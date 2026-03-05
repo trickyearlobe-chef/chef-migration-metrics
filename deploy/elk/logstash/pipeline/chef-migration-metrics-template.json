@@ -1,0 +1,407 @@
+{
+  "index_patterns": ["chef-migration-metrics*"],
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "5s"
+  },
+  "mappings": {
+    "dynamic": "true",
+    "dynamic_templates": [
+      {
+        "strings_as_keywords": {
+          "match_mapping_type": "string",
+          "mapping": {
+            "type": "keyword",
+            "ignore_above": 1024
+          }
+        }
+      }
+    ],
+    "properties": {
+      "doc_type": {
+        "type": "keyword"
+      },
+      "doc_id": {
+        "type": "keyword"
+      },
+      "@timestamp": {
+        "type": "date"
+      },
+      "organisation_name": {
+        "type": "keyword"
+      },
+      "exported_at": {
+        "type": "date"
+      },
+
+      "node_name": {
+        "type": "keyword"
+      },
+      "chef_environment": {
+        "type": "keyword"
+      },
+      "chef_version": {
+        "type": "keyword"
+      },
+      "platform": {
+        "type": "keyword"
+      },
+      "platform_version": {
+        "type": "keyword"
+      },
+      "platform_family": {
+        "type": "keyword"
+      },
+      "policy_name": {
+        "type": "keyword"
+      },
+      "policy_group": {
+        "type": "keyword"
+      },
+      "ohai_time": {
+        "type": "double"
+      },
+      "is_stale": {
+        "type": "boolean"
+      },
+      "cookbook_names": {
+        "type": "keyword"
+      },
+      "cookbook_count": {
+        "type": "integer"
+      },
+      "roles": {
+        "type": "keyword"
+      },
+      "role_count": {
+        "type": "integer"
+      },
+      "run_list": {
+        "type": "keyword"
+      },
+      "is_policyfile_node": {
+        "type": "boolean"
+      },
+      "collected_at": {
+        "type": "date"
+      },
+      "stale_days": {
+        "type": "integer"
+      },
+
+      "cookbook_name": {
+        "type": "keyword"
+      },
+      "cookbook_version": {
+        "type": "keyword"
+      },
+      "source": {
+        "type": "keyword"
+      },
+      "git_repo_url": {
+        "type": "keyword",
+        "ignore_above": 2048
+      },
+      "head_commit_sha": {
+        "type": "keyword"
+      },
+      "has_test_suite": {
+        "type": "boolean"
+      },
+      "is_active": {
+        "type": "boolean"
+      },
+      "is_stale_cookbook": {
+        "type": "boolean"
+      },
+      "first_seen_at": {
+        "type": "date"
+      },
+      "last_fetched_at": {
+        "type": "date"
+      },
+
+      "target_chef_version": {
+        "type": "keyword"
+      },
+      "passed": {
+        "type": "boolean"
+      },
+      "offense_count": {
+        "type": "integer"
+      },
+      "deprecation_count": {
+        "type": "integer"
+      },
+      "correctness_count": {
+        "type": "integer"
+      },
+      "style_count": {
+        "type": "integer"
+      },
+      "modernize_count": {
+        "type": "integer"
+      },
+      "scanned_at": {
+        "type": "date"
+      },
+
+      "cookstyle_result_id": {
+        "type": "keyword"
+      },
+      "file_path": {
+        "type": "keyword"
+      },
+      "cop_name": {
+        "type": "keyword"
+      },
+      "cop_namespace": {
+        "type": "keyword"
+      },
+      "severity": {
+        "type": "keyword"
+      },
+      "message": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 1024
+          }
+        }
+      },
+      "corrected": {
+        "type": "boolean"
+      },
+      "correctable": {
+        "type": "boolean"
+      },
+      "start_line": {
+        "type": "integer"
+      },
+      "start_column": {
+        "type": "integer"
+      },
+      "last_line": {
+        "type": "integer"
+      },
+      "last_column": {
+        "type": "integer"
+      },
+      "remediation_description": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 1024
+          }
+        }
+      },
+      "remediation_migration_url": {
+        "type": "keyword",
+        "ignore_above": 2048
+      },
+      "remediation_introduced_in": {
+        "type": "keyword"
+      },
+      "remediation_removed_in": {
+        "type": "keyword"
+      },
+
+      "commit_sha": {
+        "type": "keyword"
+      },
+      "converge_passed": {
+        "type": "boolean"
+      },
+      "tests_passed": {
+        "type": "boolean"
+      },
+      "compatible": {
+        "type": "boolean"
+      },
+      "duration_seconds": {
+        "type": "integer"
+      },
+      "started_at": {
+        "type": "date"
+      },
+      "completed_at": {
+        "type": "date"
+      },
+
+      "complexity_score": {
+        "type": "integer"
+      },
+      "complexity_label": {
+        "type": "keyword"
+      },
+      "error_count": {
+        "type": "integer"
+      },
+      "auto_correctable_count": {
+        "type": "integer"
+      },
+      "manual_fix_count": {
+        "type": "integer"
+      },
+      "affected_node_count": {
+        "type": "integer"
+      },
+      "affected_role_count": {
+        "type": "integer"
+      },
+      "affected_policy_count": {
+        "type": "integer"
+      },
+      "total_blast_radius": {
+        "type": "integer"
+      },
+      "priority_score": {
+        "type": "float"
+      },
+      "evaluated_at": {
+        "type": "date"
+      },
+
+      "is_ready": {
+        "type": "boolean"
+      },
+      "all_cookbooks_compatible": {
+        "type": "boolean"
+      },
+      "sufficient_disk_space": {
+        "type": "boolean"
+      },
+      "blocking_cookbook_names": {
+        "type": "keyword"
+      },
+      "blocking_cookbook_count": {
+        "type": "integer"
+      },
+      "blocking_reason": {
+        "type": "keyword"
+      },
+      "blocking_cookbooks": {
+        "type": "nested",
+        "properties": {
+          "name": {
+            "type": "keyword"
+          },
+          "version": {
+            "type": "keyword"
+          },
+          "reason": {
+            "type": "keyword"
+          },
+          "source": {
+            "type": "keyword"
+          },
+          "complexity_score": {
+            "type": "integer"
+          },
+          "complexity_label": {
+            "type": "keyword"
+          }
+        }
+      },
+      "available_disk_mb": {
+        "type": "integer"
+      },
+      "required_disk_mb": {
+        "type": "integer"
+      },
+      "disk_headroom_mb": {
+        "type": "integer"
+      },
+      "stale_data": {
+        "type": "boolean"
+      },
+
+      "role_name": {
+        "type": "keyword"
+      },
+      "dependency_type": {
+        "type": "keyword"
+      },
+      "dependency_name": {
+        "type": "keyword"
+      },
+
+      "snapshot_type": {
+        "type": "keyword"
+      },
+      "snapshot_at": {
+        "type": "date"
+      },
+      "total_nodes": {
+        "type": "integer"
+      },
+      "version_name": {
+        "type": "keyword"
+      },
+      "version_count": {
+        "type": "integer"
+      },
+      "version_percentage": {
+        "type": "float"
+      },
+      "ready_count": {
+        "type": "integer"
+      },
+      "blocked_count": {
+        "type": "integer"
+      },
+      "ready_percentage": {
+        "type": "float"
+      },
+      "blocked_by_cookbooks": {
+        "type": "integer"
+      },
+      "blocked_by_disk": {
+        "type": "integer"
+      },
+      "blocked_by_both": {
+        "type": "integer"
+      },
+      "total_cookbooks": {
+        "type": "integer"
+      },
+      "compatible_count": {
+        "type": "integer"
+      },
+      "incompatible_count": {
+        "type": "integer"
+      },
+      "cookstyle_only_count": {
+        "type": "integer"
+      },
+      "untested_count": {
+        "type": "integer"
+      },
+      "compatible_percentage": {
+        "type": "float"
+      },
+
+      "total_offenses": {
+        "type": "integer"
+      },
+      "correctable_offenses": {
+        "type": "integer"
+      },
+      "remaining_offenses": {
+        "type": "integer"
+      },
+      "correctable_percentage": {
+        "type": "float"
+      },
+      "files_modified": {
+        "type": "integer"
+      },
+      "generated_at": {
+        "type": "date"
+      }
+    }
+  }
+}

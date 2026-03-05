@@ -1,0 +1,92 @@
+# Configuration — ToDo
+
+Status key: [ ] Not started | [~] In progress | [x] Done
+
+---
+
+- [ ] Define configuration file format and schema
+- [ ] Support configuration of multiple Chef server organisations (URL, org name, client name, key path)
+- [ ] Support configuration of target Chef Client versions
+- [ ] Support configuration of git base URLs
+- [ ] Support configuration of disk space threshold for upgrade readiness
+- [ ] Support configuration of collection schedule
+- [ ] Support configuration of stale node threshold (`collection.stale_node_threshold_days`, default: 7)
+- [ ] Support configuration of stale cookbook threshold (`collection.stale_cookbook_threshold_days`, default: 365)
+- [ ] Support configuration of datastore connection
+- [ ] Support environment variable overrides for secrets
+- [ ] Support configuration of notification channels (webhook and email)
+- [ ] Support configuration of notification event triggers and filters
+- [ ] Support configuration of readiness milestone thresholds
+- [ ] Support configuration of stale node alert count threshold
+- [ ] Support configuration of SMTP settings for email notifications
+- [ ] Support configuration of export settings (max_rows, async_threshold, output_directory, retention_hours)
+- [ ] Support configuration of `analysis_tools.embedded_bin_dir` (default: `/opt/chef-migration-metrics/embedded/bin`)
+- [ ] Support configuration of `analysis_tools.cookstyle_timeout_minutes` (default: 10)
+- [ ] Support configuration of `analysis_tools.test_kitchen_timeout_minutes` (default: 30)
+- [ ] Support configuration of `elasticsearch.enabled` (default: false)
+- [ ] Support configuration of `elasticsearch.output_directory` (default: `/var/lib/chef-migration-metrics/elasticsearch`)
+- [ ] Support configuration of `elasticsearch.retention_hours` (default: 48)
+- [ ] Validate notification channel configuration on startup (url_env set, SMTP configured for email channels)
+- [ ] Validate export output directory exists and is writable on startup
+- [ ] Validate `analysis_tools.embedded_bin_dir` exists if set (warn, not fatal — falls back to PATH)
+- [ ] Validate `analysis_tools.cookstyle_timeout_minutes` >= 1
+- [ ] Validate `analysis_tools.test_kitchen_timeout_minutes` >= 1
+- [ ] Validate `elasticsearch.output_directory` exists and is writable when `elasticsearch.enabled` is true
+
+### TLS and Certificate Management
+
+- [x] Write TLS and certificate management specification (`tls/Specification.md`)
+- [x] Update configuration specification with `server.tls.mode` (off/static/acme) replacing boolean `server.tls.enabled`
+- [x] Add full ACME configuration schema to configuration specification (`server.tls.acme.*`)
+- [x] Add static certificate settings to configuration specification (`cert_path`, `key_path`, `ca_path`, `min_version`)
+- [x] Add HTTP-to-HTTPS redirect listener setting (`server.tls.http_redirect_port`)
+- [x] Add environment variable overrides for all TLS settings to configuration specification
+- [x] Add TLS validation rules to configuration specification (static mode, ACME mode, backward compatibility)
+- [x] Document backward compatibility with deprecated `server.tls.enabled` boolean
+- [x] Update full example configuration with TLS mode and commented-out static/ACME examples
+- [x] Update Helm chart values.yaml in packaging specification with TLS mode, static cert, and ACME settings
+- [x] Add `tlsSecret` Helm values for mounting static TLS certificates from Kubernetes Secrets
+- [x] Add `acmeStorage` Helm values for ACME certificate storage PVC
+- [x] Add TLS specification to the specifications index in the top-level specification
+- [x] Add TLS specification directory to Structure.md with description
+- [x] Add TLS specification relationships to the specification relationship graph in Structure.md
+- [ ] Implement `server.tls.mode` configuration parsing (off, static, acme)
+- [ ] Implement plain HTTP listener when `mode: off`
+- [ ] Implement HTTPS listener with static certificate/key when `mode: static`
+- [ ] Implement certificate + key validation on startup (file exists, readable, valid pair)
+- [ ] Log `WARN` on startup if static certificate is expired
+- [ ] Implement automatic certificate reload on `SIGHUP` signal
+- [ ] Implement filesystem watching for certificate file changes (e.g. `fsnotify`)
+- [ ] Gracefully handle certificate reload failure (continue serving with previous certificate, log `ERROR`)
+- [ ] Implement `min_version` enforcement (TLS 1.2 and 1.3 only)
+- [ ] Implement mutual TLS (mTLS) via `ca_path` in static mode
+- [ ] Log `WARN` on startup if key file permissions are more permissive than `0600`
+- [ ] Implement HTTP-to-HTTPS redirect listener on `http_redirect_port`
+- [ ] Ensure redirect listener serves only redirects (no API, no static assets, no health checks)
+- [ ] Add `Strict-Transport-Security` (HSTS) header on all HTTPS responses when TLS is active
+- [ ] Log TLS mode selection and certificate details at `INFO` level on startup
+- [ ] Implement ACME client integration (CertMagic or `autocert` — CertMagic recommended)
+- [ ] Implement ACME HTTP-01 challenge handler on the redirect listener
+- [ ] Implement ACME TLS-ALPN-01 challenge handler on the main HTTPS listener
+- [ ] Implement ACME DNS-01 challenge support with pluggable DNS provider interface
+- [ ] Implement DNS-01 provider: Amazon Route 53
+- [ ] Implement DNS-01 provider: Cloudflare
+- [ ] Implement DNS-01 provider: Google Cloud DNS
+- [ ] Implement DNS-01 provider: Azure DNS
+- [ ] Implement DNS-01 provider: RFC 2136 (Dynamic DNS / TSIG)
+- [ ] Implement ACME certificate storage to `acme.storage_path` with correct permissions (0700/0600)
+- [ ] Implement automatic certificate renewal before expiry (`renew_before_days`)
+- [ ] Implement exponential backoff on ACME renewal failure (1h → 24h cap)
+- [ ] Log ACME certificate obtained/renewed at `INFO`, renewal failure at `ERROR`
+- [ ] Log `WARN` when certificate is within 7 days of expiry and renewal has not succeeded
+- [ ] Send `certificate_expiry_warning` notification event when certificate is near expiry
+- [ ] Implement `agree_to_tos` gate — refuse to start in ACME mode unless `true`
+- [ ] Log `WARN` when ACME staging CA URL is detected
+- [ ] Implement multi-replica coordination for ACME via file-based locking in `storage_path`
+- [ ] Implement OCSP stapling for ACME-obtained certificates
+- [ ] Implement backward compatibility: treat `tls.enabled: true` as `mode: static` with deprecation warning
+- [ ] Validate all ACME settings on startup (domains, email, agree_to_tos, storage_path, challenge, dns_provider)
+- [ ] Validate `http_redirect_port` is set when `challenge: http-01`
+- [ ] Update `healthcheck` CLI subcommand to support HTTPS with `--insecure` flag for TLS skip-verify
+- [ ] Add TLS-related entries to the logging specification (`tls` log scope)
+- [ ] Add `certificate_expiry_warning` to the notification events list

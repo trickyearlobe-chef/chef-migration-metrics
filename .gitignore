@@ -1,0 +1,184 @@
+# =============================================================================
+# Build Output
+# =============================================================================
+
+# Go binary and cross-compiled artifacts
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# nFPM package output
+*.rpm
+*.deb
+
+# =============================================================================
+# Embedded Ruby Environment (built by make build-embedded)
+# =============================================================================
+# The entire embedded/ tree is a build artifact, covered by build/ above.
+# If built outside build/ for any reason:
+embedded/
+
+# =============================================================================
+# Go
+# =============================================================================
+# Module vendor directory (if vendoring is used)
+vendor/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.txt
+
+# Go workspace file
+go.work
+go.work.sum
+
+# =============================================================================
+# Frontend (React / Node.js)
+# =============================================================================
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.cache/
+frontend/.parcel-cache/
+frontend/.next/
+frontend/.nuxt/
+
+# npm / yarn / pnpm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+package-lock.json.bak
+
+# =============================================================================
+# IDE and Editor
+# =============================================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains (GoLand, IntelliJ, WebStorm)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+tags
+
+# Emacs
+\#*\#
+.#*
+*.elc
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Zed
+.zed/
+
+# =============================================================================
+# Operating System
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# =============================================================================
+# Secrets and Credentials (NEVER commit these)
+# =============================================================================
+
+# Chef API private keys
+*.pem
+keys/
+deploy/docker-compose/keys/
+
+# Environment files with real credentials
+.env
+deploy/docker-compose/.env
+deploy/elk/.env
+
+# TLS certificates and private keys
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+
+# ACME certificate storage (account keys, issued certs, metadata)
+acme/
+
+# =============================================================================
+# Runtime and Application Data
+# =============================================================================
+
+# PostgreSQL data (Docker Compose local volumes)
+pgdata/
+
+# Git clones and cookbook working directories
+cookbook_data/
+
+# Export output files
+exports/
+*.ndjson
+
+# Elasticsearch export staging
+elasticsearch/
+
+# ACME runtime data (if stored outside the acme/ pattern above)
+.lego/
+.certmagic/
+
+# =============================================================================
+# Docker
+# =============================================================================
+# Docker Compose override files (local customisations)
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# =============================================================================
+# Test and CI Artifacts
+# =============================================================================
+
+# Test Kitchen
+.kitchen/
+.kitchen.local.yml
+
+# CookStyle / RuboCop cache
+.rubocop-cache/
+
+# Go lint cache (local)
+.golangci-lint/
+
+# CI artifacts
+junit.xml
+test-results/
