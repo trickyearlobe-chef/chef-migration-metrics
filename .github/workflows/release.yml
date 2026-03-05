@@ -1,0 +1,369 @@
+# =============================================================================
+# Release — Build, Tag, and Publish Container Images & Packages
+# =============================================================================
+# Triggered when a git tag matching `v*` (e.g. v1.2.0) is pushed. Builds the
+# multi-arch container image and pushes it to GitHub Container Registry
+# (ghcr.io) with semantic version tags. Also packages the Helm chart and
+# attaches RPM/DEB packages and the Helm chart archive to the GitHub Release.
+#
+# Image tag strategy (for a tag like v1.2.3):
+#   - 1.2.3       immutable release tag
+#   - 1.2         floating minor tag, updated on each patch release
+#   - 1           floating major tag
+#   - latest      most recent stable release
+#   - <commit-sha> full commit SHA for traceability
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Only one release workflow at a time
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+
+      - name: Lint Helm chart
+        run: |
+          helm lint deploy/helm/chef-migration-metrics
+
+  # ---------------------------------------------------------------------------
+  # Test
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Go tests
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test -- --coverage
+
+  # ---------------------------------------------------------------------------
+  # Build and Push Container Image
+  # ---------------------------------------------------------------------------
+  build-image:
+    name: Build and Push Container Image
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      digest: ${{ steps.build-push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Strip the leading 'v' from the tag (v1.2.3 -> 1.2.3)
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building version: ${VERSION}"
+
+      - name: Set up QEMU (for multi-arch builds)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Immutable version tag: 1.2.3
+            type=semver,pattern={{version}}
+            # Floating minor tag: 1.2
+            type=semver,pattern={{major}}.{{minor}}
+            # Floating major tag: 1
+            type=semver,pattern={{major}}
+            # latest
+            type=raw,value=latest
+            # Full commit SHA for traceability
+            type=sha,prefix=,format=long
+          labels: |
+            org.opencontainers.image.title=chef-migration-metrics
+            org.opencontainers.image.description=Tool for planning and tracking Chef Client upgrade projects
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # Package Helm Chart
+  # ---------------------------------------------------------------------------
+  package-helm:
+    name: Package Helm Chart
+    runs-on: ubuntu-latest
+    needs: [build-image]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update Chart appVersion
+        run: |
+          VERSION="${{ needs.build-image.outputs.version }}"
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" deploy/helm/chef-migration-metrics/Chart.yaml
+          echo "Updated Chart.yaml appVersion to ${VERSION}"
+          cat deploy/helm/chef-migration-metrics/Chart.yaml
+
+      - name: Package Helm chart
+        run: |
+          helm package deploy/helm/chef-migration-metrics --destination .helm-packages/
+
+      - name: Log in to GHCR for Helm OCI
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
+
+      - name: Push Helm chart to OCI registry
+        run: |
+          for pkg in .helm-packages/*.tgz; do
+            helm push "${pkg}" oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+          done
+
+      - name: Upload Helm chart as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: .helm-packages/*.tgz
+
+  # ---------------------------------------------------------------------------
+  # Build Native Packages (RPM / DEB)
+  # ---------------------------------------------------------------------------
+  build-packages:
+    name: Build ${{ matrix.format }} (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: [lint, test, build-image]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        format: [rpm, deb]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up QEMU (for cross-compilation)
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install nFPM
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Go binary
+        env:
+          VERSION: ${{ needs.build-image.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+        run: |
+          GOARCH=${{ matrix.arch }} CGO_ENABLED=0 GOOS=linux go build \
+            -ldflags "-X main.version=${VERSION} -X main.commit=${GIT_COMMIT} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o build/chef-migration-metrics .
+
+      - name: Build embedded Ruby environment
+        run: |
+          make build-embedded-${{ matrix.arch }}
+
+      - name: Build ${{ matrix.format }} package
+        env:
+          VERSION: ${{ needs.build-image.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          nfpm package --packager ${{ matrix.format }} --target build/
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.format }}-${{ matrix.arch }}
+          path: |
+            build/*.${{ matrix.format }}
+
+  # ---------------------------------------------------------------------------
+  # Create GitHub Release
+  # ---------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-image, build-packages, package-helm]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: false
+
+      - name: Collect release assets
+        id: collect
+        run: |
+          mkdir -p release-files
+          # Collect RPM and DEB packages
+          find release-assets -name '*.rpm' -o -name '*.deb' | while read f; do
+            cp "$f" release-files/
+          done
+          # Collect Helm chart archives
+          find release-assets -name '*.tgz' | while read f; do
+            cp "$f" release-files/
+          done
+          echo "Collected release files:"
+          ls -la release-files/
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${{ needs.build-image.outputs.version }}"
+          DIGEST="${{ needs.build-image.outputs.digest }}"
+          cat <<EOF > release-notes.md
+          ## Container Image
+
+          \`\`\`
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
+          \`\`\`
+
+          **Digest:** \`${DIGEST}\`
+
+          **Supported platforms:** \`linux/amd64\`, \`linux/arm64\`
+
+          ### Available Tags
+
+          | Tag | Value |
+          |-----|-------|
+          | Version | \`${VERSION}\` |
+          | Commit | \`${{ github.sha }}\` |
+          | Latest | \`latest\` |
+
+          ## Helm Chart
+
+          \`\`\`bash
+          helm install chef-migration-metrics oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/chef-migration-metrics --version ${VERSION}
+          \`\`\`
+
+          ## Native Packages
+
+          RPM and DEB packages for \`amd64\` and \`arm64\` are attached below.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          files: release-files/*
+          fail_on_unmatched_files: false

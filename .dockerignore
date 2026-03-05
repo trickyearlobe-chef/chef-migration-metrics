@@ -1,0 +1,138 @@
+# =============================================================================
+# .dockerignore
+# =============================================================================
+# Keeps the Docker build context small and fast by excluding files that are not
+# needed inside the container image build. Also prevents secrets and credentials
+# from being accidentally sent to the Docker daemon.
+#
+# This file is used by the root Dockerfile (multi-stage Go + Ruby + runtime).
+# =============================================================================
+
+# =============================================================================
+# Version Control
+# =============================================================================
+.git
+.gitignore
+
+# =============================================================================
+# AI Assistant Context (not shipped in the image)
+# =============================================================================
+.claude/
+
+# =============================================================================
+# Build Output (the Dockerfile builds from source; stale artifacts cause confusion)
+# =============================================================================
+build/
+embedded/
+*.rpm
+*.deb
+*.exe
+
+# =============================================================================
+# Secrets and Credentials (NEVER send to Docker daemon)
+# =============================================================================
+*.pem
+keys/
+deploy/docker-compose/keys/
+deploy/docker-compose/.env
+deploy/elk/.env
+.env
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+
+# ACME certificate storage (account keys, issued certs, metadata)
+acme/
+.lego/
+.certmagic/
+
+# =============================================================================
+# Deployment Artifacts (not needed in the image build)
+# =============================================================================
+deploy/docker-compose/
+deploy/elk/
+deploy/helm/
+deploy/pkg/
+
+# =============================================================================
+# Documentation and Metadata (not needed in the image)
+# =============================================================================
+LICENSE
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+nfpm.yaml
+
+# =============================================================================
+# IDE and Editor
+# =============================================================================
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+.zed/
+*.swp
+*.swo
+*~
+tags
+*.sublime-project
+*.sublime-workspace
+
+# =============================================================================
+# Operating System
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# Frontend — node_modules is rebuilt inside the build stage via npm ci
+# =============================================================================
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.cache/
+frontend/.parcel-cache/
+node_modules/
+
+# =============================================================================
+# Go (test output, coverage — not needed in image build)
+# =============================================================================
+vendor/
+*.test
+*.out
+coverage.html
+coverage.txt
+go.work
+go.work.sum
+
+# =============================================================================
+# Test and CI Artifacts
+# =============================================================================
+.kitchen/
+.kitchen.local.yml
+.rubocop-cache/
+.golangci-lint/
+junit.xml
+test-results/
+
+# =============================================================================
+# Runtime Data (should never be in the source tree, but guard against it)
+# =============================================================================
+pgdata/
+cookbook_data/
+exports/
+*.ndjson
+elasticsearch/
+
+# =============================================================================
+# Docker Compose Overrides
+# =============================================================================
+docker-compose.override.yml
+docker-compose.override.yaml

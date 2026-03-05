@@ -1,0 +1,132 @@
+# ELK Testing Stack for Chef Migration Metrics
+#
+# Provides a local Elasticsearch, Logstash, and Kibana stack for testing
+# the Elasticsearch export pipeline. Logstash reads NDJSON files written
+# by the application and indexes them into a single Elasticsearch index.
+#
+# Usage:
+#   cd deploy/elk
+#   cp .env.example .env
+#   docker compose up -d
+#
+# Kibana is available at http://localhost:5601
+# Elasticsearch API is available at http://localhost:9200
+#
+# To use alongside the main application Docker Compose stack, configure
+# the application with:
+#   elasticsearch:
+#     enabled: true
+#     output_directory: <path mounted into es_export_data volume>
+#
+# See deploy/elk/README.md for full instructions.
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELK_VERSION:-8.17.0}
+    container_name: cmm-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+      - cluster.name=cmm-elk
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:${ELK_VERSION:-8.17.0}
+    container_name: cmm-logstash
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_INDEX=${ELASTICSEARCH_INDEX:-chef-migration-metrics}
+      - LOGSTASH_INPUT_DIR=/export-data
+      - LOGSTASH_SINCEDB_PATH=/usr/share/logstash/data/sincedb_chef_migration_metrics
+      - xpack.monitoring.enabled=false
+      - LS_JAVA_OPTS=${LS_JAVA_OPTS:--Xms256m -Xmx256m}
+      - pipeline.ecs_compatibility=disabled
+    volumes:
+      - ./logstash/pipeline/chef-migration-metrics.conf:/usr/share/logstash/pipeline/chef-migration-metrics.conf:ro
+      - ./logstash/pipeline/chef-migration-metrics-template.json:/usr/share/logstash/pipeline/chef-migration-metrics-template.json:ro
+      - es_export_data:/export-data:ro
+      - logstash_data:/usr/share/logstash/data
+    ports:
+      - "${LOGSTASH_MONITORING_PORT:-9600}:9600"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9600/_node/stats || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELK_VERSION:-8.17.0}
+    container_name: cmm-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+      - xpack.encryptedSavedObjects.encryptionKey=${KIBANA_ENCRYPTION_KEY:-a]V3:B6s#K9m!Pq2x8Yz@wR5fT7hJ0nL}
+      - telemetry.optIn=false
+      - server.name=cmm-kibana
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status | grep -q 'available' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  # Elasticsearch data persistence
+  esdata:
+    driver: local
+
+  # Logstash sincedb and internal state
+  logstash_data:
+    driver: local
+
+  # Shared volume for NDJSON export files
+  # The application writes here; Logstash reads from here.
+  #
+  # When running the main app Docker Compose stack alongside this ELK stack,
+  # mount this volume into the app container or configure the application's
+  # elasticsearch.output_directory to point to a host path that is also
+  # bind-mounted here.
+  #
+  # For local testing, you can write NDJSON files directly:
+  #   docker compose cp test-data.ndjson cmm-logstash:/export-data/
+  #
+  # Or bind-mount a host directory by overriding in docker-compose.override.yml:
+  #   volumes:
+  #     es_export_data:
+  #       driver: local
+  #       driver_opts:
+  #         type: none
+  #         o: bind
+  #         device: /path/to/your/export/directory
+  es_export_data:
+    driver: local
