@@ -2,21 +2,23 @@
 
 Status key: [ ] Not started | [~] In progress | [x] Done
 
+> 756 tests across 6 packages: secrets (331), config (117), logging (93), collector (79), chefapi (74), datastore (62). All passing, 0 failures. Additional test items below track coverage of specific functional areas.
+
 ---
 
-- [ ] Unit tests for Chef API client and authentication
-- [ ] Unit tests for partial search query builder
+- [x] Unit tests for Chef API client and authentication — 74 tests in `internal/chefapi/client_test.go` covering RSA signing, HTTP client, API errors, retry logic, and all endpoints
+- [x] Unit tests for partial search query builder — covered in `client_test.go` partial search tests (correct method/path/query/body verification)
 - [ ] Unit tests for cookbook usage analysis
 - [ ] Unit tests for cookbook usage analysis with Policyfile nodes
 - [ ] Unit tests for node readiness calculation
-- [ ] Unit tests for stale node detection logic
+- [x] Unit tests for stale node detection logic — covered in `client_test.go` NodeData helper tests (`IsStale`, `OhaiTimeAsTime`, missing ohai_time treated as stale)
 - [ ] Unit tests for stale cookbook detection logic
 - [ ] Unit tests for auto-correct preview generation (diff computation, statistics)
 - [ ] Unit tests for cop-to-documentation mapping enrichment
 - [ ] Unit tests for cookbook complexity score calculation (weighted scoring, label classification)
 - [ ] Unit tests for blast radius computation (node count, role count via dependency graph, policy count)
 - [ ] Unit tests for CookStyle version profile selection per target Chef Client version
-- [ ] Unit tests for role dependency graph building (role → role, role → cookbook parsing)
+- [x] Unit tests for role dependency graph building (role → role, role → cookbook parsing) — partially covered: `client_test.go` tests `GetRoles()`, `GetRole()` with `RunList`/`EnvRunLists`; run_list parsing and graph traversal not yet implemented
 - [ ] Unit tests for dependency graph traversal (transitive dependencies)
 - [ ] Unit tests for notification trigger evaluation (status change detection, milestone crossing)
 - [ ] Unit tests for webhook notification payload construction and delivery

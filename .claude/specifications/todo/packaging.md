@@ -8,7 +8,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [x] Create `Makefile` with `build`, `build-all`, `build-frontend`, `build-embedded`, `build-embedded-amd64`, `build-embedded-arm64`, `test`, `lint`, `package-rpm`, `package-deb`, `package-docker`, `package-all` targets
 - [x] Implement build-time version injection via `-ldflags`
-- [ ] Implement `--version` CLI flag
+- [x] Implement `--version` CLI flag — `main.go` supports `-version` flag with build-time version injection via `-ldflags`
 
 ## Embedded Ruby Environment
 
@@ -69,15 +69,15 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## ELK Testing Stack
 
-- [ ] Create `deploy/elk/docker-compose.yml` with Elasticsearch, Logstash, and Kibana services
-- [ ] Create `deploy/elk/logstash/pipeline/chef-migration-metrics.conf` Logstash pipeline definition
-- [ ] Create `deploy/elk/.env.example` with documented variables (ELK version, ports, volume paths)
-- [ ] Create `deploy/elk/README.md` with quick-start instructions
-- [ ] Configure Logstash to read `*.ndjson` files from shared volume (skip `.tmp` suffix)
-- [ ] Configure Logstash to extract `doc_id` as Elasticsearch `_id` for upsert behaviour
-- [ ] Configure Logstash to index all document types into single `chef-migration-metrics` index
-- [ ] Configure Elasticsearch with security disabled for local testing (`xpack.security.enabled=false`)
-- [ ] Configure shared volume (`es_export_data`) between application and Logstash
+- [x] Create `deploy/elk/docker-compose.yml` with Elasticsearch, Logstash, and Kibana services — fully implemented with health checks, configurable ports/versions via env vars, shared `es_export_data` volume, sincedb persistence, and `unless-stopped` restart policy
+- [x] Create `deploy/elk/logstash/pipeline/chef-migration-metrics.conf` Logstash pipeline definition — reads `*.ndjson` (excludes `.tmp`), parses JSON, validates envelope fields (`doc_type`, `doc_id`), preserves app-set `@timestamp`, parses all ISO 8601 date fields, uses `doc_id` as Elasticsearch `_id` for upsert, applies index template
+- [x] Create `deploy/elk/.env.example` with documented variables (ELK version, ports, volume paths)
+- [x] Create `deploy/elk/README.md` with quick-start instructions — 621 lines covering architecture, prerequisites, quick start, connecting to the app, Kibana setup, 19 dashboard visualisations, document types, Logstash pipeline details, operations, and troubleshooting
+- [x] Configure Logstash to read `*.ndjson` files from shared volume (skip `.tmp` suffix) — `file` input with `exclude => "*.tmp"`, `mode => "tail"`, `start_position => "beginning"`, `sincedb_write_interval => 5`
+- [x] Configure Logstash to extract `doc_id` as Elasticsearch `_id` for upsert behaviour — `mutate { copy => { "doc_id" => "[@metadata][_id]" } }` and `document_id => "%{[@metadata][_id]}"` in output
+- [x] Configure Logstash to index all document types into single `chef-migration-metrics` index — `index => "${ELASTICSEARCH_INDEX:chef-migration-metrics}"` with `manage_template => true` and custom index template (`chef-migration-metrics-template.json`)
+- [x] Configure Elasticsearch with security disabled for local testing (`xpack.security.enabled=false`) — plus `xpack.security.enrollment.enabled=false`, `xpack.security.http.ssl.enabled=false`, `xpack.security.transport.ssl.enabled=false`
+- [x] Configure shared volume (`es_export_data`) between application and Logstash — named volume with documentation for bind-mount override and host directory options
 - [ ] Verify `docker compose up -d` in `deploy/elk/` brings up a working ELK stack
 - [ ] Verify Logstash picks up NDJSON files and indexes them into Elasticsearch
 - [ ] Verify Kibana can query the `chef-migration-metrics` index

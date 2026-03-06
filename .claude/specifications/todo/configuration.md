@@ -4,34 +4,34 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
-- [ ] Define configuration file format and schema
-- [ ] Support configuration of multiple Chef server organisations (URL, org name, client name, key path)
-- [ ] Support configuration of target Chef Client versions
-- [ ] Support configuration of git base URLs
-- [ ] Support configuration of disk space threshold for upgrade readiness
-- [ ] Support configuration of collection schedule
-- [ ] Support configuration of stale node threshold (`collection.stale_node_threshold_days`, default: 7)
-- [ ] Support configuration of stale cookbook threshold (`collection.stale_cookbook_threshold_days`, default: 365)
-- [ ] Support configuration of datastore connection
-- [ ] Support environment variable overrides for secrets
-- [ ] Support configuration of notification channels (webhook and email)
-- [ ] Support configuration of notification event triggers and filters
-- [ ] Support configuration of readiness milestone thresholds
-- [ ] Support configuration of stale node alert count threshold
-- [ ] Support configuration of SMTP settings for email notifications
-- [ ] Support configuration of export settings (max_rows, async_threshold, output_directory, retention_hours)
-- [ ] Support configuration of `analysis_tools.embedded_bin_dir` (default: `/opt/chef-migration-metrics/embedded/bin`)
-- [ ] Support configuration of `analysis_tools.cookstyle_timeout_minutes` (default: 10)
-- [ ] Support configuration of `analysis_tools.test_kitchen_timeout_minutes` (default: 30)
-- [ ] Support configuration of `elasticsearch.enabled` (default: false)
-- [ ] Support configuration of `elasticsearch.output_directory` (default: `/var/lib/chef-migration-metrics/elasticsearch`)
-- [ ] Support configuration of `elasticsearch.retention_hours` (default: 48)
-- [ ] Validate notification channel configuration on startup (url_env set, SMTP configured for email channels)
-- [ ] Validate export output directory exists and is writable on startup
-- [ ] Validate `analysis_tools.embedded_bin_dir` exists if set (warn, not fatal — falls back to PATH)
-- [ ] Validate `analysis_tools.cookstyle_timeout_minutes` >= 1
-- [ ] Validate `analysis_tools.test_kitchen_timeout_minutes` >= 1
-- [ ] Validate `elasticsearch.output_directory` exists and is writable when `elasticsearch.enabled` is true
+- [x] Define configuration file format and schema — `internal/config/config.go` with YAML parsing, defaults, env overrides, and validation; 117 tests in `config_test.go`
+- [x] Support configuration of multiple Chef server organisations (URL, org name, client name, key path)
+- [x] Support configuration of target Chef Client versions
+- [x] Support configuration of git base URLs
+- [x] Support configuration of disk space threshold for upgrade readiness
+- [x] Support configuration of collection schedule
+- [x] Support configuration of stale node threshold (`collection.stale_node_threshold_days`, default: 7)
+- [x] Support configuration of stale cookbook threshold (`collection.stale_cookbook_threshold_days`, default: 365)
+- [x] Support configuration of datastore connection
+- [x] Support environment variable overrides for secrets
+- [x] Support configuration of notification channels (webhook and email)
+- [x] Support configuration of notification event triggers and filters
+- [x] Support configuration of readiness milestone thresholds
+- [x] Support configuration of stale node alert count threshold
+- [x] Support configuration of SMTP settings for email notifications
+- [x] Support configuration of export settings (max_rows, async_threshold, output_directory, retention_hours)
+- [x] Support configuration of `analysis_tools.embedded_bin_dir` (default: `/opt/chef-migration-metrics/embedded/bin`)
+- [x] Support configuration of `analysis_tools.cookstyle_timeout_minutes` (default: 10)
+- [x] Support configuration of `analysis_tools.test_kitchen_timeout_minutes` (default: 30)
+- [x] Support configuration of `elasticsearch.enabled` (default: false)
+- [x] Support configuration of `elasticsearch.output_directory` (default: `/var/lib/chef-migration-metrics/elasticsearch`)
+- [x] Support configuration of `elasticsearch.retention_hours` (default: 48)
+- [x] Validate notification channel configuration on startup (url_env set, SMTP configured for email channels)
+- [x] Validate export output directory exists and is writable on startup
+- [x] Validate `analysis_tools.embedded_bin_dir` exists if set (warn, not fatal — falls back to PATH)
+- [x] Validate `analysis_tools.cookstyle_timeout_minutes` >= 1
+- [x] Validate `analysis_tools.test_kitchen_timeout_minutes` >= 1
+- [x] Validate `elasticsearch.output_directory` exists and is writable when `elasticsearch.enabled` is true
 
 ### TLS and Certificate Management
 

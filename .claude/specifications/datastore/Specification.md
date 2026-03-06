@@ -234,6 +234,8 @@ Stores metadata about each known cookbook. A cookbook is uniquely identified by 
 | `has_test_suite` | BOOLEAN | No | Whether the cookbook contains a Test Kitchen configuration |
 | `is_active` | BOOLEAN | No | Whether the cookbook is applied to at least one node |
 | `is_stale_cookbook` | BOOLEAN | No | Whether the cookbook's most recent version is older than the configured stale threshold |
+| `download_status` | TEXT | No | Download status: `ok` (content fetched successfully), `failed` (download attempted but failed), or `pending` (not yet downloaded). Default: `pending`. Cookbook versions with `failed` status are excluded from CookStyle and compatibility analysis but still appear in the dashboard with a failure indicator. Versions with `failed` or `pending` status are retried on the next collection run (not treated as "already present" by the immutability optimisation). |
+| `download_error` | TEXT | Yes | Human-readable error detail when `download_status = 'failed'`. Includes the error message and HTTP status code if applicable (e.g. `"404 Not Found: cookbook version not found on server"`, `"checksum mismatch: expected abc123, got def456"`, `"connection timeout after 30s"`). Null when status is `ok` or `pending`. |
 | `first_seen_at` | TIMESTAMPTZ | Yes | When this cookbook version was first observed by the application (proxy for upload date) |
 | `last_fetched_at` | TIMESTAMPTZ | Yes | When the cookbook was last fetched or pulled |
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
@@ -243,12 +245,16 @@ Stores metadata about each known cookbook. A cookbook is uniquely identified by 
 - `(organisation_id, name, version)` WHERE `source = 'chef_server'`
 - `(name, git_repo_url)` WHERE `source = 'git'`
 
+**Check constraints:**
+- `chk_cookbooks_download_status CHECK (download_status IN ('ok', 'failed', 'pending'))`
+
 **Indexes:**
 - `idx_cookbooks_organisation_id` on `organisation_id`
 - `idx_cookbooks_name` on `name`
 - `idx_cookbooks_source` on `source`
 - `idx_cookbooks_is_active` on `is_active`
 - `idx_cookbooks_is_stale_cookbook` on `is_stale_cookbook`
+- `idx_cookbooks_download_status` on `download_status`
 - `idx_cookbooks_name_version` on `(name, version)`
 - `idx_cookbooks_first_seen_at` on `first_seen_at`
 
