@@ -26,6 +26,15 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Build a map from organisation ID to name so we can include the
+	// human-readable org name in each node response row. The node detail
+	// endpoint uses org name in the URL path, so the frontend needs it
+	// for constructing links.
+	orgNameByID := make(map[string]string, len(orgs))
+	for _, org := range orgs {
+		orgNameByID[org.ID] = org.Name
+	}
+
 	// Collect snapshots from all organisations (from their most recent
 	// completed collection run).
 	var allNodes []datastore.NodeSnapshot
@@ -54,35 +63,37 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	}
 
 	type nodeResp struct {
-		ID              string `json:"id"`
-		OrganisationID  string `json:"organisation_id"`
-		NodeName        string `json:"node_name"`
-		ChefEnvironment string `json:"chef_environment,omitempty"`
-		ChefVersion     string `json:"chef_version,omitempty"`
-		Platform        string `json:"platform,omitempty"`
-		PlatformVersion string `json:"platform_version,omitempty"`
-		PlatformFamily  string `json:"platform_family,omitempty"`
-		PolicyName      string `json:"policy_name,omitempty"`
-		PolicyGroup     string `json:"policy_group,omitempty"`
-		IsStale         bool   `json:"is_stale"`
-		CollectedAt     string `json:"collected_at"`
+		ID               string `json:"id"`
+		OrganisationID   string `json:"organisation_id"`
+		OrganisationName string `json:"organisation_name"`
+		NodeName         string `json:"node_name"`
+		ChefEnvironment  string `json:"chef_environment,omitempty"`
+		ChefVersion      string `json:"chef_version,omitempty"`
+		Platform         string `json:"platform,omitempty"`
+		PlatformVersion  string `json:"platform_version,omitempty"`
+		PlatformFamily   string `json:"platform_family,omitempty"`
+		PolicyName       string `json:"policy_name,omitempty"`
+		PolicyGroup      string `json:"policy_group,omitempty"`
+		IsStale          bool   `json:"is_stale"`
+		CollectedAt      string `json:"collected_at"`
 	}
 
 	result := make([]nodeResp, 0, end-start)
 	for _, n := range allNodes[start:end] {
 		result = append(result, nodeResp{
-			ID:              n.ID,
-			OrganisationID:  n.OrganisationID,
-			NodeName:        n.NodeName,
-			ChefEnvironment: n.ChefEnvironment,
-			ChefVersion:     n.ChefVersion,
-			Platform:        n.Platform,
-			PlatformVersion: n.PlatformVersion,
-			PlatformFamily:  n.PlatformFamily,
-			PolicyName:      n.PolicyName,
-			PolicyGroup:     n.PolicyGroup,
-			IsStale:         n.IsStale,
-			CollectedAt:     n.CollectedAt.Format("2006-01-02T15:04:05Z"),
+			ID:               n.ID,
+			OrganisationID:   n.OrganisationID,
+			OrganisationName: orgNameByID[n.OrganisationID],
+			NodeName:         n.NodeName,
+			ChefEnvironment:  n.ChefEnvironment,
+			ChefVersion:      n.ChefVersion,
+			Platform:         n.Platform,
+			PlatformVersion:  n.PlatformVersion,
+			PlatformFamily:   n.PlatformFamily,
+			PolicyName:       n.PolicyName,
+			PolicyGroup:      n.PolicyGroup,
+			IsStale:          n.IsStale,
+			CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
 		})
 	}
 

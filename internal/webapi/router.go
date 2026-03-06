@@ -5,7 +5,10 @@ package webapi
 
 import (
 	"fmt"
+	"io/fs"
 	"net/http"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -20,6 +23,12 @@ type Router struct {
 	db      DataStore
 	cfg     *config.Config
 	version string
+
+	// frontendFS holds the built React SPA assets (index.html, JS, CSS).
+	// When non-nil, the frontend fallback handler serves files from this
+	// filesystem instead of returning a plain-text placeholder. Set via
+	// WithFrontendFS at construction time.
+	frontendFS fs.FS
 
 	// logger is an optional callback for logging request-level events.
 	// If nil, events are silently discarded. The webapi package does not
@@ -44,6 +53,17 @@ func WithVersion(v string) RouterOption {
 func WithLogger(fn func(level, msg string)) RouterOption {
 	return func(r *Router) {
 		r.logger = fn
+	}
+}
+
+// WithFrontendFS sets the filesystem containing the built React SPA
+// assets (typically the Vite output directory). When set, all non-API
+// requests are served from this filesystem, with a fallback to
+// index.html for client-side routing. When nil, a plain-text
+// placeholder is returned instead.
+func WithFrontendFS(fsys fs.FS) RouterOption {
+	return func(r *Router) {
+		r.frontendFS = fsys
 	}
 }
 
@@ -280,11 +300,41 @@ func (r *Router) handleFrontendFallback(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	// For now, return a simple text response. Once the React frontend is
-	// built and embedded via go:embed, this will serve index.html and
-	// static assets.
+	// If the frontend FS is available, serve static assets from it.
+	// For paths that don't match a real file, serve index.html so that
+	// React Router can handle client-side routes.
+	if r.frontendFS != nil {
+		r.serveFrontendAsset(w, req)
+		return
+	}
+
+	// No frontend built — return a plain-text placeholder.
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprintf(w, "Chef Migration Metrics %s\n\nFrontend not yet built. API available at /api/v1/\n", r.version)
+}
+
+// serveFrontendAsset serves a file from the frontend FS if it exists,
+// otherwise falls back to index.html for SPA client-side routing.
+func (r *Router) serveFrontendAsset(w http.ResponseWriter, req *http.Request) {
+	// Clean and strip leading slash to get the FS-relative path.
+	p := strings.TrimPrefix(path.Clean(req.URL.Path), "/")
+	if p == "" {
+		p = "index.html"
+	}
+
+	// Try to open the requested path as a real file.
+	f, err := r.frontendFS.Open(p)
+	if err == nil {
+		defer f.Close()
+		// Check it's not a directory — if it is, fall through to index.html.
+		if stat, statErr := f.Stat(); statErr == nil && !stat.IsDir() {
+			http.ServeFileFS(w, req, r.frontendFS, p)
+			return
+		}
+	}
+
+	// Path didn't match a static asset — serve index.html for SPA routing.
+	http.ServeFileFS(w, req, r.frontendFS, "index.html")
 }
 
 // -----------------------------------------------------------------

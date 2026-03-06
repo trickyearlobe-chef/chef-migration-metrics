@@ -1,0 +1,175 @@
+# =============================================================================
+# Chef Migration Metrics — Example Configuration (Docker Compose)
+# =============================================================================
+# This file is mounted into the application container at
+# /etc/chef-migration-metrics/config.yml. Edit it for your environment.
+#
+# The DATABASE_URL is injected via environment variable by Docker Compose
+# (see docker-compose.yml), so no datastore section is needed here.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Chef Server Organisations
+# ---------------------------------------------------------------------------
+# Add one entry per Chef Infra Server organisation you want to collect from.
+# Place the corresponding .pem key files in the ./keys/ directory.
+organisations:
+  - name: my-org
+    chef_server_url: https://chef.example.com
+    org_name: my-org
+    client_name: chef-migration-metrics
+    client_key_path: /etc/chef-migration-metrics/keys/my-org.pem
+
+  # Additional organisations:
+  # - name: my-other-org
+  #   chef_server_url: https://chef.example.com
+  #   org_name: my-other-org
+  #   client_name: chef-migration-metrics
+  #   client_key_path: /etc/chef-migration-metrics/keys/my-other-org.pem
+
+  # Database-stored key (requires CMM_CREDENTIAL_ENCRYPTION_KEY env var):
+  # - name: staging
+  #   chef_server_url: https://chef.example.com
+  #   org_name: staging
+  #   client_name: chef-migration-metrics
+  #   client_key_credential: staging-key
+
+# ---------------------------------------------------------------------------
+# Target Chef Client Versions
+# ---------------------------------------------------------------------------
+# The versions of Chef Infra Client you are upgrading to. Cookbook compatibility
+# is tested against each version listed here.
+target_chef_versions:
+  - "18.5.0"
+  # - "19.0.0"
+
+# ---------------------------------------------------------------------------
+# Git Base URLs (optional)
+# ---------------------------------------------------------------------------
+# If your cookbooks are in git repositories, list the base URLs here.
+# The collector tries each base URL when looking for a cookbook's repo.
+# git_base_urls:
+#   - https://github.com/my-org
+#   - https://gitlab.example.com/chef-cookbooks
+
+# ---------------------------------------------------------------------------
+# Collection Schedule
+# ---------------------------------------------------------------------------
+collection:
+  # Cron expression — default: every hour at minute 0.
+  schedule: "0 * * * *"
+  stale_node_threshold_days: 7
+  stale_cookbook_threshold_days: 365
+
+# ---------------------------------------------------------------------------
+# Concurrency
+# ---------------------------------------------------------------------------
+concurrency:
+  organisation_collection: 5
+  node_page_fetching: 10
+  git_pull: 10
+  cookstyle_scan: 8
+  test_kitchen_run: 4
+  readiness_evaluation: 20
+
+# ---------------------------------------------------------------------------
+# Readiness
+# ---------------------------------------------------------------------------
+readiness:
+  min_free_disk_mb: 2048
+
+# ---------------------------------------------------------------------------
+# Analysis Tools
+# ---------------------------------------------------------------------------
+# The container image ships CookStyle and Test Kitchen under the embedded
+# prefix. If you are running a locally-built binary outside Docker, point
+# this to your own embedded directory or leave it empty to use PATH lookup.
+analysis_tools:
+  embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
+  cookstyle_timeout_minutes: 10
+  test_kitchen_timeout_minutes: 30
+
+# ---------------------------------------------------------------------------
+# Web Server
+# ---------------------------------------------------------------------------
+server:
+  listen_address: "0.0.0.0"
+  port: 8080
+  tls:
+    mode: "off"
+  websocket:
+    enabled: true
+    max_connections: 100
+    send_buffer_size: 64
+    write_timeout_seconds: 10
+    ping_interval_seconds: 30
+    pong_timeout_seconds: 60
+  graceful_shutdown_seconds: 30
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+frontend:
+  base_path: "/"
+
+# ---------------------------------------------------------------------------
+# Elasticsearch / NDJSON Export (optional)
+# ---------------------------------------------------------------------------
+# elasticsearch:
+#   enabled: false
+#   output_directory: /var/lib/chef-migration-metrics/elasticsearch
+#   retention_hours: 48
+
+# ---------------------------------------------------------------------------
+# Notifications (optional)
+# ---------------------------------------------------------------------------
+# notifications:
+#   channels:
+#     - name: slack-ops
+#       type: webhook
+#       url_env: SLACK_WEBHOOK_URL
+#       events:
+#         - collection_complete
+#         - readiness_milestone
+#     - name: email-team
+#       type: email
+#       recipients:
+#         - chef-team@example.com
+#       events:
+#         - collection_failed
+#         - certificate_expiry_warning
+
+# ---------------------------------------------------------------------------
+# SMTP (required for email notifications)
+# ---------------------------------------------------------------------------
+# smtp:
+#   host: smtp.example.com
+#   port: 587
+#   username_env: SMTP_USERNAME
+#   password_env: SMTP_PASSWORD
+#   from_address: chef-migration-metrics@example.com
+#   tls: true
+
+# ---------------------------------------------------------------------------
+# Exports (optional)
+# ---------------------------------------------------------------------------
+# exports:
+#   max_rows: 100000
+#   async_threshold: 5000
+#   output_directory: /var/lib/chef-migration-metrics/exports
+#   retention_hours: 24
+
+# ---------------------------------------------------------------------------
+# Authentication (optional — defaults to no auth for local development)
+# ---------------------------------------------------------------------------
+# auth:
+#   session_secret_env: CMM_SESSION_SECRET
+#   session_lifetime_hours: 24
+#   providers:
+#     - type: local
+#     - type: ldap
+#       host: ldap.example.com
+#       port: 636
+#       base_dn: "ou=users,dc=example,dc=com"
+#       bind_dn: "cn=service-account,dc=example,dc=com"
+#       bind_password_env: LDAP_BIND_PASSWORD
