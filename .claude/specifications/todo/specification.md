@@ -13,7 +13,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [x] Write component specification: Web API (HTTP layer between backend and frontend)
 - [x] Write component specification: Packaging and Deployment (RPM, DEB, container, Docker Compose, Helm)
 - [x] Write component specification: Elasticsearch Export (NDJSON export, Logstash pipeline, ELK testing stack)
-- [ ] Write database migration files for initial schema
+- [x] Write database migration files for initial schema — `migrations/0001_initial_schema.up.sql` and `migrations/0001_initial_schema.down.sql` exist
 - [x] Document background job scheduling and recovery behaviour
 - [x] Populate specifications/chef-api/Specification.md with relevant API endpoint references
 - [x] Flesh out analysis specification with design decisions (Test Kitchen invocation, CookStyle parsing, disk space evaluation)

@@ -144,7 +144,25 @@ All git commands must be invoked with the flags listed below to ensure output is
 - The same cookbook name and version may differ in content between organisations. Cookbook versions must be keyed in the datastore by **organisation + cookbook name + version**.
 - Cookbooks downloaded from the Chef server do **not** include test suites and are not eligible for Test Kitchen testing. They are eligible for CookStyle linting only.
 
-### 2.4 Cookbook Upload Date Tracking
+### 2.4 Cookbook Download Failure Handling
+
+Individual cookbook version downloads can fail for reasons including but not limited to:
+
+- **Corrupted files** — The Chef server returns a response but the content is truncated, malformed, or fails integrity checks (e.g. mismatched checksum).
+- **Missing files** — The Chef server returns a 404 or similar error for a cookbook version that appeared in the inventory listing. This can occur when a cookbook version is deleted between the inventory fetch and the download, or due to backend storage issues on the Chef server.
+- **Network errors** — Transient connectivity failures, timeouts, or TLS errors during the download.
+- **Permission errors** — The API client lacks permission to read a specific cookbook (e.g. ACL restrictions on the Chef server).
+
+These failures must be handled as follows:
+
+1. **Non-fatal** — A download failure for one cookbook version must **not** cause the collection run to fail. Collection must continue for all remaining cookbooks and organisations.
+2. **Flagged** — Each failed cookbook version must be flagged in the datastore with a `download_status` indicating the failure. Valid statuses are `ok`, `failed`, and `pending`. The failure reason (error message, HTTP status code if applicable) must be recorded alongside the flag.
+3. **Logged** — Each failure must be logged at `WARN` severity with the `collection_run` scope, including the organisation name, cookbook name, cookbook version, and error detail.
+4. **Excluded from analysis** — Cookbook versions with a `failed` download status must be excluded from CookStyle scanning and compatibility analysis. They must still appear in the dashboard with a visual indicator showing the download failure, so operators can investigate.
+5. **Retried on next run** — Cookbook versions with a `failed` or `pending` download status must be retried on the next collection run (they are not treated as "already present" by the immutability optimisation). If the retry succeeds, the status is updated to `ok` and the cookbook becomes eligible for analysis.
+6. **Manual rescan** — The existing manual rescan option (§ 2.3) must also clear a `failed` status and force a fresh download attempt.
+
+### 2.5 Cookbook Upload Date Tracking
 
 - When fetching the cookbook inventory from the Chef server (`GET /organizations/<ORG>/cookbooks?num_versions=all`), record the **version creation timestamp** for each cookbook version if available from the Chef server API.
 - If the Chef server does not expose a creation timestamp directly, record the timestamp of the first time the application observed the cookbook version during collection. This serves as a proxy for upload date.

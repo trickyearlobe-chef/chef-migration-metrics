@@ -241,6 +241,38 @@ The notification history must be viewable in the dashboard so that operators can
 
 ---
 
+## Real-Time Updates
+
+The dashboard receives live event notifications from the backend via a WebSocket connection (see [Web API specification § WebSocket Real-Time Events](../web-api/Specification.md#websocket-real-time-events)). This eliminates polling and makes the UI feel immediately responsive to backend activity.
+
+### Update Behaviour
+
+- When a **collection completes** (`collection_complete` event), all visible dashboard summary views (version distribution, readiness, cookbook compatibility) automatically re-fetch their data from the REST API.
+- During a **collection run** (`collection_progress` events), the dashboard displays a progress indicator showing the organisation name and node count.
+- When a **cookbook status changes** (`cookbook_status_changed` event), the cookbook compatibility view highlights the affected row and refreshes its data.
+- When **readiness counts change** (`readiness_updated` event), the readiness summary and trend views refresh.
+- The **log viewer** appends new entries in real time when `log_entry` events arrive, without requiring a manual refresh. Entries matching the current filter scope are appended; others are silently counted and shown as a "N new entries" badge.
+- **Export progress** is tracked via `export_started` / `export_complete` / `export_failed` events, replacing the previous polling-based approach. The UI shows a progress state and offers the download link immediately when the export completes.
+- **Notification delivery** results (`notification_sent` / `notification_failed`) appear in the notification history view in real time.
+
+### Connection Status Indicator
+
+The dashboard must display a connection status indicator (e.g. in the header or footer) showing:
+
+| State | Indicator | Description |
+|-------|-----------|-------------|
+| Connected | Green dot | WebSocket is connected and receiving events |
+| Reconnecting | Amber dot (pulsing) | Connection lost, attempting to reconnect |
+| Disconnected | Red dot | WebSocket is disabled or repeatedly failed to connect |
+
+When reconnecting after a disconnection, the frontend must re-fetch all visible REST endpoints to catch any events that were missed during the gap. The server does not replay missed events.
+
+### Graceful Degradation
+
+If the WebSocket connection cannot be established (e.g. the server has `server.websocket.enabled: false`, or a proxy strips WebSocket headers), the dashboard must fall back to periodic polling with a configurable interval (default: 30 seconds). The connection status indicator should show the disconnected state but the dashboard must remain fully functional.
+
+---
+
 ## Scalability Considerations
 
 Chef organisations can contain many thousands of nodes. The dashboard must remain responsive at this scale.
@@ -249,7 +281,8 @@ Chef organisations can contain many thousands of nodes. The dashboard must remai
 - Pagination or virtualised rendering must be used for any view that lists individual nodes or cookbooks.
 - Filters must be applied server-side; the full dataset must never be transferred to the browser for client-side filtering.
 - The dependency graph view must use lazy loading or level-of-detail rendering for large graphs (hundreds of roles/cookbooks). Consider collapsing sub-trees by default and expanding on demand.
-- Export operations for large datasets must be handled asynchronously — the API returns a job ID and the frontend polls for completion, then offers a download link.
+- Export operations for large datasets must be handled asynchronously — the API returns a job ID and the frontend receives a `export_complete` WebSocket event (or polls for completion as a fallback), then offers a download link.
+- WebSocket event delivery uses bounded per-client send buffers with drop-on-full semantics to protect the server from slow consumers. Dropped clients reconnect and re-fetch state from the REST API.
 
 ---
 
@@ -260,4 +293,4 @@ Chef organisations can contain many thousands of nodes. The dashboard must remai
 - [Logging component specification](../logging/Specification.md)
 - [Data Collection component specification](../data-collection/Specification.md)
 - [Configuration Specification](../configuration/Specification.md)
-- [Web API Specification](../web-api/Specification.md)
+- [Web API Specification](../web-api/Specification.md) — REST endpoints and WebSocket real-time events

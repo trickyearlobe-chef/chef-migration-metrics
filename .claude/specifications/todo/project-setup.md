@@ -2,7 +2,7 @@
 
 Status key: [ ] Not started | [~] In progress | [x] Done
 
-- [ ] Initialise Go repository structure (`go mod init`)
+- [x] Initialise Go repository structure (`go mod init`) — `go.mod` exists (`github.com/trickyearlobe-chef/chef-migration-metrics`, go 1.25.4)
 - [x] Add LICENSE file (Apache 2.0)
 - [x] Add README.md with project overview and getting started guide
 - [x] Document technology stack (Go backend, React frontend)
@@ -10,10 +10,11 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [x] Create `.dockerignore` to keep Docker build context small and exclude secrets from the daemon
 - [x] Create `.helmignore` at `deploy/helm/chef-migration-metrics/.helmignore` for Helm chart packaging
 - [x] Add ignore file maintenance rule to `Claude.md`
-- [ ] Set up Go dependency management (`go.mod`, `go.sum`)
+- [x] Set up Go dependency management (`go.mod`, `go.sum`) — `go.sum` exists with `golang.org/x/crypto`, `github.com/lib/pq`, and `gopkg.in/yaml.v3` dependencies
 - [x] Set up CI pipeline
-- [ ] Set up database migration tooling (`golang-migrate/migrate` or equivalent)
-- [ ] Create `migrations/` directory and establish migration file naming convention
-- [ ] Implement automatic migration execution on application startup
-- [ ] Verify pending migrations cause startup failure with a descriptive error
+- [x] Set up database migration tooling — custom migration runner in `internal/datastore/datastore.go` (discovers `NNNN_*.up.sql` files, applies in order within transactions, records in `schema_migrations` table)
+- [x] Create `migrations/` directory and establish migration file naming convention — `migrations/0001_initial_schema.up.sql` and `.down.sql` exist
+- [x] Implement automatic migration execution on application startup — `cmd/chef-migration-metrics/main.go` calls `db.MigrateUp()` during startup
+- [x] Verify pending migrations cause startup failure with a descriptive error — `db.MigrateUp()` returns wrapped errors with migration version and name (e.g. `"datastore: applying migration 0003 (cookbook_usage_analysis): ..."`) and `discoverMigrations()` reports missing directories with the path; `main.go` logs these at ERROR severity via the startup scope and exits with code 1; verified by `TestDiscoverMigrations_NonexistentDir_DescriptiveError` and `TestDiscoverMigrations_DuplicateVersion_DescriptiveError` in `datastore_test.go`
 - [x] Create `Makefile` with build, test, lint, package, version bump, and functional test targets
+- [x] Implement `--version` CLI flag — `main.go` supports `-version` flag with build-time version injection via `-ldflags`
