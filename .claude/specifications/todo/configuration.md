@@ -50,21 +50,21 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [x] Add TLS specification to the specifications index in the top-level specification
 - [x] Add TLS specification directory to Structure.md with description
 - [x] Add TLS specification relationships to the specification relationship graph in Structure.md
-- [ ] Implement `server.tls.mode` configuration parsing (off, static, acme)
-- [ ] Implement plain HTTP listener when `mode: off`
-- [ ] Implement HTTPS listener with static certificate/key when `mode: static`
-- [ ] Implement certificate + key validation on startup (file exists, readable, valid pair)
-- [ ] Log `WARN` on startup if static certificate is expired
-- [ ] Implement automatic certificate reload on `SIGHUP` signal
-- [ ] Implement filesystem watching for certificate file changes (e.g. `fsnotify`)
-- [ ] Gracefully handle certificate reload failure (continue serving with previous certificate, log `ERROR`)
-- [ ] Implement `min_version` enforcement (TLS 1.2 and 1.3 only)
-- [ ] Implement mutual TLS (mTLS) via `ca_path` in static mode
-- [ ] Log `WARN` on startup if key file permissions are more permissive than `0600`
-- [ ] Implement HTTP-to-HTTPS redirect listener on `http_redirect_port`
-- [ ] Ensure redirect listener serves only redirects (no API, no static assets, no health checks)
-- [ ] Add `Strict-Transport-Security` (HSTS) header on all HTTPS responses when TLS is active
-- [ ] Log TLS mode selection and certificate details at `INFO` level on startup
+- [x] Implement `server.tls.mode` configuration parsing (off, static, acme)
+- [x] Implement plain HTTP listener when `mode: off`
+- [x] Implement HTTPS listener with static certificate/key when `mode: static`
+- [x] Implement certificate + key validation on startup (file exists, readable, valid pair)
+- [x] Log `WARN` on startup if static certificate is expired
+- [x] Implement automatic certificate reload on `SIGHUP` signal
+- [x] Implement filesystem watching for certificate file changes (e.g. `fsnotify`)
+- [x] Gracefully handle certificate reload failure (continue serving with previous certificate, log `ERROR`)
+- [x] Implement `min_version` enforcement (TLS 1.2 and 1.3 only)
+- [x] Implement mutual TLS (mTLS) via `ca_path` in static mode
+- [x] Log `WARN` on startup if key file permissions are more permissive than `0600`
+- [x] Implement HTTP-to-HTTPS redirect listener on `http_redirect_port`
+- [x] Ensure redirect listener serves only redirects (no API, no static assets, no health checks)
+- [x] Add `Strict-Transport-Security` (HSTS) header on all HTTPS responses when TLS is active
+- [x] Log TLS mode selection and certificate details at `INFO` level on startup
 - [ ] Implement ACME client integration (CertMagic or `autocert` — CertMagic recommended)
 - [ ] Implement ACME HTTP-01 challenge handler on the redirect listener
 - [ ] Implement ACME TLS-ALPN-01 challenge handler on the main HTTPS listener

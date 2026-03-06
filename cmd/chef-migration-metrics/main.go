@@ -13,7 +13,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,9 +27,11 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
+	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
 )
 
@@ -530,7 +531,11 @@ func run() int {
 	hub := webapi.NewEventHub()
 	go hub.Run()
 
-	apiRouter := webapi.NewRouter(db, cfg, hub,
+	// Attempt to load the built React frontend assets from disk.
+	// The Vite build outputs to frontend/dist/. In Docker this is at
+	// /src/frontend/dist during the build stage; at runtime, the binary
+	// and assets are both in the image so we check the default path.
+	routerOpts := []webapi.RouterOption{
 		webapi.WithVersion(version),
 		webapi.WithLogger(func(level, msg string) {
 			switch level {
@@ -544,58 +549,138 @@ func run() int {
 				logger.WithScope(logging.ScopeWebAPI).Info(msg)
 			}
 		}),
-	)
-	startup.Info("webapi router initialised with all API routes")
+	}
 
-	listenAddr := cfg.Server.ListenAddress
-	if listenAddr == "" {
-		listenAddr = "0.0.0.0"
+	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
+		routerOpts = append(routerOpts, webapi.WithFrontendFS(frontendFS))
+		startup.Info(fmt.Sprintf("frontend SPA assets loaded from %s", frontend.DistDir))
+	} else {
+		startup.Info(fmt.Sprintf("frontend SPA assets not found at %s — serving plain-text placeholder", frontend.DistDir))
 	}
-	port := cfg.Server.Port
-	if port == 0 {
-		port = 8080
-	}
-	addr := fmt.Sprintf("%s:%d", listenAddr, port)
+
+	apiRouter := webapi.NewRouter(db, cfg, hub, routerOpts...)
+	startup.Info("webapi router initialised with all API routes")
 
 	shutdownTimeout := time.Duration(cfg.Server.GracefulShutdownSeconds) * time.Second
 	if shutdownTimeout <= 0 {
 		shutdownTimeout = 15 * time.Second
 	}
 
-	srv := &http.Server{
-		Addr:         addr,
-		Handler:      apiRouter,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
-		BaseContext: func(_ net.Listener) context.Context {
-			return ctx
-		},
+	// tlsLog bridges the internal/tls package's LogFunc to the structured
+	// logger using the ScopeTLS scope.
+	tlsLog := func(level, msg string) {
+		scoped := logger.WithScope(logging.ScopeTLS)
+		switch level {
+		case "DEBUG":
+			scoped.Debug(msg)
+		case "WARN":
+			scoped.Warn(msg)
+		case "ERROR":
+			scoped.Error(msg)
+		default:
+			scoped.Info(msg)
+		}
 	}
 
 	// -------------------------------------------------------------------
-	// Start server + signal handling
+	// Server start — TLS-aware listener selection
 	// -------------------------------------------------------------------
-	errCh := make(chan error, 1)
-	go func() {
-		startup.Info(fmt.Sprintf("HTTP server listening on %s", addr))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-		}
-		close(errCh)
-	}()
+	var errCh <-chan error
+	var tlsListener *apptls.Listener // non-nil only in TLS mode
+	var plainSrv *http.Server        // non-nil only in plain HTTP mode
 
-	// Wait for interrupt signal or server error.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	switch cfg.Server.TLS.Mode {
+	case "static":
+		startup.Info("TLS mode: static (operator-managed certificate)")
 
-	select {
-	case sig := <-sigCh:
-		startup.Info(fmt.Sprintf("received signal %s, shutting down gracefully...", sig))
-	case err := <-errCh:
-		if err != nil {
-			startup.Error(fmt.Sprintf("HTTP server failed: %v", err))
+		var tlsErr error
+		tlsListener, tlsErr = apptls.NewListener(apiRouter, apptls.ListenerConfig{
+			ListenAddress:           cfg.Server.ListenAddress,
+			Port:                    cfg.Server.Port,
+			CertPath:                cfg.Server.TLS.CertPath,
+			KeyPath:                 cfg.Server.TLS.KeyPath,
+			CAPath:                  cfg.Server.TLS.CAPath,
+			MinVersion:              cfg.Server.TLS.MinVersion,
+			HTTPRedirectPort:        cfg.Server.TLS.HTTPRedirectPort,
+			GracefulShutdownTimeout: shutdownTimeout,
+		}, tlsLog)
+		if tlsErr != nil {
+			startup.Error(fmt.Sprintf("TLS listener setup failed: %v", tlsErr))
 			return 1
+		}
+
+		startup.Info(fmt.Sprintf("TLS certificate: %s", tlsListener.CertSummary()))
+		startup.Info(fmt.Sprintf("TLS min version: %s", tlsListener.MinTLSVersionString()))
+		if tlsListener.IsMTLSEnabled() {
+			startup.Info("mutual TLS (mTLS) enabled — client certificates required")
+		}
+
+		// Start filesystem watcher for automatic certificate reload
+		// (e.g. cert-manager in Kubernetes). Poll every 30 seconds.
+		tlsListener.CertManager().WatchForChanges(30 * time.Second)
+
+		errCh = tlsListener.Serve()
+
+	case "acme":
+		startup.Error("TLS mode 'acme' is not yet implemented")
+		return 1
+
+	default:
+		// mode: off — plain HTTP
+		listenAddr := cfg.Server.ListenAddress
+		if listenAddr == "" {
+			listenAddr = "0.0.0.0"
+		}
+		port := cfg.Server.Port
+		if port == 0 {
+			port = 8080
+		}
+
+		plainSrv = apptls.NewPlainListener(apiRouter, listenAddr, port)
+
+		plainErrCh := make(chan error, 1)
+		go func() {
+			startup.Info(fmt.Sprintf("HTTP server listening on %s", plainSrv.Addr))
+			if err := plainSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				plainErrCh <- err
+			}
+			close(plainErrCh)
+		}()
+		errCh = plainErrCh
+	}
+
+	// -------------------------------------------------------------------
+	// Signal handling — SIGINT/SIGTERM for shutdown, SIGHUP for cert reload
+	// -------------------------------------------------------------------
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	running := true
+	for running {
+		select {
+		case sig := <-sigCh:
+			switch sig {
+			case syscall.SIGHUP:
+				if tlsListener != nil {
+					startup.Info("received SIGHUP — reloading TLS certificate")
+					if reloadErr := tlsListener.CertManager().Reload(); reloadErr != nil {
+						startup.Error(fmt.Sprintf("TLS certificate reload failed: %v", reloadErr))
+					} else {
+						startup.Info(fmt.Sprintf("TLS certificate reloaded: %s", tlsListener.CertSummary()))
+					}
+				} else {
+					startup.Info("received SIGHUP — no TLS certificate to reload in plain HTTP mode")
+				}
+			default:
+				startup.Info(fmt.Sprintf("received signal %s, shutting down gracefully...", sig))
+				running = false
+			}
+		case err := <-errCh:
+			if err != nil {
+				startup.Error(fmt.Sprintf("server failed: %v", err))
+				return 1
+			}
+			running = false
 		}
 	}
 
@@ -608,9 +693,16 @@ func run() int {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		startup.Error(fmt.Sprintf("HTTP server shutdown: %v", err))
-		return 1
+	if tlsListener != nil {
+		if err := tlsListener.Shutdown(shutdownCtx); err != nil {
+			startup.Error(fmt.Sprintf("TLS server shutdown: %v", err))
+			return 1
+		}
+	} else if plainSrv != nil {
+		if err := plainSrv.Shutdown(shutdownCtx); err != nil {
+			startup.Error(fmt.Sprintf("HTTP server shutdown: %v", err))
+			return 1
+		}
 	}
 
 	startup.Info("server stopped cleanly")

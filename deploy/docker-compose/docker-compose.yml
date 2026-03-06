@@ -1,0 +1,61 @@
+# =============================================================================
+# Chef Migration Metrics — Docker Compose (Local Development)
+# =============================================================================
+# Starts the application and a PostgreSQL database pre-wired together.
+#
+# Quick start:
+#   cp .env.example .env
+#   # Edit .env (at minimum set POSTGRES_PASSWORD)
+#   # Edit config.yml for your Chef server organisations
+#   # Place Chef API keys in ./keys/
+#   docker compose up -d
+#
+# See README.md for full instructions.
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chef_migration_metrics}
+      POSTGRES_USER: ${POSTGRES_USER:-chef_migration_metrics}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chef_migration_metrics} -d ${POSTGRES_DB:-chef_migration_metrics}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    image: ${APP_IMAGE:-chef-migration-metrics:latest}
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-chef_migration_metrics}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-chef_migration_metrics}?sslmode=disable"
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
+    volumes:
+      - ./config.yml:/etc/chef-migration-metrics/config.yml:ro
+      - ./keys/:/etc/chef-migration-metrics/keys/:ro
+      - cookbook_data:/var/lib/chef-migration-metrics
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    driver: local
+  cookbook_data:
+    driver: local

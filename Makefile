@@ -56,7 +56,7 @@ IMAGE_NAME := $(REGISTRY)/trickyearlobe-chef/chef-migration-metrics
 IMAGE_TAG  := $(VERSION_FULL)
 
 # Ruby build image for embedded environment
-RUBY_BUILD_IMAGE := ruby:3.2-bookworm
+RUBY_BUILD_IMAGE := ruby:3.1-bookworm
 EMBEDDED_PREFIX  := /opt/chef-migration-metrics/embedded
 
 # nFPM
@@ -169,13 +169,35 @@ _build-embedded:
 		-v "$(CURDIR)/$(EMBEDDED_DIR):/output" \
 		$(RUBY_BUILD_IMAGE) bash -c ' \
 			set -euo pipefail && \
-			export GEM_HOME=$(EMBEDDED_PREFIX)/lib/ruby/gems/3.2.0 && \
+			export GEM_HOME=$(EMBEDDED_PREFIX)/lib/ruby/gems/3.1.0 && \
 			export GEM_PATH=$$GEM_HOME && \
 			mkdir -p $$GEM_HOME && \
-			gem install --no-document cookstyle test-kitchen kitchen-dokken && \
+			gem install --no-document ffi:1.16.3 && \
+			gem install --no-document \
+				cookstyle:7.32.8 \
+				test-kitchen:3.9.1 && \
+			gem install --no-document \
+				inspec-bin:5.24.7 && \
+			gem install --no-document \
+				kitchen-inspec:3.1.0 \
+				kitchen-vagrant:2.2.0 \
+				kitchen-ec2:3.22.1 \
+				kitchen-azurerm:1.13.6 \
+				kitchen-google:2.6.1 \
+				kitchen-hyperv:0.10.3 \
+				kitchen-vcenter:2.12.2 \
+				kitchen-vra:3.3.3 \
+				kitchen-openstack:6.2.1 \
+				kitchen-digitalocean:0.16.1 && \
+			gem install --no-document specific_install && \
+			gem specific_install -l https://github.com/Stromweld/kitchen-dokken.git -b main && \
+			gem install --no-document --force \
+				busser:0.8.0 \
+				busser-serverspec:0.6.3 \
+				busser-bats:0.5.0 && \
 			mkdir -p $(EMBEDDED_PREFIX)/bin && \
 			cp $$(which ruby) $(EMBEDDED_PREFIX)/bin/ruby && \
-			for cmd in cookstyle kitchen; do \
+			for cmd in cookstyle kitchen inspec; do \
 				printf "#!/opt/chef-migration-metrics/embedded/bin/ruby\n" > $(EMBEDDED_PREFIX)/bin/$$cmd && \
 				cat $$(gem environment gemdir)/bin/$$cmd >> $(EMBEDDED_PREFIX)/bin/$$cmd && \
 				chmod 0755 $(EMBEDDED_PREFIX)/bin/$$cmd; \

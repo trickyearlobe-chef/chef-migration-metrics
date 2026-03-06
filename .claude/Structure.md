@@ -23,7 +23,7 @@ chef-migration-metrics/
 │   ├── notify/                     # Webhook and email notification dispatch
 │   ├── remediation/                # Auto-correct previews, cop-to-docs mapping, complexity scoring
 │   ├── secrets/                    # Credential encryption, storage, resolution, rotation
-│   ├── tls/                        # TLS listener setup, ACME integration, cert reload
+│   ├── tls/                        # TLS listener setup, cert manager, HSTS, HTTP→HTTPS redirect, file watcher
 │   ├── webapi/                     # HTTP router, REST handlers, WebSocket EventHub, response helpers
 │   └── auth/                       # Authentication providers (local, LDAP, SAML) and RBAC
 ├── migrations/                     # Sequential numbered SQL migration files (0001–0005)
@@ -78,6 +78,10 @@ chef-migration-metrics/
 ```
 deploy/
 ├── docker-compose/                 # App + PostgreSQL for local development
+│   ├── docker-compose.yml          # Service definitions, volumes, networking
+│   ├── config.yml                  # Example application configuration
+│   ├── .env.example                # Documented environment variables — copy to .env
+│   └── README.md                   # Quick-start and operational instructions
 ├── elk/                            # Elasticsearch + Logstash + Kibana testing stack
 ├── helm/chef-migration-metrics/    # Helm chart (templates, values, README)
 └── pkg/                            # RPM/DEB assets (systemd unit, config, install scripts)
