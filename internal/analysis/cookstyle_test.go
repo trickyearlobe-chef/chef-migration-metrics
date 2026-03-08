@@ -271,10 +271,13 @@ func TestBuildCookstyleArgs_NoTargetVersion(t *testing.T) {
 	assertContains(t, args, "json")
 	assertContains(t, args, "/path/to/cookbook")
 
-	// Should NOT contain --only when no target version.
+	// Should NOT contain --only or --target-chef-version when no target version.
 	for _, a := range args {
 		if a == "--only" {
 			t.Error("--only should not be present when target version is empty")
+		}
+		if a == "--target-chef-version" {
+			t.Error("--target-chef-version should not be present when target version is empty")
 		}
 	}
 }
@@ -285,6 +288,8 @@ func TestBuildCookstyleArgs_WithTargetVersion(t *testing.T) {
 	assertContains(t, args, "--format")
 	assertContains(t, args, "json")
 	assertContains(t, args, "--only")
+	assertContains(t, args, "--target-chef-version")
+	assertContains(t, args, "18.0")
 	assertContains(t, args, "/path/to/cookbook")
 
 	// Find the --only value.
@@ -296,6 +301,15 @@ func TestBuildCookstyleArgs_WithTargetVersion(t *testing.T) {
 			}
 			if !strings.Contains(val, "ChefCorrectness") {
 				t.Errorf("--only should include ChefCorrectness, got %q", val)
+			}
+		}
+	}
+
+	// Verify --target-chef-version value.
+	for i, a := range args {
+		if a == "--target-chef-version" && i+1 < len(args) {
+			if args[i+1] != "18.0" {
+				t.Errorf("--target-chef-version value should be 18.0, got %q", args[i+1])
 			}
 		}
 	}
@@ -807,6 +821,7 @@ func TestExecutor_CalledWithOnlyWhenTargetVersion(t *testing.T) {
 
 	args := fe.calls[0].Args
 	foundOnly := false
+	foundTargetVersion := false
 	for i, a := range args {
 		if a == "--only" && i+1 < len(args) {
 			foundOnly = true
@@ -815,9 +830,18 @@ func TestExecutor_CalledWithOnlyWhenTargetVersion(t *testing.T) {
 				t.Errorf("--only value should contain both namespaces, got %q", val)
 			}
 		}
+		if a == "--target-chef-version" && i+1 < len(args) {
+			foundTargetVersion = true
+			if args[i+1] != "18.0" {
+				t.Errorf("--target-chef-version value should be 18.0, got %q", args[i+1])
+			}
+		}
 	}
 	if !foundOnly {
 		t.Errorf("expected --only in args when target version is set, got %v", args)
+	}
+	if !foundTargetVersion {
+		t.Errorf("expected --target-chef-version in args when target version is set, got %v", args)
 	}
 }
 
@@ -838,6 +862,9 @@ func TestExecutor_NotCalledWithOnlyWhenNoTarget(t *testing.T) {
 	for _, a := range args {
 		if a == "--only" {
 			t.Error("--only should not be present when target version is empty")
+		}
+		if a == "--target-chef-version" {
+			t.Error("--target-chef-version should not be present when target version is empty")
 		}
 	}
 }
