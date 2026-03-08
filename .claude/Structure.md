@@ -68,6 +68,7 @@ chef-migration-metrics/
 │   ├── 2026-03-08-09-31-todo-audit-real-server-test.md # Todo audit and real server test planning
 │   ├── 2026-03-08-10-10-real-server-test-results.md # Real server test results
 │   ├── 2026-03-08-13-25-cookstyle-json-and-build-fixes.md # Cookstyle JSON struct tags, TS build fixes, Makefile stop target
+│   ├── 2026-03-08-22-26-npm-security-vulns.md             # Fix 2 moderate npm vulns — upgrade vite 5→6 and plugin-react 4→5
 │   └── archive/                               # Older summaries — historical reference only
 └── specifications/
     ├── Specification.md            # Top-level project spec and component index
