@@ -95,6 +95,100 @@ analysis_tools:
   cookstyle_timeout_minutes: 10
   test_kitchen_timeout_minutes: 30
 
+  # Test Kitchen overrides — control the driver, platforms, and architecture
+  # used for cookbook compatibility testing. These settings generate a
+  # .kitchen.local.yml overlay that overrides the cookbook's own .kitchen.yml.
+  #
+  # This is especially useful when:
+  #   - Cookbook .kitchen.yml files specify the wrong architecture (e.g. x86
+  #     boxes but you're running on Apple Silicon / ARM)
+  #   - You want to test against the actual OS images used by your fleet
+  #   - You need to switch drivers (e.g. from Dokken to Vagrant or vSphere)
+
+  # --- Example: Local Vagrant / VirtualBox (ARM architecture) ---
+  # test_kitchen:
+  #   driver_override: vagrant
+  #   driver_config:
+  #     linked_clone: "true"
+  #   platform_overrides:
+  #     - name: ubuntu-22.04
+  #       driver:
+  #         box: bento/ubuntu-22.04-arm64
+  #     - name: centos-8
+  #       driver:
+  #         box: bento/centos-8-arm64
+  #     - name: windows-2019
+  #       driver:
+  #         box: my-org/windows-2019-arm64
+
+  # --- Example: Local Vagrant / VirtualBox (x86_64 architecture) ---
+  # test_kitchen:
+  #   driver_override: vagrant
+  #   driver_config:
+  #     linked_clone: "true"
+  #   platform_overrides:
+  #     - name: ubuntu-22.04
+  #       driver:
+  #         box: bento/ubuntu-22.04
+  #     - name: centos-8
+  #       driver:
+  #         box: bento/centos-8
+  #     - name: rhel-9
+  #       driver:
+  #         box: generic/rhel9
+
+  # --- Example: Docker via Dokken ---
+  # test_kitchen:
+  #   driver_override: dokken
+  #   driver_config:
+  #     privileged: "true"
+  #   platform_overrides:
+  #     - name: ubuntu-22.04
+  #       driver:
+  #         image: dokken/ubuntu-22.04
+  #     - name: centos-8
+  #       driver:
+  #         image: dokken/centos-8
+
+  # --- Example: VMware vSphere (remote execution) ---
+  # test_kitchen:
+  #   driver_override: vsphere
+  #   driver_config:
+  #     host: vcenter.example.com
+  #     insecure: "true"
+  #   platform_overrides:
+  #     - name: ubuntu-22.04
+  #       driver:
+  #         clone_from: templates/ubuntu-2204-template
+  #     - name: rhel-8
+  #       driver:
+  #         clone_from: templates/rhel-8-template
+  #     - name: windows-2019
+  #       driver:
+  #         clone_from: templates/windows-2019-template
+
+  # --- Example: AWS EC2 ---
+  # test_kitchen:
+  #   driver_override: ec2
+  #   driver_config:
+  #     instance_type: t3.medium
+  #     region: us-east-1
+  #   platform_overrides:
+  #     - name: ubuntu-22.04
+  #       driver:
+  #         image_id: ami-0abcdef1234567890
+  #     - name: rhel-8
+  #       driver:
+  #         image_id: ami-0fedcba0987654321
+
+  # --- Escape hatch for anything not covered above ---
+  # test_kitchen:
+  #   extra_yaml: |
+  #     transport:
+  #       name: ssh
+  #     verifier:
+  #       name: inspec
+
 # ---------------------------------------------------------------------------
 # Web Server
 # ---------------------------------------------------------------------------
