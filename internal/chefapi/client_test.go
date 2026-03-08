@@ -546,6 +546,33 @@ func TestNodeSearchAttributes(t *testing.T) {
 	}
 }
 
+// TestNodeSearchAttributes_NoAutomaticPrefix verifies that partial search
+// attribute paths do NOT include "automatic" as the first path element.
+//
+// Chef search (both full and partial) returns a flattened structure where
+// automatic attributes are hoisted to the root of each node's data object.
+// For example, the node attribute stored at automatic.platform is accessed
+// as just ["platform"] in partial search, not ["automatic", "platform"].
+//
+// Fetching a node directly (GET /nodes/:name) does NOT hoist — attributes
+// remain nested under "automatic", "default", "normal", "override". But
+// partial search always works against the hoisted/merged view.
+//
+// If any path starts with "automatic", the Chef server will look for a
+// literal top-level key called "automatic" in the hoisted structure, which
+// does not exist, and return null for that attribute.
+func TestNodeSearchAttributes_NoAutomaticPrefix(t *testing.T) {
+	attrs := NodeSearchAttributes()
+	for key, path := range attrs {
+		if len(path) > 0 && path[0] == "automatic" {
+			t.Errorf("attribute %q has path %v starting with \"automatic\" — "+
+				"partial search uses the hoisted structure where automatic "+
+				"attributes are at the root; remove the \"automatic\" prefix",
+				key, path)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CollectAllNodes tests (sequential)
 // ---------------------------------------------------------------------------
