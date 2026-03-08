@@ -1822,7 +1822,7 @@ func TestRealisticCollectionRunWorkflow(t *testing.T) {
 	_ = csl.Info("starting CookStyle scan", WithChefClientVersion("19.4.0"))
 	_ = csl.Warn("5 deprecation warnings found",
 		WithChefClientVersion("19.4.0"),
-		WithProcessOutput("ChefDeprecations/ResourceUsesOnlyResourceName: ..."),
+		WithProcessOutput("Chef/Deprecations/ResourceUsesOnlyResourceName: ..."),
 	)
 
 	// Simulate a TLS event.

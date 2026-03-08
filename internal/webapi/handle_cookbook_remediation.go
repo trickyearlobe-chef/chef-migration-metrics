@@ -159,7 +159,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	//     "path": "recipes/default.rb",
 	//     "offenses": [
 	//       {
-	//         "cop_name": "ChefDeprecations/...",
+	//         "cop_name": "Chef/Deprecations/...",
 	//         "severity": "warning",
 	//         "message": "...",
 	//         "correctable": true,

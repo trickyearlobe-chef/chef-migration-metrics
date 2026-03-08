@@ -250,14 +250,14 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 			"path": "recipes/default.rb",
 			"offenses": [
 				{
-					"cop_name": "ChefDeprecations/ResourceWithoutUnifiedTrue",
+					"cop_name": "Chef/Deprecations/ResourceWithoutUnifiedTrue",
 					"severity": "warning",
 					"message": "Set unified_mode true",
 					"correctable": true,
 					"location": {"start_line": 5, "start_column": 1, "last_line": 5, "last_column": 40}
 				},
 				{
-					"cop_name": "ChefDeprecations/ResourceWithoutUnifiedTrue",
+					"cop_name": "Chef/Deprecations/ResourceWithoutUnifiedTrue",
 					"severity": "warning",
 					"message": "Set unified_mode true",
 					"correctable": true,
@@ -269,7 +269,7 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 			"path": "recipes/install.rb",
 			"offenses": [
 				{
-					"cop_name": "ChefCorrectness/InvalidPlatformFamilyHelper",
+					"cop_name": "Chef/Correctness/InvalidPlatformFamilyHelper",
 					"severity": "error",
 					"message": "Invalid platform family",
 					"correctable": false,
@@ -400,7 +400,7 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 
 	// First group: ChefDeprecations/ResourceWithoutUnifiedTrue (2 offenses).
 	g0 := groups[0].(map[string]any)
-	if g0["cop_name"] != "ChefDeprecations/ResourceWithoutUnifiedTrue" {
+	if g0["cop_name"] != "Chef/Deprecations/ResourceWithoutUnifiedTrue" {
 		t.Errorf("group[0].cop_name = %v, want ChefDeprecations/ResourceWithoutUnifiedTrue", g0["cop_name"])
 	}
 	if g0["count"] != float64(2) {
@@ -414,7 +414,7 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 		t.Error("group[0].remediation is nil, expected a mapping entry")
 	} else {
 		rem := g0["remediation"].(map[string]any)
-		if rem["cop_name"] != "ChefDeprecations/ResourceWithoutUnifiedTrue" {
+		if rem["cop_name"] != "Chef/Deprecations/ResourceWithoutUnifiedTrue" {
 			t.Errorf("group[0].remediation.cop_name = %v", rem["cop_name"])
 		}
 		if rem["description"] == nil || rem["description"] == "" {
@@ -438,7 +438,7 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 
 	// Second group: ChefCorrectness/InvalidPlatformFamilyHelper (1 offense).
 	g1 := groups[1].(map[string]any)
-	if g1["cop_name"] != "ChefCorrectness/InvalidPlatformFamilyHelper" {
+	if g1["cop_name"] != "Chef/Correctness/InvalidPlatformFamilyHelper" {
 		t.Errorf("group[1].cop_name = %v, want ChefCorrectness/InvalidPlatformFamilyHelper", g1["cop_name"])
 	}
 	if g1["count"] != float64(1) {
@@ -465,14 +465,14 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 func TestHandleCookbookRemediation_WithOffenses_FlatFormat(t *testing.T) {
 	offensesJSON := `[
 		{
-			"cop_name": "ChefDeprecations/ResourceWithoutUnifiedTrue",
+			"cop_name": "Chef/Deprecations/ResourceWithoutUnifiedTrue",
 			"severity": "warning",
 			"message": "Set unified_mode true",
 			"correctable": true,
 			"location": {"file": "recipes/default.rb", "start_line": 5, "start_column": 1, "last_line": 5, "last_column": 40}
 		},
 		{
-			"cop_name": "ChefDeprecations/ResourceWithoutUnifiedTrue",
+			"cop_name": "Chef/Deprecations/ResourceWithoutUnifiedTrue",
 			"severity": "warning",
 			"message": "Set unified_mode true again",
 			"correctable": false,
