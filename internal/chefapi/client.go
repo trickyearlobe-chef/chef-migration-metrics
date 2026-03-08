@@ -360,20 +360,24 @@ func (c *Client) PartialSearch(ctx context.Context, index, query string, rows, s
 // NodeSearchAttributes returns the standard PartialSearchQuery for node
 // collection as defined in the Chef API specification.
 func NodeSearchAttributes() PartialSearchQuery {
+	// Partial search paths navigate the merged attribute namespace, not
+	// the raw storage structure. Attributes stored under "automatic" by
+	// Ohai (platform, cookbooks, filesystem, etc.) are accessed directly
+	// by name — the "automatic" prefix must NOT appear in the path.
 	return PartialSearchQuery{
 		"name":             {"name"},
 		"chef_environment": {"chef_environment"},
-		"chef_version":     {"automatic", "chef_packages", "chef", "version"},
-		"platform":         {"automatic", "platform"},
-		"platform_version": {"automatic", "platform_version"},
-		"platform_family":  {"automatic", "platform_family"},
-		"filesystem":       {"automatic", "filesystem"},
-		"cookbooks":        {"automatic", "cookbooks"},
+		"chef_version":     {"chef_packages", "chef", "version"},
+		"platform":         {"platform"},
+		"platform_version": {"platform_version"},
+		"platform_family":  {"platform_family"},
+		"filesystem":       {"filesystem"},
+		"cookbooks":        {"cookbooks"},
 		"run_list":         {"run_list"},
-		"roles":            {"automatic", "roles"},
+		"roles":            {"roles"},
 		"policy_name":      {"policy_name"},
 		"policy_group":     {"policy_group"},
-		"ohai_time":        {"automatic", "ohai_time"},
+		"ohai_time":        {"ohai_time"},
 	}
 }
 
