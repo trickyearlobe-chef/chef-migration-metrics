@@ -109,6 +109,18 @@ type DataStore interface {
 	// ID and target Chef version. Returns (nil, nil) if no result exists.
 	GetCookstyleResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
 
+	// DeleteCookstyleResultsForCookbook removes all cookstyle results for
+	// the given cookbook ID. Forces a rescan on the next collection cycle.
+	DeleteCookstyleResultsForCookbook(ctx context.Context, cookbookID string) error
+
+	// DeleteCookbookComplexitiesForCookbook removes all complexity records
+	// for the given cookbook ID. Forces recomputation on the next cycle.
+	DeleteCookbookComplexitiesForCookbook(ctx context.Context, cookbookID string) error
+
+	// DeleteAutocorrectPreviewsForCookbook removes all autocorrect previews
+	// for the given cookbook ID. Forces regeneration on the next cycle.
+	DeleteAutocorrectPreviewsForCookbook(ctx context.Context, cookbookID string) error
+
 	// GetAutocorrectPreview returns the autocorrect preview for the given
 	// cookstyle result ID. Returns (nil, nil) if no preview exists.
 	GetAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error)

@@ -296,6 +296,15 @@ export function fetchCookbookDetail(
   );
 }
 
+export function requestCookbookRescan(
+  name: string,
+): Promise<{ cookbook_name: string; versions_invalidated: number; message: string }> {
+  return apiFetch(
+    `/api/v1/cookbooks/${encodeURIComponent(name)}/rescan`,
+    { method: "POST" },
+  );
+}
+
 export function fetchCookbookRemediation(
   name: string,
   version: string,
