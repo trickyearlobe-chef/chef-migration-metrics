@@ -311,7 +311,7 @@ jobs:
           # Create archive
           mkdir -p build/archives
           if [ "${{ matrix.archive }}" = "zip" ]; then
-            cd staging && zip -rq "../build/archives/${ARCHIVE_NAME}.zip" "${ARCHIVE_NAME}"
+            (cd staging && zip -rq "../build/archives/${ARCHIVE_NAME}.zip" "${ARCHIVE_NAME}")
           else
             tar -czf "build/archives/${ARCHIVE_NAME}.tar.gz" -C staging "${ARCHIVE_NAME}"
           fi
