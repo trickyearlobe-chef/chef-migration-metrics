@@ -157,6 +157,27 @@ func (r *Router) Hub() *EventHub {
 
 // registerRoutes wires all API endpoints into the ServeMux. Routes are
 // grouped by concern matching the Web API specification sections.
+// protect registers a route that requires authentication (any valid session).
+// When authMiddleware is nil (auth not configured), the handler is registered
+// without session enforcement so the API remains usable in development.
+func (r *Router) protect(pattern string, handler http.HandlerFunc) {
+	if r.authMiddleware != nil {
+		r.mux.Handle(pattern, r.authMiddleware.Authenticated(handler))
+	} else {
+		r.mux.HandleFunc(pattern, handler)
+	}
+}
+
+// adminOnly registers a route that requires authentication AND the admin role.
+// When authMiddleware is nil, the handler is registered without enforcement.
+func (r *Router) adminOnly(pattern string, handler http.HandlerFunc) {
+	if r.authMiddleware != nil {
+		r.mux.Handle(pattern, r.authMiddleware.AdminOnly(handler))
+	} else {
+		r.mux.HandleFunc(pattern, handler)
+	}
+}
+
 func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Health & version (public — no auth required)
@@ -181,17 +202,12 @@ func (r *Router) registerRoutes() {
 	}
 
 	// -----------------------------------------------------------------
-	// Authentication endpoints
+	// Authentication endpoints (public — no session required for login)
 	// -----------------------------------------------------------------
-	// Login and SAML endpoints are public (no session required).
 	if r.localAuth != nil && r.sessions != nil {
 		r.mux.HandleFunc("/api/v1/auth/login", r.handleLogin)
 		r.mux.HandleFunc("/api/v1/auth/logout", r.handleLogout)
-		if r.authMiddleware != nil {
-			r.mux.Handle("/api/v1/auth/me", r.authMiddleware.Authenticated(r.handleMe))
-		} else {
-			r.mux.HandleFunc("/api/v1/auth/me", r.handleMe)
-		}
+		r.protect("/api/v1/auth/me", r.handleMe)
 	} else {
 		r.mux.HandleFunc("/api/v1/auth/login", r.handleNotImplemented)
 		r.mux.HandleFunc("/api/v1/auth/logout", r.handleNotImplemented)
@@ -203,99 +219,98 @@ func (r *Router) registerRoutes() {
 	r.mux.HandleFunc("/api/v1/auth/saml/login", r.handleNotImplemented)
 
 	// -----------------------------------------------------------------
-	// Dashboard endpoints
+	// Dashboard endpoints (viewer — any authenticated user)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/dashboard/version-distribution", r.handleDashboardVersionDistribution)
-	r.mux.HandleFunc("/api/v1/dashboard/version-distribution/trend", r.handleDashboardVersionDistributionTrend)
-	r.mux.HandleFunc("/api/v1/dashboard/readiness", r.handleDashboardReadiness)
-	r.mux.HandleFunc("/api/v1/dashboard/readiness/trend", r.handleDashboardReadinessTrend)
-	r.mux.HandleFunc("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend)
-	r.mux.HandleFunc("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend)
-	r.mux.HandleFunc("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility)
-	r.mux.HandleFunc("/api/v1/dashboard/cookbook-download-status", r.handleDashboardCookbookDownloadStatus)
+	r.protect("/api/v1/dashboard/version-distribution", r.handleDashboardVersionDistribution)
+	r.protect("/api/v1/dashboard/version-distribution/trend", r.handleDashboardVersionDistributionTrend)
+	r.protect("/api/v1/dashboard/readiness", r.handleDashboardReadiness)
+	r.protect("/api/v1/dashboard/readiness/trend", r.handleDashboardReadinessTrend)
+	r.protect("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend)
+	r.protect("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend)
+	r.protect("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility)
+	r.protect("/api/v1/dashboard/cookbook-download-status", r.handleDashboardCookbookDownloadStatus)
 
 	// -----------------------------------------------------------------
-	// Node endpoints
+	// Node endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/nodes", r.handleNodes)
-	r.mux.HandleFunc("/api/v1/nodes/by-version/", r.handleNodesByVersion)
-	r.mux.HandleFunc("/api/v1/nodes/by-cookbook/", r.handleNodesByCookbook)
+	r.protect("/api/v1/nodes", r.handleNodes)
+	r.protect("/api/v1/nodes/by-version/", r.handleNodesByVersion)
+	r.protect("/api/v1/nodes/by-cookbook/", r.handleNodesByCookbook)
 	// Node detail: /api/v1/nodes/:organisation/:name — uses a prefix
 	// pattern and the handler extracts path segments.
-	r.mux.HandleFunc("/api/v1/nodes/", r.handleNodeDetail)
+	r.protect("/api/v1/nodes/", r.handleNodeDetail)
 
 	// -----------------------------------------------------------------
-	// Cookbook endpoints
+	// Cookbook endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/cookbooks", r.handleCookbooks)
-	r.mux.HandleFunc("/api/v1/cookbooks/", r.handleCookbookDetail)
+	r.protect("/api/v1/cookbooks", r.handleCookbooks)
+	r.protect("/api/v1/cookbooks/", r.handleCookbookDetail)
 
 	// -----------------------------------------------------------------
-	// Remediation endpoints
+	// Remediation endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/remediation/priority", r.handleRemediationPriority)
-	r.mux.HandleFunc("/api/v1/remediation/summary", r.handleRemediationSummary)
+	r.protect("/api/v1/remediation/priority", r.handleRemediationPriority)
+	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary)
 
 	// -----------------------------------------------------------------
-	// Dependency graph endpoints
+	// Dependency graph endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/dependency-graph/table", r.handleDependencyGraphTable)
-	r.mux.HandleFunc("/api/v1/dependency-graph", r.handleDependencyGraph)
+	r.protect("/api/v1/dependency-graph/table", r.handleDependencyGraphTable)
+	r.protect("/api/v1/dependency-graph", r.handleDependencyGraph)
 
 	// -----------------------------------------------------------------
-	// Export endpoints
+	// Export endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/exports", r.handleExports)
-	r.mux.HandleFunc("/api/v1/exports/", r.handleExportStatus)
+	r.protect("/api/v1/exports", r.handleExports)
+	r.protect("/api/v1/exports/", r.handleExportStatus)
 
 	// -----------------------------------------------------------------
-	// Notification endpoints (placeholder)
+	// Notification endpoints (placeholder — protected for when implemented)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/notifications", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/notifications/", r.handleNotImplemented)
+	r.protect("/api/v1/notifications", r.handleNotImplemented)
+	r.protect("/api/v1/notifications/", r.handleNotImplemented)
 
 	// -----------------------------------------------------------------
-	// Organisation endpoints
+	// Organisation endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/organisations", r.handleOrganisations)
-	r.mux.HandleFunc("/api/v1/organisations/", r.handleOrganisationDetail)
+	r.protect("/api/v1/organisations", r.handleOrganisations)
+	r.protect("/api/v1/organisations/", r.handleOrganisationDetail)
 
 	// -----------------------------------------------------------------
-	// Filter option endpoints
+	// Filter option endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/filters/environments", r.handleFilterEnvironments)
-	r.mux.HandleFunc("/api/v1/filters/roles", r.handleFilterRoles)
-	r.mux.HandleFunc("/api/v1/filters/policy-names", r.handleFilterPolicyNames)
-	r.mux.HandleFunc("/api/v1/filters/policy-groups", r.handleFilterPolicyGroups)
-	r.mux.HandleFunc("/api/v1/filters/platforms", r.handleFilterPlatforms)
-	r.mux.HandleFunc("/api/v1/filters/target-chef-versions", r.handleFilterTargetChefVersions)
-	r.mux.HandleFunc("/api/v1/filters/complexity-labels", r.handleFilterComplexityLabels)
+	r.protect("/api/v1/filters/environments", r.handleFilterEnvironments)
+	r.protect("/api/v1/filters/roles", r.handleFilterRoles)
+	r.protect("/api/v1/filters/policy-names", r.handleFilterPolicyNames)
+	r.protect("/api/v1/filters/policy-groups", r.handleFilterPolicyGroups)
+	r.protect("/api/v1/filters/platforms", r.handleFilterPlatforms)
+	r.protect("/api/v1/filters/target-chef-versions", r.handleFilterTargetChefVersions)
+	r.protect("/api/v1/filters/complexity-labels", r.handleFilterComplexityLabels)
 
 	// -----------------------------------------------------------------
-	// Log endpoints
+	// Log endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/logs", r.handleLogs)
-	r.mux.HandleFunc("/api/v1/logs/collection-runs", r.handleCollectionRuns)
-	r.mux.HandleFunc("/api/v1/logs/", r.handleLogDetail)
+	r.protect("/api/v1/logs", r.handleLogs)
+	r.protect("/api/v1/logs/collection-runs", r.handleCollectionRuns)
+	r.protect("/api/v1/logs/", r.handleLogDetail)
 
 	// -----------------------------------------------------------------
-	// Admin endpoints
+	// Admin endpoints (admin role required)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/admin/credentials", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/admin/credentials/", r.handleNotImplemented)
-	if r.authMiddleware != nil && r.authStore != nil {
-		r.mux.Handle("/api/v1/admin/users", r.authMiddleware.AdminOnly(r.handleAdminUsers))
-		r.mux.Handle("/api/v1/admin/users/", r.authMiddleware.AdminOnly(r.handleAdminUsers))
+	r.adminOnly("/api/v1/admin/credentials", r.handleNotImplemented)
+	r.adminOnly("/api/v1/admin/credentials/", r.handleNotImplemented)
+	if r.authStore != nil {
+		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
+		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers)
 	} else {
-		r.mux.HandleFunc("/api/v1/admin/users", r.handleNotImplemented)
-		r.mux.HandleFunc("/api/v1/admin/users/", r.handleNotImplemented)
+		r.adminOnly("/api/v1/admin/users", r.handleNotImplemented)
+		r.adminOnly("/api/v1/admin/users/", r.handleNotImplemented)
 	}
-	r.mux.HandleFunc("/api/v1/admin/status", r.handleNotImplemented)
+	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 
 	// -----------------------------------------------------------------
 	// Frontend SPA fallback — serves index.html for client-side routing.
-	// For now, return a simple text response; the embedded frontend
-	// assets will be wired in when the React app is built.
+	// Public so the login page can be served without a session.
 	// -----------------------------------------------------------------
 	r.mux.HandleFunc("/", r.handleFrontendFallback)
 }

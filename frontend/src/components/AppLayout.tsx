@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { OrgSelector } from "./OrgSelector";
 import { HealthBadge } from "./HealthBadge";
+import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: "M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" },
@@ -11,7 +12,14 @@ const navItems = [
   { to: "/logs", label: "Logs", icon: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" },
 ];
 
+// Admin-only nav items shown below a separator.
+const adminNavItems = [
+  { to: "/admin/users", label: "Users", icon: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128H9m6 0a5.972 5.972 0 0 0-.786-3.07M9 19.128v-.003c0-1.113.285-2.16.786-3.07M9 19.128H3.375a1.125 1.125 0 0 1-1.125-1.125v-1.5c0-.621.504-1.125 1.125-1.125h3.026a5.972 5.972 0 0 1 .786-3.07M9 19.128a5.972 5.972 0 0 1-.786-3.07m0 0A5.974 5.974 0 0 1 12 12.75a5.974 5.974 0 0 1 3.786 3.308m-3.786-3.308a5.25 5.25 0 1 1 0-10.5 5.25 5.25 0 0 1 0 10.5" },
+];
+
 export function AppLayout() {
+  const { user, isAdmin, logout } = useAuth();
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar */}
@@ -39,11 +47,81 @@ export function AppLayout() {
               {item.label}
             </NavLink>
           ))}
+
+          {/* Admin section — only visible to admin users */}
+          {isAdmin && (
+            <>
+              <div className="my-2 border-t border-gray-200" />
+              <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Admin
+              </div>
+              {adminNavItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `nav-link ${isActive ? "active" : ""}`
+                  }
+                >
+                  <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                  </svg>
+                  {item.label}
+                </NavLink>
+              ))}
+            </>
+          )}
         </nav>
 
-        {/* Footer with health badge */}
-        <div className="border-t border-gray-200 px-4 py-3">
-          <HealthBadge />
+        {/* Footer with health badge and user info */}
+        <div className="border-t border-gray-200">
+          {/* User info + logout */}
+          {user && (
+            <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-4 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  {/* User avatar circle */}
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                    {(user.displayName || user.username).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-gray-800">
+                      {user.displayName || user.username}
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                      <span className="truncate">{user.username}</span>
+                      <span>·</span>
+                      <span
+                        className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none ${user.role === "admin"
+                            ? "bg-purple-100 text-purple-700"
+                            : "bg-gray-100 text-gray-600"
+                          }`}
+                      >
+                        {user.role}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={logout}
+                title="Sign out"
+                className="shrink-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"
+                  />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          <div className="px-4 py-3">
+            <HealthBadge />
+          </div>
         </div>
       </aside>
 
