@@ -624,6 +624,11 @@ run: build ## Build and run the application locally
 dev: ## Run with go run (faster iteration, no binary output)
 	go run ./cmd/chef-migration-metrics/ --config deploy/pkg/config.yml
 
+.PHONY: stop
+stop: ## Stop any running chef-migration-metrics processes
+	@echo "$(GREEN)Stopping $(BINARY_NAME)...$(RESET)"
+	@pkill -f '$(BINARY_NAME)' 2>/dev/null && echo "$(GREEN)Stopped.$(RESET)" || echo "$(YELLOW)No running $(BINARY_NAME) processes found.$(RESET)"
+
 .PHONY: deps
 deps: ## Download and verify Go module dependencies
 	@echo "$(GREEN)Downloading Go dependencies...$(RESET)"
