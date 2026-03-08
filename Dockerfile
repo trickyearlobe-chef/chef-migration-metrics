@@ -113,6 +113,9 @@ ENV GEM_PATH=${GEM_HOME}
 #   - nokogiri < 1.19.1   (1.19.1+ requires Ruby >= 3.2, we use 3.1)
 #   - rubocop = 1.25.1    (cookstyle 7.32.8 hard-pins this exact version)
 #   - train-core = 3.16.1 (inspec-core and kitchen drivers depend on this)
+#   - dry-core = 1.1.0    (1.2.0+ requires Ruby >= 3.2; used by inspec-core)
+#   - dry-types = 1.8.3   (1.9.x requires Ruby >= 3.2; used by inspec-core)
+#   - dry-inflector = 1.2.0 (1.3.x requires Ruby >= 3.2; used by dry-core)
 #
 # Gems are installed in dependency order to minimise resolution conflicts.
 # The ffi pin is installed first as a floor/ceiling constraint that all
@@ -148,8 +151,18 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p "${GEM_HOME}" && \
-    echo "--- Phase 1: Pin ffi to prevent version drift ---" && \
-    gem install --no-document ffi:1.16.3 && \
+    echo "--- Phase 1: Pin gems to prevent version drift ---" && \
+    echo "ffi <= 1.16.3 is required by mixlib-log (< 1.17.0)" && \
+    echo "zeitwerk 2.6.18 is the last version supporting Ruby 3.1 (2.7+ needs >= 3.2)" && \
+    echo "dry-core 1.2.0+ requires Ruby >= 3.2; 1.1.0 is the last Ruby 3.1 release" && \
+    echo "dry-types 1.9.x requires Ruby >= 3.2; 1.8.3 is the last Ruby 3.1 release" && \
+    echo "dry-inflector 1.3.x requires Ruby >= 3.2; 1.2.0 is the last Ruby 3.1 release" && \
+    gem install --no-document \
+        ffi:1.16.3 \
+        zeitwerk:2.6.18 \
+        dry-core:1.1.0 \
+        dry-inflector:1.2.0 \
+        dry-types:1.8.3 && \
     \
     echo "--- Phase 2: Core tools ---" && \
     gem install --no-document \
@@ -157,7 +170,10 @@ RUN mkdir -p "${GEM_HOME}" && \
         test-kitchen:3.9.1 && \
     \
     echo "--- Phase 3: InSpec (verifier) ---" && \
-    gem install --no-document \
+    echo "inspec-bin depends on chef-winrm which ships an rwinrm executable" && \
+    echo "that conflicts with the rwinrm from winrm (installed by test-kitchen)." && \
+    echo "--force lets chef-winrm's rwinrm overwrite the winrm one safely." && \
+    gem install --no-document --force \
         inspec-bin:5.24.7 && \
     \
     echo "--- Phase 4: kitchen-inspec verifier ---" && \
@@ -187,7 +203,13 @@ RUN mkdir -p "${GEM_HOME}" && \
     gem install --no-document --force \
         busser:0.8.0 \
         busser-serverspec:0.6.3 \
-        busser-bats:0.5.0
+        busser-bats:0.5.0 && \
+    \
+    echo "--- Phase 8: Enforce ffi pin (clean up version drift) ---" && \
+    echo "Later phases may pull in ffi > 1.16.3 as a transitive dependency." && \
+    echo "Uninstall any ffi version that is not 1.16.3 to enforce the pin." && \
+    ruby -e "Gem::Specification.select { |s| s.name == 'ffi' && s.version.to_s != '1.16.3' }.each { |s| puts \"Removing ffi #{s.version} (unwanted)\"; system(\"gem uninstall ffi --version #{s.version} --force --executables\") }" && \
+    echo "ffi versions remaining: $(gem list ffi --exact)"
 
 # Copy the Ruby interpreter into the embedded prefix.
 RUN mkdir -p ${EMBEDDED_PREFIX}/bin && \
