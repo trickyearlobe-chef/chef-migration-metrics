@@ -12,20 +12,20 @@ import (
 
 // CookstyleResult represents a row in the cookstyle_results table.
 type CookstyleResult struct {
-	ID                  string
-	CookbookID          string
-	TargetChefVersion   string
-	Passed              bool
-	OffenceCount        int
-	DeprecationCount    int
-	CorrectnessCount    int
-	DeprecationWarnings []byte // JSONB
-	Offences            []byte // JSONB
-	ProcessStdout       string
-	ProcessStderr       string
-	DurationSeconds     int
-	ScannedAt           time.Time
-	CreatedAt           time.Time
+	ID                  string    `json:"id"`
+	CookbookID          string    `json:"cookbook_id"`
+	TargetChefVersion   string    `json:"target_chef_version"`
+	Passed              bool      `json:"passed"`
+	OffenceCount        int       `json:"offence_count"`
+	DeprecationCount    int       `json:"deprecation_count"`
+	CorrectnessCount    int       `json:"correctness_count"`
+	DeprecationWarnings []byte    `json:"deprecation_warnings,omitempty"` // JSONB
+	Offences            []byte    `json:"offences,omitempty"`             // JSONB
+	ProcessStdout       string    `json:"process_stdout,omitempty"`
+	ProcessStderr       string    `json:"process_stderr,omitempty"`
+	DurationSeconds     int       `json:"duration_seconds"`
+	ScannedAt           time.Time `json:"scanned_at"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // UpsertCookstyleResultParams contains the fields needed to insert or update
