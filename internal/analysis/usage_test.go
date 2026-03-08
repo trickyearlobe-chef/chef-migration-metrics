@@ -4,6 +4,7 @@
 package analysis
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"testing"
@@ -130,12 +131,12 @@ func TestExtractNodeTuples_PolicyfileNode(t *testing.T) {
 
 func TestExtractTuples_EmptyNodes(t *testing.T) {
 	a := &Analyser{concurrency: 4}
-	tuples := a.extractTuples(nil, nil)
+	tuples := a.extractTuples(context.TODO(), nil)
 	if len(tuples) != 0 {
 		t.Errorf("expected 0 tuples for nil nodes, got %d", len(tuples))
 	}
 
-	tuples = a.extractTuples(nil, []NodeRecord{})
+	tuples = a.extractTuples(context.TODO(), []NodeRecord{})
 	if len(tuples) != 0 {
 		t.Errorf("expected 0 tuples for empty nodes, got %d", len(tuples))
 	}
@@ -158,7 +159,7 @@ func TestExtractTuples_ParallelExtraction(t *testing.T) {
 	}
 
 	a := &Analyser{concurrency: 2}
-	tuples := a.extractTuples(nil, nodes)
+	tuples := a.extractTuples(context.TODO(), nodes)
 
 	// node1: 2 tuples, node2: 2 tuples, node3: 0 tuples = 4 total
 	if len(tuples) != 4 {
@@ -173,7 +174,7 @@ func TestExtractTuples_ConcurrencyOne(t *testing.T) {
 	}
 
 	a := &Analyser{concurrency: 1}
-	tuples := a.extractTuples(nil, nodes)
+	tuples := a.extractTuples(context.TODO(), nodes)
 	if len(tuples) != 2 {
 		t.Fatalf("expected 2 tuples, got %d", len(tuples))
 	}
@@ -189,7 +190,7 @@ func TestExtractTuples_LargeBatch(t *testing.T) {
 	}
 
 	a := &Analyser{concurrency: 8}
-	tuples := a.extractTuples(nil, nodes)
+	tuples := a.extractTuples(context.TODO(), nodes)
 	if len(tuples) != 100 {
 		t.Errorf("expected 100 tuples, got %d", len(tuples))
 	}
@@ -495,7 +496,7 @@ func TestBuildInventorySet_Populated(t *testing.T) {
 	}
 
 	for _, e := range inv {
-		key := cookbookVersionKey{Name: e.Name, Version: e.Version}
+		key := cookbookVersionKey(e)
 		if !set[key] {
 			t.Errorf("expected %s/%s in inventory set", e.Name, e.Version)
 		}
@@ -1197,7 +1198,7 @@ func TestEndToEnd_FullAnalysisPipeline(t *testing.T) {
 
 	// Phase 1: Extract
 	a := &Analyser{concurrency: 4}
-	tuples := a.extractTuples(nil, nodes)
+	tuples := a.extractTuples(context.TODO(), nodes)
 
 	// Each node contributes len(CookbookVersions) tuples:
 	// web1: 3, web2: 3, db1: 3, db2: 2, policy-node: 2 = 13
@@ -1416,7 +1417,7 @@ func TestEndToEnd_NoNodesAllUnused(t *testing.T) {
 	}
 
 	a := &Analyser{concurrency: 2}
-	tuples := a.extractTuples(nil, nil)
+	tuples := a.extractTuples(context.TODO(), nil)
 	aggregated := aggregateTuples(tuples)
 	inventorySet := buildInventorySet(inventory)
 	activeSet := buildActiveSet(aggregated)
@@ -1459,7 +1460,7 @@ func TestEndToEnd_AllNodesNoCookbooks(t *testing.T) {
 	}
 
 	a := &Analyser{concurrency: 2}
-	tuples := a.extractTuples(nil, nodes)
+	tuples := a.extractTuples(context.TODO(), nodes)
 	if len(tuples) != 0 {
 		t.Errorf("expected 0 tuples, got %d", len(tuples))
 	}

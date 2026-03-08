@@ -329,10 +329,11 @@ func (r *Router) handleExportDownload(w http.ResponseWriter, req *http.Request, 
 	if job.Status != datastore.ExportStatusCompleted {
 		status := http.StatusConflict
 		msg := fmt.Sprintf("Export job %q is not yet completed (status: %s).", jobID, job.Status)
-		if job.Status == datastore.ExportStatusExpired {
+		switch job.Status {
+		case datastore.ExportStatusExpired:
 			status = http.StatusGone
 			msg = fmt.Sprintf("Export job %q has expired. Please create a new export.", jobID)
-		} else if job.Status == datastore.ExportStatusFailed {
+		case datastore.ExportStatusFailed:
 			msg = fmt.Sprintf("Export job %q failed: %s", jobID, job.ErrorMessage)
 		}
 		WriteError(w, status, "export_not_ready", msg)
