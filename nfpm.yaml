@@ -1,0 +1,110 @@
+# =============================================================================
+# nFPM Configuration — Chef Migration Metrics
+# =============================================================================
+# Builds both RPM and DEB packages from a single configuration file.
+# Environment variables VERSION and ARCH are injected by the Makefile.
+#
+# Usage (via Makefile):
+#   make package-rpm
+#   make package-deb
+#   make package-all
+#
+# Direct usage:
+#   VERSION=1.2.3 ARCH=amd64 nfpm package --packager rpm --target build/
+#   VERSION=1.2.3 ARCH=amd64 nfpm package --packager deb --target build/
+#
+# See: .claude/specifications/packaging/Specification.md § 9
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
+# =============================================================================
+
+name: chef-migration-metrics
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+release: "1"
+section: admin
+priority: optional
+maintainer: Project Maintainers
+description: Tool for planning and tracking Chef Client upgrade projects
+vendor: Chef Migration Metrics Project
+homepage: https://github.com/trickyearlobe-chef/chef-migration-metrics
+license: Apache-2.0
+
+depends:
+  - git
+
+contents:
+  # Go binary
+  - src: ./build/chef-migration-metrics
+    dst: /usr/bin/chef-migration-metrics
+    file_info:
+      mode: 0755
+
+  # Default configuration file (noreplace = don't overwrite on upgrade)
+  - src: ./deploy/pkg/config.yml
+    dst: /etc/chef-migration-metrics/config.yml
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
+  # Chef API private keys directory (mounted/populated by operator)
+  - dst: /etc/chef-migration-metrics/keys/
+    type: dir
+    file_info:
+      mode: 0700
+
+  # Runtime data directory (git working dirs, etc.)
+  - dst: /var/lib/chef-migration-metrics/
+    type: dir
+    file_info:
+      mode: 0750
+
+  # Application log directory
+  - dst: /var/log/chef-migration-metrics/
+    type: dir
+    file_info:
+      mode: 0750
+
+  # Embedded Ruby environment (CookStyle, Test Kitchen, InSpec, kitchen drivers)
+  # type: tree preserves the full directory structure and avoids content
+  # collisions that occur with the default glob when deeply nested gems
+  # contain identically named files (e.g. google-api-client classes.rb).
+  - src: ./build/embedded/
+    dst: /opt/chef-migration-metrics/embedded/
+    type: tree
+    file_info:
+      mode: 0755
+
+  # systemd unit file
+  - src: ./deploy/pkg/chef-migration-metrics.service
+    dst: /usr/lib/systemd/system/chef-migration-metrics.service
+    file_info:
+      mode: 0644
+
+  # Environment file — Debian convention (/etc/default/)
+  - src: ./deploy/pkg/env-file
+    dst: /etc/default/chef-migration-metrics
+    type: config|noreplace
+    file_info:
+      mode: 0640
+    packager: deb
+
+  # Environment file — RPM convention (/etc/sysconfig/)
+  - src: ./deploy/pkg/env-file
+    dst: /etc/sysconfig/chef-migration-metrics
+    type: config|noreplace
+    file_info:
+      mode: 0640
+    packager: rpm
+
+scripts:
+  preinstall: ./deploy/pkg/scripts/preinstall.sh
+  postinstall: ./deploy/pkg/scripts/postinstall.sh
+  preremove: ./deploy/pkg/scripts/preremove.sh
+
+rpm:
+  group: Applications/System
+
+deb:
+  predepends:
+    - adduser

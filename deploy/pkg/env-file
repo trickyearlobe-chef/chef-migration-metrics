@@ -1,0 +1,26 @@
+# =============================================================================
+# Chef Migration Metrics — Environment File
+# =============================================================================
+# This file is sourced by the systemd unit via EnvironmentFile=.
+# Uncomment and set variables as needed. These override values in config.yml
+# where the application supports environment variable configuration.
+#
+# Location:
+#   RPM:  /etc/sysconfig/chef-migration-metrics
+#   DEB:  /etc/default/chef-migration-metrics
+#
+# See: .claude/specifications/packaging/Specification.md §§ 2.5, 3.4
+# =============================================================================
+
+# Database connection string (overrides config.yml datastore.dsn)
+#DATABASE_URL=postgres://chef_migration_metrics:changeme@localhost:5432/chef_migration_metrics?sslmode=disable
+
+# LDAP bind password (if using LDAP authentication)
+#LDAP_BIND_PASSWORD=
+
+# Log level override (DEBUG, INFO, WARN, ERROR)
+#LOG_LEVEL=INFO
+
+# TLS certificate and key paths (override config.yml server.tls.cert_path / key_path)
+#TLS_CERT_PATH=/etc/chef-migration-metrics/tls/cert.pem
+#TLS_KEY_PATH=/etc/chef-migration-metrics/tls/key.pem
