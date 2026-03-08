@@ -371,6 +371,38 @@ The web UI supports three authentication providers, which can be used simultaneo
 
 Role-based access control provides **Admin** and **Viewer** roles. See the [Authentication specification](.claude/specifications/auth/Specification.md) for details.
 
+## Security — Never Commit Secrets
+
+This project includes multiple layers of protection to prevent credentials from being committed to version control.
+
+### Pre-commit Hook
+
+A git pre-commit hook scans staged files for private keys, API tokens, hardcoded passwords, and other secret patterns. Install it after cloning:
+
+```
+make install-hooks
+```
+
+The hook runs automatically on every `git commit` and blocks the commit if potential secrets are detected. To bypass it in exceptional cases (e.g. committing test fixtures with obviously fake keys), use `git commit --no-verify`.
+
+### CI Secret Scanning
+
+The CI pipeline runs [gitleaks](https://github.com/gitleaks/gitleaks) on every push and pull request. The configuration is in `.gitleaks.toml`. The build will fail if secrets are detected in any commit.
+
+To run the same scan locally:
+
+```
+make scan-secrets
+```
+
+### .gitignore Protection
+
+The `.gitignore` file excludes common secret file types (`*.pem`, `*.key`, `.env`, `keys/`, `acme/`). The `.dockerignore` and `.helmignore` files mirror these patterns to prevent secrets from leaking into container images or Helm chart archives.
+
+### Credential Management
+
+For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [Secrets Storage Specification](.claude/specifications/secrets-storage/Specification.md).
+
 ## Specifications
 
 Detailed specifications for every component are maintained under `.claude/specifications/`:
