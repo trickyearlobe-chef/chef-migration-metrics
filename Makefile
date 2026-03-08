@@ -133,8 +133,40 @@ build-linux-arm64: build-frontend ## Cross-compile for linux/arm64
 		-ldflags "$(LDFLAGS)" \
 		-o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/chef-migration-metrics/
 
+.PHONY: build-darwin-amd64
+build-darwin-amd64: build-frontend ## Cross-compile for macOS/amd64 (Intel)
+	@echo "$(GREEN)Building $(BINARY_NAME) $(VERSION_FULL) (darwin/amd64)...$(RESET)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
+		-ldflags "$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/chef-migration-metrics/
+
+.PHONY: build-darwin-arm64
+build-darwin-arm64: build-frontend ## Cross-compile for macOS/arm64 (Apple Silicon)
+	@echo "$(GREEN)Building $(BINARY_NAME) $(VERSION_FULL) (darwin/arm64)...$(RESET)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build \
+		-ldflags "$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/chef-migration-metrics/
+
+.PHONY: build-windows-amd64
+build-windows-amd64: build-frontend ## Cross-compile for windows/amd64
+	@echo "$(GREEN)Building $(BINARY_NAME) $(VERSION_FULL) (windows/amd64)...$(RESET)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
+		-ldflags "$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/chef-migration-metrics/
+
+.PHONY: build-windows-arm64
+build-windows-arm64: build-frontend ## Cross-compile for windows/arm64
+	@echo "$(GREEN)Building $(BINARY_NAME) $(VERSION_FULL) (windows/arm64)...$(RESET)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build \
+		-ldflags "$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe ./cmd/chef-migration-metrics/
+
 .PHONY: build-all
-build-all: build-linux-amd64 build-linux-arm64 ## Cross-compile for all supported platforms
+build-all: build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64 build-windows-arm64 ## Cross-compile for all supported platforms
 
 .PHONY: build-frontend
 build-frontend: ## Build the React SPA frontend (creates placeholder dist/ if npm unavailable)
@@ -456,8 +488,65 @@ package-deb: _check-nfpm build build-embedded ## Build DEB package
 	VERSION=$(VERSION) ARCH=$(HOST_ARCH) nfpm package --packager deb --target $(BUILD_DIR)/
 	@echo "$(GREEN)DEB: $(BUILD_DIR)/*.deb$(RESET)"
 
+.PHONY: package-archives
+package-archives: build-all ## Build distribution archives (tar.gz / zip) for all platforms
+	@echo "$(GREEN)Building distribution archives for $(VERSION_FULL)...$(RESET)"
+	@mkdir -p $(BUILD_DIR)/archives
+	@# --- Linux amd64 (tar.gz) ---
+	@STAGING=$(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-linux-amd64 && \
+		mkdir -p "$$STAGING" && \
+		cp $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 "$$STAGING/$(BINARY_NAME)" && \
+		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
+		cp README.md LICENSE "$$STAGING/" && \
+		tar -czf $(BUILD_DIR)/archives/$(BINARY_NAME)-$(VERSION)-linux-amd64.tar.gz -C $(BUILD_DIR)/stage $(BINARY_NAME)-$(VERSION)-linux-amd64 && \
+		rm -rf "$$STAGING"
+	@# --- Linux arm64 (tar.gz) ---
+	@STAGING=$(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-linux-arm64 && \
+		mkdir -p "$$STAGING" && \
+		cp $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 "$$STAGING/$(BINARY_NAME)" && \
+		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
+		cp README.md LICENSE "$$STAGING/" && \
+		tar -czf $(BUILD_DIR)/archives/$(BINARY_NAME)-$(VERSION)-linux-arm64.tar.gz -C $(BUILD_DIR)/stage $(BINARY_NAME)-$(VERSION)-linux-arm64 && \
+		rm -rf "$$STAGING"
+	@# --- macOS amd64 (tar.gz) ---
+	@STAGING=$(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-darwin-amd64 && \
+		mkdir -p "$$STAGING" && \
+		cp $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 "$$STAGING/$(BINARY_NAME)" && \
+		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
+		cp README.md LICENSE "$$STAGING/" && \
+		tar -czf $(BUILD_DIR)/archives/$(BINARY_NAME)-$(VERSION)-darwin-amd64.tar.gz -C $(BUILD_DIR)/stage $(BINARY_NAME)-$(VERSION)-darwin-amd64 && \
+		rm -rf "$$STAGING"
+	@# --- macOS arm64 (tar.gz) ---
+	@STAGING=$(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-darwin-arm64 && \
+		mkdir -p "$$STAGING" && \
+		cp $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 "$$STAGING/$(BINARY_NAME)" && \
+		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
+		cp README.md LICENSE "$$STAGING/" && \
+		tar -czf $(BUILD_DIR)/archives/$(BINARY_NAME)-$(VERSION)-darwin-arm64.tar.gz -C $(BUILD_DIR)/stage $(BINARY_NAME)-$(VERSION)-darwin-arm64 && \
+		rm -rf "$$STAGING"
+	@# --- Windows amd64 (zip) ---
+	@STAGING=$(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-windows-amd64 && \
+		mkdir -p "$$STAGING" && \
+		cp $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe "$$STAGING/$(BINARY_NAME).exe" && \
+		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
+		cp README.md LICENSE "$$STAGING/" && \
+		cd $(BUILD_DIR)/stage && zip -rq ../archives/$(BINARY_NAME)-$(VERSION)-windows-amd64.zip $(BINARY_NAME)-$(VERSION)-windows-amd64 && \
+		rm -rf "$$STAGING"
+	@# --- Windows arm64 (zip) ---
+	@STAGING=$(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-windows-arm64 && \
+		mkdir -p "$$STAGING" && \
+		cp $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe "$$STAGING/$(BINARY_NAME).exe" && \
+		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
+		cp README.md LICENSE "$$STAGING/" && \
+		cd $(BUILD_DIR)/stage && zip -rq ../archives/$(BINARY_NAME)-$(VERSION)-windows-arm64.zip $(BINARY_NAME)-$(VERSION)-windows-arm64 && \
+		rm -rf "$$STAGING"
+	@rm -rf $(BUILD_DIR)/stage
+	@echo "$(GREEN)Archives:$(RESET)"
+	@ls -lh $(BUILD_DIR)/archives/
+	@echo ""
+
 .PHONY: package-all
-package-all: package-rpm package-deb package-docker ## Build RPM, DEB, and container image
+package-all: package-rpm package-deb package-docker package-archives ## Build RPM, DEB, container image, and distribution archives
 
 # =============================================================================
 # Semver Version Management
