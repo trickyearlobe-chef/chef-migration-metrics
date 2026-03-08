@@ -1,0 +1,22 @@
+apiVersion: v2
+name: chef-migration-metrics
+description: A Helm chart for deploying Chef Migration Metrics on Kubernetes
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/trickyearlobe-chef/chef-migration-metrics
+sources:
+  - https://github.com/trickyearlobe-chef/chef-migration-metrics
+maintainers:
+  - name: trickyearlobe
+keywords:
+  - chef
+  - migration
+  - metrics
+  - upgrade
+
+dependencies:
+  - name: postgresql
+    version: "~15"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled

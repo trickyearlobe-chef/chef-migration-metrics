@@ -1,0 +1,310 @@
+# =============================================================================
+# Chef Migration Metrics — Helm Chart Values
+# =============================================================================
+# Default configuration values. Override with --set or -f my-values.yaml.
+# =============================================================================
+
+# -- Number of application replicas.
+# NOTE: The background collection job includes a single-run constraint
+# (see data-collection specification). When running multiple replicas,
+# only one replica will execute collection/analysis jobs at a time.
+# Additional replicas serve dashboard traffic and API requests.
+replicaCount: 1
+
+image:
+  # -- Container image repository
+  repository: ghcr.io/trickyearlobe-chef/chef-migration-metrics
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Image tag (defaults to chart appVersion)
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create a ServiceAccount
+  create: true
+  # -- Annotations for the ServiceAccount
+  annotations: {}
+  # -- ServiceAccount name (auto-generated if not set)
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false    # git operations require writable fs
+  capabilities:
+    drop:
+      - ALL
+
+# ---------------------------------------------------------------------------
+# Application Configuration
+# ---------------------------------------------------------------------------
+# Rendered into a ConfigMap and mounted as /etc/chef-migration-metrics/config.yml.
+# The datastore.url field is omitted from the ConfigMap because it is injected
+# via the DATABASE_URL environment variable from a Secret.
+config:
+  organisations: []
+  #   - name: myorg-production
+  #     chef_server_url: https://chef.example.com
+  #     org_name: myorg-production
+  #     client_name: chef-migration-metrics
+  #     client_key_path: /etc/chef-migration-metrics/keys/myorg-production.pem
+
+  target_chef_versions: []
+  #   - "18.5.0"
+  #   - "19.0.0"
+
+  git_base_urls: []
+  #   - https://github.com/myorg
+
+  collection:
+    schedule: "0 * * * *"
+
+  concurrency:
+    organisation_collection: 5
+    node_page_fetching: 10
+    git_pull: 10
+    cookstyle_scan: 8
+    test_kitchen_run: 4
+    readiness_evaluation: 20
+
+  readiness:
+    min_free_disk_mb: 2048
+
+  server:
+    listen_address: "0.0.0.0"
+    port: 8080
+    tls:
+      mode: "off"               # "off" | "static" | "acme"
+      # --- Static certificate settings (mode: static) ---
+      cert_path: ""
+      key_path: ""
+      ca_path: ""               # Optional: CA bundle for mutual TLS (mTLS)
+      min_version: "1.2"        # Minimum TLS version: "1.2" or "1.3"
+      http_redirect_port: 0     # Optional: HTTP-to-HTTPS redirect listener port
+      # --- ACME settings (mode: acme) ---
+      acme:
+        domains: []
+        email: ""
+        ca_url: "https://acme-v02.api.letsencrypt.org/directory"
+        challenge: "http-01"    # "http-01" | "tls-alpn-01" | "dns-01"
+        dns_provider: ""
+        dns_provider_config: {}
+        storage_path: "/var/lib/chef-migration-metrics/acme"
+        renew_before_days: 30
+        agree_to_tos: false
+        trusted_roots: ""
+    graceful_shutdown_seconds: 30
+
+  frontend:
+    base_path: "/"
+
+  logging:
+    level: INFO
+    retention_days: 90
+
+  auth:
+    providers:
+      - type: local
+
+# -- Existing ConfigMap name to use instead of the chart-managed one.
+# When set, the chart does not create a ConfigMap and mounts this one instead.
+existingConfigMap: ""
+
+# ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+
+# -- Database connection URL. Overrides config.datastore.url via DATABASE_URL env var.
+# If using the bundled PostgreSQL subchart, this is auto-configured.
+databaseUrl: ""
+
+# -- Existing Kubernetes Secret containing sensitive environment variables.
+# The secret should contain keys such as DATABASE_URL, LDAP_BIND_PASSWORD, etc.
+existingSecret: ""
+
+# -- Inline secret values (only used if existingSecret is not set).
+# These are rendered into a chart-managed Secret.
+secrets:
+  databaseUrl: ""
+  ldapBindPassword: ""
+
+# -- Chef API private keys. Each key maps to a file in /etc/chef-migration-metrics/keys/.
+# Provide either inline PEM content or reference an existing secret.
+chefKeys:
+  # -- Existing Kubernetes Secret containing Chef API private keys.
+  # Each key in the secret becomes a file in the keys directory.
+  existingSecret: ""
+  # -- Inline key data (only used if existingSecret is not set).
+  # keys:
+  #   myorg-production.pem: <PEM-encoded private key content>
+  keys: {}
+
+# ---------------------------------------------------------------------------
+# Networking
+# ---------------------------------------------------------------------------
+
+service:
+  # -- Service type
+  type: ClusterIP
+  # -- Service port
+  port: 80
+  # -- Target port on the container
+  targetPort: 8080
+
+ingress:
+  # -- Enable Ingress
+  enabled: false
+  # -- Ingress class name
+  className: ""
+  # -- Ingress annotations
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: chef-migration-metrics.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: chef-migration-metrics-tls
+  #    hosts:
+  #      - chef-migration-metrics.local
+
+# ---------------------------------------------------------------------------
+# TLS (native application TLS, not Ingress TLS)
+# ---------------------------------------------------------------------------
+
+# -- TLS certificate Secret for native TLS (server.tls.mode: static).
+# Not needed when TLS is terminated at the Ingress or when using ACME mode.
+tlsSecret:
+  # -- Existing Kubernetes TLS Secret (e.g. managed by cert-manager).
+  # Must contain tls.crt and tls.key. Mounted to /etc/chef-migration-metrics/tls/.
+  existingSecret: ""
+  # -- Inline PEM certificate and key (only used if existingSecret is not set).
+  # For production, use existingSecret instead.
+  cert: ""
+  key: ""
+
+# -- ACME certificate storage (server.tls.mode: acme).
+# Persistent volume for ACME account keys, issued certificates, and metadata.
+# Only used when server.tls.mode is "acme".
+acmeStorage:
+  # -- Storage class for the ACME PVC
+  storageClass: ""
+  # -- Access modes
+  accessModes:
+    - ReadWriteOnce
+  # -- Volume size (ACME data is small — 64Mi is typically sufficient)
+  size: 64Mi
+  # -- Use an existing PVC
+  existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+
+# -- Persistent volume for git clones and cookbook downloads
+persistence:
+  # -- Enable persistent storage
+  enabled: true
+  # -- Storage class (empty string uses the cluster default)
+  storageClass: ""
+  # -- Access mode
+  accessModes:
+    - ReadWriteOnce
+  # -- Volume size
+  size: 10Gi
+  # -- Existing PVC name (overrides chart-managed PVC)
+  existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Resources and Scaling
+# ---------------------------------------------------------------------------
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+# -- Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
+# Health Checks
+# ---------------------------------------------------------------------------
+
+# -- Liveness probe
+livenessProbe:
+  httpGet:
+    path: /api/v1/admin/status
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# -- Readiness probe
+readinessProbe:
+  httpGet:
+    path: /api/v1/admin/status
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# ---------------------------------------------------------------------------
+# PostgreSQL Subchart (Bitnami)
+# ---------------------------------------------------------------------------
+# Enable to deploy PostgreSQL alongside the application. For production,
+# disable and point databaseUrl or secrets.databaseUrl at an externally
+# managed PostgreSQL instance (e.g. RDS, Cloud SQL).
+
+postgresql:
+  # -- Deploy PostgreSQL as a subchart
+  enabled: true
+  auth:
+    # -- PostgreSQL database name
+    database: chef_migration_metrics
+    # -- PostgreSQL username
+    username: chef_migration_metrics
+    # -- PostgreSQL password (use existingSecret in production)
+    password: ""
+    # -- Existing secret containing the PostgreSQL password (key: password)
+    existingSecret: ""
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
