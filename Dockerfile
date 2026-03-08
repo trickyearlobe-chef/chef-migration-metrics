@@ -65,9 +65,17 @@ COPY . .
 # a minimal placeholder index.html so the embed directive succeeds and
 # the binary serves a "frontend not built" page instead of failing to
 # compile.
+ARG NODE_MAJOR=20
 RUN if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then \
         apt-get update && \
-        apt-get install -y --no-install-recommends nodejs npm && \
+        apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
+        mkdir -p /etc/apt/keyrings && \
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+        echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+        apt-get update && \
+        apt-get install -y --no-install-recommends nodejs && \
         rm -rf /var/lib/apt/lists/* && \
         cd frontend && npm ci --prefer-offline && npm run build; \
     else \
