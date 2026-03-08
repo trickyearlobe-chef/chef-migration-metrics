@@ -653,6 +653,58 @@ generate: ## Run go generate
 	go generate ./...
 
 # =============================================================================
+# Git Hooks and Secret Scanning
+# =============================================================================
+
+.PHONY: install-hooks
+install-hooks: ## Install git pre-commit hook to prevent committing secrets
+	@echo "$(GREEN)Installing git hooks...$(RESET)"
+	@git config core.hooksPath .githooks
+	@echo "$(GREEN)Git hooks installed. Pre-commit secret scanning is now active.$(RESET)"
+	@echo "  Hook directory: .githooks/"
+	@echo "  To bypass (use with caution): git commit --no-verify"
+
+.PHONY: uninstall-hooks
+uninstall-hooks: ## Remove custom git hooks path (revert to default)
+	@echo "$(GREEN)Removing custom git hooks path...$(RESET)"
+	@git config --unset core.hooksPath || true
+	@echo "$(GREEN)Git hooks path reset to default.$(RESET)"
+
+.PHONY: scan-secrets
+scan-secrets: ## Scan the repository for secrets using gitleaks (requires gitleaks installed)
+	@if command -v gitleaks >/dev/null 2>&1; then \
+		echo "$(GREEN)Running gitleaks secret scan...$(RESET)"; \
+		gitleaks detect --config .gitleaks.toml --source . --verbose; \
+	else \
+		echo "$(YELLOW)gitleaks not found. Install it with:$(RESET)"; \
+		echo "  brew install gitleaks        # macOS"; \
+		echo "  go install github.com/zricethezav/gitleaks/v8@latest  # Go"; \
+		echo ""; \
+		echo "$(GREEN)Running built-in pattern scan instead...$(RESET)"; \
+		found=0; \
+		while IFS= read -r file; do \
+			if grep -lP '-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----' "$$file" 2>/dev/null; then \
+				echo "$(RED)FOUND private key in: $$file$(RESET)"; \
+				found=1; \
+			fi; \
+			if grep -lP 'AKIA[0-9A-Z]{16}' "$$file" 2>/dev/null; then \
+				echo "$(RED)FOUND AWS key in: $$file$(RESET)"; \
+				found=1; \
+			fi; \
+			if grep -lP 'ghp_[0-9a-zA-Z]{36}' "$$file" 2>/dev/null; then \
+				echo "$(RED)FOUND GitHub token in: $$file$(RESET)"; \
+				found=1; \
+			fi; \
+		done < <(git ls-files); \
+		if [ "$$found" -eq 0 ]; then \
+			echo "$(GREEN)No secrets detected.$(RESET)"; \
+		else \
+			echo "$(RED)Potential secrets found! Review the files above.$(RESET)"; \
+			exit 1; \
+		fi; \
+	fi
+
+# =============================================================================
 # Docker Compose (local development stack)
 # =============================================================================
 

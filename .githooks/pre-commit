@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Pre-commit hook — Prevent accidental commit of secrets and credentials
+# =============================================================================
+# Install: make install-hooks
+# Skip:    git commit --no-verify (use only when you are certain)
+# =============================================================================
+
+set -euo pipefail
+
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+RESET='\033[0m'
+
+BLOCKED=0
+WARNINGS=0
+
+# ---------------------------------------------------------------------------
+# Helper: report a blocked file
+# ---------------------------------------------------------------------------
+block() {
+  local file="$1" reason="$2"
+  printf "${RED}BLOCKED${RESET}  %s — %s\n" "$file" "$reason" >&2
+  BLOCKED=$((BLOCKED + 1))
+}
+
+warn() {
+  local file="$1" reason="$2"
+  printf "${YELLOW}WARNING${RESET}  %s — %s\n" "$file" "$reason" >&2
+  WARNINGS=$((WARNINGS + 1))
+}
+
+# ---------------------------------------------------------------------------
+# Collect list of staged files (added, copied, modified, renamed)
+# ---------------------------------------------------------------------------
+STAGED_FILES=()
+while IFS= read -r f; do
+  [[ -n "$f" ]] && STAGED_FILES+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)
+
+if [[ ${#STAGED_FILES[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 1. Filename / extension checks — catch secrets by file type
+# ---------------------------------------------------------------------------
+# Patterns aligned with .gitignore "Secrets and Credentials" section.
+for file in "${STAGED_FILES[@]}"; do
+  # Extension checks
+  case "$file" in
+    *.pem)  block "$file" "file extension .pem matches a known secret type" ;;
+    *.key)  block "$file" "file extension .key matches a known secret type" ;;
+    *.p12)  block "$file" "file extension .p12 matches a known secret type" ;;
+    *.pfx)  block "$file" "file extension .pfx matches a known secret type" ;;
+  esac
+
+  # .env files (but not .env.example)
+  base=$(basename "$file")
+  if [[ "$base" == ".env" ]]; then
+    block "$file" ".env file likely contains credentials"
+  fi
+
+  # keys/ directory
+  if [[ "$file" == keys/* || "$file" == */keys/* ]]; then
+    block "$file" "file path matches a known secrets directory (keys/)"
+  fi
+
+  # acme/ directory
+  if [[ "$file" == acme/* || "$file" == */acme/* ]]; then
+    block "$file" "file path matches a known secrets directory (acme/)"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 2. Content checks — scan staged file contents for secret patterns
+# ---------------------------------------------------------------------------
+# We scan the staged (cached) version of each file, not the working copy,
+# so the check is accurate even if the working tree has diverged.
+#
+# All patterns use grep -E (POSIX extended regex) with -- to prevent
+# leading hyphens from being interpreted as options. Case-insensitive
+# patterns use grep -iE.
+
+# File types to skip for content scanning (binary, images, fonts, etc.)
+skip_content_scan() {
+  case "$1" in
+    *.png|*.jpg|*.jpeg|*.gif|*.ico|*.webp) return 0 ;;
+    *.woff|*.woff2|*.ttf|*.eot) return 0 ;;
+    *.svg) return 0 ;;
+    *.mp3|*.mp4|*.wav|*.ogg) return 0 ;;
+    *.zip|*.tar|*.gz|*.bz2|*.xz|*.7z) return 0 ;;
+    *.pdf|*.doc|*.docx) return 0 ;;
+    *.exe|*.dll|*.so|*.dylib) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Files that contain secret patterns as documentation or regex definitions,
+# not actual secrets. Skip these from content scanning.
+skip_content_allowlist() {
+  local f="$1"
+  case "$f" in
+    .githooks/pre-commit) return 0 ;;
+    .gitleaks.toml) return 0 ;;
+    .claude/Claude.md|.claude/Structure.md) return 0 ;;
+    deploy/docker-compose/.env.example) return 0 ;;
+    deploy/docker-compose/README.md) return 0 ;;
+    deploy/elk/.env.example) return 0 ;;
+    deploy/elk/README.md) return 0 ;;
+    README.md) return 0 ;;
+    *_test.go) return 0 ;;
+  esac
+  # Subdirectory patterns (case globs don't reliably handle deep nesting)
+  [[ "$f" == .github/workflows/*.yml ]] && return 0
+  [[ "$f" == .claude/specifications/*.md ]] && return 0
+  [[ "$f" == .claude/specifications/*/*.md ]] && return 0
+  [[ "$f" == .claude/specifications/*/*/*.md ]] && return 0
+  [[ "$f" == .claude/summaries/*.md ]] && return 0
+  return 1
+}
+
+# Each check function receives the filename as $1 and staged content as $2.
+# Using separate functions keeps the patterns readable and avoids shell
+# quoting issues with arrays of complex regexes.
+
+check_private_key() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- '-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----'; then
+    block "$file" "PEM-encoded private key"
+  fi
+}
+
+check_certificate() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- '-----BEGIN CERTIFICATE-----'; then
+    warn "$file" "PEM-encoded certificate (verify this is intentional)"
+  fi
+}
+
+check_aws_access_key() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- 'AKIA[0-9A-Z]{16}'; then
+    block "$file" "AWS Access Key ID"
+  fi
+}
+
+check_aws_secret_key() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qiE -- '(aws_secret_access_key|aws_secret_key)[[:space:]]*[=:][[:space:]]*[^[:space:]]+'; then
+    block "$file" "AWS secret access key assignment"
+  fi
+}
+
+check_github_tokens() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- 'ghp_[0-9a-zA-Z]{36}'; then
+    block "$file" "GitHub personal access token"
+  fi
+  if printf '%s\n' "$content" | grep -qE -- 'gho_[0-9a-zA-Z]{36}'; then
+    block "$file" "GitHub OAuth token"
+  fi
+  if printf '%s\n' "$content" | grep -qE -- 'ghs_[0-9a-zA-Z]{36}'; then
+    block "$file" "GitHub server-to-server token"
+  fi
+  if printf '%s\n' "$content" | grep -qE -- 'ghu_[0-9a-zA-Z]{36}'; then
+    block "$file" "GitHub user-to-server token"
+  fi
+  if printf '%s\n' "$content" | grep -qE -- 'github_pat_[0-9a-zA-Z_]{22,}'; then
+    block "$file" "GitHub fine-grained PAT"
+  fi
+}
+
+check_openai_stripe() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- 'sk-[0-9a-zA-Z]{20,}'; then
+    block "$file" "OpenAI or Stripe secret key"
+  fi
+}
+
+check_sendgrid() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- 'SG\.[0-9A-Za-z_-]{22}\.[0-9A-Za-z_-]{43}'; then
+    block "$file" "SendGrid API key"
+  fi
+}
+
+check_slack() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- 'xox[bpras]-[0-9a-zA-Z-]{10,}'; then
+    block "$file" "Slack token"
+  fi
+}
+
+check_cmm_master_key() {
+  local file="$1" content="$2"
+  if printf '%s\n' "$content" | grep -qE -- 'CMM_CREDENTIAL_ENCRYPTION_KEY[[:space:]]*=[[:space:]]*[^[:space:]]{8,}'; then
+    block "$file" "Master encryption key value"
+  fi
+}
+
+check_generic_password() {
+  local file="$1" content="$2"
+  # Match assignments like: password = "realvalue", secret: 'topsecret', api_key="abcdefgh"
+  # Require the value to be at least 8 characters to reduce false positives.
+  if printf '%s\n' "$content" | grep -qiE -- "(password|passwd|secret|api_key|apikey|api_secret)[[:space:]]*[=:][[:space:]]*[\"'][^\"'[:space:]]{8,}"; then
+    block "$file" "Possible hardcoded credential"
+  fi
+}
+
+check_database_url() {
+  local file="$1" content="$2"
+  # postgres://user:password@host, mysql://..., mongodb://..., redis://...
+  if printf '%s\n' "$content" | grep -qiE -- '(postgres|mysql|mongodb|redis)://[^:]+:[^@[:space:]]{8,}@'; then
+    block "$file" "Database connection string with embedded password"
+  fi
+}
+
+for file in "${STAGED_FILES[@]}"; do
+  # Skip binary-like files
+  if skip_content_scan "$file"; then
+    continue
+  fi
+
+  # Skip files in the allowlist (contain patterns as documentation, not real secrets)
+  if skip_content_allowlist "$file"; then
+    continue
+  fi
+
+  # Get the staged content of the file
+  staged_content=$(git show ":$file" 2>/dev/null) || continue
+
+  # Skip empty files
+  [[ -z "$staged_content" ]] && continue
+
+  check_private_key "$file" "$staged_content"
+  check_certificate "$file" "$staged_content"
+  check_aws_access_key "$file" "$staged_content"
+  check_aws_secret_key "$file" "$staged_content"
+  check_github_tokens "$file" "$staged_content"
+  check_openai_stripe "$file" "$staged_content"
+  check_sendgrid "$file" "$staged_content"
+  check_slack "$file" "$staged_content"
+  check_cmm_master_key "$file" "$staged_content"
+  check_generic_password "$file" "$staged_content"
+  check_database_url "$file" "$staged_content"
+done
+
+# ---------------------------------------------------------------------------
+# 3. Large file check — secrets sometimes hide in large unexpected files
+# ---------------------------------------------------------------------------
+SIZE_LIMIT_KB=500
+
+for file in "${STAGED_FILES[@]}"; do
+  case "$file" in
+    *.go|*.js|*.ts|*.tsx|*.jsx|*.json|*.yaml|*.yml|*.md|*.sql|*.sh|*.css|*.html)
+      size_bytes=$(git cat-file -s ":$file" 2>/dev/null) || continue
+      size_kb=$((size_bytes / 1024))
+      if [[ $size_kb -gt $SIZE_LIMIT_KB ]]; then
+        warn "$file" "unusually large source file (${size_kb} KB) — verify no embedded secrets"
+      fi
+      ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+if [[ $BLOCKED -gt 0 ]]; then
+  echo "" >&2
+  printf "${RED}✗ Commit blocked: %d file(s) contain potential secrets.${RESET}\n" "$BLOCKED" >&2
+  echo "  Review the files above and remove credentials before committing." >&2
+  echo "  If you are certain these are safe, use: git commit --no-verify" >&2
+  echo "" >&2
+  exit 1
+fi
+
+if [[ $WARNINGS -gt 0 ]]; then
+  echo "" >&2
+  printf "${YELLOW}⚠ %d warning(s) — review before pushing.${RESET}\n" "$WARNINGS" >&2
+  echo "" >&2
+fi
+
+exit 0
