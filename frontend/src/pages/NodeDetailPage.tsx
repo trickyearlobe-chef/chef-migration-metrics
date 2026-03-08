@@ -58,7 +58,7 @@ export function NodeDetailPage() {
         <InfoCard label="Platform Family" value={node.platform_family || "—"} />
         <InfoCard label="Policy" value={node.policy_name ? `${node.policy_name} / ${node.policy_group}` : "—"} />
         <InfoCard label="Last Collected" value={new Date(node.collected_at).toLocaleString()} />
-        <InfoCard label="Ohai Time" value={node.ohai_time ? new Date(node.ohai_time).toLocaleString() : "—"} />
+        <InfoCard label="Ohai Time" value={node.ohai_time ? new Date(Number(node.ohai_time) * 1000).toLocaleString() : "—"} />
       </div>
 
       {/* Run list */}
