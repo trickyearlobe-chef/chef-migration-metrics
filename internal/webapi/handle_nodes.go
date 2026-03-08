@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 )
 
 // handleNodes handles GET /api/v1/nodes — lists all node snapshots across
@@ -252,46 +253,20 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 
 // filterNodes applies optional query-parameter filters (environment, platform,
 // chef_version, policy_name, policy_group, stale) to the given slice,
-// returning only matching nodes.
+// returning only matching nodes. It delegates to the shared export.FilterNodes
+// implementation so that API handlers and export generators use identical
+// filtering logic.
 func filterNodes(req *http.Request, nodes []datastore.NodeSnapshot) []datastore.NodeSnapshot {
 	q := req.URL.Query()
-	env := q.Get("environment")
-	platform := q.Get("platform")
-	version := q.Get("chef_version")
-	policyName := q.Get("policy_name")
-	policyGroup := q.Get("policy_group")
-	stale := q.Get("stale")
-
-	if env == "" && platform == "" && version == "" && policyName == "" && policyGroup == "" && stale == "" {
-		return nodes
-	}
-
-	filtered := make([]datastore.NodeSnapshot, 0, len(nodes))
-	for _, n := range nodes {
-		if env != "" && n.ChefEnvironment != env {
-			continue
-		}
-		if platform != "" && n.Platform != platform {
-			continue
-		}
-		if version != "" && n.ChefVersion != version {
-			continue
-		}
-		if policyName != "" && n.PolicyName != policyName {
-			continue
-		}
-		if policyGroup != "" && n.PolicyGroup != policyGroup {
-			continue
-		}
-		if stale == "true" && !n.IsStale {
-			continue
-		}
-		if stale == "false" && n.IsStale {
-			continue
-		}
-		filtered = append(filtered, n)
-	}
-	return filtered
+	return export.FilterNodes(nodes, export.Filters{
+		Environment: q.Get("environment"),
+		Platform:    q.Get("platform"),
+		ChefVersion: q.Get("chef_version"),
+		PolicyName:  q.Get("policy_name"),
+		PolicyGroup: q.Get("policy_group"),
+		Role:        q.Get("role"),
+		Stale:       q.Get("stale"),
+	})
 }
 
 // nodeUsesCookbook checks whether a node snapshot's Cookbooks JSON contains

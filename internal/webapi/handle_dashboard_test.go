@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -295,7 +296,7 @@ func TestHandleDashboardCookbookCompatibility_MethodNotAllowed_ErrorStructure(t 
 // ---------------------------------------------------------------------------
 
 func TestDashboardRoutes_NotFallingThrough(t *testing.T) {
-	// All 5 dashboard endpoints should respond with 405 on POST (because
+	// All 7 dashboard endpoints should respond with 405 on POST (because
 	// they use requireGET), NOT with 404 from the frontend fallback or
 	// with 501 from handleNotImplemented — proving they are properly wired.
 	endpoints := []string{
@@ -303,6 +304,8 @@ func TestDashboardRoutes_NotFallingThrough(t *testing.T) {
 		"/api/v1/dashboard/version-distribution/trend",
 		"/api/v1/dashboard/readiness",
 		"/api/v1/dashboard/readiness/trend",
+		"/api/v1/dashboard/complexity/trend",
+		"/api/v1/dashboard/stale/trend",
 		"/api/v1/dashboard/cookbook-compatibility",
 	}
 
@@ -337,6 +340,8 @@ func TestDashboardRoutes_MethodNotAllowed_ContentType(t *testing.T) {
 		"/api/v1/dashboard/version-distribution/trend",
 		"/api/v1/dashboard/readiness",
 		"/api/v1/dashboard/readiness/trend",
+		"/api/v1/dashboard/complexity/trend",
+		"/api/v1/dashboard/stale/trend",
 		"/api/v1/dashboard/cookbook-compatibility",
 	}
 
@@ -366,6 +371,8 @@ func TestDashboardRoutes_MethodNotAllowed_ErrorStructure(t *testing.T) {
 		"/api/v1/dashboard/version-distribution/trend",
 		"/api/v1/dashboard/readiness",
 		"/api/v1/dashboard/readiness/trend",
+		"/api/v1/dashboard/complexity/trend",
+		"/api/v1/dashboard/stale/trend",
 		"/api/v1/dashboard/cookbook-compatibility",
 	}
 
@@ -444,6 +451,8 @@ func TestDashboardRoutes_HEAD_MethodNotAllowed(t *testing.T) {
 		"/api/v1/dashboard/version-distribution/trend",
 		"/api/v1/dashboard/readiness",
 		"/api/v1/dashboard/readiness/trend",
+		"/api/v1/dashboard/complexity/trend",
+		"/api/v1/dashboard/stale/trend",
 		"/api/v1/dashboard/cookbook-compatibility",
 	}
 
@@ -843,3 +852,1102 @@ func TestHandleDashboardReadinessTrend_DBError(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// handleDashboardComplexityTrend — method checks
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardComplexityTrend_MethodNotAllowed_POST(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dashboard/complexity/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /dashboard/complexity/trend status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleDashboardComplexityTrend_MethodNotAllowed_PUT(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/dashboard/complexity/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("PUT /dashboard/complexity/trend status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleDashboardComplexityTrend_MethodNotAllowed_DELETE(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/dashboard/complexity/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("DELETE /dashboard/complexity/trend status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardComplexityTrend — happy path
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardComplexityTrend_HappyPath(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.CookbookComplexity, error) {
+			return []datastore.CookbookComplexity{
+				{ID: "cc-1", CookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, ComplexityLabel: "low"},
+				{ID: "cc-2", CookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 45, ComplexityLabel: "high"},
+				{ID: "cc-3", CookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 80, ComplexityLabel: "critical"},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			OrganisationName  string  `json:"organisation_name"`
+			TargetChefVersion string  `json:"target_chef_version"`
+			TotalCookbooks    int     `json:"total_cookbooks"`
+			TotalScore        int     `json:"total_score"`
+			AverageScore      float64 `json:"average_score"`
+			LowCount          int     `json:"low_count"`
+			MediumCount       int     `json:"medium_count"`
+			HighCount         int     `json:"high_count"`
+			CriticalCount     int     `json:"critical_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	pt := body.Data[0]
+	if pt.OrganisationName != "prod" {
+		t.Errorf("organisation_name = %q, want %q", pt.OrganisationName, "prod")
+	}
+	if pt.TotalCookbooks != 3 {
+		t.Errorf("total_cookbooks = %d, want 3", pt.TotalCookbooks)
+	}
+	if pt.TotalScore != 135 {
+		t.Errorf("total_score = %d, want 135", pt.TotalScore)
+	}
+	if pt.AverageScore != 45.0 {
+		t.Errorf("average_score = %f, want 45.0", pt.AverageScore)
+	}
+	if pt.LowCount != 1 {
+		t.Errorf("low_count = %d, want 1", pt.LowCount)
+	}
+	if pt.HighCount != 1 {
+		t.Errorf("high_count = %d, want 1", pt.HighCount)
+	}
+	if pt.CriticalCount != 1 {
+		t.Errorf("critical_count = %d, want 1", pt.CriticalCount)
+	}
+}
+
+func TestHandleDashboardComplexityTrend_HappyPath_Empty(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.CookbookComplexity, error) {
+			return nil, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0", len(body.Data))
+	}
+}
+
+func TestHandleDashboardComplexityTrend_DBError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, errors.New("timeout")
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod"},
+				{ID: "org-2", Name: "staging"},
+			}, nil
+		},
+		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.CookbookComplexity, error) {
+			if orgID == "org-1" {
+				return []datastore.CookbookComplexity{
+					{ID: "cc-1", CookbookID: "cb-1", TargetChefVersion: "17.0.0", ComplexityScore: 20, ComplexityLabel: "medium"},
+					{ID: "cc-2", CookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 5, ComplexityLabel: "low"},
+				}, nil
+			}
+			return []datastore.CookbookComplexity{
+				{ID: "cc-3", CookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 60, ComplexityLabel: "critical"},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"17.0.0", "18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			OrganisationName  string `json:"organisation_name"`
+			TargetChefVersion string `json:"target_chef_version"`
+			TotalCookbooks    int    `json:"total_cookbooks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// prod has 17.0.0 (1 cb) and 18.0.0 (1 cb); staging has 18.0.0 (1 cb) → 3 points
+	if len(body.Data) != 3 {
+		t.Fatalf("len(data) = %d, want 3", len(body.Data))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardStaleTrend — method checks
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardStaleTrend_MethodNotAllowed_POST(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /dashboard/stale/trend status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleDashboardStaleTrend_MethodNotAllowed_PUT(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("PUT /dashboard/stale/trend status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleDashboardStaleTrend_MethodNotAllowed_DELETE(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("DELETE /dashboard/stale/trend status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardStaleTrend — happy path
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
+			return []datastore.CollectionRun{
+				{ID: "run-1", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
+			}, nil
+		},
+		ListNodeSnapshotsByCollectionRunFn: func(ctx context.Context, runID string) ([]datastore.NodeSnapshot, error) {
+			return []datastore.NodeSnapshot{
+				{ID: "n1", IsStale: false},
+				{ID: "n2", IsStale: true},
+				{ID: "n3", IsStale: true},
+				{ID: "n4", IsStale: false},
+				{ID: "n5", IsStale: true},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			OrganisationName string `json:"organisation_name"`
+			CollectionRunID  string `json:"collection_run_id"`
+			CompletedAt      string `json:"completed_at"`
+			TotalNodes       int    `json:"total_nodes"`
+			StaleNodes       int    `json:"stale_nodes"`
+			FreshNodes       int    `json:"fresh_nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	pt := body.Data[0]
+	if pt.OrganisationName != "prod" {
+		t.Errorf("organisation_name = %q, want %q", pt.OrganisationName, "prod")
+	}
+	if pt.CollectionRunID != "run-1" {
+		t.Errorf("collection_run_id = %q, want %q", pt.CollectionRunID, "run-1")
+	}
+	if pt.TotalNodes != 5 {
+		t.Errorf("total_nodes = %d, want 5", pt.TotalNodes)
+	}
+	if pt.StaleNodes != 3 {
+		t.Errorf("stale_nodes = %d, want 3", pt.StaleNodes)
+	}
+	if pt.FreshNodes != 2 {
+		t.Errorf("fresh_nodes = %d, want 2", pt.FreshNodes)
+	}
+	if pt.CompletedAt != "2025-06-15T12:00:00Z" {
+		t.Errorf("completed_at = %q, want %q", pt.CompletedAt, "2025-06-15T12:00:00Z")
+	}
+}
+
+func TestHandleDashboardStaleTrend_HappyPath_Empty(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
+			return nil, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0", len(body.Data))
+	}
+}
+
+func TestHandleDashboardStaleTrend_SkipsNonCompletedRuns(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
+			return []datastore.CollectionRun{
+				{ID: "run-1", OrganisationID: "org-1", Status: "running"},
+				{ID: "run-2", OrganisationID: "org-1", Status: "failed"},
+				{ID: "run-3", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
+			}, nil
+		},
+		ListNodeSnapshotsByCollectionRunFn: func(ctx context.Context, runID string) ([]datastore.NodeSnapshot, error) {
+			return []datastore.NodeSnapshot{
+				{ID: "n1", IsStale: true},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			CollectionRunID string `json:"collection_run_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// Only run-3 is completed
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	if body.Data[0].CollectionRunID != "run-3" {
+		t.Errorf("collection_run_id = %q, want %q", body.Data[0].CollectionRunID, "run-3")
+	}
+}
+
+func TestHandleDashboardStaleTrend_DBError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, errors.New("timeout")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleDashboardStaleTrend_MultipleRuns(t *testing.T) {
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
+			return []datastore.CollectionRun{
+				{ID: "run-1", OrganisationID: "org-1", Status: "completed", CompletedAt: t1},
+				{ID: "run-2", OrganisationID: "org-1", Status: "completed", CompletedAt: t2},
+			}, nil
+		},
+		ListNodeSnapshotsByCollectionRunFn: func(ctx context.Context, runID string) ([]datastore.NodeSnapshot, error) {
+			if runID == "run-1" {
+				return []datastore.NodeSnapshot{
+					{ID: "n1", IsStale: true},
+					{ID: "n2", IsStale: true},
+				}, nil
+			}
+			return []datastore.NodeSnapshot{
+				{ID: "n3", IsStale: false},
+				{ID: "n4", IsStale: true},
+				{ID: "n5", IsStale: false},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			CollectionRunID string `json:"collection_run_id"`
+			TotalNodes      int    `json:"total_nodes"`
+			StaleNodes      int    `json:"stale_nodes"`
+			FreshNodes      int    `json:"fresh_nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+	// run-1: 2 nodes, 2 stale
+	if body.Data[0].TotalNodes != 2 || body.Data[0].StaleNodes != 2 || body.Data[0].FreshNodes != 0 {
+		t.Errorf("run-1: total=%d stale=%d fresh=%d, want 2/2/0",
+			body.Data[0].TotalNodes, body.Data[0].StaleNodes, body.Data[0].FreshNodes)
+	}
+	// run-2: 3 nodes, 1 stale, 2 fresh
+	if body.Data[1].TotalNodes != 3 || body.Data[1].StaleNodes != 1 || body.Data[1].FreshNodes != 2 {
+		t.Errorf("run-2: total=%d stale=%d fresh=%d, want 3/1/2",
+			body.Data[1].TotalNodes, body.Data[1].StaleNodes, body.Data[1].FreshNodes)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardCookbookDownloadStatus — method checks
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardCookbookDownloadStatus_MethodNotAllowed_POST(t *testing.T) {
+	r := testRouter()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_MethodNotAllowed_PUT(t *testing.T) {
+	r := testRouter()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_MethodNotAllowed_DELETE(t *testing.T) {
+	r := testRouter()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_MethodNotAllowed_ContentType(t *testing.T) {
+	r := testRouter()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+	ct := rr.Header().Get("Content-Type")
+	if ct != "application/json; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want application/json; charset=utf-8", ct)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_MethodNotAllowed_ErrorStructure(t *testing.T) {
+	r := testRouter()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+	var body struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Error != "method_not_allowed" {
+		t.Errorf("error = %q, want method_not_allowed", body.Error)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardCookbookDownloadStatus — happy paths
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardCookbookDownloadStatus_HappyPath_NoCookbooks(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "test-org"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return nil, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks  int    `json:"total_cookbooks"`
+		HasFailures     bool   `json:"has_failures"`
+		FailureMessage  string `json:"failure_message"`
+		FailedCookbooks []struct {
+			Name string `json:"name"`
+		} `json:"failed_cookbooks"`
+		FailedCookbookCount int `json:"failed_cookbook_count"`
+		StatusCounts        struct {
+			OK      int `json:"ok"`
+			Failed  int `json:"failed"`
+			Pending int `json:"pending"`
+		} `json:"status_counts"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.TotalCookbooks != 0 {
+		t.Errorf("total_cookbooks = %d, want 0", body.TotalCookbooks)
+	}
+	if body.HasFailures {
+		t.Error("has_failures = true, want false")
+	}
+	if body.FailedCookbookCount != 0 {
+		t.Errorf("failed_cookbook_count = %d, want 0", body.FailedCookbookCount)
+	}
+	if len(body.FailedCookbooks) != 0 {
+		t.Errorf("failed_cookbooks length = %d, want 0", len(body.FailedCookbooks))
+	}
+	if body.StatusCounts.OK != 0 || body.StatusCounts.Failed != 0 || body.StatusCounts.Pending != 0 {
+		t.Errorf("status_counts = {ok:%d, failed:%d, pending:%d}, want all zeros",
+			body.StatusCounts.OK, body.StatusCounts.Failed, body.StatusCounts.Pending)
+	}
+	if body.FailureMessage != "All cookbook versions downloaded successfully." {
+		t.Errorf("failure_message = %q, want success message", body.FailureMessage)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_HappyPath_MixedStatuses(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod-org"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok", IsActive: true},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "apache2", Version: "5.1.0", Source: "chef_server", DownloadStatus: "ok", IsActive: true},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
+				{ID: "cb-4", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", Source: "chef_server", DownloadStatus: "pending", IsActive: false},
+				{ID: "cb-5", OrganisationID: "org-1", Name: "java", Version: "2.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "connection timeout", IsActive: false},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks  int    `json:"total_cookbooks"`
+		HasFailures     bool   `json:"has_failures"`
+		FailureMessage  string `json:"failure_message"`
+		FailedCookbooks []struct {
+			ID             string `json:"id"`
+			OrganisationID string `json:"organisation_id"`
+			OrgName        string `json:"organisation_name"`
+			Name           string `json:"name"`
+			Version        string `json:"version"`
+			DownloadError  string `json:"download_error"`
+			IsActive       bool   `json:"is_active"`
+		} `json:"failed_cookbooks"`
+		FailedCookbookCount int `json:"failed_cookbook_count"`
+		StatusCounts        struct {
+			OK      int `json:"ok"`
+			Failed  int `json:"failed"`
+			Pending int `json:"pending"`
+		} `json:"status_counts"`
+		StatusPercentages struct {
+			OKPercent      float64 `json:"ok_percent"`
+			FailedPercent  float64 `json:"failed_percent"`
+			PendingPercent float64 `json:"pending_percent"`
+		} `json:"status_percentages"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.TotalCookbooks != 5 {
+		t.Errorf("total_cookbooks = %d, want 5", body.TotalCookbooks)
+	}
+	if body.StatusCounts.OK != 2 {
+		t.Errorf("status_counts.ok = %d, want 2", body.StatusCounts.OK)
+	}
+	if body.StatusCounts.Failed != 2 {
+		t.Errorf("status_counts.failed = %d, want 2", body.StatusCounts.Failed)
+	}
+	if body.StatusCounts.Pending != 1 {
+		t.Errorf("status_counts.pending = %d, want 1", body.StatusCounts.Pending)
+	}
+	if !body.HasFailures {
+		t.Error("has_failures = false, want true")
+	}
+	if body.FailedCookbookCount != 2 {
+		t.Errorf("failed_cookbook_count = %d, want 2", body.FailedCookbookCount)
+	}
+
+	// Failed cookbooks are sorted: active first, then by name.
+	if len(body.FailedCookbooks) != 2 {
+		t.Fatalf("failed_cookbooks length = %d, want 2", len(body.FailedCookbooks))
+	}
+
+	// First failure should be the active cookbook (nginx).
+	if body.FailedCookbooks[0].Name != "nginx" {
+		t.Errorf("failed_cookbooks[0].name = %q, want nginx", body.FailedCookbooks[0].Name)
+	}
+	if !body.FailedCookbooks[0].IsActive {
+		t.Error("failed_cookbooks[0].is_active = false, want true")
+	}
+	if body.FailedCookbooks[0].DownloadError != "HTTP 403: Forbidden" {
+		t.Errorf("failed_cookbooks[0].download_error = %q, want 'HTTP 403: Forbidden'", body.FailedCookbooks[0].DownloadError)
+	}
+	if body.FailedCookbooks[0].OrgName != "prod-org" {
+		t.Errorf("failed_cookbooks[0].organisation_name = %q, want prod-org", body.FailedCookbooks[0].OrgName)
+	}
+
+	// Second failure should be the inactive cookbook (java).
+	if body.FailedCookbooks[1].Name != "java" {
+		t.Errorf("failed_cookbooks[1].name = %q, want java", body.FailedCookbooks[1].Name)
+	}
+	if body.FailedCookbooks[1].IsActive {
+		t.Error("failed_cookbooks[1].is_active = true, want false")
+	}
+	if body.FailedCookbooks[1].DownloadError != "connection timeout" {
+		t.Errorf("failed_cookbooks[1].download_error = %q, want 'connection timeout'", body.FailedCookbooks[1].DownloadError)
+	}
+
+	// Check percentages.
+	expectedOKPct := float64(2) / float64(5) * 100
+	if body.StatusPercentages.OKPercent != expectedOKPct {
+		t.Errorf("ok_percent = %f, want %f", body.StatusPercentages.OKPercent, expectedOKPct)
+	}
+	expectedFailedPct := float64(2) / float64(5) * 100
+	if body.StatusPercentages.FailedPercent != expectedFailedPct {
+		t.Errorf("failed_percent = %f, want %f", body.StatusPercentages.FailedPercent, expectedFailedPct)
+	}
+
+	// Check failure message.
+	expected := fmt.Sprintf(
+		"%d cookbook version(s) failed to download. These versions are excluded from compatibility analysis. "+
+			"They will be retried on the next collection run.", 2)
+	if body.FailureMessage != expected {
+		t.Errorf("failure_message = %q, want %q", body.FailureMessage, expected)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_IgnoresGitCookbooks(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "test-org"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "my-cookbook", Version: "", Source: "git", DownloadStatus: ""},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks int `json:"total_cookbooks"`
+		StatusCounts   struct {
+			OK int `json:"ok"`
+		} `json:"status_counts"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Only the chef_server cookbook should be counted.
+	if body.TotalCookbooks != 1 {
+		t.Errorf("total_cookbooks = %d, want 1 (git cookbook should be excluded)", body.TotalCookbooks)
+	}
+	if body.StatusCounts.OK != 1 {
+		t.Errorf("status_counts.ok = %d, want 1", body.StatusCounts.OK)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_AllOK(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "test-org"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server", DownloadStatus: "ok"},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", Source: "chef_server", DownloadStatus: "ok"},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks      int        `json:"total_cookbooks"`
+		HasFailures         bool       `json:"has_failures"`
+		FailedCookbookCount int        `json:"failed_cookbook_count"`
+		FailedCookbooks     []struct{} `json:"failed_cookbooks"`
+		FailureMessage      string     `json:"failure_message"`
+		StatusCounts        struct {
+			OK      int `json:"ok"`
+			Failed  int `json:"failed"`
+			Pending int `json:"pending"`
+		} `json:"status_counts"`
+		StatusPercentages struct {
+			OKPercent float64 `json:"ok_percent"`
+		} `json:"status_percentages"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.TotalCookbooks != 3 {
+		t.Errorf("total_cookbooks = %d, want 3", body.TotalCookbooks)
+	}
+	if body.HasFailures {
+		t.Error("has_failures = true, want false")
+	}
+	if body.FailedCookbookCount != 0 {
+		t.Errorf("failed_cookbook_count = %d, want 0", body.FailedCookbookCount)
+	}
+	if len(body.FailedCookbooks) != 0 {
+		t.Errorf("failed_cookbooks length = %d, want 0", len(body.FailedCookbooks))
+	}
+	if body.StatusCounts.OK != 3 {
+		t.Errorf("status_counts.ok = %d, want 3", body.StatusCounts.OK)
+	}
+	if body.StatusCounts.Failed != 0 {
+		t.Errorf("status_counts.failed = %d, want 0", body.StatusCounts.Failed)
+	}
+	if body.StatusPercentages.OKPercent != 100 {
+		t.Errorf("ok_percent = %f, want 100", body.StatusPercentages.OKPercent)
+	}
+	if body.FailureMessage != "All cookbook versions downloaded successfully." {
+		t.Errorf("failure_message = %q, want success message", body.FailureMessage)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_MultipleOrgs(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod"},
+				{ID: "org-2", Name: "staging"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			if organisationID == "org-1" {
+				return []datastore.Cookbook{
+					{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
+					{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "404 Not Found", IsActive: true},
+				}, nil
+			}
+			return []datastore.Cookbook{
+				{ID: "cb-3", OrganisationID: "org-2", Name: "mysql", Version: "8.0.0", Source: "chef_server", DownloadStatus: "ok"},
+				{ID: "cb-4", OrganisationID: "org-2", Name: "redis", Version: "1.0.0", Source: "chef_server", DownloadStatus: "pending"},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks      int `json:"total_cookbooks"`
+		FailedCookbookCount int `json:"failed_cookbook_count"`
+		StatusCounts        struct {
+			OK      int `json:"ok"`
+			Failed  int `json:"failed"`
+			Pending int `json:"pending"`
+		} `json:"status_counts"`
+		FailedCookbooks []struct {
+			Name    string `json:"name"`
+			OrgName string `json:"organisation_name"`
+		} `json:"failed_cookbooks"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.TotalCookbooks != 4 {
+		t.Errorf("total_cookbooks = %d, want 4", body.TotalCookbooks)
+	}
+	if body.StatusCounts.OK != 2 {
+		t.Errorf("status_counts.ok = %d, want 2", body.StatusCounts.OK)
+	}
+	if body.StatusCounts.Failed != 1 {
+		t.Errorf("status_counts.failed = %d, want 1", body.StatusCounts.Failed)
+	}
+	if body.StatusCounts.Pending != 1 {
+		t.Errorf("status_counts.pending = %d, want 1", body.StatusCounts.Pending)
+	}
+	if body.FailedCookbookCount != 1 {
+		t.Errorf("failed_cookbook_count = %d, want 1", body.FailedCookbookCount)
+	}
+	if len(body.FailedCookbooks) != 1 {
+		t.Fatalf("failed_cookbooks length = %d, want 1", len(body.FailedCookbooks))
+	}
+	if body.FailedCookbooks[0].Name != "nginx" {
+		t.Errorf("failed_cookbooks[0].name = %q, want nginx", body.FailedCookbooks[0].Name)
+	}
+	if body.FailedCookbooks[0].OrgName != "prod" {
+		t.Errorf("failed_cookbooks[0].organisation_name = %q, want prod", body.FailedCookbooks[0].OrgName)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_DBError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, errors.New("connection refused")
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_CookbookListError_NonFatal(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "org1"},
+				{ID: "org-2", Name: "org2"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			if organisationID == "org-1" {
+				return nil, errors.New("timeout")
+			}
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-2", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	// Should still succeed — org-1 error is non-fatal.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks int `json:"total_cookbooks"`
+		StatusCounts   struct {
+			OK int `json:"ok"`
+		} `json:"status_counts"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Only org-2 cookbooks counted.
+	if body.TotalCookbooks != 1 {
+		t.Errorf("total_cookbooks = %d, want 1", body.TotalCookbooks)
+	}
+	if body.StatusCounts.OK != 1 {
+		t.Errorf("status_counts.ok = %d, want 1", body.StatusCounts.OK)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_EmptyDownloadStatusTreatedAsPending(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "test-org"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "legacy", Version: "1.0.0", Source: "chef_server", DownloadStatus: ""},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks int `json:"total_cookbooks"`
+		StatusCounts   struct {
+			OK      int `json:"ok"`
+			Failed  int `json:"failed"`
+			Pending int `json:"pending"`
+		} `json:"status_counts"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.TotalCookbooks != 1 {
+		t.Errorf("total_cookbooks = %d, want 1", body.TotalCookbooks)
+	}
+	if body.StatusCounts.Pending != 1 {
+		t.Errorf("status_counts.pending = %d, want 1 (empty status should be treated as pending)", body.StatusCounts.Pending)
+	}
+	if body.StatusCounts.OK != 0 {
+		t.Errorf("status_counts.ok = %d, want 0", body.StatusCounts.OK)
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_FailedSortedActiveFirst(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "test-org"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "zebra", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err1", IsActive: false},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "alpha", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err2", IsActive: true},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "beta", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err3", IsActive: true},
+				{ID: "cb-4", OrganisationID: "org-1", Name: "delta", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err4", IsActive: false},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		FailedCookbooks []struct {
+			Name     string `json:"name"`
+			IsActive bool   `json:"is_active"`
+		} `json:"failed_cookbooks"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(body.FailedCookbooks) != 4 {
+		t.Fatalf("failed_cookbooks length = %d, want 4", len(body.FailedCookbooks))
+	}
+
+	// Active cookbooks first, sorted alphabetically.
+	expectedOrder := []struct {
+		name   string
+		active bool
+	}{
+		{"alpha", true},
+		{"beta", true},
+		{"delta", false},
+		{"zebra", false},
+	}
+
+	for i, exp := range expectedOrder {
+		if body.FailedCookbooks[i].Name != exp.name {
+			t.Errorf("failed_cookbooks[%d].name = %q, want %q", i, body.FailedCookbooks[i].Name, exp.name)
+		}
+		if body.FailedCookbooks[i].IsActive != exp.active {
+			t.Errorf("failed_cookbooks[%d].is_active = %v, want %v", i, body.FailedCookbooks[i].IsActive, exp.active)
+		}
+	}
+}
+
+func TestHandleDashboardCookbookDownloadStatus_NoOrgs(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-download-status", nil)
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		TotalCookbooks int  `json:"total_cookbooks"`
+		HasFailures    bool `json:"has_failures"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.TotalCookbooks != 0 {
+		t.Errorf("total_cookbooks = %d, want 0", body.TotalCookbooks)
+	}
+	if body.HasFailures {
+		t.Error("has_failures = true, want false")
+	}
+}
+
+// Ensure the _ = fmt.Sprintf is used (keeps the import alive).
+var _ = fmt.Sprintf

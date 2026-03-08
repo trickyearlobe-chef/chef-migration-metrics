@@ -172,6 +172,297 @@ func (c *Collector) IsRunning() bool {
 	return c.running
 }
 
+// ResumeResult summarises the outcome of evaluating interrupted runs on
+// startup.
+type ResumeResult struct {
+	// Evaluated is the number of interrupted runs that were inspected.
+	Evaluated int
+
+	// Resumed is the number of runs that were resumed (still fresh enough).
+	Resumed int
+
+	// Abandoned is the number of runs that were too old and marked as failed.
+	Abandoned int
+
+	// Errors contains per-run errors keyed by collection run ID.
+	Errors map[string]error
+
+	// ResumedRunResult holds the RunResult from the resumed collection, if
+	// any run was actually resumed and executed. Nil if no runs were resumed
+	// or if the resume itself failed.
+	ResumedRunResult *RunResult
+}
+
+// ResumeInterruptedRuns evaluates interrupted collection runs from a previous
+// process and either resumes or abandons them according to the specification:
+//
+//   - If the run's started_at is within the last two collection intervals,
+//     the run is considered fresh enough to resume. The collector re-runs
+//     collection for organisations that were NOT already completed since
+//     the interrupted run started.
+//   - If the run is older than two collection intervals, it is marked as
+//     "failed" with an error message and the next scheduled run starts fresh.
+//
+// This method should be called once during application startup, after
+// migrations have been applied and stale "running" runs have been marked
+// as "interrupted".
+func (c *Collector) ResumeInterruptedRuns(ctx context.Context) (*ResumeResult, error) {
+	log := c.logger.WithScope(logging.ScopeCollectionRun)
+
+	result := &ResumeResult{
+		Errors: make(map[string]error),
+	}
+
+	// Fetch all interrupted runs.
+	interrupted, err := c.db.GetInterruptedCollectionRuns(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("collector: listing interrupted runs: %w", err)
+	}
+
+	if len(interrupted) == 0 {
+		log.Debug("no interrupted collection runs to evaluate")
+		return result, nil
+	}
+
+	result.Evaluated = len(interrupted)
+	log.Info(fmt.Sprintf("evaluating %d interrupted collection run(s) for possible resume", len(interrupted)))
+
+	// Compute the freshness cutoff: two collection intervals from now.
+	// Parse the cron schedule to determine the interval.
+	collectionInterval := c.estimateCollectionInterval()
+	freshnessCutoff := time.Now().Add(-2 * collectionInterval)
+
+	// Track which organisations need collection (those without a completed
+	// run since the interrupted run started).
+	orgsNeedingCollection := make(map[string]datastore.Organisation)
+
+	// Load all organisations once.
+	allOrgs, err := c.db.ListOrganisations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("collector: listing organisations for resume: %w", err)
+	}
+	orgByID := make(map[string]datastore.Organisation, len(allOrgs))
+	for _, org := range allOrgs {
+		orgByID[org.ID] = org
+	}
+
+	for _, run := range interrupted {
+		runLog := log
+
+		// Check freshness.
+		if run.StartedAt.Before(freshnessCutoff) {
+			// Too old — abandon.
+			reason := fmt.Sprintf("abandoned: interrupted run started at %s is older than two collection intervals (%s)",
+				run.StartedAt.Format(time.RFC3339), collectionInterval)
+			if _, abandonErr := c.db.AbandonCollectionRun(ctx, run.ID, reason); abandonErr != nil {
+				result.Errors[run.ID] = abandonErr
+				runLog.Warn(fmt.Sprintf("failed to abandon stale interrupted run %s: %v", run.ID, abandonErr))
+			} else {
+				result.Abandoned++
+				runLog.Info(fmt.Sprintf("abandoned stale interrupted run %s (started %s, cutoff %s)",
+					run.ID, run.StartedAt.Format(time.RFC3339), freshnessCutoff.Format(time.RFC3339)))
+			}
+			continue
+		}
+
+		// Fresh enough to resume. Determine which organisation this run
+		// belongs to and whether it has already been completed by a
+		// subsequent run.
+		org, orgExists := orgByID[run.OrganisationID]
+		if !orgExists {
+			// Organisation was deleted since the run started — abandon.
+			reason := "abandoned: organisation no longer exists"
+			if _, abandonErr := c.db.AbandonCollectionRun(ctx, run.ID, reason); abandonErr != nil {
+				result.Errors[run.ID] = abandonErr
+			} else {
+				result.Abandoned++
+			}
+			runLog.Info(fmt.Sprintf("abandoned interrupted run %s — organisation %s no longer exists",
+				run.ID, run.OrganisationID))
+			continue
+		}
+
+		// Check if this organisation already has a completed run since the
+		// interrupted run started.
+		completedRuns, cErr := c.db.ListCompletedRunsForOrganisation(ctx, run.OrganisationID, run.StartedAt)
+		if cErr != nil {
+			result.Errors[run.ID] = cErr
+			runLog.Warn(fmt.Sprintf("failed to check completed runs for org %s: %v", org.Name, cErr))
+			continue
+		}
+
+		if len(completedRuns) > 0 {
+			// A newer completed run exists — this interrupted run's data is
+			// superseded. Abandon it.
+			reason := fmt.Sprintf("abandoned: organisation %s already has a completed run (%s) since this run started",
+				org.Name, completedRuns[0].ID)
+			if _, abandonErr := c.db.AbandonCollectionRun(ctx, run.ID, reason); abandonErr != nil {
+				result.Errors[run.ID] = abandonErr
+			} else {
+				result.Abandoned++
+			}
+			runLog.Info(fmt.Sprintf("abandoned interrupted run %s for org %s — superseded by completed run %s",
+				run.ID, org.Name, completedRuns[0].ID))
+			continue
+		}
+
+		// This organisation needs re-collection. Mark the interrupted run
+		// as abandoned (we'll create a fresh run for the organisation) and
+		// queue the org for collection.
+		reason := fmt.Sprintf("abandoned: will be re-collected as part of resume (checkpoint_start=%d)",
+			run.CheckpointStart)
+		if _, abandonErr := c.db.AbandonCollectionRun(ctx, run.ID, reason); abandonErr != nil {
+			result.Errors[run.ID] = abandonErr
+			runLog.Warn(fmt.Sprintf("failed to abandon interrupted run %s for re-collection: %v", run.ID, abandonErr))
+			continue
+		}
+
+		orgsNeedingCollection[org.ID] = org
+		result.Resumed++
+		runLog.Info(fmt.Sprintf("will resume collection for org %s (interrupted run %s)",
+			org.Name, run.ID))
+	}
+
+	// If any organisations need re-collection, run a targeted collection
+	// for just those orgs.
+	if len(orgsNeedingCollection) > 0 {
+		log.Info(fmt.Sprintf("resuming collection for %d organisation(s)", len(orgsNeedingCollection)))
+		runResult, runErr := c.runForOrganisations(ctx, orgsNeedingCollection)
+		result.ResumedRunResult = runResult
+		if runErr != nil {
+			log.Error(fmt.Sprintf("resumed collection failed: %v", runErr))
+			return result, runErr
+		}
+		log.Info(fmt.Sprintf("resumed collection completed: %d/%d orgs succeeded, %d nodes",
+			runResult.SucceededOrgs, runResult.TotalOrgs, runResult.TotalNodes))
+	}
+
+	return result, nil
+}
+
+// estimateCollectionInterval parses the configured cron schedule and returns
+// an approximate interval between runs. This is used to determine the
+// freshness cutoff for interrupted run evaluation. Falls back to 1 hour if
+// the schedule cannot be parsed.
+func (c *Collector) estimateCollectionInterval() time.Duration {
+	sched, err := ParseSchedule(c.cfg.Collection.Schedule)
+	if err != nil {
+		return 1 * time.Hour // safe default
+	}
+
+	now := time.Now()
+	next1 := sched.Next(now)
+	if next1.IsZero() {
+		return 1 * time.Hour
+	}
+	next2 := sched.Next(next1)
+	if next2.IsZero() {
+		return 1 * time.Hour
+	}
+
+	interval := next2.Sub(next1)
+	if interval <= 0 {
+		return 1 * time.Hour
+	}
+	return interval
+}
+
+// runForOrganisations executes a collection run for a specific subset of
+// organisations. This is used by ResumeInterruptedRuns to re-collect only
+// the organisations that were interrupted.
+func (c *Collector) runForOrganisations(ctx context.Context, orgs map[string]datastore.Organisation) (*RunResult, error) {
+	if !c.tryStartRun() {
+		return nil, fmt.Errorf("collector: a collection run is already in progress")
+	}
+	defer c.finishRun()
+
+	start := time.Now()
+	log := c.logger.WithScope(logging.ScopeCollectionRun)
+
+	orgList := make([]datastore.Organisation, 0, len(orgs))
+	for _, org := range orgs {
+		orgList = append(orgList, org)
+	}
+
+	log.Info(fmt.Sprintf("starting resumed collection run for %d organisation(s)", len(orgList)))
+
+	result := &RunResult{
+		TotalOrgs: len(orgList),
+		Errors:    make(map[string]error, len(orgList)),
+	}
+
+	// Collect organisations in parallel, bounded by the configured
+	// concurrency limit.
+	concurrency := c.cfg.Concurrency.OrganisationCollection
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
+	type orgResult struct {
+		OrgName   string
+		Nodes     int
+		Cookbooks int
+		Err       error
+	}
+
+	resultsCh := make(chan orgResult, len(orgList))
+	sem := make(chan struct{}, concurrency)
+
+	var wg sync.WaitGroup
+	for _, org := range orgList {
+		wg.Add(1)
+		go func(org datastore.Organisation) {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				resultsCh <- orgResult{OrgName: org.Name, Err: ctx.Err()}
+				return
+			}
+
+			nodes, cookbooks, orgErr := c.collectOrganisation(ctx, org)
+			resultsCh <- orgResult{
+				OrgName:   org.Name,
+				Nodes:     nodes,
+				Cookbooks: cookbooks,
+				Err:       orgErr,
+			}
+		}(org)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultsCh)
+	}()
+
+	for or := range resultsCh {
+		if or.Err != nil {
+			result.FailedOrgs++
+			result.Errors[or.OrgName] = or.Err
+			log.Error(fmt.Sprintf("organisation %q: resumed collection failed: %v", or.OrgName, or.Err))
+		} else {
+			result.SucceededOrgs++
+			result.TotalNodes += or.Nodes
+			result.TotalCookbooks += or.Cookbooks
+			log.Info(fmt.Sprintf("organisation %q: resumed collection completed — %d nodes, %d cookbook versions",
+				or.OrgName, or.Nodes, or.Cookbooks))
+		}
+	}
+
+	result.Duration = time.Since(start)
+
+	log.Info(fmt.Sprintf(
+		"resumed collection run complete in %s: %d/%d orgs succeeded, %d nodes, %d cookbook versions",
+		result.Duration.Round(time.Millisecond),
+		result.SucceededOrgs, result.TotalOrgs,
+		result.TotalNodes, result.TotalCookbooks,
+	))
+
+	return result, nil
+}
+
 // RunResult summarises the outcome of a collection run.
 type RunResult struct {
 	// TotalOrgs is the number of organisations that were processed.

@@ -22,6 +22,8 @@ import (
 //   - organisation: filter by organisation name (optional, repeatable)
 //   - target_chef_version: filter by target Chef version (optional; defaults
 //     to first configured target version)
+//   - complexity_label: filter by complexity label — "low", "medium",
+//     "high", "critical" (optional; omit to include all)
 //   - sort: field to sort by — "priority_score", "complexity_score",
 //     "affected_nodes", "name" (default: "priority_score")
 //   - order: "asc" or "desc" (default: "desc")
@@ -31,6 +33,9 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 	}
 
 	ctx := req.Context()
+
+	// Optional complexity label filter.
+	complexityLabel := queryString(req, "complexity_label", "")
 
 	// Resolve target Chef version — default to the first configured one.
 	targetVersion := queryString(req, "target_chef_version", "")
@@ -120,6 +125,17 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 				TargetChefVersion:    cc.TargetChefVersion,
 			})
 		}
+	}
+
+	// Filter by complexity label if specified.
+	if complexityLabel != "" {
+		filtered := items[:0]
+		for _, item := range items {
+			if item.ComplexityLabel == complexityLabel {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
 	}
 
 	// Sort by the requested field. Default to descending for numeric fields

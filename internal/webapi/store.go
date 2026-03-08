@@ -5,6 +5,7 @@ package webapi
 
 import (
 	"context"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
@@ -104,6 +105,14 @@ type DataStore interface {
 	// given cookbook ID, ordered by target_chef_version.
 	ListCookstyleResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.CookstyleResult, error)
 
+	// GetCookstyleResult returns the cookstyle result for the given cookbook
+	// ID and target Chef version. Returns (nil, nil) if no result exists.
+	GetCookstyleResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
+
+	// GetAutocorrectPreview returns the autocorrect preview for the given
+	// cookstyle result ID. Returns (nil, nil) if no preview exists.
+	GetAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error)
+
 	// GetLatestTestKitchenResult returns the most recent test kitchen result
 	// for the given cookbook ID and target Chef version. Returns (nil, nil)
 	// if no result exists.
@@ -140,6 +149,31 @@ type DataStore interface {
 	// CountRolesPerCookbook returns the number of distinct roles that depend
 	// on each cookbook within the given organisation.
 	CountRolesPerCookbook(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
+
+	// -----------------------------------------------------------------
+	// Export jobs
+	// -----------------------------------------------------------------
+
+	// InsertExportJob creates a new export job in pending status and returns it.
+	InsertExportJob(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error)
+
+	// GetExportJob returns a single export job by its primary key UUID.
+	// Returns datastore.ErrNotFound if no such job exists.
+	GetExportJob(ctx context.Context, id string) (*datastore.ExportJob, error)
+
+	// UpdateExportJobStatus updates a job's status and associated result fields.
+	UpdateExportJobStatus(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error
+
+	// UpdateExportJobExpired marks a completed export job as expired.
+	UpdateExportJobExpired(ctx context.Context, id string) error
+
+	// ListExportJobsByStatus returns all export jobs with the given status,
+	// ordered by requested_at descending.
+	ListExportJobsByStatus(ctx context.Context, status string) ([]datastore.ExportJob, error)
+
+	// ListExpiredExportJobs returns completed export jobs whose expires_at
+	// is before the given time.
+	ListExpiredExportJobs(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

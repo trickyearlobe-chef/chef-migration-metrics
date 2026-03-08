@@ -1061,3 +1061,249 @@ func TestResolveOrganisationFilter_WithFilter_ReturnsMatch(t *testing.T) {
 		t.Error("did not expect staging in filtered orgs")
 	}
 }
+
+func TestHandleRemediationPriority_ComplexityLabelFilter(t *testing.T) {
+	now := time.Now()
+
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server"},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", Source: "chef_server"},
+			}, nil
+		},
+		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+			return []datastore.CookbookComplexity{
+				{
+					ID:                   "cc-1",
+					CookbookID:           "cb-1",
+					TargetChefVersion:    "18.0.0",
+					ComplexityScore:      42,
+					ComplexityLabel:      "high",
+					AffectedNodeCount:    10,
+					AutoCorrectableCount: 5,
+					ManualFixCount:       2,
+					DeprecationCount:     4,
+					ErrorCount:           1,
+					EvaluatedAt:          now,
+				},
+				{
+					ID:                   "cc-2",
+					CookbookID:           "cb-2",
+					TargetChefVersion:    "18.0.0",
+					ComplexityScore:      10,
+					ComplexityLabel:      "low",
+					AffectedNodeCount:    20,
+					AutoCorrectableCount: 8,
+					ManualFixCount:       0,
+					DeprecationCount:     2,
+					ErrorCount:           0,
+					EvaluatedAt:          now,
+				},
+				{
+					ID:                   "cc-3",
+					CookbookID:           "cb-3",
+					TargetChefVersion:    "18.0.0",
+					ComplexityScore:      80,
+					ComplexityLabel:      "high",
+					AffectedNodeCount:    5,
+					AutoCorrectableCount: 1,
+					ManualFixCount:       10,
+					DeprecationCount:     6,
+					ErrorCount:           3,
+					EvaluatedAt:          now,
+				},
+			}, nil
+		},
+	}
+
+	cfg := &config.Config{}
+	wsEnabled := true
+	cfg.Server.WebSocket.Enabled = &wsEnabled
+	cfg.TargetChefVersions = []string{"18.0.0"}
+
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	// Filter to only "high" complexity cookbooks.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/remediation/priority?complexity_label=high", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		TotalCookbooks int `json:"total_cookbooks"`
+		Data           []struct {
+			CookbookName    string `json:"cookbook_name"`
+			ComplexityLabel string `json:"complexity_label"`
+		} `json:"data"`
+		Pagination struct {
+			TotalItems int `json:"total_items"`
+		} `json:"pagination"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// Only the two "high" complexity cookbooks should be returned.
+	if resp.TotalCookbooks != 2 {
+		t.Errorf("total_cookbooks = %d, want 2", resp.TotalCookbooks)
+	}
+	if len(resp.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(resp.Data))
+	}
+	for i, item := range resp.Data {
+		if item.ComplexityLabel != "high" {
+			t.Errorf("data[%d].complexity_label = %q, want %q", i, item.ComplexityLabel, "high")
+		}
+	}
+	if resp.Pagination.TotalItems != 2 {
+		t.Errorf("pagination.total_items = %d, want 2", resp.Pagination.TotalItems)
+	}
+}
+
+func TestHandleRemediationPriority_ComplexityLabelFilter_NoMatch(t *testing.T) {
+	now := time.Now()
+
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server"},
+			}, nil
+		},
+		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+			return []datastore.CookbookComplexity{
+				{
+					ID:                "cc-1",
+					CookbookID:        "cb-1",
+					TargetChefVersion: "18.0.0",
+					ComplexityScore:   10,
+					ComplexityLabel:   "low",
+					AffectedNodeCount: 5,
+					EvaluatedAt:       now,
+				},
+			}, nil
+		},
+	}
+
+	cfg := &config.Config{}
+	wsEnabled := true
+	cfg.Server.WebSocket.Enabled = &wsEnabled
+	cfg.TargetChefVersions = []string{"18.0.0"}
+
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	// Filter to "critical" — no cookbooks match.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/remediation/priority?complexity_label=critical", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		TotalCookbooks int           `json:"total_cookbooks"`
+		Data           []interface{} `json:"data"`
+		Pagination     struct {
+			TotalItems int `json:"total_items"`
+		} `json:"pagination"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if resp.TotalCookbooks != 0 {
+		t.Errorf("total_cookbooks = %d, want 0", resp.TotalCookbooks)
+	}
+	if len(resp.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0", len(resp.Data))
+	}
+	if resp.Pagination.TotalItems != 0 {
+		t.Errorf("pagination.total_items = %d, want 0", resp.Pagination.TotalItems)
+	}
+}
+
+func TestHandleRemediationPriority_ComplexityLabelFilter_OmittedReturnsAll(t *testing.T) {
+	now := time.Now()
+
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod"},
+			}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server"},
+			}, nil
+		},
+		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+			return []datastore.CookbookComplexity{
+				{
+					ID:                "cc-1",
+					CookbookID:        "cb-1",
+					TargetChefVersion: "18.0.0",
+					ComplexityScore:   42,
+					ComplexityLabel:   "high",
+					AffectedNodeCount: 10,
+					EvaluatedAt:       now,
+				},
+				{
+					ID:                "cc-2",
+					CookbookID:        "cb-2",
+					TargetChefVersion: "18.0.0",
+					ComplexityScore:   10,
+					ComplexityLabel:   "low",
+					AffectedNodeCount: 20,
+					EvaluatedAt:       now,
+				},
+			}, nil
+		},
+	}
+
+	cfg := &config.Config{}
+	wsEnabled := true
+	cfg.Server.WebSocket.Enabled = &wsEnabled
+	cfg.TargetChefVersions = []string{"18.0.0"}
+
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	// No complexity_label param — should return all.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/remediation/priority", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		TotalCookbooks int           `json:"total_cookbooks"`
+		Data           []interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if resp.TotalCookbooks != 2 {
+		t.Errorf("total_cookbooks = %d, want 2 (no filter should return all)", resp.TotalCookbooks)
+	}
+	if len(resp.Data) != 2 {
+		t.Errorf("len(data) = %d, want 2", len(resp.Data))
+	}
+}

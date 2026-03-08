@@ -268,6 +268,15 @@ func (h *EventHub) Register() *client {
 	}
 	select {
 	case h.register <- c:
+		// The register channel is buffered, so this case can succeed even
+		// after Run() has exited (the write lands in the buffer but nobody
+		// will ever read it). Re-check done to detect that situation and
+		// close the send channel so callers don't block forever.
+		select {
+		case <-h.done:
+			close(c.send)
+		default:
+		}
 	case <-h.done:
 		// Hub already stopped.
 		close(c.send)

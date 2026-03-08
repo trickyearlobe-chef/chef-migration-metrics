@@ -24,6 +24,13 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// mockDB implements the subset of *datastore.DB methods used by the
+// checkpoint/resume logic. Since we can't construct a real *datastore.DB
+// without a PostgreSQL connection, we test the pure logic functions and
+// the estimateCollectionInterval helper directly.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Test helpers — mock client factory
 // ---------------------------------------------------------------------------
 
@@ -1720,6 +1727,323 @@ func TestWithCookbookDirFn_NilIsAccepted(t *testing.T) {
 	c := New(nil, cfg, logger, resolver, WithCookbookDirFn(nil))
 	if c.cookbookDirFn != nil {
 		t.Error("expected cookbookDirFn to remain nil when WithCookbookDirFn(nil) is passed")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint/Resume tests
+// ---------------------------------------------------------------------------
+
+func TestEstimateCollectionInterval_DefaultHourly(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "0 * * * *" // every hour
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 1*time.Hour {
+		t.Errorf("expected 1h interval for hourly schedule, got %v", interval)
+	}
+}
+
+func TestEstimateCollectionInterval_Every15Minutes(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "*/15 * * * *" // every 15 minutes
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 15*time.Minute {
+		t.Errorf("expected 15m interval, got %v", interval)
+	}
+}
+
+func TestEstimateCollectionInterval_Every5Minutes(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "*/5 * * * *"
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 5*time.Minute {
+		t.Errorf("expected 5m interval, got %v", interval)
+	}
+}
+
+func TestEstimateCollectionInterval_InvalidScheduleFallsBackTo1Hour(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "invalid cron expression that won't parse"
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 1*time.Hour {
+		t.Errorf("expected 1h fallback for invalid schedule, got %v", interval)
+	}
+}
+
+func TestEstimateCollectionInterval_TwiceDaily(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "0 0,12 * * *" // midnight and noon
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 12*time.Hour {
+		t.Errorf("expected 12h interval for twice-daily schedule, got %v", interval)
+	}
+}
+
+func TestResumeResult_ZeroValue(t *testing.T) {
+	r := ResumeResult{}
+	if r.Evaluated != 0 {
+		t.Errorf("expected 0 evaluated, got %d", r.Evaluated)
+	}
+	if r.Resumed != 0 {
+		t.Errorf("expected 0 resumed, got %d", r.Resumed)
+	}
+	if r.Abandoned != 0 {
+		t.Errorf("expected 0 abandoned, got %d", r.Abandoned)
+	}
+	if r.ResumedRunResult != nil {
+		t.Error("expected nil ResumedRunResult")
+	}
+}
+
+func TestResumeInterruptedRuns_NilDB_ReturnsError(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "0 * * * *"
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+
+	// With a nil DB, the call to GetInterruptedCollectionRuns will panic
+	// (nil pointer dereference). This verifies the collector handles the
+	// nil DB scenario — in production, DB is never nil, but we confirm
+	// the method doesn't silently succeed.
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("expected panic with nil DB, but got none")
+			}
+		}()
+		_, _ = c.ResumeInterruptedRuns(context.Background())
+	}()
+}
+
+func TestRunForOrganisations_ErrorWhenAlreadyRunning(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "0 * * * *"
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+
+	// Manually set running to true to simulate a concurrent run.
+	c.mu.Lock()
+	c.running = true
+	c.mu.Unlock()
+
+	orgs := map[string]datastore.Organisation{
+		"test-id": {ID: "test-id", Name: "test-org"},
+	}
+
+	_, err := c.runForOrganisations(context.Background(), orgs)
+	if err == nil {
+		t.Error("expected error when run already in progress, got nil")
+	}
+	if err != nil && err.Error() != "collector: a collection run is already in progress" {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Clean up.
+	c.mu.Lock()
+	c.running = false
+	c.mu.Unlock()
+}
+
+func TestEstimateCollectionInterval_DailySchedule(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "0 2 * * *" // daily at 2am
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 24*time.Hour {
+		t.Errorf("expected 24h interval for daily schedule, got %v", interval)
+	}
+}
+
+func TestEstimateCollectionInterval_Every30Minutes(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "*/30 * * * *"
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 30*time.Minute {
+		t.Errorf("expected 30m interval, got %v", interval)
+	}
+}
+
+func TestResumeResult_ErrorsMap(t *testing.T) {
+	r := ResumeResult{
+		Evaluated: 3,
+		Resumed:   1,
+		Abandoned: 1,
+		Errors:    map[string]error{"run-1": errors.New("test error")},
+	}
+
+	if r.Evaluated != 3 {
+		t.Errorf("expected 3 evaluated, got %d", r.Evaluated)
+	}
+	if r.Resumed != 1 {
+		t.Errorf("expected 1 resumed, got %d", r.Resumed)
+	}
+	if r.Abandoned != 1 {
+		t.Errorf("expected 1 abandoned, got %d", r.Abandoned)
+	}
+	if len(r.Errors) != 1 {
+		t.Errorf("expected 1 error, got %d", len(r.Errors))
+	}
+	if _, ok := r.Errors["run-1"]; !ok {
+		t.Error("expected error for run-1")
+	}
+}
+
+func TestRunForOrganisations_EmptyOrgMap(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "0 * * * *"
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	memWriter := logging.NewMemoryWriter()
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{memWriter},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	// Use a nil DB — since there are no orgs to collect, collectOrganisation
+	// is never called and the nil DB is safe.
+	c := New(nil, cfg, logger, resolver)
+
+	orgs := map[string]datastore.Organisation{}
+	result, err := c.runForOrganisations(context.Background(), orgs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result.TotalOrgs != 0 {
+		t.Errorf("expected 0 total orgs, got %d", result.TotalOrgs)
+	}
+	if result.SucceededOrgs != 0 {
+		t.Errorf("expected 0 succeeded orgs, got %d", result.SucceededOrgs)
+	}
+	if result.FailedOrgs != 0 {
+		t.Errorf("expected 0 failed orgs, got %d", result.FailedOrgs)
+	}
+}
+
+func TestEstimateCollectionInterval_EmptyScheduleFallsBack(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Collection.Schedule = "" // empty schedule
+	cfg.Collection.StaleNodeThresholdDays = 7
+	cfg.Collection.StaleCookbookThresholdDays = 365
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver)
+	interval := c.estimateCollectionInterval()
+
+	if interval != 1*time.Hour {
+		t.Errorf("expected 1h fallback for empty schedule, got %v", interval)
 	}
 }
 

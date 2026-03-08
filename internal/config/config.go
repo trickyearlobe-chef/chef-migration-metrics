@@ -337,7 +337,10 @@ type LoggingConfig struct {
 
 // AuthConfig holds authentication provider configuration.
 type AuthConfig struct {
-	Providers []AuthProvider `yaml:"providers"`
+	Providers         []AuthProvider `yaml:"providers"`
+	SessionExpiry     string         `yaml:"session_expiry"`
+	MinPasswordLength int            `yaml:"min_password_length"`
+	LockoutAttempts   int            `yaml:"lockout_attempts"`
 }
 
 // AuthProvider is a single authentication provider (local, LDAP, or SAML).
@@ -503,6 +506,17 @@ func (c *Config) setDefaults() {
 	// Frontend
 	if c.Frontend.BasePath == "" {
 		c.Frontend.BasePath = "/"
+	}
+
+	// Auth
+	if c.Auth.SessionExpiry == "" {
+		c.Auth.SessionExpiry = "8h"
+	}
+	if c.Auth.MinPasswordLength == 0 {
+		c.Auth.MinPasswordLength = 8
+	}
+	if c.Auth.LockoutAttempts == 0 {
+		c.Auth.LockoutAttempts = 5
 	}
 
 	// Logging
