@@ -77,20 +77,6 @@ func (f *fakeGitExecutor) Run(_ context.Context, dir string, args ...string) (st
 	return f.defaultOutput, nil
 }
 
-func (f *fakeGitExecutor) callCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.calls)
-}
-
-func (f *fakeGitExecutor) getCalls() []fakeGitCall {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	cp := make([]fakeGitCall, len(f.calls))
-	copy(cp, f.calls)
-	return cp
-}
-
 // ---------------------------------------------------------------------------
 // isGitRepo tests
 // ---------------------------------------------------------------------------
