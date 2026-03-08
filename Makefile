@@ -53,7 +53,7 @@ HOST_ARCH := $(shell go env GOARCH 2>/dev/null || echo amd64)
 # Container image
 REGISTRY   := ghcr.io
 IMAGE_NAME := $(REGISTRY)/trickyearlobe-chef/chef-migration-metrics
-IMAGE_TAG  := $(VERSION_FULL)
+IMAGE_TAG  := $(subst +,-,$(VERSION_FULL))
 
 # Ruby build image for embedded environment
 RUBY_BUILD_IMAGE := ruby:3.1-bookworm
@@ -203,6 +203,9 @@ build-embedded-arm64: ## Build embedded Ruby environment for linux/arm64
 .PHONY: _build-embedded
 _build-embedded:
 	@echo "$(GREEN)Building embedded Ruby environment ($(EMBED_PLATFORM))...$(RESET)"
+	@# Clean previous output — files may be root-owned from Docker and/or
+	@# read-only (Ruby stdlib ships minitest etc. with 0444 permissions).
+	@docker run --rm -v "$(CURDIR)/$(EMBEDDED_DIR):/output" $(RUBY_BUILD_IMAGE) bash -c 'chmod -R u+w /output 2>/dev/null; rm -rf /output/*' 2>/dev/null || true
 	@mkdir -p $(EMBEDDED_DIR)
 	docker run --rm --platform $(EMBED_PLATFORM) \
 		-v "$(CURDIR)/$(EMBEDDED_DIR):/output" \
@@ -211,14 +214,26 @@ _build-embedded:
 			export GEM_HOME=$(EMBEDDED_PREFIX)/lib/ruby/gems/3.1.0 && \
 			export GEM_PATH=$$GEM_HOME && \
 			mkdir -p $$GEM_HOME && \
-			gem install --no-document ffi:1.16.3 && \
+			apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/* && \
+			echo "--- Phase 1: Pin gems to prevent version drift ---" && \
+			gem install --no-document \
+				ffi:1.16.3 \
+				zeitwerk:2.6.18 \
+				dry-core:1.1.0 \
+				dry-inflector:1.2.0 \
+				dry-types:1.8.3 && \
+			echo "--- Phase 2: Core tools ---" && \
 			gem install --no-document \
 				cookstyle:7.32.8 \
 				test-kitchen:3.9.1 && \
-			gem install --no-document \
+			echo "--- Phase 3: InSpec (--force for rwinrm conflict) ---" && \
+			gem install --no-document --force \
 				inspec-bin:5.24.7 && \
+			echo "--- Phase 4: kitchen-inspec verifier ---" && \
 			gem install --no-document \
-				kitchen-inspec:3.1.0 \
+				kitchen-inspec:3.1.0 && \
+			echo "--- Phase 5: Kitchen drivers ---" && \
+			gem install --no-document \
 				kitchen-vagrant:2.2.0 \
 				kitchen-ec2:3.22.1 \
 				kitchen-azurerm:1.13.6 \
@@ -228,12 +243,17 @@ _build-embedded:
 				kitchen-vra:3.3.3 \
 				kitchen-openstack:6.2.1 \
 				kitchen-digitalocean:0.16.1 && \
+			echo "--- Phase 6: kitchen-dokken from Stromweld fork ---" && \
 			gem install --no-document specific_install && \
 			gem specific_install -l https://github.com/Stromweld/kitchen-dokken.git -b main && \
+			echo "--- Phase 7: Busser (legacy verifier) ---" && \
 			gem install --no-document --force \
 				busser:0.8.0 \
 				busser-serverspec:0.6.3 \
 				busser-bats:0.5.0 && \
+			echo "--- Phase 8: Enforce ffi pin (clean up version drift) ---" && \
+			ruby -e "Gem::Specification.select { |s| s.name == %q(ffi) && s.version.to_s != %q(1.16.3) }.each { |s| puts \"Removing ffi #{s.version}\"; system(\"gem uninstall ffi --version #{s.version} --force --executables\") }" && \
+			echo "ffi versions remaining: $$(gem list ffi --exact)" && \
 			mkdir -p $(EMBEDDED_PREFIX)/bin && \
 			cp $$(which ruby) $(EMBEDDED_PREFIX)/bin/ruby && \
 			for cmd in cookstyle kitchen inspec; do \
@@ -244,6 +264,7 @@ _build-embedded:
 			mkdir -p $(EMBEDDED_PREFIX)/lib && \
 			cp -a /usr/local/lib/libruby* $(EMBEDDED_PREFIX)/lib/ 2>/dev/null || true && \
 			cp -a /usr/local/lib/ruby $(EMBEDDED_PREFIX)/lib/ruby/ 2>/dev/null || true && \
+			chmod -R u+w $(EMBEDDED_PREFIX) && \
 			cp -a $(EMBEDDED_PREFIX)/* /output/ \
 		'
 	@echo "$(GREEN)Embedded environment: $(EMBEDDED_DIR)/$(RESET)"

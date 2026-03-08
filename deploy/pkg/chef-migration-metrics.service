@@ -1,0 +1,26 @@
+[Unit]
+Description=Chef Migration Metrics
+Documentation=https://github.com/trickyearlobe-chef/chef-migration-metrics
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chef-migration-metrics
+Group=chef-migration-metrics
+ExecStart=/usr/bin/chef-migration-metrics --config /etc/chef-migration-metrics/config.yml
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=-/etc/sysconfig/chef-migration-metrics
+EnvironmentFile=-/etc/default/chef-migration-metrics
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/chef-migration-metrics /var/log/chef-migration-metrics
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
