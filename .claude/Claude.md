@@ -6,7 +6,15 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Git Branching & Commit Workflow
 
-All work done in a thread **must** follow this branching and commit discipline:
+All work done in a thread **must** follow this branching and commit discipline.
+
+> **⚠️ Pre-commit checklist — STOP and verify before every `git add` or `git commit`:**
+>
+> 1. Am I on a feature branch (not `main`)? If not, create one first.
+> 2. Does the branch name match `<type>/<short-description>`?
+> 3. Am I committing only one logical unit of work? If the diff touches unrelated fixes, split into separate commits.
+> 4. Does the commit message follow `<type>(<scope>): <summary>` format?
+> 5. Have I asked the user for permission before merging to `main`?
 
 ### Branch Naming
 
