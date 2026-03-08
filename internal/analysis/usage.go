@@ -379,7 +379,7 @@ func aggregateTuples(tuples []extractedTuple) map[cookbookVersionKey]*aggregated
 func buildInventorySet(inventory []CookbookInventoryEntry) map[cookbookVersionKey]bool {
 	set := make(map[cookbookVersionKey]bool, len(inventory))
 	for _, entry := range inventory {
-		set[cookbookVersionKey{Name: entry.Name, Version: entry.Version}] = true
+		set[cookbookVersionKey(entry)] = true
 	}
 	return set
 }

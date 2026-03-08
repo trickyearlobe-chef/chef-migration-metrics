@@ -93,21 +93,3 @@ func queryStringSlice(req *http.Request, name string) []string {
 	}
 	return result
 }
-
-// queryBool returns the boolean value of a query parameter. Accepted truthy
-// values are "true", "1", "yes". Everything else (including missing) returns
-// the default.
-func queryBool(req *http.Request, name string, defaultValue bool) bool {
-	v := req.URL.Query().Get(name)
-	if v == "" {
-		return defaultValue
-	}
-	switch strings.ToLower(v) {
-	case "true", "1", "yes":
-		return true
-	case "false", "0", "no":
-		return false
-	default:
-		return defaultValue
-	}
-}

@@ -64,7 +64,7 @@ func TestSeverity_String(t *testing.T) {
 }
 
 func TestSeverity_Ordering(t *testing.T) {
-	if !(DEBUG < INFO && INFO < WARN && WARN < ERROR) {
+	if DEBUG >= INFO || INFO >= WARN || WARN >= ERROR {
 		t.Fatal("severity ordering is incorrect: expected DEBUG < INFO < WARN < ERROR")
 	}
 }

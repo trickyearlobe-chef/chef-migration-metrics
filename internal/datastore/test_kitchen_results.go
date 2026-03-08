@@ -163,20 +163,8 @@ func (db *DB) ListTestKitchenResultsForCookbook(ctx context.Context, cookbookID 
 // given organisation. This is a cross-reference join because git cookbooks
 // don't have an organisation_id but are linked by name.
 func (db *DB) ListTestKitchenResultsForOrganisation(ctx context.Context, organisationID string) ([]TestKitchenResult, error) {
+	// The aliased query needs unqualified column names in the select.
 	query := `
-		SELECT tkr.` + tkrColumns + `
-		  FROM test_kitchen_results tkr
-		  JOIN cookbooks c ON c.id = tkr.cookbook_id
-		 WHERE c.source = 'git'
-		   AND c.name IN (
-		       SELECT DISTINCT cs.name FROM cookbooks cs
-		        WHERE cs.organisation_id = $1 AND cs.source = 'chef_server'
-		   )
-		 ORDER BY c.name, tkr.target_chef_version, tkr.started_at DESC
-	`
-	// Fix: the aliased query needs unqualified column names in the select.
-	// Rewrite to use a simpler join.
-	query = `
 		SELECT tkr.id, tkr.cookbook_id, tkr.target_chef_version, tkr.commit_sha,
 		       tkr.converge_passed, tkr.tests_passed, tkr.compatible, tkr.timed_out,
 		       tkr.process_stdout, tkr.process_stderr,

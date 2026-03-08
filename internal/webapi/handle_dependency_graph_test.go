@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -1367,10 +1366,3 @@ func TestDependencyGraph_TableDoesNotShadowBase(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // helpers for this test file
-// ---------------------------------------------------------------------------
-
-// newTestRouterWithMockAndConfigDG builds a Router with dependency graph
-// test-friendly config. This uses the shared helpers from store_mock_test.go.
-func newTestRouterWithMockAndConfigDG(store *mockStore, cfg *config.Config) *Router {
-	return newTestRouterWithMockAndConfig(store, cfg)
-}
