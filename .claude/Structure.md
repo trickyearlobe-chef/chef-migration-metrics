@@ -65,6 +65,9 @@ chef-migration-metrics/
 │   ├── 2026-03-08-01-48-data-exports-wiring.md # Data Exports wiring — handler tests, filterNodes refactor, cleanup ticker, ExportButton in pages
 │   ├── 2026-03-08-01-56-project-completion-estimate.md # Project completion estimate — ~35–39 threads remaining across 8 work areas
 │   ├── 2026-03-08-02-11-data-collection-complete.md # Data Collection complete — checkpoint/resume + dashboard failed cookbook display
+│   ├── 2026-03-08-09-31-todo-audit-real-server-test.md # Todo audit and real server test planning
+│   ├── 2026-03-08-10-10-real-server-test-results.md # Real server test results
+│   ├── 2026-03-08-13-25-cookstyle-json-and-build-fixes.md # Cookstyle JSON struct tags, TS build fixes, Makefile stop target
 │   └── archive/                               # Older summaries — historical reference only
 └── specifications/
     ├── Specification.md            # Top-level project spec and component index

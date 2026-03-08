@@ -67,7 +67,7 @@ export function ExportButton({
 }: ExportButtonProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [_jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const pollCountRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
