@@ -625,17 +625,17 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	// --- Driver override ---
 	if s.tkConfig.DriverOverride != "" {
 		buf.WriteString("\ndriver:\n")
-		buf.WriteString(fmt.Sprintf("  name: %s\n", s.tkConfig.DriverOverride))
+		fmt.Fprintf(&buf, "  name: %s\n", s.tkConfig.DriverOverride)
 		// Merge driver_config entries.
 		for k, v := range s.tkConfig.DriverConfig {
-			buf.WriteString(fmt.Sprintf("  %s: %s\n", k, yamlScalar(v)))
+			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlScalar(v))
 		}
 		hasContent = true
 	} else if len(s.tkConfig.DriverConfig) > 0 {
 		// No driver name override but there is driver config to merge.
 		buf.WriteString("\ndriver:\n")
 		for k, v := range s.tkConfig.DriverConfig {
-			buf.WriteString(fmt.Sprintf("  %s: %s\n", k, yamlScalar(v)))
+			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlScalar(v))
 		}
 		hasContent = true
 	}
@@ -645,9 +645,9 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 		effectiveDriver := s.effectiveDriver(detectedDriver)
 		buf.WriteString("\nprovisioner:\n")
 		if effectiveDriver == "dokken" {
-			buf.WriteString(fmt.Sprintf("  chef_version: %q\n", targetVersion))
+			fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
 		} else {
-			buf.WriteString(fmt.Sprintf("  product_version: %q\n", targetVersion))
+			fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
 		}
 		hasContent = true
 	}
@@ -656,11 +656,11 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	if len(s.tkConfig.PlatformOverrides) > 0 {
 		buf.WriteString("\nplatforms:\n")
 		for _, p := range s.tkConfig.PlatformOverrides {
-			buf.WriteString(fmt.Sprintf("  - name: %s\n", p.Name))
+			fmt.Fprintf(&buf, "  - name: %s\n", p.Name)
 			if len(p.Driver) > 0 {
 				buf.WriteString("    driver:\n")
 				for k, v := range p.Driver {
-					buf.WriteString(fmt.Sprintf("      %s: %s\n", k, yamlScalar(v)))
+					fmt.Fprintf(&buf, "      %s: %s\n", k, yamlScalar(v))
 				}
 			}
 			if len(p.Attributes) > 0 {
@@ -872,12 +872,13 @@ func detectDriver(kitchenYMLPath string) string {
 func countLeadingSpaces(s string) int {
 	count := 0
 	for _, ch := range s {
-		if ch == ' ' {
+		switch ch {
+		case ' ':
 			count++
-		} else if ch == '\t' {
+		case '\t':
 			count += 2 // Treat tabs as 2 spaces.
-		} else {
-			break
+		default:
+			return count
 		}
 	}
 	return count
@@ -914,10 +915,10 @@ func writeAttributes(buf *bytes.Buffer, attrs map[string]interface{}, indent int
 	for k, v := range attrs {
 		switch val := v.(type) {
 		case map[string]interface{}:
-			buf.WriteString(fmt.Sprintf("%s%s:\n", prefix, k))
+			fmt.Fprintf(buf, "%s%s:\n", prefix, k)
 			writeAttributes(buf, val, indent+2)
 		default:
-			buf.WriteString(fmt.Sprintf("%s%s: %s\n", prefix, k, yamlScalar(fmt.Sprintf("%v", val))))
+			fmt.Fprintf(buf, "%s%s: %s\n", prefix, k, yamlScalar(fmt.Sprintf("%v", val)))
 		}
 	}
 }

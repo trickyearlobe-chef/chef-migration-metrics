@@ -202,12 +202,9 @@ func TestExportJob_MarshalJSON_EmptyOptionalFields(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	// error_message should be omitted when empty.
-	if _, ok := m["error_message"]; ok {
-		if m["error_message"] != "" {
-			// The field is present with the omitempty tag, but since it's
-			// a string, empty strings are omitted.
-		}
+	// error_message should be omitted when empty (omitempty on string).
+	if val, ok := m["error_message"]; ok && val != "" {
+		t.Errorf("expected error_message to be omitted or empty, got %v", val)
 	}
 
 	if m["status"] != ExportStatusPending {
