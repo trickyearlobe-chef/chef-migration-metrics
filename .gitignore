@@ -10,6 +10,7 @@ deploy/pkg/config.yml
 
 # Go binary and cross-compiled artifacts
 build/
+chef-migration-metrics
 *.exe
 *.exe~
 *.dll
@@ -55,6 +56,10 @@ frontend/.cache/
 frontend/.parcel-cache/
 frontend/.next/
 frontend/.nuxt/
+
+# TypeScript declaration output (emitDeclarationOnly for project references)
+frontend/*.d.ts
+frontend/tsconfig.node.tsbuildinfo
 
 # npm / yarn / pnpm
 node_modules/
