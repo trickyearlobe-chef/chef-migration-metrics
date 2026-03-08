@@ -550,12 +550,6 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 // File reading and diff generation
 // ---------------------------------------------------------------------------
 
-// fileContent represents the content of a single file for diffing.
-type fileContent struct {
-	RelPath string
-	Content string
-}
-
 // readAllFiles reads all regular files under dir and returns them keyed by
 // relative path.
 func readAllFiles(dir string) (map[string]string, error) {
@@ -658,8 +652,8 @@ func splitLines(s string) []string {
 func computeUnifiedDiff(path string, a, b []string) string {
 	var buf bytes.Buffer
 
-	buf.WriteString(fmt.Sprintf("--- a/%s\n", path))
-	buf.WriteString(fmt.Sprintf("+++ b/%s\n", path))
+	fmt.Fprintf(&buf, "--- a/%s\n", path)
+	fmt.Fprintf(&buf, "+++ b/%s\n", path)
 
 	// Compute the edit script using the LCS matrix.
 	edits := computeEdits(a, b)
@@ -669,9 +663,9 @@ func computeUnifiedDiff(path string, a, b []string) string {
 	hunks := groupHunks(edits, len(a), len(b), contextLines)
 
 	for _, hunk := range hunks {
-		buf.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n",
+		fmt.Fprintf(&buf, "@@ -%d,%d +%d,%d @@\n",
 			hunk.origStart+1, hunk.origCount,
-			hunk.newStart+1, hunk.newCount))
+			hunk.newStart+1, hunk.newCount)
 
 		for _, line := range hunk.lines {
 			buf.WriteString(line)

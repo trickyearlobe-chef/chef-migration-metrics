@@ -78,37 +78,6 @@ func mockCookbookList(names map[string][]string) map[string]chefapi.CookbookList
 	return result
 }
 
-// mockClient is a test double for chefapi.Client. Since we can't easily
-// mock an unexported struct, we use the ClientFactory abstraction to return
-// pre-built results. The mockClientData struct holds the canned responses.
-type mockClientData struct {
-	Nodes    []chefapi.SearchResultRow
-	NodesErr error
-
-	Cookbooks    map[string]chefapi.CookbookListEntry
-	CookbooksErr error
-}
-
-// makeTestClientFactory returns a ClientFactory that returns pre-canned data
-// for each organisation. The orgData map is keyed by organisation name.
-func makeTestClientFactory(orgData map[string]*mockClientData) ClientFactory {
-	return func(ctx context.Context, org datastore.Organisation) (*chefapi.Client, error) {
-		data, ok := orgData[org.Name]
-		if !ok {
-			return nil, fmt.Errorf("mock: no test data for org %q", org.Name)
-		}
-		if data.NodesErr != nil || data.CookbooksErr != nil {
-			// For error cases, we still need a client — but it won't be used
-			// because we inject errors via a different mechanism.
-			// For the mock factory pattern, we return an error directly.
-		}
-		// We can't easily construct a *chefapi.Client without a real PEM key.
-		// The collector calls CollectAllNodesConcurrent and GetCookbooks on it.
-		// We need a different testing approach — see mockCollector below.
-		return nil, nil
-	}
-}
-
 // testCollector creates a Collector with a mock client factory that intercepts
 // the collectOrganisation call at the Chef API level. Since we can't easily
 // mock chefapi.Client (it requires a real RSA key), we test at the Collector
