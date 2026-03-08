@@ -894,11 +894,11 @@ func TestListener_ServeAndShutdown(t *testing.T) {
 	default:
 	}
 
-	if !containsLog(*logs, "HTTPS server listening") {
-		t.Errorf("expected 'HTTPS server listening' log, got: %v", *logs)
+	if !logs.Contains("HTTPS server listening") {
+		t.Errorf("expected 'HTTPS server listening' log, got: %v", logs.Snapshot())
 	}
-	if !containsLog(*logs, "redirect listener") {
-		t.Errorf("expected redirect listener log, got: %v", *logs)
+	if !logs.Contains("redirect listener") {
+		t.Errorf("expected redirect listener log, got: %v", logs.Snapshot())
 	}
 }
 

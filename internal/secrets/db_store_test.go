@@ -131,13 +131,17 @@ func (s *InMemoryCredentialStore) Get(ctx context.Context, name string) (*Creden
 		return nil, ErrEncryptionKeyNotConfigured
 	}
 
+	// Snapshot all fields under the lock so concurrent Update calls cannot
+	// mutate them while we read. The map stores pointers, so copying the
+	// struct produces a safe, independent snapshot.
 	s.mu.Lock()
-	cred, exists := s.credentials[name]
-	s.mu.Unlock()
-
+	ptr, exists := s.credentials[name]
 	if !exists {
+		s.mu.Unlock()
 		return nil, ErrCredentialNotFound
 	}
+	cred := *ptr // shallow copy under lock
+	s.mu.Unlock()
 
 	aad, err := BuildAAD(cred.credentialType, cred.name)
 	if err != nil {
@@ -164,12 +168,13 @@ func (s *InMemoryCredentialStore) Get(ctx context.Context, name string) (*Creden
 
 func (s *InMemoryCredentialStore) GetMetadata(ctx context.Context, name string) (*CredentialMetadata, error) {
 	s.mu.Lock()
-	cred, exists := s.credentials[name]
-	s.mu.Unlock()
-
+	ptr, exists := s.credentials[name]
 	if !exists {
+		s.mu.Unlock()
 		return nil, ErrCredentialNotFound
 	}
+	cred := *ptr // shallow copy under lock
+	s.mu.Unlock()
 
 	return &CredentialMetadata{
 		Name:           cred.name,
