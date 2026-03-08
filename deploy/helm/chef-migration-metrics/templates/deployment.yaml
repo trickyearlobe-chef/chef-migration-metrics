@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chef-migration-metrics.fullname" . }}
+  labels:
+    {{- include "chef-migration-metrics.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "chef-migration-metrics.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "chef-migration-metrics.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "chef-migration-metrics.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/chef-migration-metrics/config.yml
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.server.port }}
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ .Values.existingSecret | default (include "chef-migration-metrics.fullname" .) }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/chef-migration-metrics/config.yml
+              subPath: config.yml
+              readOnly: true
+            {{- if or .Values.chefKeys.existingSecret .Values.chefKeys.keys }}
+            - name: chef-keys
+              mountPath: /etc/chef-migration-metrics/keys
+              readOnly: true
+            {{- end }}
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /var/lib/chef-migration-metrics
+            {{- end }}
+            {{- if and (eq .Values.config.server.tls.mode "static") (or .Values.tlsSecret.existingSecret .Values.tlsSecret.cert) }}
+            - name: tls
+              mountPath: /etc/chef-migration-metrics/tls
+              readOnly: true
+            {{- end }}
+            {{- if eq .Values.config.server.tls.mode "acme" }}
+            - name: acme-storage
+              mountPath: {{ .Values.config.server.tls.acme.storage_path | default "/var/lib/chef-migration-metrics/acme" }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.existingConfigMap | default (include "chef-migration-metrics.fullname" .) }}
+        {{- if .Values.chefKeys.existingSecret }}
+        - name: chef-keys
+          secret:
+            secretName: {{ .Values.chefKeys.existingSecret }}
+            defaultMode: 0400
+        {{- else if .Values.chefKeys.keys }}
+        - name: chef-keys
+          secret:
+            secretName: {{ include "chef-migration-metrics.fullname" . }}-chef-keys
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "chef-migration-metrics.fullname" .) }}
+        {{- end }}
+        {{- if and (eq .Values.config.server.tls.mode "static") .Values.tlsSecret.existingSecret }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tlsSecret.existingSecret }}
+            defaultMode: 0400
+        {{- else if and (eq .Values.config.server.tls.mode "static") .Values.tlsSecret.cert }}
+        - name: tls
+          secret:
+            secretName: {{ include "chef-migration-metrics.fullname" . }}-tls
+            defaultMode: 0400
+        {{- end }}
+        {{- if eq .Values.config.server.tls.mode "acme" }}
+        - name: acme-storage
+          persistentVolumeClaim:
+            claimName: {{ .Values.acmeStorage.existingClaim | default (printf "%s-acme" (include "chef-migration-metrics.fullname" .)) }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

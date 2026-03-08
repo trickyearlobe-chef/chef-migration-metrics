@@ -10,7 +10,7 @@ deploy/pkg/config.yml
 
 # Go binary and cross-compiled artifacts
 build/
-chef-migration-metrics
+/chef-migration-metrics
 *.exe
 *.exe~
 *.dll
