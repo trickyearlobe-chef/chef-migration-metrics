@@ -1,20 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchCookbookDetail } from "../api";
+import { fetchCookbookDetail, requestCookbookRescan } from "../api";
 import type { CookbookDetailResponse } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge, ComplexityBadge } from "../components/StatusBadge";
-
-// ---------------------------------------------------------------------------
-// Cookbook detail page — shows all versions of a cookbook along with their
-// complexity scores, cookstyle results, and compatibility information.
-// ---------------------------------------------------------------------------
 
 export function CookbookDetailPage() {
   const { name } = useParams<{ name: string }>();
   const [data, setData] = useState<CookbookDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanMsg, setRescanMsg] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!name) return;
@@ -26,6 +23,19 @@ export function CookbookDetailPage() {
       .finally(() => setLoading(false));
   }, [name]);
 
+  const handleRescan = useCallback(() => {
+    if (!name) return;
+    setRescanning(true);
+    setRescanMsg(null);
+    requestCookbookRescan(name)
+      .then((res) => {
+        setRescanMsg(res.message);
+        load();
+      })
+      .catch((e: Error) => setRescanMsg(`Rescan failed: ${e.message}`))
+      .finally(() => setRescanning(false));
+  }, [name, load]);
+
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <LoadingSpinner message="Loading cookbook detail…" />;
@@ -34,14 +44,29 @@ export function CookbookDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
       <nav className="text-sm text-gray-500">
         <Link to="/cookbooks" className="hover:text-blue-600 hover:underline">Cookbooks</Link>
         <span className="mx-1">/</span>
         <span className="text-gray-800">{data.name}</span>
       </nav>
 
-      <h2 className="text-xl font-bold text-gray-800">{data.name}</h2>
+      <div className="flex items-center gap-4">
+        <h2 className="text-xl font-bold text-gray-800">{data.name}</h2>
+        <button
+          onClick={handleRescan}
+          disabled={rescanning}
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title="Invalidate cached CookStyle results and rescan on the next collection cycle"
+        >
+          {rescanning ? "Requesting…" : "Rescan CookStyle"}
+        </button>
+      </div>
+
+      {rescanMsg && (
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          {rescanMsg}
+        </div>
+      )}
 
       {data.data.length === 0 ? (
         <EmptyState title="No versions found" />

@@ -180,6 +180,49 @@ func TestDefaults_AnalysisTools(t *testing.T) {
 	}
 }
 
+func TestDefaults_TestKitchenEnabled(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if !cfg.AnalysisTools.TestKitchen.IsEnabled() {
+		t.Error("expected test_kitchen.enabled to default to true")
+	}
+	if cfg.AnalysisTools.TestKitchen.Enabled == nil {
+		t.Error("expected Enabled pointer to be set after defaults are applied")
+	}
+}
+
+func TestTestKitchenEnabled_ExplicitFalse(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    enabled: false
+`
+	cfg := mustParse(t, yaml)
+	if cfg.AnalysisTools.TestKitchen.IsEnabled() {
+		t.Error("expected test_kitchen.enabled to be false when explicitly set")
+	}
+}
+
+func TestTestKitchenEnabled_ExplicitTrue(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    enabled: true
+`
+	cfg := mustParse(t, yaml)
+	if !cfg.AnalysisTools.TestKitchen.IsEnabled() {
+		t.Error("expected test_kitchen.enabled to be true when explicitly set")
+	}
+}
+
+func TestTestKitchenIsEnabled_NilPointer(t *testing.T) {
+	// IsEnabled should return true even when the pointer is nil (before
+	// defaults are applied) to match the documented default behaviour.
+	tk := TestKitchenConfig{}
+	if !tk.IsEnabled() {
+		t.Error("expected IsEnabled() to return true when Enabled is nil")
+	}
+}
+
 func TestDefaults_Readiness(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if cfg.Readiness.MinFreeDiskMB != 2048 {
