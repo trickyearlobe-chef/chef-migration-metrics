@@ -305,7 +305,7 @@ jobs:
           fi
 
           # Bundle supporting files
-          cp deploy/pkg/config.yml "staging/${ARCHIVE_NAME}/config.yml.example"
+          cp deploy/pkg/config.yml.example "staging/${ARCHIVE_NAME}/config.yml.example"
           cp README.md LICENSE "staging/${ARCHIVE_NAME}/"
 
           # Create archive
