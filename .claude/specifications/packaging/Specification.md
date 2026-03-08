@@ -270,51 +270,82 @@ The container image uses a multi-stage build:
 ### 4.2 Dockerfile
 
 ```dockerfile
-# --- Go build stage ---
-FROM golang:1.22-bookworm AS builder
+# --- Unified build stage (Ruby 3.1 base + Go toolchain) ---
+# Ruby 3.1 matches Chef Workstation 25.13.7 (ships Ruby 3.1.7).
+# Using 3.2+ causes gem conflicts — nokogiri >= 1.19.1 requires Ruby >= 3.2
+# and ffi is capped at <= 1.16.3 (mixlib-log requires ffi < 1.17.0).
+FROM ruby:3.1-bookworm AS builder
+
+# Install Go toolchain
+ARG GO_VERSION=1.24.4
+RUN arch="$(dpkg --print-architecture)" && \
+    case "${arch}" in amd64) goarch=amd64 ;; arm64) goarch=arm64 ;; esac && \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" \
+        | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-
 COPY . .
 
-# Build the React frontend
-RUN cd frontend && npm ci && npm run build
+# Build the React frontend (optional — skipped if frontend/ does not exist)
+RUN if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends nodejs npm && \
+        rm -rf /var/lib/apt/lists/* && \
+        cd frontend && npm ci --prefer-offline && npm run build; \
+    else echo "INFO: frontend/ not found — skipping SPA build"; fi
 
 # Build the Go binary with embedded assets
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags "-X main.version=${VERSION} -X main.commit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
-    -o /chef-migration-metrics .
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
+    -o /build/chef-migration-metrics ./cmd/chef-migration-metrics
 
-# --- Ruby build stage ---
-FROM ruby:3.2-bookworm AS ruby-builder
-
-# Install gems into an isolated prefix that can be copied wholesale
-ENV GEM_HOME=/opt/chef-migration-metrics/embedded/lib/ruby/gems/3.2.0
+# --- Embedded Ruby environment ---
+# Gem versions pinned to Chef Workstation 25.13.7
+# Source: https://github.com/chef/chef-workstation/blob/main/components/gems/Gemfile.lock
+ENV EMBEDDED_PREFIX=/opt/chef-migration-metrics/embedded
+ENV GEM_HOME=${EMBEDDED_PREFIX}/lib/ruby/gems/3.1.0
 ENV GEM_PATH=$GEM_HOME
+
+# Install git (needed for kitchen-dokken from git source)
+RUN apt-get update && apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN mkdir -p $GEM_HOME && \
+    gem install --no-document ffi:1.16.3 && \
+    gem install --no-document cookstyle:7.32.8 test-kitchen:3.9.1 && \
+    gem install --no-document inspec-bin:5.24.7 && \
     gem install --no-document \
-        cookstyle \
-        test-kitchen \
-        kitchen-dokken
+        kitchen-inspec:3.1.0 \
+        kitchen-vagrant:2.2.0 \
+        kitchen-ec2:3.22.1 \
+        kitchen-azurerm:1.13.6 \
+        kitchen-google:2.6.1 \
+        kitchen-hyperv:0.10.3 \
+        kitchen-vcenter:2.12.2 \
+        kitchen-vra:3.3.3 \
+        kitchen-openstack:6.2.1 \
+        kitchen-digitalocean:0.16.1 && \
+    gem install --no-document specific_install && \
+    gem specific_install -l https://github.com/Stromweld/kitchen-dokken.git -b main
 
 # Create wrapper binstubs that use the embedded Ruby
-RUN mkdir -p /opt/chef-migration-metrics/embedded/bin && \
-    cp $(which ruby) /opt/chef-migration-metrics/embedded/bin/ruby && \
-    for cmd in cookstyle kitchen; do \
-        printf '#!/opt/chef-migration-metrics/embedded/bin/ruby\n' > /opt/chef-migration-metrics/embedded/bin/$cmd && \
-        cat $(gem environment gemdir)/bin/$cmd >> /opt/chef-migration-metrics/embedded/bin/$cmd && \
-        chmod 0755 /opt/chef-migration-metrics/embedded/bin/$cmd; \
+RUN mkdir -p ${EMBEDDED_PREFIX}/bin && \
+    cp $(which ruby) ${EMBEDDED_PREFIX}/bin/ruby && \
+    for cmd in cookstyle kitchen inspec; do \
+        printf '#!/opt/chef-migration-metrics/embedded/bin/ruby\n' > ${EMBEDDED_PREFIX}/bin/$cmd && \
+        cat $(gem environment gemdir)/bin/$cmd >> ${EMBEDDED_PREFIX}/bin/$cmd && \
+        chmod 0755 ${EMBEDDED_PREFIX}/bin/$cmd; \
     done
 
 # Copy the Ruby shared libraries needed at runtime
-RUN mkdir -p /opt/chef-migration-metrics/embedded/lib && \
-    cp -a /usr/local/lib/libruby* /opt/chef-migration-metrics/embedded/lib/ 2>/dev/null || true && \
-    cp -a /usr/local/lib/ruby /opt/chef-migration-metrics/embedded/lib/ruby/ 2>/dev/null || true
+RUN mkdir -p ${EMBEDDED_PREFIX}/lib && \
+    cp -a /usr/local/lib/libruby* ${EMBEDDED_PREFIX}/lib/ 2>/dev/null || true && \
+    cp -a /usr/local/lib/ruby ${EMBEDDED_PREFIX}/lib/ruby/ 2>/dev/null || true
 
 # --- Runtime stage ---
 FROM debian:bookworm-slim
@@ -328,6 +359,11 @@ RUN apt-get update && \
         libffi8 \
         libgmp10 \
         zlib1g \
+        libxml2 \
+        libxslt1.1 \
+        libssl3 \
+        libgcc-s1 \
+        libreadline8 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -337,20 +373,30 @@ RUN groupadd -r chef-migration-metrics && \
 
 # Filesystem layout matching native packages
 RUN mkdir -p /etc/chef-migration-metrics/keys \
+             /etc/chef-migration-metrics/tls \
              /var/lib/chef-migration-metrics \
+             /var/lib/chef-migration-metrics/acme \
              /var/log/chef-migration-metrics && \
     chown -R chef-migration-metrics:chef-migration-metrics \
              /etc/chef-migration-metrics \
              /var/lib/chef-migration-metrics \
              /var/log/chef-migration-metrics
 
-COPY --from=builder /chef-migration-metrics /usr/bin/chef-migration-metrics
-COPY --from=ruby-builder /opt/chef-migration-metrics/embedded /opt/chef-migration-metrics/embedded
+COPY --from=builder /build/chef-migration-metrics /usr/bin/chef-migration-metrics
+COPY --from=builder /opt/chef-migration-metrics/embedded /opt/chef-migration-metrics/embedded
+
+# Register embedded Ruby shared libs with the dynamic linker
+RUN echo "/opt/chef-migration-metrics/embedded/lib" \
+        > /etc/ld.so.conf.d/chef-migration-metrics-embedded.conf && \
+    ldconfig
 
 USER chef-migration-metrics
 WORKDIR /var/lib/chef-migration-metrics
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD ["/usr/bin/chef-migration-metrics", "healthcheck"]
 
 ENTRYPOINT ["/usr/bin/chef-migration-metrics"]
 CMD ["--config", "/etc/chef-migration-metrics/config.yml"]
@@ -384,13 +430,61 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 ### 4.5 Analysis Tools (Embedded)
 
-CookStyle, Test Kitchen, and their Ruby runtime are embedded directly in the base container image via the Ruby build stage (see section 4.2). There is no separate extension image — all containers ship with full analysis capability.
+CookStyle, Test Kitchen, InSpec, and their Ruby runtime are embedded directly in the base container image via the Ruby build stage (see section 4.2). There is no separate extension image — all containers ship with full analysis capability.
 
 The `Dockerfile.analysis` file is **removed**. The previous two-image approach (base image + analysis extension) is replaced by a single image that always includes the embedded tools.
 
 > **Rationale:** Embedding the analysis tools eliminates a common deployment pitfall where the base image was used accidentally, resulting in all cookbooks being reported as `untested`. A single image with everything included reduces support burden and simplifies documentation.
 
 If a deployment does not need cookbook compatibility testing (e.g. a read-only dashboard replica), the tools are simply unused — they add approximately 80–120 MB to the image size but have no runtime overhead when not invoked.
+
+#### Gem Version Pinning
+
+All gem versions are pinned to match **Chef Workstation 25.13.7**. The canonical source is `components/gems/Gemfile.lock` in the `chef/chef-workstation` repository:
+
+  https://github.com/chef/chef-workstation/blob/main/components/gems/Gemfile.lock
+
+Key constraints from the Chef ecosystem:
+
+| Constraint | Reason |
+|------------|--------|
+| `ffi <= 1.16.3` | `mixlib-log` requires `ffi < 1.17.0` |
+| `nokogiri < 1.19.1` | 1.19.1+ requires Ruby >= 3.2; we use 3.1 |
+| `rubocop = 1.25.1` | `cookstyle` 7.32.8 hard-pins this exact version |
+| `train-core = 3.16.1` | `inspec-core` and kitchen drivers depend on this |
+
+#### Kitchen Drivers and Verifiers
+
+The following Test Kitchen drivers are shipped:
+
+| Gem | Version | Notes |
+|-----|---------|-------|
+| `kitchen-dokken` | 2.22.2 | Installed from Stromweld fork (matches CW 25.x) |
+| `kitchen-vagrant` | 2.2.0 | |
+| `kitchen-ec2` | 3.22.1 | |
+| `kitchen-azurerm` | 1.13.6 | |
+| `kitchen-google` | 2.6.1 | |
+| `kitchen-hyperv` | 0.10.3 | |
+| `kitchen-vcenter` | 2.12.2 | Modern vSphere/vCenter driver (replaces kitchen-vsphere) |
+| `kitchen-vra` | 3.3.3 | |
+| `kitchen-openstack` | 6.2.1 | |
+| `kitchen-digitalocean` | 0.16.1 | |
+
+The primary verifier is `kitchen-inspec` (3.1.0) backed by `inspec-bin` / `inspec-core` (5.24.7).
+
+#### Legacy Busser Verifier
+
+For older cookbook repos that still use busser-based test suites, the following gems are also shipped:
+
+| Gem | Version | Notes |
+|-----|---------|-------|
+| `busser` | 0.8.0 | Installed with `--force` (see below) |
+| `busser-serverspec` | 0.6.3 | Serverspec runner plugin |
+| `busser-bats` | 0.5.0 | Bats runner plugin |
+
+> **Why `--force`?** `busser` 0.8.0 has a hard runtime dependency on `thor <= 0.19.0`, which conflicts with `thor` 1.4.0 required by test-kitchen, inspec, cookstyle, and most of the Chef gem ecosystem. Chef Workstation does not ship busser for this reason. The `--force` flag overrides the dependency check during installation. This is safe because busser uses thor only for its own CLI argument parsing, and during Test Kitchen runs the busser verifier plugin manages busser's lifecycle internally without invoking the busser CLI directly. The busser gems are never loaded in the same Ruby process as test-kitchen or inspec — they run on the test instance, not the workstation.
+
+> **Note on kitchen-vsphere:** The rubygems `kitchen-vsphere` gem (0.2.0, 2015) requires `test-kitchen ~> 1.0` and is incompatible with TK 3.x at both the dependency and API level. `kitchen-vcenter` is the maintained replacement using `rbvmomi2` and the vSphere REST API.
 
 ### 4.6 Container Configuration
 
@@ -408,14 +502,16 @@ The Ruby build stage in the Dockerfile produces a self-contained tree under `/op
 
 | Path | Contents |
 |------|----------|
-| `bin/ruby` | Ruby interpreter (copied from the build stage) |
+| `bin/ruby` | Ruby 3.1 interpreter (copied from the build stage) |
 | `bin/cookstyle` | CookStyle binstub using the embedded Ruby |
 | `bin/kitchen` | Test Kitchen binstub using the embedded Ruby |
+| `bin/inspec` | InSpec binstub using the embedded Ruby |
 | `lib/libruby*` | Ruby shared libraries |
 | `lib/ruby/` | Ruby standard library |
-| `lib/ruby/gems/3.2.0/` | Installed gems (cookstyle, test-kitchen, kitchen-dokken, and dependencies) |
+| `lib/ruby/gems/3.1.0/` | Installed gems (cookstyle, test-kitchen, inspec, kitchen drivers, and dependencies) |
+| `env.sh` | Shell snippet exporting `RUBYLIB`, `GEM_HOME`, `GEM_PATH` for the embedded tree |
 
-The binstubs use a shebang of `#!/opt/chef-migration-metrics/embedded/bin/ruby` so they are fully independent of any system Ruby. The application resolves tool paths from this directory by default (see the `embedded_bin_dir` configuration setting in the [Configuration Specification](../configuration/Specification.md)).
+The binstubs are shell wrappers that source `env.sh` and exec the embedded Ruby interpreter with the gem's entry-point. They are fully independent of any system Ruby. The application resolves tool paths from this directory by default (see the `embedded_bin_dir` configuration setting in the [Configuration Specification](../configuration/Specification.md)).
 
 ### 4.7 Health Check
 
@@ -1149,9 +1245,9 @@ deb:
 
 The embedded Ruby environment is built during the `make build-embedded` step (or as part of `make package-all`) into `./build/embedded/`. The build process:
 
-1. Uses a Docker container (`ruby:3.2-bookworm`) to install gems into an isolated prefix, ensuring a consistent build regardless of the host system.
-2. Installs `cookstyle`, `test-kitchen`, and `kitchen-dokken` gems (and their transitive dependencies) with `--no-document`.
-3. Creates binstubs (`cookstyle`, `kitchen`) with shebangs pointing to `/opt/chef-migration-metrics/embedded/bin/ruby`.
+1. Uses a Docker container (`ruby:3.1-bookworm`) to install gems into an isolated prefix, ensuring a consistent build regardless of the host system. Ruby 3.1 is used to match Chef Workstation 25.13.7.
+2. Pins `ffi:1.16.3` first, then installs `cookstyle:7.32.8`, `test-kitchen:3.9.1`, `inspec-bin:5.24.7`, `kitchen-inspec:3.1.0`, all kitchen drivers (vagrant, ec2, azurerm, google, hyperv, vcenter, vra, openstack, digitalocean), and `kitchen-dokken` from the Stromweld fork — all version-pinned to match Chef Workstation 25.13.7.
+3. Creates binstubs (`cookstyle`, `kitchen`, `inspec`) with shebangs pointing to `/opt/chef-migration-metrics/embedded/bin/ruby`.
 4. Copies the Ruby interpreter and shared libraries into the prefix.
 5. Exports the entire tree to `./build/embedded/` on the host for nFPM to package.
 

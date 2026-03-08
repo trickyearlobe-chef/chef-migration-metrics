@@ -1,0 +1,369 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package datastore
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// CookbookNodeUsage represents a row in the cookbook_node_usage table. Each
+// row records that a specific node snapshot was running a specific cookbook
+// at a specific version.
+type CookbookNodeUsage struct {
+	ID              string    `json:"id"`
+	CookbookID      string    `json:"cookbook_id"`
+	NodeSnapshotID  string    `json:"node_snapshot_id"`
+	CookbookVersion string    `json:"cookbook_version"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// MarshalJSON implements json.Marshaler for CookbookNodeUsage.
+func (u CookbookNodeUsage) MarshalJSON() ([]byte, error) {
+	type Alias CookbookNodeUsage
+	return json.Marshal((Alias)(u))
+}
+
+// ---------------------------------------------------------------------------
+// Insert
+// ---------------------------------------------------------------------------
+
+// InsertCookbookNodeUsageParams holds the fields required to insert a single
+// cookbook-node usage record.
+type InsertCookbookNodeUsageParams struct {
+	CookbookID      string
+	NodeSnapshotID  string
+	CookbookVersion string
+}
+
+// InsertCookbookNodeUsage inserts a single cookbook-node usage record and
+// returns the created row.
+func (db *DB) InsertCookbookNodeUsage(ctx context.Context, p InsertCookbookNodeUsageParams) (CookbookNodeUsage, error) {
+	return db.insertCookbookNodeUsage(ctx, db.q(), p)
+}
+
+func (db *DB) insertCookbookNodeUsage(ctx context.Context, q queryable, p InsertCookbookNodeUsageParams) (CookbookNodeUsage, error) {
+	if err := validateUsageParams(p); err != nil {
+		return CookbookNodeUsage{}, err
+	}
+
+	const query = `
+		INSERT INTO cookbook_node_usage (cookbook_id, node_snapshot_id, cookbook_version)
+		VALUES ($1, $2, $3)
+		RETURNING id, cookbook_id, node_snapshot_id, cookbook_version, created_at
+	`
+
+	return scanCookbookNodeUsage(q.QueryRowContext(ctx, query,
+		p.CookbookID,
+		p.NodeSnapshotID,
+		p.CookbookVersion,
+	))
+}
+
+// ---------------------------------------------------------------------------
+// Bulk insert
+// ---------------------------------------------------------------------------
+
+// BulkInsertCookbookNodeUsage inserts multiple cookbook-node usage records
+// within a single transaction for efficiency. Returns the count of rows
+// inserted. If any insert fails, the entire batch is rolled back.
+func (db *DB) BulkInsertCookbookNodeUsage(ctx context.Context, params []InsertCookbookNodeUsageParams) (int, error) {
+	if len(params) == 0 {
+		return 0, nil
+	}
+
+	inserted := 0
+	err := db.Tx(ctx, func(tx *sql.Tx) error {
+		const query = `
+			INSERT INTO cookbook_node_usage (cookbook_id, node_snapshot_id, cookbook_version)
+			VALUES ($1, $2, $3)
+		`
+
+		stmt, err := tx.PrepareContext(ctx, query)
+		if err != nil {
+			return fmt.Errorf("datastore: preparing cookbook node usage insert: %w", err)
+		}
+		defer stmt.Close()
+
+		for i, p := range params {
+			if err := validateUsageParams(p); err != nil {
+				return fmt.Errorf("row %d: %w", i, err)
+			}
+
+			_, err := stmt.ExecContext(ctx,
+				p.CookbookID,
+				p.NodeSnapshotID,
+				p.CookbookVersion,
+			)
+			if err != nil {
+				return fmt.Errorf("datastore: inserting cookbook node usage (row %d): %w", i, err)
+			}
+			inserted++
+		}
+
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return inserted, nil
+}
+
+// ---------------------------------------------------------------------------
+// Delete
+// ---------------------------------------------------------------------------
+
+// DeleteCookbookNodeUsageByCollectionRun removes all cookbook-node usage
+// records associated with node snapshots from the given collection run.
+// Returns the number of rows deleted.
+func (db *DB) DeleteCookbookNodeUsageByCollectionRun(ctx context.Context, collectionRunID string) (int, error) {
+	res, err := db.pool.ExecContext(ctx,
+		`DELETE FROM cookbook_node_usage
+		 WHERE node_snapshot_id IN (
+			SELECT id FROM node_snapshots WHERE collection_run_id = $1
+		 )`,
+		collectionRunID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: deleting cookbook node usage by collection run: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("datastore: checking rows affected: %w", err)
+	}
+	return int(n), nil
+}
+
+// DeleteCookbookNodeUsageByCookbook removes all usage records for the given
+// cookbook. Returns the number of rows deleted.
+func (db *DB) DeleteCookbookNodeUsageByCookbook(ctx context.Context, cookbookID string) (int, error) {
+	res, err := db.pool.ExecContext(ctx,
+		`DELETE FROM cookbook_node_usage WHERE cookbook_id = $1`,
+		cookbookID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: deleting cookbook node usage by cookbook: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("datastore: checking rows affected: %w", err)
+	}
+	return int(n), nil
+}
+
+// ---------------------------------------------------------------------------
+// Query methods
+// ---------------------------------------------------------------------------
+
+// ListCookbookNodeUsageByCookbook returns all usage records for the given
+// cookbook, ordered by cookbook_version then node_snapshot_id.
+func (db *DB) ListCookbookNodeUsageByCookbook(ctx context.Context, cookbookID string) ([]CookbookNodeUsage, error) {
+	return db.listCookbookNodeUsageByCookbook(ctx, db.q(), cookbookID)
+}
+
+func (db *DB) listCookbookNodeUsageByCookbook(ctx context.Context, q queryable, cookbookID string) ([]CookbookNodeUsage, error) {
+	const query = `
+		SELECT id, cookbook_id, node_snapshot_id, cookbook_version, created_at
+		FROM cookbook_node_usage
+		WHERE cookbook_id = $1
+		ORDER BY cookbook_version, node_snapshot_id
+	`
+	return scanCookbookNodeUsages(q.QueryContext(ctx, query, cookbookID))
+}
+
+// ListCookbookNodeUsageByNodeSnapshot returns all usage records for the
+// given node snapshot, ordered by cookbook_version.
+func (db *DB) ListCookbookNodeUsageByNodeSnapshot(ctx context.Context, nodeSnapshotID string) ([]CookbookNodeUsage, error) {
+	return db.listCookbookNodeUsageByNodeSnapshot(ctx, db.q(), nodeSnapshotID)
+}
+
+func (db *DB) listCookbookNodeUsageByNodeSnapshot(ctx context.Context, q queryable, nodeSnapshotID string) ([]CookbookNodeUsage, error) {
+	const query = `
+		SELECT id, cookbook_id, node_snapshot_id, cookbook_version, created_at
+		FROM cookbook_node_usage
+		WHERE node_snapshot_id = $1
+		ORDER BY cookbook_version
+	`
+	return scanCookbookNodeUsages(q.QueryContext(ctx, query, nodeSnapshotID))
+}
+
+// ListCookbookNodeUsageByCollectionRun returns all usage records for node
+// snapshots from the given collection run, ordered by cookbook_id then
+// node_snapshot_id.
+func (db *DB) ListCookbookNodeUsageByCollectionRun(ctx context.Context, collectionRunID string) ([]CookbookNodeUsage, error) {
+	return db.listCookbookNodeUsageByCollectionRun(ctx, db.q(), collectionRunID)
+}
+
+func (db *DB) listCookbookNodeUsageByCollectionRun(ctx context.Context, q queryable, collectionRunID string) ([]CookbookNodeUsage, error) {
+	const query = `
+		SELECT u.id, u.cookbook_id, u.node_snapshot_id, u.cookbook_version, u.created_at
+		FROM cookbook_node_usage u
+		INNER JOIN node_snapshots ns ON ns.id = u.node_snapshot_id
+		WHERE ns.collection_run_id = $1
+		ORDER BY u.cookbook_id, u.node_snapshot_id
+	`
+	return scanCookbookNodeUsages(q.QueryContext(ctx, query, collectionRunID))
+}
+
+// ---------------------------------------------------------------------------
+// Aggregation queries
+// ---------------------------------------------------------------------------
+
+// CookbookUsageCount holds the result of a count-by-cookbook aggregation.
+type CookbookUsageCount struct {
+	CookbookID      string `json:"cookbook_id"`
+	CookbookVersion string `json:"cookbook_version"`
+	NodeCount       int    `json:"node_count"`
+}
+
+// CountNodesByCookbook returns the number of distinct node snapshots using
+// each cookbook version within the given collection run. Results are ordered
+// by node count descending.
+func (db *DB) CountNodesByCookbook(ctx context.Context, collectionRunID string) ([]CookbookUsageCount, error) {
+	return db.countNodesByCookbook(ctx, db.q(), collectionRunID)
+}
+
+func (db *DB) countNodesByCookbook(ctx context.Context, q queryable, collectionRunID string) ([]CookbookUsageCount, error) {
+	const query = `
+		SELECT u.cookbook_id, u.cookbook_version, COUNT(DISTINCT u.node_snapshot_id) AS node_count
+		FROM cookbook_node_usage u
+		INNER JOIN node_snapshots ns ON ns.id = u.node_snapshot_id
+		WHERE ns.collection_run_id = $1
+		GROUP BY u.cookbook_id, u.cookbook_version
+		ORDER BY node_count DESC, u.cookbook_id, u.cookbook_version
+	`
+
+	rows, err := q.QueryContext(ctx, query, collectionRunID)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: counting nodes by cookbook: %w", err)
+	}
+	defer rows.Close()
+
+	var counts []CookbookUsageCount
+	for rows.Next() {
+		var c CookbookUsageCount
+		if err := rows.Scan(&c.CookbookID, &c.CookbookVersion, &c.NodeCount); err != nil {
+			return nil, fmt.Errorf("datastore: scanning cookbook usage count: %w", err)
+		}
+		counts = append(counts, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating cookbook usage counts: %w", err)
+	}
+	return counts, nil
+}
+
+// CountNodesByCookbookName returns the number of distinct node snapshots
+// using each version of a specific cookbook (by name) within the given
+// organisation's most recent completed collection run.
+func (db *DB) CountNodesByCookbookName(ctx context.Context, organisationID, cookbookName string) ([]CookbookUsageCount, error) {
+	return db.countNodesByCookbookName(ctx, db.q(), organisationID, cookbookName)
+}
+
+func (db *DB) countNodesByCookbookName(ctx context.Context, q queryable, organisationID, cookbookName string) ([]CookbookUsageCount, error) {
+	const query = `
+		SELECT u.cookbook_id, u.cookbook_version, COUNT(DISTINCT u.node_snapshot_id) AS node_count
+		FROM cookbook_node_usage u
+		INNER JOIN node_snapshots ns ON ns.id = u.node_snapshot_id
+		INNER JOIN collection_runs cr ON cr.id = ns.collection_run_id
+		INNER JOIN cookbooks cb ON cb.id = u.cookbook_id
+		WHERE ns.organisation_id = $1
+		  AND cb.name = $2
+		  AND cr.status = 'completed'
+		  AND cr.started_at = (
+			SELECT MAX(cr2.started_at)
+			FROM collection_runs cr2
+			WHERE cr2.organisation_id = $1 AND cr2.status = 'completed'
+		  )
+		GROUP BY u.cookbook_id, u.cookbook_version
+		ORDER BY node_count DESC, u.cookbook_version
+	`
+
+	rows, err := q.QueryContext(ctx, query, organisationID, cookbookName)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: counting nodes by cookbook name: %w", err)
+	}
+	defer rows.Close()
+
+	var counts []CookbookUsageCount
+	for rows.Next() {
+		var c CookbookUsageCount
+		if err := rows.Scan(&c.CookbookID, &c.CookbookVersion, &c.NodeCount); err != nil {
+			return nil, fmt.Errorf("datastore: scanning cookbook usage count: %w", err)
+		}
+		counts = append(counts, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating cookbook usage counts: %w", err)
+	}
+	return counts, nil
+}
+
+// ---------------------------------------------------------------------------
+// Validation helper
+// ---------------------------------------------------------------------------
+
+func validateUsageParams(p InsertCookbookNodeUsageParams) error {
+	if p.CookbookID == "" {
+		return fmt.Errorf("datastore: cookbook ID is required for cookbook node usage")
+	}
+	if p.NodeSnapshotID == "" {
+		return fmt.Errorf("datastore: node snapshot ID is required for cookbook node usage")
+	}
+	if p.CookbookVersion == "" {
+		return fmt.Errorf("datastore: cookbook version is required for cookbook node usage")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Row scanning helpers
+// ---------------------------------------------------------------------------
+
+func scanCookbookNodeUsage(row *sql.Row) (CookbookNodeUsage, error) {
+	var u CookbookNodeUsage
+	err := row.Scan(
+		&u.ID,
+		&u.CookbookID,
+		&u.NodeSnapshotID,
+		&u.CookbookVersion,
+		&u.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return CookbookNodeUsage{}, ErrNotFound
+		}
+		return CookbookNodeUsage{}, fmt.Errorf("datastore: scanning cookbook node usage: %w", err)
+	}
+	return u, nil
+}
+
+func scanCookbookNodeUsages(rows *sql.Rows, err error) ([]CookbookNodeUsage, error) {
+	if err != nil {
+		return nil, fmt.Errorf("datastore: querying cookbook node usage: %w", err)
+	}
+	defer rows.Close()
+
+	var usages []CookbookNodeUsage
+	for rows.Next() {
+		var u CookbookNodeUsage
+		if err := rows.Scan(
+			&u.ID,
+			&u.CookbookID,
+			&u.NodeSnapshotID,
+			&u.CookbookVersion,
+			&u.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("datastore: scanning cookbook node usage row: %w", err)
+		}
+		usages = append(usages, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating cookbook node usage rows: %w", err)
+	}
+	return usages, nil
+}
