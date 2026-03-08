@@ -1,13 +1,17 @@
 {
   "name": "chef-migration-metrics-frontend",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "echo \"No frontend tests yet\""
   },
   "dependencies": {
     "react": "^18.3.1",
