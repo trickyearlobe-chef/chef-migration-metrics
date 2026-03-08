@@ -229,7 +229,7 @@ export interface NodeSnapshot {
   roles: string[] | null;
   policy_name: string;
   policy_group: string;
-  ohai_time: string;
+  ohai_time: number;
   is_stale: boolean;
   collected_at: string;
   created_at: string;
