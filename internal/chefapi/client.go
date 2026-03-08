@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/md5"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -702,11 +703,19 @@ func (c *Client) DownloadFileContent(ctx context.Context, fileURL, checksum stri
 		return nil, fmt.Errorf("chefapi: reading file content: %w", err)
 	}
 
-	// Validate checksum if provided. Chef server file checksums are
-	// hex-encoded SHA-256 hashes.
+	// Validate checksum if provided. Chef Server bookshelf checksums are
+	// hex-encoded MD5 hashes (32 hex chars). We detect the algorithm from
+	// the checksum length: 32 hex chars = MD5, 64 hex chars = SHA-256.
 	if checksum != "" {
-		hash := sha256.Sum256(data)
-		actual := fmt.Sprintf("%x", hash)
+		var actual string
+		switch len(checksum) {
+		case 32: // MD5
+			hash := md5.Sum(data)
+			actual = fmt.Sprintf("%x", hash)
+		default: // SHA-256 (or any other length — fall back to SHA-256)
+			hash := sha256.Sum256(data)
+			actual = fmt.Sprintf("%x", hash)
+		}
 		if actual != checksum {
 			return nil, fmt.Errorf("chefapi: checksum mismatch for %s: expected %s, got %s", fileURL, checksum, actual)
 		}
