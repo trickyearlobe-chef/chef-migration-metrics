@@ -478,7 +478,22 @@ func (db *DB) listCookbooksByName(ctx context.Context, q queryable, name string)
 		       download_status, download_error,
 		       first_seen_at, last_fetched_at, created_at, updated_at
 		FROM cookbooks
-		WHERE name = $1
+		WHERE name = $1 AND source = 'chef_server'
+
+		UNION ALL
+
+		SELECT id, organisation_id, name, version, source,
+		       git_repo_url, head_commit_sha, default_branch,
+		       has_test_suite, is_active, is_stale_cookbook,
+		       download_status, download_error,
+		       first_seen_at, last_fetched_at, created_at, updated_at
+		FROM (
+			SELECT DISTINCT ON (name) *
+			FROM cookbooks
+			WHERE name = $1 AND source = 'git'
+			ORDER BY name, last_fetched_at DESC NULLS LAST
+		) git_deduped
+
 		ORDER BY source, organisation_id, version
 	`
 	return scanCookbooks(q.QueryContext(ctx, query, name))
@@ -491,14 +506,15 @@ func (db *DB) ListGitCookbooks(ctx context.Context) ([]Cookbook, error) {
 
 func (db *DB) listGitCookbooks(ctx context.Context, q queryable) ([]Cookbook, error) {
 	const query = `
-		SELECT id, organisation_id, name, version, source,
+		SELECT DISTINCT ON (name)
+		       id, organisation_id, name, version, source,
 		       git_repo_url, head_commit_sha, default_branch,
 		       has_test_suite, is_active, is_stale_cookbook,
 		       download_status, download_error,
 		       first_seen_at, last_fetched_at, created_at, updated_at
 		FROM cookbooks
 		WHERE source = 'git'
-		ORDER BY name
+		ORDER BY name, last_fetched_at DESC NULLS LAST
 	`
 	return scanCookbooks(q.QueryContext(ctx, query))
 }
