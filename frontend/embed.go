@@ -7,7 +7,7 @@
 // target which creates a placeholder when npm is unavailable).
 //
 // This package lives inside frontend/ (alongside package.json) because
-// go:embed paths are relative to the source file and cannot use "..".
+// embed paths are relative to the source file and cannot use "..".
 // Placing it here lets the directive reference dist/ directly.
 //
 // The internal/frontend package imports this and calls RegisterEmbedFS
