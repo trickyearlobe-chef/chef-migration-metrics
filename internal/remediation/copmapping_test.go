@@ -12,12 +12,12 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestLookupCop_KnownDeprecation(t *testing.T) {
-	m := LookupCop("ChefDeprecations/ResourceWithoutUnifiedTrue")
+	m := LookupCop("Chef/Deprecations/ResourceWithoutUnifiedTrue")
 	if m == nil {
 		t.Fatal("expected non-nil mapping for ChefDeprecations/ResourceWithoutUnifiedTrue")
 	}
-	if m.CopName != "ChefDeprecations/ResourceWithoutUnifiedTrue" {
-		t.Errorf("CopName = %q, want %q", m.CopName, "ChefDeprecations/ResourceWithoutUnifiedTrue")
+	if m.CopName != "Chef/Deprecations/ResourceWithoutUnifiedTrue" {
+		t.Errorf("CopName = %q, want %q", m.CopName, "Chef/Deprecations/ResourceWithoutUnifiedTrue")
 	}
 	if m.Description == "" {
 		t.Error("Description should not be empty")
@@ -34,12 +34,12 @@ func TestLookupCop_KnownDeprecation(t *testing.T) {
 }
 
 func TestLookupCop_KnownCorrectness(t *testing.T) {
-	m := LookupCop("ChefCorrectness/BlockGuardWithOnlyString")
+	m := LookupCop("Chef/Correctness/BlockGuardWithOnlyString")
 	if m == nil {
 		t.Fatal("expected non-nil mapping for ChefCorrectness/BlockGuardWithOnlyString")
 	}
-	if m.CopName != "ChefCorrectness/BlockGuardWithOnlyString" {
-		t.Errorf("CopName = %q, want %q", m.CopName, "ChefCorrectness/BlockGuardWithOnlyString")
+	if m.CopName != "Chef/Correctness/BlockGuardWithOnlyString" {
+		t.Errorf("CopName = %q, want %q", m.CopName, "Chef/Correctness/BlockGuardWithOnlyString")
 	}
 	if m.Description == "" {
 		t.Error("Description should not be empty")
@@ -50,7 +50,7 @@ func TestLookupCop_KnownCorrectness(t *testing.T) {
 }
 
 func TestLookupCop_UnknownCop(t *testing.T) {
-	m := LookupCop("ChefDeprecations/CompletelyFakeCop")
+	m := LookupCop("Chef/Deprecations/CompletelyFakeCop")
 	if m != nil {
 		t.Errorf("expected nil for unknown cop, got %+v", m)
 	}
@@ -65,7 +65,7 @@ func TestLookupCop_EmptyString(t *testing.T) {
 
 func TestLookupCop_PartialMatch(t *testing.T) {
 	// Ensure partial names don't accidentally match.
-	m := LookupCop("ChefDeprecations/Resource")
+	m := LookupCop("Chef/Deprecations/Resource")
 	if m != nil {
 		t.Errorf("expected nil for partial cop name, got %+v", m)
 	}
@@ -92,56 +92,56 @@ func TestLookupCop_SpecificCops(t *testing.T) {
 		hasReplacement bool
 	}{
 		{
-			copName:        "ChefDeprecations/NodeSet",
+			copName:        "Chef/Deprecations/NodeSet",
 			wantURL:        "https://docs.chef.io/deprecations_attributes/",
 			wantIntro:      "12.12",
 			wantRemoved:    "14.0",
 			hasReplacement: true,
 		},
 		{
-			copName:        "ChefDeprecations/ChefRewind",
+			copName:        "Chef/Deprecations/ChefRewind",
 			wantURL:        "https://docs.chef.io/deprecations/",
 			wantIntro:      "12.10",
 			wantRemoved:    "14.0",
 			hasReplacement: true,
 		},
 		{
-			copName:        "ChefDeprecations/RequireRecipe",
+			copName:        "Chef/Deprecations/RequireRecipe",
 			wantURL:        "https://docs.chef.io/deprecations/",
 			wantIntro:      "10.0",
 			wantRemoved:    "14.0",
 			hasReplacement: true,
 		},
 		{
-			copName:        "ChefCorrectness/CookbookUsesNodeSave",
+			copName:        "Chef/Correctness/CookbookUsesNodeSave",
 			wantURL:        "https://docs.chef.io/resources/",
 			wantIntro:      "12.0",
 			wantRemoved:    "",
 			hasReplacement: true,
 		},
 		{
-			copName:        "ChefCorrectness/MetadataMissingName",
+			copName:        "Chef/Correctness/MetadataMissingName",
 			wantURL:        "https://docs.chef.io/config_rb_metadata/",
 			wantIntro:      "12.0",
 			wantRemoved:    "",
 			hasReplacement: true,
 		},
 		{
-			copName:        "ChefCorrectness/LazyEvalNodeAttributeDefaults",
+			copName:        "Chef/Correctness/LazyEvalNodeAttributeDefaults",
 			wantURL:        "https://docs.chef.io/custom_resources/",
 			wantIntro:      "12.0",
 			wantRemoved:    "",
 			hasReplacement: true,
 		},
 		{
-			copName:        "ChefDeprecations/UseAutomaticResourceName",
+			copName:        "Chef/Deprecations/UseAutomaticResourceName",
 			wantURL:        "https://docs.chef.io/deprecations/",
 			wantIntro:      "16.0",
 			wantRemoved:    "",
 			hasReplacement: true,
 		},
 		{
-			copName:        "ChefDeprecations/UserDeprecatedSupportsProperty",
+			copName:        "Chef/Deprecations/UserDeprecatedSupportsProperty",
 			wantURL:        "https://docs.chef.io/deprecations/",
 			wantIntro:      "12.14",
 			wantRemoved:    "15.0",
@@ -215,15 +215,15 @@ func TestAllCopMappings_ContainsExpectedCops(t *testing.T) {
 	}
 
 	expected := []string{
-		"ChefDeprecations/ResourceWithoutUnifiedTrue",
-		"ChefDeprecations/NodeSet",
-		"ChefDeprecations/NodeSetUnless",
-		"ChefDeprecations/ChefRewind",
-		"ChefDeprecations/RequireRecipe",
-		"ChefCorrectness/BlockGuardWithOnlyString",
-		"ChefCorrectness/CookbookUsesNodeSave",
-		"ChefCorrectness/MetadataMissingName",
-		"ChefCorrectness/ScopedFileExist",
+		"Chef/Deprecations/ResourceWithoutUnifiedTrue",
+		"Chef/Deprecations/NodeSet",
+		"Chef/Deprecations/NodeSetUnless",
+		"Chef/Deprecations/ChefRewind",
+		"Chef/Deprecations/RequireRecipe",
+		"Chef/Correctness/BlockGuardWithOnlyString",
+		"Chef/Correctness/CookbookUsesNodeSave",
+		"Chef/Correctness/MetadataMissingName",
+		"Chef/Correctness/ScopedFileExist",
 	}
 
 	for _, cop := range expected {
@@ -269,8 +269,8 @@ func TestAllCopMappings_AllFieldsPopulated(t *testing.T) {
 func TestAllCopMappings_AllCopsInCorrectNamespace(t *testing.T) {
 	all := AllCopMappings()
 	for _, m := range all {
-		isDeprecation := len(m.CopName) > len("ChefDeprecations/") && m.CopName[:len("ChefDeprecations/")] == "ChefDeprecations/"
-		isCorrectness := len(m.CopName) > len("ChefCorrectness/") && m.CopName[:len("ChefCorrectness/")] == "ChefCorrectness/"
+		isDeprecation := len(m.CopName) > len("Chef/Deprecations/") && m.CopName[:len("Chef/Deprecations/")] == "Chef/Deprecations/"
+		isCorrectness := len(m.CopName) > len("Chef/Correctness/") && m.CopName[:len("Chef/Correctness/")] == "Chef/Correctness/"
 
 		if !isDeprecation && !isCorrectness {
 			t.Errorf("cop %q is not in ChefDeprecations/ or ChefCorrectness/ namespace", m.CopName)
@@ -321,8 +321,8 @@ func TestCopMappingCount_MatchesIndexSize(t *testing.T) {
 func TestLookupCop_ReturnsSamePointer(t *testing.T) {
 	// Multiple lookups of the same cop should return the same pointer
 	// (into the index), not copies.
-	m1 := LookupCop("ChefDeprecations/NodeSet")
-	m2 := LookupCop("ChefDeprecations/NodeSet")
+	m1 := LookupCop("Chef/Deprecations/NodeSet")
+	m2 := LookupCop("Chef/Deprecations/NodeSet")
 
 	if m1 == nil || m2 == nil {
 		t.Fatal("expected non-nil for ChefDeprecations/NodeSet")
@@ -342,10 +342,10 @@ func TestAllCopMappings_ContainsBothNamespaces(t *testing.T) {
 	hasCorrectness := false
 
 	for _, m := range all {
-		if len(m.CopName) > len("ChefDeprecations/") && m.CopName[:len("ChefDeprecations/")] == "ChefDeprecations/" {
+		if len(m.CopName) > len("Chef/Deprecations/") && m.CopName[:len("Chef/Deprecations/")] == "Chef/Deprecations/" {
 			hasDeprecation = true
 		}
-		if len(m.CopName) > len("ChefCorrectness/") && m.CopName[:len("ChefCorrectness/")] == "ChefCorrectness/" {
+		if len(m.CopName) > len("Chef/Correctness/") && m.CopName[:len("Chef/Correctness/")] == "Chef/Correctness/" {
 			hasCorrectness = true
 		}
 		if hasDeprecation && hasCorrectness {
@@ -354,10 +354,10 @@ func TestAllCopMappings_ContainsBothNamespaces(t *testing.T) {
 	}
 
 	if !hasDeprecation {
-		t.Error("AllCopMappings() contains no ChefDeprecations/* entries")
+		t.Error("AllCopMappings() contains no Chef/Deprecations/* entries")
 	}
 	if !hasCorrectness {
-		t.Error("AllCopMappings() contains no ChefCorrectness/* entries")
+		t.Error("AllCopMappings() contains no Chef/Correctness/* entries")
 	}
 }
 
@@ -382,7 +382,7 @@ func TestAllCopMappings_MigrationURLsStartWithHTTPS(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEnrichedOffense_CanHoldMapping(t *testing.T) {
-	m := LookupCop("ChefDeprecations/NodeSet")
+	m := LookupCop("Chef/Deprecations/NodeSet")
 	if m == nil {
 		t.Fatal("expected non-nil mapping")
 	}
@@ -410,7 +410,7 @@ func TestEnrichedOffense_CanHoldMapping(t *testing.T) {
 
 func TestEnrichedOffense_NilRemediation(t *testing.T) {
 	eo := EnrichedOffense{
-		CopName:     "ChefStyle/SomeUnmappedCop",
+		CopName:     "Chef/Style/SomeUnmappedCop",
 		Severity:    "convention",
 		Message:     "test",
 		Remediation: nil,

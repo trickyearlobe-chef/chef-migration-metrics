@@ -15,13 +15,14 @@ import (
 // buildAutocorrectArgs
 // ---------------------------------------------------------------------------
 
-func TestBuildAutocorrectArgs_WithTargetVersion(t *testing.T) {
-	args := buildAutocorrectArgs("/tmp/cookbook", "18.0")
+func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
+	cookbookDir := t.TempDir()
+	args := buildAutocorrectArgs(cookbookDir, "18.0")
 	if len(args) == 0 {
 		t.Fatal("expected non-empty args")
 	}
 
-	// Should contain --auto-correct, --format json, --only, and the directory.
+	// Should contain --auto-correct, --format json, --config, --only, and the directory.
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--auto-correct") {
 		t.Error("args should contain --auto-correct")
@@ -29,19 +30,91 @@ func TestBuildAutocorrectArgs_WithTargetVersion(t *testing.T) {
 	if !strings.Contains(joined, "--format json") {
 		t.Error("args should contain --format json")
 	}
+	if !strings.Contains(joined, "--config") {
+		t.Error("args should contain --config when target version is set")
+	}
 	if !strings.Contains(joined, "--only") {
 		t.Error("args should contain --only when target version is set")
 	}
-	if !strings.Contains(joined, "ChefDeprecations,ChefCorrectness") {
-		t.Error("args should restrict to ChefDeprecations,ChefCorrectness")
+	if !strings.Contains(joined, "Chef/Deprecations,Chef/Correctness") {
+		t.Error("args should restrict to Chef/Deprecations,Chef/Correctness")
 	}
-	if args[len(args)-1] != "/tmp/cookbook" {
-		t.Errorf("last arg = %q, want /tmp/cookbook", args[len(args)-1])
+	if args[len(args)-1] != cookbookDir {
+		t.Errorf("last arg = %q, want %s", args[len(args)-1], cookbookDir)
+	}
+
+	// --target-chef-version is NOT a CLI flag.
+	if strings.Contains(joined, "--target-chef-version") {
+		t.Error("--target-chef-version should not be a CLI arg; it belongs in .rubocop_cmm.yml")
+	}
+
+	// Verify sidecar .rubocop_cmm.yml was written with TargetChefVersion.
+	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	if err != nil {
+		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "TargetChefVersion: 18.0") {
+		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", cmmConfigName, content)
+	}
+
+	// Without an existing .rubocop.yml the sidecar should require cookstyle
+	// so the TargetChefVersion parameter is recognised.
+	if !strings.Contains(content, "require:") || !strings.Contains(content, "cookstyle") {
+		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", cmmConfigName, content)
+	}
+	if strings.Contains(content, "inherit_from") {
+		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", cmmConfigName, content)
+	}
+
+	// Original .rubocop.yml must not exist (we must not clobber cookbook config).
+	if _, err := os.Stat(filepath.Join(cookbookDir, ".rubocop.yml")); err == nil {
+		t.Error("should not have written .rubocop.yml — only the sidecar .rubocop_cmm.yml")
+	}
+}
+
+func TestBuildAutocorrectArgs_WithTargetVersion_WithCookbookConfig(t *testing.T) {
+	cookbookDir := t.TempDir()
+
+	// Simulate a cookbook that already has its own .rubocop.yml.
+	existingConfig := "require:\n  - cookstyle\n\nChef/Style/TrueClassFalseClassResourceProperties:\n  Enabled: false\n"
+	if err := os.WriteFile(filepath.Join(cookbookDir, ".rubocop.yml"), []byte(existingConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	args := buildAutocorrectArgs(cookbookDir, "17.0")
+	joined := strings.Join(args, " ")
+
+	if !strings.Contains(joined, "--config") {
+		t.Error("args should contain --config when target version is set")
+	}
+
+	// Verify sidecar inherits from the cookbook's own config.
+	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	if err != nil {
+		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "inherit_from: .rubocop.yml") {
+		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", cmmConfigName, content)
+	}
+	if !strings.Contains(content, "TargetChefVersion: 17.0") {
+		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", cmmConfigName, content)
+	}
+
+	// The cookbook's original .rubocop.yml must be preserved.
+	origData, err := os.ReadFile(filepath.Join(cookbookDir, ".rubocop.yml"))
+	if err != nil {
+		t.Fatal("cookbook .rubocop.yml should still exist")
+	}
+	if string(origData) != existingConfig {
+		t.Errorf("cookbook .rubocop.yml was modified; expected original content to be preserved")
 	}
 }
 
 func TestBuildAutocorrectArgs_WithoutTargetVersion(t *testing.T) {
-	args := buildAutocorrectArgs("/tmp/cookbook", "")
+	cookbookDir := t.TempDir()
+	args := buildAutocorrectArgs(cookbookDir, "")
 	joined := strings.Join(args, " ")
 
 	if !strings.Contains(joined, "--auto-correct") {
@@ -53,8 +126,16 @@ func TestBuildAutocorrectArgs_WithoutTargetVersion(t *testing.T) {
 	if strings.Contains(joined, "--only") {
 		t.Error("args should NOT contain --only when target version is empty")
 	}
-	if args[len(args)-1] != "/tmp/cookbook" {
-		t.Errorf("last arg = %q, want /tmp/cookbook", args[len(args)-1])
+	if strings.Contains(joined, "--config") {
+		t.Error("args should NOT contain --config when target version is empty")
+	}
+	if args[len(args)-1] != cookbookDir {
+		t.Errorf("last arg = %q, want %s", args[len(args)-1], cookbookDir)
+	}
+
+	// No sidecar config should be written when target version is empty.
+	if _, err := os.Stat(filepath.Join(cookbookDir, cmmConfigName)); err == nil {
+		t.Errorf("%s should not be written when target version is empty", cmmConfigName)
 	}
 }
 
