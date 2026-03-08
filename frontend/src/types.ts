@@ -629,3 +629,71 @@ export interface CookbookRemediationResponse {
   offense_groups: OffenseGroup[];
   autocorrect_preview: AutocorrectPreview;
 }
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+/** POST /api/v1/auth/login request body. */
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+/** POST /api/v1/auth/login success response. */
+export interface LoginResponse {
+  token: string;
+  expires_at: string;
+  user: LoginUserInfo;
+}
+
+export interface LoginUserInfo {
+  username: string;
+  display_name: string;
+  role: string;
+}
+
+/** GET /api/v1/auth/me response. */
+export interface MeResponse {
+  username: string;
+  display_name: string;
+  email?: string;
+  role: string;
+  provider: string;
+}
+
+// ---------------------------------------------------------------------------
+// Admin user management
+// ---------------------------------------------------------------------------
+
+export interface AdminUser {
+  username: string;
+  display_name: string;
+  email?: string;
+  role: string;
+  provider: string;
+  locked: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export type AdminUserListResponse = PaginatedResponse<AdminUser>;
+
+export interface CreateUserRequest {
+  username: string;
+  display_name?: string;
+  email?: string;
+  password: string;
+  role?: string;
+}
+
+export interface UpdateUserRequest {
+  display_name?: string;
+  email?: string;
+  role?: string;
+  locked?: boolean;
+}
+
+export interface ResetPasswordRequest {
+  password: string;
+}
