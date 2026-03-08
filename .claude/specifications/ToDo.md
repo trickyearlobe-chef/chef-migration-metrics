@@ -10,17 +10,17 @@
 |------|------|-----:|------:|--:|
 | [`todo/specification.md`](todo/specification.md) | Specification writing | 32 | 32 | 100% |
 | [`todo/project-setup.md`](todo/project-setup.md) | Project setup and tooling | 16 | 16 | 100% |
-| [`todo/data-collection.md`](todo/data-collection.md) | Node collection, cookbook fetching, role graph | 66 | 68 | 97% |
+| [`todo/data-collection.md`](todo/data-collection.md) | Node collection, cookbook fetching, role graph | 68 | 68 | 100% |
 | [`todo/analysis.md`](todo/analysis.md) | Usage analysis, compatibility testing, remediation, readiness | 61 | 61 | 100% |
-| [`todo/visualisation.md`](todo/visualisation.md) | Dashboard, dependency graph, exports, notifications, log viewer | 0 | 86 | 0% |
+| [`todo/visualisation.md`](todo/visualisation.md) | Dashboard, dependency graph, exports, notifications, log viewer | 67 | 86 | 77% |
 | [`todo/logging.md`](todo/logging.md) | Logging infrastructure | 12 | 12 | 100% |
 | [`todo/auth.md`](todo/auth.md) | Authentication and authorisation | 0 | 5 | 0% |
-| [`todo/configuration.md`](todo/configuration.md) | Configuration and TLS | 43 | 83 | 51% |
+| [`todo/configuration.md`](todo/configuration.md) | Configuration and TLS | 58 | 83 | 69% |
 | [`todo/secrets-storage.md`](todo/secrets-storage.md) | Secrets and credential management | 85 | 150 | 56% |
-| [`todo/packaging.md`](todo/packaging.md) | Build tooling, embedded Ruby, RPM/DEB, container, Compose, ELK, Helm, CI/CD | 22 | 97 | 22% |
-| [`todo/testing.md`](todo/testing.md) | Unit, integration, and end-to-end tests | 4 | 40 | 10% |
+| [`todo/packaging.md`](todo/packaging.md) | Build tooling, embedded Ruby, RPM/DEB, container, Compose, ELK, Helm, CI/CD | 37 | 101 | 36% |
+| [`todo/testing.md`](todo/testing.md) | Unit, integration, and end-to-end tests | 11 | 40 | 27% |
 | [`todo/documentation.md`](todo/documentation.md) | User and developer documentation | 0 | 25 | 0% |
-| **Total** | | **341** | **675** | **50%** |
+| **Total** | | **447** | **679** | **65%** |
 
 ## Regenerating Counts
 

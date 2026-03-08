@@ -132,7 +132,7 @@ Most items are now wired into `cmd/chef-migration-metrics/main.go`. File permiss
 
 ## Web API Integration
 
-None of these are implemented yet. Depends on `internal/webapi/` package (not yet created).
+None of these are implemented yet. The `internal/webapi/` package exists (25 files, 245 tests, full REST handler layer) but the admin credential endpoints are registered as `handleNotImplemented` placeholders.
 
 - [ ] Wire `CredentialStore` into `internal/webapi/` admin credential handlers
 - [ ] Implement `GET /api/v1/admin/credentials` handler (metadata only)
@@ -150,7 +150,7 @@ None of these are implemented yet. Depends on `internal/webapi/` package (not ye
 
 ## Consumer Integration
 
-`internal/chefapi/` exists (74 tests) but does not yet resolve keys via `CredentialResolver`. `internal/auth/` and `internal/notify/` do not yet exist.
+`internal/chefapi/` exists (87 tests) but does not yet resolve keys via `CredentialResolver`. `internal/auth/` and `internal/notify/` do not yet exist.
 
 - [ ] Update `internal/chefapi/` to resolve Chef API keys via `CredentialResolver`
 - [ ] Update `internal/auth/` LDAP provider to resolve bind password via `CredentialResolver`
@@ -163,7 +163,7 @@ None of these are implemented yet. Depends on `internal/webapi/` package (not ye
 
 ## Configuration Integration
 
-`internal/config/` exists (960 lines, 117 tests) with full YAML schema, defaults, env var overrides, and validation. The items below add credential-reference fields to the existing config schema. Helm chart templates are not yet created beyond `.helmignore`.
+`internal/config/` exists (117 tests) with full YAML schema, defaults, env var overrides, and validation. The items below add credential-reference fields to the existing config schema. Helm chart templates are not yet created beyond `.helmignore`.
 
 - [ ] Add `client_key_credential` field to organisation config schema
 - [ ] Add `client_key_env` field to organisation config schema
@@ -179,7 +179,7 @@ None of these are implemented yet. Depends on `internal/webapi/` package (not ye
 
 ## System Status
 
-None of these are implemented yet. Depends on `internal/webapi/` status endpoint.
+None of these are implemented yet. The `internal/webapi/` package exists but the admin status endpoint is registered as `handleNotImplemented`.
 
 - [ ] Add `credential_storage` section to `GET /api/v1/admin/status` response
 - [ ] Report `encryption_key_configured` boolean
@@ -190,7 +190,7 @@ None of these are implemented yet. Depends on `internal/webapi/` status endpoint
 
 ## Logging
 
-The `internal/logging/` package exists (93 tests) and includes `ScopeSecrets`. Startup logging in `main.go` uses the structured logger with `secrets` scope throughout the master key, rotation, validation, and permission check sections.
+The `internal/logging/` package exists (93 tests) and includes `ScopeSecrets`. Startup logging in `main.go` uses the structured logger with `secrets` scope throughout the master key, rotation, validation, and permission check sections. The `internal/webapi/` package exists but credential create/delete/test operations are not yet wired to the structured logger because the admin credential handlers are placeholder stubs.
 
 - [x] Add `secrets` log scope to logging specification and implementation — `ScopeSecrets` constant in `internal/logging/logging.go`, registered in `validScopes` map
 - [x] Log credential create/rotate/delete/test operations at `INFO` — rotation start/completion logged at `INFO` in `main.go`; create/delete/test will be logged when Web API integration is implemented
@@ -252,12 +252,12 @@ Partially done. Ignore files are complete. RPM/DEB packaging, Docker Compose app
 
 ### Not Yet Started
 
-These sections depend on packages or infrastructure that do not yet exist:
+These sections depend on handler wiring or packages that do not yet exist:
 
-- Web API integration (needs `internal/webapi/`)
+- Web API integration (`internal/webapi/` exists with full REST layer but admin credential endpoints are `handleNotImplemented` stubs)
 - Consumer integration (needs `internal/chefapi/` resolver wiring, `internal/auth/`, `internal/notify/`)
 - Configuration integration (needs Helm chart, new config fields for credential references)
-- System status (needs `internal/webapi/`)
+- System status (`internal/webapi/` exists but admin status endpoint is a stub)
 - Packaging (needs `deploy/pkg/`, Helm chart, Docker Compose for app)
 - Documentation
 - Live credential testing (needs external service mocks)

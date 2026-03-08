@@ -219,6 +219,102 @@ func (db *DB) interruptCollectionRun(ctx context.Context, q queryable, id string
 // Query methods
 // ---------------------------------------------------------------------------
 
+// GetInterruptedCollectionRuns returns all collection runs currently in
+// "interrupted" status, across all organisations. This is used during startup
+// to evaluate which interrupted runs should be resumed vs. abandoned.
+func (db *DB) GetInterruptedCollectionRuns(ctx context.Context) ([]CollectionRun, error) {
+	const query = `
+		SELECT id, organisation_id, status, started_at, completed_at,
+		       total_nodes, nodes_collected, checkpoint_start,
+		       error_message, created_at, updated_at
+		FROM collection_runs
+		WHERE status = 'interrupted'
+		ORDER BY started_at ASC
+	`
+	return scanCollectionRuns(db.q().QueryContext(ctx, query))
+}
+
+// AbandonCollectionRun marks an interrupted collection run as "failed" with
+// an error message indicating it was abandoned due to age. This is used
+// during startup recovery when an interrupted run is too old to resume.
+func (db *DB) AbandonCollectionRun(ctx context.Context, id string, reason string) (CollectionRun, error) {
+	return db.abandonCollectionRun(ctx, db.q(), id, reason)
+}
+
+func (db *DB) abandonCollectionRun(ctx context.Context, q queryable, id string, reason string) (CollectionRun, error) {
+	if id == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to abandon")
+	}
+	if reason == "" {
+		reason = "abandoned: interrupted run too old to resume"
+	}
+
+	const query = `
+		UPDATE collection_runs
+		SET status        = 'failed',
+		    error_message = $2,
+		    completed_at  = now(),
+		    updated_at    = now()
+		WHERE id = $1 AND status = 'interrupted'
+		RETURNING id, organisation_id, status, started_at, completed_at,
+		          total_nodes, nodes_collected, checkpoint_start,
+		          error_message, created_at, updated_at
+	`
+
+	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, id, reason))
+	if err != nil {
+		return CollectionRun{}, fmt.Errorf("datastore: abandoning collection run: %w", err)
+	}
+	return run, nil
+}
+
+// ResumeCollectionRun resets an interrupted collection run back to "running"
+// status so that the collector can continue from the checkpoint. The
+// checkpoint_start value is preserved.
+func (db *DB) ResumeCollectionRun(ctx context.Context, id string) (CollectionRun, error) {
+	return db.resumeCollectionRun(ctx, db.q(), id)
+}
+
+func (db *DB) resumeCollectionRun(ctx context.Context, q queryable, id string) (CollectionRun, error) {
+	if id == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to resume")
+	}
+
+	const query = `
+		UPDATE collection_runs
+		SET status     = 'running',
+		    updated_at = now()
+		WHERE id = $1 AND status = 'interrupted'
+		RETURNING id, organisation_id, status, started_at, completed_at,
+		          total_nodes, nodes_collected, checkpoint_start,
+		          error_message, created_at, updated_at
+	`
+
+	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, id))
+	if err != nil {
+		return CollectionRun{}, fmt.Errorf("datastore: resuming collection run: %w", err)
+	}
+	return run, nil
+}
+
+// ListCompletedRunsForOrganisation returns all completed collection run IDs
+// for the given organisation since the given time. This is used during
+// checkpoint/resume to determine which organisations have already been
+// collected within the scope of an interrupted run.
+func (db *DB) ListCompletedRunsForOrganisation(ctx context.Context, organisationID string, since time.Time) ([]CollectionRun, error) {
+	const query = `
+		SELECT id, organisation_id, status, started_at, completed_at,
+		       total_nodes, nodes_collected, checkpoint_start,
+		       error_message, created_at, updated_at
+		FROM collection_runs
+		WHERE organisation_id = $1
+		  AND status = 'completed'
+		  AND started_at >= $2
+		ORDER BY started_at DESC
+	`
+	return scanCollectionRuns(db.q().QueryContext(ctx, query, organisationID, since))
+}
+
 // GetCollectionRun returns the collection run with the given UUID. Returns
 // ErrNotFound if no such run exists.
 func (db *DB) GetCollectionRun(ctx context.Context, id string) (CollectionRun, error) {

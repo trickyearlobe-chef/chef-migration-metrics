@@ -7,20 +7,34 @@
 // ---------------------------------------------------------------------------
 
 import type {
+  ExportRequest,
+  ExportJobResponse,
   HealthResponse,
   VersionResponse,
   OrganisationsResponse,
   VersionDistributionResponse,
+  VersionDistributionTrendResponse,
   ReadinessResponse,
+  ReadinessTrendResponse,
+  ComplexityTrendResponse,
+  StaleTrendResponse,
   CookbookCompatibilityResponse,
+  CookbookRemediationResponse,
   NodeListResponse,
   NodeDetailResponse,
   NodesByVersionResponse,
   NodesByCookbookResponse,
   CookbookListResponse,
   CookbookDetailResponse,
+  RemediationPriorityResponse,
+  RemediationSummaryResponse,
   FilterStringResponse,
   FilterPlatformsResponse,
+  DependencyGraphResponse,
+  DependencyGraphTableResponse,
+  LogListResponse,
+  LogEntry,
+  CollectionRunListResponse,
   Pagination,
 } from "./types";
 
@@ -105,6 +119,7 @@ export interface NodeFilterQuery extends PaginationQuery {
   chef_version?: string;
   policy_name?: string;
   policy_group?: string;
+  role?: string;
   stale?: string; // "true" | "false" | ""
   sort?: string;
   order?: "asc" | "desc";
@@ -156,6 +171,38 @@ export function fetchReadiness(
 ): Promise<ReadinessResponse> {
   return apiFetch<ReadinessResponse>(
     buildUrl("/dashboard/readiness", { organisation }),
+  );
+}
+
+export function fetchVersionDistributionTrend(
+  organisation?: string,
+): Promise<VersionDistributionTrendResponse> {
+  return apiFetch<VersionDistributionTrendResponse>(
+    buildUrl("/dashboard/version-distribution/trend", { organisation }),
+  );
+}
+
+export function fetchReadinessTrend(
+  organisation?: string,
+): Promise<ReadinessTrendResponse> {
+  return apiFetch<ReadinessTrendResponse>(
+    buildUrl("/dashboard/readiness/trend", { organisation }),
+  );
+}
+
+export function fetchComplexityTrend(
+  organisation?: string,
+): Promise<ComplexityTrendResponse> {
+  return apiFetch<ComplexityTrendResponse>(
+    buildUrl("/dashboard/complexity/trend", { organisation }),
+  );
+}
+
+export function fetchStaleTrend(
+  organisation?: string,
+): Promise<StaleTrendResponse> {
+  return apiFetch<StaleTrendResponse>(
+    buildUrl("/dashboard/stale/trend", { organisation }),
   );
 }
 
@@ -233,6 +280,79 @@ export function fetchCookbookDetail(
   );
 }
 
+export function fetchCookbookRemediation(
+  name: string,
+  version: string,
+  params?: { target_chef_version?: string },
+): Promise<CookbookRemediationResponse> {
+  return apiFetch<CookbookRemediationResponse>(
+    buildUrl(
+      `/cookbooks/${encodeURIComponent(name)}/${encodeURIComponent(version)}/remediation`,
+      params,
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dependency Graph
+// ---------------------------------------------------------------------------
+
+export function fetchDependencyGraph(
+  organisation: string,
+): Promise<DependencyGraphResponse> {
+  return apiFetch<DependencyGraphResponse>(
+    buildUrl("/dependency-graph", { organisation }),
+  );
+}
+
+export interface DependencyGraphTableQuery extends PaginationQuery {
+  organisation: string;
+  sort?: string;
+  order?: "asc" | "desc";
+}
+
+export function fetchDependencyGraphTable(
+  filters: DependencyGraphTableQuery,
+): Promise<DependencyGraphTableResponse> {
+  return apiFetch<DependencyGraphTableResponse>(
+    buildUrl(
+      "/dependency-graph/table",
+      filters as unknown as Record<string, string | number | undefined>,
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Remediation
+// ---------------------------------------------------------------------------
+
+export interface RemediationQuery extends PaginationQuery {
+  organisation?: string;
+  target_chef_version?: string;
+  complexity_label?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+}
+
+export function fetchRemediationPriority(
+  filters?: RemediationQuery,
+): Promise<RemediationPriorityResponse> {
+  return apiFetch<RemediationPriorityResponse>(
+    buildUrl(
+      "/remediation/priority",
+      filters as Record<string, string | number | undefined>,
+    ),
+  );
+}
+
+export function fetchRemediationSummary(
+  params?: { organisation?: string; target_chef_version?: string },
+): Promise<RemediationSummaryResponse> {
+  return apiFetch<RemediationSummaryResponse>(
+    buildUrl("/remediation/summary", params),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Filters
 // ---------------------------------------------------------------------------
@@ -290,6 +410,49 @@ export function fetchFilterComplexityLabels(): Promise<FilterStringResponse> {
 }
 
 // ---------------------------------------------------------------------------
+// Logs
+// ---------------------------------------------------------------------------
+
+export interface LogFilterQuery extends PaginationQuery {
+  scope?: string;
+  severity?: string;
+  min_severity?: string;
+  organisation?: string;
+  cookbook_name?: string;
+  collection_run_id?: string;
+  since?: string;
+  until?: string;
+}
+
+export function fetchLogs(filters?: LogFilterQuery): Promise<LogListResponse> {
+  return apiFetch<LogListResponse>(
+    buildUrl("/logs", filters as Record<string, string | number | undefined>),
+  );
+}
+
+export function fetchLogDetail(id: string): Promise<LogEntry> {
+  return apiFetch<LogEntry>(
+    buildUrl(`/logs/${encodeURIComponent(id)}`),
+  );
+}
+
+export interface CollectionRunFilterQuery extends PaginationQuery {
+  organisation?: string;
+  status?: string;
+}
+
+export function fetchCollectionRuns(
+  filters?: CollectionRunFilterQuery,
+): Promise<CollectionRunListResponse> {
+  return apiFetch<CollectionRunListResponse>(
+    buildUrl(
+      "/logs/collection-runs",
+      filters as Record<string, string | number | undefined>,
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Utility: poll helper for health badge
 // ---------------------------------------------------------------------------
 
@@ -321,6 +484,85 @@ export function pollHealth(
     active = false;
     clearInterval(id);
   };
+}
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new data export. For small result sets the server responds with
+ * 200 and streams the file directly (the browser will trigger a download).
+ * For large result sets it responds with 202 and a job ID for polling.
+ *
+ * When the response is 200 (synchronous), the returned promise resolves to
+ * `null` — the file download is handled by the browser via a hidden link.
+ * When the response is 202 (asynchronous), the promise resolves to the
+ * ExportJobResponse containing the `job_id` for status polling.
+ */
+export async function createExport(
+  body: ExportRequest,
+): Promise<ExportJobResponse | null> {
+  const url = buildUrl("/exports");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 200) {
+    // Synchronous export — server streamed the file directly.
+    // Trigger a browser download from the response blob.
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] ?? `export.${body.format === "json" ? "json" : body.format === "chef_search_query" ? "txt" : "csv"}`;
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+    return null;
+  }
+
+  if (res.status === 202) {
+    return res.json() as Promise<ExportJobResponse>;
+  }
+
+  // Error responses.
+  let code = "unknown";
+  let message = `HTTP ${res.status}`;
+  try {
+    const errBody = await res.json();
+    code = errBody.error ?? code;
+    message = errBody.message ?? message;
+  } catch {
+    message = res.statusText || message;
+  }
+  throw new ApiError(res.status, code, message);
+}
+
+/**
+ * Poll an async export job's status.
+ */
+export function fetchExportStatus(jobId: string): Promise<ExportJobResponse> {
+  return apiFetch<ExportJobResponse>(
+    buildUrl(`/exports/${encodeURIComponent(jobId)}`),
+  );
+}
+
+/**
+ * Returns the URL to download a completed export file.
+ * The caller should open this in a new tab or create a hidden anchor click.
+ */
+export function downloadExportUrl(jobId: string): string {
+  return `${BASE}/exports/${encodeURIComponent(jobId)}/download`;
 }
 
 // ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ chef-migration-metrics/
 │   ├── datastore/                  # PostgreSQL repositories, migrations runner, connection pool
 │   ├── elasticsearch/              # NDJSON file writer and high-water-mark tracking
 │   ├── embedded/                   # Embedded tool resolution (CookStyle, TK, Ruby, git, Docker)
+│   ├── frontend/                   # Frontend FS provider — embed registration, disk fallback, nil detection
 │   ├── export/                     # CSV/JSON/NDJSON export generation
 │   ├── logging/                    # Structured logging — Logger, writers (stdout, DB, memory)
 │   ├── models/                     # Shared domain types
@@ -27,7 +28,10 @@ chef-migration-metrics/
 │   ├── webapi/                     # HTTP router, REST handlers, WebSocket EventHub, response helpers
 │   └── auth/                       # Authentication providers (local, LDAP, SAML) and RBAC
 ├── migrations/                     # Sequential numbered SQL migration files (0001–0005)
-├── frontend/                       # React application (separate npm project)
+├── frontend/                       # React application + Go embed package (frontendfs)
+│   ├── embed.go                    # //go:embed all:dist — bakes built SPA into the Go binary
+│   ├── embed_test.go               # Tests for the embedded FS
+│   └── dist/                       # Vite build output (gitignored; placeholder created by Makefile)
 ├── deploy/                         # Packaging and deployment artifacts (see below)
 ├── Makefile                        # Build, test, lint, and package targets
 ├── Dockerfile                      # Multi-stage container build
@@ -53,7 +57,15 @@ chef-migration-metrics/
 ├── Claude.md                       # Development rules and token economy guidance
 ├── Structure.md                    # This file
 ├── summaries/                      # Recent task summaries (≤8 active; read only the latest at thread start)
-│   └── archive/                    # Older summaries — historical reference only
+│   ├── 2026-tls-static-mode.md                # TLS static certificate mode
+│   ├── 2026-webapi-foundation-websocket.md    # WebAPI foundation and WebSocket EventHub
+│   ├── 2026-wire-main-and-close-todos.md      # Wire main.go to webapi router, close todo items
+│   ├── 2026-wire-usage-analysis-into-collection.md  # Wire usage analysis into collection pipeline
+│   ├── 2026-03-08-01-35-data-exports.md       # Data Exports — generators, handlers, cleanup, frontend ExportButton
+│   ├── 2026-03-08-01-48-data-exports-wiring.md # Data Exports wiring — handler tests, filterNodes refactor, cleanup ticker, ExportButton in pages
+│   ├── 2026-03-08-01-56-project-completion-estimate.md # Project completion estimate — ~35–39 threads remaining across 8 work areas
+│   ├── 2026-03-08-02-11-data-collection-complete.md # Data Collection complete — checkpoint/resume + dashboard failed cookbook display
+│   └── archive/                               # Older summaries — historical reference only
 └── specifications/
     ├── Specification.md            # Top-level project spec and component index
     ├── ToDo.md                     # Progress table index — tasks live in todo/*.md

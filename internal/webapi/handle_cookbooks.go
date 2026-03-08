@@ -92,6 +92,15 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 // versions of a cookbook by name, along with complexity and compatibility
 // information.
 func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) {
+	// Check for the remediation sub-path:
+	//   /api/v1/cookbooks/:name/:version/remediation
+	// The segments after the prefix are [name, version, "remediation"].
+	segments := pathSegments(req.URL.Path, "/api/v1/cookbooks/")
+	if len(segments) >= 3 && segments[len(segments)-1] == "remediation" {
+		r.handleCookbookRemediation(w, req)
+		return
+	}
+
 	name := pathParam(req, "/api/v1/cookbooks/")
 	if name == "" {
 		WriteNotFound(w, "Cookbook name is required.")

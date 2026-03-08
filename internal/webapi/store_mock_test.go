@@ -5,6 +5,7 @@ package webapi
 
 import (
 	"context"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -30,6 +31,9 @@ type mockStore struct {
 	ListCookbookComplexitiesForCookbookFn     func(ctx context.Context, cookbookID string) ([]datastore.CookbookComplexity, error)
 	ListCookbookComplexitiesForOrganisationFn func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error)
 	ListCookstyleResultsForCookbookFn         func(ctx context.Context, cookbookID string) ([]datastore.CookstyleResult, error)
+	GetCookstyleResultFn                      func(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
+	GetAutocorrectPreviewFn                   func(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error)
+	ListAutocorrectPreviewsForCookbookFn      func(ctx context.Context, cookbookID string) ([]datastore.AutocorrectPreview, error)
 	GetLatestTestKitchenResultFn              func(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error)
 	ListLogEntriesFn                          func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
 	CountLogEntriesFn                         func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
@@ -37,6 +41,12 @@ type mockStore struct {
 	ListRoleDependenciesByOrgFn               func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
 	CountDependenciesByRoleFn                 func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
 	CountRolesPerCookbookFn                   func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
+	InsertExportJobFn                         func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error)
+	GetExportJobFn                            func(ctx context.Context, id string) (*datastore.ExportJob, error)
+	UpdateExportJobStatusFn                   func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error
+	UpdateExportJobExpiredFn                  func(ctx context.Context, id string) error
+	ListExportJobsByStatusFn                  func(ctx context.Context, status string) ([]datastore.ExportJob, error)
+	ListExpiredExportJobsFn                   func(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
 }
 
 // compile-time check
@@ -154,6 +164,27 @@ func (m *mockStore) ListCookstyleResultsForCookbook(ctx context.Context, cookboo
 	return nil, nil
 }
 
+func (m *mockStore) GetCookstyleResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error) {
+	if m.GetCookstyleResultFn != nil {
+		return m.GetCookstyleResultFn(ctx, cookbookID, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error) {
+	if m.GetAutocorrectPreviewFn != nil {
+		return m.GetAutocorrectPreviewFn(ctx, cookstyleResultID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListAutocorrectPreviewsForCookbook(ctx context.Context, cookbookID string) ([]datastore.AutocorrectPreview, error) {
+	if m.ListAutocorrectPreviewsForCookbookFn != nil {
+		return m.ListAutocorrectPreviewsForCookbookFn(ctx, cookbookID)
+	}
+	return nil, nil
+}
+
 func (m *mockStore) GetLatestTestKitchenResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error) {
 	if m.GetLatestTestKitchenResultFn != nil {
 		return m.GetLatestTestKitchenResultFn(ctx, cookbookID, targetChefVersion)
@@ -199,6 +230,48 @@ func (m *mockStore) CountDependenciesByRole(ctx context.Context, organisationID 
 func (m *mockStore) CountRolesPerCookbook(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error) {
 	if m.CountRolesPerCookbookFn != nil {
 		return m.CountRolesPerCookbookFn(ctx, organisationID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) InsertExportJob(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
+	if m.InsertExportJobFn != nil {
+		return m.InsertExportJobFn(ctx, p)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetExportJob(ctx context.Context, id string) (*datastore.ExportJob, error) {
+	if m.GetExportJobFn != nil {
+		return m.GetExportJobFn(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) UpdateExportJobStatus(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error {
+	if m.UpdateExportJobStatusFn != nil {
+		return m.UpdateExportJobStatusFn(ctx, id, status, rowCount, filePath, fileSizeBytes, errorMessage)
+	}
+	return nil
+}
+
+func (m *mockStore) UpdateExportJobExpired(ctx context.Context, id string) error {
+	if m.UpdateExportJobExpiredFn != nil {
+		return m.UpdateExportJobExpiredFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockStore) ListExportJobsByStatus(ctx context.Context, status string) ([]datastore.ExportJob, error) {
+	if m.ListExportJobsByStatusFn != nil {
+		return m.ListExportJobsByStatusFn(ctx, status)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListExpiredExportJobs(ctx context.Context, now time.Time) ([]datastore.ExportJob, error) {
+	if m.ListExpiredExportJobsFn != nil {
+		return m.ListExpiredExportJobsFn(ctx, now)
 	}
 	return nil, nil
 }

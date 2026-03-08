@@ -114,7 +114,7 @@ build: build-frontend ## Compile Go binary for the host platform
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=0 GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build \
 		-ldflags "$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME) .
+		-o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/chef-migration-metrics/
 	@echo "$(GREEN)Binary: $(BUILD_DIR)/$(BINARY_NAME)$(RESET)"
 
 .PHONY: build-linux-amd64
@@ -123,7 +123,7 @@ build-linux-amd64: build-frontend ## Cross-compile for linux/amd64
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 		-ldflags "$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 .
+		-o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/chef-migration-metrics/
 
 .PHONY: build-linux-arm64
 build-linux-arm64: build-frontend ## Cross-compile for linux/arm64
@@ -131,18 +131,25 @@ build-linux-arm64: build-frontend ## Cross-compile for linux/arm64
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 		-ldflags "$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 .
+		-o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/chef-migration-metrics/
 
 .PHONY: build-all
 build-all: build-linux-amd64 build-linux-arm64 ## Cross-compile for all supported platforms
 
 .PHONY: build-frontend
-build-frontend: ## Build the React SPA frontend
-	@if [ -d "$(FRONTEND_DIR)" ] && [ -f "$(FRONTEND_DIR)/package.json" ]; then \
+build-frontend: ## Build the React SPA frontend (creates placeholder dist/ if npm unavailable)
+	@if [ -d "$(FRONTEND_DIR)" ] && [ -f "$(FRONTEND_DIR)/package.json" ] && command -v npm >/dev/null 2>&1; then \
 		echo "$(GREEN)Building frontend...$(RESET)"; \
 		cd $(FRONTEND_DIR) && npm ci --prefer-offline && npm run build; \
 	else \
-		echo "$(YELLOW)Skipping frontend build — $(FRONTEND_DIR)/ not found$(RESET)"; \
+		echo "$(YELLOW)npm not found or frontend/ missing — creating placeholder dist/$(RESET)"; \
+	fi
+	@# Ensure dist/ always exists with at least a placeholder index.html so
+	@# that the go:embed directive in frontend/embed.go succeeds at compile time.
+	@mkdir -p $(FRONTEND_DIR)/dist
+	@if [ ! -f "$(FRONTEND_DIR)/dist/index.html" ]; then \
+		echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Chef Migration Metrics</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f9fafb;color:#374151}.p{text-align:center;max-width:480px;padding:2rem}h1{font-size:1.25rem;margin-bottom:.5rem}p{color:#6b7280;font-size:.875rem;line-height:1.5}code{background:#f3f4f6;padding:.15em .4em;border-radius:4px;font-size:.8125rem}</style></head><body><div class="p"><h1>Frontend Not Built</h1><p>Build the React SPA: <code>cd frontend &amp;&amp; npm ci &amp;&amp; npm run build</code></p><p>API available at <a href="/api/v1/health">/api/v1/health</a></p></div></body></html>' \
+		> "$(FRONTEND_DIR)/dist/index.html"; \
 	fi
 
 # ---------------------------------------------------------------------------
@@ -615,7 +622,7 @@ run: build ## Build and run the application locally
 
 .PHONY: dev
 dev: ## Run with go run (faster iteration, no binary output)
-	go run . --config deploy/pkg/config.yml
+	go run ./cmd/chef-migration-metrics/ --config deploy/pkg/config.yml
 
 .PHONY: deps
 deps: ## Download and verify Go module dependencies

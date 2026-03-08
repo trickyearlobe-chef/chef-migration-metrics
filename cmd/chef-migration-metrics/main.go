@@ -27,6 +27,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
@@ -406,7 +407,7 @@ func run() int {
 	}
 	startup.Info(fmt.Sprintf("%d organisation(s) synced from configuration", len(orgs)))
 	for _, org := range orgs {
-		startup.Info(fmt.Sprintf("  - %s (%s/%s)", org.Name, org.ChefServerURL, org.OrgName))
+		startup.Info(fmt.Sprintf("  - %s (%s)", org.Name, org.ChefServerURL))
 	}
 
 	// -------------------------------------------------------------------
@@ -510,6 +511,30 @@ func run() int {
 	// -------------------------------------------------------------------
 	coll := collector.New(db, cfg, logger, credResolver, collOpts...)
 
+	// -------------------------------------------------------------------
+	// Resume interrupted collection runs from previous process
+	// -------------------------------------------------------------------
+	resumeResult, resumeErr := coll.ResumeInterruptedRuns(ctx)
+	if resumeErr != nil {
+		startup.Warn(fmt.Sprintf("failed to resume interrupted collection runs: %v", resumeErr))
+	} else if resumeResult != nil && resumeResult.Evaluated > 0 {
+		startup.Info(fmt.Sprintf(
+			"interrupted run evaluation: %d evaluated, %d resumed, %d abandoned",
+			resumeResult.Evaluated, resumeResult.Resumed, resumeResult.Abandoned,
+		))
+		if resumeResult.ResumedRunResult != nil {
+			rr := resumeResult.ResumedRunResult
+			startup.Info(fmt.Sprintf(
+				"resumed collection completed: %d/%d orgs succeeded, %d nodes, %d cookbook versions in %s",
+				rr.SucceededOrgs, rr.TotalOrgs, rr.TotalNodes, rr.TotalCookbooks,
+				rr.Duration.Round(time.Millisecond),
+			))
+		}
+		for runID, runErr := range resumeResult.Errors {
+			startup.Warn(fmt.Sprintf("resume error for run %s: %v", runID, runErr))
+		}
+	}
+
 	schedule, schedErr := collector.ParseSchedule(cfg.Collection.Schedule)
 	if schedErr != nil {
 		startup.Error(fmt.Sprintf("invalid collection schedule %q: %v", cfg.Collection.Schedule, schedErr))
@@ -523,6 +548,36 @@ func run() int {
 	}
 	defer sched.Stop()
 	startup.Info(fmt.Sprintf("collection scheduler started (schedule: %s)", cfg.Collection.Schedule))
+
+	// -------------------------------------------------------------------
+	// Export output directory and cleanup ticker
+	// -------------------------------------------------------------------
+	exportOutputDir := cfg.Exports.OutputDirectory
+	if exportOutputDir == "" {
+		exportOutputDir = "/var/lib/chef-migration-metrics/exports"
+	}
+	if err := os.MkdirAll(exportOutputDir, 0o750); err != nil {
+		startup.Error(fmt.Sprintf("creating export output directory %s: %v", exportOutputDir, err))
+		return 1
+	}
+	startup.Info(fmt.Sprintf("export output directory: %s", exportOutputDir))
+
+	exportCleanupLog := func(level, msg string) {
+		scoped := logger.WithScope(logging.ScopeExportJob)
+		switch level {
+		case "DEBUG":
+			scoped.Debug(msg)
+		case "WARN":
+			scoped.Warn(msg)
+		case "ERROR":
+			scoped.Error(msg)
+		default:
+			scoped.Info(msg)
+		}
+	}
+	stopExportCleanup := export.StartCleanupTicker(db, exportOutputDir, 1*time.Hour, exportCleanupLog)
+	defer stopExportCleanup()
+	startup.Info("export cleanup ticker started (interval: 1h)")
 
 	// -------------------------------------------------------------------
 	// HTTP server — wire up the webapi.Router which owns all API routes,
@@ -553,9 +608,13 @@ func run() int {
 
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
 		routerOpts = append(routerOpts, webapi.WithFrontendFS(frontendFS))
-		startup.Info(fmt.Sprintf("frontend SPA assets loaded from %s", frontend.DistDir))
+		if frontend.HasEmbed() {
+			startup.Info("frontend SPA assets loaded from embedded binary")
+		} else {
+			startup.Info(fmt.Sprintf("frontend SPA assets loaded from disk: %s", frontend.DistDir))
+		}
 	} else {
-		startup.Info(fmt.Sprintf("frontend SPA assets not found at %s — serving plain-text placeholder", frontend.DistDir))
+		startup.Info(fmt.Sprintf("frontend SPA assets not found (checked embedded binary and %s) — serving plain-text placeholder", frontend.DistDir))
 	}
 
 	apiRouter := webapi.NewRouter(db, cfg, hub, routerOpts...)

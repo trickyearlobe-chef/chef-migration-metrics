@@ -2,30 +2,30 @@
 
 Status key: [ ] Not started | [~] In progress | [x] Done
 
-> 756 tests across 6 packages: secrets (331), config (117), logging (93), collector (79), chefapi (74), datastore (62). All passing, 0 failures. Additional test items below track coverage of specific functional areas.
+> **1,666 tests across 11 packages:** analysis (263), chefapi (87), collector (222), config (117), datastore (64), embedded (21), logging (93), remediation (114), secrets (331), tls (79), webapi (275). All passing, 0 failures. Additional test items below track coverage of specific functional areas.
 
 ---
 
-- [x] Unit tests for Chef API client and authentication — 74 tests in `internal/chefapi/client_test.go` covering RSA signing, HTTP client, API errors, retry logic, and all endpoints
+- [x] Unit tests for Chef API client and authentication — 87 tests in `internal/chefapi/client_test.go` covering RSA signing, HTTP client, API errors, retry logic, and all endpoints
 - [x] Unit tests for partial search query builder — covered in `client_test.go` partial search tests (correct method/path/query/body verification)
-- [ ] Unit tests for cookbook usage analysis
-- [ ] Unit tests for cookbook usage analysis with Policyfile nodes
-- [ ] Unit tests for node readiness calculation
-- [x] Unit tests for stale node detection logic — covered in `client_test.go` NodeData helper tests (`IsStale`, `OhaiTimeAsTime`, missing ohai_time treated as stale)
+- [x] Unit tests for cookbook usage analysis — 51 tests in `internal/analysis/usage_test.go` covering tuple extraction, aggregation, active set building, parallel extraction, Policyfile nodes, end-to-end pipeline
+- [x] Unit tests for cookbook usage analysis with Policyfile nodes — covered in `usage_test.go` (`TestExtractNodeTuples_PolicyfileNode`, `TestEndToEnd_FullAnalysisPipeline` with mixed classic and Policyfile nodes)
+- [x] Unit tests for node readiness calculation — 77 tests in `internal/analysis/readiness_test.go` covering per-node evaluation, cookbook compatibility checks, disk space evaluation, stale node handling, blocking reasons, parallel evaluation
+- [x] Unit tests for stale node detection logic — covered in `chefapi/client_test.go` NodeData helper tests (`IsStale`, `OhaiTimeAsTime`, missing ohai_time treated as stale)
 - [ ] Unit tests for stale cookbook detection logic
-- [ ] Unit tests for auto-correct preview generation (diff computation, statistics)
-- [ ] Unit tests for cop-to-documentation mapping enrichment
-- [ ] Unit tests for cookbook complexity score calculation (weighted scoring, label classification)
+- [x] Unit tests for auto-correct preview generation (diff computation, statistics) — 52 tests in `internal/remediation/autocorrect_test.go` covering directory copy, diff generation, LCS-based edit computation, hunk grouping, statistics, temp cleanup
+- [x] Unit tests for cop-to-documentation mapping enrichment — 21 tests in `internal/remediation/copmapping_test.go` covering LookupCop, AllCopMappings, CopMappingCount, embedded mapping index
+- [x] Unit tests for cookbook complexity score calculation (weighted scoring, label classification) — 41 tests in `internal/remediation/complexity_test.go` covering ComputeComplexityScore with all weight factors, ScoreToLabel boundary conditions, blast radius loading
 - [ ] Unit tests for blast radius computation (node count, role count via dependency graph, policy count)
 - [ ] Unit tests for CookStyle version profile selection per target Chef Client version
-- [x] Unit tests for role dependency graph building (role → role, role → cookbook parsing) — partially covered: `client_test.go` tests `GetRoles()`, `GetRole()` with `RunList`/`EnvRunLists`; run_list parsing and graph traversal not yet implemented
+- [x] Unit tests for role dependency graph building (role → role, role → cookbook parsing) — 33 tests in `internal/collector/runlist_test.go` covering `ParseRunListEntry`, `ParseRunList`, `BuildRoleDependencies` with role→role, role→cookbook edges, env_run_lists, deduplication
 - [ ] Unit tests for dependency graph traversal (transitive dependencies)
 - [ ] Unit tests for notification trigger evaluation (status change detection, milestone crossing)
 - [ ] Unit tests for webhook notification payload construction and delivery
 - [ ] Unit tests for email notification construction
 - [ ] Unit tests for export generation (CSV, JSON, Chef search query formats)
 - [ ] Unit tests for export async/sync threshold decision
-- [ ] Unit tests for embedded tool resolution (embedded_bin_dir lookup, PATH fallback, missing directory handling)
+- [x] Unit tests for embedded tool resolution (embedded_bin_dir lookup, PATH fallback, missing directory handling) — 21 tests in `internal/embedded/embedded_test.go` covering ResolvePath, ValidateCookstyle, ValidateKitchen, ValidateDocker, ValidateGit, missing directory, PATH fallback
 - [ ] Unit tests for Elasticsearch NDJSON export (document format, doc_id generation, .tmp suffix handling)
 - [ ] Unit tests for Elasticsearch high-water-mark tracking (incremental export, first-run full export)
 - [ ] Integration tests for data collection against a test Chef server

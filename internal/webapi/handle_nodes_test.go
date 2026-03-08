@@ -581,10 +581,137 @@ func TestHandleNodesByCookbook_DBError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// filterNodes — role filter
+// ---------------------------------------------------------------------------
+
+func TestFilterNodes_ByRole(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "web1", Roles: json.RawMessage(`["base","webserver"]`)},
+		{NodeName: "db1", Roles: json.RawMessage(`["base","database"]`)},
+		{NodeName: "web2", Roles: json.RawMessage(`["base","webserver"]`)},
+		{NodeName: "bare", Roles: nil},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=webserver", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 2 {
+		t.Errorf("expected 2 nodes with role=webserver, got %d", len(result))
+	}
+	for _, n := range result {
+		if n.NodeName != "web1" && n.NodeName != "web2" {
+			t.Errorf("unexpected node %q in results", n.NodeName)
+		}
+	}
+}
+
+func TestFilterNodes_ByRole_NoMatch(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "web1", Roles: json.RawMessage(`["base","webserver"]`)},
+		{NodeName: "db1", Roles: json.RawMessage(`["base","database"]`)},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=loadbalancer", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 0 {
+		t.Errorf("expected 0 nodes, got %d", len(result))
+	}
+}
+
+func TestFilterNodes_ByRoleCombinedWithEnv(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "web1", ChefEnvironment: "prod", Roles: json.RawMessage(`["base","webserver"]`)},
+		{NodeName: "web2", ChefEnvironment: "staging", Roles: json.RawMessage(`["base","webserver"]`)},
+		{NodeName: "db1", ChefEnvironment: "prod", Roles: json.RawMessage(`["base","database"]`)},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=webserver&environment=prod", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node, got %d", len(result))
+	}
+	if len(result) > 0 && result[0].NodeName != "web1" {
+		t.Errorf("expected web1, got %q", result[0].NodeName)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Role filtering via filterNodes (delegates to export.FilterNodes)
+// ---------------------------------------------------------------------------
+
+func TestFilterNodes_RoleMatch(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "n1", Roles: json.RawMessage(`["base","webserver","database"]`)},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=webserver", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for role=webserver, got %d", len(result))
+	}
+}
+
+func TestFilterNodes_RoleNoMatch(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "n1", Roles: json.RawMessage(`["base","webserver"]`)},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=database", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 0 {
+		t.Errorf("expected 0 nodes for role=database, got %d", len(result))
+	}
+}
+
+func TestFilterNodes_RoleEmptyRoles(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "n1", Roles: json.RawMessage(`[]`)},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=webserver", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 0 {
+		t.Errorf("expected 0 nodes for role=webserver on empty roles, got %d", len(result))
+	}
+}
+
+func TestFilterNodes_RoleNilRoles(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "n1"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=webserver", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 0 {
+		t.Errorf("expected 0 nodes for role=webserver on nil roles, got %d", len(result))
+	}
+}
+
+func TestFilterNodes_RolePartialNameNoFalsePositive(t *testing.T) {
+	// "web" should not match a role named "webserver" because the substring
+	// check uses the JSON-quoted form "web" vs "webserver".
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "n1", Roles: json.RawMessage(`["webserver"]`)},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=web", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 0 {
+		t.Errorf("expected 0 nodes for role=web (partial), got %d", len(result))
+	}
+}
+
+func TestFilterNodes_RoleExactMatchAmongSimilar(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "n1", Roles: json.RawMessage(`["web","webserver","web-proxy"]`)},
+	}
+
+	for _, role := range []string{"web", "webserver", "web-proxy"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role="+role, nil)
+		result := filterNodes(req, nodes)
+		if len(result) != 1 {
+			t.Errorf("expected 1 node for role=%s, got %d", role, len(result))
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Compile-time import usage guards
 // ---------------------------------------------------------------------------
 
 var (
 	_ = time.Now
 	_ = datastore.NodeSnapshot{}
+	_ = json.RawMessage{}
 )

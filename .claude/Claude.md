@@ -6,13 +6,17 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Token Economy
 
-- **Do NOT read all specification files upfront.** Only read the spec(s) relevant to the current task.
-- Use `./Structure.md` to orient yourself and find spec file names. **Do not read `specifications/Specification.md`** unless you need the project overview for a new contributor.
+- When choosing the next task, the estimate and implementation must be within the 80000 token budget.
+- Only read the specification documents relevant to the current task.
+- Use `./Structure.md` to orient yourself and find spec file names.
+- Do not read `specifications/Specification.md`** unless you need the full project overview.
 - **Prefer reading specific line ranges** over entire files. Use file outlines first, then read only the sections you need.
 - Large spec files have a **TL;DR** at the top. Read that first to decide whether you need the full file.
-- `specifications/ToDo.md` is a progress table only. Authoritative tasks live in `specifications/todo/*.md` — read only the one relevant to your work.
+- `specifications/ToDo.md` is a progress table only.
+- Authoritative tasks live in `specifications/todo/*.md` — read only the one relevant to your work.
 - After completing tasks, update the done/total counts in `ToDo.md` (use the regeneration script in that file).
-- Use the **task-to-spec lookup** below to find which specs and todo files to load. Do not load specs not listed for your task. `(§ Section)` means read only that section.
+- Use the **task-to-spec lookup** below to find which specs and todo files to load.
+- Do not load specs not listed for your task. `(§ Section)` means read only that section.
 
 ### Task-to-Spec Lookup
 
@@ -44,7 +48,7 @@ This file contains the rules and conventions that must be followed at all times 
 ## Task Summaries
 
 - At the end of every task (feature, bug fix, test addition, refactor, etc.), write a summary file in `.claude/summaries/`.
-- **Naming convention:** `YYYY-<component>-<short-description>.md` (e.g. `2025-secrets-rotation-tests.md`).
+- **Naming convention:** `YYYY-MM-DD-hh-mm-<component>-<short-description>.md` (e.g. `2025-01-01-secrets-rotation-tests.md`).
 - **Purpose:** Give future threads enough context to continue work without re-reading code or re-running tests. Include what was done, what the final state is (test counts, coverage, passing/failing), any known gaps, and which files were modified.
 - **Minimum contents:**
   1. **Context** — what component/area was involved and why.
@@ -52,7 +56,7 @@ This file contains the rules and conventions that must be followed at all times 
   3. **Final state** — test counts, coverage numbers, pass/fail status, any warnings.
   4. **Known gaps** — anything deliberately left uncovered or deferred.
   5. **Files modified** — list of files touched (production code and tests separately).
-  6. **Recommended next steps** — prioritised list of what to work on next, with reasoning. Include which specs and todo files to read, and the approximate scope of each step. This avoids future threads spending tokens rediscovering what to do.
+  6. **Recommended next steps** — prioritised list of what to work on next, with reasoning. Include which specs and todo files to read, and the approximate scope and tokens required for each step. This avoids future threads spending tokens rediscovering what to do.
 - Keep summaries concise but complete — a new thread should be able to read the summary and pick up where you left off without re-exploring the codebase.
 - **At the start of a new thread**, before exploring the codebase, read **only the most recent summary** in `.claude/summaries/` (sorted by filename date prefix). If it has a "Recommended next steps" section, use that as your starting point instead of re-analysing the project from scratch. **Do not read other summaries unless you need context on a specific component you are about to modify.**
 - Before starting work on a component, check `.claude/summaries/` for existing summaries related to that component. This avoids duplicating investigation effort.

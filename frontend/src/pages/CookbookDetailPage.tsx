@@ -87,6 +87,14 @@ export function CookbookDetailPage() {
                           <span className="text-xs text-gray-400">
                             Errors: {c.error_count} | Deprecations: {c.deprecation_count}
                           </span>
+                          {cb.version && (
+                            <Link
+                              to={`/cookbooks/${encodeURIComponent(cb.name)}/${encodeURIComponent(cb.version)}/remediation?target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                              className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              View Remediation Detail →
+                            </Link>
+                          )}
                         </div>
                       ))}
                     </div>

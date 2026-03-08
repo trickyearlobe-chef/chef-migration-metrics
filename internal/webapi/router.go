@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -11,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
 // Router is the top-level HTTP handler for the Chef Migration Metrics API.
@@ -35,6 +38,41 @@ type Router struct {
 	// import the logging package to avoid circular dependencies — the
 	// caller provides a logging function at construction time.
 	logger func(level, msg string)
+
+	// --- Authentication components (set via WithAuth) ---
+
+	// localAuth handles local username/password authentication with
+	// brute-force protection. Nil when no local provider is configured.
+	localAuth *auth.LocalAuthenticator
+
+	// sessions manages session creation, validation, and invalidation.
+	// Nil when authentication is not configured.
+	sessions *auth.SessionManager
+
+	// authMiddleware provides RequireAuth and RequireAdmin HTTP middleware.
+	// Nil when authentication is not configured.
+	authMiddleware *auth.Middleware
+
+	// authStore provides direct user CRUD for the admin user-management
+	// endpoints. Nil when authentication is not configured.
+	authStore AuthStore
+}
+
+// AuthStore is the interface consumed by admin user-management handlers. It
+// abstracts the concrete *datastore.DB so that handlers can be tested with
+// stubs. The signatures match the corresponding methods on *datastore.DB.
+type AuthStore interface {
+	InsertUser(ctx context.Context, p datastore.InsertUserParams) (datastore.User, error)
+	GetUserByUsername(ctx context.Context, username string) (datastore.User, error)
+	GetUserByID(ctx context.Context, id string) (datastore.User, error)
+	ListUsers(ctx context.Context) ([]datastore.User, error)
+	CountUsers(ctx context.Context) (int, error)
+	UpdateUser(ctx context.Context, username string, p datastore.UpdateUserParams) (datastore.User, error)
+	UpdateUserPassword(ctx context.Context, username, passwordHash string) error
+	DeleteUser(ctx context.Context, username string) error
+	IncrementFailedLoginAttempts(ctx context.Context, username string) (int, error)
+	LockUser(ctx context.Context, username string) error
+	RecordLoginSuccess(ctx context.Context, username string) error
 }
 
 // RouterOption is a functional option for NewRouter.
@@ -64,6 +102,24 @@ func WithLogger(fn func(level, msg string)) RouterOption {
 func WithFrontendFS(fsys fs.FS) RouterOption {
 	return func(r *Router) {
 		r.frontendFS = fsys
+	}
+}
+
+// WithAuth wires in the authentication components — local authenticator,
+// session manager, auth middleware, and user store. When set, the auth
+// placeholder routes are replaced with real handlers and protected endpoints
+// are wrapped with session enforcement middleware.
+func WithAuth(
+	localAuth *auth.LocalAuthenticator,
+	sessions *auth.SessionManager,
+	mw *auth.Middleware,
+	store AuthStore,
+) RouterOption {
+	return func(r *Router) {
+		r.localAuth = localAuth
+		r.sessions = sessions
+		r.authMiddleware = mw
+		r.authStore = store
 	}
 }
 
@@ -125,11 +181,23 @@ func (r *Router) registerRoutes() {
 	}
 
 	// -----------------------------------------------------------------
-	// Authentication (placeholder — will be implemented by auth package)
+	// Authentication endpoints
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/auth/login", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/auth/logout", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/auth/me", r.handleNotImplemented)
+	// Login and SAML endpoints are public (no session required).
+	if r.localAuth != nil && r.sessions != nil {
+		r.mux.HandleFunc("/api/v1/auth/login", r.handleLogin)
+		r.mux.HandleFunc("/api/v1/auth/logout", r.handleLogout)
+		if r.authMiddleware != nil {
+			r.mux.Handle("/api/v1/auth/me", r.authMiddleware.Authenticated(r.handleMe))
+		} else {
+			r.mux.HandleFunc("/api/v1/auth/me", r.handleMe)
+		}
+	} else {
+		r.mux.HandleFunc("/api/v1/auth/login", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/logout", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/me", r.handleNotImplemented)
+	}
+	// SAML endpoints remain placeholders until SAML provider is implemented.
 	r.mux.HandleFunc("/api/v1/auth/saml/acs", r.handleNotImplemented)
 	r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.handleNotImplemented)
 	r.mux.HandleFunc("/api/v1/auth/saml/login", r.handleNotImplemented)
@@ -141,7 +209,10 @@ func (r *Router) registerRoutes() {
 	r.mux.HandleFunc("/api/v1/dashboard/version-distribution/trend", r.handleDashboardVersionDistributionTrend)
 	r.mux.HandleFunc("/api/v1/dashboard/readiness", r.handleDashboardReadiness)
 	r.mux.HandleFunc("/api/v1/dashboard/readiness/trend", r.handleDashboardReadinessTrend)
+	r.mux.HandleFunc("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend)
+	r.mux.HandleFunc("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend)
 	r.mux.HandleFunc("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility)
+	r.mux.HandleFunc("/api/v1/dashboard/cookbook-download-status", r.handleDashboardCookbookDownloadStatus)
 
 	// -----------------------------------------------------------------
 	// Node endpoints
@@ -172,10 +243,10 @@ func (r *Router) registerRoutes() {
 	r.mux.HandleFunc("/api/v1/dependency-graph", r.handleDependencyGraph)
 
 	// -----------------------------------------------------------------
-	// Export endpoints (placeholder)
+	// Export endpoints
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/exports", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/exports/", r.handleNotImplemented)
+	r.mux.HandleFunc("/api/v1/exports", r.handleExports)
+	r.mux.HandleFunc("/api/v1/exports/", r.handleExportStatus)
 
 	// -----------------------------------------------------------------
 	// Notification endpoints (placeholder)
@@ -208,12 +279,17 @@ func (r *Router) registerRoutes() {
 	r.mux.HandleFunc("/api/v1/logs/", r.handleLogDetail)
 
 	// -----------------------------------------------------------------
-	// Admin endpoints (placeholder)
+	// Admin endpoints
 	// -----------------------------------------------------------------
 	r.mux.HandleFunc("/api/v1/admin/credentials", r.handleNotImplemented)
 	r.mux.HandleFunc("/api/v1/admin/credentials/", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/admin/users", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/admin/users/", r.handleNotImplemented)
+	if r.authMiddleware != nil && r.authStore != nil {
+		r.mux.Handle("/api/v1/admin/users", r.authMiddleware.AdminOnly(r.handleAdminUsers))
+		r.mux.Handle("/api/v1/admin/users/", r.authMiddleware.AdminOnly(r.handleAdminUsers))
+	} else {
+		r.mux.HandleFunc("/api/v1/admin/users", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/admin/users/", r.handleNotImplemented)
+	}
 	r.mux.HandleFunc("/api/v1/admin/status", r.handleNotImplemented)
 
 	// -----------------------------------------------------------------

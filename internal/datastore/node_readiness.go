@@ -59,6 +59,24 @@ const nrColumns = `id, node_snapshot_id, organisation_id, node_name,
        sufficient_disk_space, blocking_cookbooks, available_disk_mb,
        required_disk_mb, stale_data, evaluated_at, created_at, updated_at`
 
+// latestReadinessPerNode is a subquery that returns the single most recent
+// node_readiness row ID for each unique (organisation_id, node_name,
+// target_chef_version) combination, based on evaluated_at. This ensures
+// that dashboard counts reflect exactly one readiness verdict per node per
+// target version — regardless of how many collection cycles have run.
+//
+// The previous approach filtered by the latest *completed* collection run,
+// but readiness evaluation runs BEFORE the run is marked complete (step 14
+// of 15), so the evaluator uses snapshots from the prior run. That caused
+// the filter to find zero rows for the current run's snapshots.
+const latestReadinessPerNode = `
+    id IN (
+        SELECT DISTINCT ON (organisation_id, node_name, target_chef_version) id
+          FROM node_readiness nr2
+         WHERE nr2.organisation_id = node_readiness.organisation_id
+         ORDER BY organisation_id, node_name, target_chef_version, evaluated_at DESC
+    )`
+
 // ---------------------------------------------------------------------------
 // Get
 // ---------------------------------------------------------------------------
@@ -123,32 +141,37 @@ func (db *DB) ListNodeReadinessForSnapshot(ctx context.Context, nodeSnapshotID s
 }
 
 // ListNodeReadinessForOrganisation returns all readiness records for the
-// given organisation, ordered by node_name then target_chef_version.
+// given organisation from the latest completed collection run, ordered by
+// node_name then target_chef_version.
 func (db *DB) ListNodeReadinessForOrganisation(ctx context.Context, organisationID string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
 		 WHERE organisation_id = $1
+		   AND ` + latestReadinessPerNode + `
 		 ORDER BY node_name, target_chef_version
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID)
 }
 
 // ListNodeReadinessForOrganisationAndTarget returns all readiness records
-// for the given organisation and target Chef version, ordered by node name.
+// for the given organisation and target Chef version from the latest
+// completed collection run, ordered by node name.
 func (db *DB) ListNodeReadinessForOrganisationAndTarget(ctx context.Context, organisationID, targetChefVersion string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
+		   AND ` + latestReadinessPerNode + `
 		 ORDER BY node_name
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
 }
 
 // ListReadyNodes returns all readiness records where is_ready = TRUE for
-// the given organisation and target Chef version.
+// the given organisation and target Chef version, scoped to the latest
+// completed collection run.
 func (db *DB) ListReadyNodes(ctx context.Context, organisationID, targetChefVersion string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
@@ -156,13 +179,15 @@ func (db *DB) ListReadyNodes(ctx context.Context, organisationID, targetChefVers
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
 		   AND is_ready = TRUE
+		   AND ` + latestReadinessPerNode + `
 		 ORDER BY node_name
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
 }
 
 // ListBlockedNodes returns all readiness records where is_ready = FALSE for
-// the given organisation and target Chef version.
+// the given organisation and target Chef version, scoped to the latest
+// completed collection run.
 func (db *DB) ListBlockedNodes(ctx context.Context, organisationID, targetChefVersion string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
@@ -170,19 +195,22 @@ func (db *DB) ListBlockedNodes(ctx context.Context, organisationID, targetChefVe
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
 		   AND is_ready = FALSE
+		   AND ` + latestReadinessPerNode + `
 		 ORDER BY node_name
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
 }
 
 // ListStaleNodeReadiness returns all readiness records where stale_data = TRUE
-// for the given organisation, ordered by node name.
+// for the given organisation from the latest completed collection run,
+// ordered by node name.
 func (db *DB) ListStaleNodeReadiness(ctx context.Context, organisationID string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
 		 WHERE organisation_id = $1
 		   AND stale_data = TRUE
+		   AND ` + latestReadinessPerNode + `
 		 ORDER BY node_name, target_chef_version
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID)
@@ -193,7 +221,9 @@ func (db *DB) ListStaleNodeReadiness(ctx context.Context, organisationID string)
 // ---------------------------------------------------------------------------
 
 // CountNodeReadiness returns the total, ready, and blocked counts for the
-// given organisation and target Chef version.
+// given organisation and target Chef version, scoped to the latest completed
+// collection run. Without this scoping, every historical collection cycle's
+// readiness rows would be counted, inflating the totals.
 func (db *DB) CountNodeReadiness(ctx context.Context, organisationID, targetChefVersion string) (total, ready, blocked int, err error) {
 	const query = `
 		SELECT
@@ -203,6 +233,7 @@ func (db *DB) CountNodeReadiness(ctx context.Context, organisationID, targetChef
 		  FROM node_readiness
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
+		   AND ` + latestReadinessPerNode + `
 	`
 	err = db.pool.QueryRowContext(ctx, query, organisationID, targetChefVersion).Scan(&total, &ready, &blocked)
 	if err != nil {

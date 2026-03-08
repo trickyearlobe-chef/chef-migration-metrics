@@ -58,9 +58,13 @@ RUN go mod download
 
 COPY . .
 
-# Build the React frontend if the directory exists.
-# The frontend is optional during early development — the build succeeds
-# without it and the Go binary simply serves an empty SPA shell.
+# Build the React frontend if the directory and npm are available.
+# The frontend/dist directory MUST exist before "go build" because
+# frontend/embed.go uses //go:embed all:dist to bake the SPA assets
+# into the binary. If npm is unavailable or the build fails, we create
+# a minimal placeholder index.html so the embed directive succeeds and
+# the binary serves a "frontend not built" page instead of failing to
+# compile.
 RUN if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then \
         apt-get update && \
         apt-get install -y --no-install-recommends nodejs npm && \
@@ -68,6 +72,11 @@ RUN if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then \
         cd frontend && npm ci --prefer-offline && npm run build; \
     else \
         echo "INFO: frontend/ not found — skipping SPA build"; \
+    fi && \
+    mkdir -p frontend/dist && \
+    if [ ! -f "frontend/dist/index.html" ]; then \
+        echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Chef Migration Metrics</title></head><body><p>Frontend not built. API at <a href="/api/v1/health">/api/v1/health</a></p></body></html>' \
+            > frontend/dist/index.html; \
     fi
 
 # Build arguments for version injection via -ldflags.
