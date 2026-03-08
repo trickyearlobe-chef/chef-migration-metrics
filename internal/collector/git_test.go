@@ -867,6 +867,39 @@ func TestDetectTestSuite_KitchenYmlNoDot(t *testing.T) {
 // CloneOrPull — clone with branch detection failure after clone
 // ---------------------------------------------------------------------------
 
+func TestCloneOrPull_Clone_StaleDirectoryRemoved(t *testing.T) {
+	// Simulate the scenario where a previous failed clone left behind an
+	// empty (non-git) directory. The clone method should remove the stale
+	// directory and succeed.
+	sha := "abcdef1234567890abcdef1234567890abcdef12"
+	fake := newFakeGitExecutor()
+	fake.addResponse("clone", "", nil)
+	fake.addResponse("symbolic-ref", "origin/main", nil)
+	fake.addResponse("rev-parse HEAD", sha, nil)
+	fake.addResponse("ls-tree", "", fmt.Errorf("not found"))
+
+	baseDir := t.TempDir()
+	mgr := NewGitCookbookManager(baseDir, fake)
+
+	// Pre-create the target directory without a .git subdirectory to
+	// simulate a leftover from a previous failed clone.
+	staleDir := mgr.RepoDir("chef-client")
+	if err := os.MkdirAll(staleDir, 0o755); err != nil {
+		t.Fatalf("failed to create stale dir: %v", err)
+	}
+
+	result, err := mgr.CloneOrPull(context.Background(), "chef-client", "https://github.com/myorg/chef-client")
+	if err != nil {
+		t.Fatalf("expected clone to succeed after removing stale dir, got: %v", err)
+	}
+	if !result.WasCloned {
+		t.Error("expected WasCloned to be true")
+	}
+	if result.HeadCommitSHA != sha {
+		t.Errorf("expected HeadCommitSHA %q, got %q", sha, result.HeadCommitSHA)
+	}
+}
+
 func TestCloneOrPull_Clone_BranchDetectionFails(t *testing.T) {
 	fake := newFakeGitExecutor()
 	fake.addResponse("clone", "", nil)

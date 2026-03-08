@@ -162,6 +162,21 @@ func (m *GitCookbookManager) CloneOrPull(ctx context.Context, cookbookName, repo
 		RepoURL:      repoURL,
 	}
 
+	// If the target directory exists but is not a valid git repo, remove it.
+	// This can happen when a previous clone attempt created the directory but
+	// failed before completing (e.g. bad URL or network error), leaving
+	// behind an empty or partial directory that would cause git clone to fail
+	// with "fatal: could not create work tree dir '...': File exists".
+	//
+	// This is safe because callers (fetchGitCookbooks) ensure that only one
+	// goroutine operates on a given cookbook at a time.
+	if _, err := os.Stat(repoDir); err == nil && !isGitRepo(repoDir) {
+		if err := os.RemoveAll(repoDir); err != nil {
+			result.Err = fmt.Errorf("removing stale directory %s: %w", repoDir, err)
+			return result, result.Err
+		}
+	}
+
 	if isGitRepo(repoDir) {
 		// Repository exists — fetch + reset.
 		if err := m.fetch(ctx, repoDir); err != nil {
@@ -400,34 +415,31 @@ func fetchGitCookbooks(
 		return GitFetchResult{Duration: time.Since(start)}
 	}
 
-	// Build the list of (cookbook, url) pairs to process.
-	type candidate struct {
-		cookbookName string
-		repoURL      string
+	// Normalise base URLs once.
+	trimmedURLs := make([]string, len(gitBaseURLs))
+	for i, u := range gitBaseURLs {
+		trimmedURLs[i] = strings.TrimRight(u, "/")
 	}
 
-	var candidates []candidate
-	for cbName := range activeCookbookNames {
-		for _, baseURL := range gitBaseURLs {
-			baseURL = strings.TrimRight(baseURL, "/")
-			candidates = append(candidates, candidate{
-				cookbookName: cbName,
-				repoURL:      baseURL + "/" + cbName,
-			})
-		}
+	// Build a list of cookbook names to process. Each cookbook will try base
+	// URLs sequentially within a single goroutine, which prevents concurrent
+	// clone operations targeting the same local directory.
+	cookbooks := make([]string, 0, len(activeCookbookNames))
+	for name := range activeCookbookNames {
+		cookbooks = append(cookbooks, name)
 	}
 
 	result := GitFetchResult{
-		Total: len(candidates),
+		Total: len(cookbooks) * len(trimmedURLs),
 	}
 
-	if len(candidates) == 0 {
+	if len(cookbooks) == 0 {
 		result.Duration = time.Since(start)
 		return result
 	}
 
 	log.Info(fmt.Sprintf("checking %d git cookbook candidate(s) across %d base URL(s)",
-		len(candidates), len(gitBaseURLs)))
+		result.Total, len(trimmedURLs)))
 
 	// Use a buffered channel as a semaphore to bound concurrency.
 	sem := make(chan struct{}, concurrency)
@@ -435,25 +447,13 @@ func fetchGitCookbooks(
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	// Track which cookbook names have already been successfully resolved to
-	// a git repo so we skip remaining base URLs for that cookbook.
-	resolved := make(map[string]bool)
-
-	for _, c := range candidates {
+	for _, cbName := range cookbooks {
 		if ctx.Err() != nil {
 			break
 		}
 
-		// Skip if this cookbook was already resolved from a previous base URL.
-		mu.Lock()
-		alreadyResolved := resolved[c.cookbookName]
-		mu.Unlock()
-		if alreadyResolved {
-			continue
-		}
-
 		wg.Add(1)
-		go func(c candidate) {
+		go func(cbName string) {
 			defer wg.Done()
 
 			// Acquire semaphore slot.
@@ -464,72 +464,79 @@ func fetchGitCookbooks(
 				return
 			}
 
-			// Skip if resolved by another goroutine while we were waiting.
-			mu.Lock()
-			if resolved[c.cookbookName] {
-				mu.Unlock()
-				return
-			}
-			mu.Unlock()
-
-			repoResult, err := mgr.CloneOrPull(ctx, c.cookbookName, c.repoURL)
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			if err != nil {
-				result.Failed++
-				gfe := GitFetchError{
-					CookbookName: c.cookbookName,
-					RepoURL:      c.repoURL,
-					Err:          err,
+			// Try each base URL in order until one succeeds.
+			var lastErr error
+			for _, baseURL := range trimmedURLs {
+				if ctx.Err() != nil {
+					return
 				}
-				result.Errors = append(result.Errors, gfe)
-				// Log at DEBUG because a missing repo for one base URL is
-				// expected when multiple base URLs are configured.
-				log.Debug(fmt.Sprintf("git cookbook candidate failed: %s", gfe.Error()))
-				return
-			}
 
-			// Mark as resolved so other base URLs for this cookbook are skipped.
-			resolved[c.cookbookName] = true
+				repoURL := baseURL + "/" + cbName
+				repoResult, err := mgr.CloneOrPull(ctx, cbName, repoURL)
 
-			if repoResult.WasCloned {
-				result.Cloned++
-			} else if repoResult.Changed {
-				result.Pulled++
-			} else {
-				result.Unchanged++
-			}
+				if err != nil {
+					lastErr = err
+					// Log at DEBUG because a missing repo for one base URL
+					// is expected when multiple base URLs are configured.
+					log.Debug(fmt.Sprintf("git cookbook candidate failed: %s (%s): %v",
+						cbName, repoURL, err))
+					continue
+				}
 
-			// Upsert into the datastore.
-			now := time.Now().UTC()
-			_, upsertErr := db.UpsertGitCookbook(ctx, datastore.UpsertGitCookbookParams{
-				Name:            c.cookbookName,
-				GitRepoURL:      c.repoURL,
-				HeadCommitSHA:   repoResult.HeadCommitSHA,
-				DefaultBranch:   repoResult.DefaultBranch,
-				HasTestSuite:    repoResult.HasTestSuite,
-				IsActive:        true,
-				IsStaleCookbook: false,
-				FirstSeenAt:     now,
-				LastFetchedAt:   now,
-			})
-			if upsertErr != nil {
-				log.Warn(fmt.Sprintf("git cookbook upsert failed for %s: %v", c.cookbookName, upsertErr))
-			} else {
-				verb := "pulled"
+				// Success — record the result and stop trying further URLs.
+				mu.Lock()
 				if repoResult.WasCloned {
-					verb = "cloned"
+					result.Cloned++
+				} else if repoResult.Changed {
+					result.Pulled++
+				} else {
+					result.Unchanged++
 				}
-				log.Info(fmt.Sprintf("git cookbook %s: %s branch=%s sha=%s test_suite=%v",
-					verb, c.cookbookName, repoResult.DefaultBranch,
-					repoResult.HeadCommitSHA[:minInt(8, len(repoResult.HeadCommitSHA))],
-					repoResult.HasTestSuite),
-					logging.WithCookbook(c.cookbookName, ""),
-					logging.WithCommitSHA(repoResult.HeadCommitSHA))
+				mu.Unlock()
+
+				// Upsert into the datastore.
+				now := time.Now().UTC()
+				_, upsertErr := db.UpsertGitCookbook(ctx, datastore.UpsertGitCookbookParams{
+					Name:            cbName,
+					GitRepoURL:      repoURL,
+					HeadCommitSHA:   repoResult.HeadCommitSHA,
+					DefaultBranch:   repoResult.DefaultBranch,
+					HasTestSuite:    repoResult.HasTestSuite,
+					IsActive:        true,
+					IsStaleCookbook: false,
+					FirstSeenAt:     now,
+					LastFetchedAt:   now,
+				})
+				if upsertErr != nil {
+					log.Warn(fmt.Sprintf("git cookbook upsert failed for %s: %v", cbName, upsertErr))
+				} else {
+					verb := "pulled"
+					if repoResult.WasCloned {
+						verb = "cloned"
+					}
+					log.Info(fmt.Sprintf("git cookbook %s: %s branch=%s sha=%s test_suite=%v",
+						verb, cbName, repoResult.DefaultBranch,
+						repoResult.HeadCommitSHA[:minInt(8, len(repoResult.HeadCommitSHA))],
+						repoResult.HasTestSuite),
+						logging.WithCookbook(cbName, ""),
+						logging.WithCommitSHA(repoResult.HeadCommitSHA))
+				}
+				lastErr = nil
+				break
 			}
-		}(c)
+
+			// If all base URLs failed, count a single failure for the cookbook.
+			if lastErr != nil {
+				mu.Lock()
+				result.Failed++
+				result.Errors = append(result.Errors, GitFetchError{
+					CookbookName: cbName,
+					RepoURL:      trimmedURLs[len(trimmedURLs)-1] + "/" + cbName,
+					Err:          lastErr,
+				})
+				mu.Unlock()
+			}
+		}(cbName)
 	}
 
 	wg.Wait()

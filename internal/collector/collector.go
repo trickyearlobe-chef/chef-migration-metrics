@@ -1146,7 +1146,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		log.Info("evaluating node readiness",
 			logging.WithCollectionRunID(run.ID))
 
-		readinessResults, readinessErr := c.readinessEval.EvaluateOrganisation(ctx, org.ID, c.cfg.TargetChefVersions)
+		readinessResults, readinessErr := c.readinessEval.EvaluateOrganisation(ctx, org.ID, org.Name, c.cfg.TargetChefVersions)
 		if readinessErr != nil {
 			log.Warn(fmt.Sprintf("node readiness evaluation failed: %v", readinessErr),
 				logging.WithCollectionRunID(run.ID))
