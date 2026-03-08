@@ -88,7 +88,9 @@ The JSON structure returned for a node differs depending on which endpoint is us
 - **`GET /organizations/<ORG_NAME>/nodes/<NODE_NAME>`** returns the node object with attributes nested under their attribute level keys: `automatic`, `normal`, `default`, and `override`.
 - **Full and partial search** (`POST .../search/node`) returns a flattened structure where automatic attributes are **hoisted to the root** of each node's `data` object. For example, `automatic.platform` is accessed as `platform` in the search response, not `automatic.platform`.
 
-This means partial search attribute paths must be written as if addressing the hoisted structure. For example, to retrieve `automatic.chef_packages.chef.version`, the path in the partial search request body is `["automatic", "chef_packages", "chef", "version"]`, but the key is returned at the top level of `data` under whatever alias you assign it (e.g. `"chef_version"`).
+This means partial search attribute paths must be written as if addressing the hoisted structure — **without** the `automatic` prefix. For example, to retrieve `automatic.chef_packages.chef.version`, the path in the partial search request body is `["chef_packages", "chef", "version"]` (not `["automatic", "chef_packages", "chef", "version"]`). The key is returned at the top level of `data` under whatever alias you assign it (e.g. `"chef_version"`).
+
+> **⚠️ Common mistake:** Including `"automatic"` as the first element of a partial search path causes the Chef server to look for a literal top-level key called `"automatic"` in the hoisted structure. Since that key does not exist in the hoisted view, the server returns `null` for every such attribute. The `"automatic"` prefix is only needed when fetching a node directly via `GET /nodes/:name`.
 
 When writing code that processes node data, take care not to assume a consistent structure between data retrieved via `GET /nodes/:name` and data retrieved via search.
 
@@ -108,19 +110,21 @@ POST /organizations/<ORG_NAME>/search/node?q=*:*&rows=1000&start=0
 {
   "name":             ["name"],
   "chef_environment": ["chef_environment"],
-  "chef_version":     ["automatic", "chef_packages", "chef", "version"],
-  "platform":         ["automatic", "platform"],
-  "platform_version": ["automatic", "platform_version"],
-  "platform_family":  ["automatic", "platform_family"],
-  "filesystem":       ["automatic", "filesystem"],
-  "cookbooks":        ["automatic", "cookbooks"],
+  "chef_version":     ["chef_packages", "chef", "version"],
+  "platform":         ["platform"],
+  "platform_version": ["platform_version"],
+  "platform_family":  ["platform_family"],
+  "filesystem":       ["filesystem"],
+  "cookbooks":        ["cookbooks"],
   "run_list":         ["run_list"],
-  "roles":            ["automatic", "roles"],
+  "roles":            ["roles"],
   "policy_name":      ["policy_name"],
   "policy_group":     ["policy_group"],
-  "ohai_time":        ["automatic", "ohai_time"]
+  "ohai_time":        ["ohai_time"]
 }
 ```
+
+> **Note:** Paths do NOT include `"automatic"` because search hoists automatic attributes to the root (see note above). The `"automatic"` prefix is only relevant when accessing nodes via `GET /nodes/:name`.
 
 **Attribute notes:**
 

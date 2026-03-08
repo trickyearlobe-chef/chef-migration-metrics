@@ -4,6 +4,35 @@ This file contains the rules and conventions that must be followed at all times 
 
 ---
 
+## Git Branching & Commit Workflow
+
+All work done in a thread **must** follow this branching and commit discipline:
+
+### Branch Naming
+
+- **Never commit directly to `main`.** At the start of a thread, create a feature branch and do all work there.
+- Branch names must follow the pattern: `<type>/<short-description>` where `<type>` is one of `feature`, `fix`, `refactor`, `chore`, `docs`, or `test`.
+- Use kebab-case for the description (e.g. `feature/node-collection-worker-pool`, `fix/cookstyle-timeout-handling`, `chore/update-dependencies`).
+- The description should reflect the scope of work planned for the thread.
+
+### Commits
+
+- **Each completed todo or meaningful unit of work must result in its own commit.** Do not batch unrelated changes into a single commit.
+- Write clear, descriptive commit messages following conventional commit style:
+  - Format: `<type>(<scope>): <summary>` (e.g. `feat(datastore): add migration for cookbook_versions table`, `test(chefapi): add signing round-trip tests`).
+  - The summary should be imperative mood, lowercase, no trailing period, and under 72 characters.
+  - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
+- Commit early and often. If the context window ends unexpectedly, committed work is not lost.
+
+### Merging to Main
+
+- **Do not merge the feature branch into `main` without explicit permission from the user.**
+- After significant work has been completed and verified (tests pass, linting clean, summary written), present a summary of the branch's changes and **ask the user for permission to merge**.
+- When permission is granted, merge using `git merge --no-ff` to preserve the branch history, then delete the feature branch.
+- If the user declines or wants changes first, continue working on the same branch.
+
+---
+
 ## Token Economy
 
 - When choosing the next task, the estimate and implementation must be within the 80000 token budget.
