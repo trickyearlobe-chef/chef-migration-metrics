@@ -418,11 +418,11 @@ func TestIsDeprecation(t *testing.T) {
 		copName string
 		want    bool
 	}{
-		{"ChefDeprecations/NodeSet", true},
-		{"ChefDeprecations/ResourceWithoutUnifiedTrue", true},
-		{"ChefCorrectness/BlockGuardWithOnlyString", false},
-		{"ChefModernize/CronDFileOrTemplate", false},
-		{"ChefStyle/TrueClassFalseClassResourceProperties", false},
+		{"Chef/Deprecations/NodeSet", true},
+		{"Chef/Deprecations/ResourceWithoutUnifiedTrue", true},
+		{"Chef/Correctness/BlockGuardWithOnlyString", false},
+		{"Chef/Modernize/CronDFileOrTemplate", false},
+		{"Chef/Style/TrueClassFalseClassResourceProperties", false},
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -437,10 +437,10 @@ func TestIsCorrectness(t *testing.T) {
 		copName string
 		want    bool
 	}{
-		{"ChefCorrectness/BlockGuardWithOnlyString", true},
-		{"ChefCorrectness/CookbookUsesNodeSave", true},
-		{"ChefDeprecations/NodeSet", false},
-		{"ChefModernize/CronDFileOrTemplate", false},
+		{"Chef/Correctness/BlockGuardWithOnlyString", true},
+		{"Chef/Correctness/CookbookUsesNodeSave", true},
+		{"Chef/Deprecations/NodeSet", false},
+		{"Chef/Modernize/CronDFileOrTemplate", false},
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -455,10 +455,10 @@ func TestIsModernize(t *testing.T) {
 		copName string
 		want    bool
 	}{
-		{"ChefModernize/CronDFileOrTemplate", true},
-		{"ChefModernize/UnnecessaryMixlibShelloutRequire", true},
-		{"ChefDeprecations/NodeSet", false},
-		{"ChefCorrectness/BlockGuardWithOnlyString", false},
+		{"Chef/Modernize/CronDFileOrTemplate", true},
+		{"Chef/Modernize/UnnecessaryMixlibShelloutRequire", true},
+		{"Chef/Deprecations/NodeSet", false},
+		{"Chef/Correctness/BlockGuardWithOnlyString", false},
 		{"", false},
 	}
 	for _, tt := range tests {

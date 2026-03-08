@@ -69,6 +69,7 @@ chef-migration-metrics/
 │   ├── 2026-03-08-10-10-real-server-test-results.md # Real server test results
 │   ├── 2026-03-08-13-25-cookstyle-json-and-build-fixes.md # Cookstyle JSON struct tags, TS build fixes, Makefile stop target
 │   ├── 2026-03-08-22-26-npm-security-vulns.md             # Fix 2 moderate npm vulns — upgrade vite 5→6 and plugin-react 4→5
+│   ├── 2026-03-08-22-44-cookstyle-namespace-and-target-version.md # Fix CookStyle cop namespace prefixes and --target-chef-version → sidecar .rubocop_cmm.yml
 │   └── archive/                               # Older summaries — historical reference only
 └── specifications/
     ├── Specification.md            # Top-level project spec and component index

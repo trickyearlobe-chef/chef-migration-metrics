@@ -365,11 +365,56 @@ func buildAutocorrectArgs(cookbookDir string, targetChefVersion string) []string
 	args := []string{"--auto-correct", "--format", "json"}
 
 	if targetChefVersion != "" {
-		args = append(args, "--only", "ChefDeprecations,ChefCorrectness")
+		// Set TargetChefVersion via a sidecar .rubocop_cmm.yml that we
+		// point CookStyle at with --config. If the cookbook already has a
+		// .rubocop.yml we inherit from it so its settings are preserved.
+		// CookStyle does not accept a --target-chef-version CLI flag.
+		configPath := writeAutocorrectTargetConfig(cookbookDir, targetChefVersion)
+		if configPath != "" {
+			args = append(args, "--config", configPath)
+		}
+
+		args = append(args, "--only", "Chef/Deprecations,Chef/Correctness")
 	}
 
 	args = append(args, cookbookDir)
 	return args
+}
+
+// cmmConfigName is the sidecar config file written next to the cookbook's
+// own .rubocop.yml (if any). Using a distinct name avoids overwriting the
+// cookbook's configuration.
+const cmmConfigName = ".rubocop_cmm.yml"
+
+// writeAutocorrectTargetConfig writes a sidecar .rubocop_cmm.yml into the
+// cookbook directory that sets AllCops.TargetChefVersion. If the cookbook
+// already contains a .rubocop.yml the sidecar inherits from it so the
+// cookbook's own configuration (excludes, custom cops, etc.) is preserved.
+// When no cookbook config exists the sidecar explicitly requires cookstyle
+// so that the TargetChefVersion parameter is recognised.
+//
+// Returns the absolute path to the written file, or "" on failure.
+func writeAutocorrectTargetConfig(cookbookDir, targetChefVersion string) string {
+	var buf strings.Builder
+
+	existingConfig := filepath.Join(cookbookDir, ".rubocop.yml")
+	if _, err := os.Stat(existingConfig); err == nil {
+		// Cookbook has its own config — inherit from it (which also
+		// picks up any `require: cookstyle` it contains).
+		buf.WriteString("inherit_from: .rubocop.yml\n\n")
+	} else {
+		// No cookbook config — require cookstyle ourselves so the
+		// TargetChefVersion AllCops parameter is registered.
+		buf.WriteString("require:\n  - cookstyle\n\n")
+	}
+
+	fmt.Fprintf(&buf, "AllCops:\n  TargetChefVersion: %s\n", targetChefVersion)
+
+	outPath := filepath.Join(cookbookDir, cmmConfigName)
+	if err := os.WriteFile(outPath, []byte(buf.String()), 0644); err != nil {
+		return ""
+	}
+	return outPath
 }
 
 // ---------------------------------------------------------------------------
