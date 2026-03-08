@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -47,6 +48,15 @@ func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, args ...st
 	cmd := makeCommand(ctx, e.path, args...)
 	cmd.Dir = dir
 
+	// Build a sanitised environment that prevents Bundler from picking up
+	// a Gemfile inside the cookbook directory. Without this, cookbooks that
+	// ship a Gemfile can cause `kitchen list` (and other kitchen commands)
+	// to activate Bundler, which may emit HTML error pages from private gem
+	// servers or fail to resolve dependencies — producing non-JSON output
+	// on stdout that breaks our JSON parser.
+	env := sanitiseKitchenEnv(os.Environ())
+	cmd.Env = env
+
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
@@ -69,7 +79,7 @@ func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, args ...st
 // ---------------------------------------------------------------------------
 
 // KitchenInstance represents a single Test Kitchen instance as returned by
-// `kitchen list --format json`.
+// `kitchen list --json`.
 type KitchenInstance struct {
 	Instance    string `json:"instance"`
 	Driver      string `json:"driver"`
@@ -567,7 +577,7 @@ func (s *KitchenScanner) destroyBestEffort(ctx context.Context, dir string, resu
 // ---------------------------------------------------------------------------
 
 func (s *KitchenScanner) listInstances(ctx context.Context, dir string) ([]KitchenInstance, error) {
-	stdout, _, _, err := s.executor.Run(ctx, dir, "list", "--format", "json")
+	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, "list", "--json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run kitchen list: %w", err)
 	}
@@ -579,7 +589,19 @@ func (s *KitchenScanner) listInstances(ctx context.Context, dir string) ([]Kitch
 
 	var instances []KitchenInstance
 	if err := json.Unmarshal([]byte(stdout), &instances); err != nil {
-		return nil, fmt.Errorf("failed to parse kitchen list JSON: %w", err)
+		// Log the raw output so operators can diagnose what kitchen
+		// actually returned (e.g. HTML from a gem server error, Bundler
+		// resolution failure, or a shell wrapper).
+		preview := stdout
+		if len(preview) > 512 {
+			preview = preview[:512] + "…"
+		}
+		stderrPreview := strings.TrimSpace(stderr)
+		if len(stderrPreview) > 512 {
+			stderrPreview = stderrPreview[:512] + "…"
+		}
+		return nil, fmt.Errorf("failed to parse kitchen list JSON (exit_code=%d): %w\nstdout: %s\nstderr: %s",
+			exitCode, err, preview, stderrPreview)
 	}
 	return instances, nil
 }
@@ -907,4 +929,39 @@ func truncSHA(sha string) string {
 		return sha[:8]
 	}
 	return sha
+}
+
+// sanitiseKitchenEnv returns a copy of the given environment with Bundler-
+// related variables removed. This prevents the cookbook's own Gemfile from
+// interfering with the system-installed Test Kitchen binary.
+//
+// Variables removed:
+//   - BUNDLE_GEMFILE — tells Bundler to use a specific Gemfile
+//   - BUNDLE_BIN_PATH — overrides the Bundler binary location
+//   - BUNDLE_PATH — overrides the gem installation path
+//   - RUBYOPT — may contain "-rbundler/setup" injected by Bundler
+//
+// GEM_HOME and GEM_PATH are preserved so that the system kitchen gem
+// (and its dependencies) remain discoverable.
+func sanitiseKitchenEnv(environ []string) []string {
+	drop := map[string]bool{
+		"BUNDLE_GEMFILE":  true,
+		"BUNDLE_BIN_PATH": true,
+		"BUNDLE_PATH":     true,
+		"RUBYOPT":         true,
+	}
+
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		if idx := strings.IndexByte(kv, '='); idx > 0 {
+			key := kv[:idx]
+			// Environment variable names are case-sensitive on Unix but
+			// case-insensitive on Windows. Normalise to upper for the check.
+			if drop[strings.Map(unicode.ToUpper, key)] {
+				continue
+			}
+		}
+		out = append(out, kv)
+	}
+	return out
 }
