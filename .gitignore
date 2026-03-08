@@ -26,7 +26,9 @@ chef-migration-metrics
 # =============================================================================
 # The entire embedded/ tree is a build artifact, covered by build/ above.
 # If built outside build/ for any reason:
-embedded/
+# NOTE: Use leading / so this only matches the top-level embedded/ directory
+# and does NOT match internal/embedded/ (which contains Go source files).
+/embedded/
 
 # =============================================================================
 # Go
