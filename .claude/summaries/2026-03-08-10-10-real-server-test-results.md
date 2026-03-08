@@ -2,6 +2,7 @@
 
 **Date:** 2026-03-08
 **Purpose:** Execute the TODO audit checklist — stand up infrastructure, connect to a real Chef Infra Server, and verify the end-to-end pipeline.
+**Branch:** `mvp-code` merged into `main` at `830fba3`.
 
 ---
 
@@ -97,10 +98,16 @@ The full pipeline was verified working against the real Chef server:
 
 ## Current State
 
+- **Git:** `mvp-code` merged into `main` (no-ff). No remote configured.
 - **Database:** PostgreSQL running via Docker Compose on `localhost:5432`, schema version 7.
 - **Application:** Fully functional, connects to `chef.home.arpa`, collects 10 nodes and 7 cookbooks every minute.
 - **Dashboard:** React SPA serves at `http://127.0.0.1:8080` with real data.
-- **All tests pass** (1,666+ across 16 packages, 0 failures).
+- **Tests:** All passed before the DISTINCT ON query change. The final `go test ./... -count=1` was interrupted — **re-run needed** to confirm no regressions from the readiness query fix.
+
+## Lessons Learned (Config)
+
+- **`chef_server_url` must include the full `/organizations/<org>` path** — e.g. `https://chef.home.arpa/organizations/thenixons`, not just `https://chef.home.arpa`. The `chefapi.ClientConfig.ServerURL` field is used directly as the base URL for all API calls; the `org_name` field is metadata only and is NOT appended to the URL automatically. The Docker Compose example config (`deploy/docker-compose/config.yml`) shows the short form without `/organizations/...` which is misleading — it should be updated.
+- **`exports.output_directory`** — when explicitly set in config, the directory must already exist (validation checks). When left to the default (`/var/lib/chef-migration-metrics/exports`), the app tries to `MkdirAll` at startup, which fails without root permissions. For local dev, use a relative path like `.local/exports`.
 
 ---
 
@@ -118,9 +125,10 @@ The full pipeline was verified working against the real Chef server:
 
 ### Immediate (continue testing the pipeline)
 
+- [ ] **Run the full test suite** — `go test ./... -count=1` was interrupted; confirm all tests still pass with the DISTINCT ON query changes in `node_readiness.go`.
 - [ ] **Investigate why cookbooks aren't downloading** — The collector says "no cookbook versions need downloading" but `download_status` is `pending`. Check whether the download decision logic requires a specific condition (e.g. cookbook marked as active, or explicit download trigger). The cookbooks need to be on disk for CookStyle scanning, Test Kitchen, and autocorrect previews to work.
-- [ ] **Run the full test suite** — The `go test ./... -count=1` was interrupted; confirm all tests still pass with the DISTINCT ON query changes.
 - [ ] **Check the readiness evaluator timing issue more thoroughly** — The evaluator uses `ListNodeSnapshotsByOrganisation` which looks at the latest *completed* run, but it runs before the current run completes. This means readiness is always one cycle behind. Consider passing the current `collection_run_id` to the evaluator so it uses the current run's snapshots directly.
+- [ ] **Fix the Docker Compose example config** — `deploy/docker-compose/config.yml` shows `chef_server_url: https://chef.example.com` without the `/organizations/<org>` path. Update to show the full URL to avoid confusion.
 
 ### Short-term (improve real-server testing)
 
