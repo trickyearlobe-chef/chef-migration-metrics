@@ -94,6 +94,8 @@ analysis_tools:
   embedded_bin_dir: ""
   cookstyle_timeout_minutes: 10
   test_kitchen_timeout_minutes: 30
+  test_kitchen:
+    enabled: false
 
   # Test Kitchen overrides — control the driver, platforms, and architecture
   # used for cookbook compatibility testing. These settings generate a

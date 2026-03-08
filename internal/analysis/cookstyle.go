@@ -121,6 +121,10 @@ type CookstyleScanResult struct {
 	// against. Empty when no version profile was applied.
 	TargetChefVersion string
 
+	// CommitSHA is the HEAD commit SHA of the cookbook at the time of
+	// scanning. Set for git-sourced cookbooks; empty for server-sourced.
+	CommitSHA string
+
 	// Passed is true when there are zero offenses with severity "error"
 	// or "fatal".
 	Passed bool
@@ -187,7 +191,8 @@ type CookstyleExecutor interface {
 // Scanner
 // ---------------------------------------------------------------------------
 
-// CookstyleScanner runs CookStyle scans on server-sourced cookbooks.
+// CookstyleScanner runs CookStyle scans on cookbooks from any source
+// (Chef server or git).
 type CookstyleScanner struct {
 	db            *datastore.DB
 	logger        *logging.Logger
@@ -265,15 +270,18 @@ type CookstyleBatchResult struct {
 // ScanCookbooks runs CookStyle against all provided cookbooks in parallel,
 // once per target Chef Client version. For each combination it:
 //
-//  1. Checks if a result already exists (immutability skip for server
-//     cookbook versions, which are immutable on the Chef server).
+//  1. Checks if a result already exists — server cookbook versions are
+//     immutable so an existing result is always valid; git cookbooks are
+//     skipped only when the HEAD commit SHA has not changed.
 //  2. Runs `cookstyle --format json` on the cookbook directory, optionally
 //     restricting to ChefDeprecations + ChefCorrectness via --only.
 //  3. Parses the JSON output — every offense already carries the cop name,
 //     severity, message, correctable flag, and location.
 //  4. Persists the result to the cookstyle_results table.
 //
-// Cookbooks with download_status != 'ok' are silently excluded.
+// Server cookbooks with download_status != 'ok' are silently excluded.
+// Git cookbooks are always considered available (their content lives in the
+// local clone directory).
 //
 // cookbookDir maps a cookbook to its filesystem path. The caller provides
 // this because the directory layout depends on how cookbooks were fetched.
@@ -294,7 +302,10 @@ func (s *CookstyleScanner) ScanCookbooks(
 
 	var items []workItem
 	for _, cb := range cookbooks {
-		if !cb.IsChefServer() || !cb.IsDownloaded() {
+		if cb.IsChefServer() && !cb.IsDownloaded() {
+			continue
+		}
+		if !cb.IsChefServer() && !cb.IsGit() {
 			continue
 		}
 		dir := cookbookDir(cb)
@@ -402,16 +413,32 @@ func (s *CookstyleScanner) scanOne(
 		CookbookName:      cb.Name,
 		CookbookVersion:   cb.Version,
 		TargetChefVersion: targetChefVersion,
+		CommitSHA:         cb.HeadCommitSHA,
 	}
 
-	// Step 1: immutability check — server cookbook versions never change,
-	// so an existing result is still valid.
+	// Step 1: skip check.
+	// Server cookbook versions are immutable — an existing result is always valid.
+	// Git cookbooks change with each commit — skip only when the HEAD commit
+	// SHA matches the previously scanned commit.
 	existing, err := s.db.GetCookstyleResult(ctx, cb.ID, targetChefVersion)
 	if err == nil && existing != nil {
-		log.Debug(fmt.Sprintf("skipping — already scanned at %s",
-			existing.ScannedAt.Format(time.RFC3339)))
-		sr.Skipped = true
-		return sr
+		if cb.IsChefServer() {
+			log.Debug(fmt.Sprintf("skipping — already scanned at %s",
+				existing.ScannedAt.Format(time.RFC3339)))
+			sr.Skipped = true
+			return sr
+		}
+		if cb.IsGit() && existing.CommitSHA != "" && existing.CommitSHA == cb.HeadCommitSHA {
+			shaPreview := cb.HeadCommitSHA
+			if len(shaPreview) > 8 {
+				shaPreview = shaPreview[:8]
+			}
+			log.Debug(fmt.Sprintf("skipping — commit %s already scanned at %s",
+				shaPreview,
+				existing.ScannedAt.Format(time.RFC3339)))
+			sr.Skipped = true
+			return sr
+		}
 	}
 
 	// Step 2: build arguments.
@@ -520,6 +547,12 @@ func buildCookstyleArgs(cookbookDir string, targetChefVersion string) []string {
 	args := []string{"--format", "json"}
 
 	if targetChefVersion != "" {
+		// Tell CookStyle which Chef Infra Client version the cookbook
+		// should be evaluated against. This enables version-specific
+		// deprecation and correctness cops — e.g. a cop that fires for
+		// Chef 18 may not fire for Chef 17.
+		args = append(args, "--target-chef-version", targetChefVersion)
+
 		// Restrict to the two migration-critical namespaces. CookStyle
 		// cops already carry version metadata in their own source —
 		// enabling only these namespaces avoids noise from ChefStyle and
@@ -583,6 +616,7 @@ func (s *CookstyleScanner) persistResult(ctx context.Context, sr CookstyleScanRe
 	params := datastore.UpsertCookstyleResultParams{
 		CookbookID:          sr.CookbookID,
 		TargetChefVersion:   sr.TargetChefVersion,
+		CommitSHA:           sr.CommitSHA,
 		Passed:              sr.Passed,
 		OffenceCount:        sr.OffenseCount,
 		DeprecationCount:    sr.DeprecationCount,

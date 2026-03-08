@@ -25,8 +25,9 @@ import (
 // GitFetchResult summarises the outcome of a git cookbook fetching pass across
 // all configured base URLs and active cookbook names.
 type GitFetchResult struct {
-	// Total is the number of cookbook repositories that were candidates for
-	// clone or pull.
+	// Total is the number of unique cookbook names that were candidates for
+	// clone or pull. Each cookbook tries base URLs sequentially until one
+	// succeeds, so this counts cookbooks, not (cookbook, URL) combinations.
 	Total int
 
 	// Cloned is the number of repositories freshly cloned.
@@ -430,7 +431,7 @@ func fetchGitCookbooks(
 	}
 
 	result := GitFetchResult{
-		Total: len(cookbooks) * len(trimmedURLs),
+		Total: len(cookbooks),
 	}
 
 	if len(cookbooks) == 0 {
