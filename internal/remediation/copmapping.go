@@ -11,7 +11,7 @@ package remediation
 // URL, version lifecycle information, and a brief code example showing the
 // old pattern and its replacement.
 type CopMapping struct {
-	// CopName is the fully qualified cop name (e.g. "ChefDeprecations/ResourceWithoutUnifiedTrue").
+	// CopName is the fully qualified cop name (e.g. "Chef/Deprecations/ResourceWithoutUnifiedTrue").
 	CopName string `json:"cop_name"`
 
 	// Description is a human-readable explanation of the deprecation or
@@ -90,8 +90,8 @@ func CopMappingCount() int {
 // Embedded mapping data
 // ---------------------------------------------------------------------------
 //
-// This table covers the most common ChefDeprecations/* and
-// ChefCorrectness/* cops that practitioners encounter during Chef Client
+// This table covers the most common Chef/Deprecations/* and
+// Chef/Correctness/* cops that practitioners encounter during Chef Client
 // upgrade projects. The mapping is shipped as compiled Go data in the
 // application binary and can be updated by releasing a new version.
 //
@@ -103,10 +103,10 @@ func CopMappingCount() int {
 
 var embeddedCopMappings = []CopMapping{
 	// -----------------------------------------------------------------------
-	// ChefDeprecations
+	// Chef/Deprecations
 	// -----------------------------------------------------------------------
 	{
-		CopName:      "ChefDeprecations/ResourceWithoutUnifiedTrue",
+		CopName:      "Chef/Deprecations/ResourceWithoutUnifiedTrue",
 		Description:  "Custom resources should enable unified mode for compatibility with Chef 18+. In unified mode, the resource's compile and converge phases run in a single pass.",
 		MigrationURL: "https://docs.chef.io/unified_mode/",
 		IntroducedIn: "15.3",
@@ -119,7 +119,7 @@ resource_name :my_resource
 unified_mode true`,
 	},
 	{
-		CopName:      "ChefDeprecations/ChefHandlerUsesSupports",
+		CopName:      "Chef/Deprecations/ChefHandlerUsesSupports",
 		Description:  "The `supports` method in Chef handlers was deprecated. Use the `type` property instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -131,7 +131,7 @@ supports :report => true, :exception => true
 type :report`,
 	},
 	{
-		CopName:      "ChefDeprecations/ChefRewind",
+		CopName:      "Chef/Deprecations/ChefRewind",
 		Description:  "The chef-rewind gem is no longer needed. Use the built-in edit_resource, delete_resource, or find_resource methods instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.10",
@@ -149,7 +149,7 @@ edit_resource(:package, 'nginx') do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/ChefSpecifyDefaultAction",
+		CopName:      "Chef/Deprecations/ChefSpecifyDefaultAction",
 		Description:  "Custom resources should specify a default_action instead of relying on the implicit first action.",
 		MigrationURL: "https://docs.chef.io/custom_resources/",
 		IntroducedIn: "12.0",
@@ -161,7 +161,7 @@ actions :create, :delete
 default_action :create`,
 	},
 	{
-		CopName:      "ChefDeprecations/ChefSugarHelpers",
+		CopName:      "Chef/Deprecations/ChefSugarHelpers",
 		Description:  "Chef Sugar helpers were merged into Chef Infra Client 15.5+. Remove the chef-sugar gem dependency and use the built-in helpers directly.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.5",
@@ -174,7 +174,7 @@ include Chef::Sugar::DataBag
 # Remove the dependency — helpers are built into Chef 15.5+`,
 	},
 	{
-		CopName:      "ChefDeprecations/CookbookDependsOnCompatResource",
+		CopName:      "Chef/Deprecations/CookbookDependsOnCompatResource",
 		Description:  "The compat_resource cookbook backported custom resource functionality to older Chef versions. It is no longer needed with Chef 12.19+.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.19",
@@ -186,7 +186,7 @@ depends 'compat_resource'
 # Remove the dependency`,
 	},
 	{
-		CopName:      "ChefDeprecations/CookbookDependsOnPartialSearch",
+		CopName:      "Chef/Deprecations/CookbookDependsOnPartialSearch",
 		Description:  "The partial_search cookbook is no longer needed. Partial search is built into Chef Client 12.0+.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -198,7 +198,7 @@ depends 'partial_search'
 # Remove the dependency — use search(:node, 'query', filter_result: { ... })`,
 	},
 	{
-		CopName:      "ChefDeprecations/CookbookDependsOnPoise",
+		CopName:      "Chef/Deprecations/CookbookDependsOnPoise",
 		Description:  "The poise and poise-service cookbooks are no longer maintained and have compatibility issues with modern Chef versions. Migrate to custom resources.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -211,7 +211,7 @@ depends 'poise-service'
 # Rewrite using custom resources with unified_mode true`,
 	},
 	{
-		CopName:      "ChefDeprecations/DeprecatedChefSpecHelpers",
+		CopName:      "Chef/Deprecations/DeprecatedChefSpecHelpers",
 		Description:  "Several ChefSpec helper methods have been deprecated. Use the updated method names.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -225,7 +225,7 @@ ChefSpec::SoloRunner.new
 stub_command('...')`,
 	},
 	{
-		CopName:      "ChefDeprecations/DeprecatedPlatformMethods",
+		CopName:      "Chef/Deprecations/DeprecatedPlatformMethods",
 		Description:  "Legacy platform detection methods have been deprecated. Use the node['platform'] and node['platform_family'] attributes instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -237,7 +237,7 @@ platform?('ubuntu')
 node['platform'] == 'ubuntu'`,
 	},
 	{
-		CopName:      "ChefDeprecations/DeprecatedShelloutMethods",
+		CopName:      "Chef/Deprecations/DeprecatedShelloutMethods",
 		Description:  "The shell_out_with_systems_locale and shell_out_compact methods have been deprecated. Use shell_out with explicit environment options.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.3",
@@ -251,7 +251,7 @@ shell_out('command')
 shell_out('command', 'arg')`,
 	},
 	{
-		CopName:      "ChefDeprecations/DeprecatedWindowsVersionCheck",
+		CopName:      "Chef/Deprecations/DeprecatedWindowsVersionCheck",
 		Description:  "Checking Windows version using node['platform_version'] comparison strings is deprecated. Use the new node['platform_version'] Gem::Version comparison or the windows_version helper.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -263,7 +263,7 @@ if node['platform_version'].to_f >= 6.3
 if Gem::Version.new(node['platform_version']) >= Gem::Version.new('6.3')`,
 	},
 	{
-		CopName:      "ChefDeprecations/DeprecatedYumRepositoryActions",
+		CopName:      "Chef/Deprecations/DeprecatedYumRepositoryActions",
 		Description:  "The :add and :remove actions for yum_repository were replaced by :create and :delete.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.14",
@@ -279,7 +279,7 @@ yum_repository 'epel' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/EasyInstallResource",
+		CopName:      "Chef/Deprecations/EasyInstallResource",
 		Description:  "The easy_install resource was removed. Use pip or other package management instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.10",
@@ -292,7 +292,7 @@ easy_install_package 'pip-package'
 # or shell_out to pip directly.`,
 	},
 	{
-		CopName:      "ChefDeprecations/EOLAuditModeUsage",
+		CopName:      "Chef/Deprecations/EOLAuditModeUsage",
 		Description:  "Audit mode has been removed from Chef Infra Client. Migrate to Chef InSpec for compliance testing.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -305,7 +305,7 @@ audit_mode :audit_only
 # compliance phase instead.`,
 	},
 	{
-		CopName:      "ChefDeprecations/ErlCallResource",
+		CopName:      "Chef/Deprecations/ErlCallResource",
 		Description:  "The erl_call resource was removed in Chef 13. Use shell_out to call Erlang if needed.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -321,7 +321,7 @@ execute 'erl_call' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/HWRPWithoutUnifiedTrue",
+		CopName:      "Chef/Deprecations/HWRPWithoutUnifiedTrue",
 		Description:  "HWRPs (Heavy Weight Resource Providers) should enable unified mode for compatibility with Chef 18+.",
 		MigrationURL: "https://docs.chef.io/unified_mode/",
 		IntroducedIn: "15.3",
@@ -336,7 +336,7 @@ unified_mode true
 provides :my_resource`,
 	},
 	{
-		CopName:      "ChefDeprecations/LegacyNotifySyntax",
+		CopName:      "Chef/Deprecations/LegacyNotifySyntax",
 		Description:  "The Hash-based notification syntax has been deprecated. Use the string-based syntax instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "10.0",
@@ -348,7 +348,7 @@ notifies :restart, resources(:service => 'nginx')
 notifies :restart, 'service[nginx]'`,
 	},
 	{
-		CopName:      "ChefDeprecations/LogResourceNotifications",
+		CopName:      "Chef/Deprecations/LogResourceNotifications",
 		Description:  "Using the log resource to trigger notifications is deprecated. Use the notify_group resource instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.8",
@@ -364,7 +364,7 @@ notify_group 'trigger_restart' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/NamePropertyWithDefaultValue",
+		CopName:      "Chef/Deprecations/NamePropertyWithDefaultValue",
 		Description:  "A property with name_property: true should not also define a default value. The name_property uses the resource name as its default.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -376,7 +376,7 @@ property :package_name, String, name_property: true, default: 'foo'
 property :package_name, String, name_property: true`,
 	},
 	{
-		CopName:      "ChefDeprecations/NodeDeepFetch",
+		CopName:      "Chef/Deprecations/NodeDeepFetch",
 		Description:  "node.deep_fetch has been deprecated. Use the dig method or standard hash access instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.0",
@@ -388,7 +388,7 @@ node.deep_fetch('network', 'interfaces', 'eth0', 'addresses')
 node.dig('network', 'interfaces', 'eth0', 'addresses')`,
 	},
 	{
-		CopName:      "ChefDeprecations/NodeMethodsInsteadofAttributes",
+		CopName:      "Chef/Deprecations/NodeMethodsInsteadofAttributes",
 		Description:  "Accessing node attributes using method-style access (node.foo) is deprecated. Use bracket notation (node['foo']) instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -402,7 +402,7 @@ node['platform']
 node['hostname']`,
 	},
 	{
-		CopName:      "ChefDeprecations/NodeSet",
+		CopName:      "Chef/Deprecations/NodeSet",
 		Description:  "node.set has been deprecated. Use node.normal instead for normal-precedence attributes.",
 		MigrationURL: "https://docs.chef.io/deprecations_attributes/",
 		IntroducedIn: "12.12",
@@ -414,7 +414,7 @@ node.set['my_cookbook']['port'] = 8080
 node.normal['my_cookbook']['port'] = 8080`,
 	},
 	{
-		CopName:      "ChefDeprecations/NodeSetUnless",
+		CopName:      "Chef/Deprecations/NodeSetUnless",
 		Description:  "node.set_unless has been deprecated. Use node.normal_unless instead.",
 		MigrationURL: "https://docs.chef.io/deprecations_attributes/",
 		IntroducedIn: "12.12",
@@ -426,7 +426,7 @@ node.set_unless['my_cookbook']['port'] = 8080
 node.normal_unless['my_cookbook']['port'] = 8080`,
 	},
 	{
-		CopName:      "ChefDeprecations/PoiseArchiveUsage",
+		CopName:      "Chef/Deprecations/PoiseArchiveUsage",
 		Description:  "The poise_archive resource from the poise-archive cookbook is deprecated. Use the archive_file resource built into Chef 15+.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.0",
@@ -442,7 +442,7 @@ archive_file '/tmp/app.tar.gz' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/RecipeMetadata",
+		CopName:      "Chef/Deprecations/RecipeMetadata",
 		Description:  "The recipe metadata in metadata.rb (recipe 'name', 'description') has been deprecated and is ignored.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -454,7 +454,7 @@ recipe 'my_cookbook::default', 'Installs the service'
 # Remove the recipe metadata line — use the README instead.`,
 	},
 	{
-		CopName:      "ChefDeprecations/ResourceInheritsFromCompatResource",
+		CopName:      "Chef/Deprecations/ResourceInheritsFromCompatResource",
 		Description:  "Custom resources should not inherit from ChefCompat::Resource. This compatibility shim is no longer needed in Chef 12.19+.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.19",
@@ -468,7 +468,7 @@ end
 # Convert to a modern custom resource DSL file in resources/`,
 	},
 	{
-		CopName:      "ChefDeprecations/ResourceOverridesProvidesMethod",
+		CopName:      "Chef/Deprecations/ResourceOverridesProvidesMethod",
 		Description:  "Custom resources should not override the provides? class method. Use the provides DSL method instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -482,7 +482,7 @@ end
 provides :my_resource, platform: 'ubuntu'`,
 	},
 	{
-		CopName:      "ChefDeprecations/ResourceUsesOnlyIfNotIf",
+		CopName:      "Chef/Deprecations/ResourceUsesOnlyIfNotIf",
 		Description:  "Using only_if/not_if with a block that references @new_resource is deprecated. Use properties directly.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -494,7 +494,7 @@ only_if { @new_resource.install_flag }
 only_if { new_resource.install_flag }`,
 	},
 	{
-		CopName:      "ChefDeprecations/ResourceUsesProviderBaseMethod",
+		CopName:      "Chef/Deprecations/ResourceUsesProviderBaseMethod",
 		Description:  "Using Chef::Provider::LWRPBase as a base class for providers is deprecated. Convert to a custom resource.",
 		MigrationURL: "https://docs.chef.io/custom_resources/",
 		IntroducedIn: "12.0",
@@ -511,7 +511,7 @@ unified_mode true
 provides :my_resource`,
 	},
 	{
-		CopName:      "ChefDeprecations/ResourceUsesUpdatedMethod",
+		CopName:      "Chef/Deprecations/ResourceUsesUpdatedMethod",
 		Description:  "Using the deprecated updated=() method in custom resources. Use updated_by_last_action() instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -523,7 +523,7 @@ provides :my_resource`,
 # In a custom resource, converge_if_changed handles this automatically.`,
 	},
 	{
-		CopName:      "ChefDeprecations/RubyBlockCreateAction",
+		CopName:      "Chef/Deprecations/RubyBlockCreateAction",
 		Description:  "The :create action for ruby_block is deprecated. Use :run instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -545,7 +545,7 @@ ruby_block 'my_block' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/SearchUsesPositionalParameters",
+		CopName:      "Chef/Deprecations/SearchUsesPositionalParameters",
 		Description:  "Positional parameters in search() calls are deprecated. Use named parameters instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -557,7 +557,7 @@ search(:node, 'role:web', 'name', 0, 1000)
 search(:node, 'role:web', filter_result: { 'name' => ['name'] })`,
 	},
 	{
-		CopName:      "ChefDeprecations/UseInlineResourcesDefined",
+		CopName:      "Chef/Deprecations/UseInlineResourcesDefined",
 		Description:  "use_inline_resources is now the default in Chef 13+ and should be removed from LWRP/HWRP providers.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -573,7 +573,7 @@ end
 # Convert to a custom resource.`,
 	},
 	{
-		CopName:      "ChefDeprecations/UsesRunCommandHelper",
+		CopName:      "Chef/Deprecations/UsesRunCommandHelper",
 		Description:  "The run_command helper is deprecated. Use shell_out or shell_out! instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -585,7 +585,7 @@ run_command(:command => 'apt-get update')
 shell_out!('apt-get update')`,
 	},
 	{
-		CopName:      "ChefDeprecations/WindowsFeatureServermanagercmd",
+		CopName:      "Chef/Deprecations/WindowsFeatureServermanagercmd",
 		Description:  "The :servermanagercmd install method for windows_feature is deprecated. Use :dism or :powershell_out instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -601,7 +601,7 @@ windows_feature 'IIS' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/WindowsPackageInstallerType",
+		CopName:      "Chef/Deprecations/WindowsPackageInstallerType",
 		Description:  "The :installer_type property for windows_package is deprecated in favour of the :source property's auto-detection.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -618,7 +618,7 @@ windows_package 'MyApp' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/WindowsTaskChangeAction",
+		CopName:      "Chef/Deprecations/WindowsTaskChangeAction",
 		Description:  "The :change action for windows_task is deprecated. Use :create which now supports updating existing tasks.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -636,7 +636,7 @@ windows_task 'my_task' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/DefaultMetadataMaintainer",
+		CopName:      "Chef/Deprecations/DefaultMetadataMaintainer",
 		Description:  "The default metadata.rb maintainer and maintainer_email values should be updated from the template defaults.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -650,7 +650,7 @@ maintainer 'My Company'
 maintainer_email 'team@example.com'`,
 	},
 	{
-		CopName:      "ChefDeprecations/LongDescriptionInMetadata",
+		CopName:      "Chef/Deprecations/LongDescriptionInMetadata",
 		Description:  "The long_description field in metadata.rb is deprecated and ignored. Use README.md instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -662,7 +662,7 @@ long_description IO.read(File.join(File.dirname(__FILE__), 'README.md'))
 # Remove the long_description line.`,
 	},
 	{
-		CopName:      "ChefDeprecations/PolicyfileCommunitySource",
+		CopName:      "Chef/Deprecations/PolicyfileCommunitySource",
 		Description:  "The :community source in Policyfiles is deprecated. Use the default_source :supermarket instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -674,7 +674,7 @@ default_source :community
 default_source :supermarket`,
 	},
 	{
-		CopName:      "ChefDeprecations/RequireRecipe",
+		CopName:      "Chef/Deprecations/RequireRecipe",
 		Description:  "require_recipe is deprecated. Use include_recipe instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "10.0",
@@ -686,7 +686,7 @@ require_recipe 'my_cookbook::setup'
 include_recipe 'my_cookbook::setup'`,
 	},
 	{
-		CopName:      "ChefDeprecations/ChefWindowsPlatformHelper",
+		CopName:      "Chef/Deprecations/ChefWindowsPlatformHelper",
 		Description:  "Chef::Platform.windows? is deprecated. Use the platform?('windows') helper or node['os'] == 'windows'.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -698,7 +698,7 @@ if Chef::Platform.windows?
 if platform?('windows')`,
 	},
 	{
-		CopName:      "ChefDeprecations/VerifyPropertyUsesFileExpansion",
+		CopName:      "Chef/Deprecations/VerifyPropertyUsesFileExpansion",
 		Description:  "Using file expansion (%{path}) in verify properties is deprecated. Use the block form of verify instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.5",
@@ -716,7 +716,7 @@ file '/etc/config' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/UseAutomaticResourceName",
+		CopName:      "Chef/Deprecations/UseAutomaticResourceName",
 		Description:  "use_automatic_resource_name is deprecated. Use provides with the resource name explicitly.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "16.0",
@@ -728,7 +728,7 @@ use_automatic_resource_name
 provides :my_resource_name`,
 	},
 	{
-		CopName:      "ChefDeprecations/DependsOnOmnibusUpdaterCookbook",
+		CopName:      "Chef/Deprecations/DependsOnOmnibusUpdaterCookbook",
 		Description:  "The omnibus_updater cookbook is deprecated. Use the chef_client_updater cookbook instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -740,7 +740,7 @@ depends 'omnibus_updater'
 depends 'chef_client_updater'`,
 	},
 	{
-		CopName:      "ChefDeprecations/DependsOnChefNginxCookbook",
+		CopName:      "Chef/Deprecations/DependsOnChefNginxCookbook",
 		Description:  "The chef_nginx cookbook (formerly nginx) is deprecated. Use the sous-chefs nginx cookbook or write custom resources.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -752,7 +752,7 @@ depends 'chef_nginx'
 # Evaluate alternatives or write custom nginx resources.`,
 	},
 	{
-		CopName:      "ChefDeprecations/FoodcriticTesting",
+		CopName:      "Chef/Deprecations/FoodcriticTesting",
 		Description:  "Foodcritic has been replaced by CookStyle (Cookstyle). Remove Foodcritic configuration and use CookStyle instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -766,7 +766,7 @@ require 'cookstyle'
 gem 'cookstyle'`,
 	},
 	{
-		CopName:      "ChefDeprecations/LibrarianChefSpec",
+		CopName:      "Chef/Deprecations/LibrarianChefSpec",
 		Description:  "Librarian-Chef is deprecated. Use Berkshelf or Policyfiles for dependency resolution.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -778,7 +778,7 @@ gem 'cookstyle'`,
 # Use Berksfile or Policyfile.rb`,
 	},
 	{
-		CopName:      "ChefDeprecations/UserDeprecatedSupportsProperty",
+		CopName:      "Chef/Deprecations/UserDeprecatedSupportsProperty",
 		Description:  "The user resource's supports property (for manage_home, non_unique) is deprecated. Use the individual properties directly.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.14",
@@ -794,7 +794,7 @@ user 'deploy' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/MacosUserdefaultsGlobalProperty",
+		CopName:      "Chef/Deprecations/MacosUserdefaultsGlobalProperty",
 		Description:  "The macos_userdefaults resource's global property is deprecated. Omit the domain property to write to the global domain.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.0",
@@ -813,7 +813,7 @@ macos_userdefaults 'set dock size' do
 end`,
 	},
 	{
-		CopName:      "ChefDeprecations/IncludingYumDNFCompatRecipe",
+		CopName:      "Chef/Deprecations/IncludingYumDNFCompatRecipe",
 		Description:  "Including the yum::dnf_yum_compat recipe is no longer needed. The yum_package resource handles dnf natively in modern Chef.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.0",
@@ -825,7 +825,7 @@ include_recipe 'yum::dnf_yum_compat'
 # Remove the include_recipe line.`,
 	},
 	{
-		CopName:      "ChefDeprecations/IncludingXMLRubyCookbook",
+		CopName:      "Chef/Deprecations/IncludingXMLRubyCookbook",
 		Description:  "The xml::ruby recipe is no longer needed. The nokogiri gem is included in Chef Infra Client.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.0",
@@ -837,7 +837,7 @@ include_recipe 'xml::ruby'
 # Remove the include_recipe line.`,
 	},
 	{
-		CopName:      "ChefDeprecations/DependsOnChefHandlerCookbook",
+		CopName:      "Chef/Deprecations/DependsOnChefHandlerCookbook",
 		Description:  "The chef_handler cookbook is no longer needed. The chef_handler resource is built into Chef 14+.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "14.0",
@@ -849,7 +849,7 @@ depends 'chef_handler'
 # Remove the dependency — use the built-in chef_handler resource.`,
 	},
 	{
-		CopName:      "ChefDeprecations/RubyVersionConstraintInEnvironment",
+		CopName:      "Chef/Deprecations/RubyVersionConstraintInEnvironment",
 		Description:  "Specifying a Ruby version constraint in a Chef environment is deprecated.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -861,7 +861,7 @@ ruby_version '~> 2.5'
 # Remove the ruby_version constraint.`,
 	},
 	{
-		CopName:      "ChefDeprecations/ChefDKGenerators",
+		CopName:      "Chef/Deprecations/ChefDKGenerators",
 		Description:  "ChefDK generators are deprecated. Use Chef Workstation's chef generate command instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.0",
@@ -874,10 +874,10 @@ chef generate cookbook my_cookbook`,
 	},
 
 	// -----------------------------------------------------------------------
-	// ChefCorrectness
+	// Chef/Correctness
 	// -----------------------------------------------------------------------
 	{
-		CopName:      "ChefCorrectness/BlockGuardWithOnlyString",
+		CopName:      "Chef/Correctness/BlockGuardWithOnlyString",
 		Description:  "A guard (only_if/not_if) with a block should not contain a single string. Use the string form of the guard instead.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -889,7 +889,7 @@ only_if { 'test -f /etc/config' }
 only_if 'test -f /etc/config'`,
 	},
 	{
-		CopName:      "ChefCorrectness/ConditionalRubyShellout",
+		CopName:      "Chef/Correctness/ConditionalRubyShellout",
 		Description:  "A guard should not use shell_out inside a Ruby block when a string guard would suffice.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -901,7 +901,7 @@ only_if { shell_out('test -f /etc/config').exitstatus == 0 }
 only_if 'test -f /etc/config'`,
 	},
 	{
-		CopName:      "ChefCorrectness/CookbookUsesNodeSave",
+		CopName:      "Chef/Correctness/CookbookUsesNodeSave",
 		Description:  "Calling node.save in a recipe can cause unexpected data overwrites and performance issues. Remove node.save calls.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -913,7 +913,7 @@ node.save
 # Remove node.save — the node is saved automatically at the end of a run.`,
 	},
 	{
-		CopName:      "ChefCorrectness/DnfPackageAllowDowngrades",
+		CopName:      "Chef/Correctness/DnfPackageAllowDowngrades",
 		Description:  "The dnf_package resource does not support the allow_downgrades property. Use a specific version constraint instead.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "15.0",
@@ -930,7 +930,7 @@ dnf_package 'nginx' do
 end`,
 	},
 	{
-		CopName:      "ChefCorrectness/IncorrectLibraryInjection",
+		CopName:      "Chef/Correctness/IncorrectLibraryInjection",
 		Description:  "Library helpers should be injected using ::Chef::DSL::Recipe.include or Chef::Resource.include, not by reopening core classes.",
 		MigrationURL: "https://docs.chef.io/libraries/",
 		IntroducedIn: "12.0",
@@ -953,7 +953,7 @@ end
 Chef::DSL::Recipe.include MyCookbook::Helpers`,
 	},
 	{
-		CopName:      "ChefCorrectness/InvalidPlatformMetadata",
+		CopName:      "Chef/Correctness/InvalidPlatformMetadata",
 		Description:  "The supports metadata in metadata.rb contains invalid platform names. Check the platform name against the list of known Ohai platforms.",
 		MigrationURL: "https://docs.chef.io/config_rb_metadata/",
 		IntroducedIn: "12.0",
@@ -967,7 +967,7 @@ supports 'ubuntu'
 supports 'centos'`,
 	},
 	{
-		CopName:      "ChefCorrectness/InvalidVersionMetadata",
+		CopName:      "Chef/Correctness/InvalidVersionMetadata",
 		Description:  "The version in metadata.rb is not a valid semantic version.",
 		MigrationURL: "https://docs.chef.io/config_rb_metadata/",
 		IntroducedIn: "12.0",
@@ -979,7 +979,7 @@ version '1.0'
 version '1.0.0'`,
 	},
 	{
-		CopName:      "ChefCorrectness/MetadataMissingName",
+		CopName:      "Chef/Correctness/MetadataMissingName",
 		Description:  "The name field is missing from metadata.rb. This is required by Chef 12+.",
 		MigrationURL: "https://docs.chef.io/config_rb_metadata/",
 		IntroducedIn: "12.0",
@@ -994,7 +994,7 @@ maintainer 'My Company'
 version '1.0.0'`,
 	},
 	{
-		CopName:      "ChefCorrectness/NodeNormal",
+		CopName:      "Chef/Correctness/NodeNormal",
 		Description:  "Setting node.normal attributes persists data to the Chef server after every run, which can cause unexpected behavior. Use node.default or node.override instead.",
 		MigrationURL: "https://docs.chef.io/attributes/",
 		IntroducedIn: "12.0",
@@ -1006,7 +1006,7 @@ node.normal['my_app']['config'] = 'value'
 node.default['my_app']['config'] = 'value'`,
 	},
 	{
-		CopName:      "ChefCorrectness/NodeNormalUnless",
+		CopName:      "Chef/Correctness/NodeNormalUnless",
 		Description:  "Setting node.normal_unless attributes persists data to the Chef server. Use node.default_unless or node.override_unless instead.",
 		MigrationURL: "https://docs.chef.io/attributes/",
 		IntroducedIn: "12.0",
@@ -1018,7 +1018,7 @@ node.normal_unless['my_app']['port'] = 8080
 node.default_unless['my_app']['port'] = 8080`,
 	},
 	{
-		CopName:      "ChefCorrectness/NotifiesActionNotSymbol",
+		CopName:      "Chef/Correctness/NotifiesActionNotSymbol",
 		Description:  "The action in a notifies statement must be a symbol, not a string.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1030,7 +1030,7 @@ notifies 'restart', 'service[nginx]'
 notifies :restart, 'service[nginx]'`,
 	},
 	{
-		CopName:      "ChefCorrectness/ResourceSetsInternalProperties",
+		CopName:      "Chef/Correctness/ResourceSetsInternalProperties",
 		Description:  "Setting internal properties (such as :updated, :executed) on a resource is incorrect and can cause unexpected behavior.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1044,7 +1044,7 @@ end
 # Remove the internal property assignment.`,
 	},
 	{
-		CopName:      "ChefCorrectness/ResourceSetsNameProperty",
+		CopName:      "Chef/Correctness/ResourceSetsNameProperty",
 		Description:  "A resource should not set the name property in the resource body since it is automatically set from the resource declaration.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1058,7 +1058,7 @@ end
 service 'nginx'`,
 	},
 	{
-		CopName:      "ChefCorrectness/ResourceWithNoneAction",
+		CopName:      "Chef/Correctness/ResourceWithNoneAction",
 		Description:  "Resources should not use :none as an action. Use :nothing instead.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1074,7 +1074,7 @@ service 'nginx' do
 end`,
 	},
 	{
-		CopName:      "ChefCorrectness/ScopedFileExist",
+		CopName:      "Chef/Correctness/ScopedFileExist",
 		Description:  "Use ::File.exist? instead of File.exist? in recipes to avoid namespace conflicts with the Chef file resource.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1086,7 +1086,7 @@ if File.exist?('/etc/config')
 if ::File.exist?('/etc/config')`,
 	},
 	{
-		CopName:      "ChefCorrectness/ServiceResource",
+		CopName:      "Chef/Correctness/ServiceResource",
 		Description:  "The service resource should not be used with both start and enable actions in separate resource blocks for the same service. Combine them.",
 		MigrationURL: "https://docs.chef.io/resources/service/",
 		IntroducedIn: "12.0",
@@ -1105,7 +1105,7 @@ service 'nginx' do
 end`,
 	},
 	{
-		CopName:      "ChefCorrectness/TmpPath",
+		CopName:      "Chef/Correctness/TmpPath",
 		Description:  "Using /tmp in resource paths is not recommended. Use Chef::Config[:file_cache_path] or a platform-appropriate temporary directory.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1121,7 +1121,7 @@ remote_file "#{Chef::Config[:file_cache_path]}/installer.sh" do
 end`,
 	},
 	{
-		CopName:      "ChefCorrectness/InvalidNotificationTiming",
+		CopName:      "Chef/Correctness/InvalidNotificationTiming",
 		Description:  "Notification timing must be :delayed (default), :immediately, or :before. Other values are invalid.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1133,7 +1133,7 @@ notifies :restart, 'service[nginx]', :right_away
 notifies :restart, 'service[nginx]', :immediately`,
 	},
 	{
-		CopName:      "ChefCorrectness/InvalidDefaultAction",
+		CopName:      "Chef/Correctness/InvalidDefaultAction",
 		Description:  "The default_action in a custom resource must be a symbol or array of symbols, not a string.",
 		MigrationURL: "https://docs.chef.io/custom_resources/",
 		IntroducedIn: "12.5",
@@ -1145,7 +1145,7 @@ default_action 'create'
 default_action :create`,
 	},
 	{
-		CopName:      "ChefCorrectness/LazyEvalNodeAttributeDefaults",
+		CopName:      "Chef/Correctness/LazyEvalNodeAttributeDefaults",
 		Description:  "Node attributes used in property defaults must be wrapped in lazy {} to avoid compile-time evaluation.",
 		MigrationURL: "https://docs.chef.io/custom_resources/",
 		IntroducedIn: "12.0",
@@ -1157,7 +1157,7 @@ property :port, Integer, default: node['my_app']['port']
 property :port, Integer, default: lazy { node['my_app']['port'] }`,
 	},
 	{
-		CopName:      "ChefCorrectness/ChefApplicationFatal",
+		CopName:      "Chef/Correctness/ChefApplicationFatal",
 		Description:  "Calling Chef::Application.fatal! in a recipe or resource halts the entire Chef run. Use raise or Chef::Log.fatal with a resource guard instead.",
 		MigrationURL: "https://docs.chef.io/resources/",
 		IntroducedIn: "12.0",
@@ -1169,7 +1169,7 @@ Chef::Application.fatal!('Configuration missing!', 1)
 raise 'Configuration missing!'`,
 	},
 	{
-		CopName:      "ChefCorrectness/PowershellScriptDeleteFile",
+		CopName:      "Chef/Correctness/PowershellScriptDeleteFile",
 		Description:  "Using powershell_script to delete a file is unnecessary. Use the file resource with action :delete.",
 		MigrationURL: "https://docs.chef.io/resources/file/",
 		IntroducedIn: "12.0",

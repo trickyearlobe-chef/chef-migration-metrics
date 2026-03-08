@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -81,16 +83,16 @@ type CookstyleSummary struct {
 // Cop namespace prefixes used for classification. The cop_name field from
 // CookStyle JSON starts with one of these followed by a "/".
 const (
-	nsDeprecations = "ChefDeprecations/"
-	nsCorrectness  = "ChefCorrectness/"
-	nsStyle        = "ChefStyle/"
-	nsModernize    = "ChefModernize/"
+	nsDeprecations = "Chef/Deprecations/"
+	nsCorrectness  = "Chef/Correctness/"
+	nsStyle        = "Chef/Style/"
+	nsModernize    = "Chef/Modernize/"
 )
 
-// isDeprecation returns true if the cop is in the ChefDeprecations namespace.
+// isDeprecation returns true if the cop is in the Chef/Deprecations namespace.
 func isDeprecation(copName string) bool { return strings.HasPrefix(copName, nsDeprecations) }
 
-// isCorrectness returns true if the cop is in the ChefCorrectness namespace.
+// isCorrectness returns true if the cop is in the Chef/Correctness namespace.
 func isCorrectness(copName string) bool { return strings.HasPrefix(copName, nsCorrectness) }
 
 // isErrorOrFatal returns true if the severity indicates a hard failure.
@@ -547,21 +549,60 @@ func buildCookstyleArgs(cookbookDir string, targetChefVersion string) []string {
 	args := []string{"--format", "json"}
 
 	if targetChefVersion != "" {
-		// Tell CookStyle which Chef Infra Client version the cookbook
-		// should be evaluated against. This enables version-specific
-		// deprecation and correctness cops — e.g. a cop that fires for
-		// Chef 18 may not fire for Chef 17.
-		args = append(args, "--target-chef-version", targetChefVersion)
+		// Set TargetChefVersion via a sidecar .rubocop_cmm.yml that we
+		// point CookStyle at with --config. If the cookbook already has a
+		// .rubocop.yml we inherit from it so its settings are preserved.
+		// CookStyle does not accept a --target-chef-version CLI flag.
+		configPath := writeCookstyleTargetConfig(cookbookDir, targetChefVersion)
+		if configPath != "" {
+			args = append(args, "--config", configPath)
+		}
 
 		// Restrict to the two migration-critical namespaces. CookStyle
 		// cops already carry version metadata in their own source —
-		// enabling only these namespaces avoids noise from ChefStyle and
-		// ChefModernize cops that don't affect compatibility.
-		args = append(args, "--only", "ChefDeprecations,ChefCorrectness")
+		// enabling only these namespaces avoids noise from Chef/Style and
+		// Chef/Modernize cops that don't affect compatibility.
+		args = append(args, "--only", "Chef/Deprecations,Chef/Correctness")
 	}
 
 	args = append(args, cookbookDir)
 	return args
+}
+
+// cmmConfigName is the sidecar config file written next to the cookbook's
+// own .rubocop.yml (if any). Using a distinct name avoids overwriting the
+// cookbook's configuration.
+const cmmConfigName = ".rubocop_cmm.yml"
+
+// writeCookstyleTargetConfig writes a sidecar .rubocop_cmm.yml into the
+// cookbook directory that sets AllCops.TargetChefVersion. If the cookbook
+// already contains a .rubocop.yml the sidecar inherits from it so the
+// cookbook's own configuration (excludes, custom cops, etc.) is preserved.
+// When no cookbook config exists the sidecar explicitly requires cookstyle
+// so that the TargetChefVersion parameter is recognised.
+//
+// Returns the absolute path to the written file, or "" on failure.
+func writeCookstyleTargetConfig(cookbookDir, targetChefVersion string) string {
+	var buf strings.Builder
+
+	existingConfig := filepath.Join(cookbookDir, ".rubocop.yml")
+	if _, err := os.Stat(existingConfig); err == nil {
+		// Cookbook has its own config — inherit from it (which also
+		// picks up any `require: cookstyle` it contains).
+		buf.WriteString("inherit_from: .rubocop.yml\n\n")
+	} else {
+		// No cookbook config — require cookstyle ourselves so the
+		// TargetChefVersion AllCops parameter is registered.
+		buf.WriteString("require:\n  - cookstyle\n\n")
+	}
+
+	fmt.Fprintf(&buf, "AllCops:\n  TargetChefVersion: %s\n", targetChefVersion)
+
+	outPath := filepath.Join(cookbookDir, cmmConfigName)
+	if err := os.WriteFile(outPath, []byte(buf.String()), 0644); err != nil {
+		return ""
+	}
+	return outPath
 }
 
 // ---------------------------------------------------------------------------

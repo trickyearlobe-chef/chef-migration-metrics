@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -140,7 +142,7 @@ func TestCookstyleOutput_ParseClean(t *testing.T) {
 
 func TestCookstyleOutput_ParseWithOffenses(t *testing.T) {
 	raw := makeOffenseJSON(
-		"ChefDeprecations/ResourceWithoutUnifiedTrue",
+		"Chef/Deprecations/ResourceWithoutUnifiedTrue",
 		"warning",
 		"Custom resources should set unified_mode true",
 		false,
@@ -156,7 +158,7 @@ func TestCookstyleOutput_ParseWithOffenses(t *testing.T) {
 		t.Fatalf("expected 1 file, got %d", len(out.Files))
 	}
 	off := out.Files[0].Offenses[0]
-	if off.CopName != "ChefDeprecations/ResourceWithoutUnifiedTrue" {
+	if off.CopName != "Chef/Deprecations/ResourceWithoutUnifiedTrue" {
 		t.Errorf("unexpected cop name: %q", off.CopName)
 	}
 	if off.Severity != "warning" {
@@ -175,14 +177,14 @@ func TestCookstyleOutput_ParseMultipleFiles(t *testing.T) {
 		{
 			Path: "recipes/default.rb",
 			Offenses: []CookstyleOffense{
-				{Severity: "warning", CopName: "ChefDeprecations/NodeSet", Message: "msg1"},
+				{Severity: "warning", CopName: "Chef/Deprecations/NodeSet", Message: "msg1"},
 			},
 		},
 		{
 			Path: "recipes/install.rb",
 			Offenses: []CookstyleOffense{
-				{Severity: "error", CopName: "ChefCorrectness/InvalidDefaultAction", Message: "msg2"},
-				{Severity: "convention", CopName: "ChefStyle/FileMode", Message: "msg3", Corrected: true},
+				{Severity: "error", CopName: "Chef/Correctness/InvalidDefaultAction", Message: "msg2"},
+				{Severity: "convention", CopName: "Chef/Style/FileMode", Message: "msg3", Corrected: true},
 			},
 		},
 	}
@@ -209,11 +211,11 @@ func TestIsDeprecation(t *testing.T) {
 		cop  string
 		want bool
 	}{
-		{"ChefDeprecations/NodeSet", true},
-		{"ChefDeprecations/ResourceWithoutUnifiedTrue", true},
-		{"ChefCorrectness/MetadataMissingName", false},
-		{"ChefStyle/FileMode", false},
-		{"ChefModernize/FoodcriticComments", false},
+		{"Chef/Deprecations/NodeSet", true},
+		{"Chef/Deprecations/ResourceWithoutUnifiedTrue", true},
+		{"Chef/Correctness/MetadataMissingName", false},
+		{"Chef/Style/FileMode", false},
+		{"Chef/Modernize/FoodcriticComments", false},
 		{"Layout/EmptyLines", false},
 		{"", false},
 	}
@@ -229,10 +231,10 @@ func TestIsCorrectness(t *testing.T) {
 		cop  string
 		want bool
 	}{
-		{"ChefCorrectness/MetadataMissingName", true},
-		{"ChefCorrectness/InvalidDefaultAction", true},
-		{"ChefDeprecations/NodeSet", false},
-		{"ChefStyle/FileMode", false},
+		{"Chef/Correctness/MetadataMissingName", true},
+		{"Chef/Correctness/InvalidDefaultAction", true},
+		{"Chef/Deprecations/NodeSet", false},
+		{"Chef/Style/FileMode", false},
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -271,57 +273,128 @@ func TestBuildCookstyleArgs_NoTargetVersion(t *testing.T) {
 	assertContains(t, args, "json")
 	assertContains(t, args, "/path/to/cookbook")
 
-	// Should NOT contain --only or --target-chef-version when no target version.
+	// Should NOT contain --only when no target version.
 	for _, a := range args {
 		if a == "--only" {
 			t.Error("--only should not be present when target version is empty")
 		}
-		if a == "--target-chef-version" {
-			t.Error("--target-chef-version should not be present when target version is empty")
-		}
 	}
 }
 
-func TestBuildCookstyleArgs_WithTargetVersion(t *testing.T) {
-	args := buildCookstyleArgs("/path/to/cookbook", "18.0")
+func TestBuildCookstyleArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
+	// buildCookstyleArgs writes a sidecar .rubocop_cmm.yml into the
+	// cookbook dir, so we need a real temp directory.
+	cookbookDir := t.TempDir()
+
+	args := buildCookstyleArgs(cookbookDir, "18.0")
 
 	assertContains(t, args, "--format")
 	assertContains(t, args, "json")
+	assertContains(t, args, "--config")
 	assertContains(t, args, "--only")
-	assertContains(t, args, "--target-chef-version")
-	assertContains(t, args, "18.0")
-	assertContains(t, args, "/path/to/cookbook")
+	assertContains(t, args, cookbookDir)
 
-	// Find the --only value.
+	// --target-chef-version is NOT a CLI flag — it is written to .rubocop_cmm.yml.
+	for _, a := range args {
+		if a == "--target-chef-version" {
+			t.Error("--target-chef-version should not be a CLI arg; it belongs in .rubocop_cmm.yml")
+		}
+	}
+
+	// Find the --only value — should use Chef/Deprecations format.
 	for i, a := range args {
 		if a == "--only" && i+1 < len(args) {
 			val := args[i+1]
-			if !strings.Contains(val, "ChefDeprecations") {
-				t.Errorf("--only should include ChefDeprecations, got %q", val)
+			if !strings.Contains(val, "Chef/Deprecations") {
+				t.Errorf("--only should include Chef/Deprecations, got %q", val)
 			}
-			if !strings.Contains(val, "ChefCorrectness") {
-				t.Errorf("--only should include ChefCorrectness, got %q", val)
+			if !strings.Contains(val, "Chef/Correctness") {
+				t.Errorf("--only should include Chef/Correctness, got %q", val)
 			}
 		}
 	}
 
-	// Verify --target-chef-version value.
-	for i, a := range args {
-		if a == "--target-chef-version" && i+1 < len(args) {
-			if args[i+1] != "18.0" {
-				t.Errorf("--target-chef-version value should be 18.0, got %q", args[i+1])
-			}
-		}
+	// Verify sidecar .rubocop_cmm.yml was written with TargetChefVersion.
+	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	if err != nil {
+		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "TargetChefVersion: 18.0") {
+		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", cmmConfigName, content)
+	}
+
+	// Without an existing .rubocop.yml the sidecar should require cookstyle
+	// so the TargetChefVersion parameter is recognised.
+	if !strings.Contains(content, "require:") || !strings.Contains(content, "cookstyle") {
+		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", cmmConfigName, content)
+	}
+	if strings.Contains(content, "inherit_from") {
+		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", cmmConfigName, content)
+	}
+
+	// Original .rubocop.yml must not exist (we must not clobber cookbook config).
+	if _, err := os.Stat(filepath.Join(cookbookDir, ".rubocop.yml")); err == nil {
+		t.Error("should not have written .rubocop.yml — only the sidecar .rubocop_cmm.yml")
+	}
+}
+
+func TestBuildCookstyleArgs_WithTargetVersion_WithCookbookConfig(t *testing.T) {
+	cookbookDir := t.TempDir()
+
+	// Simulate a cookbook that already has its own .rubocop.yml.
+	existingConfig := "require:\n  - cookstyle\n\nChef/Style/TrueClassFalseClassResourceProperties:\n  Enabled: false\n"
+	if err := os.WriteFile(filepath.Join(cookbookDir, ".rubocop.yml"), []byte(existingConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	args := buildCookstyleArgs(cookbookDir, "17.0")
+	joined := strings.Join(args, " ")
+
+	if !strings.Contains(joined, "--config") {
+		t.Error("args should contain --config when target version is set")
+	}
+
+	// Verify sidecar inherits from the cookbook's own config.
+	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	if err != nil {
+		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "inherit_from: .rubocop.yml") {
+		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", cmmConfigName, content)
+	}
+	if !strings.Contains(content, "TargetChefVersion: 17.0") {
+		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", cmmConfigName, content)
+	}
+
+	// The cookbook's original .rubocop.yml must be preserved.
+	origData, err := os.ReadFile(filepath.Join(cookbookDir, ".rubocop.yml"))
+	if err != nil {
+		t.Fatal("cookbook .rubocop.yml should still exist")
+	}
+	if string(origData) != existingConfig {
+		t.Errorf("cookbook .rubocop.yml was modified; expected original content to be preserved")
+	}
+}
+
+func TestBuildCookstyleArgs_NoSidecarWithoutTarget(t *testing.T) {
+	cookbookDir := t.TempDir()
+	buildCookstyleArgs(cookbookDir, "")
+
+	if _, err := os.Stat(filepath.Join(cookbookDir, cmmConfigName)); err == nil {
+		t.Errorf("%s should not be written when target version is empty", cmmConfigName)
 	}
 }
 
 func TestBuildCookstyleArgs_CookbookDirIsLast(t *testing.T) {
-	args := buildCookstyleArgs("/my/cookbook", "17.0")
+	cookbookDir := t.TempDir()
+	args := buildCookstyleArgs(cookbookDir, "17.0")
 	if len(args) == 0 {
 		t.Fatal("expected non-empty args")
 	}
 	last := args[len(args)-1]
-	if last != "/my/cookbook" {
+	if last != cookbookDir {
 		t.Errorf("last arg should be cookbook dir, got %q", last)
 	}
 }
@@ -334,8 +407,8 @@ func TestBuildCookstyleArgs_CookbookDirIsLast(t *testing.T) {
 // offenses is classified as passed.
 func TestClassifyOffenses_Pass(t *testing.T) {
 	offenses := []CookstyleOffense{
-		{Severity: "warning", CopName: "ChefDeprecations/NodeSet", Message: "deprecated"},
-		{Severity: "convention", CopName: "ChefStyle/FileMode", Message: "style"},
+		{Severity: "warning", CopName: "Chef/Deprecations/NodeSet", Message: "deprecated"},
+		{Severity: "convention", CopName: "Chef/Style/FileMode", Message: "style"},
 	}
 	raw := makeMultiOffenseJSON(offenses)
 
@@ -360,8 +433,8 @@ func TestClassifyOffenses_Pass(t *testing.T) {
 // the scan to fail.
 func TestClassifyOffenses_Fail(t *testing.T) {
 	offenses := []CookstyleOffense{
-		{Severity: "warning", CopName: "ChefDeprecations/NodeSet", Message: "deprecated"},
-		{Severity: "error", CopName: "ChefCorrectness/InvalidDefaultAction", Message: "bad"},
+		{Severity: "warning", CopName: "Chef/Deprecations/NodeSet", Message: "deprecated"},
+		{Severity: "error", CopName: "Chef/Correctness/InvalidDefaultAction", Message: "bad"},
 	}
 	raw := makeMultiOffenseJSON(offenses)
 
@@ -382,7 +455,7 @@ func TestClassifyOffenses_Fail(t *testing.T) {
 // TestClassifyOffenses_Fatal verifies that a fatal-severity offense fails.
 func TestClassifyOffenses_Fatal(t *testing.T) {
 	offenses := []CookstyleOffense{
-		{Severity: "fatal", CopName: "ChefCorrectness/SomethingBad", Message: "fatal"},
+		{Severity: "fatal", CopName: "Chef/Correctness/SomethingBad", Message: "fatal"},
 	}
 	raw := makeMultiOffenseJSON(offenses)
 
@@ -400,9 +473,9 @@ func TestClassifyOffenses_Fatal(t *testing.T) {
 // TestClassifyOffenses_Correctable verifies the correctable counter.
 func TestClassifyOffenses_Correctable(t *testing.T) {
 	offenses := []CookstyleOffense{
-		{Severity: "warning", CopName: "ChefDeprecations/NodeSet", Message: "a", Corrected: true},
-		{Severity: "warning", CopName: "ChefDeprecations/EpicFail", Message: "b", Corrected: true},
-		{Severity: "convention", CopName: "ChefStyle/FileMode", Message: "c", Corrected: false},
+		{Severity: "warning", CopName: "Chef/Deprecations/NodeSet", Message: "a", Corrected: true},
+		{Severity: "warning", CopName: "Chef/Deprecations/EpicFail", Message: "b", Corrected: true},
+		{Severity: "convention", CopName: "Chef/Style/FileMode", Message: "c", Corrected: false},
 	}
 	raw := makeMultiOffenseJSON(offenses)
 
@@ -420,10 +493,10 @@ func TestClassifyOffenses_Correctable(t *testing.T) {
 // TestClassifyOffenses_DeprecationWarnings verifies the deprecation subset.
 func TestClassifyOffenses_DeprecationWarnings(t *testing.T) {
 	offenses := []CookstyleOffense{
-		{Severity: "warning", CopName: "ChefDeprecations/NodeSet", Message: "dep1"},
-		{Severity: "error", CopName: "ChefCorrectness/InvalidDefaultAction", Message: "corr"},
-		{Severity: "warning", CopName: "ChefDeprecations/EpicFail", Message: "dep2"},
-		{Severity: "convention", CopName: "ChefStyle/FileMode", Message: "style"},
+		{Severity: "warning", CopName: "Chef/Deprecations/NodeSet", Message: "dep1"},
+		{Severity: "error", CopName: "Chef/Correctness/InvalidDefaultAction", Message: "corr"},
+		{Severity: "warning", CopName: "Chef/Deprecations/EpicFail", Message: "dep2"},
+		{Severity: "convention", CopName: "Chef/Style/FileMode", Message: "style"},
 	}
 	raw := makeMultiOffenseJSON(offenses)
 
@@ -522,7 +595,7 @@ func TestEnrichOffenses_Empty(t *testing.T) {
 func TestEnrichOffenses_KnownCop(t *testing.T) {
 	// Use a cop name that exists in the embedded mapping table.
 	// ChefDeprecations/ResourceWithoutUnifiedTrue is one of the first entries.
-	copName := "ChefDeprecations/ResourceWithoutUnifiedTrue"
+	copName := "Chef/Deprecations/ResourceWithoutUnifiedTrue"
 	mapping := remediation.LookupCop(copName)
 	if mapping == nil {
 		t.Skipf("cop %q not in embedded mapping table — cannot test enrichment", copName)
@@ -574,7 +647,7 @@ func TestEnrichOffenses_UnknownCop(t *testing.T) {
 		{
 			Severity:  "convention",
 			Message:   "some unknown rule",
-			CopName:   "ChefStyle/UnknownCopThatDoesNotExist",
+			CopName:   "Chef/Style/UnknownCopThatDoesNotExist",
 			Corrected: false,
 			Location: CookstyleOffenseLocation{
 				StartLine:   1,
@@ -591,7 +664,7 @@ func TestEnrichOffenses_UnknownCop(t *testing.T) {
 	}
 
 	e := enriched[0]
-	if e.CopName != "ChefStyle/UnknownCopThatDoesNotExist" {
+	if e.CopName != "Chef/Style/UnknownCopThatDoesNotExist" {
 		t.Errorf("CopName = %q, want original cop name", e.CopName)
 	}
 	if e.Remediation != nil {
@@ -604,7 +677,7 @@ func TestEnrichOffenses_LocationFidelity(t *testing.T) {
 		{
 			Severity: "warning",
 			Message:  "test",
-			CopName:  "ChefDeprecations/SomeRule",
+			CopName:  "Chef/Deprecations/SomeRule",
 			Location: CookstyleOffenseLocation{
 				StartLine:   42,
 				StartColumn: 7,
@@ -636,7 +709,7 @@ func TestEnrichOffenses_LocationFidelity(t *testing.T) {
 
 func TestEnrichOffenses_MixedKnownAndUnknown(t *testing.T) {
 	// Pick a known cop from the mapping table.
-	knownCop := "ChefDeprecations/ResourceWithoutUnifiedTrue"
+	knownCop := "Chef/Deprecations/ResourceWithoutUnifiedTrue"
 	if remediation.LookupCop(knownCop) == nil {
 		t.Skipf("cop %q not in embedded mapping table", knownCop)
 	}
@@ -651,13 +724,13 @@ func TestEnrichOffenses_MixedKnownAndUnknown(t *testing.T) {
 		{
 			Severity: "convention",
 			Message:  "unknown offense",
-			CopName:  "ChefStyle/TotallyMadeUp",
+			CopName:  "Chef/Style/TotallyMadeUp",
 			Location: CookstyleOffenseLocation{StartLine: 20, StartColumn: 5, LastLine: 20, LastColumn: 40},
 		},
 		{
 			Severity: "error",
 			Message:  "another known or unknown",
-			CopName:  "ChefCorrectness/AlsoMadeUp",
+			CopName:  "Chef/Correctness/AlsoMadeUp",
 			Location: CookstyleOffenseLocation{StartLine: 30, StartColumn: 1, LastLine: 35, LastColumn: 1},
 		},
 	}
@@ -697,7 +770,7 @@ func TestEnrichOffenses_JSONRoundTrip(t *testing.T) {
 		{
 			Severity:  "warning",
 			Message:   "test msg",
-			CopName:   "ChefDeprecations/ResourceWithoutUnifiedTrue",
+			CopName:   "Chef/Deprecations/ResourceWithoutUnifiedTrue",
 			Corrected: true,
 			Location:  CookstyleOffenseLocation{StartLine: 1, StartColumn: 1, LastLine: 1, LastColumn: 10},
 		},
@@ -807,13 +880,14 @@ func TestExecutor_CalledWithFormatJSON(t *testing.T) {
 }
 
 func TestExecutor_CalledWithOnlyWhenTargetVersion(t *testing.T) {
+	cookbookDir := t.TempDir()
 	fe := &fakeCookstyleExecutor{
 		stdout: makeCleanJSON(),
 	}
 	s := NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 1, 10,
 		WithCookstyleExecutor(fe))
 
-	s.scanOneNoDB(context.Background(), "test-cookbook", "1.0.0", "18.0", "/cookbooks/test")
+	s.scanOneNoDB(context.Background(), "test-cookbook", "1.0.0", "18.0", cookbookDir)
 
 	if len(fe.calls) == 0 {
 		t.Fatal("expected at least one executor call")
@@ -821,38 +895,39 @@ func TestExecutor_CalledWithOnlyWhenTargetVersion(t *testing.T) {
 
 	args := fe.calls[0].Args
 	foundOnly := false
-	foundTargetVersion := false
+	foundConfig := false
 	for i, a := range args {
 		if a == "--only" && i+1 < len(args) {
 			foundOnly = true
 			val := args[i+1]
-			if !strings.Contains(val, "ChefDeprecations") || !strings.Contains(val, "ChefCorrectness") {
+			if !strings.Contains(val, "Chef/Deprecations") || !strings.Contains(val, "Chef/Correctness") {
 				t.Errorf("--only value should contain both namespaces, got %q", val)
 			}
 		}
-		if a == "--target-chef-version" && i+1 < len(args) {
-			foundTargetVersion = true
-			if args[i+1] != "18.0" {
-				t.Errorf("--target-chef-version value should be 18.0, got %q", args[i+1])
-			}
+		if a == "--config" {
+			foundConfig = true
+		}
+		if a == "--target-chef-version" {
+			t.Error("--target-chef-version should not be a CLI arg; it belongs in .rubocop_cmm.yml")
 		}
 	}
 	if !foundOnly {
 		t.Errorf("expected --only in args when target version is set, got %v", args)
 	}
-	if !foundTargetVersion {
-		t.Errorf("expected --target-chef-version in args when target version is set, got %v", args)
+	if !foundConfig {
+		t.Errorf("expected --config in args when target version is set, got %v", args)
 	}
 }
 
 func TestExecutor_NotCalledWithOnlyWhenNoTarget(t *testing.T) {
+	cookbookDir := t.TempDir()
 	fe := &fakeCookstyleExecutor{
 		stdout: makeCleanJSON(),
 	}
 	s := NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 1, 10,
 		WithCookstyleExecutor(fe))
 
-	s.scanOneNoDB(context.Background(), "test-cookbook", "1.0.0", "", "/cookbooks/test")
+	s.scanOneNoDB(context.Background(), "test-cookbook", "1.0.0", "", cookbookDir)
 
 	if len(fe.calls) == 0 {
 		t.Fatal("expected at least one executor call")
@@ -863,27 +938,28 @@ func TestExecutor_NotCalledWithOnlyWhenNoTarget(t *testing.T) {
 		if a == "--only" {
 			t.Error("--only should not be present when target version is empty")
 		}
-		if a == "--target-chef-version" {
-			t.Error("--target-chef-version should not be present when target version is empty")
+		if a == "--config" {
+			t.Error("--config should not be present when target version is empty")
 		}
 	}
 }
 
 func TestExecutor_CookbookDirIsLastArg(t *testing.T) {
+	cookbookDir := t.TempDir()
 	fe := &fakeCookstyleExecutor{
 		stdout: makeCleanJSON(),
 	}
 	s := NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 1, 10,
 		WithCookstyleExecutor(fe))
 
-	s.scanOneNoDB(context.Background(), "test-cookbook", "1.0.0", "", "/my/cookbook/dir")
+	s.scanOneNoDB(context.Background(), "test-cookbook", "1.0.0", "", cookbookDir)
 
 	if len(fe.calls) == 0 {
 		t.Fatal("expected at least one executor call")
 	}
 
 	args := fe.calls[0].Args
-	if args[len(args)-1] != "/my/cookbook/dir" {
+	if args[len(args)-1] != cookbookDir {
 		t.Errorf("last arg should be cookbook dir, got %q", args[len(args)-1])
 	}
 }
@@ -921,7 +997,7 @@ func TestScanOneNoDB_CleanCookbook(t *testing.T) {
 func TestScanOneNoDB_DeprecationWarnings(t *testing.T) {
 	fe := &fakeCookstyleExecutor{
 		stdout: makeOffenseJSON(
-			"ChefDeprecations/NodeSet",
+			"Chef/Deprecations/NodeSet",
 			"warning",
 			"Do not use node.set. Use node.normal instead.",
 			false,
@@ -955,7 +1031,7 @@ func TestScanOneNoDB_DeprecationWarnings(t *testing.T) {
 
 func TestScanOneNoDB_ErrorSeverityFails(t *testing.T) {
 	offenses := []CookstyleOffense{
-		{Severity: "error", CopName: "ChefCorrectness/InvalidDefaultAction", Message: "bad action"},
+		{Severity: "error", CopName: "Chef/Correctness/InvalidDefaultAction", Message: "bad action"},
 	}
 	fe := &fakeCookstyleExecutor{
 		stdout:   makeMultiOffenseJSON(offenses),
@@ -979,10 +1055,10 @@ func TestScanOneNoDB_ErrorSeverityFails(t *testing.T) {
 
 func TestScanOneNoDB_MixedOffenses(t *testing.T) {
 	offenses := []CookstyleOffense{
-		{Severity: "warning", CopName: "ChefDeprecations/NodeSet", Message: "dep", Corrected: true},
-		{Severity: "error", CopName: "ChefCorrectness/InvalidDefaultAction", Message: "err"},
-		{Severity: "convention", CopName: "ChefStyle/FileMode", Message: "style", Corrected: true},
-		{Severity: "warning", CopName: "ChefModernize/FoodcriticComments", Message: "modernize"},
+		{Severity: "warning", CopName: "Chef/Deprecations/NodeSet", Message: "dep", Corrected: true},
+		{Severity: "error", CopName: "Chef/Correctness/InvalidDefaultAction", Message: "err"},
+		{Severity: "convention", CopName: "Chef/Style/FileMode", Message: "style", Corrected: true},
+		{Severity: "warning", CopName: "Chef/Modernize/FoodcriticComments", Message: "modernize"},
 	}
 	fe := &fakeCookstyleExecutor{
 		stdout:   makeMultiOffenseJSON(offenses),
@@ -1100,7 +1176,7 @@ func TestScanOneNoDB_ExecError_WithValidJSON(t *testing.T) {
 	// the fallthrough path.
 	fe := &fakeCookstyleExecutor{
 		stdout: makeOffenseJSON(
-			"ChefDeprecations/NodeSet",
+			"Chef/Deprecations/NodeSet",
 			"warning",
 			"deprecated",
 			false,

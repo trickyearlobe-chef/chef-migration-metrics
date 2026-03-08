@@ -23,11 +23,11 @@ const (
 	// with severity "error" or "fatal".
 	WeightErrorFatal = 5
 
-	// WeightDeprecation is the per-offense weight for ChefDeprecations/*
+	// WeightDeprecation is the per-offense weight for Chef/Deprecations/*
 	// offenses.
 	WeightDeprecation = 3
 
-	// WeightCorrectness is the per-offense weight for ChefCorrectness/*
+	// WeightCorrectness is the per-offense weight for Chef/Correctness/*
 	// offenses.
 	WeightCorrectness = 3
 
@@ -35,7 +35,7 @@ const (
 	// that remain after auto-correct (manual intervention required).
 	WeightNonAutoCorrectable = 4
 
-	// WeightModernize is the per-offense weight for ChefModernize/*
+	// WeightModernize is the per-offense weight for Chef/Modernize/*
 	// offenses.
 	WeightModernize = 1
 
@@ -94,13 +94,13 @@ type CookstyleOffenseSummary struct {
 	// ErrorFatalCount is the number of offenses with severity "error" or "fatal".
 	ErrorFatalCount int
 
-	// DeprecationCount is the number of ChefDeprecations/* offenses.
+	// DeprecationCount is the number of Chef/Deprecations/* offenses.
 	DeprecationCount int
 
-	// CorrectnessCount is the number of ChefCorrectness/* offenses.
+	// CorrectnessCount is the number of Chef/Correctness/* offenses.
 	CorrectnessCount int
 
-	// ModernizeCount is the number of ChefModernize/* offenses.
+	// ModernizeCount is the number of Chef/Modernize/* offenses.
 	ModernizeCount int
 
 	// AutoCorrectableCount is the number of offenses fixable by auto-correct.
@@ -455,9 +455,9 @@ func classifyOffenses(csResult *datastore.CookstyleResult) CookstyleOffenseSumma
 
 // Cop namespace prefixes — mirror the constants in analysis/cookstyle.go.
 const (
-	nsDeprecations = "ChefDeprecations/"
-	nsCorrectness  = "ChefCorrectness/"
-	nsModernize    = "ChefModernize/"
+	nsDeprecations = "Chef/Deprecations/"
+	nsCorrectness  = "Chef/Correctness/"
+	nsModernize    = "Chef/Modernize/"
 )
 
 func isDeprecation(copName string) bool { return strings.HasPrefix(copName, nsDeprecations) }
