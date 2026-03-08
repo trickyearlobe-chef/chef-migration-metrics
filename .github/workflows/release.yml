@@ -37,87 +37,15 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Lint
-  # ---------------------------------------------------------------------------
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install and run golangci-lint
-        run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-          golangci-lint run ./...
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: frontend/package.json
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Lint frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run lint
-
-      - name: Lint Helm chart
-        run: |
-          helm lint deploy/helm/chef-migration-metrics
-
-  # ---------------------------------------------------------------------------
-  # Test
-  # ---------------------------------------------------------------------------
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Create placeholder frontend dist (for go:embed)
-        run: |
-          mkdir -p frontend/dist
-          echo '<!DOCTYPE html><html><head><title>placeholder</title></head><body></body></html>' > frontend/dist/index.html
-
-      - name: Run Go tests
-        run: go test -race -coverprofile=coverage.out ./...
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: frontend/package.json
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Run frontend tests
-        working-directory: frontend
-        run: |
-          npm ci
-          npm test -- --coverage
-
-  # ---------------------------------------------------------------------------
   # Build and Push Container Image
+  # ---------------------------------------------------------------------------
+  # NOTE: Lint and test jobs are handled by ci.yml which runs on every push
+  # to main. Tags are only created on main, so CI has already passed for
+  # the tagged commit. No need to duplicate that work here.
   # ---------------------------------------------------------------------------
   build-image:
     name: Build and Push Container Image
     runs-on: ubuntu-latest
-    needs: [lint, test]
     outputs:
       version: ${{ steps.version.outputs.version }}
       digest: ${{ steps.build-push.outputs.digest }}
@@ -230,7 +158,7 @@ jobs:
   build-packages:
     name: Build ${{ matrix.format }} (${{ matrix.arch }})
     runs-on: ubuntu-latest
-    needs: [lint, test, build-image]
+    needs: [build-image]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -299,7 +227,6 @@ jobs:
   build-archives:
     name: Build archive (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
-    needs: [lint, test]
     strategy:
       matrix:
         include:
