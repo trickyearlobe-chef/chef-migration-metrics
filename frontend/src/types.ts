@@ -247,6 +247,7 @@ export interface NodeReadiness {
 
 export interface NodeDetailResponse {
   node: NodeSnapshot;
+  organisation_name: string;
   readiness: NodeReadiness[] | null;
 }
 
