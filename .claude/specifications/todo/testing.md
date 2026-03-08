@@ -2,11 +2,11 @@
 
 Status key: [ ] Not started | [~] In progress | [x] Done
 
-> **1,666 tests across 11 packages:** analysis (263), chefapi (87), collector (222), config (117), datastore (64), embedded (21), logging (93), remediation (114), secrets (331), tls (79), webapi (275). All passing, 0 failures. Additional test items below track coverage of specific functional areas.
+> **1,965 tests across 14 packages:** analysis (263), auth (129), chefapi (90), collector (235), config (117), datastore (79), embedded (21), export (36), frontend (11), logging (93), remediation (114), secrets (331), tls (79), webapi (364). All passing, 0 failures. Additional test items below track coverage of specific functional areas.
 
 ---
 
-- [x] Unit tests for Chef API client and authentication — 87 tests in `internal/chefapi/client_test.go` covering RSA signing, HTTP client, API errors, retry logic, and all endpoints
+- [x] Unit tests for Chef API client and authentication — 90 tests in `internal/chefapi/client_test.go` covering RSA signing, HTTP client, API errors, retry logic, and all endpoints
 - [x] Unit tests for partial search query builder — covered in `client_test.go` partial search tests (correct method/path/query/body verification)
 - [x] Unit tests for cookbook usage analysis — 51 tests in `internal/analysis/usage_test.go` covering tuple extraction, aggregation, active set building, parallel extraction, Policyfile nodes, end-to-end pipeline
 - [x] Unit tests for cookbook usage analysis with Policyfile nodes — covered in `usage_test.go` (`TestExtractNodeTuples_PolicyfileNode`, `TestEndToEnd_FullAnalysisPipeline` with mixed classic and Policyfile nodes)
@@ -23,9 +23,11 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Unit tests for notification trigger evaluation (status change detection, milestone crossing)
 - [ ] Unit tests for webhook notification payload construction and delivery
 - [ ] Unit tests for email notification construction
-- [ ] Unit tests for export generation (CSV, JSON, Chef search query formats)
+- [x] Unit tests for export generation (CSV, JSON, Chef search query formats) — 36 tests in `internal/export/export_test.go` covering ready node export (CSV, JSON, Chef search query), blocked node export (CSV, JSON, complexity scores, blocking reasons), cookbook remediation export (CSV, JSON, target version filter, complexity label filter), filter application (environment, platform, role, stale, no-filter passthrough), max rows, write-to-disk, invalid format rejection
 - [ ] Unit tests for export async/sync threshold decision
 - [x] Unit tests for embedded tool resolution (embedded_bin_dir lookup, PATH fallback, missing directory handling) — 21 tests in `internal/embedded/embedded_test.go` covering ResolvePath, ValidateCookstyle, ValidateKitchen, ValidateDocker, ValidateGit, missing directory, PATH fallback
+- [x] Unit tests for local authentication — 129 tests in `internal/auth/` covering `LocalAuthenticator` (success, failure, lockout, non-local provider rejection, store errors), `SessionManager` (create, validate, invalidate, cleanup, lifetime), `Middleware` (RequireAuth, RequireAdmin, RequireRole, token extraction), `Password` (hashing, validation rules, bcrypt cost)
+- [x] Unit tests for auth web API handlers — covered in `internal/webapi/` tests for login, logout, me, admin user CRUD (list, create, update, delete, password reset), method checks, auth-not-configured fallback
 - [ ] Unit tests for Elasticsearch NDJSON export (document format, doc_id generation, .tmp suffix handling)
 - [ ] Unit tests for Elasticsearch high-water-mark tracking (incremental export, first-run full export)
 - [ ] Integration tests for data collection against a test Chef server
