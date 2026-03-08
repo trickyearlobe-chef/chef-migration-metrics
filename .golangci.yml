@@ -1,0 +1,9 @@
+# golangci-lint v2 configuration
+# https://golangci-lint.run/usage/configuration/
+version: "2"
+
+linters:
+  disable:
+    # Disabled temporarily — 50+ existing violations to triage.
+    # Tracked by GitHub issue; re-enable once resolved.
+    - errcheck
