@@ -188,6 +188,7 @@ type workItem struct {
 func (e *ReadinessEvaluator) EvaluateOrganisation(
 	ctx context.Context,
 	organisationID string,
+	orgName string,
 	targetChefVersions []string,
 ) ([]ReadinessResult, error) {
 	if len(targetChefVersions) == 0 {
@@ -200,7 +201,7 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 		return nil, fmt.Errorf("readiness: listing node snapshots: %w", err)
 	}
 	if len(snapshots) == 0 {
-		e.logInfo(organisationID, "no node snapshots found — skipping readiness evaluation")
+		e.logInfo(orgName, "no node snapshots found — skipping readiness evaluation")
 		return nil, nil
 	}
 
@@ -221,7 +222,7 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 		}
 	}
 
-	e.logInfo(organisationID, fmt.Sprintf("evaluating %d nodes × %d target versions = %d work items",
+	e.logInfo(orgName, fmt.Sprintf("evaluating %d nodes × %d target versions = %d work items",
 		len(snapshots), len(targetChefVersions), len(items)))
 
 	// Step 4: Fan out.
@@ -245,7 +246,7 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 
 			// Persist.
 			if persistErr := e.persistResult(ctx, result); persistErr != nil {
-				e.logError(wi.snapshot.OrganisationID,
+				e.logError(orgName,
 					fmt.Sprintf("failed to persist readiness for node %s target %s: %v",
 						wi.snapshot.NodeName, wi.targetChefVersion, persistErr))
 			}
@@ -258,7 +259,7 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 
 	wg.Wait()
 
-	e.logInfo(organisationID, fmt.Sprintf("readiness evaluation complete: %d results", len(results)))
+	e.logInfo(orgName, fmt.Sprintf("readiness evaluation complete: %d results", len(results)))
 	return results, nil
 }
 
@@ -761,16 +762,16 @@ func (e *ReadinessEvaluator) persistResult(ctx context.Context, result Readiness
 // Logging helpers
 // ---------------------------------------------------------------------------
 
-func (e *ReadinessEvaluator) logInfo(orgID, msg string) {
+func (e *ReadinessEvaluator) logInfo(orgName, msg string) {
 	if e.logger == nil {
 		return
 	}
-	e.logger.Info(logging.ScopeReadinessEvaluation, msg, logging.WithOrganisation(orgID))
+	e.logger.Info(logging.ScopeReadinessEvaluation, msg, logging.WithOrganisation(orgName))
 }
 
-func (e *ReadinessEvaluator) logError(orgID, msg string) {
+func (e *ReadinessEvaluator) logError(orgName, msg string) {
 	if e.logger == nil {
 		return
 	}
-	e.logger.Error(logging.ScopeReadinessEvaluation, msg, logging.WithOrganisation(orgID))
+	e.logger.Error(logging.ScopeReadinessEvaluation, msg, logging.WithOrganisation(orgName))
 }
