@@ -782,6 +782,36 @@ func TestListInstances_Success(t *testing.T) {
 	}
 }
 
+func TestListInstances_UsesJsonFlag(t *testing.T) {
+	mock := newMockKitchenExecutor()
+	mock.responses["list"] = mockKitchenResponse{
+		Stdout: `[{"instance":"default-ubuntu-2204","driver":"Dokken","provisioner":"Dokken","verifier":"Inspec","transport":"Dokken","last_action":null}]`,
+	}
+	s := &KitchenScanner{executor: mock, logger: testLogger()}
+
+	_, err := s.listInstances(context.Background(), "/tmp/test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	calls := mock.callsForPhase("list")
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 list call, got %d", len(calls))
+	}
+
+	// kitchen list uses --json (a boolean flag), not --format json.
+	args := calls[0].Args
+	wantArgs := []string{"list", "--json"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected args %v, got %v", wantArgs, args)
+	}
+	for i, want := range wantArgs {
+		if args[i] != want {
+			t.Errorf("arg[%d] = %q, want %q", i, args[i], want)
+		}
+	}
+}
+
 func TestListInstances_MultipleInstances(t *testing.T) {
 	mock := newMockKitchenExecutor()
 	mock.responses["list"] = mockKitchenResponse{
@@ -840,6 +870,51 @@ func TestListInstances_InvalidJSON(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parse") {
 		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+func TestListInstances_InvalidJSON_IncludesStdoutAndStderr(t *testing.T) {
+	mock := newMockKitchenExecutor()
+	mock.responses["list"] = mockKitchenResponse{
+		Stdout:   "<html><body>403 Forbidden</body></html>",
+		Stderr:   "Could not find gem 'kitchen-dokken'",
+		ExitCode: 1,
+	}
+	s := &KitchenScanner{executor: mock, logger: testLogger()}
+
+	_, err := s.listInstances(context.Background(), "/tmp/test")
+	if err == nil {
+		t.Fatal("expected error on HTML stdout")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "exit_code=1") {
+		t.Errorf("expected exit_code in error, got: %v", errMsg)
+	}
+	if !strings.Contains(errMsg, "403 Forbidden") {
+		t.Errorf("expected stdout content in error, got: %v", errMsg)
+	}
+	if !strings.Contains(errMsg, "kitchen-dokken") {
+		t.Errorf("expected stderr content in error, got: %v", errMsg)
+	}
+}
+
+func TestListInstances_InvalidJSON_TruncatesLongOutput(t *testing.T) {
+	longHTML := strings.Repeat("<div>some very long HTML content</div>", 100)
+	mock := newMockKitchenExecutor()
+	mock.responses["list"] = mockKitchenResponse{Stdout: longHTML}
+	s := &KitchenScanner{executor: mock, logger: testLogger()}
+
+	_, err := s.listInstances(context.Background(), "/tmp/test")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	// The error message should contain the stdout but truncated.
+	errMsg := err.Error()
+	if len(errMsg) > 2000 {
+		t.Errorf("error message too long (%d chars), expected truncation", len(errMsg))
+	}
+	if !strings.Contains(errMsg, "…") {
+		t.Error("expected truncation indicator '…' in error message")
 	}
 }
 
@@ -1549,5 +1624,68 @@ func TestBuildOverlay_ProductionPlatformAlignment(t *testing.T) {
 	count := strings.Count(got, "- name:")
 	if count != 3 {
 		t.Errorf("expected 3 platforms, found %d in:\n%s", count, got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sanitiseKitchenEnv tests
+// ---------------------------------------------------------------------------
+
+func TestSanitiseKitchenEnv_RemovesBundlerVars(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"HOME=/home/user",
+		"BUNDLE_GEMFILE=/cookbooks/chef-client/Gemfile",
+		"BUNDLE_BIN_PATH=/usr/lib/ruby/gems/bundler",
+		"BUNDLE_PATH=/vendor/bundle",
+		"RUBYOPT=-rbundler/setup",
+		"GEM_HOME=/usr/lib/ruby/gems",
+	}
+
+	got := sanitiseKitchenEnv(env)
+
+	allowed := map[string]bool{
+		"PATH":     true,
+		"HOME":     true,
+		"GEM_HOME": true,
+	}
+	for _, kv := range got {
+		key := kv[:strings.IndexByte(kv, '=')]
+		if !allowed[key] {
+			t.Errorf("expected %q to be removed, but it was kept", key)
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("expected 3 env vars, got %d: %v", len(got), got)
+	}
+}
+
+func TestSanitiseKitchenEnv_PreservesNonBundlerVars(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"GEM_HOME=/gems",
+		"GEM_PATH=/gems",
+		"TERM=xterm",
+	}
+
+	got := sanitiseKitchenEnv(env)
+	if len(got) != len(env) {
+		t.Errorf("expected %d env vars, got %d", len(env), len(got))
+	}
+}
+
+func TestSanitiseKitchenEnv_EmptyInput(t *testing.T) {
+	got := sanitiseKitchenEnv(nil)
+	if len(got) != 0 {
+		t.Errorf("expected empty result, got %v", got)
+	}
+}
+
+func TestSanitiseKitchenEnv_NoEqualsSign(t *testing.T) {
+	// Malformed entries without '=' should be preserved as-is.
+	env := []string{"NOEQUALS", "PATH=/bin"}
+	got := sanitiseKitchenEnv(env)
+	if len(got) != 2 {
+		t.Errorf("expected 2 entries, got %d: %v", len(got), got)
 	}
 }
