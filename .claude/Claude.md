@@ -6,49 +6,35 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Token Economy
 
-- **Do NOT read all specification files upfront.** Only read the specific spec(s) relevant to the current task.
-- Use `./Structure.md` to orient yourself within the project layout. Use the Specifications Index table in `specifications/Specification.md` to identify which spec file(s) you need — but do not read the full top-level Specification.md unless you need the project overview.
-- **Prefer reading specific line ranges** over entire files when possible. Use file outlines first, then read only the sections you need.
-- `specifications/ToDo.md` is a large index file. Each component also has its own `todo/` file (e.g. `specifications/todo/analysis.md`). **Read only the component-level todo file** relevant to your current work instead of the full `ToDo.md`.
-- Large spec files have a **TL;DR** section at the top. Read that first to decide whether you need the full file.
-- When updating `./Structure.md`, keep entries concise — one-line descriptions only. The spec files themselves contain the detail.
-- Use the **task-to-spec lookup table** below to find exactly which specs and todo files to load for a given task. Do not load specs not listed for your task.
+- When choosing the next task, the estimate and implementation must be within the 80000 token budget.
+- Only read the specification documents relevant to the current task.
+- Use `./Structure.md` to orient yourself and find spec file names.
+- Do not read `specifications/Specification.md`** unless you need the full project overview.
+- **Prefer reading specific line ranges** over entire files. Use file outlines first, then read only the sections you need.
+- Large spec files have a **TL;DR** at the top. Read that first to decide whether you need the full file.
+- `specifications/ToDo.md` is a progress table only.
+- Authoritative tasks live in `specifications/todo/*.md` — read only the one relevant to your work.
+- After completing tasks, update the done/total counts in `ToDo.md` (use the regeneration script in that file).
+- Use the **task-to-spec lookup** below to find which specs and todo files to load.
+- Do not load specs not listed for your task. `(§ Section)` means read only that section.
 
 ### Task-to-Spec Lookup
 
-| Task area | Required specs (read fully) | Reference only (read TL;DR) | Todo file |
-|-----------|----------------------------|----------------------------|-----------|
-| Chef API client / auth signing | `chef-api/` | `configuration/` | `todo/data-collection.md` |
-| Node data collection | `data-collection/`, `chef-api/` | `configuration/`, `datastore/` | `todo/data-collection.md` |
-| Cookbook fetching (git + server) | `data-collection/` | `chef-api/`, `configuration/`, `datastore/` | `todo/data-collection.md` |
-| Cookbook usage analysis | `analysis/` (§ Usage Analysis) | `data-collection/`, `datastore/` | `todo/analysis.md` |
-| CookStyle / compatibility testing | `analysis/` (§ Compatibility Testing) | `configuration/`, `packaging/` | `todo/analysis.md` |
-| Remediation guidance | `analysis/` (§ Remediation) | `datastore/`, `visualisation/` | `todo/analysis.md` |
-| Node upgrade readiness | `analysis/` (§ Readiness) | `data-collection/`, `datastore/` | `todo/analysis.md` |
-| Role dependency graph | `data-collection/` (§ Role Graph) | `chef-api/`, `datastore/`, `visualisation/` | `todo/data-collection.md` |
-| Database schema / migrations | `datastore/` | `configuration/` | `todo/project-setup.md` |
-| Configuration parsing | `configuration/` | — | `todo/configuration.md` |
-| TLS / certificate management | `tls/` | `configuration/`, `packaging/` | `todo/configuration.md` |
-| Web API endpoints | `web-api/` | `auth/`, `datastore/` | `todo/visualisation.md` |
-| Dashboard frontend | `visualisation/` | `web-api/` | `todo/visualisation.md` |
-| Auth (local/LDAP/SAML) | `auth/` | `configuration/`, `web-api/` | `todo/auth.md` |
-| Logging subsystem | `logging/` | `configuration/` | `todo/logging.md` |
-| Elasticsearch / NDJSON export | `elasticsearch/` | `configuration/`, `datastore/` | `todo/visualisation.md` |
-| RPM / DEB packaging | `packaging/` (§ RPM/DEB) | `configuration/` | `todo/packaging.md` |
-| Container image / Dockerfile | `packaging/` (§ Container) | — | `todo/packaging.md` |
-| Embedded Ruby environment | `packaging/` (§ Embedded Ruby) | `analysis/` | `todo/packaging.md` |
-| Helm chart | `packaging/` (§ Helm) | `tls/`, `configuration/` | `todo/packaging.md` |
-| Docker Compose / ELK stack | `packaging/` (§ Compose/ELK) | `elasticsearch/` | `todo/packaging.md` |
-| CI/CD workflows | `packaging/` (§ CI/CD) | — | `todo/packaging.md` |
-| Notifications (webhook/email) | `configuration/` (§ Notifications), `web-api/` (§ Notification Endpoints) | `logging/` | `todo/visualisation.md` |
-| Data exports (CSV/JSON) | `web-api/` (§ Export Endpoints) | `configuration/`, `datastore/` | `todo/visualisation.md` |
-| Secrets / credential storage | `secrets-storage/` | `configuration/`, `datastore/` | `todo/secrets-storage.md` |
-| Credential encryption / rotation | `secrets-storage/` (§ Encryption Model, § Key Rotation) | `datastore/` | `todo/secrets-storage.md` |
-| Credential resolution (DB/env/file) | `secrets-storage/` (§ Credential Resolution Precedence) | `configuration/`, `chef-api/` | `todo/secrets-storage.md` |
-| Credential Web API (admin CRUD) | `secrets-storage/` (§ Web API Endpoints), `web-api/` (§ Credential Management) | `datastore/` | `todo/secrets-storage.md` |
-| Kubernetes / Helm secrets | `secrets-storage/` (§ Kubernetes Secrets Integration), `packaging/` (§ Helm) | `configuration/` | `todo/secrets-storage.md` |
-
-`(§ Section)` means read only that section of the spec, not the entire file.
+| Task area | Read spec | Todo file |
+|-----------|-----------|-----------|
+| Chef API client | `chef-api/` | `todo/data-collection.md` |
+| Node collection, cookbook fetching, role graph | `data-collection/` | `todo/data-collection.md` |
+| Usage analysis, CookStyle, Test Kitchen, readiness, remediation | `analysis/` (relevant §) | `todo/analysis.md` |
+| Database schema / migrations | `datastore/` | `todo/project-setup.md` |
+| Configuration / TLS | `configuration/`, `tls/` | `todo/configuration.md` |
+| Web API endpoints | `web-api/` | `todo/visualisation.md` |
+| Dashboard frontend | `visualisation/` | `todo/visualisation.md` |
+| Auth (local/LDAP/SAML) | `auth/` | `todo/auth.md` |
+| Logging | `logging/` | `todo/logging.md` |
+| Elasticsearch / NDJSON | `elasticsearch/` | `todo/visualisation.md` |
+| Packaging (RPM/DEB/container/Helm/Compose/CI) | `packaging/` (relevant §) | `todo/packaging.md` |
+| Notifications / exports | `web-api/` (relevant §), `configuration/` (§ Notifications) | `todo/visualisation.md` |
+| Secrets / credentials | `secrets-storage/` (relevant §) | `todo/secrets-storage.md` |
 
 ---
 
@@ -56,6 +42,53 @@ This file contains the rules and conventions that must be followed at all times 
 
 - Read `./Structure.md` first to understand the layout of the project before exploring files or making changes.
 - `./Structure.md` must be updated in the same change whenever a file or directory is added, moved, renamed, or removed.
+
+---
+
+## Task Summaries
+
+- At the end of every task (feature, bug fix, test addition, refactor, etc.), write a summary file in `.claude/summaries/`.
+- **Naming convention:** `YYYY-MM-DD-hh-mm-<component>-<short-description>.md` (e.g. `2025-01-01-secrets-rotation-tests.md`).
+- **Purpose:** Give future threads enough context to continue work without re-reading code or re-running tests. Include what was done, what the final state is (test counts, coverage, passing/failing), any known gaps, and which files were modified.
+- **Minimum contents:**
+  1. **Context** — what component/area was involved and why.
+  2. **What was done** — specific changes, with enough detail to understand scope.
+  3. **Final state** — test counts, coverage numbers, pass/fail status, any warnings.
+  4. **Known gaps** — anything deliberately left uncovered or deferred.
+  5. **Files modified** — list of files touched (production code and tests separately).
+  6. **Recommended next steps** — prioritised list of what to work on next, with reasoning. Include which specs and todo files to read, and the approximate scope and tokens required for each step. This avoids future threads spending tokens rediscovering what to do.
+- Keep summaries concise but complete — a new thread should be able to read the summary and pick up where you left off without re-exploring the codebase.
+- **At the start of a new thread**, before exploring the codebase, read **only the most recent summary** in `.claude/summaries/` (sorted by filename date prefix). If it has a "Recommended next steps" section, use that as your starting point instead of re-analysing the project from scratch. **Do not read other summaries unless you need context on a specific component you are about to modify.**
+- Before starting work on a component, check `.claude/summaries/` for existing summaries related to that component. This avoids duplicating investigation effort.
+- Update `./Structure.md` when adding a new summary file (add the entry to the `summaries/` listing).
+
+### Single Source of Truth for Next Steps
+
+- The **most recent summary file's "Recommended next steps" section** is the single source of truth for what to work on next.
+- **Do NOT duplicate next-step plans into `specifications/ToDo.md`.** That file is a progress-table index only — no narratives, milestones, token estimates, or session plans.
+- When finishing a task, put the full next-steps plan in the new summary file and nowhere else.
+
+### Archiving Old Summaries
+
+- Only recent summaries belong in `.claude/summaries/`. Older summaries live in `.claude/summaries/archive/`.
+- **When to archive:** After writing a new summary, if there are more than **8 files** in `.claude/summaries/` (excluding `archive/`), move the oldest summaries to `archive/` to keep the count at 8 or fewer.
+- **Do not read archived summaries** at thread start. They exist for historical reference only. If you need context on an old component, you may read a specific archived summary on demand.
+- Update `./Structure.md` when archiving summaries.
+
+### ToDo.md Hygiene
+
+- `specifications/ToDo.md` must contain **only** the progress table and the count-regeneration script. No milestones, no narratives, no token estimates, no session plans, no phase breakdowns.
+- After completing tasks, update the done/total counts in the progress table. Do not add any other content.
+
+### Context Budget and Incremental Saves
+
+Large tasks risk exhausting the context window before a summary can be written. Follow these rules to prevent losing work:
+
+- **Write the summary early and update it incrementally.** Create the summary file as soon as meaningful progress has been made (e.g. after the first milestone, not at the very end). Update it as you go. A partial summary saved is infinitely better than a perfect summary lost to a context limit.
+- **Break large tasks into checkpoints.** If a task involves multiple distinct subtasks (e.g. "add tests for function A, then B, then C"), save the summary after completing each subtask. The summary should always reflect the current state, not just the planned end state.
+- **Prefer multiple small commits over one large commit.** When a task touches many files or adds many tests, pause at natural boundaries to update the summary. This also makes it easier for a new thread to pick up mid-task if the current thread ends unexpectedly.
+- **If you sense the conversation is getting long**, proactively save the summary with what you have so far, noting any remaining work under "Known gaps" or a "Remaining work" section. Do not wait for the user to ask.
+- **If the user's request is large**, tell them your plan, note how you intend to checkpoint, and save the first summary after the first checkpoint — before continuing to the next phase.
 
 ---
 
@@ -72,10 +105,9 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Specifications
 
-- All specifications live under `.claude/specifications/`, organised into subdirectories by component.
-- Before implementing any feature, check whether a specification exists for it. If not, write one first.
-- The top-level specification is `.claude/specifications/Specification.md`. Start there for project context.
-- The master to-do list is `.claude/specifications/ToDo.md`. Per-component to-do files live under `.claude/specifications/todo/` (e.g. `todo/analysis.md`, `todo/data-collection.md`). When completing tasks, update both the component file and the master `ToDo.md`.
+- Specs live under `.claude/specifications/<component>/Specification.md`.
+- Before implementing any feature, check whether a specification exists. If not, write one first.
+- When completing tasks, update the relevant `todo/*.md` file and refresh the counts in `ToDo.md`.
 
 ---
 
@@ -127,41 +159,14 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Go Package Layout
 
-All Go code lives in the repository root (single Go module). Follow this package structure:
-
-```
-cmd/
-  chef-migration-metrics/       # main package — CLI entrypoint, flag parsing, startup
-internal/
-  chefapi/                      # Chef Infra Server API client, RSA signing, partial search
-  collector/                    # Periodic collection job orchestration (nodes, cookbooks, roles)
-  analysis/                     # Cookbook usage, CookStyle, Test Kitchen, readiness evaluation
-  remediation/                  # Auto-correct preview, cop mapping, complexity scoring
-  datastore/                    # Database access layer — queries, migrations, connection pool
-  webapi/                       # HTTP handlers, router, middleware (auth, CORS, pagination)
-  auth/                         # Authentication providers (local, LDAP, SAML) and RBAC
-  config/                       # Configuration parsing, validation, env var overrides
-  tls/                          # TLS listener setup, ACME integration, cert reload
-  export/                       # CSV/JSON/NDJSON export generation, async job runner
-  notify/                       # Webhook and email notification dispatch
-  secrets/                      # Credential encryption, storage, resolution, rotation, zeroing
-  logging/                      # Structured logger, log scopes, retention
-  elasticsearch/                # NDJSON file writer, high-water-mark tracking
-  embedded/                     # Embedded tool resolution (CookStyle, TK, Ruby lookup)
-  models/                       # Shared domain types (Node, Cookbook, ReadinessResult, etc.)
-frontend/                       # React application (separate npm project)
-migrations/                     # Sequential numbered SQL migration files
-```
-
-Conventions:
-- Use `internal/` to prevent external import of application packages.
-- Each package should have a single clear responsibility matching its specification.
-- Shared domain types used across packages live in `internal/models/`.
+See `./Structure.md` for the full directory tree. Key conventions:
+- All Go code is a single module. Application packages live under `internal/`.
+- Shared domain types live in `internal/models/`.
 - Database queries are centralised in `internal/datastore/` — other packages must not import `database/sql` directly.
-- HTTP handlers in `internal/webapi/` are thin — they validate input, call domain logic, and serialise output. Business logic lives in the domain packages (`analysis/`, `collector/`, etc.).
-- Configuration structs live in `internal/config/` and are passed to other packages by value or interface — packages must not read config files or environment variables directly.
-- Test files sit alongside the code they test (`foo_test.go` next to `foo.go`).
-- Integration and functional tests use build tags (`//go:build functional`) so they are excluded from `go test ./...` by default.
+- HTTP handlers in `internal/webapi/` are thin wrappers — business logic lives in domain packages.
+- Config structs live in `internal/config/` and are passed by value or interface — packages must not read config files or env vars directly.
+- Test files sit alongside code (`foo_test.go` next to `foo.go`).
+- Integration tests use build tags (`//go:build functional`) and are excluded from `go test ./...`.
 
 ---
 

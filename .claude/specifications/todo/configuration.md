@@ -4,34 +4,34 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
-- [ ] Define configuration file format and schema
-- [ ] Support configuration of multiple Chef server organisations (URL, org name, client name, key path)
-- [ ] Support configuration of target Chef Client versions
-- [ ] Support configuration of git base URLs
-- [ ] Support configuration of disk space threshold for upgrade readiness
-- [ ] Support configuration of collection schedule
-- [ ] Support configuration of stale node threshold (`collection.stale_node_threshold_days`, default: 7)
-- [ ] Support configuration of stale cookbook threshold (`collection.stale_cookbook_threshold_days`, default: 365)
-- [ ] Support configuration of datastore connection
-- [ ] Support environment variable overrides for secrets
-- [ ] Support configuration of notification channels (webhook and email)
-- [ ] Support configuration of notification event triggers and filters
-- [ ] Support configuration of readiness milestone thresholds
-- [ ] Support configuration of stale node alert count threshold
-- [ ] Support configuration of SMTP settings for email notifications
-- [ ] Support configuration of export settings (max_rows, async_threshold, output_directory, retention_hours)
-- [ ] Support configuration of `analysis_tools.embedded_bin_dir` (default: `/opt/chef-migration-metrics/embedded/bin`)
-- [ ] Support configuration of `analysis_tools.cookstyle_timeout_minutes` (default: 10)
-- [ ] Support configuration of `analysis_tools.test_kitchen_timeout_minutes` (default: 30)
-- [ ] Support configuration of `elasticsearch.enabled` (default: false)
-- [ ] Support configuration of `elasticsearch.output_directory` (default: `/var/lib/chef-migration-metrics/elasticsearch`)
-- [ ] Support configuration of `elasticsearch.retention_hours` (default: 48)
-- [ ] Validate notification channel configuration on startup (url_env set, SMTP configured for email channels)
-- [ ] Validate export output directory exists and is writable on startup
-- [ ] Validate `analysis_tools.embedded_bin_dir` exists if set (warn, not fatal — falls back to PATH)
-- [ ] Validate `analysis_tools.cookstyle_timeout_minutes` >= 1
-- [ ] Validate `analysis_tools.test_kitchen_timeout_minutes` >= 1
-- [ ] Validate `elasticsearch.output_directory` exists and is writable when `elasticsearch.enabled` is true
+- [x] Define configuration file format and schema — `internal/config/config.go` with YAML parsing, defaults, env overrides, and validation; 117 tests in `config_test.go`
+- [x] Support configuration of multiple Chef server organisations (URL, org name, client name, key path)
+- [x] Support configuration of target Chef Client versions
+- [x] Support configuration of git base URLs
+- [x] Support configuration of disk space threshold for upgrade readiness
+- [x] Support configuration of collection schedule
+- [x] Support configuration of stale node threshold (`collection.stale_node_threshold_days`, default: 7)
+- [x] Support configuration of stale cookbook threshold (`collection.stale_cookbook_threshold_days`, default: 365)
+- [x] Support configuration of datastore connection
+- [x] Support environment variable overrides for secrets
+- [x] Support configuration of notification channels (webhook and email)
+- [x] Support configuration of notification event triggers and filters
+- [x] Support configuration of readiness milestone thresholds
+- [x] Support configuration of stale node alert count threshold
+- [x] Support configuration of SMTP settings for email notifications
+- [x] Support configuration of export settings (max_rows, async_threshold, output_directory, retention_hours)
+- [x] Support configuration of `analysis_tools.embedded_bin_dir` (default: `/opt/chef-migration-metrics/embedded/bin`)
+- [x] Support configuration of `analysis_tools.cookstyle_timeout_minutes` (default: 10)
+- [x] Support configuration of `analysis_tools.test_kitchen_timeout_minutes` (default: 30)
+- [x] Support configuration of `elasticsearch.enabled` (default: false)
+- [x] Support configuration of `elasticsearch.output_directory` (default: `/var/lib/chef-migration-metrics/elasticsearch`)
+- [x] Support configuration of `elasticsearch.retention_hours` (default: 48)
+- [x] Validate notification channel configuration on startup (url_env set, SMTP configured for email channels)
+- [x] Validate export output directory exists and is writable on startup
+- [x] Validate `analysis_tools.embedded_bin_dir` exists if set (warn, not fatal — falls back to PATH)
+- [x] Validate `analysis_tools.cookstyle_timeout_minutes` >= 1
+- [x] Validate `analysis_tools.test_kitchen_timeout_minutes` >= 1
+- [x] Validate `elasticsearch.output_directory` exists and is writable when `elasticsearch.enabled` is true
 
 ### TLS and Certificate Management
 
@@ -50,21 +50,21 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [x] Add TLS specification to the specifications index in the top-level specification
 - [x] Add TLS specification directory to Structure.md with description
 - [x] Add TLS specification relationships to the specification relationship graph in Structure.md
-- [ ] Implement `server.tls.mode` configuration parsing (off, static, acme)
-- [ ] Implement plain HTTP listener when `mode: off`
-- [ ] Implement HTTPS listener with static certificate/key when `mode: static`
-- [ ] Implement certificate + key validation on startup (file exists, readable, valid pair)
-- [ ] Log `WARN` on startup if static certificate is expired
-- [ ] Implement automatic certificate reload on `SIGHUP` signal
-- [ ] Implement filesystem watching for certificate file changes (e.g. `fsnotify`)
-- [ ] Gracefully handle certificate reload failure (continue serving with previous certificate, log `ERROR`)
-- [ ] Implement `min_version` enforcement (TLS 1.2 and 1.3 only)
-- [ ] Implement mutual TLS (mTLS) via `ca_path` in static mode
-- [ ] Log `WARN` on startup if key file permissions are more permissive than `0600`
-- [ ] Implement HTTP-to-HTTPS redirect listener on `http_redirect_port`
-- [ ] Ensure redirect listener serves only redirects (no API, no static assets, no health checks)
-- [ ] Add `Strict-Transport-Security` (HSTS) header on all HTTPS responses when TLS is active
-- [ ] Log TLS mode selection and certificate details at `INFO` level on startup
+- [x] Implement `server.tls.mode` configuration parsing (off, static, acme)
+- [x] Implement plain HTTP listener when `mode: off`
+- [x] Implement HTTPS listener with static certificate/key when `mode: static`
+- [x] Implement certificate + key validation on startup (file exists, readable, valid pair)
+- [x] Log `WARN` on startup if static certificate is expired
+- [x] Implement automatic certificate reload on `SIGHUP` signal
+- [x] Implement filesystem watching for certificate file changes (e.g. `fsnotify`)
+- [x] Gracefully handle certificate reload failure (continue serving with previous certificate, log `ERROR`)
+- [x] Implement `min_version` enforcement (TLS 1.2 and 1.3 only)
+- [x] Implement mutual TLS (mTLS) via `ca_path` in static mode
+- [x] Log `WARN` on startup if key file permissions are more permissive than `0600`
+- [x] Implement HTTP-to-HTTPS redirect listener on `http_redirect_port`
+- [x] Ensure redirect listener serves only redirects (no API, no static assets, no health checks)
+- [x] Add `Strict-Transport-Security` (HSTS) header on all HTTPS responses when TLS is active
+- [x] Log TLS mode selection and certificate details at `INFO` level on startup
 - [ ] Implement ACME client integration (CertMagic or `autocert` — CertMagic recommended)
 - [ ] Implement ACME HTTP-01 challenge handler on the redirect listener
 - [ ] Implement ACME TLS-ALPN-01 challenge handler on the main HTTPS listener

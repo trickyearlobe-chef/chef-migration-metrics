@@ -391,6 +391,15 @@ server:
       agree_to_tos: false          # Must be true to accept the CA's Terms of Service
       trusted_roots: ""            # Optional: PEM file of additional CA roots to trust
 
+  # --- WebSocket settings ---
+  websocket:
+    enabled: true                  # Enable/disable the WebSocket endpoint (default: true)
+    max_connections: 100           # Maximum concurrent WebSocket connections (default: 100)
+    send_buffer_size: 64           # Per-client outbound event buffer size (default: 64)
+    write_timeout_seconds: 10      # Timeout for writing a single frame (default: 10)
+    ping_interval_seconds: 30      # Server-initiated ping interval (default: 30)
+    pong_timeout_seconds: 60       # Time to wait for pong before closing (default: 60)
+
   graceful_shutdown_seconds: 30    # Time to wait for in-flight requests on shutdown
 ```
 
@@ -404,6 +413,17 @@ server:
 | `tls.min_version` | `"1.2"` | Minimum TLS protocol version. Valid values: `"1.2"`, `"1.3"`. Applies to both `static` and `acme` modes. TLS 1.0 and 1.1 are not supported. |
 | `tls.http_redirect_port` | `0` (disabled) | When set to a valid port (e.g. `80`), starts a secondary HTTP listener that responds with `301` redirects to HTTPS. In `acme` mode with `http-01` challenge, this listener also serves ACME challenge responses. |
 | `graceful_shutdown_seconds` | `30` | On `SIGTERM`/`SIGINT`, the server waits this long for in-flight requests to complete before forcing shutdown. |
+
+#### WebSocket Settings
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `websocket.enabled` | `true` | Set to `false` to disable the WebSocket endpoint entirely. The REST API and dashboard continue to function normally; the frontend falls back to periodic polling. |
+| `websocket.max_connections` | `100` | Maximum number of simultaneous WebSocket connections. New connections are rejected with `503 Service Unavailable` when the limit is reached. Set higher for deployments with many concurrent dashboard users. |
+| `websocket.send_buffer_size` | `64` | Size of each client's outbound event channel. If a client's buffer fills up (slow consumer), the server closes that connection. The client is expected to reconnect automatically. |
+| `websocket.write_timeout_seconds` | `10` | Maximum time to write a single WebSocket frame before closing the connection. |
+| `websocket.ping_interval_seconds` | `30` | How often the server sends WebSocket ping frames to detect dead connections. |
+| `websocket.pong_timeout_seconds` | `60` | How long the server waits for a pong response before closing the connection. Must be greater than `ping_interval_seconds`. |
 
 #### Static Certificate Settings (mode: static)
 
@@ -589,6 +609,10 @@ On startup, the application must validate the configuration and fail fast with a
 
 ---
 
+> **Note:** See [Web API specification § WebSocket Real-Time Events](../web-api/Specification.md#websocket-real-time-events) for the event types, envelope format, and client reconnection behaviour.
+
+---
+
 ## Full Example
 
 
@@ -647,6 +671,13 @@ server:
   port: 8080
   tls:
     mode: "off"
+  websocket:
+    enabled: true
+    max_connections: 100
+    send_buffer_size: 64
+    write_timeout_seconds: 10
+    ping_interval_seconds: 30
+    pong_timeout_seconds: 60
     # --- Static certificate example (uncomment and set mode: static) ---
     # cert_path: /etc/chef-migration-metrics/tls/server.crt
     # key_path: /etc/chef-migration-metrics/tls/server.key
