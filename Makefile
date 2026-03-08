@@ -668,9 +668,11 @@ bump-major-push: bump-major _push-tag ## Bump major version, tag, and push to tr
 .PHONY: _push-tag
 _push-tag:
 	$(eval LATEST_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null))
+	@echo "$(GREEN)Pushing branch to origin...$(RESET)"
+	git push origin HEAD
 	@echo "$(GREEN)Pushing tag $(LATEST_TAG) to origin...$(RESET)"
 	git push origin "$(LATEST_TAG)"
-	@echo "$(GREEN)Tag pushed. Release workflow should start shortly.$(RESET)"
+	@echo "$(GREEN)Branch and tag pushed. Release workflow should start shortly.$(RESET)"
 
 .PHONY: version-tags
 version-tags: ## List all version tags in reverse chronological order
