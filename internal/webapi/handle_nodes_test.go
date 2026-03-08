@@ -416,12 +416,16 @@ func TestHandleNodeDetail_HappyPath(t *testing.T) {
 		Node struct {
 			NodeName string `json:"node_name"`
 		} `json:"node"`
+		OrganisationName string `json:"organisation_name"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if body.Node.NodeName != "web1" {
 		t.Errorf("node_name = %q, want %q", body.Node.NodeName, "web1")
+	}
+	if body.OrganisationName != "prod" {
+		t.Errorf("organisation_name = %q, want %q", body.OrganisationName, "prod")
 	}
 }
 
