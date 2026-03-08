@@ -308,12 +308,117 @@ jobs:
             build/*.${{ matrix.format }}
 
   # ---------------------------------------------------------------------------
+  # Build Distribution Archives (tar.gz / zip)
+  # ---------------------------------------------------------------------------
+  build-archives:
+    name: Build archive (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    needs: [secrets, lint, test]
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            archive: tar.gz
+          - goos: linux
+            goarch: arm64
+            archive: tar.gz
+          - goos: darwin
+            goarch: amd64
+            archive: tar.gz
+          - goos: darwin
+            goarch: arm64
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            archive: zip
+          - goos: windows
+            goarch: arm64
+            archive: zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Go binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          BINARY_NAME=chef-migration-metrics
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
+          go build \
+            -ldflags "-X main.version=${{ steps.version.outputs.version }} -X main.commit=${{ github.sha }} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "build/${BINARY_NAME}" ./cmd/chef-migration-metrics/
+
+      - name: Create distribution archive
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCHIVE_NAME="chef-migration-metrics-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "staging/${ARCHIVE_NAME}"
+
+          # Copy binary
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            cp build/chef-migration-metrics.exe "staging/${ARCHIVE_NAME}/chef-migration-metrics.exe"
+          else
+            cp build/chef-migration-metrics "staging/${ARCHIVE_NAME}/chef-migration-metrics"
+          fi
+
+          # Bundle supporting files
+          cp deploy/pkg/config.yml "staging/${ARCHIVE_NAME}/config.yml.example"
+          cp README.md LICENSE "staging/${ARCHIVE_NAME}/"
+
+          # Create archive
+          mkdir -p build/archives
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            cd staging && zip -rq "../build/archives/${ARCHIVE_NAME}.zip" "${ARCHIVE_NAME}"
+          else
+            tar -czf "build/archives/${ARCHIVE_NAME}.tar.gz" -C staging "${ARCHIVE_NAME}"
+          fi
+
+          echo "Created archive:"
+          ls -lh build/archives/
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: build/archives/*
+
+  # ---------------------------------------------------------------------------
   # Create GitHub Release
   # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-image, build-packages, package-helm]
+    needs: [build-image, build-packages, build-archives, package-helm]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -332,6 +437,10 @@ jobs:
           mkdir -p release-files
           # Collect RPM and DEB packages
           find release-assets -name '*.rpm' -o -name '*.deb' | while read f; do
+            cp "$f" release-files/
+          done
+          # Collect distribution archives (tar.gz and zip)
+          find release-assets -name '*.tar.gz' -o -name '*.zip' | while read f; do
             cp "$f" release-files/
           done
           # Collect Helm chart archives
@@ -370,6 +479,19 @@ jobs:
           \`\`\`bash
           helm install chef-migration-metrics oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/chef-migration-metrics --version ${VERSION}
           \`\`\`
+
+          ## Distribution Archives
+
+          Pre-built binaries bundled with example configuration, README, and LICENSE:
+
+          | Platform | Architecture | Archive |
+          |----------|-------------|---------|
+          | Linux | amd64 | \`chef-migration-metrics-${VERSION}-linux-amd64.tar.gz\` |
+          | Linux | arm64 | \`chef-migration-metrics-${VERSION}-linux-arm64.tar.gz\` |
+          | macOS | amd64 (Intel) | \`chef-migration-metrics-${VERSION}-darwin-amd64.tar.gz\` |
+          | macOS | arm64 (Apple Silicon) | \`chef-migration-metrics-${VERSION}-darwin-arm64.tar.gz\` |
+          | Windows | amd64 | \`chef-migration-metrics-${VERSION}-windows-amd64.zip\` |
+          | Windows | arm64 | \`chef-migration-metrics-${VERSION}-windows-arm64.zip\` |
 
           ## Native Packages
 
