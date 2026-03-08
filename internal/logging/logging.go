@@ -155,6 +155,11 @@ const (
 	// ScopeWebAPI is used for HTTP API lifecycle events — request routing,
 	// WebSocket connections, and handler-level logging.
 	ScopeWebAPI Scope = "webapi"
+
+	// ScopeAuth is used for authentication and authorisation events —
+	// login attempts, session lifecycle, user management, and middleware
+	// enforcement.
+	ScopeAuth Scope = "auth"
 )
 
 // validScopes is the set of recognised scope values. Used for validation.
@@ -171,6 +176,7 @@ var validScopes = map[Scope]bool{
 	ScopeSecrets:              true,
 	ScopeRemediation:          true,
 	ScopeWebAPI:               true,
+	ScopeAuth:                 true,
 }
 
 // IsValidScope returns true if s is a recognised scope value.
