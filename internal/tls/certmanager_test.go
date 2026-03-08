@@ -143,24 +143,48 @@ func generateTestCA(t *testing.T, dir, cn string) (caPath string, caCert *x509.C
 }
 
 // collectLogs returns a LogFunc that appends all messages to a slice.
-func collectLogs() (LogFunc, *[]string) {
-	var mu sync.Mutex
-	var msgs []string
-	fn := func(level, msg string) {
-		mu.Lock()
-		defer mu.Unlock()
-		msgs = append(msgs, level+": "+msg)
-	}
-	return fn, &msgs
+// logCapture is a thread-safe log collector for tests. The LogFunc
+// returned by collectLogs appends entries under a mutex; Snapshot and
+// Contains read them under the same mutex so there is no data race
+// when a watcher goroutine is still logging.
+type logCapture struct {
+	mu   sync.Mutex
+	msgs []string
 }
 
-func containsLog(logs []string, substr string) bool {
-	for _, l := range logs {
+func (lc *logCapture) append(entry string) {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	lc.msgs = append(lc.msgs, entry)
+}
+
+// Snapshot returns a copy of the collected log entries.
+func (lc *logCapture) Snapshot() []string {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	cp := make([]string, len(lc.msgs))
+	copy(cp, lc.msgs)
+	return cp
+}
+
+// Contains reports whether any collected entry contains substr.
+func (lc *logCapture) Contains(substr string) bool {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	for _, l := range lc.msgs {
 		if strings.Contains(l, substr) {
 			return true
 		}
 	}
 	return false
+}
+
+func collectLogs() (LogFunc, *logCapture) {
+	lc := &logCapture{}
+	fn := func(level, msg string) {
+		lc.append(level + ": " + msg)
+	}
+	return fn, lc
 }
 
 // ---------------------------------------------------------------------------
@@ -267,11 +291,11 @@ func TestNewCertManager_ValidCert(t *testing.T) {
 		t.Errorf("leaf CN = %q, want %q", leaf.Subject.CommonName, "server")
 	}
 
-	if !containsLog(*logs, "TLS certificate loaded") {
-		t.Errorf("expected 'TLS certificate loaded' log, got: %v", *logs)
+	if !logs.Contains("TLS certificate loaded") {
+		t.Errorf("expected 'TLS certificate loaded' log, got: %v", logs.Snapshot())
 	}
-	if !containsLog(*logs, "TLS certificate valid") {
-		t.Errorf("expected 'TLS certificate valid' log, got: %v", *logs)
+	if !logs.Contains("TLS certificate valid") {
+		t.Errorf("expected 'TLS certificate valid' log, got: %v", logs.Snapshot())
 	}
 }
 
@@ -290,8 +314,8 @@ func TestNewCertManager_ExpiredCert_WarnsButSucceeds(t *testing.T) {
 	}
 	defer cm.Close()
 
-	if !containsLog(*logs, "EXPIRED") {
-		t.Errorf("expected EXPIRED warning in logs, got: %v", *logs)
+	if !logs.Contains("EXPIRED") {
+		t.Errorf("expected EXPIRED warning in logs, got: %v", logs.Snapshot())
 	}
 }
 
@@ -310,8 +334,8 @@ func TestNewCertManager_NearExpiryCert_Warns(t *testing.T) {
 	}
 	defer cm.Close()
 
-	if !containsLog(*logs, "expires soon") {
-		t.Errorf("expected 'expires soon' warning in logs, got: %v", *logs)
+	if !logs.Contains("expires soon") {
+		t.Errorf("expected 'expires soon' warning in logs, got: %v", logs.Snapshot())
 	}
 }
 
@@ -335,8 +359,8 @@ func TestNewCertManager_KeyPermissionsWarning(t *testing.T) {
 	}
 	defer cm.Close()
 
-	if !containsLog(*logs, "permissions") {
-		t.Errorf("expected key permissions warning in logs, got: %v", *logs)
+	if !logs.Contains("permissions") {
+		t.Errorf("expected key permissions warning in logs, got: %v", logs.Snapshot())
 	}
 }
 
@@ -479,8 +503,8 @@ func TestCertManager_Reload_Success(t *testing.T) {
 		t.Errorf("leaf CN after reload = %q, want %q", leaf.Subject.CommonName, "reload-v2")
 	}
 
-	if !containsLog(*logs, "certificate reloaded") {
-		t.Errorf("expected 'certificate reloaded' log, got: %v", *logs)
+	if !logs.Contains("certificate reloaded") {
+		t.Errorf("expected 'certificate reloaded' log, got: %v", logs.Snapshot())
 	}
 }
 
@@ -519,8 +543,8 @@ func TestCertManager_Reload_FailureKeepsPrevious(t *testing.T) {
 			currentLeaf.Subject.CommonName, originalLeaf.Subject.CommonName)
 	}
 
-	if !containsLog(*logs, "certificate reload failed") {
-		t.Errorf("expected 'certificate reload failed' log, got: %v", *logs)
+	if !logs.Contains("certificate reload failed") {
+		t.Errorf("expected 'certificate reload failed' log, got: %v", logs.Snapshot())
 	}
 }
 
@@ -812,8 +836,8 @@ func TestWatchForChanges_DetectsFileChange(t *testing.T) {
 		t.Errorf("leaf CN = %q, want %q", leaf.Subject.CommonName, "watch-v2")
 	}
 
-	if !containsLog(*logs, "file change detected") {
-		t.Errorf("expected 'file change detected' log, got: %v", *logs)
+	if !logs.Contains("file change detected") {
+		t.Errorf("expected 'file change detected' log, got: %v", logs.Snapshot())
 	}
 }
 
@@ -841,8 +865,8 @@ func TestWatchForChanges_StopsOnClose(t *testing.T) {
 	cm.Close()
 	time.Sleep(500 * time.Millisecond)
 
-	if !containsLog(*logs, "watcher stopped") {
-		t.Errorf("expected 'watcher stopped' log, got: %v", *logs)
+	if !logs.Contains("watcher stopped") {
+		t.Errorf("expected 'watcher stopped' log, got: %v", logs.Snapshot())
 	}
 }
 
