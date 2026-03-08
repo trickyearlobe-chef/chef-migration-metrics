@@ -15,6 +15,7 @@ type CookstyleResult struct {
 	ID                  string    `json:"id"`
 	CookbookID          string    `json:"cookbook_id"`
 	TargetChefVersion   string    `json:"target_chef_version"`
+	CommitSHA           string    `json:"commit_sha,omitempty"`
 	Passed              bool      `json:"passed"`
 	OffenceCount        int       `json:"offence_count"`
 	DeprecationCount    int       `json:"deprecation_count"`
@@ -33,6 +34,7 @@ type CookstyleResult struct {
 type UpsertCookstyleResultParams struct {
 	CookbookID          string
 	TargetChefVersion   string
+	CommitSHA           string // HEAD commit SHA for git-sourced cookbooks; empty for server-sourced
 	Passed              bool
 	OffenceCount        int
 	DeprecationCount    int
@@ -57,7 +59,7 @@ func (db *DB) GetCookstyleResult(ctx context.Context, cookbookID, targetChefVers
 
 func (db *DB) getCookstyleResult(ctx context.Context, q queryable, cookbookID, targetChefVersion string) (*CookstyleResult, error) {
 	const query = `
-		SELECT id, cookbook_id, target_chef_version, passed,
+		SELECT id, cookbook_id, target_chef_version, commit_sha, passed,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -73,7 +75,7 @@ func (db *DB) getCookstyleResult(ctx context.Context, q queryable, cookbookID, t
 	}
 
 	r := &CookstyleResult{}
-	var tvOut sql.NullString
+	var tvOut, commitSHA sql.NullString
 	var deprecationWarnings, offences []byte
 	var stdout, stderr sql.NullString
 	var duration sql.NullInt64
@@ -82,6 +84,7 @@ func (db *DB) getCookstyleResult(ctx context.Context, q queryable, cookbookID, t
 		&r.ID,
 		&r.CookbookID,
 		&tvOut,
+		&commitSHA,
 		&r.Passed,
 		&r.OffenceCount,
 		&r.DeprecationCount,
@@ -102,6 +105,7 @@ func (db *DB) getCookstyleResult(ctx context.Context, q queryable, cookbookID, t
 	}
 
 	r.TargetChefVersion = stringFromNull(tvOut)
+	r.CommitSHA = stringFromNull(commitSHA)
 	r.DeprecationWarnings = deprecationWarnings
 	r.Offences = offences
 	r.ProcessStdout = stringFromNull(stdout)
@@ -114,7 +118,7 @@ func (db *DB) getCookstyleResult(ctx context.Context, q queryable, cookbookID, t
 // GetCookstyleResultByID returns a single cookstyle result by its primary key.
 func (db *DB) GetCookstyleResultByID(ctx context.Context, id string) (*CookstyleResult, error) {
 	const query = `
-		SELECT id, cookbook_id, target_chef_version, passed,
+		SELECT id, cookbook_id, target_chef_version, commit_sha, passed,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -124,7 +128,7 @@ func (db *DB) GetCookstyleResultByID(ctx context.Context, id string) (*Cookstyle
 	`
 
 	r := &CookstyleResult{}
-	var tvOut sql.NullString
+	var tvOut, commitSHA sql.NullString
 	var deprecationWarnings, offences []byte
 	var stdout, stderr sql.NullString
 	var duration sql.NullInt64
@@ -133,6 +137,7 @@ func (db *DB) GetCookstyleResultByID(ctx context.Context, id string) (*Cookstyle
 		&r.ID,
 		&r.CookbookID,
 		&tvOut,
+		&commitSHA,
 		&r.Passed,
 		&r.OffenceCount,
 		&r.DeprecationCount,
@@ -153,6 +158,7 @@ func (db *DB) GetCookstyleResultByID(ctx context.Context, id string) (*Cookstyle
 	}
 
 	r.TargetChefVersion = stringFromNull(tvOut)
+	r.CommitSHA = stringFromNull(commitSHA)
 	r.DeprecationWarnings = deprecationWarnings
 	r.Offences = offences
 	r.ProcessStdout = stringFromNull(stdout)
@@ -170,7 +176,7 @@ func (db *DB) GetCookstyleResultByID(ctx context.Context, id string) (*Cookstyle
 // given cookbook ID, ordered by target_chef_version.
 func (db *DB) ListCookstyleResultsForCookbook(ctx context.Context, cookbookID string) ([]CookstyleResult, error) {
 	const query = `
-		SELECT id, cookbook_id, target_chef_version, passed,
+		SELECT id, cookbook_id, target_chef_version, commit_sha, passed,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -186,7 +192,7 @@ func (db *DB) ListCookstyleResultsForCookbook(ctx context.Context, cookbookID st
 // cookbooks belonging to the given organisation.
 func (db *DB) ListCookstyleResultsForOrganisation(ctx context.Context, organisationID string) ([]CookstyleResult, error) {
 	const query = `
-		SELECT cr.id, cr.cookbook_id, cr.target_chef_version, cr.passed,
+		SELECT cr.id, cr.cookbook_id, cr.target_chef_version, cr.commit_sha, cr.passed,
 		       cr.offence_count, cr.deprecation_count, cr.correctness_count,
 		       cr.deprecation_warnings, cr.offences,
 		       cr.process_stdout, cr.process_stderr, cr.duration_seconds,
@@ -209,7 +215,7 @@ func (db *DB) scanCookstyleResults(ctx context.Context, query string, args ...an
 	var results []CookstyleResult
 	for rows.Next() {
 		var r CookstyleResult
-		var tvOut sql.NullString
+		var tvOut, commitSHA sql.NullString
 		var deprecationWarnings, offences []byte
 		var stdout, stderr sql.NullString
 		var duration sql.NullInt64
@@ -218,6 +224,7 @@ func (db *DB) scanCookstyleResults(ctx context.Context, query string, args ...an
 			&r.ID,
 			&r.CookbookID,
 			&tvOut,
+			&commitSHA,
 			&r.Passed,
 			&r.OffenceCount,
 			&r.DeprecationCount,
@@ -234,6 +241,7 @@ func (db *DB) scanCookstyleResults(ctx context.Context, query string, args ...an
 		}
 
 		r.TargetChefVersion = stringFromNull(tvOut)
+		r.CommitSHA = stringFromNull(commitSHA)
 		r.DeprecationWarnings = deprecationWarnings
 		r.Offences = offences
 		r.ProcessStdout = stringFromNull(stdout)
@@ -262,14 +270,15 @@ func (db *DB) UpsertCookstyleResult(ctx context.Context, p UpsertCookstyleResult
 func (db *DB) upsertCookstyleResult(ctx context.Context, q queryable, p UpsertCookstyleResultParams) (*CookstyleResult, error) {
 	const query = `
 		INSERT INTO cookstyle_results (
-			cookbook_id, target_chef_version, passed,
+			cookbook_id, target_chef_version, commit_sha, passed,
 			offence_count, deprecation_count, correctness_count,
 			deprecation_warnings, offences,
 			process_stdout, process_stderr, duration_seconds,
 			scanned_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (cookbook_id, target_chef_version)
 		DO UPDATE SET
+			commit_sha          = EXCLUDED.commit_sha,
 			passed              = EXCLUDED.passed,
 			offence_count       = EXCLUDED.offence_count,
 			deprecation_count   = EXCLUDED.deprecation_count,
@@ -280,7 +289,7 @@ func (db *DB) upsertCookstyleResult(ctx context.Context, q queryable, p UpsertCo
 			process_stderr      = EXCLUDED.process_stderr,
 			duration_seconds    = EXCLUDED.duration_seconds,
 			scanned_at          = EXCLUDED.scanned_at
-		RETURNING id, cookbook_id, target_chef_version, passed,
+		RETURNING id, cookbook_id, target_chef_version, commit_sha, passed,
 		          offence_count, deprecation_count, correctness_count,
 		          deprecation_warnings, offences,
 		          process_stdout, process_stderr, duration_seconds,
@@ -293,7 +302,7 @@ func (db *DB) upsertCookstyleResult(ctx context.Context, q queryable, p UpsertCo
 	}
 
 	r := &CookstyleResult{}
-	var tvOut sql.NullString
+	var tvOut, commitSHAOut sql.NullString
 	var deprecationWarnings, offences []byte
 	var stdout, stderr sql.NullString
 	var duration sql.NullInt64
@@ -301,6 +310,7 @@ func (db *DB) upsertCookstyleResult(ctx context.Context, q queryable, p UpsertCo
 	err := q.QueryRowContext(ctx, query,
 		p.CookbookID,
 		targetVersion,
+		nullString(p.CommitSHA),
 		p.Passed,
 		p.OffenceCount,
 		p.DeprecationCount,
@@ -315,6 +325,7 @@ func (db *DB) upsertCookstyleResult(ctx context.Context, q queryable, p UpsertCo
 		&r.ID,
 		&r.CookbookID,
 		&tvOut,
+		&commitSHAOut,
 		&r.Passed,
 		&r.OffenceCount,
 		&r.DeprecationCount,
@@ -332,6 +343,7 @@ func (db *DB) upsertCookstyleResult(ctx context.Context, q queryable, p UpsertCo
 	}
 
 	r.TargetChefVersion = stringFromNull(tvOut)
+	r.CommitSHA = stringFromNull(commitSHAOut)
 	r.DeprecationWarnings = deprecationWarnings
 	r.Offences = offences
 	r.ProcessStdout = stringFromNull(stdout)

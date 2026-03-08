@@ -527,8 +527,8 @@ func run() int {
 		startup.Info("autocorrect preview generator enabled")
 	}
 
-	// Test Kitchen scanner (requires both kitchen and docker).
-	if toolResult.KitchenEnabled {
+	// Test Kitchen scanner (requires both kitchen and docker, and config enabled).
+	if toolResult.KitchenEnabled && cfg.AnalysisTools.TestKitchen.IsEnabled() {
 		tkScanner := analysis.NewKitchenScanner(
 			db, logger, toolResult.Kitchen.Path,
 			cfg.Concurrency.TestKitchenRun,
@@ -537,6 +537,8 @@ func run() int {
 		)
 		collOpts = append(collOpts, collector.WithKitchenScanner(tkScanner))
 		startup.Info("Test Kitchen scanner enabled")
+	} else if toolResult.KitchenEnabled && !cfg.AnalysisTools.TestKitchen.IsEnabled() {
+		startup.Info("Test Kitchen disabled via configuration (analysis_tools.test_kitchen.enabled: false)")
 	}
 
 	// Complexity scorer — always available (reads from DB, no external tool).

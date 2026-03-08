@@ -90,17 +90,19 @@ Tests cookbooks against each configured target Chef Client version and records r
 
 #### Git-sourced Cookbooks
 
-- Tested using **Test Kitchen** against multiple configured target Chef Client versions
+- Tested using both **CookStyle** and **Test Kitchen** against multiple configured target Chef Client versions
 - Only the HEAD commit of the default branch (`main` or `master`) is tested
-- The HEAD commit SHA is recorded with each test result
-- A test run is skipped if the HEAD commit SHA is unchanged since the last run for the same cookbook + target Chef Client version
-- Both pass criteria must be met for a cookbook to be considered compatible:
+- The HEAD commit SHA is recorded with each test result (both CookStyle and Test Kitchen)
+- A CookStyle scan is skipped if the HEAD commit SHA is unchanged since the last scan for the same cookbook + target Chef Client version. When the HEAD commit changes, the cookbook is rescanned and the previous result is overwritten.
+- A Test Kitchen run is skipped if the HEAD commit SHA is unchanged since the last run for the same cookbook + target Chef Client version
+- Both Test Kitchen pass criteria must be met for a cookbook to be considered fully compatible:
   1. The cookbook **converges** successfully
   2. The cookbook's **tests pass**
+- CookStyle results provide deprecation detection and remediation guidance (auto-correct previews, migration doc links) independently of Test Kitchen pass/fail
 
 #### Chef Server-sourced Cookbooks
 
-- No test suite is available; tested with **CookStyle** for linting and deprecation warnings
+- No test suite is available; tested with **CookStyle** only for linting and deprecation warnings
 - Cookbook versions are immutable on the Chef server — CookStyle scanning runs once per organisation + cookbook name + version
 - Subsequent collection runs skip versions already scanned
 - A manual rescan option must be provided

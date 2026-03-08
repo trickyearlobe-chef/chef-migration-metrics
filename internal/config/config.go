@@ -106,6 +106,20 @@ type AnalysisToolsConfig struct {
 // containerisation provider and to test cookbooks against the actual
 // platforms that consume them rather than whatever the cookbook author chose.
 type TestKitchenConfig struct {
+	// Enabled controls whether Test Kitchen testing is active. When set to
+	// false, Test Kitchen is disabled even if the kitchen and docker binaries
+	// are available. When omitted or set to true (the default), Test Kitchen
+	// is enabled automatically if both kitchen and docker are detected at
+	// startup.
+	//
+	// Use this to turn off Test Kitchen without removing docker or kitchen
+	// from the system:
+	//
+	//   analysis_tools:
+	//     test_kitchen:
+	//       enabled: false
+	Enabled *bool `yaml:"enabled"`
+
 	// DriverOverride forces every Test Kitchen run to use the named driver
 	// (e.g. "dokken", "vagrant", "ec2", "azurerm") regardless of what the
 	// cookbook's .kitchen.yml specifies. When empty the cookbook's own
@@ -166,6 +180,15 @@ type TestKitchenPlatform struct {
 
 	// Attributes contains platform-level default attributes. Optional.
 	Attributes map[string]interface{} `yaml:"attributes"`
+}
+
+// IsEnabled returns true if Test Kitchen testing is enabled in the
+// configuration. Defaults to true when the field is omitted.
+func (tk *TestKitchenConfig) IsEnabled() bool {
+	if tk.Enabled == nil {
+		return true
+	}
+	return *tk.Enabled
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +429,10 @@ func (c *Config) setDefaults() {
 	}
 	if c.AnalysisTools.TestKitchenTimeoutMinutes == 0 {
 		c.AnalysisTools.TestKitchenTimeoutMinutes = 30
+	}
+	if c.AnalysisTools.TestKitchen.Enabled == nil {
+		t := true
+		c.AnalysisTools.TestKitchen.Enabled = &t
 	}
 
 	// Readiness
