@@ -23,6 +23,7 @@ import (
 	_ "github.com/lib/pq" // PostgreSQL driver
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -207,6 +208,69 @@ func run() int {
 		startup.Warn(fmt.Sprintf("could not read migration version: %v", err))
 	} else {
 		startup.Info(fmt.Sprintf("database schema version: %d", ver))
+	}
+
+	// -------------------------------------------------------------------
+	// Authentication: local authenticator, session manager, middleware
+	// -------------------------------------------------------------------
+	authLog := logger.WithScope(logging.ScopeAuth)
+	authLogFn := func(level, msg string) {
+		switch level {
+		case "DEBUG":
+			authLog.Debug(msg)
+		case "WARN":
+			authLog.Warn(msg)
+		case "ERROR":
+			authLog.Error(msg)
+		default:
+			authLog.Info(msg)
+		}
+	}
+
+	sessionLifetime := auth.ParseDuration(cfg.Auth.SessionExpiry, 8*time.Hour)
+
+	sessionMgr := auth.NewSessionManager(db, sessionLifetime,
+		auth.WithSessionLogger(authLogFn),
+	)
+
+	localAuth := auth.NewLocalAuthenticator(db, cfg.Auth.LockoutAttempts,
+		auth.WithLocalAuthLogger(authLogFn),
+	)
+
+	authMiddleware := auth.NewMiddleware(sessionMgr,
+		auth.WithMiddlewareLogger(authLogFn),
+	)
+
+	startup.Info(fmt.Sprintf("authentication configured: session_expiry=%s, lockout_attempts=%d, min_password_length=%d",
+		sessionLifetime, cfg.Auth.LockoutAttempts, cfg.Auth.MinPasswordLength))
+
+	// Seed default admin user if no users exist yet. The default password
+	// is "ChefMigrate1" — operators MUST change it on first login.
+	defaultAdminPassword := os.Getenv("CMM_DEFAULT_ADMIN_PASSWORD")
+	if defaultAdminPassword == "" {
+		defaultAdminPassword = "ChefMigrate1"
+	}
+	defaultAdminHash, err := auth.HashPassword(defaultAdminPassword)
+	if err != nil {
+		startup.Error(fmt.Sprintf("hashing default admin password: %v", err))
+		return 1
+	}
+	seeded, err := db.EnsureDefaultAdmin(ctx, defaultAdminHash)
+	if err != nil {
+		startup.Error(fmt.Sprintf("seeding default admin user: %v", err))
+		return 1
+	}
+	if seeded {
+		startup.Info("default admin user created (username: admin) — change the password immediately")
+	} else {
+		startup.Debug("admin user already exists — skipping seed")
+	}
+
+	// Clean up any expired sessions left over from a previous process.
+	if n, cleanErr := sessionMgr.CleanupExpired(ctx); cleanErr != nil {
+		startup.Warn(fmt.Sprintf("failed to clean up expired sessions at startup: %v", cleanErr))
+	} else if n > 0 {
+		startup.Info(fmt.Sprintf("cleaned up %d expired session(s) at startup", n))
 	}
 
 	// -------------------------------------------------------------------
@@ -604,6 +668,7 @@ func run() int {
 				logger.WithScope(logging.ScopeWebAPI).Info(msg)
 			}
 		}),
+		webapi.WithAuth(localAuth, sessionMgr, authMiddleware, db),
 	}
 
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
