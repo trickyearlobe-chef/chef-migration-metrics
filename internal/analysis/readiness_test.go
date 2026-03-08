@@ -1143,7 +1143,7 @@ func TestEvaluateOrganisation_Basic(t *testing.T) {
 	ds.addTKResult("id-apt", "18.0", true, true)
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1175,7 +1175,7 @@ func TestEvaluateOrganisation_MultipleTargetVersions(t *testing.T) {
 	ds.addTKResult("id-apt", "17.0", false, false) // fails for 17.0
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", []string{"17.0", "18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"17.0", "18.0"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1199,7 +1199,7 @@ func TestEvaluateOrganisation_NoSnapshots(t *testing.T) {
 	// No snapshots.
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1215,7 +1215,7 @@ func TestEvaluateOrganisation_NoTargetVersions(t *testing.T) {
 	}
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", nil)
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1229,7 +1229,7 @@ func TestEvaluateOrganisation_ListSnapshotsError(t *testing.T) {
 	ds.listSnapshotsErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -1246,7 +1246,7 @@ func TestEvaluateOrganisation_CookbookIDMapError(t *testing.T) {
 	ds.cookbookIDMapErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -1270,7 +1270,7 @@ func TestEvaluateOrganisation_UpsertErrorDoesNotAbortBatch(t *testing.T) {
 	ds.upsertErr = fmt.Errorf("disk full")
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
 	if err != nil {
 		t.Fatalf("batch should not fail: %v", err)
 	}
@@ -1295,7 +1295,7 @@ func TestEvaluateOrganisation_ContextCancellation(t *testing.T) {
 	cancel() // Cancel immediately.
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048) // concurrency=1 to make cancellation more observable
-	results, err := e.EvaluateOrganisation(ctx, "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(ctx, "org-1", "org-1", []string{"18.0"})
 	if err != nil {
 		t.Fatalf("unexpected error (context cancellation is not a batch error): %v", err)
 	}
@@ -1320,7 +1320,7 @@ func TestEvaluateOrganisation_ConcurrencyBounded(t *testing.T) {
 	ds.addTKResult("id-apt", "18.0", true, true)
 
 	e := NewReadinessEvaluator(ds, nil, 3, 2048) // concurrency=3
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
