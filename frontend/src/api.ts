@@ -36,6 +36,14 @@ import type {
   LogEntry,
   CollectionRunListResponse,
   Pagination,
+  LoginRequest,
+  LoginResponse,
+  MeResponse,
+  AdminUser,
+  AdminUserListResponse,
+  CreateUserRequest,
+  UpdateUserRequest,
+  ResetPasswordRequest,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -87,6 +95,14 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 
   // Health endpoint returns 503 for unhealthy — we still want the body.
   if (!res.ok && res.status !== 503) {
+    // If the session has expired or is invalid, redirect to login
+    // immediately rather than showing cryptic errors in the UI.
+    if (res.status === 401 && !url.includes("/auth/login") && !url.includes("/auth/me")) {
+      window.location.href = "/login";
+      // Return a never-resolving promise so callers don't continue.
+      return new Promise<T>(() => { });
+    }
+
     let code = "unknown";
     let message = `HTTP ${res.status}`;
     try {
@@ -563,6 +579,190 @@ export function fetchExportStatus(jobId: string): Promise<ExportJobResponse> {
  */
 export function downloadExportUrl(jobId: string): string {
   return `${BASE}/exports/${encodeURIComponent(jobId)}/download`;
+}
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/v1/auth/login — authenticate with username and password.
+ * On success the server sets an HTTP-only session cookie and returns
+ * a LoginResponse with token, expiry, and user info.
+ */
+export async function login(body: LoginRequest): Promise<LoginResponse> {
+  const url = buildUrl("/auth/login");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<LoginResponse>;
+}
+
+/**
+ * POST /api/v1/auth/logout — invalidate the current session.
+ * Returns void (204 No Content on success).
+ */
+export async function logout(): Promise<void> {
+  const url = buildUrl("/auth/logout");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  // 204 No Content is the expected success response.
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, "logout_failed", "Logout failed.");
+  }
+}
+
+/**
+ * GET /api/v1/auth/me — fetch the current user's profile from the session.
+ */
+export function fetchMe(): Promise<MeResponse> {
+  return apiFetch<MeResponse>(buildUrl("/auth/me"));
+}
+
+// ---------------------------------------------------------------------------
+// Admin user management
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/users — list all users (admin only). */
+export function fetchAdminUsers(
+  params?: { page?: number; per_page?: number },
+): Promise<AdminUserListResponse> {
+  return apiFetch<AdminUserListResponse>(
+    buildUrl("/admin/users", params as Record<string, string | number | undefined>),
+  );
+}
+
+/** POST /api/v1/admin/users — create a new local user (admin only). */
+export async function createUser(body: CreateUserRequest): Promise<AdminUser> {
+  const url = buildUrl("/admin/users");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<AdminUser>;
+}
+
+/** PUT /api/v1/admin/users/:username — update an existing user (admin only). */
+export async function updateUser(
+  username: string,
+  body: UpdateUserRequest,
+): Promise<AdminUser> {
+  const url = buildUrl(`/admin/users/${encodeURIComponent(username)}`);
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<AdminUser>;
+}
+
+/** PUT /api/v1/admin/users/:username/password — reset a user's password (admin only). */
+export async function resetUserPassword(
+  username: string,
+  body: ResetPasswordRequest,
+): Promise<void> {
+  const url = buildUrl(
+    `/admin/users/${encodeURIComponent(username)}/password`,
+  );
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+}
+
+/** DELETE /api/v1/admin/users/:username — delete a user (admin only). */
+export async function deleteUser(username: string): Promise<void> {
+  const url = buildUrl(`/admin/users/${encodeURIComponent(username)}`);
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!res.ok && res.status !== 204) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
 }
 
 // ---------------------------------------------------------------------------
