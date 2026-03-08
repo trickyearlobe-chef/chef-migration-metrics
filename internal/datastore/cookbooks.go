@@ -286,7 +286,7 @@ func (db *DB) MarkCookbooksActiveForOrg(ctx context.Context, organisationID stri
 			 WHERE organisation_id = $1 AND source = 'chef_server'
 			   AND name = ANY($2)`,
 			organisationID,
-			activeNames,
+			stringSliceToArray(activeNames),
 		)
 		if err != nil {
 			return fmt.Errorf("datastore: activating cookbooks: %w", err)

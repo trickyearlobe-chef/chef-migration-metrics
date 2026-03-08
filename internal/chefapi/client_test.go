@@ -2,6 +2,7 @@ package chefapi
 
 import (
 	"context"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -546,6 +547,33 @@ func TestNodeSearchAttributes(t *testing.T) {
 	}
 }
 
+// TestNodeSearchAttributes_NoAutomaticPrefix verifies that partial search
+// attribute paths do NOT include "automatic" as the first path element.
+//
+// Chef search (both full and partial) returns a flattened structure where
+// automatic attributes are hoisted to the root of each node's data object.
+// For example, the node attribute stored at automatic.platform is accessed
+// as just ["platform"] in partial search, not ["automatic", "platform"].
+//
+// Fetching a node directly (GET /nodes/:name) does NOT hoist — attributes
+// remain nested under "automatic", "default", "normal", "override". But
+// partial search always works against the hoisted/merged view.
+//
+// If any path starts with "automatic", the Chef server will look for a
+// literal top-level key called "automatic" in the hoisted structure, which
+// does not exist, and return null for that attribute.
+func TestNodeSearchAttributes_NoAutomaticPrefix(t *testing.T) {
+	attrs := NodeSearchAttributes()
+	for key, path := range attrs {
+		if len(path) > 0 && path[0] == "automatic" {
+			t.Errorf("attribute %q has path %v starting with \"automatic\" — "+
+				"partial search uses the hoisted structure where automatic "+
+				"attributes are at the root; remove the \"automatic\" prefix",
+				key, path)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CollectAllNodes tests (sequential)
 // ---------------------------------------------------------------------------
@@ -1062,10 +1090,10 @@ func TestDownloadFileContent_Success(t *testing.T) {
 	}
 }
 
-func TestDownloadFileContent_ChecksumValid(t *testing.T) {
+func TestDownloadFileContent_ChecksumValid_SHA256(t *testing.T) {
 	content := []byte("checksummed content")
 	hash := sha256.Sum256(content)
-	checksum := fmt.Sprintf("%x", hash)
+	checksum := fmt.Sprintf("%x", hash) // 64 hex chars → SHA-256
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(content)
@@ -1085,6 +1113,66 @@ func TestDownloadFileContent_ChecksumValid(t *testing.T) {
 	}
 	if string(data) != string(content) {
 		t.Errorf("content = %q, want %q", data, content)
+	}
+}
+
+// TestDownloadFileContent_ChecksumValid_MD5 verifies that MD5 checksums
+// (32 hex chars) are validated correctly. Chef Server bookshelf uses MD5
+// checksums in cookbook version manifests.
+func TestDownloadFileContent_ChecksumValid_MD5(t *testing.T) {
+	content := []byte("checksummed content for md5")
+	hash := md5.Sum(content)
+	checksum := fmt.Sprintf("%x", hash) // 32 hex chars → MD5
+
+	if len(checksum) != 32 {
+		t.Fatalf("expected 32 hex chars for MD5 checksum, got %d", len(checksum))
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	client, _ := NewClient(ClientConfig{
+		ServerURL:     srv.URL + "/organizations/test",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		HTTPClient:    srv.Client(),
+	})
+
+	data, err := client.DownloadFileContent(ctx(), srv.URL+"/files/abc", checksum)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Errorf("content = %q, want %q", data, content)
+	}
+}
+
+// TestDownloadFileContent_ChecksumMismatch_MD5 verifies that an MD5
+// checksum mismatch is correctly detected.
+func TestDownloadFileContent_ChecksumMismatch_MD5(t *testing.T) {
+	content := []byte("actual content for md5 mismatch")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	client, _ := NewClient(ClientConfig{
+		ServerURL:     srv.URL + "/organizations/test",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		HTTPClient:    srv.Client(),
+	})
+
+	// 32 hex chars of zeros → MD5 that won't match
+	_, err := client.DownloadFileContent(ctx(), srv.URL+"/files/abc", "00000000000000000000000000000000")
+	if err == nil {
+		t.Fatal("expected checksum mismatch error")
+	}
+	if !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Errorf("expected checksum mismatch error, got: %v", err)
 	}
 }
 
