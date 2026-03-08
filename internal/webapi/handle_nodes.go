@@ -152,8 +152,9 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"node":      snapshot,
-		"readiness": readiness,
+		"node":              snapshot,
+		"organisation_name": org.Name,
+		"readiness":         readiness,
 	})
 }
 

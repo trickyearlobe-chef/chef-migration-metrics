@@ -51,7 +51,7 @@ export function NodeDetailPage() {
 
       {/* Info grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <InfoCard label="Organisation" value={node.organisation_id} />
+        <InfoCard label="Organisation" value={data.organisation_name || node.organisation_id} />
         <InfoCard label="Environment" value={node.chef_environment || "—"} />
         <InfoCard label="Chef Version" value={node.chef_version || "—"} />
         <InfoCard label="Platform" value={`${node.platform || "—"} ${node.platform_version || ""}`} />
