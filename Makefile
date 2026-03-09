@@ -489,6 +489,56 @@ package-docker-multiarch: ## Build multi-arch container image (amd64 + arm64)
 		.
 	@echo "$(GREEN)Multi-arch image: $(IMAGE_NAME):$(IMAGE_TAG)$(RESET)"
 
+.PHONY: package-docker-export
+package-docker-export: ## Build and export multi-arch + per-arch container tarballs for airgap environments
+	@echo "$(GREEN)Building and exporting container images for airgap...$(RESET)"
+	@mkdir -p $(BUILD_DIR)
+	@# --- Multi-arch image (linux/amd64 + linux/arm64) ---
+	@echo "$(CYAN)  -> multi-arch (amd64 + arm64)...$(RESET)"
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--build-arg VERSION=$(VERSION_FULL) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE_NAME):$(IMAGE_TAG) \
+		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
+		-t $(IMAGE_NAME):latest \
+		--output type=oci,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-multiarch.tar \
+		.
+	@# --- linux/amd64 only ---
+	@echo "$(CYAN)  -> linux/amd64...$(RESET)"
+	docker buildx build \
+		--platform linux/amd64 \
+		--build-arg VERSION=$(VERSION_FULL) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE_NAME):$(IMAGE_TAG) \
+		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
+		-t $(IMAGE_NAME):latest \
+		--output type=oci,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-amd64.tar \
+		.
+	@# --- linux/arm64 only ---
+	@echo "$(CYAN)  -> linux/arm64...$(RESET)"
+	docker buildx build \
+		--platform linux/arm64 \
+		--build-arg VERSION=$(VERSION_FULL) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE_NAME):$(IMAGE_TAG) \
+		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
+		-t $(IMAGE_NAME):latest \
+		--output type=oci,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-arm64.tar \
+		.
+	@echo ""
+	@echo "$(GREEN)Exported images:$(RESET)"
+	@ls -lh $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-*.tar
+	@echo ""
+	@echo "$(GREEN)To load on an airgap host:$(RESET)"
+	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-multiarch.tar   $(CYAN)# both architectures$(RESET)"
+	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-amd64.tar       $(CYAN)# x86_64 only (smaller)$(RESET)"
+	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-arm64.tar       $(CYAN)# ARM64 only (smaller)$(RESET)"
+	@echo ""
+
 .PHONY: _check-nfpm
 _check-nfpm:
 	@if [ -z "$(NFPM)" ]; then \
