@@ -59,6 +59,7 @@ config:
   #     org_name: myorg-production
   #     client_name: chef-migration-metrics
   #     client_key_path: /etc/chef-migration-metrics/keys/myorg-production.pem
+  #     ssl_verify: true          # Set to false to skip TLS certificate verification
 
   target_chef_versions: []
   #   - "18.5.0"

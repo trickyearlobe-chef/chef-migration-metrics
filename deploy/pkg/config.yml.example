@@ -17,6 +17,8 @@ organisations:
     org_name: my-org
     client_name: chef-migration-metrics
     client_key_path: /etc/chef-migration-metrics/keys/my-org.pem
+    # ssl_verify: true          # Set to false to skip TLS certificate verification
+                                 # (e.g. for self-signed certs). Default: true.
 
   # Additional organisations:
   # - name: another-org
@@ -24,6 +26,7 @@ organisations:
   #   org_name: another-org
   #   client_name: chef-migration-metrics
   #   client_key_path: /etc/chef-migration-metrics/keys/another-org.pem
+  #   ssl_verify: false          # Disable TLS verification for this org
 
   # Database-stored key (requires CMM_CREDENTIAL_ENCRYPTION_KEY env var):
   # - name: staging
@@ -94,8 +97,6 @@ analysis_tools:
   embedded_bin_dir: ""
   cookstyle_timeout_minutes: 10
   test_kitchen_timeout_minutes: 30
-  test_kitchen:
-    enabled: false
 
   # Test Kitchen overrides — control the driver, platforms, and architecture
   # used for cookbook compatibility testing. These settings generate a

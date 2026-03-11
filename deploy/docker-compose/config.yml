@@ -19,6 +19,8 @@ organisations:
     org_name: my-org
     client_name: chef-migration-metrics
     client_key_path: /etc/chef-migration-metrics/keys/my-org.pem
+    # ssl_verify: true          # Set to false to skip TLS certificate verification
+                                 # (e.g. for self-signed certs). Default: true.
 
   # Additional organisations:
   # - name: my-other-org
@@ -26,6 +28,7 @@ organisations:
   #   org_name: my-other-org
   #   client_name: chef-migration-metrics
   #   client_key_path: /etc/chef-migration-metrics/keys/my-other-org.pem
+  #   ssl_verify: false          # Disable TLS verification for this org
 
   # Database-stored key (requires CMM_CREDENTIAL_ENCRYPTION_KEY env var):
   # - name: staging
