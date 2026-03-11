@@ -60,6 +60,16 @@ type Organisation struct {
 	ClientName          string `yaml:"client_name"`
 	ClientKeyPath       string `yaml:"client_key_path"`
 	ClientKeyCredential string `yaml:"client_key_credential"`
+	SSLVerify           *bool  `yaml:"ssl_verify"`
+}
+
+// SSLVerifyEnabled returns whether SSL verification is enabled for this
+// organisation. The default is true (verify) when not explicitly set.
+func (o *Organisation) SSLVerifyEnabled() bool {
+	if o.SSLVerify == nil {
+		return true
+	}
+	return *o.SSLVerify
 }
 
 // ---------------------------------------------------------------------------

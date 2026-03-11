@@ -1268,11 +1268,21 @@ func (c *Collector) defaultClientFactory(ctx context.Context, org datastore.Orga
 	}
 	defer secrets.ZeroBytes(resolved.Plaintext)
 
+	// Look up the SSLVerify setting from the config for this org.
+	sslVerify := true
+	for _, cfgOrg := range c.cfg.Organisations {
+		if cfgOrg.Name == org.Name {
+			sslVerify = cfgOrg.SSLVerifyEnabled()
+			break
+		}
+	}
+
 	client, err := chefapi.NewClient(chefapi.ClientConfig{
 		ServerURL:     org.ChefServerURL,
 		ClientName:    org.ClientName,
 		PrivateKeyPEM: resolved.Plaintext,
 		OrgName:       org.OrgName,
+		SSLVerify:     &sslVerify,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating client for org %q: %w", org.Name, err)

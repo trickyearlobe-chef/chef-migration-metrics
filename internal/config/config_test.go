@@ -697,6 +697,124 @@ func TestValidation_OrgCredentialOnly(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Organisation SSLVerify
+// ---------------------------------------------------------------------------
+
+func TestOrganisation_SSLVerifyEnabled_DefaultTrue(t *testing.T) {
+	// When ssl_verify is not set (nil), it should default to true.
+	cfg := mustParse(t, minimalValidYAML())
+	if !cfg.Organisations[0].SSLVerifyEnabled() {
+		t.Error("expected SSLVerifyEnabled() to return true when ssl_verify is not set")
+	}
+	if cfg.Organisations[0].SSLVerify != nil {
+		t.Error("expected SSLVerify to be nil when not set in YAML")
+	}
+}
+
+func TestOrganisation_SSLVerifyEnabled_ExplicitTrue(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+    ssl_verify: true
+
+target_chef_versions:
+  - "18.5.0"
+
+datastore:
+  url: postgres://localhost:5432/test
+`
+	cfg := mustParse(t, yaml)
+	if !cfg.Organisations[0].SSLVerifyEnabled() {
+		t.Error("expected SSLVerifyEnabled() to return true when ssl_verify is explicitly true")
+	}
+	if cfg.Organisations[0].SSLVerify == nil {
+		t.Fatal("expected SSLVerify to be non-nil when explicitly set")
+	}
+	if !*cfg.Organisations[0].SSLVerify {
+		t.Error("expected *SSLVerify to be true")
+	}
+}
+
+func TestOrganisation_SSLVerifyEnabled_ExplicitFalse(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+    ssl_verify: false
+
+target_chef_versions:
+  - "18.5.0"
+
+datastore:
+  url: postgres://localhost:5432/test
+`
+	cfg := mustParse(t, yaml)
+	if cfg.Organisations[0].SSLVerifyEnabled() {
+		t.Error("expected SSLVerifyEnabled() to return false when ssl_verify is explicitly false")
+	}
+	if cfg.Organisations[0].SSLVerify == nil {
+		t.Fatal("expected SSLVerify to be non-nil when explicitly set")
+	}
+	if *cfg.Organisations[0].SSLVerify {
+		t.Error("expected *SSLVerify to be false")
+	}
+}
+
+func TestOrganisation_SSLVerifyEnabled_MixedOrgs(t *testing.T) {
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "client.pem")
+	if err := os.WriteFile(keyFile, []byte("fake-key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	yaml := `
+organisations:
+  - name: org-default
+    chef_server_url: https://chef.example.com
+    org_name: org-default
+    client_name: test-client
+    client_key_credential: test-key
+  - name: org-no-ssl
+    chef_server_url: https://chef.example.com
+    org_name: org-no-ssl
+    client_name: test-client
+    client_key_credential: test-key
+    ssl_verify: false
+  - name: org-ssl
+    chef_server_url: https://chef.example.com
+    org_name: org-ssl
+    client_name: test-client
+    client_key_credential: test-key
+    ssl_verify: true
+
+target_chef_versions:
+  - "18.5.0"
+
+datastore:
+  url: postgres://localhost:5432/test
+`
+	cfg := mustParse(t, yaml)
+	if len(cfg.Organisations) != 3 {
+		t.Fatalf("expected 3 organisations, got %d", len(cfg.Organisations))
+	}
+	if !cfg.Organisations[0].SSLVerifyEnabled() {
+		t.Error("org-default: expected SSLVerifyEnabled() to return true (default)")
+	}
+	if cfg.Organisations[1].SSLVerifyEnabled() {
+		t.Error("org-no-ssl: expected SSLVerifyEnabled() to return false")
+	}
+	if !cfg.Organisations[2].SSLVerifyEnabled() {
+		t.Error("org-ssl: expected SSLVerifyEnabled() to return true")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Target version validation
 // ---------------------------------------------------------------------------
 

@@ -11,6 +11,7 @@ import (
 	"crypto/md5"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -50,8 +51,17 @@ type ClientConfig struct {
 	// AppVersion is used in the User-Agent header. Defaults to "dev".
 	AppVersion string
 
+	// SSLVerify controls whether the client verifies the server's TLS
+	// certificate chain and hostname. When set to false, the client
+	// accepts any certificate presented by the server. This is useful
+	// for development or self-signed certificate environments but should
+	// NOT be used in production. Defaults to true (verify).
+	SSLVerify *bool
+
 	// HTTPClient is an optional *http.Client to use. If nil,
-	// http.DefaultClient is used.
+	// a default client is created. When SSLVerify is false and no
+	// HTTPClient is provided, the default client is configured to
+	// skip TLS verification.
 	HTTPClient *http.Client
 }
 
@@ -100,9 +110,24 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}
 	ua := fmt.Sprintf("chef-migration-metrics/%s (org:%s)", appVersion, orgName)
 
+	sslVerify := true
+	if cfg.SSLVerify != nil {
+		sslVerify = *cfg.SSLVerify
+	}
+
 	hc := cfg.HTTPClient
 	if hc == nil {
-		hc = http.DefaultClient
+		if !sslVerify {
+			hc = &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						InsecureSkipVerify: true, // #nosec G402 -- user explicitly opted out of verification
+					},
+				},
+			}
+		} else {
+			hc = http.DefaultClient
+		}
 	}
 
 	return &Client{

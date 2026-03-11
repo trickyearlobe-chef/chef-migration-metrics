@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -191,6 +192,90 @@ func TestNewClient_DefaultsApplied(t *testing.T) {
 	}
 	if c.httpClient != http.DefaultClient {
 		t.Error("expected default HTTP client to be used")
+	}
+}
+
+func TestNewClient_SSLVerify_DefaultUsesDefaultClient(t *testing.T) {
+	// When SSLVerify is nil (not set), the client should use http.DefaultClient.
+	c, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.httpClient != http.DefaultClient {
+		t.Error("expected http.DefaultClient when SSLVerify is nil")
+	}
+}
+
+func TestNewClient_SSLVerify_ExplicitTrueUsesDefaultClient(t *testing.T) {
+	sslVerify := true
+	c, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		SSLVerify:     &sslVerify,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.httpClient != http.DefaultClient {
+		t.Error("expected http.DefaultClient when SSLVerify is explicitly true")
+	}
+}
+
+func TestNewClient_SSLVerify_FalseSkipsVerification(t *testing.T) {
+	sslVerify := false
+	c, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		SSLVerify:     &sslVerify,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.httpClient == http.DefaultClient {
+		t.Fatal("expected a custom HTTP client when SSLVerify is false, got http.DefaultClient")
+	}
+	transport, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", c.httpClient.Transport)
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("expected TLSClientConfig to be set")
+	}
+	if !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Error("expected InsecureSkipVerify to be true when SSLVerify is false")
+	}
+}
+
+func TestNewClient_SSLVerify_FalseWithCustomHTTPClient(t *testing.T) {
+	// When the caller provides their own HTTPClient, it should be used
+	// even when SSLVerify is false (the caller is responsible for their
+	// own transport configuration).
+	sslVerify := false
+	custom := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+			},
+		},
+	}
+	c, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		SSLVerify:     &sslVerify,
+		HTTPClient:    custom,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.httpClient != custom {
+		t.Error("expected the custom HTTPClient to be preserved when explicitly provided")
 	}
 }
 
