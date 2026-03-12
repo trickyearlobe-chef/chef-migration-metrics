@@ -144,7 +144,6 @@ export interface NodeFilterQuery extends PaginationQuery {
 
 export interface CookbookFilterQuery extends PaginationQuery {
   organisation?: string;
-  source?: string;
   active?: string; // "true" | "false" | ""
   name?: string;
   sort?: string;

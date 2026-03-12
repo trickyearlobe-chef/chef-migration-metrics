@@ -282,7 +282,7 @@ export interface CookbookListItem {
   name: string;
   version?: string;
   version_count?: number;
-  source: string;
+  source?: string;
   has_test_suite: boolean;
   is_active: boolean;
   is_stale_cookbook: boolean;

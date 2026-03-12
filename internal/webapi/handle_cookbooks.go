@@ -14,7 +14,9 @@ import (
 )
 
 // handleCookbooks handles GET /api/v1/cookbooks — lists all cookbooks across
-// all organisations, optionally filtered by query parameters.
+// all organisations, optionally filtered by query parameters. Cookbooks are
+// collapsed by name so each unique cookbook name appears once with a total
+// version count across all sources (git and chef_server).
 func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -27,7 +29,16 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Collect git-sourced cookbooks first so they become the preferred
+	// representative entry when collapsing by name.
 	var allCookbooks []datastore.Cookbook
+	gitCookbooks, err := r.db.ListGitCookbooks(req.Context())
+	if err != nil {
+		r.logf("WARN", "listing git cookbooks: %v", err)
+	} else {
+		allCookbooks = append(allCookbooks, gitCookbooks...)
+	}
+
 	for _, org := range orgs {
 		cbs, err := r.db.ListCookbooksByOrganisation(req.Context(), org.ID)
 		if err != nil {
@@ -37,20 +48,12 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		allCookbooks = append(allCookbooks, cbs...)
 	}
 
-	// Also include git-sourced cookbooks.
-	gitCookbooks, err := r.db.ListGitCookbooks(req.Context())
-	if err != nil {
-		r.logf("WARN", "listing git cookbooks: %v", err)
-	} else {
-		allCookbooks = append(allCookbooks, gitCookbooks...)
-	}
-
 	// Apply optional query-parameter filters.
 	allCookbooks = filterCookbooks(req, allCookbooks)
 
-	// Collapse chef_server cookbooks by name so the summary page shows one
-	// row per cookbook with a version count instead of one row per version.
-	allCookbooks, versionCounts := collapseChefServerCookbooks(allCookbooks)
+	// Collapse all cookbooks by name so the summary page shows one row per
+	// cookbook with a total version count across all sources.
+	allCookbooks, versionCounts := collapseCookbooks(allCookbooks)
 
 	// Paginate the results.
 	pg := ParsePagination(req)
@@ -68,9 +71,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		ID              string `json:"id"`
 		OrganisationID  string `json:"organisation_id,omitempty"`
 		Name            string `json:"name"`
-		Version         string `json:"version,omitempty"`
 		VersionCount    int    `json:"version_count"`
-		Source          string `json:"source"`
 		HasTestSuite    bool   `json:"has_test_suite"`
 		IsActive        bool   `json:"is_active"`
 		IsStaleCookbook bool   `json:"is_stale_cookbook"`
@@ -83,17 +84,11 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			ID:              cb.ID,
 			OrganisationID:  cb.OrganisationID,
 			Name:            cb.Name,
-			Version:         cb.Version,
-			Source:          cb.Source,
 			HasTestSuite:    cb.HasTestSuite,
 			IsActive:        cb.IsActive,
 			IsStaleCookbook: cb.IsStaleCookbook,
 			DownloadStatus:  cb.DownloadStatus,
-		}
-		if count, ok := versionCounts[cb.Name]; ok {
-			resp.VersionCount = count
-		} else {
-			resp.VersionCount = 1
+			VersionCount:    versionCounts[cb.Name],
 		}
 		result = append(result, resp)
 	}
@@ -187,30 +182,23 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 // Helpers
 // ---------------------------------------------------------------------------
 
-// collapseChefServerCookbooks groups chef_server cookbooks by name, keeping
-// only the first occurrence of each name while recording the total version
-// count. Git-sourced cookbooks are passed through unchanged. The returned
-// map holds the version count keyed by cookbook name (only for chef_server
-// entries with more than one version).
-func collapseChefServerCookbooks(cookbooks []datastore.Cookbook) ([]datastore.Cookbook, map[string]int) {
+// collapseCookbooks groups all cookbooks by name regardless of source,
+// keeping only the first occurrence of each name as the representative
+// entry while counting every version. Because git-sourced cookbooks are
+// appended to the slice before chef_server ones, the git entry is
+// naturally preferred as the representative when both exist.
+func collapseCookbooks(cookbooks []datastore.Cookbook) ([]datastore.Cookbook, map[string]int) {
 	versionCounts := make(map[string]int)
 	seen := make(map[string]bool)
 	collapsed := make([]datastore.Cookbook, 0, len(cookbooks))
 
-	// First pass: count versions per chef_server cookbook name.
+	// First pass: count all versions per cookbook name.
 	for _, cb := range cookbooks {
-		if cb.Source == "chef_server" {
-			versionCounts[cb.Name]++
-		}
+		versionCounts[cb.Name]++
 	}
 
-	// Second pass: keep git cookbooks as-is; for chef_server, keep only
-	// the first occurrence of each name.
+	// Second pass: keep only the first occurrence of each name.
 	for _, cb := range cookbooks {
-		if cb.Source != "chef_server" {
-			collapsed = append(collapsed, cb)
-			continue
-		}
 		if seen[cb.Name] {
 			continue
 		}
@@ -221,24 +209,20 @@ func collapseChefServerCookbooks(cookbooks []datastore.Cookbook) ([]datastore.Co
 	return collapsed, versionCounts
 }
 
-// filterCookbooks applies optional query-parameter filters (source, active,
-// name) to the given slice, returning only matching cookbooks. The name
-// filter uses case-insensitive partial (substring) matching.
+// filterCookbooks applies optional query-parameter filters (active, name)
+// to the given slice, returning only matching cookbooks. The name filter
+// uses case-insensitive partial (substring) matching.
 func filterCookbooks(req *http.Request, cookbooks []datastore.Cookbook) []datastore.Cookbook {
 	q := req.URL.Query()
-	source := q.Get("source")
 	active := q.Get("active")
 	nameFilter := q.Get("name")
 
-	if source == "" && active == "" && nameFilter == "" {
+	if active == "" && nameFilter == "" {
 		return cookbooks
 	}
 
 	filtered := make([]datastore.Cookbook, 0, len(cookbooks))
 	for _, cb := range cookbooks {
-		if source != "" && cb.Source != source {
-			continue
-		}
 		if active == "true" && !cb.IsActive {
 			continue
 		}
