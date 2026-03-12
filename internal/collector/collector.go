@@ -634,9 +634,16 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	log.Info(fmt.Sprintf("collection run %s started", run.ID),
 		logging.WithCollectionRunID(run.ID))
 
+	// runCompleted is set to true once the collection run has been marked
+	// as completed in Step 4b (after node snapshots are persisted). Once
+	// set, the deferred error handler must NOT overwrite the completed
+	// status — post-completion errors in cookbook operations are non-fatal
+	// and should not regress the run status.
+	runCompleted := false
+
 	// Ensure we mark the run as completed or failed on exit.
 	defer func() {
-		if err != nil {
+		if err != nil && !runCompleted {
 			errMsg := err.Error()
 			if ctx.Err() != nil {
 				// Context cancelled — mark as interrupted, not failed.
@@ -686,6 +693,13 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 	// Track which cookbook names are in active use by at least one node,
 	// and record per-node cookbook versions for building usage records later.
+	// We maintain two sets:
+	//   - allCookbookNames: every cookbook referenced by any node (for usage records)
+	//   - activeCookbookNames: only cookbooks referenced by non-stale nodes
+	//     (for marking active status and triggering downloads)
+	// This avoids downloading cookbooks that are only used by stale nodes,
+	// which can be very expensive when there are many stale nodes.
+	allCookbookNames := make(map[string]bool)
 	activeCookbookNames := make(map[string]bool)
 	nodeCookbookVersions := make(map[string]map[string]string, len(searchRows)) // node name → cookbook name → version
 
@@ -702,10 +716,19 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		rlJSON, _ := json.Marshal(nd.RunList())
 		rolesJSON, _ := json.Marshal(nd.Roles())
 
-		// Track active cookbooks and per-node cookbook versions.
+		// Track cookbooks and per-node cookbook versions. Compute staleness
+		// up front so we can separate active-node cookbooks from stale-node
+		// cookbooks. Only cookbooks referenced by non-stale nodes are
+		// candidates for download — this avoids fetching thousands of
+		// cookbook versions that are only used by nodes that haven't
+		// checked in.
+		nodeIsStale := nd.IsStale(staleThreshold)
 		cbVersions := nd.CookbookVersions()
 		for cbName := range cbVersions {
-			activeCookbookNames[cbName] = true
+			allCookbookNames[cbName] = true
+			if !nodeIsStale {
+				activeCookbookNames[cbName] = true
+			}
 		}
 		if len(cbVersions) > 0 {
 			nodeCookbookVersions[nd.Name()] = cbVersions
@@ -740,10 +763,26 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			PolicyName:      nd.PolicyName(),
 			PolicyGroup:     nd.PolicyGroup(),
 			OhaiTime:        nd.OhaiTime(),
-			IsStale:         nd.IsStale(staleThreshold),
+			IsStale:         nodeIsStale,
 			CollectedAt:     now,
 		})
 	}
+
+	// Log the impact of stale-node filtering on cookbook counts so operators
+	// can see how many cookbooks are skipped for download.
+	staleOnlyCount := len(allCookbookNames) - len(activeCookbookNames)
+	staleNodeCount := 0
+	for _, p := range snapshotParams {
+		if p.IsStale {
+			staleNodeCount++
+		}
+	}
+	log.Info(fmt.Sprintf(
+		"node staleness summary: %d total nodes, %d stale, %d active; "+
+			"cookbook names: %d total, %d from active nodes, %d only from stale nodes (will not be downloaded)",
+		len(snapshotParams), staleNodeCount, len(snapshotParams)-staleNodeCount,
+		len(allCookbookNames), len(activeCookbookNames), staleOnlyCount),
+		logging.WithCollectionRunID(run.ID))
 
 	// Persist node snapshots in bulk, returning generated IDs so we can
 	// build cookbook-node usage records without a separate lookup.
@@ -763,16 +802,48 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			logging.WithCollectionRunID(run.ID))
 	}
 
+	// Step 4b: Complete the collection run early so the UI can show fresh
+	// node data immediately. The remaining steps (cookbook inventory,
+	// downloads, analysis, CookStyle, etc.) can take a very long time with
+	// large fleets and the UI queries only show nodes from the latest
+	// *completed* run. By completing now, users see up-to-date node/stale
+	// status while the heavier cookbook operations continue in the background.
+	if _, completeErr := c.db.CompleteCollectionRun(ctx, run.ID, len(searchRows), inserted); completeErr != nil {
+		log.Error(fmt.Sprintf("failed to mark run %s as completed after node collection: %v", run.ID, completeErr),
+			logging.WithCollectionRunID(run.ID))
+		// Non-fatal — continue with cookbook operations even if the status
+		// update failed. The deferred error handler will still attempt to
+		// mark the run appropriately on exit.
+	} else {
+		runCompleted = true
+		log.Info(fmt.Sprintf("collection run %s marked completed with %d nodes (continuing with cookbook operations)",
+			run.ID, inserted),
+			logging.WithCollectionRunID(run.ID))
+	}
+
 	// Step 5: Fetch cookbook inventory from the Chef server.
 	log.Info("fetching cookbook inventory",
 		logging.WithCollectionRunID(run.ID))
 
 	serverCookbooks, err := client.GetCookbooks(ctx)
 	if err != nil {
+		// After early completion in Step 4b, cookbook inventory failures are
+		// non-fatal — node data is already visible in the UI. Log and skip
+		// the remaining cookbook operations.
+		if runCompleted {
+			log.Warn(fmt.Sprintf("fetching cookbook inventory failed (non-fatal, nodes already committed): %v", err),
+				logging.WithCollectionRunID(run.ID))
+			err = nil
+			return nodes, 0, nil
+		}
 		return nodes, 0, fmt.Errorf("fetching cookbook inventory: %w", err)
 	}
 
 	// Step 6: Upsert cookbook metadata and determine active/unused status.
+	// Use activeCookbookNames (non-stale only) for the is_active flag,
+	// consistent with MarkCookbooksActiveForOrg which overwrites it moments
+	// later. This ensures a cookbook only used by stale nodes is never
+	// transiently marked active between the upsert and the bulk update.
 	cookbookParams := make([]datastore.UpsertServerCookbookParams, 0)
 	for cbName, entry := range serverCookbooks {
 		isActive := activeCookbookNames[cbName]
@@ -797,6 +868,15 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 	upserted, err := c.db.BulkUpsertServerCookbooks(ctx, cookbookParams)
 	if err != nil {
+		// After early completion in Step 4b, upsert failures are non-fatal —
+		// node data is already visible in the UI. Log and skip the remaining
+		// cookbook operations.
+		if runCompleted {
+			log.Warn(fmt.Sprintf("upserting cookbook metadata failed (non-fatal, nodes already committed): %v", err),
+				logging.WithCollectionRunID(run.ID))
+			err = nil
+			return nodes, 0, nil
+		}
 		return nodes, 0, fmt.Errorf("upserting cookbook metadata: %w", err)
 	}
 	cookbooks = upserted
@@ -1204,15 +1284,10 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		}
 	}
 
-	// Step 15: Complete the collection run.
-	if _, err := c.db.CompleteCollectionRun(ctx, run.ID, len(searchRows), inserted); err != nil {
-		log.Error(fmt.Sprintf("failed to mark run %s as completed: %v", run.ID, err),
-			logging.WithCollectionRunID(run.ID))
-		// Don't return an error here — the data was collected successfully,
-		// only the status update failed.
-	}
-
-	log.Info(fmt.Sprintf("collection run %s completed: %d nodes, %d cookbook versions",
+	// Step 15: The collection run was already marked completed in Step 4b
+	// after node snapshots were persisted, so the UI could show fresh data
+	// while cookbook operations continued. Log final summary.
+	log.Info(fmt.Sprintf("collection run %s post-completion processing finished: %d nodes, %d cookbook versions",
 		run.ID, inserted, upserted),
 		logging.WithCollectionRunID(run.ID))
 
