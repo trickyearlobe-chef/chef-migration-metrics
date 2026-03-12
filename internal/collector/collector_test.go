@@ -567,6 +567,284 @@ func TestActiveCookbookTracking_NoNodes(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Stale-node cookbook filtering
+// ---------------------------------------------------------------------------
+
+// TestActiveCookbookTracking_StaleNodesExcluded verifies that cookbooks
+// referenced only by stale nodes are excluded from activeCookbookNames
+// but still appear in allCookbookNames.
+func TestActiveCookbookTracking_StaleNodesExcluded(t *testing.T) {
+	staleThreshold := 7 * 24 * time.Hour
+
+	// web-01: active node with apache2 + openssl
+	activeRow := mockSearchRow("web-01", "prod", "18.0.0", "ubuntu", map[string]string{
+		"apache2": "5.0.1",
+		"openssl": "8.0.0",
+	})
+
+	// db-01: stale node (30 days old) with mysql + openssl
+	staleRow := mockSearchRow("db-01", "prod", "18.0.0", "centos", map[string]string{
+		"mysql":   "10.0.0",
+		"openssl": "8.0.0",
+	})
+	staleRow.Data["ohai_time"] = float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
+
+	rows := []chefapi.SearchResultRow{activeRow, staleRow}
+
+	allCookbookNames := make(map[string]bool)
+	activeCookbookNames := make(map[string]bool)
+
+	for _, row := range rows {
+		nd := chefapi.NewNodeData(row.Data)
+		nodeIsStale := nd.IsStale(staleThreshold)
+		for cbName := range nd.CookbookVersions() {
+			allCookbookNames[cbName] = true
+			if !nodeIsStale {
+				activeCookbookNames[cbName] = true
+			}
+		}
+	}
+
+	// allCookbookNames should contain all 3 unique cookbooks.
+	if len(allCookbookNames) != 3 {
+		t.Errorf("expected 3 total cookbooks, got %d", len(allCookbookNames))
+	}
+	for _, name := range []string{"apache2", "openssl", "mysql"} {
+		if !allCookbookNames[name] {
+			t.Errorf("expected %q in allCookbookNames", name)
+		}
+	}
+
+	// activeCookbookNames should only contain cookbooks from the active node.
+	// openssl is used by both active and stale, so it stays active.
+	// mysql is only used by the stale node, so it should be excluded.
+	if len(activeCookbookNames) != 2 {
+		t.Errorf("expected 2 active cookbooks, got %d: %v", len(activeCookbookNames), activeCookbookNames)
+	}
+	if !activeCookbookNames["apache2"] {
+		t.Error("expected apache2 to be active (used by non-stale node)")
+	}
+	if !activeCookbookNames["openssl"] {
+		t.Error("expected openssl to be active (used by non-stale node)")
+	}
+	if activeCookbookNames["mysql"] {
+		t.Error("mysql should NOT be active — only used by stale node")
+	}
+}
+
+// TestActiveCookbookTracking_AllNodesStale verifies that when every node
+// is stale, activeCookbookNames is empty while allCookbookNames still
+// records the full inventory.
+func TestActiveCookbookTracking_AllNodesStale(t *testing.T) {
+	staleThreshold := 7 * 24 * time.Hour
+	thirtyDaysAgo := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
+
+	rows := []chefapi.SearchResultRow{
+		mockSearchRow("stale-01", "prod", "18.0.0", "ubuntu", map[string]string{
+			"apache2": "5.0.1",
+			"openssl": "8.0.0",
+		}),
+		mockSearchRow("stale-02", "prod", "18.0.0", "centos", map[string]string{
+			"mysql":   "10.0.0",
+			"openssl": "8.0.0",
+		}),
+	}
+	// Make both nodes stale.
+	rows[0].Data["ohai_time"] = thirtyDaysAgo
+	rows[1].Data["ohai_time"] = thirtyDaysAgo
+
+	allCookbookNames := make(map[string]bool)
+	activeCookbookNames := make(map[string]bool)
+
+	for _, row := range rows {
+		nd := chefapi.NewNodeData(row.Data)
+		nodeIsStale := nd.IsStale(staleThreshold)
+		for cbName := range nd.CookbookVersions() {
+			allCookbookNames[cbName] = true
+			if !nodeIsStale {
+				activeCookbookNames[cbName] = true
+			}
+		}
+	}
+
+	if len(allCookbookNames) != 3 {
+		t.Errorf("expected 3 total cookbooks, got %d", len(allCookbookNames))
+	}
+	if len(activeCookbookNames) != 0 {
+		t.Errorf("expected 0 active cookbooks when all nodes are stale, got %d: %v",
+			len(activeCookbookNames), activeCookbookNames)
+	}
+}
+
+// TestActiveCookbookTracking_NoStaleNodes verifies that when no nodes are
+// stale, allCookbookNames and activeCookbookNames are identical.
+func TestActiveCookbookTracking_NoStaleNodes(t *testing.T) {
+	staleThreshold := 7 * 24 * time.Hour
+
+	rows := []chefapi.SearchResultRow{
+		mockSearchRow("active-01", "prod", "18.0.0", "ubuntu", map[string]string{
+			"apache2": "5.0.1",
+			"openssl": "8.0.0",
+		}),
+		mockSearchRow("active-02", "prod", "18.0.0", "centos", map[string]string{
+			"mysql":   "10.0.0",
+			"openssl": "8.0.0",
+		}),
+	}
+
+	allCookbookNames := make(map[string]bool)
+	activeCookbookNames := make(map[string]bool)
+
+	for _, row := range rows {
+		nd := chefapi.NewNodeData(row.Data)
+		nodeIsStale := nd.IsStale(staleThreshold)
+		for cbName := range nd.CookbookVersions() {
+			allCookbookNames[cbName] = true
+			if !nodeIsStale {
+				activeCookbookNames[cbName] = true
+			}
+		}
+	}
+
+	if len(allCookbookNames) != len(activeCookbookNames) {
+		t.Errorf("with no stale nodes, allCookbookNames (%d) and activeCookbookNames (%d) should match",
+			len(allCookbookNames), len(activeCookbookNames))
+	}
+	for name := range allCookbookNames {
+		if !activeCookbookNames[name] {
+			t.Errorf("expected %q to be in activeCookbookNames when no nodes are stale", name)
+		}
+	}
+}
+
+// TestActiveCookbookTracking_SharedCookbookStaysActive verifies that a
+// cookbook used by both stale and active nodes remains in the active set.
+func TestActiveCookbookTracking_SharedCookbookStaysActive(t *testing.T) {
+	staleThreshold := 7 * 24 * time.Hour
+
+	activeRow := mockSearchRow("active-01", "prod", "18.0.0", "ubuntu", map[string]string{
+		"shared": "1.0.0",
+	})
+	staleRow := mockSearchRow("stale-01", "prod", "18.0.0", "centos", map[string]string{
+		"shared":     "1.0.0",
+		"stale-only": "2.0.0",
+	})
+	staleRow.Data["ohai_time"] = float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
+
+	allCookbookNames := make(map[string]bool)
+	activeCookbookNames := make(map[string]bool)
+
+	for _, row := range []chefapi.SearchResultRow{activeRow, staleRow} {
+		nd := chefapi.NewNodeData(row.Data)
+		nodeIsStale := nd.IsStale(staleThreshold)
+		for cbName := range nd.CookbookVersions() {
+			allCookbookNames[cbName] = true
+			if !nodeIsStale {
+				activeCookbookNames[cbName] = true
+			}
+		}
+	}
+
+	if !activeCookbookNames["shared"] {
+		t.Error("shared cookbook should be active — used by at least one non-stale node")
+	}
+	if activeCookbookNames["stale-only"] {
+		t.Error("stale-only cookbook should NOT be active — only used by stale node")
+	}
+	if len(allCookbookNames) != 2 {
+		t.Errorf("expected 2 total cookbooks, got %d", len(allCookbookNames))
+	}
+}
+
+// TestActiveCookbookTracking_MissingOhaiTimeTreatedAsStale verifies that
+// nodes with no ohai_time are treated as stale and their cookbooks are
+// excluded from the active set.
+func TestActiveCookbookTracking_MissingOhaiTimeTreatedAsStale(t *testing.T) {
+	staleThreshold := 7 * 24 * time.Hour
+
+	activeRow := mockSearchRow("active-01", "prod", "18.0.0", "ubuntu", map[string]string{
+		"web": "1.0.0",
+	})
+	noOhaiRow := mockSearchRow("no-ohai", "prod", "18.0.0", "ubuntu", map[string]string{
+		"mystery": "1.0.0",
+	})
+	delete(noOhaiRow.Data, "ohai_time")
+
+	allCookbookNames := make(map[string]bool)
+	activeCookbookNames := make(map[string]bool)
+
+	for _, row := range []chefapi.SearchResultRow{activeRow, noOhaiRow} {
+		nd := chefapi.NewNodeData(row.Data)
+		nodeIsStale := nd.IsStale(staleThreshold)
+		for cbName := range nd.CookbookVersions() {
+			allCookbookNames[cbName] = true
+			if !nodeIsStale {
+				activeCookbookNames[cbName] = true
+			}
+		}
+	}
+
+	if !activeCookbookNames["web"] {
+		t.Error("web cookbook should be active")
+	}
+	if activeCookbookNames["mystery"] {
+		t.Error("mystery cookbook should NOT be active — node has no ohai_time so is treated as stale")
+	}
+	if !allCookbookNames["mystery"] {
+		t.Error("mystery cookbook should still be in allCookbookNames")
+	}
+}
+
+// TestActiveCookbookTracking_StaleOnlyCountCalculation verifies the
+// staleOnlyCount calculation used for logging in the collector.
+func TestActiveCookbookTracking_StaleOnlyCountCalculation(t *testing.T) {
+	staleThreshold := 7 * 24 * time.Hour
+	thirtyDaysAgo := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
+
+	rows := []chefapi.SearchResultRow{
+		mockSearchRow("active-01", "prod", "18.0.0", "ubuntu", map[string]string{
+			"shared":      "1.0.0",
+			"active-only": "1.0.0",
+		}),
+		mockSearchRow("stale-01", "prod", "18.0.0", "centos", map[string]string{
+			"shared":  "1.0.0",
+			"stale-a": "1.0.0",
+			"stale-b": "1.0.0",
+		}),
+	}
+	rows[1].Data["ohai_time"] = thirtyDaysAgo
+
+	allCookbookNames := make(map[string]bool)
+	activeCookbookNames := make(map[string]bool)
+
+	for _, row := range rows {
+		nd := chefapi.NewNodeData(row.Data)
+		nodeIsStale := nd.IsStale(staleThreshold)
+		for cbName := range nd.CookbookVersions() {
+			allCookbookNames[cbName] = true
+			if !nodeIsStale {
+				activeCookbookNames[cbName] = true
+			}
+		}
+	}
+
+	staleOnlyCount := len(allCookbookNames) - len(activeCookbookNames)
+
+	// Total: shared, active-only, stale-a, stale-b = 4
+	// Active: shared, active-only = 2
+	// Stale-only: stale-a, stale-b = 2
+	if len(allCookbookNames) != 4 {
+		t.Errorf("expected 4 total cookbooks, got %d", len(allCookbookNames))
+	}
+	if len(activeCookbookNames) != 2 {
+		t.Errorf("expected 2 active cookbooks, got %d", len(activeCookbookNames))
+	}
+	if staleOnlyCount != 2 {
+		t.Errorf("expected staleOnlyCount = 2, got %d", staleOnlyCount)
+	}
+}
+
 func TestActiveCookbookTracking_NoCookbooksOnNodes(t *testing.T) {
 	rows := []chefapi.SearchResultRow{
 		mockSearchRow("bare-01", "prod", "18.0.0", "ubuntu", nil),
