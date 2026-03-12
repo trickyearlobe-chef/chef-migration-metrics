@@ -48,6 +48,10 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	// Apply optional query-parameter filters.
 	allCookbooks = filterCookbooks(req, allCookbooks)
 
+	// Collapse chef_server cookbooks by name so the summary page shows one
+	// row per cookbook with a version count instead of one row per version.
+	allCookbooks, versionCounts := collapseChefServerCookbooks(allCookbooks)
+
 	// Paginate the results.
 	pg := ParsePagination(req)
 	total := len(allCookbooks)
@@ -65,6 +69,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		OrganisationID  string `json:"organisation_id,omitempty"`
 		Name            string `json:"name"`
 		Version         string `json:"version,omitempty"`
+		VersionCount    int    `json:"version_count,omitempty"`
 		Source          string `json:"source"`
 		HasTestSuite    bool   `json:"has_test_suite"`
 		IsActive        bool   `json:"is_active"`
@@ -74,7 +79,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	result := make([]cookbookResp, 0, end-start)
 	for _, cb := range allCookbooks[start:end] {
-		result = append(result, cookbookResp{
+		resp := cookbookResp{
 			ID:              cb.ID,
 			OrganisationID:  cb.OrganisationID,
 			Name:            cb.Name,
@@ -84,7 +89,11 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			IsActive:        cb.IsActive,
 			IsStaleCookbook: cb.IsStaleCookbook,
 			DownloadStatus:  cb.DownloadStatus,
-		})
+		}
+		if count, ok := versionCounts[cb.Name]; ok && cb.Source == "chef_server" {
+			resp.VersionCount = count
+		}
+		result = append(result, resp)
 	}
 
 	WritePaginated(w, result, pg, total)
@@ -175,6 +184,40 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// collapseChefServerCookbooks groups chef_server cookbooks by name, keeping
+// only the first occurrence of each name while recording the total version
+// count. Git-sourced cookbooks are passed through unchanged. The returned
+// map holds the version count keyed by cookbook name (only for chef_server
+// entries with more than one version).
+func collapseChefServerCookbooks(cookbooks []datastore.Cookbook) ([]datastore.Cookbook, map[string]int) {
+	versionCounts := make(map[string]int)
+	seen := make(map[string]bool)
+	collapsed := make([]datastore.Cookbook, 0, len(cookbooks))
+
+	// First pass: count versions per chef_server cookbook name.
+	for _, cb := range cookbooks {
+		if cb.Source == "chef_server" {
+			versionCounts[cb.Name]++
+		}
+	}
+
+	// Second pass: keep git cookbooks as-is; for chef_server, keep only
+	// the first occurrence of each name.
+	for _, cb := range cookbooks {
+		if cb.Source != "chef_server" {
+			collapsed = append(collapsed, cb)
+			continue
+		}
+		if seen[cb.Name] {
+			continue
+		}
+		seen[cb.Name] = true
+		collapsed = append(collapsed, cb)
+	}
+
+	return collapsed, versionCounts
+}
 
 // filterCookbooks applies optional query-parameter filters (source, active,
 // name) to the given slice, returning only matching cookbooks. The name
