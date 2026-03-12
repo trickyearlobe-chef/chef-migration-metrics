@@ -57,7 +57,8 @@ Desktop.ini
 keys/
 .env
 .env.*
-!.env.example
+# NOTE: negation patterns (e.g. !.env.example) are not used here because
+# Helm v4's .helmignore parser fails to load the chart when they are present.
 
 # =============================================================================
 # Build Artifacts
@@ -102,4 +103,7 @@ coverage.txt
 # =============================================================================
 # Helm chart dependency cache (rebuilt by helm dependency build)
 # =============================================================================
-charts/*.tgz
+# NOTE: charts/*.tgz is intentionally NOT ignored here. Helm v4 applies
+# .helmignore patterns during lint and chart loading, not just packaging.
+# Ignoring subchart archives causes "chart directory is missing these
+# dependencies" warnings and can break helm lint / helm template.

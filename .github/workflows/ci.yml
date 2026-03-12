@@ -73,6 +73,7 @@ jobs:
 
       - name: Lint Helm chart
         run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
           helm dependency build deploy/helm/chef-migration-metrics
           helm lint deploy/helm/chef-migration-metrics
 
