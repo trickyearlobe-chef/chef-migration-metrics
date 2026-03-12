@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config). Key endpoint groups: nodes, cookbooks, compatibility results, readiness, remediation, dependency graph, exports, notifications, logs, and admin. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label), and sorting. Auth via session cookie with RBAC middleware. CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Notification endpoints manage webhook/email channels and history. See `../auth/Specification.md` for auth details, `../datastore/Specification.md` for schema.
+RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config) and operator actions (ownership management, bulk import/reassignment). Key endpoint groups: nodes, cookbooks, compatibility results, readiness, remediation, ownership, dependency graph, exports, notifications, logs, and admin. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label, owner), and sorting. Auth via session cookie with RBAC middleware (viewer / operator / admin). CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Notification endpoints manage webhook/email channels and history. Ownership endpoints manage owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows (see [Ownership Specification](../ownership/Specification.md)). See `../auth/Specification.md` for auth details, `../datastore/Specification.md` for schema.
 
 ---
 
@@ -146,10 +146,11 @@ After authentication, the middleware checks the user's role against the endpoint
 
 | Role | Permissions |
 |------|-------------|
-| `viewer` | Read access to all dashboard, log, and status endpoints |
-| `admin` | All viewer permissions plus user management, manual rescan triggers, and configuration |
+| `viewer` | Read access to all dashboard, log, ownership, and status endpoints |
+| `operator` | All viewer permissions plus create/update owners and assignments, bulk import, bulk reassignment (without delete-source-owner) |
+| `admin` | All operator permissions plus user management, owner deletion, bulk reassignment with delete-source-owner, manual rescan triggers, and configuration |
 
-Endpoints that require `admin` are annotated below. All other authenticated endpoints require at minimum `viewer`.
+Endpoints that require `admin` or `operator` are annotated below. All other authenticated endpoints require at minimum `viewer`.
 
 Unauthorised requests return `403 Forbidden`:
 
@@ -210,6 +211,8 @@ Filter parameters are passed as query string parameters. Multiple values for the
 | `cookbook_status` | string | `active`, `unused`, or `all` (default: `active`) |
 | `stale_status` | string | `all`, `stale`, or `fresh` (default: `all`). Filters nodes by stale check-in status. |
 | `complexity_label` | string | Comma-separated list of complexity labels: `low`, `medium`, `high`, `critical`. Filters cookbooks by remediation complexity. |
+| `owner` | string | Comma-separated list of owner names. Filters to entities owned by specified owners (see [Ownership Specification](../ownership/Specification.md) § 4.5). Only active when ownership is enabled. |
+| `unowned` | boolean | When `true`, filters to entities with no resolved owner. Cannot be combined with `owner`. Only active when ownership is enabled. |
 
 ### Sorting
 
@@ -1144,6 +1147,31 @@ Returns the full detail of a sent notification, including the payload.
 
 ---
 
+## Ownership Endpoints
+
+Ownership tracking endpoints allow managing owners, ownership assignments, bulk reassignment, bulk import, audit log, and committer-to-owner workflows. These endpoints are fully specified in the [Ownership Specification](../ownership/Specification.md) § 4 and are summarised here for cross-reference.
+
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/api/v1/owners` | GET | List all owners | viewer+ |
+| `/api/v1/owners` | POST | Create an owner | operator+ |
+| `/api/v1/owners/:name` | GET | Get owner detail with migration progress | viewer+ |
+| `/api/v1/owners/:name` | PUT | Update an owner | operator+ |
+| `/api/v1/owners/:name` | DELETE | Delete an owner (cascades) | admin |
+| `/api/v1/owners/:name/assignments` | GET | List assignments for an owner | viewer+ |
+| `/api/v1/owners/:name/assignments` | POST | Create assignments | operator+ |
+| `/api/v1/owners/:name/assignments/:id` | DELETE | Delete an assignment | operator+ |
+| `/api/v1/ownership/reassign` | POST | Bulk reassign between owners | operator+ |
+| `/api/v1/ownership/import` | POST | Bulk import from CSV/JSON | operator+ |
+| `/api/v1/ownership/lookup` | GET | Look up ownership for an entity | viewer+ |
+| `/api/v1/ownership/audit-log` | GET | Query ownership audit log | viewer+ |
+| `/api/v1/cookbooks/:name/committers` | GET | List git committers for a cookbook | viewer+ |
+| `/api/v1/cookbooks/:name/committers/assign` | POST | Assign committers as owners | operator+ |
+
+→ Full endpoint specifications: [Ownership Specification § 4](../ownership/Specification.md)
+
+---
+
 ## Organisation Endpoints
 
 ### List Organisations
@@ -2005,6 +2033,9 @@ All events use a consistent JSON envelope:
 |-------|---------|------|
 | `notification_sent` | A notification was dispatched to a channel | `{ "id": "...", "channel_name": "slack-ops", "event_type": "cookbook_status_changed", "status": "sent" }` |
 | `notification_failed` | A notification delivery failed | `{ "id": "...", "channel_name": "slack-ops", "event_type": "cookbook_status_changed", "status": "failed", "error": "..." }` |
+| `ownership_assigned` | An ownership assignment was created | `{ "owner_name": "web-platform", "entity_type": "cookbook", "entity_key": "acme-web", "assignment_source": "manual" }` |
+| `ownership_removed` | An ownership assignment was removed | `{ "owner_name": "web-platform", "entity_type": "cookbook", "entity_key": "acme-web" }` |
+| `ownership_reassigned` | Assignments were bulk-reassigned between owners | `{ "from_owner": "old-team", "to_owner": "new-team", "reassigned": 47 }` |
 
 ### Server-Side Architecture
 
@@ -2096,6 +2127,7 @@ If the frontend is served from the same origin as the API (recommended), no CORS
 
 - [Top-level Specification](../Specification.md)
 - [Authentication and Authorisation](../auth/Specification.md)
+- [Ownership](../ownership/Specification.md) — owner management, assignments, bulk reassignment, audit log, committer workflows
 - [Visualisation](../visualisation/Specification.md)
 - [Logging](../logging/Specification.md)
 - [Configuration](../configuration/Specification.md) — credential encryption key, `client_key_credential` and `bind_password_credential` settings

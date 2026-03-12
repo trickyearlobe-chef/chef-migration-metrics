@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-Periodic background job collects node data from Chef Infra Server orgs via **partial search** and fetches cookbooks from **git repos** and/or the **Chef server**. Supports multiple orgs (parallel), Policyfile nodes (`policy_name`/`policy_group`), stale node detection (`ohai_time`), stale cookbook detection (`first_seen_at`), and role dependency graph building. Key config: `collection.schedule`, `collection.stale_node_threshold_days` (7), `collection.stale_cookbook_threshold_days` (365). Concurrency is bounded per task type. Related specs: `chef-api/`, `configuration/`, `datastore/`, `logging/`.
+Periodic background job collects node data from Chef Infra Server orgs via **partial search** and fetches cookbooks from **git repos** and/or the **Chef server**. Supports multiple orgs (parallel), Policyfile nodes (`policy_name`/`policy_group`), stale node detection (`ohai_time`), stale cookbook detection (`first_seen_at`), and role dependency graph building. Key config: `collection.schedule`, `collection.stale_node_threshold_days` (7), `collection.stale_cookbook_threshold_days` (365). Concurrency is bounded per task type. Related specs: `chef-api/`, `configuration/`, `datastore/`, `logging/`. When ownership is enabled, also collects git committer history and evaluates auto-derivation rules after each run.
 
 ---
 
@@ -249,6 +249,8 @@ A single collection run proceeds in the following order:
 
 Steps 1–5 are the responsibility of this component. Steps 6–8 are coordinated by the application's top-level orchestrator.
 
+When `ownership.enabled` is `true`, ownership auto-derivation (§ 6.2) runs between steps 5 and 6 — after stale node flagging and before analysis hand-off. Custom attribute collection (§ 6.3) is integrated into step 1 (node collection).
+
 ---
 
 ## 4. Active/Unused Cookbook Tracking
@@ -284,6 +286,46 @@ See the [Visualisation Specification](../visualisation/Specification.md) for how
 
 ---
 
+## 6. Ownership Data Collection
+
+When `ownership.enabled` is `true`, the data collection component has two additional responsibilities: collecting git committer data and triggering ownership auto-derivation rules. These are fully specified in the [Ownership Specification](../ownership/Specification.md) § 7 and summarised here.
+
+### 6.1 Git Committer Collection
+
+After fetching/pulling each git-sourced cookbook repository, the collector extracts committer information from the git log of the default branch. For each distinct committer (identified by email), the collector records:
+
+- Author name and email
+- Total commit count
+- Earliest and most recent commit dates
+
+This data is stored in the `git_repo_committers` table (see [Datastore Specification](../datastore/Specification.md)) and fully replaced on each collection run for each repository. The committer data powers the cookbook detail → committers sub-page in the dashboard, where operators can identify active contributors and assign them as owners.
+
+**Git command:** Use `git log --format='%aE%x00%aN%x00%aI' --all` with post-processing to aggregate by author email, count commits, and extract min/max dates. The `%x00` NUL separator ensures robust parsing even with unusual author names.
+
+### 6.2 Auto-Derivation Trigger
+
+After each collection run completes for an organisation:
+
+1. If `ownership.enabled` is `false`, skip.
+2. Evaluate all configured auto-derivation rules against the newly collected data.
+3. Create `ownership_assignments` for new matches and remove stale `auto_rule` assignments from rules that no longer match.
+4. Log a summary at `INFO` severity with the rule count, assignments created, and stale assignments removed.
+
+Auto-derivation runs in the same sequence as the rest of the post-collection pipeline — after step 5 (stale node flagging) and before step 6 (hand off to analysis) in § 3.5.
+
+### 6.3 Custom Attribute Collection
+
+When `node_attribute` auto-derivation rules are configured, the collector must extend the partial search query to include the additional attribute paths. At startup:
+
+1. Scan all `ownership.auto_rules` entries of type `node_attribute`.
+2. Extract the `attribute_path` values.
+3. Merge them into the partial search key map sent to the Chef API.
+4. Store the returned values in the `custom_attributes` JSONB column on `node_snapshots`.
+
+See the [Ownership Specification](../ownership/Specification.md) § 2.4 for details on attribute path resolution.
+
+---
+
 ## Related Specifications
 
 - [Analysis Specification](../analysis/Specification.md)
@@ -292,3 +334,4 @@ See the [Visualisation Specification](../visualisation/Specification.md) for how
 - [Chef API Specification](../chef-api/Specification.md)
 - [Datastore Specification](../datastore/Specification.md)
 - [Web API Specification](../web-api/Specification.md)
+- [Ownership Specification](../ownership/Specification.md) — git committer collection, auto-derivation rules, custom attribute collection
