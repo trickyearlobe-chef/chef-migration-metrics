@@ -9,7 +9,7 @@ import { StatusBadge } from "../components/StatusBadge";
 
 // ---------------------------------------------------------------------------
 // Cookbooks list page — paginated table from GET /api/v1/cookbooks showing
-// name, version, source, test suite status, active/stale indicators.
+// name, version count, test suite status, active/stale indicators.
 //
 // Colour coding per spec:
 //   green  = has test suite (TK pass capable)
@@ -26,7 +26,6 @@ export function CookbooksPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [source, setSource] = useState("");
   const [active, setActive] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -41,7 +40,6 @@ export function CookbooksPage() {
       per_page: perPage,
     };
     if (selectedOrg) filters.organisation = selectedOrg;
-    if (source) filters.source = source;
     if (active) filters.active = active;
     if (nameFilter) filters.name = nameFilter;
 
@@ -52,10 +50,10 @@ export function CookbooksPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, source, active, nameFilter, page]);
+  }, [selectedOrg, active, nameFilter, page]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [selectedOrg, source, active, nameFilter]);
+  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter]);
 
   return (
     <div className="space-y-4">
@@ -72,18 +70,6 @@ export function CookbooksPage() {
             placeholder="Filter by name"
             className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Source</label>
-          <select
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            className="block w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="git">Git</option>
-            <option value="chef_server">Chef Server</option>
-          </select>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Active</label>
@@ -112,8 +98,7 @@ export function CookbooksPage() {
                 <thead>
                   <tr>
                     <th>Name</th>
-                    <th>Version</th>
-                    <th>Source</th>
+                    <th>Versions</th>
                     <th>Test Suite</th>
                     <th>Status</th>
                     <th>Download</th>
@@ -136,11 +121,6 @@ export function CookbooksPage() {
                       <td>
                         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
                           {cb.version_count === 1 ? "1 version" : `${cb.version_count} versions`}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`badge ${cb.source === "git" ? "badge-compatible" : "badge-cookstyle"}`}>
-                          {cb.source === "git" ? "Git" : "Chef Server"}
                         </span>
                       </td>
                       <td>
