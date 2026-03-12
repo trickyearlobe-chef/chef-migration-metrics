@@ -89,6 +89,8 @@ readiness:
 # this to your own embedded directory or leave it empty to use PATH lookup.
 analysis_tools:
   embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
+  # cookstyle_enabled: true     # Set to false to disable CookStyle scanning
+                                 # even when the cookstyle binary is available.
   cookstyle_timeout_minutes: 10
   test_kitchen_timeout_minutes: 30
 

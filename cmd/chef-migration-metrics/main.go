@@ -510,7 +510,7 @@ func run() int {
 	var collOpts []collector.Option
 
 	// CookStyle scanner + autocorrect preview generator (both require cookstyle).
-	if toolResult.CookstyleEnabled {
+	if toolResult.CookstyleEnabled && cfg.AnalysisTools.IsCookstyleEnabled() {
 		csScanner := analysis.NewCookstyleScanner(
 			db, logger, toolResult.Cookstyle.Path,
 			cfg.Concurrency.CookstyleScan,
@@ -525,6 +525,8 @@ func run() int {
 		)
 		collOpts = append(collOpts, collector.WithAutocorrectGenerator(acGen))
 		startup.Info("autocorrect preview generator enabled")
+	} else if toolResult.CookstyleEnabled && !cfg.AnalysisTools.IsCookstyleEnabled() {
+		startup.Info("CookStyle disabled via configuration (analysis_tools.cookstyle_enabled: false)")
 	}
 
 	// Test Kitchen scanner (requires both kitchen and docker, and config enabled).

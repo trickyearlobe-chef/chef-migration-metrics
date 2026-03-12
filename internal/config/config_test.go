@@ -180,6 +180,47 @@ func TestDefaults_AnalysisTools(t *testing.T) {
 	}
 }
 
+func TestDefaults_CookstyleEnabled(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if !cfg.AnalysisTools.IsCookstyleEnabled() {
+		t.Error("expected cookstyle_enabled to default to true")
+	}
+	if cfg.AnalysisTools.CookstyleEnabled == nil {
+		t.Error("expected CookstyleEnabled pointer to be set after defaults are applied")
+	}
+}
+
+func TestCookstyleEnabled_ExplicitFalse(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  cookstyle_enabled: false
+`
+	cfg := mustParse(t, yaml)
+	if cfg.AnalysisTools.IsCookstyleEnabled() {
+		t.Error("expected cookstyle_enabled to be false when explicitly set")
+	}
+}
+
+func TestCookstyleEnabled_ExplicitTrue(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  cookstyle_enabled: true
+`
+	cfg := mustParse(t, yaml)
+	if !cfg.AnalysisTools.IsCookstyleEnabled() {
+		t.Error("expected cookstyle_enabled to be true when explicitly set")
+	}
+}
+
+func TestCookstyleIsEnabled_NilPointer(t *testing.T) {
+	// IsCookstyleEnabled should return true even when the pointer is nil
+	// (before defaults are applied) to match the documented default behaviour.
+	a := AnalysisToolsConfig{}
+	if !a.IsCookstyleEnabled() {
+		t.Error("expected IsCookstyleEnabled() to return true when CookstyleEnabled is nil")
+	}
+}
+
 func TestDefaults_TestKitchenEnabled(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if !cfg.AnalysisTools.TestKitchen.IsEnabled() {
