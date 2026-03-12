@@ -505,7 +505,7 @@ package-docker-export: ## Build and export multi-arch + per-arch container tarba
 		-t $(IMAGE_NAME):latest \
 		--output type=oci,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-multiarch.tar \
 		.
-	@# --- linux/amd64 only ---
+	@# --- linux/amd64 only (Docker format for docker load compatibility) ---
 	@echo "$(CYAN)  -> linux/amd64...$(RESET)"
 	docker buildx build \
 		--platform linux/amd64 \
@@ -515,9 +515,9 @@ package-docker-export: ## Build and export multi-arch + per-arch container tarba
 		-t $(IMAGE_NAME):$(IMAGE_TAG) \
 		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
 		-t $(IMAGE_NAME):latest \
-		--output type=oci,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-amd64.tar \
+		--output type=docker,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-amd64.tar \
 		.
-	@# --- linux/arm64 only ---
+	@# --- linux/arm64 only (Docker format for docker load compatibility) ---
 	@echo "$(CYAN)  -> linux/arm64...$(RESET)"
 	docker buildx build \
 		--platform linux/arm64 \
@@ -527,16 +527,20 @@ package-docker-export: ## Build and export multi-arch + per-arch container tarba
 		-t $(IMAGE_NAME):$(IMAGE_TAG) \
 		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
 		-t $(IMAGE_NAME):latest \
-		--output type=oci,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-arm64.tar \
+		--output type=docker,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-arm64.tar \
 		.
 	@echo ""
 	@echo "$(GREEN)Exported images:$(RESET)"
 	@ls -lh $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-*.tar
 	@echo ""
-	@echo "$(GREEN)To load on an airgap host:$(RESET)"
-	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-multiarch.tar   $(CYAN)# both architectures$(RESET)"
-	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-amd64.tar       $(CYAN)# x86_64 only (smaller)$(RESET)"
-	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-arm64.tar       $(CYAN)# ARM64 only (smaller)$(RESET)"
+	@echo "$(GREEN)To load per-arch images on an airgap host (docker load):$(RESET)"
+	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-amd64.tar       $(CYAN)# x86_64 only$(RESET)"
+	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-arm64.tar       $(CYAN)# ARM64 only$(RESET)"
+	@echo ""
+	@echo "$(GREEN)To load the multi-arch image (OCI format — requires skopeo or crane):$(RESET)"
+	@echo "  skopeo copy oci-archive:$(BINARY_NAME)-$(VERSION)-docker-multiarch.tar docker-daemon:$(IMAGE_NAME):$(IMAGE_TAG)"
+	@echo "  $(CYAN)# or push directly to a private registry:$(RESET)"
+	@echo "  skopeo copy oci-archive:$(BINARY_NAME)-$(VERSION)-docker-multiarch.tar docker://registry.example.com/$(IMAGE_NAME):$(IMAGE_TAG)"
 	@echo ""
 
 .PHONY: _check-nfpm
