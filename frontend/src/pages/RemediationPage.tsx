@@ -83,7 +83,7 @@ export function RemediationPage() {
     fetchFilterComplexityLabels()
       .then((res) => setComplexityLabels(res.data ?? []))
       .catch(() => setComplexityLabels([]));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // intentionally run only on mount
 
   // -----------------------------------------------------------------------
   // Load summary whenever org or target version changes
