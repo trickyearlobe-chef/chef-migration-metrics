@@ -106,9 +106,19 @@ type ConcurrencyConfig struct {
 // timeouts.
 type AnalysisToolsConfig struct {
 	EmbeddedBinDir            string            `yaml:"embedded_bin_dir"`
+	CookstyleEnabled          *bool             `yaml:"cookstyle_enabled"`
 	CookstyleTimeoutMinutes   int               `yaml:"cookstyle_timeout_minutes"`
 	TestKitchenTimeoutMinutes int               `yaml:"test_kitchen_timeout_minutes"`
 	TestKitchen               TestKitchenConfig `yaml:"test_kitchen"`
+}
+
+// IsCookstyleEnabled returns true if CookStyle scanning is enabled in the
+// configuration. Defaults to true when the field is omitted.
+func (a *AnalysisToolsConfig) IsCookstyleEnabled() bool {
+	if a.CookstyleEnabled == nil {
+		return true
+	}
+	return *a.CookstyleEnabled
 }
 
 // TestKitchenConfig controls driver and platform overrides for Test Kitchen
@@ -439,6 +449,10 @@ func (c *Config) setDefaults() {
 	}
 	if c.AnalysisTools.TestKitchenTimeoutMinutes == 0 {
 		c.AnalysisTools.TestKitchenTimeoutMinutes = 30
+	}
+	if c.AnalysisTools.CookstyleEnabled == nil {
+		t := true
+		c.AnalysisTools.CookstyleEnabled = &t
 	}
 	if c.AnalysisTools.TestKitchen.Enabled == nil {
 		t := true

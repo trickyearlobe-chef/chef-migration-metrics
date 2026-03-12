@@ -95,6 +95,8 @@ readiness:
 # binary, leave embedded_bin_dir empty to use PATH lookup.
 analysis_tools:
   embedded_bin_dir: ""
+  # cookstyle_enabled: true     # Set to false to disable CookStyle scanning
+                                 # even when the cookstyle binary is available.
   cookstyle_timeout_minutes: 10
   test_kitchen_timeout_minutes: 30
 

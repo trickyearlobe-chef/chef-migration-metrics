@@ -82,6 +82,13 @@ config:
   readiness:
     min_free_disk_mb: 2048
 
+  # analysis_tools:
+  #   cookstyle_enabled: true    # Set to false to disable CookStyle scanning
+  #   cookstyle_timeout_minutes: 10
+  #   test_kitchen_timeout_minutes: 30
+  #   test_kitchen:
+  #     enabled: true             # Set to false to disable Test Kitchen testing
+
   server:
     listen_address: "0.0.0.0"
     port: 8080
