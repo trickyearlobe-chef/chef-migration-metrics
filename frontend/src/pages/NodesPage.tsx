@@ -32,6 +32,7 @@ export function NodesPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Filter state
+  const [nodeName, setNodeName] = useState("");
   const [environment, setEnvironment] = useState("");
   const [platform, setPlatform] = useState("");
   const [chefVersion, setChefVersion] = useState("");
@@ -104,6 +105,7 @@ export function NodesPage() {
       per_page: perPage,
     };
     if (selectedOrg) filters.organisation = selectedOrg;
+    if (nodeName) filters.node_name = nodeName;
     if (environment) filters.environment = environment;
     if (platform) filters.platform = platform;
     if (chefVersion) filters.chef_version = chefVersion;
@@ -119,17 +121,18 @@ export function NodesPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, environment, platform, chefVersion, role, policyName, policyGroup, stale, page]);
+  }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, page]);
 
   useEffect(() => { load(); }, [load]);
 
   // Reset to page 1 when filters change.
-  useEffect(() => { setPage(1); }, [selectedOrg, environment, platform, chefVersion, role, policyName, policyGroup, stale]);
+  useEffect(() => { setPage(1); }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale]);
 
   // Count active filters for the clear button.
-  const activeFilterCount = [environment, platform, chefVersion, role, policyName, policyGroup, stale].filter(Boolean).length;
+  const activeFilterCount = [nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale].filter(Boolean).length;
 
   const clearFilters = () => {
+    setNodeName("");
     setEnvironment("");
     setPlatform("");
     setChefVersion("");
@@ -142,6 +145,7 @@ export function NodesPage() {
   // Build the current filter set for export buttons.
   const exportFilters: ExportFilters = {};
   if (selectedOrg) exportFilters.organisation = selectedOrg;
+  if (nodeName) exportFilters.node_name = nodeName;
   if (environment) exportFilters.environment = environment;
   if (platform) exportFilters.platform = platform;
   if (chefVersion) exportFilters.chef_version = chefVersion;
@@ -188,6 +192,7 @@ export function NodesPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
+        <FilterInput label="Node Name" value={nodeName} onChange={setNodeName} placeholder="Filter by name" />
         <FilterCombobox
           label="Environment"
           value={environment}

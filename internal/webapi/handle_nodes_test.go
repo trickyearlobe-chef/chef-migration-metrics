@@ -177,6 +177,46 @@ func TestFilterNodes_EmptyInput(t *testing.T) {
 	}
 }
 
+func TestFilterNodes_ByNodeName(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "web-prod-01"},
+		{NodeName: "web-staging-02"},
+		{NodeName: "db-prod-01"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?node_name=web", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 2 {
+		t.Errorf("expected 2 nodes matching 'web', got %d", len(result))
+	}
+}
+
+func TestFilterNodes_ByNodeName_CaseInsensitive(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "WebServer-01"},
+		{NodeName: "database-01"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?node_name=webserver", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node matching 'webserver', got %d", len(result))
+	}
+	if len(result) > 0 && result[0].NodeName != "WebServer-01" {
+		t.Errorf("expected WebServer-01, got %q", result[0].NodeName)
+	}
+}
+
+func TestFilterNodes_ByNodeName_NoMatch(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "web-prod-01"},
+		{NodeName: "db-prod-01"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?node_name=cache", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 0 {
+		t.Errorf("expected 0 nodes, got %d", len(result))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // nodeUsesCookbook tests
 // ---------------------------------------------------------------------------
@@ -683,30 +723,153 @@ func TestFilterNodes_RoleNilRoles(t *testing.T) {
 	}
 }
 
-func TestFilterNodes_RolePartialNameNoFalsePositive(t *testing.T) {
-	// "web" should not match a role named "webserver" because the substring
-	// check uses the JSON-quoted form "web" vs "webserver".
+func TestFilterNodes_RolePartialNameMatches(t *testing.T) {
+	// With case-insensitive substring matching, "web" WILL match "webserver".
 	nodes := []datastore.NodeSnapshot{
 		{NodeName: "n1", Roles: json.RawMessage(`["webserver"]`)},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=web", nil)
 	result := filterNodes(req, nodes)
-	if len(result) != 0 {
-		t.Errorf("expected 0 nodes for role=web (partial), got %d", len(result))
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for role=web (substring match), got %d", len(result))
 	}
 }
 
-func TestFilterNodes_RoleExactMatchAmongSimilar(t *testing.T) {
+func TestFilterNodes_RoleSubstringMatchAmongSimilar(t *testing.T) {
 	nodes := []datastore.NodeSnapshot{
 		{NodeName: "n1", Roles: json.RawMessage(`["web","webserver","web-proxy"]`)},
 	}
 
+	// All of these should match because they are exact or substring matches.
 	for _, role := range []string{"web", "webserver", "web-proxy"} {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role="+role, nil)
 		result := filterNodes(req, nodes)
 		if len(result) != 1 {
 			t.Errorf("expected 1 node for role=%s, got %d", role, len(result))
 		}
+	}
+
+	// "server" is a substring of "webserver", so it should also match.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=server", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for role=server (substring of webserver), got %d", len(result))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Partial-match and case-insensitive tests
+// ---------------------------------------------------------------------------
+
+func TestFilterNodes_PartialMatch(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "web1", ChefEnvironment: "production", Platform: "ubuntu-20.04", ChefVersion: "17.0.0", PolicyName: "webserver-policy", PolicyGroup: "prod-us-east"},
+		{NodeName: "web2", ChefEnvironment: "pre-prod", Platform: "ubuntu-22.04", ChefVersion: "17.1.0", PolicyName: "database-policy", PolicyGroup: "staging"},
+		{NodeName: "web3", ChefEnvironment: "staging", Platform: "centos", ChefVersion: "18.0.0", PolicyName: "cache-policy", PolicyGroup: "dev"},
+	}
+
+	// "prod" matches "production" and "pre-prod"
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?environment=prod", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 2 {
+		t.Errorf("expected 2 nodes for environment=prod (partial), got %d", len(result))
+	}
+
+	// "ubuntu" matches "ubuntu-20.04" and "ubuntu-22.04"
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?platform=ubuntu", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 2 {
+		t.Errorf("expected 2 nodes for platform=ubuntu (partial), got %d", len(result))
+	}
+
+	// "17" matches "17.0.0" and "17.1.0"
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?chef_version=17", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 2 {
+		t.Errorf("expected 2 nodes for chef_version=17 (partial), got %d", len(result))
+	}
+
+	// "policy" matches all three policy names
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?policy_name=policy", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 3 {
+		t.Errorf("expected 3 nodes for policy_name=policy (partial), got %d", len(result))
+	}
+
+	// "prod" matches "prod-us-east"
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?policy_group=prod", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for policy_group=prod (partial), got %d", len(result))
+	}
+}
+
+func TestFilterNodes_CaseInsensitive(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "web1", ChefEnvironment: "Production", Platform: "Ubuntu", ChefVersion: "17.0.0", PolicyName: "WebServer", PolicyGroup: "Prod-US"},
+		{NodeName: "web2", ChefEnvironment: "staging", Platform: "centos", ChefVersion: "18.0.0", PolicyName: "database", PolicyGroup: "dev"},
+	}
+
+	// Upper-case filter matches lower/mixed-case field
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?environment=PRODUCTION", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for environment=PRODUCTION (case-insensitive), got %d", len(result))
+	}
+	if len(result) > 0 && result[0].NodeName != "web1" {
+		t.Errorf("expected web1, got %q", result[0].NodeName)
+	}
+
+	// Lower-case filter matches mixed-case field
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?platform=ubuntu", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for platform=ubuntu (case-insensitive), got %d", len(result))
+	}
+
+	// Mixed-case partial filter
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?policy_name=Web", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for policy_name=Web (case-insensitive partial), got %d", len(result))
+	}
+
+	// Upper-case partial filter on policy_group
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?policy_group=PROD", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for policy_group=PROD (case-insensitive partial), got %d", len(result))
+	}
+}
+
+func TestFilterNodes_CaseInsensitiveRole(t *testing.T) {
+	nodes := []datastore.NodeSnapshot{
+		{NodeName: "n1", Roles: json.RawMessage(`["WebServer","Database"]`)},
+		{NodeName: "n2", Roles: json.RawMessage(`["cache"]`)},
+	}
+
+	// "webserver" matches "WebServer" (case-insensitive)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=webserver", nil)
+	result := filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for role=webserver (case-insensitive), got %d", len(result))
+	}
+	if len(result) > 0 && result[0].NodeName != "n1" {
+		t.Errorf("expected n1, got %q", result[0].NodeName)
+	}
+
+	// "DATABASE" matches "Database" (case-insensitive)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=DATABASE", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for role=DATABASE (case-insensitive), got %d", len(result))
+	}
+
+	// "Server" is a substring of "WebServer" (case-insensitive partial)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/nodes?role=Server", nil)
+	result = filterNodes(req, nodes)
+	if len(result) != 1 {
+		t.Errorf("expected 1 node for role=Server (case-insensitive partial), got %d", len(result))
 	}
 }
 

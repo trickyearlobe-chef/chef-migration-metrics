@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
@@ -156,6 +158,14 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 		details = append(details, detail)
 	}
 
+	// Sort so that git-sourced cookbooks appear before chef_server ones.
+	sort.SliceStable(details, func(i, j int) bool {
+		if details[i].Cookbook.Source == details[j].Cookbook.Source {
+			return false
+		}
+		return details[i].Cookbook.Source == "git"
+	})
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"name": name,
 		"data": details,
@@ -167,7 +177,8 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 // ---------------------------------------------------------------------------
 
 // filterCookbooks applies optional query-parameter filters (source, active,
-// name) to the given slice, returning only matching cookbooks.
+// name) to the given slice, returning only matching cookbooks. The name
+// filter uses case-insensitive partial (substring) matching.
 func filterCookbooks(req *http.Request, cookbooks []datastore.Cookbook) []datastore.Cookbook {
 	q := req.URL.Query()
 	source := q.Get("source")
@@ -189,7 +200,7 @@ func filterCookbooks(req *http.Request, cookbooks []datastore.Cookbook) []datast
 		if active == "false" && cb.IsActive {
 			continue
 		}
-		if nameFilter != "" && cb.Name != nameFilter {
+		if nameFilter != "" && !strings.Contains(strings.ToLower(cb.Name), strings.ToLower(nameFilter)) {
 			continue
 		}
 		filtered = append(filtered, cb)

@@ -130,6 +130,7 @@ export interface PaginationQuery {
 
 export interface NodeFilterQuery extends PaginationQuery {
   organisation?: string;
+  node_name?: string;
   environment?: string;
   platform?: string;
   chef_version?: string;
