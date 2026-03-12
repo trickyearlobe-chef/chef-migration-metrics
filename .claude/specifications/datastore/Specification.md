@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-PostgreSQL schema for all persisted data. Key tables: `credentials` (AES-256-GCM encrypted secrets — Chef API keys, LDAP passwords, SMTP passwords, webhook URLs), `organisations` (with optional FK to stored credentials), `collection_runs`, `node_snapshots` (with `is_stale`, `policy_name`, `policy_group`), `cookbook_versions`, `cookstyle_results`, `test_kitchen_results`, `readiness_results`, `autocorrect_previews`, `cookbook_complexity`, `role_dependencies`, `notification_history`, `export_jobs`, `log_entries`, `metric_snapshots`. Schema managed via sequential numbered migrations. Retention policies apply to snapshots, logs, exports, and metric data.
+PostgreSQL schema for all persisted data. Key tables: `credentials` (AES-256-GCM encrypted secrets — Chef API keys, LDAP passwords, SMTP passwords, webhook URLs), `organisations` (with optional FK to stored credentials), `collection_runs`, `node_snapshots` (with `is_stale`, `policy_name`, `policy_group`), `cookbook_versions`, `cookstyle_results`, `test_kitchen_results`, `readiness_results`, `autocorrect_previews`, `cookbook_complexity`, `role_dependencies`, `notification_history`, `export_jobs`, `log_entries`, `metric_snapshots`, `owners`, `ownership_assignments`, `git_repo_committers`, `ownership_audit_log`. Schema managed via sequential numbered migrations. Retention policies apply to snapshots, logs, exports, and metric data.
 
 ---
 
@@ -197,6 +197,7 @@ Stores a point-in-time snapshot of each node's attributes as collected during a 
 | `is_stale` | BOOLEAN | No | Whether the node's data is stale (ohai_time older than configured threshold) |
 | `collected_at` | TIMESTAMPTZ | No | Timestamp of collection |
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
+| `custom_attributes` | JSONB | Yes | Additional node attributes collected for ownership auto-derivation rules. Keyed by the dot-separated attribute path (e.g. `{"automatic.cloud.provider": "aws"}`). See [Ownership Specification](../ownership/Specification.md) § 2.4. |
 
 **Foreign keys:**
 - `collection_run_id` → `collection_runs(id)` ON DELETE CASCADE
@@ -723,6 +724,119 @@ Stores active user sessions for session management and explicit logout/invalidat
 
 ---
 
+### 19. `owners`
+
+Stores named owner entities for the Ownership Tracking feature. Owners represent teams, individuals, business units, or cost centres that are responsible for nodes, cookbooks, git repositories, roles, or policies. See the [Ownership Specification](../ownership/Specification.md) for the full feature design.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `name` | TEXT | No | Unique human-readable owner name (e.g. `platform-team`, `jsmith`) |
+| `display_name` | TEXT | Yes | Friendly display name |
+| `contact_email` | TEXT | Yes | Contact email for notifications and reports |
+| `contact_channel` | TEXT | Yes | Slack channel, Teams channel, or other contact reference |
+| `owner_type` | TEXT | No | One of: `team`, `individual`, `business_unit`, `cost_centre`, `custom` |
+| `metadata` | JSONB | Yes | Arbitrary key-value metadata |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+| `updated_at` | TIMESTAMPTZ | No | Last update time |
+
+**Unique constraints:**
+- `name`
+
+**Indexes:**
+- `idx_owners_name` on `name`
+- `idx_owners_owner_type` on `owner_type`
+
+---
+
+### 20. `ownership_assignments`
+
+Links owners to the entities they are responsible for. An owner can have many assignments; an entity can have multiple owners (shared ownership). Uses soft references (by name/key) rather than foreign keys to entity tables, allowing ownership to be pre-assigned for entities that haven't been collected yet. See the [Ownership Specification](../ownership/Specification.md) § 1.2 for entity key formats and § 1.3 for ownership resolution precedence.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `owner_id` | UUID | No | FK → `owners.id` |
+| `entity_type` | TEXT | No | One of: `node`, `cookbook`, `git_repo`, `role`, `policy` |
+| `entity_key` | TEXT | No | Identifier for the owned entity |
+| `organisation_id` | UUID | Yes | FK → `organisations.id`. Null = cross-org assignment. |
+| `assignment_source` | TEXT | No | One of: `manual`, `auto_rule`, `import` |
+| `auto_rule_name` | TEXT | Yes | Name of the auto-derivation rule (null for manual/import) |
+| `confidence` | TEXT | No | One of: `definitive`, `inferred` |
+| `notes` | TEXT | Yes | Optional notes |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+| `updated_at` | TIMESTAMPTZ | No | Last update time |
+
+**Foreign keys:**
+- `owner_id` → `owners(id)` ON DELETE CASCADE
+- `organisation_id` → `organisations(id)` ON DELETE CASCADE
+
+**Unique constraints:**
+- `(owner_id, entity_type, entity_key, organisation_id)` — must handle nullable `organisation_id` so two assignments differing only by one having null are distinct.
+
+**Indexes:**
+- `idx_ownership_assignments_owner_id` on `owner_id`
+- `idx_ownership_assignments_entity_type` on `entity_type`
+- `idx_ownership_assignments_entity_key` on `entity_key`
+- `idx_ownership_assignments_organisation_id` on `organisation_id`
+- `idx_ownership_assignments_entity_lookup` on `(entity_type, entity_key, organisation_id)`
+- `idx_ownership_assignments_assignment_source` on `assignment_source`
+- `idx_ownership_assignments_auto_rule_name` on `auto_rule_name`
+
+---
+
+### 21. `git_repo_committers`
+
+Stores committer information extracted from git repository history during collection. Updated in full on each collection run for each git-sourced cookbook. Supports the committer sub-page on the cookbook detail view where operators can identify active contributors and assign them as owners. See the [Ownership Specification](../ownership/Specification.md) § 7.2.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `git_repo_url` | TEXT | No | Git repository URL (matches `cookbooks.git_repo_url`) |
+| `author_name` | TEXT | No | Committer's name as recorded in git |
+| `author_email` | TEXT | No | Committer's email as recorded in git |
+| `commit_count` | INTEGER | No | Total number of commits by this author |
+| `first_commit_at` | TIMESTAMPTZ | No | Timestamp of this author's earliest commit |
+| `last_commit_at` | TIMESTAMPTZ | No | Timestamp of this author's most recent commit |
+| `collected_at` | TIMESTAMPTZ | No | When this data was last refreshed |
+
+**Unique constraints:**
+- `(git_repo_url, author_email)`
+
+**Indexes:**
+- `idx_git_repo_committers_git_repo_url` on `git_repo_url`
+- `idx_git_repo_committers_author_email` on `author_email`
+- `idx_git_repo_committers_last_commit_at` on `last_commit_at`
+
+---
+
+### 22. `ownership_audit_log`
+
+Append-only log of all ownership changes. Every mutation to the `owners` and `ownership_assignments` tables generates one or more audit log entries. Rows are never updated or deleted by application code — only the time-based retention purge job removes old entries. See the [Ownership Specification](../ownership/Specification.md) § 4.4 for the API endpoint and § 10 for retention rules.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `timestamp` | TIMESTAMPTZ | No | When the action occurred |
+| `action` | TEXT | No | One of: `owner_created`, `owner_updated`, `owner_deleted`, `assignment_created`, `assignment_deleted`, `assignment_reassigned` |
+| `actor` | TEXT | No | Username of the authenticated user, or `system` for auto-derivation and startup cleanup |
+| `owner_name` | TEXT | No | Name of the owner involved |
+| `entity_type` | TEXT | Yes | Entity type of the assignment (null for owner-level actions) |
+| `entity_key` | TEXT | Yes | Entity key of the assignment (null for owner-level actions) |
+| `organisation` | TEXT | Yes | Organisation name for org-scoped assignments |
+| `details` | JSONB | Yes | Additional context varying by action type |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+
+**Indexes:**
+- `idx_ownership_audit_log_timestamp` on `timestamp`
+- `idx_ownership_audit_log_action` on `action`
+- `idx_ownership_audit_log_actor` on `actor`
+- `idx_ownership_audit_log_owner_name` on `owner_name`
+- `idx_ownership_audit_log_entity_type` on `entity_type`
+- `idx_ownership_audit_log_retention` on `timestamp` — used by the retention purge job
+
+---
+
 ## Entity Relationship Summary
 
 ```
@@ -764,6 +878,13 @@ notification_history (standalone — references channels by name)
 export_jobs (standalone — references users by username)
 
 users ── 1:N ── sessions
+
+owners ── 1:N ── ownership_assignments
+ownership_assignments ── N:1 ── organisations (optional, nullable FK)
+
+git_repo_committers (standalone — references cookbooks by git_repo_url)
+
+ownership_audit_log (standalone — append-only audit trail)
 ```
 
 > **Note on `credentials` relationships:** The `credentials` table has a direct FK relationship with `organisations` for Chef client keys. For other credential types (LDAP bind password, SMTP password, webhook URLs), the link is by name — the YAML config references a credential by its `name` value (e.g. `bind_password_credential: ldap-bind-password`) rather than by a foreign key. This keeps the schema simple and avoids adding nullable FK columns to tables that don't exist (LDAP/SMTP config lives in the YAML file, not in the database).
@@ -828,6 +949,24 @@ Auto-correct previews are linked to their parent `cookstyle_results` row via CAS
 
 ---
 
+### Ownership Audit Log Retention
+
+Ownership audit log entries are purged based on `ownership.audit_log.retention_days` (default: 365 days). A daily background job deletes entries older than the threshold. See [Ownership Specification](../ownership/Specification.md) § 10.
+
+### Owner Deletion
+
+Deleting an owner cascades to all `ownership_assignments` for that owner.
+
+### Organisation Deletion (Ownership)
+
+Deleting an organisation cascades to all `ownership_assignments` scoped to that organisation.
+
+### Git Repo Committers
+
+Committer data is fully refreshed on each collection run. No time-based retention — rows are replaced in bulk.
+
+---
+
 ### Credential Retention
 
 - Credentials are not subject to time-based retention. They persist until explicitly deleted by an administrator.
@@ -858,3 +997,4 @@ Auto-correct previews are linked to their parent `cookstyle_results` row via CAS
 - [Logging Specification](../logging/Specification.md)
 - [Authentication Specification](../auth/Specification.md)
 - [Configuration Specification](../configuration/Specification.md)
+- [Ownership Specification](../ownership/Specification.md)

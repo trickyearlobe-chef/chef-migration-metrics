@@ -131,5 +131,6 @@ All component-level specifications are documented as separate files under `.clau
 | `tls/Specification.md` | TLS and certificate management — plain HTTP, static certificates, ACME automatic management (Let's Encrypt), challenge types, DNS providers, certificate reload, mTLS |
 | `secrets-storage/Specification.md` | Secrets and credential management — three storage methods (database AES-256-GCM encrypted, environment variable, file path), credential resolution precedence, master encryption key management, key rotation, plaintext handling rules, Kubernetes/Helm/RPM/DEB secrets integration |
 | `elasticsearch/Specification.md` | Elasticsearch export, Logstash pipeline, ELK testing stack |
+| `ownership/Specification.md` | Ownership tracking for nodes, roles, policyfiles, cookbooks, and git repositories — owner model, auto-derivation rules, bulk import, owner-scoped dashboard views and exports |
 
 See also [`chef-api/Specification.md`](chef-api/Specification.md) for the Chef Infra Server API technical specification.

@@ -1,6 +1,6 @@
 # Data Visualisation - Component Specification
 
-> **TL;DR:** React web dashboard consumed via the Web API. Views: Chef Client version distribution, cookbook compatibility matrix, node upgrade readiness summary, role→cookbook dependency graph, remediation priority list with auto-correct diff previews. Interactive filters (org, environment, role, policy name/group, platform, target version, stale status, complexity label). Data exports (CSV, JSON, Chef search query). Notifications (webhook, email) on status changes and milestones. Historical trend charts. Integrated log viewer scoped per job/cookbook/scan.
+> **TL;DR:** React web dashboard consumed via the Web API. Views: Chef Client version distribution, cookbook compatibility matrix, node upgrade readiness summary, role→cookbook dependency graph, remediation priority list with auto-correct diff previews. Interactive filters (org, environment, role, policy name/group, platform, target version, stale status, complexity label). Data exports (CSV, JSON, Chef search query). Notifications (webhook, email) on status changes and milestones. Historical trend charts. Integrated log viewer scoped per job/cookbook/scan, and ownership summary view (per-owner migration progress, coverage metrics, ownership badges on node/cookbook lists).
 
 ## Overview
 
@@ -142,6 +142,7 @@ All dashboard views must support filtering by the following dimensions. Filters 
 | Active/unused cookbook status | Show or hide cookbooks not applied to any node (default: hide unused) |
 | Stale node status | Show all nodes, only stale nodes, or only fresh nodes (default: all) |
 | Complexity label | Filter cookbooks by complexity label (`low`, `medium`, `high`, `critical`) |
+| Owner | Filter by owner name(s) or show only unowned entities. Multi-select. See [Ownership Specification](../ownership/Specification.md) § 5.1. Only visible when `ownership.enabled` is `true`. |
 
 ---
 
@@ -153,6 +154,19 @@ All dashboard views must support filtering by the following dimensions. Filters 
 - From the dependency graph → cookbook detail or role node list
 - From the remediation guidance view → cookbook detail view with full deprecation documentation and auto-correct diff
 - From a blocking cookbook in the node detail → remediation guidance for that specific cookbook
+
+---
+
+## Ownership Views
+
+When `ownership.enabled` is `true`, the dashboard includes ownership-aware views and indicators. These are fully specified in the [Ownership Specification](../ownership/Specification.md) § 5 and summarised here:
+
+- **Owner filter** — An Owner multi-select filter in the filter bar, applied consistently across all views (§ 5.1).
+- **Ownership summary view** — A top-level "Ownership" navigation item showing per-owner migration progress, ownership coverage metrics, and drill-down to owner-scoped dashboards (§ 5.2).
+- **Ownership indicators** — Owner badges on node lists, cookbook lists, node detail, cookbook detail, and remediation priority views. `definitive` owners show a solid badge; `inferred` owners show a dashed-outline badge (§ 5.3, § 1.4).
+- **Committer sub-page** — On cookbook detail for git-sourced cookbooks, a sub-page listing git committers with an "Assign as Owners" workflow (§ 5.3).
+- **Ownership management UI** — Admin section for owner CRUD, assignment management, bulk import, bulk reassignment, auto-rule status, and audit log (§ 5.4).
+- **Ownership audit log** — A filterable, paginated table showing all ownership mutations with actor, timestamp, and details (§ 5.4).
 
 ---
 
@@ -294,3 +308,4 @@ Chef organisations can contain many thousands of nodes. The dashboard must remai
 - [Data Collection component specification](../data-collection/Specification.md)
 - [Configuration Specification](../configuration/Specification.md)
 - [Web API Specification](../web-api/Specification.md) — REST endpoints and WebSocket real-time events
+- [Ownership Specification](../ownership/Specification.md) — ownership views, filters, and management UI

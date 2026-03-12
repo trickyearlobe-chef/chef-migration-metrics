@@ -496,6 +496,51 @@ logging:
 
 ---
 
+### Ownership
+
+Controls ownership tracking features. When disabled (default), all ownership UI elements are hidden and ownership tables are not populated. See the [Ownership Specification](../ownership/Specification.md) for the full feature design.
+
+```yaml
+ownership:
+  enabled: false  # Default: false. Enable ownership tracking features.
+
+  audit_log:
+    retention_days: 365  # Days to retain audit log entries. 0 = retain indefinitely.
+
+  auto_rules: []
+  # Auto-derivation rules are defined here. Example:
+  # auto_rules:
+  #   - name: aws-nodes-to-cloud-team
+  #     owner: cloud-team
+  #     type: node_attribute
+  #     attribute_path: automatic.cloud.provider
+  #     match_value: "aws"
+  #   - name: web-prod-nodes
+  #     owner: web-platform
+  #     type: node_name_pattern
+  #     pattern: "^web-prod-.*"
+  #   - name: payment-policy
+  #     owner: payments-team
+  #     type: policy_match
+  #     policy_name: "payment-app"
+  #   - name: acme-cookbooks
+  #     owner: acme-platform
+  #     type: cookbook_name_pattern
+  #     pattern: "^acme-.*"
+  #   - name: web-team-repos
+  #     owner: web-platform
+  #     type: git_repo_url_pattern
+  #     pattern: "gitlab\\.example\\.com/team-web/.*"
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `ownership.enabled` | `false` | Enable ownership tracking. When disabled, tables still exist but are not populated and UI elements are hidden. |
+| `ownership.audit_log.retention_days` | `365` | Days to retain ownership audit log entries. Set to `0` to disable purging. |
+| `ownership.auto_rules` | `[]` | List of auto-derivation rules. See [Ownership Specification](../ownership/Specification.md) § 2.2 for rule types and field definitions. |
+
+---
+
 ### Authentication
 
 See the [Authentication and Authorisation specification](../auth/Specification.md) for full details. Authentication providers are configured under the `auth` key.
@@ -559,6 +604,8 @@ The following environment variables are explicitly supported for sensitive value
 | `CHEF_MIGRATION_METRICS_ANALYSIS_TOOLS_EMBEDDED_BIN_DIR` | Override `analysis_tools.embedded_bin_dir` — path to directory containing embedded `cookstyle`, `kitchen`, and `ruby` binaries |
 | `CHEF_MIGRATION_METRICS_ELASTICSEARCH_ENABLED` | Override `elasticsearch.enabled` — set to `true` to enable Elasticsearch NDJSON export |
 | `CHEF_MIGRATION_METRICS_ELASTICSEARCH_OUTPUT_DIRECTORY` | Override `elasticsearch.output_directory` — path where NDJSON files are written |
+| `CMM_OWNERSHIP_ENABLED` | Override `ownership.enabled` |
+| `CMM_OWNERSHIP_AUDIT_LOG_RETENTION_DAYS` | Override `ownership.audit_log.retention_days` |
 
 ---
 
@@ -611,6 +658,14 @@ On startup, the application must validate the configuration and fail fast with a
 - `analysis_tools.embedded_bin_dir` is set to a non-empty value but the directory does not exist (log `WARN` — not fatal, as the application falls back to `PATH` lookup)
 - `elasticsearch.output_directory` does not exist or is not writable when `elasticsearch.enabled` is `true`
 - `elasticsearch.retention_hours` is less than 1
+- `ownership.auto_rules[].name` must be unique across all rules
+- `ownership.auto_rules[].owner` must reference an existing owner when auto-derivation runs (validated at rule evaluation time, not startup — owners may be created after config is written)
+- `ownership.auto_rules[].type` must be one of: `node_attribute`, `node_name_pattern`, `policy_match`, `cookbook_name_pattern`, `git_repo_url_pattern`, `role_match`
+- `ownership.auto_rules[].pattern` must be a valid Go regex when required by the rule type
+- `ownership.auto_rules[].attribute_path` is required when type is `node_attribute`
+- `ownership.auto_rules[].match_value` is required when type is `node_attribute`
+- `ownership.auto_rules[].policy_name` is required when type is `policy_match`
+- `ownership.audit_log.retention_days` must be a non-negative integer
 
 ---
 
@@ -707,6 +762,12 @@ frontend:
 logging:
   level: INFO
   retention_days: 90
+
+ownership:
+  enabled: false
+  audit_log:
+    retention_days: 365
+  auto_rules: []
 
 auth:
   providers:

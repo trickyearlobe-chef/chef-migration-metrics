@@ -420,6 +420,7 @@ Detailed specifications for every component are maintained under `.claude/specif
 | [Datastore](.claude/specifications/datastore/Specification.md) | Database schema, tables, indexes, relationships (including remediation, complexity, dependency graph, notifications, and exports) |
 | [Web API](.claude/specifications/web-api/Specification.md) | HTTP API endpoints between backend and frontend (including remediation, dependency graph, exports, and notifications) |
 | [Packaging](.claude/specifications/packaging/Specification.md) | RPM, DEB, container image, Docker Compose, and Helm chart |
+| [Ownership](.claude/specifications/ownership/Specification.md) | Ownership tracking for nodes, roles, policyfiles, cookbooks, and git repositories — owner model, auto-derivation rules, bulk import, owner-scoped views and exports |
 
 ## License
 
