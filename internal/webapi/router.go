@@ -297,6 +297,19 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)
 	// -----------------------------------------------------------------
+	// -----------------------------------------------------------------
+	// Ownership endpoints (viewer for reads, operator/admin for writes)
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/owners", r.handleOwners)
+	r.protect("/api/v1/owners/", r.handleOwners)
+	r.protect("/api/v1/ownership/reassign", r.handleOwnershipEndpoints)
+	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
+	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints)
+	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints)
+
+	// -----------------------------------------------------------------
+	// Admin endpoints (admin role required)
+	// -----------------------------------------------------------------
 	r.adminOnly("/api/v1/admin/credentials", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/credentials/", r.handleNotImplemented)
 	if r.authStore != nil {
