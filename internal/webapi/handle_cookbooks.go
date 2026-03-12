@@ -69,7 +69,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		OrganisationID  string `json:"organisation_id,omitempty"`
 		Name            string `json:"name"`
 		Version         string `json:"version,omitempty"`
-		VersionCount    int    `json:"version_count,omitempty"`
+		VersionCount    int    `json:"version_count"`
 		Source          string `json:"source"`
 		HasTestSuite    bool   `json:"has_test_suite"`
 		IsActive        bool   `json:"is_active"`
@@ -90,8 +90,10 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			IsStaleCookbook: cb.IsStaleCookbook,
 			DownloadStatus:  cb.DownloadStatus,
 		}
-		if count, ok := versionCounts[cb.Name]; ok && cb.Source == "chef_server" {
+		if count, ok := versionCounts[cb.Name]; ok {
 			resp.VersionCount = count
+		} else {
+			resp.VersionCount = 1
 		}
 		result = append(result, resp)
 	}
