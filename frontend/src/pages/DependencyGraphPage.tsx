@@ -427,8 +427,8 @@ function ForceGraph({
           for (let j = i + 1; j < simNodes.length; j++) {
             const a = simNodes[i];
             const b = simNodes[j];
-            let dx = b.x - a.x;
-            let dy = b.y - a.y;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
             let dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < 1) dist = 1;
             const force = (repulsionStrength * alpha) / (dist * dist);
@@ -452,8 +452,8 @@ function ForceGraph({
           const source = nodeMap.get(edge.source);
           const target = nodeMap.get(edge.target);
           if (!source || !target) continue;
-          let dx = target.x - source.x;
-          let dy = target.y - source.y;
+          const dx = target.x - source.x;
+          const dy = target.y - source.y;
           let dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < 1) dist = 1;
           const displacement = dist - idealLength;

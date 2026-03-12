@@ -64,7 +64,7 @@ export function NodesPage() {
         }
       })
       .catch(() => setTargetVersions([]));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // intentionally run only on mount
 
   // Load filter option values whenever the selected org changes.
   useEffect(() => {

@@ -133,7 +133,7 @@ export function ExportButton({
             setError(status.error_message ?? "Export failed.");
             setPhase("error");
           }
-        } catch (e) {
+        } catch (_e) {
           // Transient poll failure — keep trying until MAX_POLLS.
         }
       }, POLL_INTERVAL_MS);
