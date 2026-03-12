@@ -281,6 +281,7 @@ export interface CookbookListItem {
   organisation_id?: string;
   name: string;
   version?: string;
+  version_count?: number;
   source: string;
   has_test_suite: boolean;
   is_active: boolean;

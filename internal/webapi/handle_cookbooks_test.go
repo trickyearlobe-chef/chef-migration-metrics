@@ -182,6 +182,81 @@ func TestFilterCookbooks_NoMatch(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// collapseChefServerCookbooks tests
+// ---------------------------------------------------------------------------
+
+func TestCollapseChefServerCookbooks_MultipleVersions(t *testing.T) {
+	cookbooks := []datastore.Cookbook{
+		{ID: "cb-1", Name: "apt", Version: "1.0.0", Source: "chef_server"},
+		{ID: "cb-2", Name: "apt", Version: "2.0.0", Source: "chef_server"},
+		{ID: "cb-3", Name: "apt", Version: "3.0.0", Source: "chef_server"},
+		{ID: "cb-4", Name: "nginx", Version: "1.0.0", Source: "chef_server"},
+	}
+	collapsed, counts := collapseChefServerCookbooks(cookbooks)
+	if len(collapsed) != 2 {
+		t.Fatalf("expected 2 collapsed cookbooks, got %d", len(collapsed))
+	}
+	if collapsed[0].Name != "apt" || collapsed[0].ID != "cb-1" {
+		t.Errorf("first entry: name=%q id=%q, want apt/cb-1", collapsed[0].Name, collapsed[0].ID)
+	}
+	if collapsed[1].Name != "nginx" || collapsed[1].ID != "cb-4" {
+		t.Errorf("second entry: name=%q id=%q, want nginx/cb-4", collapsed[1].Name, collapsed[1].ID)
+	}
+	if counts["apt"] != 3 {
+		t.Errorf("apt version count = %d, want 3", counts["apt"])
+	}
+	if counts["nginx"] != 1 {
+		t.Errorf("nginx version count = %d, want 1", counts["nginx"])
+	}
+}
+
+func TestCollapseChefServerCookbooks_GitPassedThrough(t *testing.T) {
+	cookbooks := []datastore.Cookbook{
+		{ID: "cb-1", Name: "myapp", Version: "1.0.0", Source: "git"},
+		{ID: "cb-2", Name: "myapp", Version: "2.0.0", Source: "chef_server"},
+		{ID: "cb-3", Name: "myapp", Version: "3.0.0", Source: "chef_server"},
+	}
+	collapsed, counts := collapseChefServerCookbooks(cookbooks)
+	// Git cookbook passes through unchanged; chef_server versions collapse to one.
+	if len(collapsed) != 2 {
+		t.Fatalf("expected 2 collapsed cookbooks, got %d", len(collapsed))
+	}
+	if collapsed[0].Source != "git" {
+		t.Errorf("first entry source = %q, want git", collapsed[0].Source)
+	}
+	if collapsed[1].Source != "chef_server" || collapsed[1].ID != "cb-2" {
+		t.Errorf("second entry: source=%q id=%q, want chef_server/cb-2", collapsed[1].Source, collapsed[1].ID)
+	}
+	if counts["myapp"] != 2 {
+		t.Errorf("myapp version count = %d, want 2", counts["myapp"])
+	}
+}
+
+func TestCollapseChefServerCookbooks_Empty(t *testing.T) {
+	collapsed, counts := collapseChefServerCookbooks(nil)
+	if len(collapsed) != 0 {
+		t.Errorf("expected 0 collapsed cookbooks, got %d", len(collapsed))
+	}
+	if len(counts) != 0 {
+		t.Errorf("expected 0 counts, got %d", len(counts))
+	}
+}
+
+func TestCollapseChefServerCookbooks_AllGit(t *testing.T) {
+	cookbooks := []datastore.Cookbook{
+		{ID: "cb-1", Name: "app1", Source: "git"},
+		{ID: "cb-2", Name: "app2", Source: "git"},
+	}
+	collapsed, counts := collapseChefServerCookbooks(cookbooks)
+	if len(collapsed) != 2 {
+		t.Errorf("expected 2 cookbooks, got %d", len(collapsed))
+	}
+	if len(counts) != 0 {
+		t.Errorf("expected 0 version counts for all-git, got %d", len(counts))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Route wiring tests — verify method checks and 404s
 // ---------------------------------------------------------------------------
 
@@ -278,6 +353,82 @@ func TestHandleCookbooks_HappyPath_WithCookbooks(t *testing.T) {
 	}
 	if body.Pagination.TotalItems != 2 {
 		t.Errorf("total_items = %d, want 2", body.Pagination.TotalItems)
+	}
+}
+
+func TestHandleCookbooks_HappyPath_VersionCountCollapsed(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-1", Name: "apt", Version: "1.0.0", Source: "chef_server", IsActive: true},
+				{ID: "cb-2", Name: "apt", Version: "2.0.0", Source: "chef_server", IsActive: true},
+				{ID: "cb-3", Name: "apt", Version: "3.0.0", Source: "chef_server", IsActive: true},
+				{ID: "cb-4", Name: "nginx", Version: "1.0.0", Source: "chef_server", IsActive: true},
+			}, nil
+		},
+		ListGitCookbooksFn: func(ctx context.Context) ([]datastore.Cookbook, error) {
+			return []datastore.Cookbook{
+				{ID: "cb-5", Name: "myapp", Version: "0.1.0", Source: "git", IsActive: true},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body struct {
+		Data []struct {
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			Version      string `json:"version"`
+			VersionCount int    `json:"version_count"`
+			Source       string `json:"source"`
+		} `json:"data"`
+		Pagination struct {
+			TotalItems int `json:"total_items"`
+		} `json:"pagination"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// 4 chef_server versions of apt collapse to 1 + 1 nginx + 1 git myapp = 3 rows.
+	if body.Pagination.TotalItems != 3 {
+		t.Fatalf("total_items = %d, want 3", body.Pagination.TotalItems)
+	}
+	if len(body.Data) != 3 {
+		t.Fatalf("len(data) = %d, want 3", len(body.Data))
+	}
+
+	// Find the apt entry and check version_count.
+	found := false
+	for _, cb := range body.Data {
+		if cb.Name == "apt" && cb.Source == "chef_server" {
+			found = true
+			if cb.VersionCount != 3 {
+				t.Errorf("apt version_count = %d, want 3", cb.VersionCount)
+			}
+		}
+		if cb.Name == "nginx" && cb.Source == "chef_server" {
+			if cb.VersionCount != 1 {
+				t.Errorf("nginx version_count = %d, want 1", cb.VersionCount)
+			}
+		}
+		// Git cookbooks should not have version_count set.
+		if cb.Source == "git" && cb.VersionCount != 0 {
+			t.Errorf("git cookbook %q has version_count = %d, want 0", cb.Name, cb.VersionCount)
+		}
+	}
+	if !found {
+		t.Error("did not find collapsed apt entry in response")
 	}
 }
 
