@@ -11,5 +11,8 @@ spec:
     - name: wget
       image: busybox:latest
       command: ["wget"]
-      args: ["--spider", "--timeout=5", "http://{{ include \"chef-migration-metrics.fullname\" . }}:{{ .Values.service.port }}/api/v1/admin/status"]
+      args:
+        - "--spider"
+        - "--timeout=5"
+        - 'http://{{ include "chef-migration-metrics.fullname" . }}:{{ .Values.service.port }}/api/v1/admin/status'
   restartPolicy: Never
