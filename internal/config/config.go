@@ -40,6 +40,7 @@ type Config struct {
 	Frontend                   FrontendConfig      `yaml:"frontend"`
 	Logging                    LoggingConfig       `yaml:"logging"`
 	Auth                       AuthConfig          `yaml:"auth"`
+	Ownership                  OwnershipConfig     `yaml:"ownership"`
 
 	// explicitExportsDir tracks whether the user explicitly set exports.output_directory.
 	explicitExportsDir bool
@@ -400,6 +401,34 @@ type AuthProvider struct {
 }
 
 // ---------------------------------------------------------------------------
+// Ownership
+// ---------------------------------------------------------------------------
+
+// OwnershipConfig controls the ownership tracking feature.
+type OwnershipConfig struct {
+	Enabled   bool                `yaml:"enabled"`
+	AuditLog  OwnershipAuditLog   `yaml:"audit_log"`
+	AutoRules []OwnershipAutoRule `yaml:"auto_rules"`
+}
+
+// OwnershipAuditLog controls retention of the ownership audit log.
+type OwnershipAuditLog struct {
+	RetentionDays int `yaml:"retention_days"`
+}
+
+// OwnershipAutoRule defines a single auto-derivation rule for ownership.
+type OwnershipAutoRule struct {
+	Name          string `yaml:"name"`
+	Owner         string `yaml:"owner"`
+	Type          string `yaml:"type"`
+	AttributePath string `yaml:"attribute_path"`
+	MatchValue    string `yaml:"match_value"`
+	Pattern       string `yaml:"pattern"`
+	PolicyName    string `yaml:"policy_name"`
+	Organisation  string `yaml:"organisation"`
+}
+
+// ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 
@@ -577,6 +606,11 @@ func (c *Config) setDefaults() {
 	if c.Logging.RetentionDays == 0 {
 		c.Logging.RetentionDays = 90
 	}
+
+	// Ownership
+	if c.Ownership.AuditLog.RetentionDays == 0 {
+		c.Ownership.AuditLog.RetentionDays = 365
+	}
 }
 
 // resolveTLSMode handles the deprecated tls.enabled boolean and normalises
@@ -655,6 +689,14 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_OUTPUT_DIRECTORY"); v != "" {
 		c.Elasticsearch.OutputDirectory = v
 	}
+	if v := os.Getenv("CMM_OWNERSHIP_ENABLED"); v != "" {
+		c.Ownership.Enabled = strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("CMM_OWNERSHIP_AUDIT_LOG_RETENTION_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.Ownership.AuditLog.RetentionDays = n
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -716,6 +758,7 @@ func (c *Config) Validate() (*Warnings, error) {
 	c.validateServer(ve, w)
 	c.validateLogging(ve)
 	c.validateAuth(ve)
+	c.validateOwnership(ve)
 
 	if ve.hasErrors() {
 		return w, ve
@@ -1087,6 +1130,48 @@ func (c *Config) validateAuth(ve *ValidationError) {
 			}
 		default:
 			ve.addf("%s: unknown provider type %q (expected local, ldap, or saml)", prefix, p.Type)
+		}
+	}
+}
+
+func (c *Config) validateOwnership(ve *ValidationError) {
+	if !c.Ownership.Enabled {
+		return
+	}
+
+	names := make(map[string]bool)
+	for i, rule := range c.Ownership.AutoRules {
+		prefix := fmt.Sprintf("ownership.auto_rules[%d]", i)
+		if rule.Name == "" {
+			ve.addf("%s.name is required", prefix)
+		} else if names[rule.Name] {
+			ve.addf("%s.name %q is duplicated", prefix, rule.Name)
+		} else {
+			names[rule.Name] = true
+		}
+		if rule.Owner == "" {
+			ve.addf("%s.owner is required", prefix)
+		}
+		switch rule.Type {
+		case "node_attribute":
+			if rule.AttributePath == "" {
+				ve.addf("%s.attribute_path is required for node_attribute rules", prefix)
+			}
+			if rule.MatchValue == "" {
+				ve.addf("%s.match_value is required for node_attribute rules", prefix)
+			}
+		case "node_name_pattern", "cookbook_name_pattern", "git_repo_url_pattern", "role_match":
+			if rule.Pattern == "" {
+				ve.addf("%s.pattern is required for %s rules", prefix, rule.Type)
+			}
+		case "policy_match":
+			if rule.PolicyName == "" && rule.Pattern == "" {
+				ve.addf("%s.policy_name or pattern is required for policy_match rules", prefix)
+			}
+		case "":
+			ve.addf("%s.type is required", prefix)
+		default:
+			ve.addf("%s.type %q is not valid (must be one of: node_attribute, node_name_pattern, policy_match, cookbook_name_pattern, git_repo_url_pattern, role_match)", prefix, rule.Type)
 		}
 	}
 }
