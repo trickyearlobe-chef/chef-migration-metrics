@@ -50,6 +50,25 @@ type mockStore struct {
 	UpdateExportJobExpiredFn                  func(ctx context.Context, id string) error
 	ListExportJobsByStatusFn                  func(ctx context.Context, status string) ([]datastore.ExportJob, error)
 	ListExpiredExportJobsFn                   func(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
+	ListOwnersFn                              func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error)
+	GetOwnerByNameFn                          func(ctx context.Context, name string) (datastore.Owner, error)
+	InsertOwnerFn                             func(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error)
+	UpdateOwnerFn                             func(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error)
+	DeleteOwnerFn                             func(ctx context.Context, name string) (int, error)
+	CountAssignmentsByOwnerFn                 func(ctx context.Context, ownerName string) (map[string]int, error)
+	InsertAssignmentFn                        func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error)
+	ListAssignmentsByOwnerFn                  func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error)
+	GetAssignmentFn                           func(ctx context.Context, id string) (datastore.OwnershipAssignment, error)
+	DeleteAssignmentFn                        func(ctx context.Context, id string) error
+	ReassignOwnershipFn                       func(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (int, int, error)
+	LookupOwnershipFn                         func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
+	GetOwnerReadinessSummaryFn                func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
+	GetOwnerCookbookSummaryFn                 func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
+	GetOwnerGitRepoSummaryFn                  func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
+	InsertAuditEntryFn                        func(ctx context.Context, p datastore.InsertAuditEntryParams) error
+	ListAuditLogFn                            func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
+	GetGitRepoURLForCookbookFn                func(ctx context.Context, cookbookName string) (string, error)
+	ListCommittersByRepoFn                    func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
 }
 
 // compile-time check
@@ -298,6 +317,139 @@ func (m *mockStore) ListExpiredExportJobs(ctx context.Context, now time.Time) ([
 		return m.ListExpiredExportJobsFn(ctx, now)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) ListOwners(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
+	if m.ListOwnersFn != nil {
+		return m.ListOwnersFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) GetOwnerByName(ctx context.Context, name string) (datastore.Owner, error) {
+	if m.GetOwnerByNameFn != nil {
+		return m.GetOwnerByNameFn(ctx, name)
+	}
+	return datastore.Owner{}, nil
+}
+
+func (m *mockStore) InsertOwner(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error) {
+	if m.InsertOwnerFn != nil {
+		return m.InsertOwnerFn(ctx, p)
+	}
+	return datastore.Owner{}, nil
+}
+
+func (m *mockStore) UpdateOwner(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error) {
+	if m.UpdateOwnerFn != nil {
+		return m.UpdateOwnerFn(ctx, name, p)
+	}
+	return datastore.Owner{}, nil
+}
+
+func (m *mockStore) DeleteOwner(ctx context.Context, name string) (int, error) {
+	if m.DeleteOwnerFn != nil {
+		return m.DeleteOwnerFn(ctx, name)
+	}
+	return 0, nil
+}
+
+func (m *mockStore) CountAssignmentsByOwner(ctx context.Context, ownerName string) (map[string]int, error) {
+	if m.CountAssignmentsByOwnerFn != nil {
+		return m.CountAssignmentsByOwnerFn(ctx, ownerName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) InsertAssignment(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
+	if m.InsertAssignmentFn != nil {
+		return m.InsertAssignmentFn(ctx, p)
+	}
+	return datastore.OwnershipAssignment{}, nil
+}
+
+func (m *mockStore) ListAssignmentsByOwner(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
+	if m.ListAssignmentsByOwnerFn != nil {
+		return m.ListAssignmentsByOwnerFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) GetAssignment(ctx context.Context, id string) (datastore.OwnershipAssignment, error) {
+	if m.GetAssignmentFn != nil {
+		return m.GetAssignmentFn(ctx, id)
+	}
+	return datastore.OwnershipAssignment{}, nil
+}
+
+func (m *mockStore) DeleteAssignment(ctx context.Context, id string) error {
+	if m.DeleteAssignmentFn != nil {
+		return m.DeleteAssignmentFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockStore) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (int, int, error) {
+	if m.ReassignOwnershipFn != nil {
+		return m.ReassignOwnershipFn(ctx, fromOwnerID, toOwnerID, entityType, organisationID)
+	}
+	return 0, 0, nil
+}
+
+func (m *mockStore) LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error) {
+	if m.LookupOwnershipFn != nil {
+		return m.LookupOwnershipFn(ctx, entityType, entityKey, organisationID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetOwnerReadinessSummary(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error) {
+	if m.GetOwnerReadinessSummaryFn != nil {
+		return m.GetOwnerReadinessSummaryFn(ctx, ownerName, targetChefVersion)
+	}
+	return datastore.OwnerReadinessSummary{BlockingCookbooks: []datastore.BlockingCookbookSummary{}}, nil
+}
+
+func (m *mockStore) GetOwnerCookbookSummary(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error) {
+	if m.GetOwnerCookbookSummaryFn != nil {
+		return m.GetOwnerCookbookSummaryFn(ctx, ownerName, targetChefVersion)
+	}
+	return datastore.OwnerCookbookSummary{}, nil
+}
+
+func (m *mockStore) GetOwnerGitRepoSummary(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error) {
+	if m.GetOwnerGitRepoSummaryFn != nil {
+		return m.GetOwnerGitRepoSummaryFn(ctx, ownerName, targetChefVersion)
+	}
+	return datastore.OwnerGitRepoSummary{}, nil
+}
+
+func (m *mockStore) InsertAuditEntry(ctx context.Context, p datastore.InsertAuditEntryParams) error {
+	if m.InsertAuditEntryFn != nil {
+		return m.InsertAuditEntryFn(ctx, p)
+	}
+	return nil
+}
+
+func (m *mockStore) ListAuditLog(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error) {
+	if m.ListAuditLogFn != nil {
+		return m.ListAuditLogFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) GetGitRepoURLForCookbook(ctx context.Context, cookbookName string) (string, error) {
+	if m.GetGitRepoURLForCookbookFn != nil {
+		return m.GetGitRepoURLForCookbookFn(ctx, cookbookName)
+	}
+	return "", datastore.ErrNotFound
+}
+
+func (m *mockStore) ListCommittersByRepo(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error) {
+	if m.ListCommittersByRepoFn != nil {
+		return m.ListCommittersByRepoFn(ctx, f)
+	}
+	return nil, 0, nil
 }
 
 // ---------------------------------------------------------------------------

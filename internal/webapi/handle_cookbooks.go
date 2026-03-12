@@ -22,6 +22,35 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned cookbook keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		ctx := req.Context()
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned cookbook keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving owned cookbook keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
 	orgs, err := r.db.ListOrganisations(req.Context())
 	if err != nil {
 		r.logf("ERROR", "listing organisations for cookbooks: %v", err)
@@ -54,6 +83,27 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	// Collapse all cookbooks by name so the summary page shows one row per
 	// cookbook with a total version count across all sources.
 	allCookbooks, versionCounts := collapseCookbooks(allCookbooks)
+
+	// Apply owner filter if active and ownership is enabled.
+	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		if of.Unowned {
+			filtered := allCookbooks[:0]
+			for _, cb := range allCookbooks {
+				if !ownedKeys[cb.Name] {
+					filtered = append(filtered, cb)
+				}
+			}
+			allCookbooks = filtered
+		} else {
+			filtered := allCookbooks[:0]
+			for _, cb := range allCookbooks {
+				if ownedKeys[cb.Name] {
+					filtered = append(filtered, cb)
+				}
+			}
+			allCookbooks = filtered
+		}
+	}
 
 	// Paginate the results.
 	pg := ParsePagination(req)
@@ -112,6 +162,21 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 	// /api/v1/cookbooks/:name/rescan
 	if len(segments) >= 2 && segments[len(segments)-1] == "rescan" {
 		r.handleCookbookRescan(w, req)
+		return
+	}
+
+	// /api/v1/cookbooks/:name/committers[/assign]
+	if len(segments) >= 2 && segments[1] == "committers" {
+		cookbookName := segments[0]
+		if len(segments) == 3 && segments[2] == "assign" {
+			r.handleCookbookCommittersAssign(w, req, cookbookName)
+			return
+		}
+		if len(segments) == 2 {
+			r.handleCookbookCommitters(w, req, cookbookName)
+			return
+		}
+		WriteNotFound(w, fmt.Sprintf("Unknown committers endpoint: %s", req.URL.Path))
 		return
 	}
 
