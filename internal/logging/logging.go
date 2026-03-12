@@ -160,6 +160,10 @@ const (
 	// login attempts, session lifecycle, user management, and middleware
 	// enforcement.
 	ScopeAuth Scope = "auth"
+
+	// ScopeOwnership is used for ownership auto-derivation events —
+	// rule evaluation, assignment creation, and stale assignment cleanup.
+	ScopeOwnership Scope = "ownership"
 )
 
 // validScopes is the set of recognised scope values. Used for validation.
@@ -177,6 +181,7 @@ var validScopes = map[Scope]bool{
 	ScopeRemediation:          true,
 	ScopeWebAPI:               true,
 	ScopeAuth:                 true,
+	ScopeOwnership:            true,
 }
 
 // IsValidScope returns true if s is a recognised scope value.

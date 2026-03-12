@@ -14,25 +14,26 @@ import (
 // NodeSnapshot represents a row in the node_snapshots table. Each snapshot
 // captures the state of a single node at the time of a collection run.
 type NodeSnapshot struct {
-	ID              string          `json:"id"`
-	CollectionRunID string          `json:"collection_run_id"`
-	OrganisationID  string          `json:"organisation_id"`
-	NodeName        string          `json:"node_name"`
-	ChefEnvironment string          `json:"chef_environment,omitempty"`
-	ChefVersion     string          `json:"chef_version,omitempty"`
-	Platform        string          `json:"platform,omitempty"`
-	PlatformVersion string          `json:"platform_version,omitempty"`
-	PlatformFamily  string          `json:"platform_family,omitempty"`
-	Filesystem      json.RawMessage `json:"filesystem,omitempty"`
-	Cookbooks       json.RawMessage `json:"cookbooks,omitempty"`
-	RunList         json.RawMessage `json:"run_list,omitempty"`
-	Roles           json.RawMessage `json:"roles,omitempty"`
-	PolicyName      string          `json:"policy_name,omitempty"`
-	PolicyGroup     string          `json:"policy_group,omitempty"`
-	OhaiTime        float64         `json:"ohai_time,omitempty"`
-	IsStale         bool            `json:"is_stale"`
-	CollectedAt     time.Time       `json:"collected_at"`
-	CreatedAt       time.Time       `json:"created_at"`
+	ID               string          `json:"id"`
+	CollectionRunID  string          `json:"collection_run_id"`
+	OrganisationID   string          `json:"organisation_id"`
+	NodeName         string          `json:"node_name"`
+	ChefEnvironment  string          `json:"chef_environment,omitempty"`
+	ChefVersion      string          `json:"chef_version,omitempty"`
+	Platform         string          `json:"platform,omitempty"`
+	PlatformVersion  string          `json:"platform_version,omitempty"`
+	PlatformFamily   string          `json:"platform_family,omitempty"`
+	Filesystem       json.RawMessage `json:"filesystem,omitempty"`
+	Cookbooks        json.RawMessage `json:"cookbooks,omitempty"`
+	RunList          json.RawMessage `json:"run_list,omitempty"`
+	Roles            json.RawMessage `json:"roles,omitempty"`
+	PolicyName       string          `json:"policy_name,omitempty"`
+	PolicyGroup      string          `json:"policy_group,omitempty"`
+	OhaiTime         float64         `json:"ohai_time,omitempty"`
+	CustomAttributes json.RawMessage `json:"custom_attributes,omitempty"`
+	IsStale          bool            `json:"is_stale"`
+	CollectedAt      time.Time       `json:"collected_at"`
+	CreatedAt        time.Time       `json:"created_at"`
 }
 
 // IsPolicyfileNode returns true if the node is managed by Policyfiles
@@ -54,23 +55,24 @@ func (ns NodeSnapshot) MarshalJSON() ([]byte, error) {
 // InsertNodeSnapshotParams holds the fields required to insert a single
 // node snapshot.
 type InsertNodeSnapshotParams struct {
-	CollectionRunID string
-	OrganisationID  string
-	NodeName        string
-	ChefEnvironment string
-	ChefVersion     string
-	Platform        string
-	PlatformVersion string
-	PlatformFamily  string
-	Filesystem      json.RawMessage // raw JSON from Chef API
-	Cookbooks       json.RawMessage // raw JSON from Chef API
-	RunList         json.RawMessage // raw JSON from Chef API
-	Roles           json.RawMessage // raw JSON from Chef API
-	PolicyName      string
-	PolicyGroup     string
-	OhaiTime        float64
-	IsStale         bool
-	CollectedAt     time.Time
+	CollectionRunID  string
+	OrganisationID   string
+	NodeName         string
+	ChefEnvironment  string
+	ChefVersion      string
+	Platform         string
+	PlatformVersion  string
+	PlatformFamily   string
+	Filesystem       json.RawMessage // raw JSON from Chef API
+	Cookbooks        json.RawMessage // raw JSON from Chef API
+	RunList          json.RawMessage // raw JSON from Chef API
+	Roles            json.RawMessage // raw JSON from Chef API
+	PolicyName       string
+	PolicyGroup      string
+	OhaiTime         float64
+	CustomAttributes json.RawMessage // raw JSON — flat map keyed by dot-separated attribute path
+	IsStale          bool
+	CollectedAt      time.Time
 }
 
 // InsertNodeSnapshot inserts a single node snapshot and returns the created
@@ -98,16 +100,17 @@ func (db *DB) insertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			collection_run_id, organisation_id, node_name,
 			chef_environment, chef_version, platform, platform_version,
 			platform_family, filesystem, cookbooks, run_list, roles,
-			policy_name, policy_group, ohai_time, is_stale, collected_at
+			policy_name, policy_group, ohai_time, custom_attributes,
+			is_stale, collected_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17
+			$13, $14, $15, $16, $17, $18
 		)
 		RETURNING id, collection_run_id, organisation_id, node_name,
 		          chef_environment, chef_version, platform, platform_version,
 		          platform_family, filesystem, cookbooks, run_list, roles,
-		          policy_name, policy_group, ohai_time, is_stale,
-		          collected_at, created_at
+		          policy_name, policy_group, ohai_time, custom_attributes,
+		          is_stale, collected_at, created_at
 	`
 
 	return scanNodeSnapshot(q.QueryRowContext(ctx, query,
@@ -126,6 +129,7 @@ func (db *DB) insertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 		nullString(p.PolicyName),
 		nullString(p.PolicyGroup),
 		nullFloat(p.OhaiTime),
+		nullJSON(p.CustomAttributes),
 		p.IsStale,
 		p.CollectedAt,
 	))
@@ -178,10 +182,11 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					collection_run_id, organisation_id, node_name,
 					chef_environment, chef_version, platform, platform_version,
 					platform_family, filesystem, cookbooks, run_list, roles,
-					policy_name, policy_group, ohai_time, is_stale, collected_at
+					policy_name, policy_group, ohai_time, custom_attributes,
+					is_stale, collected_at
 				) VALUES (
 					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-					$13, $14, $15, $16, $17
+					$13, $14, $15, $16, $17, $18
 				)
 				RETURNING id
 			`
@@ -191,10 +196,11 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					collection_run_id, organisation_id, node_name,
 					chef_environment, chef_version, platform, platform_version,
 					platform_family, filesystem, cookbooks, run_list, roles,
-					policy_name, policy_group, ohai_time, is_stale, collected_at
+					policy_name, policy_group, ohai_time, custom_attributes,
+					is_stale, collected_at
 				) VALUES (
 					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-					$13, $14, $15, $16, $17
+					$13, $14, $15, $16, $17, $18
 				)
 			`
 		}
@@ -235,6 +241,7 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 				nullString(p.PolicyName),
 				nullString(p.PolicyGroup),
 				nullFloat(p.OhaiTime),
+				nullJSON(p.CustomAttributes),
 				p.IsStale,
 				p.CollectedAt,
 			}
@@ -276,8 +283,8 @@ func (db *DB) getNodeSnapshot(ctx context.Context, q queryable, id string) (Node
 		SELECT id, collection_run_id, organisation_id, node_name,
 		       chef_environment, chef_version, platform, platform_version,
 		       platform_family, filesystem, cookbooks, run_list, roles,
-		       policy_name, policy_group, ohai_time, is_stale,
-		       collected_at, created_at
+		       policy_name, policy_group, ohai_time, custom_attributes,
+		       is_stale, collected_at, created_at
 		FROM node_snapshots
 		WHERE id = $1
 	`
@@ -295,8 +302,8 @@ func (db *DB) listNodeSnapshotsByCollectionRun(ctx context.Context, q queryable,
 		SELECT id, collection_run_id, organisation_id, node_name,
 		       chef_environment, chef_version, platform, platform_version,
 		       platform_family, filesystem, cookbooks, run_list, roles,
-		       policy_name, policy_group, ohai_time, is_stale,
-		       collected_at, created_at
+		       policy_name, policy_group, ohai_time, custom_attributes,
+		       is_stale, collected_at, created_at
 		FROM node_snapshots
 		WHERE collection_run_id = $1
 		ORDER BY node_name
@@ -317,8 +324,8 @@ func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, 
 		SELECT ns.id, ns.collection_run_id, ns.organisation_id, ns.node_name,
 		       ns.chef_environment, ns.chef_version, ns.platform, ns.platform_version,
 		       ns.platform_family, ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
-		       ns.policy_name, ns.policy_group, ns.ohai_time, ns.is_stale,
-		       ns.collected_at, ns.created_at
+		       ns.policy_name, ns.policy_group, ns.ohai_time, ns.custom_attributes,
+		       ns.is_stale, ns.collected_at, ns.created_at
 		FROM node_snapshots ns
 		INNER JOIN collection_runs cr ON cr.id = ns.collection_run_id
 		WHERE ns.organisation_id = $1
@@ -345,8 +352,8 @@ func (db *DB) getNodeSnapshotByName(ctx context.Context, q queryable, organisati
 		SELECT id, collection_run_id, organisation_id, node_name,
 		       chef_environment, chef_version, platform, platform_version,
 		       platform_family, filesystem, cookbooks, run_list, roles,
-		       policy_name, policy_group, ohai_time, is_stale,
-		       collected_at, created_at
+		       policy_name, policy_group, ohai_time, custom_attributes,
+		       is_stale, collected_at, created_at
 		FROM node_snapshots
 		WHERE organisation_id = $1 AND node_name = $2
 		ORDER BY collected_at DESC
@@ -439,7 +446,7 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
 	var policyName, policyGroup sql.NullString
 	var ohaiTime sql.NullFloat64
-	var filesystem, cookbooks, runList, roles []byte
+	var filesystem, cookbooks, runList, roles, customAttributes []byte
 
 	err := row.Scan(
 		&ns.ID,
@@ -458,6 +465,7 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 		&policyName,
 		&policyGroup,
 		&ohaiTime,
+		&customAttributes,
 		&ns.IsStale,
 		&ns.CollectedAt,
 		&ns.CreatedAt,
@@ -481,6 +489,7 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	ns.Cookbooks = jsonFromNullBytes(cookbooks)
 	ns.RunList = jsonFromNullBytes(runList)
 	ns.Roles = jsonFromNullBytes(roles)
+	ns.CustomAttributes = jsonFromNullBytes(customAttributes)
 	return ns, nil
 }
 
@@ -496,7 +505,7 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
 		var policyName, policyGroup sql.NullString
 		var ohaiTime sql.NullFloat64
-		var filesystem, cookbooks, runList, roles []byte
+		var filesystem, cookbooks, runList, roles, customAttributes []byte
 
 		if err := rows.Scan(
 			&ns.ID,
@@ -515,6 +524,7 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 			&policyName,
 			&policyGroup,
 			&ohaiTime,
+			&customAttributes,
 			&ns.IsStale,
 			&ns.CollectedAt,
 			&ns.CreatedAt,
@@ -534,6 +544,7 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		ns.Cookbooks = jsonFromNullBytes(cookbooks)
 		ns.RunList = jsonFromNullBytes(runList)
 		ns.Roles = jsonFromNullBytes(roles)
+		ns.CustomAttributes = jsonFromNullBytes(customAttributes)
 		snapshots = append(snapshots, ns)
 	}
 	if err := rows.Err(); err != nil {

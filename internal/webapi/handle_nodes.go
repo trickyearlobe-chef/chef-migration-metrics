@@ -20,6 +20,35 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned node keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		ctx := req.Context()
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned node keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving owned node keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
 	orgs, err := r.db.ListOrganisations(req.Context())
 	if err != nil {
 		r.logf("ERROR", "listing organisations for nodes: %v", err)
@@ -50,6 +79,27 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 
 	// Apply optional query-parameter filters.
 	allNodes = filterNodes(req, allNodes)
+
+	// Apply owner filter if active and ownership is enabled.
+	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		if of.Unowned {
+			filtered := allNodes[:0]
+			for _, n := range allNodes {
+				if !ownedKeys[n.NodeName] {
+					filtered = append(filtered, n)
+				}
+			}
+			allNodes = filtered
+		} else {
+			filtered := allNodes[:0]
+			for _, n := range allNodes {
+				if ownedKeys[n.NodeName] {
+					filtered = append(filtered, n)
+				}
+			}
+			allNodes = filtered
+		}
+	}
 
 	// Paginate the results.
 	pg := ParsePagination(req)
@@ -165,6 +215,35 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned node keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		ctx := req.Context()
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned node keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving owned node keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
 	chefVersion := pathParam(req, "/api/v1/nodes/by-version/")
 	if chefVersion == "" {
 		WriteBadRequest(w, "Chef version is required.")
@@ -192,6 +271,27 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Apply owner filter if active and ownership is enabled.
+	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		if of.Unowned {
+			filtered := matched[:0]
+			for _, n := range matched {
+				if !ownedKeys[n.NodeName] {
+					filtered = append(filtered, n)
+				}
+			}
+			matched = filtered
+		} else {
+			filtered := matched[:0]
+			for _, n := range matched {
+				if ownedKeys[n.NodeName] {
+					filtered = append(filtered, n)
+				}
+			}
+			matched = filtered
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"chef_version": chefVersion,
 		"total":        len(matched),
@@ -204,6 +304,35 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
+	}
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned node keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		ctx := req.Context()
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned node keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving owned node keys: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
 	}
 
 	cookbookName := pathParam(req, "/api/v1/nodes/by-cookbook/")
@@ -238,6 +367,27 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 					Node:             n,
 				})
 			}
+		}
+	}
+
+	// Apply owner filter if active and ownership is enabled.
+	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		if of.Unowned {
+			filtered := matched[:0]
+			for _, n := range matched {
+				if !ownedKeys[n.Node.NodeName] {
+					filtered = append(filtered, n)
+				}
+			}
+			matched = filtered
+		} else {
+			filtered := matched[:0]
+			for _, n := range matched {
+				if ownedKeys[n.Node.NodeName] {
+					filtered = append(filtered, n)
+				}
+			}
+			matched = filtered
 		}
 	}
 

@@ -34,6 +34,34 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 
 	ctx := req.Context()
 
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned cookbook keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned cookbook keys for remediation: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving owned cookbook keys for remediation: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
 	// Optional complexity label filter.
 	complexityLabel := queryString(req, "complexity_label", "")
 
@@ -127,6 +155,27 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
+	// Apply owner filter if active and ownership is enabled.
+	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		if of.Unowned {
+			filtered := items[:0]
+			for _, item := range items {
+				if !ownedKeys[item.CookbookName] {
+					filtered = append(filtered, item)
+				}
+			}
+			items = filtered
+		} else {
+			filtered := items[:0]
+			for _, item := range items {
+				if ownedKeys[item.CookbookName] {
+					filtered = append(filtered, item)
+				}
+			}
+			items = filtered
+		}
+	}
+
 	// Filter by complexity label if specified.
 	if complexityLabel != "" {
 		filtered := items[:0]
@@ -217,6 +266,34 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 
 	ctx := req.Context()
 
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned cookbook keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned cookbook keys for remediation summary: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving owned cookbook keys for remediation summary: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
 	// Resolve target Chef version.
 	targetVersion := queryString(req, "target_chef_version", "")
 	if targetVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
@@ -251,9 +328,37 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 			continue
 		}
 
+		// Build a map from cookbook ID to cookbook metadata for ownership filtering.
+		var cbMap map[string]datastore.Cookbook
+		if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+			cookbooks, err := r.db.ListCookbooksByOrganisation(ctx, org.ID)
+			if err != nil {
+				r.logf("WARN", "listing cookbooks for org %s in remediation summary: %v", org.Name, err)
+				continue
+			}
+			cbMap = make(map[string]datastore.Cookbook, len(cookbooks))
+			for _, cb := range cookbooks {
+				cbMap[cb.ID] = cb
+			}
+		}
+
 		for _, cc := range complexities {
 			if cc.TargetChefVersion != targetVersion {
 				continue
+			}
+
+			// Apply owner filter: skip cookbooks that don't match ownership.
+			if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+				cb := cbMap[cc.CookbookID]
+				if of.Unowned {
+					if ownedKeys[cb.Name] {
+						continue
+					}
+				} else {
+					if !ownedKeys[cb.Name] {
+						continue
+					}
+				}
 			}
 
 			totalCookbooks++

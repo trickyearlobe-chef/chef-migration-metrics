@@ -23,7 +23,38 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned node keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned node keys for version distribution: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving owned node keys for version distribution: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
+	orgs, err := r.db.ListOrganisations(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for version distribution: %v", err)
 		WriteInternalError(w, "Failed to compute version distribution.")
@@ -33,12 +64,23 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 	counts := make(map[string]int)
 	totalNodes := 0
 	for _, org := range orgs {
-		nodes, err := r.db.ListNodeSnapshotsByOrganisation(req.Context(), org.ID)
+		nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
 		if err != nil {
 			r.logf("WARN", "listing nodes for org %s in version distribution: %v", org.Name, err)
 			continue
 		}
 		for _, n := range nodes {
+			if ownerFilterActive && ownedKeys != nil {
+				if of.Unowned {
+					if ownedKeys[n.NodeName] {
+						continue
+					}
+				} else {
+					if !ownedKeys[n.NodeName] {
+						continue
+					}
+				}
+			}
 			v := n.ChefVersion
 			if v == "" {
 				v = "unknown"
@@ -91,7 +133,38 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned node keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned node keys for version trend: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving owned node keys for version trend: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
+	orgs, err := r.db.ListOrganisations(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for version trend: %v", err)
 		WriteInternalError(w, "Failed to compute version distribution trend.")
@@ -109,7 +182,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 	var points []trendPoint
 	for _, org := range orgs {
 		// Get recent completed runs (limit to 10 per org for performance).
-		runs, err := r.db.ListCollectionRuns(req.Context(), org.ID, 10)
+		runs, err := r.db.ListCollectionRuns(ctx, org.ID, 10)
 		if err != nil {
 			r.logf("WARN", "listing collection runs for org %s in trend: %v", org.Name, err)
 			continue
@@ -118,18 +191,31 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 			if run.Status != "completed" {
 				continue
 			}
-			nodes, err := r.db.ListNodeSnapshotsByCollectionRun(req.Context(), run.ID)
+			nodes, err := r.db.ListNodeSnapshotsByCollectionRun(ctx, run.ID)
 			if err != nil {
 				r.logf("WARN", "listing nodes for run %s in trend: %v", run.ID, err)
 				continue
 			}
 			dist := make(map[string]int)
+			total := 0
 			for _, n := range nodes {
+				if ownerFilterActive && ownedKeys != nil {
+					if of.Unowned {
+						if ownedKeys[n.NodeName] {
+							continue
+						}
+					} else {
+						if !ownedKeys[n.NodeName] {
+							continue
+						}
+					}
+				}
 				v := n.ChefVersion
 				if v == "" {
 					v = "unknown"
 				}
 				dist[v]++
+				total++
 			}
 			completedAt := ""
 			if !run.CompletedAt.IsZero() {
@@ -139,7 +225,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 				OrganisationName: org.Name,
 				CollectionRunID:  run.ID,
 				CompletedAt:      completedAt,
-				TotalNodes:       len(nodes),
+				TotalNodes:       total,
 				Distribution:     dist,
 			})
 		}
@@ -160,7 +246,38 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned node keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned node keys for readiness: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving owned node keys for readiness: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
+	orgs, err := r.db.ListOrganisations(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for readiness: %v", err)
 		WriteInternalError(w, "Failed to compute readiness summary.")
@@ -177,11 +294,76 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		ReadyPercent      float64 `json:"ready_percent"`
 	}
 
+	// When owner filtering is active, collect allowed node names and count
+	// readiness by inspecting per-node readiness records. Otherwise, use
+	// the fast aggregate CountNodeReadiness path.
+	if ownerFilterActive && ownedKeys != nil {
+		// Build the set of allowed node names across all orgs.
+		allowedNodes := make(map[string]string) // node_name -> snapshot_id
+		for _, org := range orgs {
+			nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
+			if err != nil {
+				r.logf("WARN", "listing nodes for org %s in readiness owner filter: %v", org.Name, err)
+				continue
+			}
+			for _, n := range nodes {
+				include := false
+				if of.Unowned {
+					include = !ownedKeys[n.NodeName]
+				} else {
+					include = ownedKeys[n.NodeName]
+				}
+				if include {
+					allowedNodes[n.NodeName] = n.ID
+				}
+			}
+		}
+
+		var summaries []readinessSummary
+		for _, tv := range targetVersions {
+			var totalAll, readyAll, blockedAll int
+			for _, snapshotID := range allowedNodes {
+				readiness, err := r.db.ListNodeReadinessForSnapshot(ctx, snapshotID)
+				if err != nil {
+					continue
+				}
+				for _, nr := range readiness {
+					if nr.TargetChefVersion != tv {
+						continue
+					}
+					totalAll++
+					if nr.IsReady {
+						readyAll++
+					} else {
+						blockedAll++
+					}
+				}
+			}
+			pct := 0.0
+			if totalAll > 0 {
+				pct = float64(readyAll) / float64(totalAll) * 100
+			}
+			summaries = append(summaries, readinessSummary{
+				TargetChefVersion: tv,
+				TotalNodes:        totalAll,
+				ReadyNodes:        readyAll,
+				BlockedNodes:      blockedAll,
+				ReadyPercent:      pct,
+			})
+		}
+		if summaries == nil {
+			summaries = []readinessSummary{}
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
+		return
+	}
+
+	// Fast path: no owner filtering — use aggregate counts.
 	var summaries []readinessSummary
 	for _, tv := range targetVersions {
 		var totalAll, readyAll, blockedAll int
 		for _, org := range orgs {
-			total, ready, blocked, err := r.db.CountNodeReadiness(req.Context(), org.ID, tv)
+			total, ready, blocked, err := r.db.CountNodeReadiness(ctx, org.ID, tv)
 			if err != nil {
 				r.logf("WARN", "counting readiness for org %s version %s: %v", org.Name, tv, err)
 				continue
@@ -278,7 +460,38 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned cookbook keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned cookbook keys for compatibility: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving owned cookbook keys for compatibility: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
+	orgs, err := r.db.ListOrganisations(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for cookbook compatibility: %v", err)
 		WriteInternalError(w, "Failed to compute cookbook compatibility.")
@@ -301,14 +514,27 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		var totalAll, compatAll, incompatAll int
 
 		for _, org := range orgs {
-			cookbooks, err := r.db.ListCookbooksByOrganisation(req.Context(), org.ID)
+			cookbooks, err := r.db.ListCookbooksByOrganisation(ctx, org.ID)
 			if err != nil {
 				r.logf("WARN", "listing cookbooks for org %s: %v", org.Name, err)
 				continue
 			}
 			for _, cb := range cookbooks {
+				// Apply owner filter if active.
+				if ownerFilterActive && ownedKeys != nil {
+					if of.Unowned {
+						if ownedKeys[cb.Name] {
+							continue
+						}
+					} else {
+						if !ownedKeys[cb.Name] {
+							continue
+						}
+					}
+				}
+
 				totalAll++
-				result, err := r.db.GetLatestTestKitchenResult(req.Context(), cb.ID, tv)
+				result, err := r.db.GetLatestTestKitchenResult(ctx, cb.ID, tv)
 				if err != nil {
 					r.logf("WARN", "getting test kitchen result for cookbook %s version %s: %v", cb.ID, tv, err)
 					continue

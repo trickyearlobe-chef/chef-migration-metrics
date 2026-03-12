@@ -406,6 +406,7 @@ func fetchGitCookbooks(
 	gitBaseURLs []string,
 	activeCookbookNames map[string]bool,
 	concurrency int,
+	ownershipEnabled bool,
 ) GitFetchResult {
 	start := time.Now()
 
@@ -521,6 +522,21 @@ func fetchGitCookbooks(
 						repoResult.HasTestSuite),
 						logging.WithCookbook(cbName, ""),
 						logging.WithCommitSHA(repoResult.HeadCommitSHA))
+
+					// Extract and store git committer data when ownership is enabled.
+					if ownershipEnabled {
+						repoDir := mgr.RepoDir(cbName)
+						committers, extractErr := extractGitCommitters(ctx, mgr.executor, repoDir, repoURL)
+						if extractErr != nil {
+							log.Warn(fmt.Sprintf("git committer extraction failed for %s: %v", cbName, extractErr))
+						} else if len(committers) > 0 {
+							if replaceErr := db.ReplaceCommittersForRepo(ctx, repoURL, committers); replaceErr != nil {
+								log.Warn(fmt.Sprintf("git committer storage failed for %s: %v", cbName, replaceErr))
+							} else {
+								log.Debug(fmt.Sprintf("stored %d committer(s) for %s", len(committers), cbName))
+							}
+						}
+					}
 				}
 				lastErr = nil
 				break
@@ -551,4 +567,99 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ---------------------------------------------------------------------------
+// Git committer extraction
+// ---------------------------------------------------------------------------
+
+// extractGitCommitters extracts committer information from the git log of the
+// given repository directory. Returns a slice of GitRepoCommitter records.
+func extractGitCommitters(ctx context.Context, executor GitExecutor, repoDir string, gitRepoURL string) ([]datastore.GitRepoCommitter, error) {
+	output, err := executor.Run(ctx, repoDir, "log", "--format=%aE|%aN|%aI", "--all")
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+
+	if strings.TrimSpace(output) == "" {
+		return nil, nil
+	}
+
+	// Aggregate by email: track most-recent name, commit count, first/last dates.
+	type emailAgg struct {
+		name          string
+		nameDate      time.Time // date of the commit that provided the current name
+		commitCount   int
+		firstCommitAt time.Time
+		lastCommitAt  time.Time
+	}
+	agg := make(map[string]*emailAgg)
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) < 3 {
+			continue
+		}
+
+		email := strings.TrimSpace(parts[0])
+		name := strings.TrimSpace(parts[1])
+		dateStr := strings.TrimSpace(parts[2])
+
+		if email == "" {
+			continue
+		}
+
+		commitDate, parseErr := time.Parse(time.RFC3339, dateStr)
+		if parseErr != nil {
+			// Try a more lenient parse for ISO 8601 with timezone offset.
+			commitDate, parseErr = time.Parse("2006-01-02T15:04:05-07:00", dateStr)
+			if parseErr != nil {
+				continue
+			}
+		}
+
+		entry, exists := agg[email]
+		if !exists {
+			agg[email] = &emailAgg{
+				name:          name,
+				nameDate:      commitDate,
+				commitCount:   1,
+				firstCommitAt: commitDate,
+				lastCommitAt:  commitDate,
+			}
+			continue
+		}
+
+		entry.commitCount++
+		if commitDate.After(entry.lastCommitAt) {
+			entry.lastCommitAt = commitDate
+		}
+		if commitDate.Before(entry.firstCommitAt) {
+			entry.firstCommitAt = commitDate
+		}
+		// Use the most recent name for this email.
+		if commitDate.After(entry.nameDate) {
+			entry.name = name
+			entry.nameDate = commitDate
+		}
+	}
+
+	committers := make([]datastore.GitRepoCommitter, 0, len(agg))
+	for email, entry := range agg {
+		committers = append(committers, datastore.GitRepoCommitter{
+			GitRepoURL:    gitRepoURL,
+			AuthorName:    entry.name,
+			AuthorEmail:   email,
+			CommitCount:   entry.commitCount,
+			FirstCommitAt: entry.firstCommitAt,
+			LastCommitAt:  entry.lastCommitAt,
+		})
+	}
+
+	return committers, nil
 }

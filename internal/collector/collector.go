@@ -55,6 +55,7 @@ type Collector struct {
 	autocorrectGen   *remediation.AutocorrectGenerator
 	complexityScorer *remediation.ComplexityScorer
 	readinessEval    *analysis.ReadinessEvaluator
+	ownershipEval    *OwnershipEvaluator
 
 	// cookbookDirFn resolves the filesystem path for a cookbook. Required
 	// by CookStyle scanning, Test Kitchen, and autocorrect preview
@@ -114,6 +115,12 @@ func WithComplexityScorer(s *remediation.ComplexityScorer) Option {
 // When set, readiness evaluation runs at the end of the analysis pipeline.
 func WithReadinessEvaluator(e *analysis.ReadinessEvaluator) Option {
 	return func(c *Collector) { c.readinessEval = e }
+}
+
+// WithOwnershipEvaluator sets the ownership auto-derivation evaluator.
+// When set, ownership rules are evaluated after each collection run.
+func WithOwnershipEvaluator(e *OwnershipEvaluator) Option {
+	return func(c *Collector) { c.ownershipEval = e }
 }
 
 // WithCookbookDirFn sets the function that resolves a cookbook to its
@@ -951,7 +958,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		gitBaseDir := filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
 		gitMgr := NewGitCookbookManager(gitBaseDir, nil)
 
-		gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency)
+		gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency, c.cfg.Ownership.Enabled)
 
 		if gitResult.Total == 0 {
 			gitLog.Info("no git cookbook candidates to fetch",
@@ -1284,7 +1291,23 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		}
 	}
 
-	// Step 15: The collection run was already marked completed in Step 4b
+	// Step 15: Ownership auto-derivation. Evaluates configured rules against
+	// the freshly collected data and creates/removes ownership assignments.
+	// Skipped when the evaluator is not configured. Non-fatal.
+	if c.ownershipEval != nil {
+		log.Info("evaluating ownership auto-derivation rules",
+			logging.WithCollectionRunID(run.ID))
+
+		if ownerErr := c.ownershipEval.EvaluateAfterCollection(ctx, org.ID, org.Name); ownerErr != nil {
+			log.Warn(fmt.Sprintf("ownership evaluation failed: %v", ownerErr),
+				logging.WithCollectionRunID(run.ID))
+		} else {
+			log.Info("ownership evaluation complete",
+				logging.WithCollectionRunID(run.ID))
+		}
+	}
+
+	// Step 16: The collection run was already marked completed in Step 4b
 	// after node snapshots were persisted, so the UI could show fresh data
 	// while cookbook operations continued. Log final summary.
 	log.Info(fmt.Sprintf("collection run %s post-completion processing finished: %d nodes, %d cookbook versions",

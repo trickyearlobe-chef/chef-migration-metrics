@@ -2,83 +2,35 @@
 
 This file contains the rules and conventions that must be followed at all times when working on this project. Read this file before doing anything else.
 
----
+## Git Branching
 
-## Git Branching & Commit Workflow
-
-All work done in a thread **must** follow this branching and commit discipline.
-
-> **⚠️ Pre-commit checklist — STOP and verify before every `git add` or `git commit`:**
->
-> 1. Am I on a feature branch (not `main`)? If not, create one first.
-> 2. Does the branch name match `<type>/<short-description>`?
-> 3. Am I committing only one logical unit of work? If the diff touches unrelated fixes, split into separate commits.
-> 4. Does the commit message follow `<type>(<scope>): <summary>` format?
-> 5. Have I asked the user for permission before merging to `main`?
-
-### Branch Naming
-
-- **Never commit directly to `main`.** At the start of a thread, create a feature branch and do all work there.
-- Branch names must follow the pattern: `<type>/<short-description>` where `<type>` is one of `feature`, `fix`, `refactor`, `chore`, `docs`, or `test`.
-- Use kebab-case for the description (e.g. `feature/node-collection-worker-pool`, `fix/cookstyle-timeout-handling`, `chore/update-dependencies`).
-- The description should reflect the scope of work planned for the thread.
-
-### Commits
-
-- **Each completed todo or meaningful unit of work must result in its own commit.** Do not batch unrelated changes into a single commit.
-- Write clear, descriptive commit messages following conventional commit style:
-  - Format: `<type>(<scope>): <summary>` (e.g. `feat(datastore): add migration for cookbook_versions table`, `test(chefapi): add signing round-trip tests`).
-  - The summary should be imperative mood, lowercase, no trailing period, and under 72 characters.
-  - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
-- Commit early and often. If the context window ends unexpectedly, committed work is not lost.
-
-### Merging to Main
-
+- All tasks must be performed on a branch, never on `main`
+- Branch names must be of the pattern `<type>/<short-description>` where `<type>` is one of `feature`, `fix`, `refactor`, `chore`, `docs`, `specification`, or `test`.
+- All banching and merging happens locally, no PR's
 - **Do not merge the feature branch into `main` without explicit permission from the user.**
 - After significant work has been completed and verified (tests pass, linting clean, summary written), present a summary of the branch's changes and **ask the user for permission to merge**.
 - When permission is granted, merge using `git merge --no-ff` to preserve the branch history, then delete the feature branch.
 - If the user declines or wants changes first, continue working on the same branch.
 
----
+## Commits
+
+- **Each completed todo or meaningful unit of work must result in its own commit.** Do not batch unrelated changes into a single commit.
+- Commit only one logical unit of work at a time
+- Split unrelated changes into separate commits.
+- The commit message must follow `<type>(<scope>): <summary>` format
+- Write clear, descriptive commit messages following conventional commit style
+  - First line `<type>(<scope>): <summary>`
+  - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
+- Commit early and often.
 
 ## Token Economy
 
-- When choosing the next task, the estimate and implementation must be within the 80000 token budget.
+- The **hard context ceiling is 72 000 tokens**. The working budget for task selection is **60 000 tokens** — the remaining 12k is reserved for wrap-up (summary, commit, push).
+- **Thread-start budget: ≤ 4 000 tokens.** The only reads allowed before starting real work are: (1) the latest summary's "Recommended next steps" section, and (2) the task-to-spec lookup below. Nothing else. No browsing summaries.
 - Only read the specification documents relevant to the current task.
-- Use `./Structure.md` to orient yourself and find spec file names.
-- Do not read `specifications/Specification.md`** unless you need the full project overview.
 - **Prefer reading specific line ranges** over entire files. Use file outlines first, then read only the sections you need.
 - Large spec files have a **TL;DR** at the top. Read that first to decide whether you need the full file.
-- `specifications/ToDo.md` is a progress table only.
 - Authoritative tasks live in `specifications/todo/*.md` — read only the one relevant to your work.
-- After completing tasks, update the done/total counts in `ToDo.md` (use the regeneration script in that file).
-- Use the **task-to-spec lookup** below to find which specs and todo files to load.
-- Do not load specs not listed for your task. `(§ Section)` means read only that section.
-
-### Task-to-Spec Lookup
-
-| Task area | Read spec | Todo file |
-|-----------|-----------|-----------|
-| Chef API client | `chef-api/` | `todo/data-collection.md` |
-| Node collection, cookbook fetching, role graph | `data-collection/` | `todo/data-collection.md` |
-| Usage analysis, CookStyle, Test Kitchen, readiness, remediation | `analysis/` (relevant §) | `todo/analysis.md` |
-| Database schema / migrations | `datastore/` | `todo/project-setup.md` |
-| Configuration / TLS | `configuration/`, `tls/` | `todo/configuration.md` |
-| Web API endpoints | `web-api/` | `todo/visualisation.md` |
-| Dashboard frontend | `visualisation/` | `todo/visualisation.md` |
-| Auth (local/LDAP/SAML) | `auth/` | `todo/auth.md` |
-| Logging | `logging/` | `todo/logging.md` |
-| Elasticsearch / NDJSON | `elasticsearch/` | `todo/visualisation.md` |
-| Packaging (RPM/DEB/container/Helm/Compose/CI) | `packaging/` (relevant §) | `todo/packaging.md` |
-| Notifications / exports | `web-api/` (relevant §), `configuration/` (§ Notifications) | `todo/visualisation.md` |
-| Secrets / credentials | `secrets-storage/` (relevant §) | `todo/secrets-storage.md` |
-
----
-
-## Orientation
-
-- Read `./Structure.md` first to understand the layout of the project before exploring files or making changes.
-- `./Structure.md` must be updated in the same change whenever a file or directory is added, moved, renamed, or removed.
 
 ---
 
@@ -86,56 +38,35 @@ All work done in a thread **must** follow this branching and commit discipline.
 
 - At the end of every task (feature, bug fix, test addition, refactor, etc.), write a summary file in `.claude/summaries/`.
 - **Naming convention:** `YYYY-MM-DD-hh-mm-<component>-<short-description>.md` (e.g. `2025-01-01-secrets-rotation-tests.md`).
-- **Purpose:** Give future threads enough context to continue work without re-reading code or re-running tests. Include what was done, what the final state is (test counts, coverage, passing/failing), any known gaps, and which files were modified.
-- **Minimum contents:**
-  1. **Context** — what component/area was involved and why.
-  2. **What was done** — specific changes, with enough detail to understand scope.
-  3. **Final state** — test counts, coverage numbers, pass/fail status, any warnings.
-  4. **Known gaps** — anything deliberately left uncovered or deferred.
-  5. **Files modified** — list of files touched (production code and tests separately).
-  6. **Recommended next steps** — prioritised list of what to work on next, with reasoning. Include which specs and todo files to read, and the approximate scope and tokens required for each step. This avoids future threads spending tokens rediscovering what to do.
-- Keep summaries concise but complete — a new thread should be able to read the summary and pick up where you left off without re-exploring the codebase.
-- **At the start of a new thread**, before exploring the codebase, read **only the most recent summary** in `.claude/summaries/` (sorted by filename date prefix). If it has a "Recommended next steps" section, use that as your starting point instead of re-analysing the project from scratch. **Do not read other summaries unless you need context on a specific component you are about to modify.**
-- Before starting work on a component, check `.claude/summaries/` for existing summaries related to that component. This avoids duplicating investigation effort.
-- Update `./Structure.md` when adding a new summary file (add the entry to the `summaries/` listing).
+- **Purpose:** Give future threads enough context to continue work without re-reading code or re-running tests.
+- **Summaries must be ≤ 80 lines / ≤ 4 KB.** If you exceed this, cut "What was done" detail first — the next thread can read the code.
+- **Required sections (in order):**
+  1. **Context** — 1–3 sentences: component, why, branch name.
+  2. **What was done** — bullet list of changes. One line per logical change. No implementation detail — just _what_ changed and _where_ (file path).
+  3. **Final state** — one line: test count, pass/fail. Only mention coverage if relevant.
+  5. **Recommended next steps** — prioritised list. Each item must include: which spec and todo file to read, and estimated token cost (S/M/L = <15k / 15–35k / 35–55k). **This is the single source of truth for what to work on next.**
+- Do NOT include a "Files modified" table. The git diff is the source of truth for that.
+- **At the start of a new thread**, read **only the "Recommended next steps" section** of the most recent summary (sorted by filename date prefix). Do NOT read the full summary. Do NOT list or scan other summaries. Do NOT read archived summaries.
 
 ### Single Source of Truth for Next Steps
 
-- The **most recent summary file's "Recommended next steps" section** is the single source of truth for what to work on next.
-- **Do NOT duplicate next-step plans into `specifications/ToDo.md`.** That file is a progress-table index only — no narratives, milestones, token estimates, or session plans.
 - When finishing a task, put the full next-steps plan in the new summary file and nowhere else.
 
 ### Archiving Old Summaries
 
 - Only recent summaries belong in `.claude/summaries/`. Older summaries live in `.claude/summaries/archive/`.
-- **When to archive:** After writing a new summary, if there are more than **8 files** in `.claude/summaries/` (excluding `archive/`), move the oldest summaries to `archive/` to keep the count at 8 or fewer.
-- **Do not read archived summaries** at thread start. They exist for historical reference only. If you need context on an old component, you may read a specific archived summary on demand.
-- Update `./Structure.md` when archiving summaries.
-
-### ToDo.md Hygiene
-
-- `specifications/ToDo.md` must contain **only** the progress table and the count-regeneration script. No milestones, no narratives, no token estimates, no session plans, no phase breakdowns.
-- After completing tasks, update the done/total counts in the progress table. Do not add any other content.
+- **When to archive:** After writing a new summary, if there are more than **2 files** in `.claude/summaries/` (excluding `archive/`), move the oldest summaries to `archive/` to keep the count at 2 or fewer. **This is mandatory — do not skip it.**
+- **Do not read archived summaries**
 
 ### Context Budget and Incremental Saves
 
 Large tasks risk exhausting the context window before a summary can be written. Follow these rules to prevent losing work:
 
-- **Write the summary early and update it incrementally.** Create the summary file as soon as meaningful progress has been made (e.g. after the first milestone, not at the very end). Update it as you go. A partial summary saved is infinitely better than a perfect summary lost to a context limit.
-- **Break large tasks into checkpoints.** If a task involves multiple distinct subtasks (e.g. "add tests for function A, then B, then C"), save the summary after completing each subtask. The summary should always reflect the current state, not just the planned end state.
-- **Prefer multiple small commits over one large commit.** When a task touches many files or adds many tests, pause at natural boundaries to update the summary. This also makes it easier for a new thread to pick up mid-task if the current thread ends unexpectedly.
-- **If you sense the conversation is getting long**, proactively save the summary with what you have so far, noting any remaining work under "Known gaps" or a "Remaining work" section. Do not wait for the user to ask.
-- **If the user's request is large**, tell them your plan, note how you intend to checkpoint, and save the first summary after the first checkpoint — before continuing to the next phase.
-
----
 
 ## Ignore Files
 
 - The project maintains ignore files for Git (`.gitignore`), Docker (`.dockerignore`), and Helm (`.helmignore`). These must be kept up to date.
 - When a new file type, directory, build artifact, or secret pattern is introduced, all relevant ignore files must be reviewed and updated in the same change.
-- `.gitignore` — excludes build output, secrets, IDE files, OS metadata, runtime data, and test artifacts from version control.
-- `.dockerignore` — excludes everything not needed by the Dockerfile build context (secrets, deploy artifacts, documentation, IDE files, stale build output). Keeping this tight reduces build context size and prevents secrets leaking to the Docker daemon.
-- `.helmignore` (at `deploy/helm/chef-migration-metrics/.helmignore`) — excludes files that should not be packaged into the Helm chart archive.
 - Secrets and credentials (`*.pem`, `*.key`, `.env`, `keys/`) must appear in **all** ignore files. Never rely on a single ignore file to prevent accidental exposure.
 
 ---
@@ -144,27 +75,7 @@ Large tasks risk exhausting the context window before a summary can be written. 
 
 - Specs live under `.claude/specifications/<component>/Specification.md`.
 - Before implementing any feature, check whether a specification exists. If not, write one first.
-- When completing tasks, update the relevant `todo/*.md` file and refresh the counts in `ToDo.md`.
-
----
-
-## Chef Infra Server API
-
-- All Chef Infra Server API calls must conform to the project API specification at `./specifications/chef-api/Specification.md`.
-- The upstream API reference is at https://docs.chef.io/server/api_chef_server.
-- `./specifications/chef-api/Specification.md` must be updated when API bugs or unexpected behaviours are discovered.
-- Do not use external libraries (e.g. `mixlib-authentication`) for Chef API signing. Signing must be implemented natively.
-
----
-
-## External Tool Output
-
-- When the application shells out to external tools (git, CookStyle, Test Kitchen, Docker, etc.) as part of batch processes, the invocation **must** use flags that produce JSON or machine-parseable output wherever the tool supports it. This makes parsing robust, locale-independent, and resilient to future output format changes.
-- Preferred output formats, in order: **JSON** (`--format json`, `--format '{{json .}}'`), **porcelain** (`--porcelain`), **NUL-delimited** (`-z`), **explicit format strings** (`--format='...'`). Fall back to line-oriented text parsing only when no structured option exists.
-- Never parse a tool's human-readable/colourised terminal output. Always suppress colour (`--no-color`, `NO_COLOR=1`) and progress indicators (`--quiet`) when capturing output programmatically.
-- Specific per-tool guidance lives in the component specifications: `analysis/Specification.md` (CookStyle, Test Kitchen, Docker) and `data-collection/Specification.md` (git). Those specs are authoritative — this section states the general principle.
-
----
+- When completing tasks, update the relevant `todo/*.md` file.
 
 ## Database
 
@@ -172,31 +83,22 @@ Large tasks risk exhausting the context window before a summary can be written. 
 - The application must run pending migrations automatically on startup.
 - Migrations must never be edited after they have been committed. Instead, create a new migration to make further changes.
 
----
-
 ## Language and Concurrency
 
 - All backend components must be implemented in **Go**.
-- Use **goroutines** to parallelise work wherever independent units of work can proceed concurrently. Key examples:
-  - Collecting node data from multiple Chef server organisations in parallel
-  - Pulling multiple cookbook git repositories in parallel
-  - Running CookStyle scans across multiple cookbook versions in parallel
-  - Running Test Kitchen tests across multiple cookbooks and/or target Chef Client versions in parallel
+- Use **goroutines** to parallelise work wherever independent units of work can proceed concurrently.
 - Use **channels** or **sync primitives** (e.g. `sync.WaitGroup`, `errgroup`) to coordinate goroutines and collect results or errors.
 - Goroutine concurrency must be **bounded** using worker pools. Each task type (organisation collection, node page fetching, git pulls, CookStyle scans, Test Kitchen runs, readiness evaluation) has its own independently configurable worker pool size. See `./specifications/configuration/Specification.md` for the concurrency configuration schema and default values.
 - Each concurrent work unit must propagate errors back to the caller rather than silently discarding them.
 
----
-
 ## Testing
 
 - Tests must be written before implementing code (test-driven development).
-
----
+- Tests must be run after each code change.
 
 ## Go Package Layout
 
-See `./Structure.md` for the full directory tree. Key conventions:
+Key conventions:
 - All Go code is a single module. Application packages live under `internal/`.
 - Shared domain types live in `internal/models/`.
 - Database queries are centralised in `internal/datastore/` — other packages must not import `database/sql` directly.
@@ -205,15 +107,12 @@ See `./Structure.md` for the full directory tree. Key conventions:
 - Test files sit alongside code (`foo_test.go` next to `foo.go`).
 - Integration tests use build tags (`//go:build functional`) and are excluded from `go test ./...`.
 
----
 
 ## Frontend Conventions
 
 - The React frontend lives in `frontend/` and is built with `npm run build` into `frontend/build/` (or `frontend/dist/`).
 - The Go binary embeds the built frontend assets using `go:embed` and serves them from the web server.
 - The frontend communicates exclusively through the Web API (`/api/v1/...`). It never accesses the database directly.
-
----
 
 ## Error Handling
 
@@ -223,8 +122,6 @@ See `./Structure.md` for the full directory tree. Key conventions:
 - HTTP handlers must map domain errors to appropriate HTTP status codes in `internal/webapi/` — domain packages must not import `net/http`.
 - Background jobs (collection, analysis, export) must log errors and continue processing remaining items. A single failing organisation, cookbook, or node must not abort the entire job.
 - External process execution (CookStyle, Test Kitchen, git) must enforce timeouts, capture stderr, and return structured error information — not raw exec failures.
-
----
 
 ## Naming Conventions
 
@@ -238,8 +135,6 @@ See `./Structure.md` for the full directory tree. Key conventions:
 - **API endpoints**: kebab-case paths under `/api/v1/` (e.g. `/api/v1/dependency-graph`, `/api/v1/cookbook-compatibility`).
 - **Configuration keys**: `snake_case` in YAML (e.g. `stale_node_threshold_days`, `embedded_bin_dir`).
 - **Environment variable overrides**: `SCREAMING_SNAKE_CASE` with `CMM_` prefix (e.g. `CMM_DATABASE_URL`, `CMM_SMTP_PASSWORD`).
-
----
 
 ## Licensing
 

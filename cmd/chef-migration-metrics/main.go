@@ -555,6 +555,15 @@ func run() int {
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
 
+	// Ownership evaluator — always available (reads from DB, no external tool).
+	// Auto-derivation rules are evaluated after each collection run when
+	// ownership tracking is enabled.
+	if cfg.Ownership.Enabled {
+		ownershipEval := collector.NewOwnershipEvaluator(db, cfg.Ownership, logger)
+		collOpts = append(collOpts, collector.WithOwnershipEvaluator(ownershipEval))
+		startup.Info("ownership evaluator enabled")
+	}
+
 	// Cookbook directory resolver. Chef server cookbooks are downloaded
 	// to a temp directory keyed by org/name/version. Git cookbooks are
 	// cloned under the git base directory. This function is used by
@@ -578,6 +587,20 @@ func run() int {
 	// Data collection scheduler
 	// -------------------------------------------------------------------
 	coll := collector.New(db, cfg, logger, credResolver, collOpts...)
+
+	// -------------------------------------------------------------------
+	// Ownership startup tasks
+	// -------------------------------------------------------------------
+	if cfg.Ownership.Enabled {
+		// Remove assignments from auto-rules that have been deleted from config.
+		if err := collector.CleanupRemovedAutoRules(ctx, db, cfg.Ownership, logger); err != nil {
+			startup.Warn(fmt.Sprintf("ownership auto-rule cleanup failed: %v", err))
+		}
+
+		// Start daily audit log purge (runs immediately once, then every 24h).
+		collector.StartAuditLogPurge(ctx, db, cfg.Ownership.AuditLog.RetentionDays, logger)
+		startup.Info(fmt.Sprintf("ownership audit log purge enabled (retention: %d days)", cfg.Ownership.AuditLog.RetentionDays))
+	}
 
 	// -------------------------------------------------------------------
 	// Resume interrupted collection runs from previous process
