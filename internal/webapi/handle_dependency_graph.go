@@ -30,6 +30,34 @@ func (r *Router) handleDependencyGraph(w http.ResponseWriter, req *http.Request)
 
 	ctx := req.Context()
 
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned role keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "role")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned role keys for dependency graph: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "role")
+			if err != nil {
+				r.logf("ERROR", "resolving owned role keys for dependency graph: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
 	orgName := queryString(req, "organisation", "")
 	if orgName == "" {
 		WriteBadRequest(w, "Query parameter 'organisation' is required.")
@@ -99,6 +127,50 @@ func (r *Router) handleDependencyGraph(w http.ResponseWriter, req *http.Request)
 		})
 	}
 
+	// Apply owner filter: remove role nodes that don't match ownership,
+	// and remove edges that reference removed nodes.
+	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		// Determine which role nodes to keep.
+		keepNodes := make(map[string]bool, len(nodeMap))
+		for id, n := range nodeMap {
+			if n.Type == "role" {
+				if of.Unowned {
+					if ownedKeys[n.Name] {
+						delete(nodeMap, id)
+						continue
+					}
+				} else {
+					if !ownedKeys[n.Name] {
+						delete(nodeMap, id)
+						continue
+					}
+				}
+			}
+			keepNodes[id] = true
+		}
+
+		// Remove edges referencing removed nodes.
+		filteredEdges := edges[:0]
+		for _, e := range edges {
+			if keepNodes[e.Source] && keepNodes[e.Target] {
+				filteredEdges = append(filteredEdges, e)
+			}
+		}
+		edges = filteredEdges
+
+		// Remove orphaned cookbook nodes (no remaining edges reference them).
+		referenced := make(map[string]bool)
+		for _, e := range edges {
+			referenced[e.Source] = true
+			referenced[e.Target] = true
+		}
+		for id, n := range nodeMap {
+			if n.Type == "cookbook" && !referenced[id] {
+				delete(nodeMap, id)
+			}
+		}
+	}
+
 	// Convert node map to sorted slice for deterministic output.
 	nodes := make([]graphNode, 0, len(nodeMap))
 	for _, n := range nodeMap {
@@ -155,6 +227,34 @@ func (r *Router) handleDependencyGraphTable(w http.ResponseWriter, req *http.Req
 	}
 
 	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned role keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	if of.Active && r.cfg.Ownership.Enabled {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "role")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned role keys for dependency table: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "role")
+			if err != nil {
+				r.logf("ERROR", "resolving owned role keys for dependency table: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
 
 	orgName := queryString(req, "organisation", "")
 	if orgName == "" {
@@ -239,6 +339,27 @@ func (r *Router) handleDependencyGraphTable(w http.ResponseWriter, req *http.Req
 			DependedOnBy:      reverseCounts[rc.RoleName],
 			Dependencies:      deps,
 		})
+	}
+
+	// Apply owner filter if active and ownership is enabled.
+	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		if of.Unowned {
+			filtered := rows[:0]
+			for _, row := range rows {
+				if !ownedKeys[row.RoleName] {
+					filtered = append(filtered, row)
+				}
+			}
+			rows = filtered
+		} else {
+			filtered := rows[:0]
+			for _, row := range rows {
+				if ownedKeys[row.RoleName] {
+					filtered = append(filtered, row)
+				}
+			}
+			rows = filtered
+		}
 	}
 
 	// Sort by the requested field. Default to descending for numeric fields

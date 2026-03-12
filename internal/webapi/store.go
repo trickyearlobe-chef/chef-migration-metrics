@@ -186,6 +186,102 @@ type DataStore interface {
 	// ListExpiredExportJobs returns completed export jobs whose expires_at
 	// is before the given time.
 	ListExpiredExportJobs(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
+
+	// -----------------------------------------------------------------
+	// Owners
+	// -----------------------------------------------------------------
+
+	// ListOwners returns owners matching the given filter, ordered by name.
+	ListOwners(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error)
+
+	// GetOwnerByName returns the owner with the given name. Returns
+	// datastore.ErrNotFound if no such owner exists.
+	GetOwnerByName(ctx context.Context, name string) (datastore.Owner, error)
+
+	// InsertOwner creates a new owner. Returns datastore.ErrAlreadyExists
+	// if the name is taken.
+	InsertOwner(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error)
+
+	// UpdateOwner updates an existing owner by name. Returns
+	// datastore.ErrNotFound if no such owner exists.
+	UpdateOwner(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error)
+
+	// DeleteOwner removes an owner by name. Returns datastore.ErrNotFound
+	// if no such owner exists. Returns the number of cascaded assignments.
+	DeleteOwner(ctx context.Context, name string) (int, error)
+
+	// CountAssignmentsByOwner returns the assignment count per entity type
+	// for the given owner name.
+	CountAssignmentsByOwner(ctx context.Context, ownerName string) (map[string]int, error)
+
+	// -----------------------------------------------------------------
+	// Ownership assignments
+	// -----------------------------------------------------------------
+
+	// InsertAssignment creates a new ownership assignment. Returns
+	// datastore.ErrAlreadyExists if a duplicate assignment exists.
+	InsertAssignment(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error)
+
+	// ListAssignmentsByOwner returns assignments for the given owner
+	// matching the filter.
+	ListAssignmentsByOwner(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error)
+
+	// GetAssignment returns a single assignment by ID. Returns
+	// datastore.ErrNotFound if no such assignment exists.
+	GetAssignment(ctx context.Context, id string) (datastore.OwnershipAssignment, error)
+
+	// DeleteAssignment removes an assignment by ID. Returns
+	// datastore.ErrNotFound if no such assignment exists.
+	DeleteAssignment(ctx context.Context, id string) error
+
+	// ReassignOwnership moves assignments from one owner to another.
+	// Returns the number reassigned and the number skipped (duplicates).
+	ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (reassigned, skipped int, err error)
+
+	// LookupOwnership returns the owners of a given entity, including
+	// inherited ownership.
+	LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
+
+	// -----------------------------------------------------------------
+	// Owner detail summaries
+	// -----------------------------------------------------------------
+
+	// GetOwnerReadinessSummary computes migration readiness data for all
+	// nodes assigned to the given owner for the specified target version.
+	GetOwnerReadinessSummary(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
+
+	// GetOwnerCookbookSummary computes compatibility data for cookbooks
+	// assigned to the given owner for the specified target version.
+	GetOwnerCookbookSummary(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
+
+	// GetOwnerGitRepoSummary computes compatibility data for git repos
+	// assigned to the given owner for the specified target version.
+	GetOwnerGitRepoSummary(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
+
+	// -----------------------------------------------------------------
+	// Git repo committers
+	// -----------------------------------------------------------------
+
+	// GetGitRepoURLForCookbook looks up the git_repo_url for a git-sourced
+	// cookbook by name. Returns datastore.ErrNotFound if no git-sourced
+	// cookbook exists with that name.
+	GetGitRepoURLForCookbook(ctx context.Context, cookbookName string) (string, error)
+
+	// ListCommittersByRepo returns committers for the given git repo URL,
+	// with sorting, pagination, and an optional since filter. Returns the
+	// matching rows and the total count for pagination.
+	ListCommittersByRepo(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
+
+	// -----------------------------------------------------------------
+	// Ownership audit log
+	// -----------------------------------------------------------------
+
+	// InsertAuditEntry creates a new ownership audit log entry.
+	InsertAuditEntry(ctx context.Context, p datastore.InsertAuditEntryParams) error
+
+	// ListAuditLog returns audit log entries matching the given filter,
+	// in reverse chronological order.
+	ListAuditLog(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

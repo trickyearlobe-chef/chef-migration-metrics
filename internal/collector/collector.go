@@ -951,7 +951,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		gitBaseDir := filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
 		gitMgr := NewGitCookbookManager(gitBaseDir, nil)
 
-		gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency)
+		gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency, c.cfg.Ownership.Enabled)
 
 		if gitResult.Total == 0 {
 			gitLog.Info("no git cookbook candidates to fetch",
