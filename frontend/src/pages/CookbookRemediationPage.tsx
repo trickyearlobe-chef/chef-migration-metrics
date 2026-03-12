@@ -52,7 +52,7 @@ export function CookbookRemediationPage() {
         // Non-fatal — the page can still load with the default target version.
       })
       .finally(() => setVersionsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // intentionally run only when params change
   }, []);
 
   const load = useCallback(() => {
