@@ -581,6 +581,7 @@ export type ExportJobStatus = "pending" | "processing" | "completed" | "failed" 
 
 export interface ExportFilters {
   organisation?: string;
+  node_name?: string;
   environment?: string;
   platform?: string;
   chef_version?: string;

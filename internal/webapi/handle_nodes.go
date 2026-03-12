@@ -267,6 +267,7 @@ func filterNodes(req *http.Request, nodes []datastore.NodeSnapshot) []datastore.
 		PolicyGroup: q.Get("policy_group"),
 		Role:        q.Get("role"),
 		Stale:       q.Get("stale"),
+		NodeName:    q.Get("node_name"),
 	})
 }
 

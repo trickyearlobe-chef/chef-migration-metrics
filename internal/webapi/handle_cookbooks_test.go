@@ -114,6 +114,34 @@ func TestFilterCookbooks_ByName(t *testing.T) {
 	}
 }
 
+func TestFilterCookbooks_ByNamePartialMatch(t *testing.T) {
+	cookbooks := []datastore.Cookbook{
+		{Name: "apache2"},
+		{Name: "apt"},
+		{Name: "nginx"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks?name=ap", nil)
+	result := filterCookbooks(req, cookbooks)
+	if len(result) != 2 {
+		t.Errorf("expected 2 cookbooks matching 'ap', got %d", len(result))
+	}
+}
+
+func TestFilterCookbooks_ByNameCaseInsensitive(t *testing.T) {
+	cookbooks := []datastore.Cookbook{
+		{Name: "Apache2"},
+		{Name: "nginx"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks?name=apache", nil)
+	result := filterCookbooks(req, cookbooks)
+	if len(result) != 1 {
+		t.Errorf("expected 1 cookbook matching 'apache', got %d", len(result))
+	}
+	if len(result) > 0 && result[0].Name != "Apache2" {
+		t.Errorf("expected Apache2, got %q", result[0].Name)
+	}
+}
+
 func TestFilterCookbooks_MultipleFilters(t *testing.T) {
 	cookbooks := []datastore.Cookbook{
 		{Name: "apt", Source: "chef_server", IsActive: true},
@@ -361,6 +389,61 @@ func TestHandleCookbookDetail_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
+	store := &mockStore{
+		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+			// Return chef_server entries first to verify the handler re-sorts.
+			return []datastore.Cookbook{
+				{ID: "cb-1", Name: "myapp", Version: "1.0.0", Source: "chef_server"},
+				{ID: "cb-2", Name: "myapp", Version: "2.0.0", Source: "chef_server"},
+				{ID: "cb-3", Name: "myapp", Version: "1.0.0", Source: "git"},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks/myapp", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			Cookbook struct {
+				ID     string `json:"id"`
+				Source string `json:"source"`
+			} `json:"cookbook"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 3 {
+		t.Fatalf("len(data) = %d, want 3", len(body.Data))
+	}
+	// The git-sourced cookbook (cb-3) must appear first.
+	if body.Data[0].Cookbook.Source != "git" {
+		t.Errorf("data[0].source = %q, want %q", body.Data[0].Cookbook.Source, "git")
+	}
+	if body.Data[0].Cookbook.ID != "cb-3" {
+		t.Errorf("data[0].id = %q, want %q", body.Data[0].Cookbook.ID, "cb-3")
+	}
+	// The chef_server entries should follow in their original relative order.
+	if body.Data[1].Cookbook.Source != "chef_server" {
+		t.Errorf("data[1].source = %q, want %q", body.Data[1].Cookbook.Source, "chef_server")
+	}
+	if body.Data[1].Cookbook.ID != "cb-1" {
+		t.Errorf("data[1].id = %q, want %q (stable sort preserves original order)", body.Data[1].Cookbook.ID, "cb-1")
+	}
+	if body.Data[2].Cookbook.Source != "chef_server" {
+		t.Errorf("data[2].source = %q, want %q", body.Data[2].Cookbook.Source, "chef_server")
+	}
+	if body.Data[2].Cookbook.ID != "cb-2" {
+		t.Errorf("data[2].id = %q, want %q (stable sort preserves original order)", body.Data[2].Cookbook.ID, "cb-2")
 	}
 }
 

@@ -572,6 +572,85 @@ func TestFilterNodes_Role(t *testing.T) {
 	}
 }
 
+func TestFilterNodes_PartialMatch(t *testing.T) {
+	nodes := testStore().nodesByOrg["org-1"]
+
+	// "prod" is a substring of "production" — should match web01 and db01.
+	filtered := FilterNodes(nodes, Filters{Environment: "prod"})
+	if len(filtered) != 2 {
+		t.Errorf("got %d nodes, want 2 (environment substring 'prod' matches 'production')", len(filtered))
+	}
+
+	// "bunt" is a substring of "ubuntu" — should match web01 and staging01.
+	filtered = FilterNodes(nodes, Filters{Platform: "bunt"})
+	if len(filtered) != 2 {
+		t.Errorf("got %d nodes, want 2 (platform substring 'bunt' matches 'ubuntu')", len(filtered))
+	}
+
+	// "base" is a substring match on role — all 3 nodes have the "base" role.
+	filtered = FilterNodes(nodes, Filters{Role: "base"})
+	if len(filtered) != 3 {
+		t.Errorf("got %d nodes, want 3 (role substring 'base' matches all nodes)", len(filtered))
+	}
+
+	// "web" is a substring of "webserver" role — should match web01.
+	filtered = FilterNodes(nodes, Filters{Role: "web"})
+	if len(filtered) != 1 {
+		t.Errorf("got %d nodes, want 1 (role substring 'web' matches 'webserver')", len(filtered))
+	}
+
+	// "16" is a substring of "16.0.0" — should match web01 only.
+	filtered = FilterNodes(nodes, Filters{ChefVersion: "16"})
+	if len(filtered) != 1 {
+		t.Errorf("got %d nodes, want 1 (chef_version substring '16' matches '16.0.0')", len(filtered))
+	}
+}
+
+func TestFilterNodes_CaseInsensitive(t *testing.T) {
+	nodes := testStore().nodesByOrg["org-1"]
+
+	// Upper-case "STAGING" should match "staging" environment.
+	filtered := FilterNodes(nodes, Filters{Environment: "STAGING"})
+	if len(filtered) != 1 {
+		t.Errorf("got %d nodes, want 1 (case-insensitive 'STAGING' matches 'staging')", len(filtered))
+	}
+	if len(filtered) > 0 && filtered[0].NodeName != "staging01" {
+		t.Errorf("NodeName = %q, want staging01", filtered[0].NodeName)
+	}
+
+	// Mixed-case "Ubuntu" should match "ubuntu" platform.
+	filtered = FilterNodes(nodes, Filters{Platform: "Ubuntu"})
+	if len(filtered) != 2 {
+		t.Errorf("got %d nodes, want 2 (case-insensitive 'Ubuntu' matches 'ubuntu')", len(filtered))
+	}
+
+	// Upper-case "CENTOS" should match "centos" platform.
+	filtered = FilterNodes(nodes, Filters{Platform: "CENTOS"})
+	if len(filtered) != 1 {
+		t.Errorf("got %d nodes, want 1 (case-insensitive 'CENTOS' matches 'centos')", len(filtered))
+	}
+
+	// Upper-case role filter "WEBSERVER" should match "webserver" role.
+	filtered = FilterNodes(nodes, Filters{Role: "WEBSERVER"})
+	if len(filtered) != 1 {
+		t.Errorf("got %d nodes, want 1 (case-insensitive 'WEBSERVER' matches 'webserver')", len(filtered))
+	}
+
+	// Case-insensitive partial: "PROD" matches "production".
+	filtered = FilterNodes(nodes, Filters{Environment: "PROD"})
+	if len(filtered) != 2 {
+		t.Errorf("got %d nodes, want 2 (case-insensitive partial 'PROD' matches 'production')", len(filtered))
+	}
+}
+
+func TestFilterNodes_NodeName(t *testing.T) {
+	nodes := testStore().nodesByOrg["org-1"]
+	filtered := FilterNodes(nodes, Filters{NodeName: "web"})
+	if len(filtered) != 1 {
+		t.Errorf("got %d nodes, want 1 (web01 only)", len(filtered))
+	}
+}
+
 func TestFilterNodes_NoFilter(t *testing.T) {
 	nodes := testStore().nodesByOrg["org-1"]
 	filtered := FilterNodes(nodes, Filters{})
