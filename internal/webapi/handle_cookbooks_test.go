@@ -422,9 +422,9 @@ func TestHandleCookbooks_HappyPath_VersionCountCollapsed(t *testing.T) {
 				t.Errorf("nginx version_count = %d, want 1", cb.VersionCount)
 			}
 		}
-		// Git cookbooks should not have version_count set.
-		if cb.Source == "git" && cb.VersionCount != 0 {
-			t.Errorf("git cookbook %q has version_count = %d, want 0", cb.Name, cb.VersionCount)
+		// Git cookbooks should have version_count = 1.
+		if cb.Source == "git" && cb.VersionCount != 1 {
+			t.Errorf("git cookbook %q has version_count = %d, want 1", cb.Name, cb.VersionCount)
 		}
 	}
 	if !found {

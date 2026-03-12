@@ -134,15 +134,9 @@ export function CookbooksPage() {
                         </Link>
                       </td>
                       <td>
-                        {cb.source === "chef_server" && cb.version_count && cb.version_count > 1 ? (
-                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
-                            {cb.version_count} versions
-                          </span>
-                        ) : (
-                          <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">
-                            {cb.version || "—"}
-                          </code>
-                        )}
+                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                          {cb.version_count === 1 ? "1 version" : `${cb.version_count} versions`}
+                        </span>
                       </td>
                       <td>
                         <span className={`badge ${cb.source === "git" ? "badge-compatible" : "badge-cookstyle"}`}>
