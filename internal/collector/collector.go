@@ -68,6 +68,11 @@ type Collector struct {
 	// extraction is skipped (only manifest fetch + status update).
 	cookbookCacheDir string
 
+	// gitCookbookDir is the base directory where git cookbook repositories
+	// are cloned and pulled. Structure: <gitCookbookDir>/<cookbook_name>/.
+	// When empty, falls back to $TMPDIR/chef-migration-metrics/git-cookbooks.
+	gitCookbookDir string
+
 	// mu guards currentRunID to enforce the single-run constraint.
 	mu           sync.Mutex
 	currentRunID string
@@ -137,6 +142,13 @@ func WithCookbookDirFn(fn func(cb datastore.Cookbook) string) Option {
 // of Chef server cookbooks.
 func WithCookbookCacheDir(dir string) Option {
 	return func(c *Collector) { c.cookbookCacheDir = dir }
+}
+
+// WithGitCookbookDir sets the base directory for cloning git cookbook
+// repositories during collection. When set, git operations use this path
+// instead of the default $TMPDIR-based location.
+func WithGitCookbookDir(dir string) Option {
+	return func(c *Collector) { c.gitCookbookDir = dir }
 }
 
 // New creates a new Collector with the given dependencies.
@@ -979,8 +991,11 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			len(c.cfg.GitBaseURLs), len(activeCookbookNames)),
 			logging.WithCollectionRunID(run.ID))
 
-		gitBaseDir := filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
-		gitMgr := NewGitCookbookManager(gitBaseDir, nil)
+		gitDir := c.gitCookbookDir
+		if gitDir == "" {
+			gitDir = filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
+		}
+		gitMgr := NewGitCookbookManager(gitDir, nil)
 
 		gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency, c.cfg.Ownership.Enabled)
 
