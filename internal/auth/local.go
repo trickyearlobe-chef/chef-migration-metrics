@@ -225,7 +225,7 @@ func (a *LocalAuthenticator) Login(
 	}
 
 	// Set the session cookie.
-	SetSessionCookie(w, sess.ID, sess.ExpiresAt)
+	SetSessionCookie(w, r, sess.ID, sess.ExpiresAt)
 
 	return &LoginResponse{
 		Token:     sess.ID,
