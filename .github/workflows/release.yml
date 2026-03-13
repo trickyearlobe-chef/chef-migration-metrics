@@ -6,9 +6,9 @@
 # builds the multi-arch container image and pushes it to GitHub Container
 # Registry (ghcr.io) with semantic version tags.
 #
-# Container image builds are controlled by the repository variable
-# BUILD_CONTAINER_IMAGE. Set it to "true" to enable, any other value to skip.
-# Toggle it at: Settings → Secrets and variables → Actions → Variables
+# Repository variables (Settings → Secrets and variables → Actions → Variables):
+#   BUILD_CONTAINER_IMAGE  "true" to build/push the Docker image (default: skip)
+#   BUILD_ARM64            "true" to include arm64 packages/archives (default: skip)
 #
 # Job dependency graph:
 #
@@ -59,6 +59,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       build_image: ${{ steps.flags.outputs.build_image }}
+      build_arm64: ${{ steps.flags.outputs.build_arm64 }}
+      package_archs: ${{ steps.flags.outputs.package_archs }}
+      archive_matrix: ${{ steps.flags.outputs.archive_matrix }}
     steps:
       - name: Extract version from tag
         id: version
@@ -78,6 +81,19 @@ jobs:
           else
             echo "build_image=false" >> "$GITHUB_OUTPUT"
             echo "Container image build: SKIPPED (set BUILD_CONTAINER_IMAGE=true to enable)"
+          fi
+
+          BUILD_ARM64="${{ vars.BUILD_ARM64 }}"
+          if [ "${BUILD_ARM64}" = "true" ]; then
+            echo "build_arm64=true" >> "$GITHUB_OUTPUT"
+            echo 'package_archs=["amd64","arm64"]' >> "$GITHUB_OUTPUT"
+            echo 'archive_matrix=[{"goos":"linux","goarch":"amd64","archive":"tar.gz"},{"goos":"linux","goarch":"arm64","archive":"tar.gz"},{"goos":"darwin","goarch":"amd64","archive":"tar.gz"},{"goos":"darwin","goarch":"arm64","archive":"tar.gz"},{"goos":"windows","goarch":"amd64","archive":"zip"},{"goos":"windows","goarch":"arm64","archive":"zip"}]' >> "$GITHUB_OUTPUT"
+            echo "ARM64 builds: ENABLED"
+          else
+            echo "build_arm64=false" >> "$GITHUB_OUTPUT"
+            echo 'package_archs=["amd64"]' >> "$GITHUB_OUTPUT"
+            echo 'archive_matrix=[{"goos":"linux","goarch":"amd64","archive":"tar.gz"},{"goos":"darwin","goarch":"amd64","archive":"tar.gz"},{"goos":"darwin","goarch":"arm64","archive":"tar.gz"},{"goos":"windows","goarch":"amd64","archive":"zip"}]' >> "$GITHUB_OUTPUT"
+            echo "ARM64 builds: SKIPPED (set BUILD_ARM64=true to enable)"
           fi
 
   # ---------------------------------------------------------------------------
@@ -198,7 +214,7 @@ jobs:
     needs: [extract-version]
     strategy:
       matrix:
-        arch: [amd64, arm64]
+        arch: ${{ fromJSON(needs.extract-version.outputs.package_archs) }}
         format: [rpm, deb]
     steps:
       - name: Checkout
@@ -273,25 +289,7 @@ jobs:
     needs: [extract-version]
     strategy:
       matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            archive: tar.gz
-          - goos: linux
-            goarch: arm64
-            archive: tar.gz
-          - goos: darwin
-            goarch: amd64
-            archive: tar.gz
-          - goos: darwin
-            goarch: arm64
-            archive: tar.gz
-          - goos: windows
-            goarch: amd64
-            archive: zip
-          - goos: windows
-            goarch: arm64
-            archive: zip
+        include: ${{ fromJSON(needs.extract-version.outputs.archive_matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
