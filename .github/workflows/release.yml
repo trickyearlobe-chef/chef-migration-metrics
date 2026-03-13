@@ -1,22 +1,26 @@
 # =============================================================================
 # Release — Build, Tag, and Publish Container Images & Packages
 # =============================================================================
-# Triggered when a git tag matching `v*` (e.g. v1.2.0) is pushed. Builds the
-# multi-arch container image and pushes it to GitHub Container Registry
-# (ghcr.io) with semantic version tags. Also packages the Helm chart and
-# attaches RPM/DEB packages and the Helm chart archive to the GitHub Release.
+# Triggered when a git tag matching `v*` (e.g. v1.2.0) is pushed. Builds
+# distribution archives, RPM/DEB packages, and the Helm chart. Optionally
+# builds the multi-arch container image and pushes it to GitHub Container
+# Registry (ghcr.io) with semantic version tags.
+#
+# Container image builds are controlled by the repository variable
+# BUILD_CONTAINER_IMAGE. Set it to "true" to enable, any other value to skip.
+# Toggle it at: Settings → Secrets and variables → Actions → Variables
 #
 # Job dependency graph:
 #
 #   extract-version (instant)
-#     ├── build-image ──────┐
-#     ├── build-packages ───┤
-#     ├── build-archives ───┼── release
-#     └── package-helm ─────┘
+#     ├── build-image (optional) ─┐
+#     ├── build-packages ─────────┤
+#     ├── build-archives ─────────┼── release
+#     └── package-helm ───────────┘
 #
 # All build jobs run in parallel. Only the final release job waits for all.
 #
-# Image tag strategy (for a tag like v1.2.3):
+# Image tag strategy (for a tag like v1.2.3, when image build is enabled):
 #   - 1.2.3       immutable release tag
 #   - 1.2         floating minor tag, updated on each patch release
 #   - 1           floating major tag
@@ -54,6 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      build_image: ${{ steps.flags.outputs.build_image }}
     steps:
       - name: Extract version from tag
         id: version
@@ -63,17 +68,26 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}"
 
+      - name: Evaluate build flags
+        id: flags
+        run: |
+          BUILD_IMAGE="${{ vars.BUILD_CONTAINER_IMAGE }}"
+          if [ "${BUILD_IMAGE}" = "true" ]; then
+            echo "build_image=true" >> "$GITHUB_OUTPUT"
+            echo "Container image build: ENABLED"
+          else
+            echo "build_image=false" >> "$GITHUB_OUTPUT"
+            echo "Container image build: SKIPPED (set BUILD_CONTAINER_IMAGE=true to enable)"
+          fi
+
   # ---------------------------------------------------------------------------
-  # Build and Push Container Image
-  # ---------------------------------------------------------------------------
-  # NOTE: Lint and test jobs are handled by ci.yml which runs on every push
-  # to main. Tags are only created on main, so CI has already passed for
-  # the tagged commit. No need to duplicate that work here.
+  # Build and Push Container Image (optional — controlled by repository variable)
   # ---------------------------------------------------------------------------
   build-image:
     name: Build and Push Container Image
     runs-on: ubuntu-latest
     needs: [extract-version]
+    if: needs.extract-version.outputs.build_image == 'true'
     outputs:
       digest: ${{ steps.build-push.outputs.digest }}
     steps:
@@ -346,10 +360,21 @@ jobs:
   # ---------------------------------------------------------------------------
   # Create GitHub Release
   # ---------------------------------------------------------------------------
+  # The build-image dependency uses always() so this job runs even when the
+  # image build is skipped. The if condition ensures we still fail if any
+  # required job actually failed (as opposed to being skipped).
+  # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: [extract-version, build-image, build-packages, build-archives, package-helm]
+    if: |
+      always() &&
+      needs.extract-version.result == 'success' &&
+      needs.build-packages.result == 'success' &&
+      needs.build-archives.result == 'success' &&
+      needs.package-helm.result == 'success' &&
+      (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -383,10 +408,17 @@ jobs:
 
       - name: Generate release notes
         id: notes
+        env:
+          BUILD_IMAGE: ${{ needs.extract-version.outputs.build_image }}
         run: |
           VERSION="${{ needs.extract-version.outputs.version }}"
-          DIGEST="${{ needs.build-image.outputs.digest }}"
-          cat <<EOF > release-notes.md
+          cat <<'HEADER' > release-notes.md
+          HEADER
+
+          # Container image section (only when image was built)
+          if [ "${BUILD_IMAGE}" = "true" ]; then
+            DIGEST="${{ needs.build-image.outputs.digest }}"
+            cat <<EOF >> release-notes.md
           ## Container Image
 
           \`\`\`
@@ -405,6 +437,16 @@ jobs:
           | Commit | \`${{ github.sha }}\` |
           | Latest | \`latest\` |
 
+          EOF
+          else
+            cat <<EOF >> release-notes.md
+          > **Note:** Container image was not built for this release.
+          > Set the \`BUILD_CONTAINER_IMAGE\` repository variable to \`true\` and re-tag to include it.
+
+          EOF
+          fi
+
+          cat <<EOF >> release-notes.md
           ## Helm Chart
 
           \`\`\`bash
