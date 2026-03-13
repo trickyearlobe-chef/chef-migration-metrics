@@ -418,14 +418,55 @@ type OwnershipAuditLog struct {
 
 // OwnershipAutoRule defines a single auto-derivation rule for ownership.
 type OwnershipAutoRule struct {
-	Name          string `yaml:"name"`
-	Owner         string `yaml:"owner"`
-	Type          string `yaml:"type"`
-	AttributePath string `yaml:"attribute_path"`
-	MatchValue    string `yaml:"match_value"`
-	Pattern       string `yaml:"pattern"`
-	PolicyName    string `yaml:"policy_name"`
-	Organisation  string `yaml:"organisation"`
+	Name           string `yaml:"name"`
+	Owner          string `yaml:"owner"`
+	Type           string `yaml:"type"`
+	AttributePath  string `yaml:"attribute_path"`
+	MatchValue     string `yaml:"match_value"`
+	Pattern        string `yaml:"pattern"`
+	PolicyName     string `yaml:"policy_name"`
+	Organisation   string `yaml:"organisation"`
+	ObjectType     string `yaml:"object_type"`     // cmdb_attribute: one of node, cookbook, profile, role
+	OwnerAttribute string `yaml:"owner_attribute"` // cmdb_attribute: field within itil.cmdb.<object_type> holding the owner name (default: "owner")
+}
+
+// ValidCMDBObjectTypes lists the allowed values for OwnershipAutoRule.ObjectType
+// when Type is "cmdb_attribute". Each corresponds to a Chef normal attribute
+// subtree at itil.cmdb.<object_type>.
+var ValidCMDBObjectTypes = map[string]bool{
+	"node":     true,
+	"cookbook": true,
+	"profile":  true,
+	"role":     true,
+}
+
+// CMDBSearchKeys returns the additional partial-search attribute keys and
+// paths needed to collect CMDB ownership data from Chef nodes. Each
+// configured cmdb_attribute rule contributes a key of the form
+// "itil.cmdb.<object_type>" mapped to the Chef attribute path
+// ["itil", "cmdb", "<object_type>"]. Duplicate object types are
+// deduplicated so each path is requested at most once.
+//
+// The returned map is intended to be merged into the standard
+// NodeSearchAttributes query before executing partial search.
+func (c *OwnershipConfig) CMDBSearchKeys() map[string][]string {
+	if !c.Enabled {
+		return nil
+	}
+	keys := make(map[string][]string)
+	for _, rule := range c.AutoRules {
+		if rule.Type != "cmdb_attribute" || rule.ObjectType == "" {
+			continue
+		}
+		key := "itil.cmdb." + rule.ObjectType
+		if _, exists := keys[key]; !exists {
+			keys[key] = []string{"itil", "cmdb", rule.ObjectType}
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	return keys
 }
 
 // ---------------------------------------------------------------------------
@@ -610,6 +651,11 @@ func (c *Config) setDefaults() {
 	// Ownership
 	if c.Ownership.AuditLog.RetentionDays == 0 {
 		c.Ownership.AuditLog.RetentionDays = 365
+	}
+	for i := range c.Ownership.AutoRules {
+		if c.Ownership.AutoRules[i].Type == "cmdb_attribute" && c.Ownership.AutoRules[i].OwnerAttribute == "" {
+			c.Ownership.AutoRules[i].OwnerAttribute = "owner"
+		}
 	}
 }
 
@@ -1149,8 +1195,12 @@ func (c *Config) validateOwnership(ve *ValidationError) {
 		} else {
 			names[rule.Name] = true
 		}
-		if rule.Owner == "" {
-			ve.addf("%s.owner is required", prefix)
+		// cmdb_attribute rules derive the owner from node attributes, so
+		// the Owner field is not required (and should not be set).
+		if rule.Type != "cmdb_attribute" {
+			if rule.Owner == "" {
+				ve.addf("%s.owner is required", prefix)
+			}
 		}
 		switch rule.Type {
 		case "node_attribute":
@@ -1168,10 +1218,19 @@ func (c *Config) validateOwnership(ve *ValidationError) {
 			if rule.PolicyName == "" && rule.Pattern == "" {
 				ve.addf("%s.policy_name or pattern is required for policy_match rules", prefix)
 			}
+		case "cmdb_attribute":
+			if rule.ObjectType == "" {
+				ve.addf("%s.object_type is required for cmdb_attribute rules", prefix)
+			} else if !ValidCMDBObjectTypes[rule.ObjectType] {
+				ve.addf("%s.object_type %q is not valid (must be one of: node, cookbook, profile, role)", prefix, rule.ObjectType)
+			}
+			if rule.Owner != "" {
+				ve.addf("%s.owner must not be set for cmdb_attribute rules (owner is derived from the attribute value)", prefix)
+			}
 		case "":
 			ve.addf("%s.type is required", prefix)
 		default:
-			ve.addf("%s.type %q is not valid (must be one of: node_attribute, node_name_pattern, policy_match, cookbook_name_pattern, git_repo_url_pattern, role_match)", prefix, rule.Type)
+			ve.addf("%s.type %q is not valid (must be one of: node_attribute, node_name_pattern, policy_match, cookbook_name_pattern, git_repo_url_pattern, role_match, cmdb_attribute)", prefix, rule.Type)
 		}
 	}
 }

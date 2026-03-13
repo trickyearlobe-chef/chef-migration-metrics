@@ -660,6 +660,95 @@ func TestNodeSearchAttributes_NoAutomaticPrefix(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// NodeSearchAttributesWithExtra tests
+// ---------------------------------------------------------------------------
+
+func TestNodeSearchAttributesWithExtra_Nil(t *testing.T) {
+	attrs := NodeSearchAttributesWithExtra(nil)
+	base := NodeSearchAttributes()
+	if len(attrs) != len(base) {
+		t.Errorf("expected %d attributes with nil extra, got %d", len(base), len(attrs))
+	}
+}
+
+func TestNodeSearchAttributesWithExtra_CMDBKeys(t *testing.T) {
+	extra := map[string][]string{
+		"itil.cmdb.node":     {"itil", "cmdb", "node"},
+		"itil.cmdb.cookbook": {"itil", "cmdb", "cookbook"},
+		"itil.cmdb.profile":  {"itil", "cmdb", "profile"},
+		"itil.cmdb.role":     {"itil", "cmdb", "role"},
+	}
+	attrs := NodeSearchAttributesWithExtra(extra)
+	base := NodeSearchAttributes()
+	if len(attrs) != len(base)+4 {
+		t.Errorf("expected %d attributes, got %d", len(base)+4, len(attrs))
+	}
+	for key, expectedPath := range extra {
+		path, ok := attrs[key]
+		if !ok {
+			t.Errorf("missing expected extra key %q", key)
+			continue
+		}
+		if len(path) != len(expectedPath) {
+			t.Errorf("key %q: expected path length %d, got %d", key, len(expectedPath), len(path))
+			continue
+		}
+		for i, segment := range expectedPath {
+			if path[i] != segment {
+				t.Errorf("key %q: path[%d] expected %q, got %q", key, i, segment, path[i])
+			}
+		}
+	}
+	// Standard keys should still be present.
+	for _, stdKey := range []string{"name", "platform", "ohai_time", "roles"} {
+		if _, ok := attrs[stdKey]; !ok {
+			t.Errorf("standard key %q missing after merge", stdKey)
+		}
+	}
+}
+
+func TestNodeSearchAttributesWithExtra_CollisionProtection(t *testing.T) {
+	// Attempting to override a standard key should be silently ignored.
+	extra := map[string][]string{
+		"name":           {"itil", "cmdb", "evil"},  // collides with standard "name"
+		"ohai_time":      {"override", "ohai_time"}, // collides with standard "ohai_time"
+		"itil.cmdb.node": {"itil", "cmdb", "node"},  // new key, should be added
+	}
+	attrs := NodeSearchAttributesWithExtra(extra)
+	base := NodeSearchAttributes()
+
+	// Only one extra key should have been added (itil.cmdb.node).
+	if len(attrs) != len(base)+1 {
+		t.Errorf("expected %d attributes (base + 1 non-colliding), got %d", len(base)+1, len(attrs))
+	}
+
+	// "name" should still have its original path, not the override.
+	namePath := attrs["name"]
+	if len(namePath) != 1 || namePath[0] != "name" {
+		t.Errorf("standard 'name' key was overwritten: got path %v", namePath)
+	}
+
+	// "ohai_time" should still have its original path.
+	ohaiPath := attrs["ohai_time"]
+	if len(ohaiPath) != 1 || ohaiPath[0] != "ohai_time" {
+		t.Errorf("standard 'ohai_time' key was overwritten: got path %v", ohaiPath)
+	}
+
+	// The new CMDB key should be present.
+	if _, ok := attrs["itil.cmdb.node"]; !ok {
+		t.Error("expected 'itil.cmdb.node' key to be added")
+	}
+}
+
+func TestNodeSearchAttributesWithExtra_EmptyMap(t *testing.T) {
+	attrs := NodeSearchAttributesWithExtra(map[string][]string{})
+	base := NodeSearchAttributes()
+	if len(attrs) != len(base) {
+		t.Errorf("expected %d attributes with empty extra, got %d", len(base), len(attrs))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // CollectAllNodes tests (sequential)
 // ---------------------------------------------------------------------------
 
@@ -676,7 +765,7 @@ func TestCollectAllNodes_SinglePage(t *testing.T) {
 		json.NewEncoder(w).Encode(resp)
 	})
 
-	rows, err := client.CollectAllNodes(ctx(), 1000)
+	rows, err := client.CollectAllNodes(ctx(), 1000, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -727,7 +816,7 @@ func TestCollectAllNodes_MultiplePages(t *testing.T) {
 		json.NewEncoder(w).Encode(resp)
 	})
 
-	rows, err := client.CollectAllNodes(ctx(), 2)
+	rows, err := client.CollectAllNodes(ctx(), 2, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -748,7 +837,7 @@ func TestCollectAllNodes_DefaultPageSize(t *testing.T) {
 		json.NewEncoder(w).Encode(SearchResult{Total: 0, Rows: []SearchResultRow{}})
 	})
 
-	_, err := client.CollectAllNodes(ctx(), 0)
+	_, err := client.CollectAllNodes(ctx(), 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -770,7 +859,7 @@ func TestCollectAllNodesConcurrent_SinglePage(t *testing.T) {
 		json.NewEncoder(w).Encode(resp)
 	})
 
-	rows, err := client.CollectAllNodesConcurrent(ctx(), 1000, 5)
+	rows, err := client.CollectAllNodesConcurrent(ctx(), 1000, 5, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -807,7 +896,7 @@ func TestCollectAllNodesConcurrent_MultiplePages(t *testing.T) {
 		json.NewEncoder(w).Encode(resp)
 	})
 
-	rows, err := client.CollectAllNodesConcurrent(ctx(), 2, 3)
+	rows, err := client.CollectAllNodesConcurrent(ctx(), 2, 3, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -841,7 +930,7 @@ func TestCollectAllNodesConcurrent_ErrorOnSubsequentPage(t *testing.T) {
 		w.Write([]byte(`{"error":"boom"}`))
 	})
 
-	_, err := client.CollectAllNodesConcurrent(ctx(), 2, 2)
+	_, err := client.CollectAllNodesConcurrent(ctx(), 2, 2, nil)
 	if err == nil {
 		t.Fatal("expected error when subsequent page fails")
 	}
@@ -864,7 +953,7 @@ func TestCollectAllNodesConcurrent_ContextCancelled(t *testing.T) {
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := client.CollectAllNodesConcurrent(ctxTimeout, 1, 5)
+	_, err := client.CollectAllNodesConcurrent(ctxTimeout, 1, 5, nil)
 	if err == nil {
 		t.Fatal("expected error when context is cancelled")
 	}
@@ -1985,7 +2074,7 @@ func TestFullSearchFlow(t *testing.T) {
 		json.NewEncoder(w).Encode(resp)
 	})
 
-	rows, err := client.CollectAllNodes(ctx(), 1000)
+	rows, err := client.CollectAllNodes(ctx(), 1000, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -682,10 +682,16 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		pageConcurrency = 1
 	}
 
+	// Compute any additional partial-search keys needed for CMDB ownership
+	// attributes. When cmdb_attribute rules are configured, the search
+	// request includes keys like "itil.cmdb.node" → ["itil","cmdb","node"]
+	// so the Chef server returns the CMDB subtree for each node.
+	cmdbSearchKeys := c.cfg.Ownership.CMDBSearchKeys()
+
 	log.Info("collecting nodes via partial search",
 		logging.WithCollectionRunID(run.ID))
 
-	searchRows, err := client.CollectAllNodesConcurrent(ctx, 1000, pageConcurrency)
+	searchRows, err := client.CollectAllNodesConcurrent(ctx, 1000, pageConcurrency, cmdbSearchKeys)
 	if err != nil {
 		return 0, 0, fmt.Errorf("collecting nodes: %w", err)
 	}
@@ -754,24 +760,42 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			cbVersions,
 		))
 
+		// Build custom attributes from CMDB search keys and any other
+		// extra attributes returned by the partial search. Each CMDB key
+		// (e.g. "itil.cmdb.node") is stored as-is in the flat map so the
+		// ownership evaluator can look up values by dot-separated path.
+		var customAttrsJSON json.RawMessage
+		if len(cmdbSearchKeys) > 0 {
+			customAttrs := make(map[string]interface{})
+			for key := range cmdbSearchKeys {
+				if val, ok := nd.Raw[key]; ok && val != nil {
+					customAttrs[key] = val
+				}
+			}
+			if len(customAttrs) > 0 {
+				customAttrsJSON, _ = json.Marshal(customAttrs)
+			}
+		}
+
 		snapshotParams = append(snapshotParams, datastore.InsertNodeSnapshotParams{
-			CollectionRunID: run.ID,
-			OrganisationID:  org.ID,
-			NodeName:        nd.Name(),
-			ChefEnvironment: nd.ChefEnvironment(),
-			ChefVersion:     nd.ChefVersion(),
-			Platform:        nd.Platform(),
-			PlatformVersion: nd.PlatformVersion(),
-			PlatformFamily:  nd.PlatformFamily(),
-			Filesystem:      fsJSON,
-			Cookbooks:       cbJSON,
-			RunList:         rlJSON,
-			Roles:           rolesJSON,
-			PolicyName:      nd.PolicyName(),
-			PolicyGroup:     nd.PolicyGroup(),
-			OhaiTime:        nd.OhaiTime(),
-			IsStale:         nodeIsStale,
-			CollectedAt:     now,
+			CollectionRunID:  run.ID,
+			OrganisationID:   org.ID,
+			NodeName:         nd.Name(),
+			ChefEnvironment:  nd.ChefEnvironment(),
+			ChefVersion:      nd.ChefVersion(),
+			Platform:         nd.Platform(),
+			PlatformVersion:  nd.PlatformVersion(),
+			PlatformFamily:   nd.PlatformFamily(),
+			Filesystem:       fsJSON,
+			Cookbooks:        cbJSON,
+			RunList:          rlJSON,
+			Roles:            rolesJSON,
+			PolicyName:       nd.PolicyName(),
+			PolicyGroup:      nd.PolicyGroup(),
+			OhaiTime:         nd.OhaiTime(),
+			CustomAttributes: customAttrsJSON,
+			IsStale:          nodeIsStale,
+			CollectedAt:      now,
 		})
 	}
 

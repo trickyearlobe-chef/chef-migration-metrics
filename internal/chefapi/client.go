@@ -407,17 +407,35 @@ func NodeSearchAttributes() PartialSearchQuery {
 	}
 }
 
+// NodeSearchAttributesWithExtra returns the standard node partial search
+// query merged with additional keys. Extra keys that collide with standard
+// keys are silently ignored so callers cannot accidentally overwrite core
+// fields. This is used to request CMDB ownership attributes (e.g.
+// "itil.cmdb.node" → ["itil", "cmdb", "node"]) alongside the standard set.
+func NodeSearchAttributesWithExtra(extra map[string][]string) PartialSearchQuery {
+	attrs := NodeSearchAttributes()
+	for key, path := range extra {
+		if _, exists := attrs[key]; !exists {
+			attrs[key] = path
+		}
+	}
+	return attrs
+}
+
 // CollectAllNodes performs a paginated partial search to collect all nodes
 // from the Chef server. It fetches pages sequentially, collecting all rows
 // into a single slice. For concurrent page fetching, use CollectAllNodesConcurrent.
 //
 // The pageSize parameter controls the number of nodes per request (recommended: 1000).
-func (c *Client) CollectAllNodes(ctx context.Context, pageSize int) ([]SearchResultRow, error) {
+// The optional extraAttrs parameter supplies additional partial-search keys
+// (e.g. CMDB ownership attributes) that are merged into the standard set.
+// Pass nil when no extra attributes are needed.
+func (c *Client) CollectAllNodes(ctx context.Context, pageSize int, extraAttrs map[string][]string) ([]SearchResultRow, error) {
 	if pageSize <= 0 {
 		pageSize = 1000
 	}
 
-	attrs := NodeSearchAttributes()
+	attrs := NodeSearchAttributesWithExtra(extraAttrs)
 
 	// First page — discover total count.
 	first, err := c.PartialSearch(ctx, "node", "*:*", pageSize, 0, attrs)
@@ -452,7 +470,11 @@ type PageResult struct {
 // all nodes, fetching pages concurrently up to the given concurrency limit.
 // It first fetches page 0 to discover the total count, then dispatches
 // remaining pages in parallel.
-func (c *Client) CollectAllNodesConcurrent(ctx context.Context, pageSize, concurrency int) ([]SearchResultRow, error) {
+//
+// The optional extraAttrs parameter supplies additional partial-search keys
+// (e.g. CMDB ownership attributes) that are merged into the standard set.
+// Pass nil when no extra attributes are needed.
+func (c *Client) CollectAllNodesConcurrent(ctx context.Context, pageSize, concurrency int, extraAttrs map[string][]string) ([]SearchResultRow, error) {
 	if pageSize <= 0 {
 		pageSize = 1000
 	}
@@ -460,7 +482,7 @@ func (c *Client) CollectAllNodesConcurrent(ctx context.Context, pageSize, concur
 		concurrency = 1
 	}
 
-	attrs := NodeSearchAttributes()
+	attrs := NodeSearchAttributesWithExtra(extraAttrs)
 
 	// First page — discover total.
 	first, err := c.PartialSearch(ctx, "node", "*:*", pageSize, 0, attrs)

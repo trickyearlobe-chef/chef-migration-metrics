@@ -284,6 +284,118 @@ exports:
 #       bind_password_env: LDAP_BIND_PASSWORD
 
 # ---------------------------------------------------------------------------
+# Ownership Tracking (optional)
+# ---------------------------------------------------------------------------
+# Ownership tracking lets you assign nodes, cookbooks, git repos, roles, and
+# policies to owners (teams or individuals) so you can view migration progress
+# per owner. Owners can be created via the API/UI; auto-rules below derive
+# ownership automatically after each collection run.
+#
+# ownership:
+#   enabled: true                # Default: false. Set true to enable ownership features.
+#
+#   audit_log:
+#     retention_days: 365        # Default: 365. Days to keep audit log entries.
+#                                # Set to 0 to retain indefinitely.
+#
+#   auto_rules:
+#     # Assign nodes whose automatic.cloud.provider attribute equals "aws"
+#     - name: aws-nodes-to-cloud-team
+#       owner: cloud-team
+#       type: node_attribute
+#       attribute_path: automatic.cloud.provider
+#       match_value: "aws"
+#
+#     # Assign nodes whose name matches a regex pattern
+#     - name: web-prod-nodes
+#       owner: web-platform
+#       type: node_name_pattern
+#       pattern: "^web-prod-.*"
+#
+#     # Assign nodes using a specific policy
+#     - name: payment-policy
+#       owner: payments-team
+#       type: policy_match
+#       policy_name: "payment-app"
+#
+#     # Assign cookbooks whose name matches a regex pattern
+#     - name: acme-cookbooks
+#       owner: acme-platform
+#       type: cookbook_name_pattern
+#       pattern: "^acme-.*"
+#
+#     # Assign git repos whose URL matches a regex pattern
+#     - name: web-team-repos
+#       owner: web-platform
+#       type: git_repo_url_pattern
+#       pattern: "gitlab\\.example\\.com/team-web/.*"
+#
+#     # Assign roles by name (exact or regex pattern)
+#     - name: web-server-role
+#       owner: web-platform
+#       type: role_match
+#       pattern: "web-server"
+#
+#     # Scope a rule to a single organisation (omit to apply across all orgs)
+#     - name: staging-nodes
+#       owner: platform-team
+#       type: node_name_pattern
+#       pattern: "^staging-.*"
+#       organisation: my-org
+#
+#     # --- CMDB ownership from node attributes ---
+#     # Derive ownership from ITIL CMDB attributes stored on Chef nodes.
+#     # A cookbook or wrapper sets normal attributes under itil.cmdb.<object_type>,
+#     # for example:
+#     #
+#     #   node.normal['itil']['cmdb']['node'] = {
+#     #     'owner'         => 'linux-platform',
+#     #     'ci_id'         => 'CI00123',
+#     #     'support_group' => 'L2-Linux',
+#     #     'environment'   => 'production'
+#     #   }
+#     #
+#     # The cmdb_attribute rule reads the owner name from the attribute value
+#     # at itil.cmdb.<object_type>.<owner_attribute> for each node. Unlike
+#     # other rules, the owner field is NOT set in the rule — it is derived
+#     # per node from the attribute data.
+#
+#     # Node ownership — read from itil.cmdb.node.owner
+#     - name: cmdb-node-owner
+#       type: cmdb_attribute
+#       object_type: node
+#       # owner_attribute: owner   # Default: "owner". The field within
+#                                   # itil.cmdb.<object_type> that holds the
+#                                   # owner name.
+#
+#     # Cookbook ownership — read from itil.cmdb.cookbook.owner
+#     - name: cmdb-cookbook-owner
+#       type: cmdb_attribute
+#       object_type: cookbook
+#
+#     # InSpec profile ownership — read from itil.cmdb.profile.owner
+#     - name: cmdb-profile-owner
+#       type: cmdb_attribute
+#       object_type: profile
+#
+#     # Role ownership — read from itil.cmdb.role.owner
+#     - name: cmdb-role-owner
+#       type: cmdb_attribute
+#       object_type: role
+#
+#     # Use a different field as the owner name (e.g. support_group)
+#     - name: cmdb-node-support-group
+#       type: cmdb_attribute
+#       object_type: node
+#       owner_attribute: support_group
+#
+#     # Scope a CMDB rule to a single organisation
+#     - name: cmdb-node-owner-prod
+#       type: cmdb_attribute
+#       object_type: node
+#       organisation: my-org
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 logging:

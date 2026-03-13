@@ -11,6 +11,7 @@ This file contains the rules and conventions that must be followed at all times 
 - After significant work has been completed and verified (tests pass, linting clean, summary written), present a summary of the branch's changes and **ask the user for permission to merge**.
 - When permission is granted, merge using `git merge --no-ff` to preserve the branch history, then delete the feature branch.
 - If the user declines or wants changes first, continue working on the same branch.
+- Do not squash commits when merging.
 
 ## Commits
 

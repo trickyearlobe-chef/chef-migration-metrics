@@ -828,3 +828,91 @@ func (db *DB) ResetCookbookDownloadStatus(ctx context.Context, id string) (Cookb
 		DownloadStatus: DownloadStatusPending,
 	})
 }
+
+// DeleteGitCookbookResult holds the outcome of a DeleteGitCookbooksByName
+// operation, including how many cookbook and committer rows were removed and
+// which git repo URLs were cleaned up.
+type DeleteGitCookbookResult struct {
+	CookbooksDeleted  int
+	CommittersDeleted int
+	RepoURLs          []string
+}
+
+// DeleteGitCookbooksByName removes all git-sourced cookbook rows for the given
+// cookbook name and deletes associated committer data from
+// git_repo_committers. There may be multiple rows for the same cookbook name
+// with different git_repo_url values (stale data from URL changes); this
+// method cleans up all of them in a single transaction.
+//
+// Cascading foreign-key deletes handle cookstyle results, complexity records,
+// and other dependent rows automatically.
+//
+// Returns ErrNotFound if no git-sourced cookbook with that name exists.
+func (db *DB) DeleteGitCookbooksByName(ctx context.Context, cookbookName string) (DeleteGitCookbookResult, error) {
+	var result DeleteGitCookbookResult
+
+	err := db.Tx(ctx, func(tx *sql.Tx) error {
+		// Collect all git_repo_url values for this cookbook name so we can
+		// clean up committer data after deleting the cookbook rows.
+		rows, err := tx.QueryContext(ctx,
+			`SELECT git_repo_url FROM cookbooks
+			 WHERE name = $1 AND source = 'git' AND git_repo_url IS NOT NULL`,
+			cookbookName,
+		)
+		if err != nil {
+			return fmt.Errorf("datastore: selecting git repo URLs for cookbook %q: %w", cookbookName, err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var url string
+			if err := rows.Scan(&url); err != nil {
+				return fmt.Errorf("datastore: scanning git repo URL: %w", err)
+			}
+			result.RepoURLs = append(result.RepoURLs, url)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("datastore: iterating git repo URLs: %w", err)
+		}
+
+		// Delete all git-sourced cookbook rows for this name. Cascading FK
+		// deletes remove cookstyle results, complexity, test results, etc.
+		res, err := tx.ExecContext(ctx,
+			`DELETE FROM cookbooks WHERE name = $1 AND source = 'git'`,
+			cookbookName,
+		)
+		if err != nil {
+			return fmt.Errorf("datastore: deleting git cookbooks for %q: %w", cookbookName, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("datastore: checking rows affected: %w", err)
+		}
+		if n == 0 {
+			return ErrNotFound
+		}
+		result.CookbooksDeleted = int(n)
+
+		// Delete committer data for all collected repo URLs.
+		if len(result.RepoURLs) > 0 {
+			res, err := tx.ExecContext(ctx,
+				`DELETE FROM git_repo_committers WHERE git_repo_url = ANY($1)`,
+				stringSliceToArray(result.RepoURLs),
+			)
+			if err != nil {
+				return fmt.Errorf("datastore: deleting committers for cookbook %q: %w", cookbookName, err)
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("datastore: checking committer rows affected: %w", err)
+			}
+			result.CommittersDeleted = int(n)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return DeleteGitCookbookResult{}, err
+	}
+	return result, nil
+}

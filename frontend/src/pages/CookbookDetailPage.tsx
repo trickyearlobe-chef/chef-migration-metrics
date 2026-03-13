@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchCookbookDetail, requestCookbookRescan } from "../api";
+import { fetchCookbookDetail, requestCookbookRescan, resetGitCookbook } from "../api";
 import type { CookbookDetailResponse } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge, ComplexityBadge } from "../components/StatusBadge";
@@ -12,6 +12,9 @@ export function CookbookDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
   const [rescanMsg, setRescanMsg] = useState<string | null>(null);
+  const [resettingGit, setResettingGit] = useState(false);
+  const [resetGitMsg, setResetGitMsg] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const load = useCallback(() => {
     if (!name) return;
@@ -36,11 +39,27 @@ export function CookbookDetailPage() {
       .finally(() => setRescanning(false));
   }, [name, load]);
 
+  const handleResetGit = useCallback(() => {
+    if (!name) return;
+    setResettingGit(true);
+    setResetGitMsg(null);
+    setShowResetConfirm(false);
+    resetGitCookbook(name)
+      .then((res) => {
+        setResetGitMsg(res.message);
+        load();
+      })
+      .catch((e: Error) => setResetGitMsg(`Reset failed: ${e.message}`))
+      .finally(() => setResettingGit(false));
+  }, [name, load]);
+
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <LoadingSpinner message="Loading cookbook detail…" />;
   if (error) return <ErrorAlert message={error} onRetry={load} />;
   if (!data) return null;
+
+  const isGitSourced = data.data.some((vd) => vd.cookbook.source === "git");
 
   return (
     <div className="space-y-6">
@@ -60,11 +79,70 @@ export function CookbookDetailPage() {
         >
           {rescanning ? "Requesting…" : "Rescan CookStyle"}
         </button>
+        {isGitSourced && (
+          <button
+            onClick={() => setShowResetConfirm(true)}
+            disabled={resettingGit}
+            className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Remove all git data for this cookbook — it will be re-cloned on the next collection cycle"
+          >
+            {resettingGit ? "Resetting…" : "Reset Git"}
+          </button>
+        )}
       </div>
+
+      {showResetConfirm && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="font-medium">Are you sure you want to reset git data for "{data.name}"?</p>
+          <p className="mt-1 text-red-600">
+            This will delete all git-sourced cookbook rows, committer data, and the local clone.
+            The cookbook will be re-cloned from the currently configured git base URLs on the next collection cycle.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={handleResetGit}
+              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-red-700"
+            >
+              Yes, Reset Git
+            </button>
+            <button
+              onClick={() => setShowResetConfirm(false)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {rescanMsg && (
         <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
           {rescanMsg}
+        </div>
+      )}
+
+      {resetGitMsg && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {resetGitMsg}
+        </div>
+      )}
+
+      {isGitSourced && (
+        <div className="card">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-medium text-gray-600">Git Repository</h4>
+              <p className="mt-1 text-sm text-gray-500">
+                View committer history and assign repository owners
+              </p>
+            </div>
+            <Link
+              to={`/cookbooks/${encodeURIComponent(data.name)}/committers`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 shadow-sm hover:bg-gray-50"
+            >
+              View Committers →
+            </Link>
+          </div>
         </div>
       )}
 

@@ -22,6 +22,14 @@ type entityMatch struct {
 	EntityKey  string
 }
 
+// ownerEntityMatch extends entityMatch with a per-match owner name. This is
+// used by cmdb_attribute rules where the owner is read from each node's
+// attributes rather than being fixed in the rule configuration.
+type ownerEntityMatch struct {
+	entityMatch
+	OwnerName string
+}
+
 // OwnershipEvaluator evaluates ownership auto-derivation rules after each
 // collection run completes. It examines collected data (nodes, cookbooks,
 // roles, git repos) and creates or removes ownership assignments based on
@@ -66,6 +74,20 @@ func (e *OwnershipEvaluator) EvaluateAfterCollection(ctx context.Context, orgID,
 	for _, rule := range rules {
 		// If the rule specifies an organisation, skip if it doesn't match.
 		if rule.Organisation != "" && rule.Organisation != orgName {
+			continue
+		}
+
+		// cmdb_attribute rules derive the owner from each node's
+		// attributes, so they follow a separate code path.
+		if rule.Type == "cmdb_attribute" {
+			created, removed, skipped, err := e.evaluateCMDBRule(ctx, orgID, rule, log)
+			if err != nil {
+				log.Warn(fmt.Sprintf("auto-rule %q: CMDB evaluation failed: %v", rule.Name, err))
+				continue
+			}
+			totalCreated += created
+			totalRemoved += removed
+			totalSkipped += skipped
 			continue
 		}
 
@@ -133,6 +155,8 @@ func (e *OwnershipEvaluator) EvaluateAfterCollection(ctx context.Context, orgID,
 }
 
 // evaluateRule dispatches to the correct rule evaluator based on rule type.
+// Note: cmdb_attribute rules are handled separately in EvaluateAfterCollection
+// because they produce per-match owners rather than a single fixed owner.
 func (e *OwnershipEvaluator) evaluateRule(ctx context.Context, orgID string, rule config.OwnershipAutoRule) ([]entityMatch, error) {
 	switch rule.Type {
 	case "node_attribute":
@@ -147,9 +171,186 @@ func (e *OwnershipEvaluator) evaluateRule(ctx context.Context, orgID string, rul
 		return e.evaluateGitRepoURLPatternRule(ctx, rule)
 	case "role_match":
 		return e.evaluateRoleMatchRule(ctx, orgID, rule)
+	case "cmdb_attribute":
+		// cmdb_attribute rules are handled separately in EvaluateAfterCollection
+		// because they produce per-match owners. This case prevents an
+		// "unknown rule type" error if evaluateRule is called directly.
+		return nil, fmt.Errorf("cmdb_attribute rules must be evaluated via evaluateCMDBRule, not evaluateRule")
 	default:
 		return nil, fmt.Errorf("unknown rule type %q", rule.Type)
 	}
+}
+
+// evaluateCMDBRule handles cmdb_attribute rules end-to-end, including owner
+// resolution. Unlike other rules that assign all matches to a single
+// pre-configured owner, CMDB rules read the owner name from each node's
+// itil.cmdb.<object_type>.<owner_attribute> attribute. This means each
+// matched node can map to a different owner.
+//
+// Returns the number of assignments created, removed (stale), and skipped
+// (already existed).
+func (e *OwnershipEvaluator) evaluateCMDBRule(ctx context.Context, orgID string, rule config.OwnershipAutoRule, log *logging.ScopedLogger) (created, removed, skipped int, err error) {
+	matches, evalErr := e.evaluateCMDBAttributeRule(ctx, orgID, rule)
+	if evalErr != nil {
+		return 0, 0, 0, evalErr
+	}
+
+	// Build a set of current match keys for stale cleanup.
+	currentMatchKeys := make(map[string]bool, len(matches))
+	for _, m := range matches {
+		currentMatchKeys[m.EntityType+":"+m.EntityKey] = true
+	}
+
+	// Cache owner lookups — many nodes will share the same owner.
+	ownerCache := make(map[string]string) // owner name → owner ID
+
+	for _, m := range matches {
+		ownerID, cached := ownerCache[m.OwnerName]
+		if !cached {
+			owner, lookupErr := e.db.GetOwnerByName(ctx, m.OwnerName)
+			if lookupErr != nil {
+				if errors.Is(lookupErr, datastore.ErrNotFound) {
+					log.Warn(fmt.Sprintf("auto-rule %q: CMDB owner %q (from %s:%s) not found, skipping",
+						rule.Name, m.OwnerName, m.EntityType, m.EntityKey))
+					ownerCache[m.OwnerName] = "" // negative cache
+					continue
+				}
+				return created, 0, skipped, fmt.Errorf("looking up CMDB owner %q: %w", m.OwnerName, lookupErr)
+			}
+			ownerID = owner.ID
+			ownerCache[m.OwnerName] = ownerID
+		}
+
+		if ownerID == "" {
+			// Negative cache hit — owner was not found previously.
+			continue
+		}
+
+		_, insertErr := e.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
+			OwnerID:          ownerID,
+			EntityType:       m.EntityType,
+			EntityKey:        m.EntityKey,
+			OrganisationID:   orgID,
+			AssignmentSource: "auto_rule",
+			AutoRuleName:     rule.Name,
+			Confidence:       "inferred",
+			Notes:            fmt.Sprintf("Auto-assigned by CMDB rule %q from itil.cmdb.%s.%s", rule.Name, rule.ObjectType, rule.OwnerAttribute),
+		})
+		if insertErr != nil {
+			if errors.Is(insertErr, datastore.ErrAlreadyExists) {
+				skipped++
+				continue
+			}
+			log.Warn(fmt.Sprintf("auto-rule %q: failed to create assignment for %s:%s → %s: %v",
+				rule.Name, m.EntityType, m.EntityKey, m.OwnerName, insertErr))
+			continue
+		}
+		created++
+	}
+
+	// Clean up stale assignments from this rule that no longer match.
+	removedCount, cleanupErr := e.db.DeleteStaleAutoRuleAssignments(ctx, rule.Name, orgID, currentMatchKeys)
+	if cleanupErr != nil {
+		log.Warn(fmt.Sprintf("auto-rule %q: stale cleanup failed: %v", rule.Name, cleanupErr))
+	} else {
+		removed = removedCount
+	}
+
+	return created, removed, skipped, nil
+}
+
+// evaluateCMDBAttributeRule matches nodes by reading the owner value from
+// their itil.cmdb.<object_type> attributes stored in custom_attributes.
+//
+// For each node, the evaluator looks up the key "itil.cmdb.<object_type>"
+// in the custom_attributes JSON, then reads the <owner_attribute> field
+// from the resulting map. If the field is present and non-empty, the node
+// is matched with that owner name.
+//
+// The object_type determines both the attribute path and the entity type
+// of the resulting match:
+//
+//   - node     → entity_type "node",    entity_key = node name
+//   - cookbook  → entity_type "node",    entity_key = node name (the node declares cookbook ownership)
+//   - profile  → entity_type "node",    entity_key = node name (the node declares profile ownership)
+//   - role     → entity_type "node",    entity_key = node name (the node declares role ownership)
+func (e *OwnershipEvaluator) evaluateCMDBAttributeRule(ctx context.Context, orgID string, rule config.OwnershipAutoRule) ([]ownerEntityMatch, error) {
+	if rule.ObjectType == "" {
+		return nil, fmt.Errorf("object_type is required for cmdb_attribute rule")
+	}
+	ownerAttr := rule.OwnerAttribute
+	if ownerAttr == "" {
+		ownerAttr = "owner"
+	}
+
+	if e.db == nil {
+		return nil, fmt.Errorf("listing nodes: database is nil")
+	}
+
+	nodes, err := e.db.ListNodeSnapshotsByOrganisation(ctx, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("listing nodes: %w", err)
+	}
+
+	cmdbKey := "itil.cmdb." + rule.ObjectType
+	var matches []ownerEntityMatch
+
+	for _, node := range nodes {
+		ownerName := extractCMDBOwner(node.CustomAttributes, cmdbKey, ownerAttr)
+		if ownerName == "" {
+			continue
+		}
+		matches = append(matches, ownerEntityMatch{
+			entityMatch: entityMatch{
+				EntityType: "node",
+				EntityKey:  node.NodeName,
+			},
+			OwnerName: ownerName,
+		})
+	}
+	return matches, nil
+}
+
+// extractCMDBOwner reads the owner value from a node's custom attributes
+// at the path <cmdbKey>.<ownerAttr>. The custom_attributes JSON is a flat
+// map where top-level keys are dot-separated paths (e.g.
+// "itil.cmdb.node"), and the value at each key is the subtree returned by
+// the Chef partial search. The subtree is expected to be a map containing
+// the owner attribute field.
+//
+// Returns the owner name as a string, or "" if not found or not a string.
+func extractCMDBOwner(customAttrs json.RawMessage, cmdbKey, ownerAttr string) string {
+	if len(customAttrs) == 0 {
+		return ""
+	}
+
+	var attrs map[string]interface{}
+	if err := json.Unmarshal(customAttrs, &attrs); err != nil {
+		return ""
+	}
+
+	subtree, ok := attrs[cmdbKey]
+	if !ok || subtree == nil {
+		return ""
+	}
+
+	// The subtree should be a map (the itil.cmdb.<object_type> object).
+	subtreeMap, ok := subtree.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	val, ok := subtreeMap[ownerAttr]
+	if !ok || val == nil {
+		return ""
+	}
+
+	ownerStr, ok := val.(string)
+	if !ok || ownerStr == "" {
+		return ""
+	}
+
+	return ownerStr
 }
 
 // evaluateNodeAttributeRule matches nodes by a value at a configurable
