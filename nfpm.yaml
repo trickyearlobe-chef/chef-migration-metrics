@@ -43,10 +43,11 @@ contents:
     file_info:
       mode: 0755
 
-  # Default configuration file (noreplace = don't overwrite on upgrade)
+  # Example configuration file — always shipped fresh on install/upgrade.
+  # The postinstall script copies this to config.yml only if config.yml
+  # does not already exist, so operator edits are never clobbered.
   - src: ./deploy/pkg/config.yml.example
-    dst: /etc/chef-migration-metrics/config.yml
-    type: config|noreplace
+    dst: /etc/chef-migration-metrics/config.yml.example
     file_info:
       mode: 0640
 
