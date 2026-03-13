@@ -233,10 +233,6 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Set up QEMU (for cross-compilation)
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
-
       - name: Install nFPM
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
@@ -255,16 +251,6 @@ jobs:
           GOARCH=${{ matrix.arch }} CGO_ENABLED=0 GOOS=linux go build \
             -ldflags "-X main.version=${VERSION} -X main.commit=${GIT_COMMIT} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o build/chef-migration-metrics ./cmd/chef-migration-metrics/
-
-      - name: Build embedded Ruby environment
-        run: |
-          make build-embedded-${{ matrix.arch }}
-
-      - name: Fix embedded tree permissions
-        run: |
-          # Docker extracts gems as root with restrictive permissions.
-          # nFPM needs read access to every file to pack them into the archive.
-          sudo chmod -R a+rX build/embedded/
 
       - name: Build ${{ matrix.format }} package
         env:
