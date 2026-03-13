@@ -65,15 +65,20 @@ const nrColumns = `id, node_snapshot_id, organisation_id, node_name,
 // that dashboard counts reflect exactly one readiness verdict per node per
 // target version — regardless of how many collection cycles have run.
 //
-// The previous approach filtered by the latest *completed* collection run,
-// but readiness evaluation runs BEFORE the run is marked complete (step 14
-// of 15), so the evaluator uses snapshots from the prior run. That caused
-// the filter to find zero rows for the current run's snapshots.
+// This uses a non-correlated subquery that computes the full set of latest
+// IDs once via DISTINCT ON, then uses a semi-join against the outer query.
+// The idx_node_readiness_latest covering index satisfies the DISTINCT ON +
+// ORDER BY via an index-only scan (Heap Fetches: 0).
+//
+// The previous correlated version (WHERE nr2.organisation_id =
+// node_readiness.organisation_id) caused O(N²) behaviour with PostgreSQL's
+// generic plans for parameterized queries — the planner re-scanned the
+// entire table for every outer row, turning a millisecond query into one
+// that took minutes on tables with tens of thousands of rows.
 const latestReadinessPerNode = `
     id IN (
         SELECT DISTINCT ON (organisation_id, node_name, target_chef_version) id
-          FROM node_readiness nr2
-         WHERE nr2.organisation_id = node_readiness.organisation_id
+          FROM node_readiness
          ORDER BY organisation_id, node_name, target_chef_version, evaluated_at DESC
     )`
 
