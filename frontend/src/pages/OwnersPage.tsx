@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { fetchOwners, createOwner, type OwnerFilterQuery } from "../api";
 import type { Owner, Pagination as PaginationType } from "../types";
@@ -23,9 +23,111 @@ function ownerTypeLabel(t: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Owners list page — paginated table from GET /api/v1/owners with filter
-// inputs for search text and owner_type. Operators and admins can create
-// new owners via an inline form that expands below the header.
+// Readiness bar — compact inline stacked bar for ready/blocked/stale
+// ---------------------------------------------------------------------------
+
+function ReadinessBar({
+  ready,
+  blocked,
+  stale,
+  total,
+}: {
+  ready: number;
+  blocked: number;
+  stale: number;
+  total: number;
+}) {
+  if (total === 0) {
+    return <span className="text-xs text-gray-400">—</span>;
+  }
+  const pctReady = (ready / total) * 100;
+  const pctBlocked = (blocked / total) * 100;
+  const pctStale = (stale / total) * 100;
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-2 w-20 overflow-hidden rounded-full bg-gray-200">
+        <div className="flex h-full">
+          <div className="bg-green-500" style={{ width: `${pctReady}%` }} />
+          <div className="bg-red-500" style={{ width: `${pctBlocked}%` }} />
+          <div className="bg-amber-400" style={{ width: `${pctStale}%` }} />
+        </div>
+      </div>
+      <span className="whitespace-nowrap text-xs text-gray-500">
+        {ready}/{total}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sortable column header
+// ---------------------------------------------------------------------------
+
+type SortField = "name" | "owner_type" | "created_at" | "updated_at";
+type SortDir = "asc" | "desc";
+
+function SortHeader({
+  label,
+  field,
+  currentField,
+  currentDir,
+  onSort,
+}: {
+  label: string;
+  field: SortField;
+  currentField: SortField;
+  currentDir: SortDir;
+  onSort: (field: SortField) => void;
+}) {
+  const active = field === currentField;
+  return (
+    <th
+      onClick={() => onSort(field)}
+      className="cursor-pointer select-none hover:text-blue-600"
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active ? (
+          <svg
+            className="h-3.5 w-3.5 text-blue-600"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d={
+                currentDir === "asc"
+                  ? "M4.5 15.75l7.5-7.5 7.5 7.5"
+                  : "M19.5 8.25l-7.5 7.5-7.5-7.5"
+              }
+            />
+          </svg>
+        ) : (
+          <svg
+            className="h-3.5 w-3.5 text-gray-300"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
+            />
+          </svg>
+        )}
+      </span>
+    </th>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Owners list page
 // ---------------------------------------------------------------------------
 
 export function OwnersPage() {
@@ -42,6 +144,10 @@ export function OwnersPage() {
   const [ownerType, setOwnerType] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 50;
+
+  // Sort state
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // Create form state
   const [showCreate, setShowCreate] = useState(false);
@@ -60,6 +166,8 @@ export function OwnersPage() {
     const filters: OwnerFilterQuery = {
       page,
       per_page: perPage,
+      sort: sortField,
+      order: sortDir,
     };
     if (search) filters.search = search;
     if (ownerType) filters.owner_type = ownerType;
@@ -71,12 +179,34 @@ export function OwnersPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [search, ownerType, page]);
+  }, [search, ownerType, page, sortField, sortDir]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  // Reset to page 1 when filters change.
-  useEffect(() => { setPage(1); }, [search, ownerType]);
+  // Reset to page 1 when filters or sort changes.
+  useEffect(() => {
+    setPage(1);
+  }, [search, ownerType, sortField, sortDir]);
+
+  const handleSort = useCallback(
+    (field: SortField) => {
+      if (field === sortField) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setSortField(field);
+        setSortDir("asc");
+      }
+    },
+    [sortField],
+  );
+
+  // Check if any owner has readiness data to decide whether to show the column.
+  const showReadiness = useMemo(
+    () => owners.some((o) => o.readiness && o.readiness.total_nodes > 0),
+    [owners],
+  );
 
   const resetCreateForm = () => {
     setCreateName("");
@@ -267,13 +397,14 @@ export function OwnersPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <SortHeader label="Name" field="name" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                     <th>Display Name</th>
-                    <th>Type</th>
+                    <SortHeader label="Type" field="owner_type" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                     <th>Nodes</th>
                     <th>Cookbooks</th>
                     <th>Git Repos</th>
-                    <th>Created</th>
+                    {showReadiness && <th>Readiness</th>}
+                    <SortHeader label="Created" field="created_at" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                   </tr>
                 </thead>
                 <tbody>
@@ -288,7 +419,7 @@ export function OwnersPage() {
                         </Link>
                       </td>
                       <td className="text-sm text-gray-600">
-                        {owner.display_name || "—"}
+                        {owner.display_name || "\u2014"}
                       </td>
                       <td>
                         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
@@ -304,6 +435,20 @@ export function OwnersPage() {
                       <td className="text-sm text-gray-600">
                         {owner.assignment_counts?.git_repo ?? 0}
                       </td>
+                      {showReadiness && (
+                        <td>
+                          {owner.readiness ? (
+                            <ReadinessBar
+                              ready={owner.readiness.ready}
+                              blocked={owner.readiness.blocked}
+                              stale={owner.readiness.stale}
+                              total={owner.readiness.total_nodes}
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-400">{"\u2014"}</span>
+                          )}
+                        </td>
+                      )}
                       <td className="text-xs text-gray-400">
                         {new Date(owner.created_at).toLocaleString()}
                       </td>
