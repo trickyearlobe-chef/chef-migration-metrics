@@ -3,10 +3,12 @@ import { useParams, Link } from "react-router-dom";
 import { fetchCookbookDetail, requestCookbookRescan, resetGitCookbook } from "../api";
 import type { CookbookDetailResponse } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
-import { StatusBadge, ComplexityBadge } from "../components/StatusBadge";
+import { StatusBadge } from "../components/StatusBadge";
+
 
 export function CookbookDetailPage() {
   const { name } = useParams<{ name: string }>();
+
   const [data, setData] = useState<CookbookDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +17,7 @@ export function CookbookDetailPage() {
   const [resettingGit, setResettingGit] = useState(false);
   const [resetGitMsg, setResetGitMsg] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
 
   const load = useCallback(() => {
     if (!name) return;
@@ -52,6 +55,8 @@ export function CookbookDetailPage() {
       .catch((e: Error) => setResetGitMsg(`Reset failed: ${e.message}`))
       .finally(() => setResettingGit(false));
   }, [name, load]);
+
+
 
   useEffect(() => { load(); }, [load]);
 
@@ -127,6 +132,8 @@ export function CookbookDetailPage() {
         </div>
       )}
 
+
+
       {isGitSourced && (
         <div className="card">
           <div className="flex items-center justify-between">
@@ -175,35 +182,6 @@ export function CookbookDetailPage() {
                   )}
                 </div>
 
-                {/* Complexity scores */}
-                {vd.complexity && vd.complexity.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="mb-2 text-sm font-medium text-gray-600">Complexity</h4>
-                    <div className="space-y-2">
-                      {vd.complexity.map((c) => (
-                        <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
-                          <span className="text-xs text-gray-500">Target: {c.target_chef_version}</span>
-                          <ComplexityBadge complexityLabel={c.complexity_label} score={c.complexity_score} size="sm" />
-                          <span className="text-xs text-gray-500">
-                            Auto: {c.auto_correctable_count} | Manual: {c.manual_fix_count}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            Errors: {c.error_count} | Deprecations: {c.deprecation_count}
-                          </span>
-                          {cb.version && (
-                            <Link
-                              to={`/cookbooks/${encodeURIComponent(cb.name)}/${encodeURIComponent(cb.version)}/remediation?target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                              className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              View Remediation Detail →
-                            </Link>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Cookstyle results */}
                 {vd.cookstyle && vd.cookstyle.length > 0 && (
                   <div>
@@ -222,6 +200,45 @@ export function CookbookDetailPage() {
                           </span>
                           <span className="text-xs text-gray-400">
                             Scanned: {new Date(cs.scanned_at).toLocaleString()}
+                          </span>
+                          {cb.version && cs.target_chef_version && (
+                            <Link
+                              to={`/cookbooks/${encodeURIComponent(cb.name)}/${encodeURIComponent(cb.version)}/remediation?target_chef_version=${encodeURIComponent(cs.target_chef_version)}`}
+                              className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              View Remediation Detail →
+                            </Link>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Test Kitchen results */}
+                {cb.source === "git" && vd.test_kitchen && vd.test_kitchen.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="mb-2 text-sm font-medium text-gray-600">Test Kitchen Results</h4>
+                    <div className="space-y-2">
+                      {vd.test_kitchen.map((tk) => (
+                        <div key={tk.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
+                          <span className="text-xs text-gray-500">Target: {tk.target_chef_version}</span>
+                          <StatusBadge
+                            variant={tk.compatible ? "compatible" : "incompatible"}
+                            label={tk.compatible ? "Compatible" : "Incompatible"}
+                            size="sm"
+                          />
+                          {tk.timed_out && <StatusBadge variant="stale" label="Timed Out" size="sm" />}
+                          <span className="text-xs text-gray-500">
+                            Converge: {tk.converge_passed ? "✓" : "✗"} | Tests: {tk.tests_passed ? "✓" : "✗"}
+                          </span>
+                          {tk.platform_tested && (
+                            <span className="text-xs text-gray-400">
+                              {tk.platform_tested}{tk.driver_used ? ` (${tk.driver_used})` : ""}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400">
+                            {tk.duration_seconds}s · {new Date(tk.completed_at).toLocaleString()}
                           </span>
                         </div>
                       ))}

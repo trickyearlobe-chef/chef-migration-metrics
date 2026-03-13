@@ -316,6 +316,13 @@ export function requestCookbookRescan(
   );
 }
 
+export function rescanAllCookstyle(): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(
+    "/api/v1/admin/rescan-all-cookstyle",
+    { method: "POST" },
+  );
+}
+
 export function resetGitCookbook(
   name: string,
 ): Promise<ResetGitCookbookResponse> {
