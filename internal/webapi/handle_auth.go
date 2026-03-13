@@ -71,7 +71,7 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 	token := auth.ExtractToken(req)
 	if token == "" {
 		// No session to invalidate — still return 204 for idempotency.
-		auth.ClearSessionCookie(w)
+		auth.ClearSessionCookie(w, req)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -83,7 +83,7 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 		// expire naturally even if the DB delete fails.
 	}
 
-	auth.ClearSessionCookie(w)
+	auth.ClearSessionCookie(w, req)
 	w.WriteHeader(http.StatusNoContent)
 }
 

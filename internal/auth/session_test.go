@@ -5,6 +5,7 @@ package auth
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -593,73 +594,104 @@ func TestExtractTokenIgnoresWrongCookieName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSetSessionCookie(t *testing.T) {
-	w := httptest.NewRecorder()
-	expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
-	SetSessionCookie(w, "my-token-value", expires)
+	t.Run("plain HTTP sets Secure=false", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil) // plain HTTP
+		expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
+		SetSessionCookie(w, r, "my-token-value", expires)
 
-	cookies := w.Result().Cookies()
-	if len(cookies) == 0 {
-		t.Fatal("expected at least one cookie to be set")
-	}
-
-	var found *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "session" {
-			found = c
-			break
+		found := findCookie(t, w.Result().Cookies(), "session")
+		if found.Value != "my-token-value" {
+			t.Errorf("cookie value = %q, want %q", found.Value, "my-token-value")
 		}
-	}
-	if found == nil {
-		t.Fatal("expected 'session' cookie to be set")
-	}
-	if found.Value != "my-token-value" {
-		t.Errorf("cookie value = %q, want %q", found.Value, "my-token-value")
-	}
-	if !found.HttpOnly {
-		t.Error("expected HttpOnly flag to be set")
-	}
-	if found.SameSite != http.SameSiteLaxMode {
-		t.Errorf("expected SameSite=Lax, got %v", found.SameSite)
-	}
-	if !found.Secure {
-		t.Error("expected Secure flag to be set")
-	}
-	if found.Path != "/" {
-		t.Errorf("expected Path=/,  got %q", found.Path)
-	}
-	if !found.Expires.Equal(expires) {
-		t.Errorf("cookie Expires = %v, want %v", found.Expires, expires)
-	}
+		if !found.HttpOnly {
+			t.Error("expected HttpOnly flag to be set")
+		}
+		if found.SameSite != http.SameSiteLaxMode {
+			t.Errorf("expected SameSite=Lax, got %v", found.SameSite)
+		}
+		if found.Secure {
+			t.Error("expected Secure=false for plain HTTP request")
+		}
+		if found.Path != "/" {
+			t.Errorf("expected Path=/,  got %q", found.Path)
+		}
+		if !found.Expires.Equal(expires) {
+			t.Errorf("cookie Expires = %v, want %v", found.Expires, expires)
+		}
+	})
+
+	t.Run("TLS request sets Secure=true", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+		r.TLS = &tls.ConnectionState{} // simulate TLS connection
+		expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
+		SetSessionCookie(w, r, "tls-token", expires)
+
+		found := findCookie(t, w.Result().Cookies(), "session")
+		if !found.Secure {
+			t.Error("expected Secure=true for TLS request")
+		}
+	})
+
+	t.Run("X-Forwarded-Proto https sets Secure=true", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
+		SetSessionCookie(w, r, "proxy-token", expires)
+
+		found := findCookie(t, w.Result().Cookies(), "session")
+		if !found.Secure {
+			t.Error("expected Secure=true when X-Forwarded-Proto is https")
+		}
+	})
 }
 
 func TestClearSessionCookie(t *testing.T) {
-	w := httptest.NewRecorder()
-	ClearSessionCookie(w)
+	t.Run("plain HTTP sets Secure=false", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		ClearSessionCookie(w, r)
 
-	cookies := w.Result().Cookies()
-	if len(cookies) == 0 {
-		t.Fatal("expected at least one cookie to be set for clearing")
-	}
+		found := findCookie(t, w.Result().Cookies(), "session")
+		if found.Value != "" {
+			t.Errorf("expected empty cookie value, got %q", found.Value)
+		}
+		if found.MaxAge != -1 {
+			t.Errorf("expected MaxAge=-1 to expire cookie, got %d", found.MaxAge)
+		}
+		if !found.HttpOnly {
+			t.Error("expected HttpOnly flag to be set on clearing cookie")
+		}
+		if found.Secure {
+			t.Error("expected Secure=false for plain HTTP request")
+		}
+	})
 
-	var found *http.Cookie
+	t.Run("TLS request sets Secure=true", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+		r.TLS = &tls.ConnectionState{}
+		ClearSessionCookie(w, r)
+
+		found := findCookie(t, w.Result().Cookies(), "session")
+		if !found.Secure {
+			t.Error("expected Secure=true for TLS request")
+		}
+	})
+}
+
+// findCookie is a test helper that locates a cookie by name or fails the test.
+func findCookie(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {
+	t.Helper()
 	for _, c := range cookies {
-		if c.Name == "session" {
-			found = c
-			break
+		if c.Name == name {
+			return c
 		}
 	}
-	if found == nil {
-		t.Fatal("expected 'session' cookie")
-	}
-	if found.Value != "" {
-		t.Errorf("expected empty cookie value, got %q", found.Value)
-	}
-	if found.MaxAge != -1 {
-		t.Errorf("expected MaxAge=-1 to expire cookie, got %d", found.MaxAge)
-	}
-	if !found.HttpOnly {
-		t.Error("expected HttpOnly flag to be set on clearing cookie")
-	}
+	t.Fatalf("expected %q cookie to be set", name)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
