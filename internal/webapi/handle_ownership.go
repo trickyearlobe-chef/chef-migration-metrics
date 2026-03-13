@@ -169,9 +169,12 @@ func (r *Router) handleOwners(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 	pg := ParsePagination(req)
+	q := req.URL.Query()
 	f := datastore.OwnerListFilter{
-		OwnerType: req.URL.Query().Get("owner_type"),
-		Search:    req.URL.Query().Get("search"),
+		OwnerType: q.Get("owner_type"),
+		Search:    q.Get("search"),
+		SortField: q.Get("sort"),
+		SortDir:   q.Get("order"),
 		Limit:     pg.Limit(),
 		Offset:    pg.Offset(),
 	}
@@ -183,22 +186,38 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Build response with assignment counts.
-	type ownerResp struct {
-		Name             string          `json:"name"`
-		DisplayName      string          `json:"display_name,omitempty"`
-		ContactEmail     string          `json:"contact_email,omitempty"`
-		ContactChannel   string          `json:"contact_channel,omitempty"`
-		OwnerType        string          `json:"owner_type"`
-		Metadata         json.RawMessage `json:"metadata,omitempty"`
-		AssignmentCounts map[string]int  `json:"assignment_counts"`
-		CreatedAt        time.Time       `json:"created_at"`
-		UpdatedAt        time.Time       `json:"updated_at"`
+	// Determine target chef version for readiness enrichment.
+	targetVersion := q.Get("target_chef_version")
+	if targetVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
+		targetVersion = r.cfg.TargetChefVersions[0]
 	}
 
+	// Build response with assignment counts and optional readiness data.
+	type readinessSummary struct {
+		TargetChefVersion string `json:"target_chef_version"`
+		TotalNodes        int    `json:"total_nodes"`
+		Ready             int    `json:"ready"`
+		Blocked           int    `json:"blocked"`
+		Stale             int    `json:"stale"`
+	}
+
+	type ownerResp struct {
+		Name             string            `json:"name"`
+		DisplayName      string            `json:"display_name,omitempty"`
+		ContactEmail     string            `json:"contact_email,omitempty"`
+		ContactChannel   string            `json:"contact_channel,omitempty"`
+		OwnerType        string            `json:"owner_type"`
+		Metadata         json.RawMessage   `json:"metadata,omitempty"`
+		AssignmentCounts map[string]int    `json:"assignment_counts"`
+		Readiness        *readinessSummary `json:"readiness,omitempty"`
+		CreatedAt        time.Time         `json:"created_at"`
+		UpdatedAt        time.Time         `json:"updated_at"`
+	}
+
+	ctx := req.Context()
 	data := make([]ownerResp, 0, len(owners))
 	for _, o := range owners {
-		counts, err := r.db.CountAssignmentsByOwner(req.Context(), o.Name)
+		counts, err := r.db.CountAssignmentsByOwner(ctx, o.Name)
 		if err != nil {
 			r.logf("WARN", "ownership: counting assignments for %s: %v", o.Name, err)
 			counts = map[string]int{}
@@ -209,7 +228,8 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 				counts[et] = 0
 			}
 		}
-		data = append(data, ownerResp{
+
+		resp := ownerResp{
 			Name:             o.Name,
 			DisplayName:      o.DisplayName,
 			ContactEmail:     o.ContactEmail,
@@ -219,7 +239,26 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 			AssignmentCounts: counts,
 			CreatedAt:        o.CreatedAt,
 			UpdatedAt:        o.UpdatedAt,
-		})
+		}
+
+		// Enrich with readiness summary if a target version is available
+		// and the owner has node assignments.
+		if targetVersion != "" && counts["node"] > 0 {
+			rs, err := r.db.GetOwnerReadinessSummary(ctx, o.Name, targetVersion)
+			if err != nil {
+				r.logf("WARN", "ownership: readiness summary for %s: %v", o.Name, err)
+			} else {
+				resp.Readiness = &readinessSummary{
+					TargetChefVersion: rs.TargetChefVersion,
+					TotalNodes:        rs.TotalNodes,
+					Ready:             rs.Ready,
+					Blocked:           rs.Blocked,
+					Stale:             rs.Stale,
+				}
+			}
+		}
+
+		data = append(data, resp)
 	}
 
 	WritePaginated(w, data, pg, total)

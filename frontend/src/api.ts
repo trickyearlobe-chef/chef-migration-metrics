@@ -801,6 +801,9 @@ export async function deleteUser(username: string): Promise<void> {
 export interface OwnerFilterQuery extends PaginationQuery {
   owner_type?: string;
   search?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  target_chef_version?: string;
 }
 
 export interface AssignmentFilterQuery extends PaginationQuery {

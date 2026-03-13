@@ -49,6 +49,8 @@ type UpdateOwnerParams struct {
 type OwnerListFilter struct {
 	OwnerType string
 	Search    string
+	SortField string // allowed: "name", "owner_type", "created_at", "updated_at"
+	SortDir   string // "asc" or "desc"
 	Limit     int
 	Offset    int
 }
@@ -166,14 +168,25 @@ func (db *DB) listOwners(ctx context.Context, q queryable, f OwnerListFilter) ([
 		offset = 0
 	}
 
+	// Determine sort order.
+	orderBy := "name"
+	switch f.SortField {
+	case "name", "owner_type", "created_at", "updated_at":
+		orderBy = f.SortField
+	}
+	dir := "ASC"
+	if strings.EqualFold(f.SortDir, "desc") {
+		dir = "DESC"
+	}
+
 	dataQuery := fmt.Sprintf(`
 		SELECT id, name, display_name, contact_email, contact_channel,
 		       owner_type, metadata, created_at, updated_at
 		FROM owners
 		%s
-		ORDER BY name
+		ORDER BY %s %s, name ASC
 		LIMIT $%d OFFSET $%d
-	`, where, argN, argN+1)
+	`, where, orderBy, dir, argN, argN+1)
 	args = append(args, limit, offset)
 
 	rows, err := q.QueryContext(ctx, dataQuery, args...)

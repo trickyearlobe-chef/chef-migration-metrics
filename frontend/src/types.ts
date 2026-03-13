@@ -718,6 +718,14 @@ export interface AssignmentCounts {
   policy: number;
 }
 
+export interface OwnerReadiness {
+  target_chef_version: string;
+  total_nodes: number;
+  ready: number;
+  blocked: number;
+  stale: number;
+}
+
 export interface Owner {
   name: string;
   display_name?: string;
@@ -726,6 +734,7 @@ export interface Owner {
   owner_type: OwnerType;
   metadata?: Record<string, unknown>;
   assignment_counts?: AssignmentCounts;
+  readiness?: OwnerReadiness;
   created_at: string;
   updated_at: string;
 }
