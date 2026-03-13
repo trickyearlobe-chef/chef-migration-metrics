@@ -272,6 +272,11 @@ type DataStore interface {
 	// matching rows and the total count for pagination.
 	ListCommittersByRepo(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
 
+	// DeleteGitCookbooksByName removes all git-sourced cookbook rows for the
+	// given cookbook name and deletes associated committer data. Returns
+	// datastore.ErrNotFound if no git-sourced cookbook exists with that name.
+	DeleteGitCookbooksByName(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error)
+
 	// -----------------------------------------------------------------
 	// Ownership audit log
 	// -----------------------------------------------------------------

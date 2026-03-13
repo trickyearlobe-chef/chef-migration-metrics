@@ -171,6 +171,7 @@ func (db *DB) getGitRepoURLForCookbook(ctx context.Context, q queryable, cookboo
 		SELECT git_repo_url
 		FROM cookbooks
 		WHERE name = $1 AND source = 'git'
+		ORDER BY last_fetched_at DESC
 		LIMIT 1
 	`
 

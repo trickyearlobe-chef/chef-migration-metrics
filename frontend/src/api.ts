@@ -44,6 +44,17 @@ import type {
   CreateUserRequest,
   UpdateUserRequest,
   ResetPasswordRequest,
+  OwnerListResponse,
+  OwnerDetail,
+  AssignmentListResponse,
+  AuditLogResponse,
+  OwnershipLookupResponse,
+  ReassignResponse,
+  ImportResponse,
+  CookbookCommittersResponse,
+  CommitterAssignResponse,
+  Owner,
+  ResetGitCookbookResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -301,6 +312,15 @@ export function requestCookbookRescan(
 ): Promise<{ cookbook_name: string; versions_invalidated: number; message: string }> {
   return apiFetch(
     `/api/v1/cookbooks/${encodeURIComponent(name)}/rescan`,
+    { method: "POST" },
+  );
+}
+
+export function resetGitCookbook(
+  name: string,
+): Promise<ResetGitCookbookResponse> {
+  return apiFetch<ResetGitCookbookResponse>(
+    `/api/v1/cookbooks/${encodeURIComponent(name)}/reset-git`,
     { method: "POST" },
   );
 }
@@ -772,6 +792,369 @@ export async function deleteUser(username: string): Promise<void> {
     }
     throw new ApiError(res.status, code, message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Ownership
+// ---------------------------------------------------------------------------
+
+export interface OwnerFilterQuery extends PaginationQuery {
+  owner_type?: string;
+  search?: string;
+}
+
+export interface AssignmentFilterQuery extends PaginationQuery {
+  entity_type?: string;
+  organisation?: string;
+  assignment_source?: string;
+}
+
+export interface AuditLogFilterQuery extends PaginationQuery {
+  action?: string;
+  actor?: string;
+  owner_name?: string;
+  entity_type?: string;
+  entity_key?: string;
+  since?: string;
+  until?: string;
+}
+
+export interface CommitterFilterQuery extends PaginationQuery {
+  sort?: string;
+  order?: "asc" | "desc";
+  since?: string;
+}
+
+/** GET /api/v1/owners — list owners with optional filters. */
+export function fetchOwners(
+  filters?: OwnerFilterQuery,
+): Promise<OwnerListResponse> {
+  return apiFetch<OwnerListResponse>(
+    buildUrl("/owners", filters as Record<string, string | number | undefined>),
+  );
+}
+
+/** GET /api/v1/owners/:name — get owner detail with summaries. */
+export function fetchOwnerDetail(
+  name: string,
+  params?: { target_chef_version?: string },
+): Promise<OwnerDetail> {
+  return apiFetch<OwnerDetail>(
+    buildUrl(`/owners/${encodeURIComponent(name)}`, params),
+  );
+}
+
+/** POST /api/v1/owners — create a new owner. */
+export async function createOwner(body: {
+  name: string;
+  owner_type: string;
+  display_name?: string;
+  contact_email?: string;
+  contact_channel?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<Owner> {
+  const url = buildUrl("/owners");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<Owner>;
+}
+
+/** PUT /api/v1/owners/:name — update an existing owner. */
+export async function updateOwner(
+  name: string,
+  body: {
+    display_name?: string;
+    contact_email?: string;
+    contact_channel?: string;
+    owner_type?: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<Owner> {
+  const url = buildUrl(`/owners/${encodeURIComponent(name)}`);
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<Owner>;
+}
+
+/** DELETE /api/v1/owners/:name — delete an owner. */
+export async function deleteOwner(name: string): Promise<void> {
+  const url = buildUrl(`/owners/${encodeURIComponent(name)}`);
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!res.ok && res.status !== 204) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+}
+
+/** GET /api/v1/owners/:name/assignments — list assignments for an owner. */
+export function fetchAssignments(
+  ownerName: string,
+  filters?: AssignmentFilterQuery,
+): Promise<AssignmentListResponse> {
+  return apiFetch<AssignmentListResponse>(
+    buildUrl(
+      `/owners/${encodeURIComponent(ownerName)}/assignments`,
+      filters as Record<string, string | number | undefined>,
+    ),
+  );
+}
+
+/** POST /api/v1/owners/:name/assignments — create assignments. */
+export async function createAssignments(
+  ownerName: string,
+  body: {
+    assignments: {
+      entity_type: string;
+      entity_key: string;
+      organisation?: string;
+      notes?: string;
+    }[];
+  },
+): Promise<{ created: number; assignments: unknown[] }> {
+  const url = buildUrl(`/owners/${encodeURIComponent(ownerName)}/assignments`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json();
+}
+
+/** DELETE /api/v1/owners/:name/assignments/:id — delete an assignment. */
+export async function deleteAssignment(
+  ownerName: string,
+  assignmentId: string,
+): Promise<void> {
+  const url = buildUrl(
+    `/owners/${encodeURIComponent(ownerName)}/assignments/${encodeURIComponent(assignmentId)}`,
+  );
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!res.ok && res.status !== 204) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+}
+
+/** POST /api/v1/ownership/reassign — bulk reassign ownership. */
+export async function reassignOwnership(body: {
+  from_owner: string;
+  to_owner: string;
+  entity_type?: string;
+  organisation?: string;
+  delete_source_owner?: boolean;
+}): Promise<ReassignResponse> {
+  const url = buildUrl("/ownership/reassign");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<ReassignResponse>;
+}
+
+/** GET /api/v1/ownership/lookup — lookup who owns an entity. */
+export function fetchOwnershipLookup(params: {
+  entity_type: string;
+  entity_key: string;
+  organisation?: string;
+}): Promise<OwnershipLookupResponse> {
+  return apiFetch<OwnershipLookupResponse>(
+    buildUrl("/ownership/lookup", params),
+  );
+}
+
+/** GET /api/v1/ownership/audit-log — paginated audit log. */
+export function fetchAuditLog(
+  filters?: AuditLogFilterQuery,
+): Promise<AuditLogResponse> {
+  return apiFetch<AuditLogResponse>(
+    buildUrl(
+      "/ownership/audit-log",
+      filters as Record<string, string | number | undefined>,
+    ),
+  );
+}
+
+/** POST /api/v1/ownership/import — bulk import via file upload. */
+export async function importOwnership(
+  file: File,
+  format: "csv" | "json",
+): Promise<ImportResponse> {
+  const url = buildUrl("/ownership/import");
+  const formData = new FormData();
+  formData.append("format", format);
+  formData.append("file", file);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<ImportResponse>;
+}
+
+/** GET /api/v1/cookbooks/:name/committers — list committers for a cookbook. */
+export function fetchCookbookCommitters(
+  cookbookName: string,
+  filters?: CommitterFilterQuery,
+): Promise<CookbookCommittersResponse> {
+  return apiFetch<CookbookCommittersResponse>(
+    buildUrl(
+      `/cookbooks/${encodeURIComponent(cookbookName)}/committers`,
+      filters as Record<string, string | number | undefined>,
+    ),
+  );
+}
+
+/** POST /api/v1/cookbooks/:name/committers/assign — assign committers as owners. */
+export async function assignCookbookCommitters(
+  cookbookName: string,
+  body: {
+    committers: {
+      author_email: string;
+      owner_name: string;
+      display_name?: string;
+    }[];
+  },
+): Promise<CommitterAssignResponse> {
+  const url = buildUrl(
+    `/cookbooks/${encodeURIComponent(cookbookName)}/committers/assign`,
+  );
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<CommitterAssignResponse>;
 }
 
 // ---------------------------------------------------------------------------

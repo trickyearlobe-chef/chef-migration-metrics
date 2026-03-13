@@ -69,6 +69,7 @@ type mockStore struct {
 	ListAuditLogFn                            func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 	GetGitRepoURLForCookbookFn                func(ctx context.Context, cookbookName string) (string, error)
 	ListCommittersByRepoFn                    func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
+	DeleteGitCookbooksByNameFn                func(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error)
 }
 
 // compile-time check
@@ -450,6 +451,13 @@ func (m *mockStore) ListCommittersByRepo(ctx context.Context, f datastore.Commit
 		return m.ListCommittersByRepoFn(ctx, f)
 	}
 	return nil, 0, nil
+}
+
+func (m *mockStore) DeleteGitCookbooksByName(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error) {
+	if m.DeleteGitCookbooksByNameFn != nil {
+		return m.DeleteGitCookbooksByNameFn(ctx, cookbookName)
+	}
+	return datastore.DeleteGitCookbookResult{}, datastore.ErrNotFound
 }
 
 // ---------------------------------------------------------------------------

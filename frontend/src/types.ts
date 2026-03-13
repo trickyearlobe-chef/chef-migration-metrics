@@ -700,3 +700,158 @@ export interface UpdateUserRequest {
 export interface ResetPasswordRequest {
   password: string;
 }
+
+// ---------------------------------------------------------------------------
+// Ownership
+// ---------------------------------------------------------------------------
+
+export type OwnerType = "team" | "individual" | "business_unit" | "cost_centre" | "custom";
+export type EntityType = "node" | "cookbook" | "git_repo" | "role" | "policy";
+export type AssignmentSource = "manual" | "auto_rule" | "import";
+export type OwnershipConfidence = "definitive" | "inferred";
+
+export interface AssignmentCounts {
+  node: number;
+  cookbook: number;
+  git_repo: number;
+  role: number;
+  policy: number;
+}
+
+export interface Owner {
+  name: string;
+  display_name?: string;
+  contact_email?: string;
+  contact_channel?: string;
+  owner_type: OwnerType;
+  metadata?: Record<string, unknown>;
+  assignment_counts?: AssignmentCounts;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OwnerDetail extends Owner {
+  readiness_summary?: OwnerReadinessSummary;
+  cookbook_summary?: OwnerCookbookSummary;
+  git_repo_summary?: OwnerGitRepoSummary;
+}
+
+export interface OwnerReadinessSummary {
+  target_chef_version: string;
+  total_nodes: number;
+  ready_nodes: number;
+  blocked_nodes: number;
+  blocking_cookbooks: string[];
+}
+
+export interface OwnerCookbookSummary {
+  total_cookbooks: number;
+  compatible: number;
+  incompatible: number;
+  untested: number;
+}
+
+export interface OwnerGitRepoSummary {
+  total_repos: number;
+  compatible: number;
+  incompatible: number;
+}
+
+export interface OwnershipAssignment {
+  id: string;
+  owner_id: string;
+  owner_name: string;
+  entity_type: EntityType;
+  entity_key: string;
+  organisation_id?: string;
+  organisation_name?: string;
+  assignment_source: AssignmentSource;
+  auto_rule_name?: string;
+  confidence: OwnershipConfidence;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OwnershipLookupResult {
+  owner_name: string;
+  owner_type: OwnerType;
+  assignment_source: AssignmentSource;
+  confidence: OwnershipConfidence;
+  resolution: string;
+}
+
+export interface OwnershipLookupResponse {
+  entity_type: string;
+  entity_key: string;
+  organisation: string;
+  owners: OwnershipLookupResult[];
+}
+
+export interface OwnershipAuditEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  actor: string;
+  owner_name: string;
+  entity_type?: string;
+  entity_key?: string;
+  organisation?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ReassignResponse {
+  reassigned: number;
+  skipped: number;
+  from_owner: string;
+  to_owner: string;
+  source_owner_deleted: boolean;
+}
+
+export interface ImportResponse {
+  imported: number;
+  skipped: number;
+  errors: ImportError[];
+}
+
+export interface ImportError {
+  line: number;
+  error: string;
+}
+
+export interface GitRepoCommitter {
+  id: string;
+  git_repo_url: string;
+  author_name: string;
+  author_email: string;
+  commit_count: number;
+  first_commit_at: string;
+  last_commit_at: string;
+  collected_at: string;
+}
+
+export interface CookbookCommittersResponse {
+  cookbook_name: string;
+  git_repo_url: string;
+  data: GitRepoCommitter[];
+  pagination: Pagination;
+}
+
+export interface CommitterAssignResponse {
+  owners_created: number;
+  assignments_created: number;
+  skipped: number;
+}
+
+export interface ResetGitCookbookResponse {
+  cookbook_name: string;
+  cookbooks_deleted: number;
+  committers_deleted: number;
+  repo_urls_removed: string[];
+  local_clone_removed: boolean;
+  message: string;
+}
+
+export type OwnerListResponse = PaginatedResponse<Owner>;
+export type AssignmentListResponse = PaginatedResponse<OwnershipAssignment>;
+export type AuditLogResponse = PaginatedResponse<OwnershipAuditEntry>;

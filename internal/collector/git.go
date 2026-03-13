@@ -180,6 +180,17 @@ func (m *GitCookbookManager) CloneOrPull(ctx context.Context, cookbookName, repo
 
 	if isGitRepo(repoDir) {
 		// Repository exists — fetch + reset.
+		//
+		// Read the actual origin remote URL from the repo on disk rather
+		// than trusting the caller's repoURL. On subsequent runs the pull
+		// path ignores the passed-in repoURL (it just does `git fetch
+		// origin`), so the caller's URL may be a constructed guess that
+		// doesn't match the real remote set during the original clone.
+		// Using the real URL ensures we store the correct value in the DB.
+		if actualURL, err := m.readRemoteURL(ctx, repoDir); err == nil {
+			result.RepoURL = actualURL
+		}
+
 		if err := m.fetch(ctx, repoDir); err != nil {
 			result.Err = fmt.Errorf("fetch: %w", err)
 			return result, result.Err
@@ -283,6 +294,21 @@ func (m *GitCookbookManager) detectDefaultBranch(ctx context.Context, repoDir st
 	}
 
 	return "", fmt.Errorf("could not detect default branch: neither origin/main nor origin/master exists")
+}
+
+// readRemoteURL runs: git remote get-url origin
+// Returns the configured URL for the "origin" remote. This is used on the
+// pull path so that we store the actual remote URL (set during clone) rather
+// than a potentially incorrect URL constructed from the current base-URL list.
+func (m *GitCookbookManager) readRemoteURL(ctx context.Context, repoDir string) (string, error) {
+	out, err := m.executor.Run(ctx, repoDir, "remote", "get-url", "origin")
+	if err != nil {
+		return "", fmt.Errorf("reading origin URL: %w", err)
+	}
+	if out == "" {
+		return "", fmt.Errorf("reading origin URL: empty output")
+	}
+	return out, nil
 }
 
 // resetToRemote runs: git reset --hard origin/<branch>
@@ -475,6 +501,12 @@ func fetchGitCookbooks(
 
 				repoURL := baseURL + "/" + cbName
 				repoResult, err := mgr.CloneOrPull(ctx, cbName, repoURL)
+
+				// CloneOrPull may have corrected the URL on the pull path
+				// by reading the actual git remote. Use whatever it returned.
+				if repoResult != nil {
+					repoURL = repoResult.RepoURL
+				}
 
 				if err != nil {
 					lastErr = err

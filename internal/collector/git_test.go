@@ -964,6 +964,177 @@ func TestCloneOrPull_Pull_HeadReadFailsAfterReset(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// GitCookbookManager — readRemoteURL tests
+// ---------------------------------------------------------------------------
+
+func TestReadRemoteURL_Success(t *testing.T) {
+	fake := newFakeGitExecutor()
+	fake.addResponse("remote get-url origin", "git@github.com:chef-cookbooks/cron", nil)
+
+	mgr := NewGitCookbookManager(t.TempDir(), fake)
+	url, err := mgr.readRemoteURL(context.Background(), "/repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if url != "git@github.com:chef-cookbooks/cron" {
+		t.Errorf("expected %q, got %q", "git@github.com:chef-cookbooks/cron", url)
+	}
+}
+
+func TestReadRemoteURL_GitError(t *testing.T) {
+	fake := newFakeGitExecutor()
+	fake.addResponse("remote get-url origin", "", fmt.Errorf("no such remote"))
+
+	mgr := NewGitCookbookManager(t.TempDir(), fake)
+	_, err := mgr.readRemoteURL(context.Background(), "/repo")
+	if err == nil {
+		t.Fatal("expected error when git remote get-url fails")
+	}
+	if !strings.Contains(err.Error(), "reading origin URL") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestReadRemoteURL_EmptyOutput(t *testing.T) {
+	fake := newFakeGitExecutor()
+	fake.addResponse("remote get-url origin", "", nil)
+
+	mgr := NewGitCookbookManager(t.TempDir(), fake)
+	_, err := mgr.readRemoteURL(context.Background(), "/repo")
+	if err == nil {
+		t.Fatal("expected error when remote URL is empty")
+	}
+	if !strings.Contains(err.Error(), "empty output") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CloneOrPull — pull path URL correction tests
+// ---------------------------------------------------------------------------
+
+func TestCloneOrPull_Pull_CorrectURLFromRemote(t *testing.T) {
+	// Simulate the bug scenario: the caller passes a constructed URL
+	// (e.g. from the first base URL in config) but the repo on disk was
+	// originally cloned from a different URL. CloneOrPull should read
+	// the actual remote URL and use that instead.
+	oldSHA := "1111111111111111111111111111111111111111"
+	newSHA := "2222222222222222222222222222222222222222"
+	actualRemoteURL := "git@github.com:chef-cookbooks/cron"
+	callerURL := "git@github.com:trickyearlobe-chef/cron" // wrong URL from config
+
+	fake := newFakeGitExecutor()
+	// readRemoteURL will match "remote get-url origin"
+	fake.addResponse("remote get-url origin", actualRemoteURL, nil)
+	fake.addResponse("fetch", "", nil)
+	fake.addResponse("symbolic-ref", "origin/main", nil)
+	fake.addResponse("reset --hard", "", nil)
+	fake.addResponse("ls-tree", "", fmt.Errorf("not found"))
+
+	revParseCount := 0
+	revParseMu := sync.Mutex{}
+	customFake := &countingGitExecutor{
+		base:     fake,
+		oldSHA:   oldSHA,
+		newSHA:   newSHA,
+		revCount: &revParseCount,
+		mu:       &revParseMu,
+	}
+
+	baseDir := t.TempDir()
+	repoDir := baseDir + "/cron"
+	if err := createFakeGitDir(repoDir); err != nil {
+		t.Fatalf("failed to create fake .git dir: %v", err)
+	}
+
+	mgr := NewGitCookbookManager(baseDir, customFake)
+	result, err := mgr.CloneOrPull(context.Background(), "cron", callerURL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The key assertion: RepoURL should be the actual remote URL, not the
+	// caller-supplied URL.
+	if result.RepoURL != actualRemoteURL {
+		t.Errorf("expected RepoURL %q (from git remote), got %q", actualRemoteURL, result.RepoURL)
+	}
+	if result.WasCloned {
+		t.Error("expected WasCloned to be false for pull")
+	}
+}
+
+func TestCloneOrPull_Pull_FallsBackToCallerURL(t *testing.T) {
+	// When readRemoteURL fails (e.g. unusual repo state), CloneOrPull should
+	// gracefully fall back to using the caller-supplied URL.
+	oldSHA := "1111111111111111111111111111111111111111"
+	newSHA := "2222222222222222222222222222222222222222"
+	callerURL := "git@github.com:trickyearlobe-chef/cron"
+
+	fake := newFakeGitExecutor()
+	// readRemoteURL fails
+	fake.addResponse("remote get-url origin", "", fmt.Errorf("no such remote"))
+	fake.addResponse("fetch", "", nil)
+	fake.addResponse("symbolic-ref", "origin/main", nil)
+	fake.addResponse("reset --hard", "", nil)
+	fake.addResponse("ls-tree", "", fmt.Errorf("not found"))
+
+	revParseCount := 0
+	revParseMu := sync.Mutex{}
+	customFake := &countingGitExecutor{
+		base:     fake,
+		oldSHA:   oldSHA,
+		newSHA:   newSHA,
+		revCount: &revParseCount,
+		mu:       &revParseMu,
+	}
+
+	baseDir := t.TempDir()
+	repoDir := baseDir + "/cron"
+	if err := createFakeGitDir(repoDir); err != nil {
+		t.Fatalf("failed to create fake .git dir: %v", err)
+	}
+
+	mgr := NewGitCookbookManager(baseDir, customFake)
+	result, err := mgr.CloneOrPull(context.Background(), "cron", callerURL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// When readRemoteURL fails, the caller-supplied URL should be preserved.
+	if result.RepoURL != callerURL {
+		t.Errorf("expected RepoURL %q (caller fallback), got %q", callerURL, result.RepoURL)
+	}
+}
+
+func TestCloneOrPull_Clone_UsesCallerURL(t *testing.T) {
+	// On the clone path, the caller URL is the one actually used for cloning,
+	// so it should be preserved as-is (no readRemoteURL correction needed).
+	sha := "abcdef1234567890abcdef1234567890abcdef12"
+	callerURL := "git@github.com:chef-cookbooks/cron"
+
+	fake := newFakeGitExecutor()
+	fake.addResponse("clone", "", nil)
+	fake.addResponse("symbolic-ref", "origin/main", nil)
+	fake.addResponse("rev-parse HEAD", sha, nil)
+	fake.addResponse("ls-tree", "", fmt.Errorf("not found"))
+
+	baseDir := t.TempDir()
+	mgr := NewGitCookbookManager(baseDir, fake)
+
+	result, err := mgr.CloneOrPull(context.Background(), "cron", callerURL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.RepoURL != callerURL {
+		t.Errorf("expected RepoURL %q on clone path, got %q", callerURL, result.RepoURL)
+	}
+	if !result.WasCloned {
+		t.Error("expected WasCloned to be true")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

@@ -165,6 +165,12 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// /api/v1/cookbooks/:name/reset-git
+	if len(segments) >= 2 && segments[len(segments)-1] == "reset-git" {
+		r.handleCookbookResetGit(w, req)
+		return
+	}
+
 	// /api/v1/cookbooks/:name/committers[/assign]
 	if len(segments) >= 2 && segments[1] == "committers" {
 		cookbookName := segments[0]

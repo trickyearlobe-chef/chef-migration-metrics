@@ -2286,6 +2286,265 @@ func TestCheckDirWritable_NotExist(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Ownership — CMDBSearchKeys helper
+// ---------------------------------------------------------------------------
+
+func TestCMDBSearchKeys_Disabled(t *testing.T) {
+	cfg := OwnershipConfig{
+		Enabled: false,
+		AutoRules: []OwnershipAutoRule{
+			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
+		},
+	}
+	keys := cfg.CMDBSearchKeys()
+	if keys != nil {
+		t.Errorf("expected nil when ownership is disabled, got %v", keys)
+	}
+}
+
+func TestCMDBSearchKeys_NoCMDBRules(t *testing.T) {
+	cfg := OwnershipConfig{
+		Enabled: true,
+		AutoRules: []OwnershipAutoRule{
+			{Name: "web-nodes", Type: "node_name_pattern", Owner: "web", Pattern: "^web-.*"},
+		},
+	}
+	keys := cfg.CMDBSearchKeys()
+	if keys != nil {
+		t.Errorf("expected nil when no cmdb_attribute rules, got %v", keys)
+	}
+}
+
+func TestCMDBSearchKeys_SingleObjectType(t *testing.T) {
+	cfg := OwnershipConfig{
+		Enabled: true,
+		AutoRules: []OwnershipAutoRule{
+			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
+		},
+	}
+	keys := cfg.CMDBSearchKeys()
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 key, got %d", len(keys))
+	}
+	path, ok := keys["itil.cmdb.node"]
+	if !ok {
+		t.Fatal("expected key 'itil.cmdb.node'")
+	}
+	if len(path) != 3 || path[0] != "itil" || path[1] != "cmdb" || path[2] != "node" {
+		t.Errorf("unexpected path: %v", path)
+	}
+}
+
+func TestCMDBSearchKeys_AllObjectTypes(t *testing.T) {
+	cfg := OwnershipConfig{
+		Enabled: true,
+		AutoRules: []OwnershipAutoRule{
+			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
+			{Name: "cmdb-cookbook", Type: "cmdb_attribute", ObjectType: "cookbook"},
+			{Name: "cmdb-profile", Type: "cmdb_attribute", ObjectType: "profile"},
+			{Name: "cmdb-role", Type: "cmdb_attribute", ObjectType: "role"},
+		},
+	}
+	keys := cfg.CMDBSearchKeys()
+	if len(keys) != 4 {
+		t.Fatalf("expected 4 keys, got %d", len(keys))
+	}
+	for _, ot := range []string{"node", "cookbook", "profile", "role"} {
+		key := "itil.cmdb." + ot
+		path, ok := keys[key]
+		if !ok {
+			t.Errorf("missing key %q", key)
+			continue
+		}
+		if len(path) != 3 || path[2] != ot {
+			t.Errorf("key %q: unexpected path %v", key, path)
+		}
+	}
+}
+
+func TestCMDBSearchKeys_DeduplicatesObjectTypes(t *testing.T) {
+	cfg := OwnershipConfig{
+		Enabled: true,
+		AutoRules: []OwnershipAutoRule{
+			{Name: "cmdb-node-a", Type: "cmdb_attribute", ObjectType: "node", OwnerAttribute: "owner"},
+			{Name: "cmdb-node-b", Type: "cmdb_attribute", ObjectType: "node", OwnerAttribute: "support_group"},
+		},
+	}
+	keys := cfg.CMDBSearchKeys()
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 deduplicated key, got %d", len(keys))
+	}
+	if _, ok := keys["itil.cmdb.node"]; !ok {
+		t.Error("expected key 'itil.cmdb.node'")
+	}
+}
+
+func TestCMDBSearchKeys_MixedRuleTypes(t *testing.T) {
+	cfg := OwnershipConfig{
+		Enabled: true,
+		AutoRules: []OwnershipAutoRule{
+			{Name: "web-nodes", Type: "node_name_pattern", Owner: "web", Pattern: "^web-.*"},
+			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
+			{Name: "aws-nodes", Type: "node_attribute", Owner: "cloud", AttributePath: "automatic.cloud.provider", MatchValue: "aws"},
+			{Name: "cmdb-role", Type: "cmdb_attribute", ObjectType: "role"},
+		},
+	}
+	keys := cfg.CMDBSearchKeys()
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 keys (only cmdb_attribute rules), got %d", len(keys))
+	}
+	if _, ok := keys["itil.cmdb.node"]; !ok {
+		t.Error("expected key 'itil.cmdb.node'")
+	}
+	if _, ok := keys["itil.cmdb.role"]; !ok {
+		t.Error("expected key 'itil.cmdb.role'")
+	}
+}
+
+func TestCMDBSearchKeys_EmptyObjectTypeSkipped(t *testing.T) {
+	cfg := OwnershipConfig{
+		Enabled: true,
+		AutoRules: []OwnershipAutoRule{
+			{Name: "bad-rule", Type: "cmdb_attribute", ObjectType: ""},
+		},
+	}
+	keys := cfg.CMDBSearchKeys()
+	if keys != nil {
+		t.Errorf("expected nil for rule with empty object_type, got %v", keys)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ownership — cmdb_attribute validation
+// ---------------------------------------------------------------------------
+
+func TestValidation_OwnershipCMDBAttribute_Valid(t *testing.T) {
+	yaml := minimalValidYAML() + `
+ownership:
+  enabled: true
+  auto_rules:
+    - name: cmdb-node-owner
+      type: cmdb_attribute
+      object_type: node
+`
+	cfg := mustParse(t, yaml)
+	if len(cfg.Ownership.AutoRules) != 1 {
+		t.Fatalf("expected 1 auto rule, got %d", len(cfg.Ownership.AutoRules))
+	}
+	if cfg.Ownership.AutoRules[0].OwnerAttribute != "owner" {
+		t.Errorf("expected default owner_attribute 'owner', got %q", cfg.Ownership.AutoRules[0].OwnerAttribute)
+	}
+}
+
+func TestValidation_OwnershipCMDBAttribute_AllObjectTypes(t *testing.T) {
+	for _, ot := range []string{"node", "cookbook", "profile", "role"} {
+		t.Run(ot, func(t *testing.T) {
+			yaml := minimalValidYAML() + `
+ownership:
+  enabled: true
+  auto_rules:
+    - name: cmdb-` + ot + `-owner
+      type: cmdb_attribute
+      object_type: ` + ot + `
+`
+			cfg := mustParse(t, yaml)
+			if cfg.Ownership.AutoRules[0].ObjectType != ot {
+				t.Errorf("expected object_type %q, got %q", ot, cfg.Ownership.AutoRules[0].ObjectType)
+			}
+		})
+	}
+}
+
+func TestValidation_OwnershipCMDBAttribute_CustomOwnerAttribute(t *testing.T) {
+	yaml := minimalValidYAML() + `
+ownership:
+  enabled: true
+  auto_rules:
+    - name: cmdb-support-group
+      type: cmdb_attribute
+      object_type: node
+      owner_attribute: support_group
+`
+	cfg := mustParse(t, yaml)
+	if cfg.Ownership.AutoRules[0].OwnerAttribute != "support_group" {
+		t.Errorf("expected owner_attribute 'support_group', got %q", cfg.Ownership.AutoRules[0].OwnerAttribute)
+	}
+}
+
+func TestValidation_OwnershipCMDBAttribute_MissingObjectType(t *testing.T) {
+	yaml := minimalValidYAML() + `
+ownership:
+  enabled: true
+  auto_rules:
+    - name: cmdb-missing-ot
+      type: cmdb_attribute
+`
+	expectParseError(t, yaml, "object_type is required for cmdb_attribute rules")
+}
+
+func TestValidation_OwnershipCMDBAttribute_InvalidObjectType(t *testing.T) {
+	yaml := minimalValidYAML() + `
+ownership:
+  enabled: true
+  auto_rules:
+    - name: cmdb-bad-ot
+      type: cmdb_attribute
+      object_type: server
+`
+	expectParseError(t, yaml, `object_type "server" is not valid`)
+}
+
+func TestValidation_OwnershipCMDBAttribute_OwnerNotAllowed(t *testing.T) {
+	yaml := minimalValidYAML() + `
+ownership:
+  enabled: true
+  auto_rules:
+    - name: cmdb-with-owner
+      type: cmdb_attribute
+      object_type: node
+      owner: some-team
+`
+	expectParseError(t, yaml, "owner must not be set for cmdb_attribute rules")
+}
+
+func TestValidation_OwnershipCMDBAttribute_DisabledSkipsValidation(t *testing.T) {
+	yaml := minimalValidYAML() + `
+ownership:
+  enabled: false
+  auto_rules:
+    - name: cmdb-disabled
+      type: cmdb_attribute
+`
+	// Should not error — validation is skipped when ownership is disabled.
+	_ = mustParse(t, yaml)
+}
+
+func TestValidation_OwnershipCMDBAttribute_MixedWithOtherRules(t *testing.T) {
+	yaml := minimalValidYAML() + `
+ownership:
+  enabled: true
+  auto_rules:
+    - name: cmdb-node-owner
+      type: cmdb_attribute
+      object_type: node
+    - name: web-prod-nodes
+      owner: web-platform
+      type: node_name_pattern
+      pattern: "^web-prod-.*"
+`
+	cfg := mustParse(t, yaml)
+	if len(cfg.Ownership.AutoRules) != 2 {
+		t.Fatalf("expected 2 auto rules, got %d", len(cfg.Ownership.AutoRules))
+	}
+	if cfg.Ownership.AutoRules[0].Type != "cmdb_attribute" {
+		t.Errorf("expected first rule type cmdb_attribute, got %q", cfg.Ownership.AutoRules[0].Type)
+	}
+	if cfg.Ownership.AutoRules[1].Type != "node_name_pattern" {
+		t.Errorf("expected second rule type node_name_pattern, got %q", cfg.Ownership.AutoRules[1].Type)
+	}
+}
+
 func TestCheckDirWritable_NotADirectory(t *testing.T) {
 	f, err := os.CreateTemp("", "config-test-*")
 	if err != nil {

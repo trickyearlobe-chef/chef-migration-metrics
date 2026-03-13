@@ -8,10 +8,15 @@ import { NodesPage } from "./pages/NodesPage";
 import { NodeDetailPage } from "./pages/NodeDetailPage";
 import { CookbooksPage } from "./pages/CookbooksPage";
 import { CookbookDetailPage } from "./pages/CookbookDetailPage";
+import { CookbookCommittersPage } from "./pages/CookbookCommittersPage";
 import { CookbookRemediationPage } from "./pages/CookbookRemediationPage";
 import { RemediationPage } from "./pages/RemediationPage";
 import { DependencyGraphPage } from "./pages/DependencyGraphPage";
 import { LogsPage } from "./pages/LogsPage";
+import { OwnersPage } from "./pages/OwnersPage";
+import { OwnerDetailPage } from "./pages/OwnerDetailPage";
+import { OwnershipAuditLogPage } from "./pages/OwnershipAuditLogPage";
+import { OwnershipImportPage } from "./pages/OwnershipImportPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 
 // ---------------------------------------------------------------------------
@@ -100,11 +105,16 @@ export function App() {
             <Route path="/nodes/:org/:name" element={<NodeDetailPage />} />
             <Route path="/cookbooks" element={<CookbooksPage />} />
             <Route path="/cookbooks/:name" element={<CookbookDetailPage />} />
+            <Route path="/cookbooks/:name/committers" element={<CookbookCommittersPage />} />
             <Route
               path="/cookbooks/:name/:version/remediation"
               element={<CookbookRemediationPage />}
             />
             <Route path="/remediation" element={<RemediationPage />} />
+            <Route path="/ownership" element={<OwnersPage />} />
+            <Route path="/ownership/audit-log" element={<OwnershipAuditLogPage />} />
+            <Route path="/ownership/import" element={<OwnershipImportPage />} />
+            <Route path="/ownership/:name" element={<OwnerDetailPage />} />
             <Route path="/dependencies" element={<DependencyGraphPage />} />
             <Route path="/logs" element={<LogsPage />} />
 
