@@ -116,19 +116,33 @@ export function OwnersPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold text-gray-800">Owners</h2>
-        {canCreate && (
-          <button
-            onClick={() => {
-              if (showCreate) {
-                resetCreateForm();
-              }
-              setShowCreate(!showCreate);
-            }}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+        <div className="flex items-center gap-2">
+          <Link
+            to="/ownership/import"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >
-            {showCreate ? "Cancel" : "New Owner"}
-          </button>
-        )}
+            Import CSV / JSON
+          </Link>
+          <Link
+            to="/ownership/audit-log"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            Audit Log
+          </Link>
+          {canCreate && (
+            <button
+              onClick={() => {
+                if (showCreate) {
+                  resetCreateForm();
+                }
+                setShowCreate(!showCreate);
+              }}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+            >
+              {showCreate ? "Cancel" : "New Owner"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Inline create form */}
