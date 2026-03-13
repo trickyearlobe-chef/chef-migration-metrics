@@ -27,6 +27,7 @@ type Config struct {
 	Organisations              []Organisation      `yaml:"organisations"`
 	TargetChefVersions         []string            `yaml:"target_chef_versions"`
 	GitBaseURLs                []string            `yaml:"git_base_urls"`
+	Storage                    StorageConfig       `yaml:"storage"`
 	Collection                 CollectionConfig    `yaml:"collection"`
 	Concurrency                ConcurrencyConfig   `yaml:"concurrency"`
 	AnalysisTools              AnalysisToolsConfig `yaml:"analysis_tools"`
@@ -71,6 +72,34 @@ func (o *Organisation) SSLVerifyEnabled() bool {
 		return true
 	}
 	return *o.SSLVerify
+}
+
+// ---------------------------------------------------------------------------
+// Storage paths
+// ---------------------------------------------------------------------------
+
+// StorageConfig controls the filesystem paths used for persistent data such
+// as downloaded Chef Server cookbooks and cloned git repositories. All paths
+// default to subdirectories under DataDir.
+//
+// For RPM/DEB installs DataDir defaults to /var/lib/chef-migration-metrics
+// which is created by the package with correct ownership. For development
+// (when the default is not writable) it falls back to $TMPDIR/chef-migration-metrics.
+type StorageConfig struct {
+	// DataDir is the base directory for all persistent application data.
+	// CookbookCacheDir and GitCookbookDir default to subdirectories of
+	// this path when not explicitly set.
+	DataDir string `yaml:"data_dir"`
+
+	// CookbookCacheDir is the directory where Chef Server cookbook files
+	// are extracted after download. Structure:
+	//   <cookbook_cache_dir>/<org_id>/<name>/<version>/
+	CookbookCacheDir string `yaml:"cookbook_cache_dir"`
+
+	// GitCookbookDir is the directory where git cookbook repositories are
+	// cloned and pulled. Structure:
+	//   <git_cookbook_dir>/<cookbook_name>/
+	GitCookbookDir string `yaml:"git_cookbook_dir"`
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +506,23 @@ func (c *OwnershipConfig) CMDBSearchKeys() map[string][]string {
 func (c *Config) setDefaults() {
 	if c.CredentialEncryptionKeyEnv == "" {
 		c.CredentialEncryptionKeyEnv = "CMM_CREDENTIAL_ENCRYPTION_KEY"
+	}
+
+	// Storage — resolve DataDir first, then derive subdirectories from it.
+	if c.Storage.DataDir == "" {
+		// Prefer the standard package install location; fall back to a
+		// temp-based path for development where /var/lib may not be writable.
+		candidate := "/var/lib/chef-migration-metrics"
+		if info, err := os.Stat(candidate); err != nil || !info.IsDir() {
+			candidate = filepath.Join(os.TempDir(), "chef-migration-metrics")
+		}
+		c.Storage.DataDir = candidate
+	}
+	if c.Storage.CookbookCacheDir == "" {
+		c.Storage.CookbookCacheDir = filepath.Join(c.Storage.DataDir, "cookbook-cache")
+	}
+	if c.Storage.GitCookbookDir == "" {
+		c.Storage.GitCookbookDir = filepath.Join(c.Storage.DataDir, "git-cookbooks")
 	}
 
 	// Collection

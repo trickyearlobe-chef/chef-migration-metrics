@@ -53,6 +53,21 @@ target_chef_versions:
 #   url: "${DATABASE_URL}"
 
 # ---------------------------------------------------------------------------
+# Storage Paths
+# ---------------------------------------------------------------------------
+# Controls where the application stores downloaded cookbooks and cloned git
+# repositories. All paths default to subdirectories under data_dir.
+#
+# For RPM/DEB installs, data_dir defaults to /var/lib/chef-migration-metrics
+# (created by the package with correct ownership). For development, it falls
+# back to $TMPDIR/chef-migration-metrics when /var/lib/... doesn't exist.
+#
+# storage:
+#   data_dir: /var/lib/chef-migration-metrics
+#   cookbook_cache_dir: /var/lib/chef-migration-metrics/cookbook-cache
+#   git_cookbook_dir: /var/lib/chef-migration-metrics/git-cookbooks
+
+# ---------------------------------------------------------------------------
 # Git Base URLs (optional)
 # ---------------------------------------------------------------------------
 # If your cookbooks are in git repositories, list the base URLs here.
