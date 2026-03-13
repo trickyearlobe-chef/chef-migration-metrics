@@ -41,7 +41,7 @@ contents:
       mode: 0755
 
   # Default configuration file (noreplace = don't overwrite on upgrade)
-  - src: ./deploy/pkg/config.yml
+  - src: ./deploy/pkg/config.yml.example
     dst: /etc/chef-migration-metrics/config.yml
     type: config|noreplace
     file_info:
