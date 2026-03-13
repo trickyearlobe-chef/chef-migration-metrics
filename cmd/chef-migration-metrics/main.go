@@ -577,15 +577,17 @@ func run() int {
 	}
 
 	// Cookbook directory resolver. Chef server cookbooks are downloaded
-	// to a temp directory keyed by org/name/version. Git cookbooks are
-	// cloned under the git base directory. This function is used by
-	// CookStyle scanning, Test Kitchen, and autocorrect preview generation.
-	gitBaseDir := filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
-	cookbookCacheDir := filepath.Join(os.TempDir(), "chef-migration-metrics", "cookbook-cache")
+	// to a cache directory keyed by org/name/version. Git cookbooks are
+	// cloned under the git cookbook directory. Both paths are configured
+	// via storage.cookbook_cache_dir and storage.git_cookbook_dir (which
+	// default to subdirectories of storage.data_dir).
+	gitCookbookDir := cfg.Storage.GitCookbookDir
+	cookbookCacheDir := cfg.Storage.CookbookCacheDir
 	collOpts = append(collOpts, collector.WithCookbookCacheDir(cookbookCacheDir))
+	collOpts = append(collOpts, collector.WithGitCookbookDir(gitCookbookDir))
 	collOpts = append(collOpts, collector.WithCookbookDirFn(func(cb datastore.Cookbook) string {
 		if cb.IsGit() {
-			return filepath.Join(gitBaseDir, cb.Name)
+			return filepath.Join(gitCookbookDir, cb.Name)
 		}
 		if cb.IsChefServer() && cb.IsDownloaded() {
 			return filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
@@ -593,6 +595,8 @@ func run() int {
 		return ""
 	}))
 
+	startup.Info(fmt.Sprintf("storage paths: data_dir=%s, cookbook_cache=%s, git_cookbooks=%s",
+		cfg.Storage.DataDir, cookbookCacheDir, gitCookbookDir))
 	startup.Info("analysis pipeline configured: complexity scorer and readiness evaluator always enabled")
 
 	// -------------------------------------------------------------------

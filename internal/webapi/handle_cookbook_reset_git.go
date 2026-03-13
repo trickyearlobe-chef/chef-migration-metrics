@@ -13,6 +13,9 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
+// Ensure unused imports don't cause issues — os and filepath are still used
+// by the clone removal logic below.
+
 // ---------------------------------------------------------------------------
 // Git Cookbook Reset endpoint
 //
@@ -43,12 +46,6 @@ import (
 //	}
 //
 // ---------------------------------------------------------------------------
-
-// gitCookbookBaseDir returns the base directory where git cookbook clones are
-// stored. This mirrors the path used in collector.go.
-func gitCookbookBaseDir() string {
-	return filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
-}
 
 // handleCookbookResetGit handles POST /api/v1/cookbooks/:name/reset-git.
 func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request) {
@@ -89,7 +86,7 @@ func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request
 
 	// Remove the local git clone directory.
 	localCloneRemoved := false
-	repoDir := filepath.Join(gitCookbookBaseDir(), cookbookName)
+	repoDir := filepath.Join(r.cfg.Storage.GitCookbookDir, cookbookName)
 	if _, statErr := os.Stat(repoDir); statErr == nil {
 		if rmErr := os.RemoveAll(repoDir); rmErr != nil {
 			r.logf("WARN", "failed to remove local git clone for %s at %s: %v",
