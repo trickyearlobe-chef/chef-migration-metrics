@@ -195,27 +195,6 @@ func (db *DB) getGitRepoURLForCookbook(ctx context.Context, q queryable, cookboo
 // Scan helpers
 // ---------------------------------------------------------------------------
 
-func scanCommitter(row *sql.Row) (GitRepoCommitter, error) {
-	var c GitRepoCommitter
-	err := row.Scan(
-		&c.ID,
-		&c.GitRepoURL,
-		&c.AuthorName,
-		&c.AuthorEmail,
-		&c.CommitCount,
-		&c.FirstCommitAt,
-		&c.LastCommitAt,
-		&c.CollectedAt,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return GitRepoCommitter{}, fmt.Errorf("datastore: committer: %w", ErrNotFound)
-		}
-		return GitRepoCommitter{}, fmt.Errorf("datastore: scanning committer: %w", err)
-	}
-	return c, nil
-}
-
 func scanCommitters(rows *sql.Rows) ([]GitRepoCommitter, error) {
 	var committers []GitRepoCommitter
 	for rows.Next() {

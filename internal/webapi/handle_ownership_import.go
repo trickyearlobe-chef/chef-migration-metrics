@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -484,19 +483,3 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 // ---------------------------------------------------------------------------
 // Helpers (unexported, local to this file)
 // ---------------------------------------------------------------------------
-
-// parseIntQueryParam parses an integer query parameter with a default value.
-// Returns the default if the parameter is missing, empty, or not a valid
-// positive integer. This is kept unexported since ParsePagination covers the
-// standard page/per_page case; this is for one-off integer params.
-func parseIntQueryParam(req *http.Request, name string, defaultVal int) int {
-	v := req.URL.Query().Get(name)
-	if v == "" {
-		return defaultVal
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		return defaultVal
-	}
-	return n
-}

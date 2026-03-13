@@ -38,7 +38,7 @@ function ReadinessBar({
   total: number;
 }) {
   if (total === 0) {
-    return <span className="text-xs text-gray-400">—</span>;
+    return <span className="text-xs text-gray-400">{"\u2014"}</span>;
   }
   const pctReady = (ready / total) * 100;
   const pctBlocked = (blocked / total) * 100;
@@ -64,7 +64,16 @@ function ReadinessBar({
 // Sortable column header
 // ---------------------------------------------------------------------------
 
-type SortField = "name" | "owner_type" | "created_at" | "updated_at";
+type SortField =
+  | "name"
+  | "owner_type"
+  | "nodes"
+  | "cookbooks"
+  | "git_repos"
+  | "ready"
+  | "blocked"
+  | "created_at"
+  | "updated_at";
 type SortDir = "asc" | "desc";
 
 function SortHeader({
@@ -145,9 +154,9 @@ export function OwnersPage() {
   const [page, setPage] = useState(1);
   const perPage = 50;
 
-  // Sort state
-  const [sortField, setSortField] = useState<SortField>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Sort state — default to blocked descending to surface remediation work
+  const [sortField, setSortField] = useState<SortField>("blocked");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   // Create form state
   const [showCreate, setShowCreate] = useState(false);
@@ -185,7 +194,7 @@ export function OwnersPage() {
     load();
   }, [load]);
 
-  // Reset to page 1 when filters or sort changes.
+  // Reset to page 1 when filters or sort change.
   useEffect(() => {
     setPage(1);
   }, [search, ownerType, sortField, sortDir]);
@@ -196,13 +205,15 @@ export function OwnersPage() {
         setSortDir((d) => (d === "asc" ? "desc" : "asc"));
       } else {
         setSortField(field);
-        setSortDir("asc");
+        // Numeric columns default to descending (biggest first), text to ascending.
+        const numericFields: SortField[] = ["nodes", "cookbooks", "git_repos", "ready", "blocked"];
+        setSortDir(numericFields.includes(field) ? "desc" : "asc");
       }
     },
     [sortField],
   );
 
-  // Check if any owner has readiness data to decide whether to show the column.
+  // Check if any owner has readiness data.
   const showReadiness = useMemo(
     () => owners.some((o) => o.readiness && o.readiness.total_nodes > 0),
     [owners],
@@ -350,7 +361,7 @@ export function OwnersPage() {
               disabled={creating}
               className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-green-700 disabled:opacity-50"
             >
-              {creating ? "Creating…" : "Create"}
+              {creating ? "Creating\u2026" : "Create"}
             </button>
           </form>
         </div>
@@ -385,8 +396,18 @@ export function OwnersPage() {
         </div>
       </div>
 
+      {/* Legend for readiness bar */}
+      {showReadiness && (
+        <div className="flex items-center gap-4 text-xs text-gray-500">
+          <span className="font-medium text-gray-600">Readiness:</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" /> Ready</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" /> Blocked</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" /> Stale</span>
+        </div>
+      )}
+
       {/* Table */}
-      {loading && <LoadingSpinner message="Loading owners…" />}
+      {loading && <LoadingSpinner message="Loading owners\u2026" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
         <>
@@ -400,10 +421,16 @@ export function OwnersPage() {
                     <SortHeader label="Name" field="name" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                     <th>Display Name</th>
                     <SortHeader label="Type" field="owner_type" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
-                    <th>Nodes</th>
-                    <th>Cookbooks</th>
-                    <th>Git Repos</th>
-                    {showReadiness && <th>Readiness</th>}
+                    <SortHeader label="Nodes" field="nodes" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Cookbooks" field="cookbooks" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Git Repos" field="git_repos" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                    {showReadiness && (
+                      <>
+                        <SortHeader label="Ready" field="ready" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                        <SortHeader label="Blocked" field="blocked" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                        <th>Readiness</th>
+                      </>
+                    )}
                     <SortHeader label="Created" field="created_at" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                   </tr>
                 </thead>
@@ -426,31 +453,39 @@ export function OwnersPage() {
                           {ownerTypeLabel(owner.owner_type)}
                         </span>
                       </td>
-                      <td className="text-sm text-gray-600">
+                      <td className="text-sm text-gray-600 tabular-nums">
                         {owner.assignment_counts?.node ?? 0}
                       </td>
-                      <td className="text-sm text-gray-600">
+                      <td className="text-sm text-gray-600 tabular-nums">
                         {owner.assignment_counts?.cookbook ?? 0}
                       </td>
-                      <td className="text-sm text-gray-600">
+                      <td className="text-sm text-gray-600 tabular-nums">
                         {owner.assignment_counts?.git_repo ?? 0}
                       </td>
                       {showReadiness && (
-                        <td>
-                          {owner.readiness ? (
-                            <ReadinessBar
-                              ready={owner.readiness.ready}
-                              blocked={owner.readiness.blocked}
-                              stale={owner.readiness.stale}
-                              total={owner.readiness.total_nodes}
-                            />
-                          ) : (
-                            <span className="text-xs text-gray-400">{"\u2014"}</span>
-                          )}
-                        </td>
+                        <>
+                          <td className="text-sm tabular-nums text-green-700">
+                            {owner.readiness?.ready ?? 0}
+                          </td>
+                          <td className="text-sm tabular-nums text-red-700 font-medium">
+                            {owner.readiness?.blocked ?? 0}
+                          </td>
+                          <td>
+                            {owner.readiness ? (
+                              <ReadinessBar
+                                ready={owner.readiness.ready}
+                                blocked={owner.readiness.blocked}
+                                stale={owner.readiness.stale}
+                                total={owner.readiness.total_nodes}
+                              />
+                            ) : (
+                              <span className="text-xs text-gray-400">{"\u2014"}</span>
+                            )}
+                          </td>
+                        </>
                       )}
                       <td className="text-xs text-gray-400">
-                        {new Date(owner.created_at).toLocaleString()}
+                        {new Date(owner.created_at).toLocaleDateString()}
                       </td>
                     </tr>
                   ))}

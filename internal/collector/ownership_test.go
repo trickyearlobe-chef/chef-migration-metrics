@@ -4,6 +4,7 @@
 package collector
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -85,7 +86,7 @@ func TestEvaluateRule_UnknownType(t *testing.T) {
 		Type:  "nonexistent_type",
 	}
 
-	_, err := e.evaluateRule(nil, "org-id", rule)
+	_, err := e.evaluateRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for unknown rule type")
 	}
@@ -107,7 +108,7 @@ func TestEvaluateNodeNamePatternRule_EmptyPattern(t *testing.T) {
 		Type:  "node_name_pattern",
 	}
 
-	_, err := e.evaluateNodeNamePatternRule(nil, "org-id", rule)
+	_, err := e.evaluateNodeNamePatternRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for empty pattern")
 	}
@@ -123,7 +124,7 @@ func TestEvaluateNodeNamePatternRule_InvalidRegex(t *testing.T) {
 		Pattern: "[invalid",
 	}
 
-	_, err := e.evaluateNodeNamePatternRule(nil, "org-id", rule)
+	_, err := e.evaluateNodeNamePatternRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for invalid regex pattern")
 	}
@@ -142,7 +143,7 @@ func TestEvaluatePolicyMatchRule_NoPolicyNameOrPattern(t *testing.T) {
 		Type:  "policy_match",
 	}
 
-	_, err := e.evaluatePolicyMatchRule(nil, "org-id", rule)
+	_, err := e.evaluatePolicyMatchRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error when neither policy_name nor pattern is set")
 	}
@@ -158,7 +159,7 @@ func TestEvaluatePolicyMatchRule_InvalidRegex(t *testing.T) {
 		Pattern: "(unclosed",
 	}
 
-	_, err := e.evaluatePolicyMatchRule(nil, "org-id", rule)
+	_, err := e.evaluatePolicyMatchRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for invalid regex pattern")
 	}
@@ -177,7 +178,7 @@ func TestEvaluateCookbookNamePatternRule_EmptyPattern(t *testing.T) {
 		Type:  "cookbook_name_pattern",
 	}
 
-	_, err := e.evaluateCookbookNamePatternRule(nil, "org-id", rule)
+	_, err := e.evaluateCookbookNamePatternRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for empty pattern")
 	}
@@ -193,7 +194,7 @@ func TestEvaluateCookbookNamePatternRule_InvalidRegex(t *testing.T) {
 		Pattern: `\p{`,
 	}
 
-	_, err := e.evaluateCookbookNamePatternRule(nil, "org-id", rule)
+	_, err := e.evaluateCookbookNamePatternRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for invalid regex pattern")
 	}
@@ -212,7 +213,7 @@ func TestEvaluateGitRepoURLPatternRule_EmptyPattern(t *testing.T) {
 		Type:  "git_repo_url_pattern",
 	}
 
-	_, err := e.evaluateGitRepoURLPatternRule(nil, rule)
+	_, err := e.evaluateGitRepoURLPatternRule(context.TODO(), rule)
 	if err == nil {
 		t.Fatal("expected error for empty pattern")
 	}
@@ -228,7 +229,7 @@ func TestEvaluateGitRepoURLPatternRule_InvalidRegex(t *testing.T) {
 		Pattern: `(?P<name`,
 	}
 
-	_, err := e.evaluateGitRepoURLPatternRule(nil, rule)
+	_, err := e.evaluateGitRepoURLPatternRule(context.TODO(), rule)
 	if err == nil {
 		t.Fatal("expected error for invalid regex pattern")
 	}
@@ -247,7 +248,7 @@ func TestEvaluateRoleMatchRule_NoMatchValueOrPattern(t *testing.T) {
 		Type:  "role_match",
 	}
 
-	_, err := e.evaluateRoleMatchRule(nil, "org-id", rule)
+	_, err := e.evaluateRoleMatchRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error when neither match_value nor pattern is set")
 	}
@@ -263,7 +264,7 @@ func TestEvaluateRoleMatchRule_InvalidRegex(t *testing.T) {
 		Pattern: `[z-a]`,
 	}
 
-	_, err := e.evaluateRoleMatchRule(nil, "org-id", rule)
+	_, err := e.evaluateRoleMatchRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for invalid regex pattern")
 	}
@@ -283,7 +284,7 @@ func TestEvaluateNodeAttributeRule_MissingAttributePath(t *testing.T) {
 		MatchValue: "aws",
 	}
 
-	_, err := e.evaluateNodeAttributeRule(nil, "org-id", rule)
+	_, err := e.evaluateNodeAttributeRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for missing attribute_path")
 	}
@@ -299,7 +300,7 @@ func TestEvaluateNodeAttributeRule_MissingMatchValue(t *testing.T) {
 		AttributePath: "automatic.cloud.provider",
 	}
 
-	_, err := e.evaluateNodeAttributeRule(nil, "org-id", rule)
+	_, err := e.evaluateNodeAttributeRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for missing match_value")
 	}
@@ -312,7 +313,7 @@ func TestEvaluateNodeAttributeRule_MissingMatchValue(t *testing.T) {
 func TestEvaluateAfterCollection_DisabledConfig(t *testing.T) {
 	e := NewOwnershipEvaluator(nil, config.OwnershipConfig{Enabled: false}, nil)
 
-	err := e.EvaluateAfterCollection(nil, "org-id", "org-name")
+	err := e.EvaluateAfterCollection(context.TODO(), "org-id", "org-name")
 	if err != nil {
 		t.Fatalf("expected nil error when ownership is disabled, got: %v", err)
 	}
@@ -333,7 +334,7 @@ func TestEvaluateAfterCollection_EmptyRules(t *testing.T) {
 		AutoRules: nil,
 	}, logger)
 
-	err := e.EvaluateAfterCollection(nil, "org-id", "org-name")
+	err := e.EvaluateAfterCollection(context.TODO(), "org-id", "org-name")
 	if err != nil {
 		t.Fatalf("expected nil error with empty rules, got: %v", err)
 	}
@@ -508,7 +509,7 @@ func TestEvaluateCMDBAttributeRule_MissingObjectType(t *testing.T) {
 		Type: "cmdb_attribute",
 	}
 
-	_, err := e.evaluateCMDBAttributeRule(nil, "org-id", rule)
+	_, err := e.evaluateCMDBAttributeRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error for missing object_type")
 	}
@@ -530,7 +531,7 @@ func TestEvaluateCMDBAttributeRule_DefaultOwnerAttribute(t *testing.T) {
 
 	// This will fail at the DB call (nil db), which is expected.
 	// The point is it should NOT fail on validation of the OwnerAttribute.
-	_, err := e.evaluateCMDBAttributeRule(nil, "org-id", rule)
+	_, err := e.evaluateCMDBAttributeRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error from nil db, but got nil")
 	}
@@ -559,7 +560,7 @@ func TestEvaluateRule_CMDBAttribute_ReturnsError(t *testing.T) {
 		ObjectType: "node",
 	}
 
-	_, err := e.evaluateRule(nil, "org-id", rule)
+	_, err := e.evaluateRule(context.TODO(), "org-id", rule)
 	if err == nil {
 		t.Fatal("expected error when cmdb_attribute is dispatched via evaluateRule")
 	}

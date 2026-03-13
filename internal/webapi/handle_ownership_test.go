@@ -141,8 +141,8 @@ func TestListOwners_MethodNotAllowed(t *testing.T) {
 
 func TestListOwners_Empty(t *testing.T) {
 	store := &mockStore{
-		ListOwnersFn: func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
-			return []datastore.Owner{}, 0, nil
+		ListOwnersWithSummaryFn: func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error) {
+			return []datastore.OwnerWithSummary{}, 0, nil
 		},
 	}
 	r := ownershipRouter(store)
@@ -165,17 +165,11 @@ func TestListOwners_Empty(t *testing.T) {
 func TestListOwners_WithOwners(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	store := &mockStore{
-		ListOwnersFn: func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
-			return []datastore.Owner{
-				{ID: "id-1", Name: "web-platform", DisplayName: "Web Platform", OwnerType: "team", CreatedAt: now, UpdatedAt: now},
-				{ID: "id-2", Name: "payments-team", DisplayName: "Payments", OwnerType: "team", CreatedAt: now, UpdatedAt: now},
+		ListOwnersWithSummaryFn: func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error) {
+			return []datastore.OwnerWithSummary{
+				{Owner: datastore.Owner{ID: "id-1", Name: "web-platform", DisplayName: "Web Platform", OwnerType: "team", CreatedAt: now, UpdatedAt: now}, NodeCount: 10, CookbookCount: 3},
+				{Owner: datastore.Owner{ID: "id-2", Name: "payments-team", DisplayName: "Payments", OwnerType: "team", CreatedAt: now, UpdatedAt: now}},
 			}, 2, nil
-		},
-		CountAssignmentsByOwnerFn: func(ctx context.Context, ownerName string) (map[string]int, error) {
-			if ownerName == "web-platform" {
-				return map[string]int{"node": 10, "cookbook": 3}, nil
-			}
-			return map[string]int{}, nil
 		},
 	}
 	r := ownershipRouter(store)
@@ -221,7 +215,7 @@ func TestListOwners_WithOwners(t *testing.T) {
 
 func TestListOwners_DBError(t *testing.T) {
 	store := &mockStore{
-		ListOwnersFn: func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
+		ListOwnersWithSummaryFn: func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error) {
 			return nil, 0, errors.New("connection refused")
 		},
 	}
@@ -238,9 +232,9 @@ func TestListOwners_DBError(t *testing.T) {
 func TestListOwners_Filters(t *testing.T) {
 	var capturedFilter datastore.OwnerListFilter
 	store := &mockStore{
-		ListOwnersFn: func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
+		ListOwnersWithSummaryFn: func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error) {
 			capturedFilter = f
-			return []datastore.Owner{}, 0, nil
+			return []datastore.OwnerWithSummary{}, 0, nil
 		},
 	}
 	r := ownershipRouter(store)

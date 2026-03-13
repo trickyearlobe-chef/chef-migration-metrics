@@ -213,7 +213,6 @@ func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID stri
 		if organisationID != "" {
 			where += fmt.Sprintf(" AND organisation_id = $%d", argN)
 			args = append(args, organisationID)
-			argN++
 		}
 
 		// Fetch matching assignments from the source owner.
@@ -493,7 +492,6 @@ func (db *DB) listAutoRuleAssignments(ctx context.Context, q queryable, autoRule
 	if organisationID != "" {
 		where += fmt.Sprintf(" AND organisation_id = $%d", argN)
 		args = append(args, organisationID)
-		argN++
 	}
 
 	query := fmt.Sprintf(`
