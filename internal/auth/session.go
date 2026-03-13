@@ -248,7 +248,11 @@ func ExtractToken(r *http.Request) string {
 }
 
 // SetSessionCookie writes a secure, HTTP-only session cookie to the response.
-func SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+// The Secure flag is derived from the request — it is set when the connection
+// is TLS or when a TLS-terminating reverse proxy set X-Forwarded-Proto: https.
+// This allows the cookie to work on plain HTTP during local development while
+// remaining secure in production deployments behind TLS.
+func SetSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    token,
@@ -256,13 +260,14 @@ func SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) 
 		Expires:  expiresAt,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
+		Secure:   isSecureRequest(r),
 	})
 }
 
 // ClearSessionCookie writes an expired session cookie to the response,
 // effectively removing it from the browser.
-func ClearSessionCookie(w http.ResponseWriter) {
+// The Secure flag is derived from the request to match how the cookie was set.
+func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    "",
@@ -270,8 +275,17 @@ func ClearSessionCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
+		Secure:   isSecureRequest(r),
 	})
+}
+
+// isSecureRequest returns true if the request arrived over TLS (direct or
+// via a TLS-terminating proxy that sets X-Forwarded-Proto: https).
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // ---------------------------------------------------------------------------
