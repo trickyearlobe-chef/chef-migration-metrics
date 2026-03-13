@@ -229,7 +229,7 @@ func TestDiscoverMigrations_DuplicateVersion_DescriptiveError(t *testing.T) {
 	}
 }
 
-func TestDiscoverMigrations_FilepathSet(t *testing.T) {
+func TestDiscoverMigrations_FilenameSet(t *testing.T) {
 	dir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(dir, "0001_test.up.sql"), []byte("-- sql"), 0644); err != nil {
@@ -244,9 +244,9 @@ func TestDiscoverMigrations_FilepathSet(t *testing.T) {
 		t.Fatalf("expected 1 migration, got %d", len(migrations))
 	}
 
-	expected := filepath.Join(dir, "0001_test.up.sql")
-	if migrations[0].FilePath != expected {
-		t.Errorf("filepath = %q, want %q", migrations[0].FilePath, expected)
+	expected := "0001_test.up.sql"
+	if migrations[0].Filename != expected {
+		t.Errorf("filename = %q, want %q", migrations[0].Filename, expected)
 	}
 }
 
