@@ -110,14 +110,14 @@ type ErrorResponse struct {
 
 // Standard error codes matching the spec.
 const (
-	ErrCodeBadRequest      = "bad_request"
-	ErrCodeUnauthorized    = "unauthorized"
-	ErrCodeForbidden       = "forbidden"
-	ErrCodeNotFound        = "not_found"
-	ErrCodeValidationError = "validation_error"
-	ErrCodeRateLimited     = "rate_limited"
-	ErrCodeInternalError   = "internal_error"
-	ErrCodeMethodNotAllowed = "method_not_allowed"
+	ErrCodeBadRequest         = "bad_request"
+	ErrCodeUnauthorized       = "unauthorized"
+	ErrCodeForbidden          = "forbidden"
+	ErrCodeNotFound           = "not_found"
+	ErrCodeValidationError    = "validation_error"
+	ErrCodeRateLimited        = "rate_limited"
+	ErrCodeInternalError      = "internal_error"
+	ErrCodeMethodNotAllowed   = "method_not_allowed"
 	ErrCodeServiceUnavailable = "service_unavailable"
 )
 

@@ -203,6 +203,222 @@ func (db *DB) listOwners(ctx context.Context, q queryable, f OwnerListFilter) ([
 	return owners, total, nil
 }
 
+// OwnerWithSummary extends Owner with pre-computed assignment counts and
+// readiness summary data. Used by the list endpoint to avoid N+1 queries.
+type OwnerWithSummary struct {
+	Owner
+	NodeCount     int `json:"node_count"`
+	CookbookCount int `json:"cookbook_count"`
+	GitRepoCount  int `json:"git_repo_count"`
+	RoleCount     int `json:"role_count"`
+	PolicyCount   int `json:"policy_count"`
+	// Readiness fields (zero when no target version or no node assignments).
+	ReadyNodes   int `json:"ready_nodes"`
+	BlockedNodes int `json:"blocked_nodes"`
+	StaleNodes   int `json:"stale_nodes"`
+	TotalNodes   int `json:"total_nodes"`
+}
+
+// ListOwnersWithSummary returns owners with assignment counts and readiness
+// data computed in a single SQL query. The targetChefVersion is used to look
+// up the latest node_readiness records for owned nodes; pass "" to skip
+// readiness enrichment.
+func (db *DB) ListOwnersWithSummary(ctx context.Context, f OwnerListFilter, targetChefVersion string) ([]OwnerWithSummary, int, error) {
+	return db.listOwnersWithSummary(ctx, db.q(), f, targetChefVersion)
+}
+
+func (db *DB) listOwnersWithSummary(ctx context.Context, q queryable, f OwnerListFilter, targetChefVersion string) ([]OwnerWithSummary, int, error) {
+	where := "WHERE 1=1"
+	args := []any{}
+	argN := 1
+
+	if f.OwnerType != "" {
+		where += fmt.Sprintf(" AND o.owner_type = $%d", argN)
+		args = append(args, f.OwnerType)
+		argN++
+	}
+	if f.Search != "" {
+		where += fmt.Sprintf(" AND (o.name ILIKE $%d OR o.display_name ILIKE $%d)", argN, argN)
+		args = append(args, "%"+f.Search+"%")
+		argN++
+	}
+
+	// Count total matches.
+	countQuery := "SELECT COUNT(*) FROM owners o " + where
+	var total int
+	if err := q.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("datastore: counting owners: %w", err)
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 25
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Determine sort order. We support sorting by owner columns AND by
+	// computed columns (counts, readiness) — all done in SQL.
+	orderBy := "o.name"
+	switch f.SortField {
+	case "name":
+		orderBy = "o.name"
+	case "owner_type":
+		orderBy = "o.owner_type"
+	case "created_at":
+		orderBy = "o.created_at"
+	case "updated_at":
+		orderBy = "o.updated_at"
+	case "nodes":
+		orderBy = "node_count"
+	case "cookbooks":
+		orderBy = "cookbook_count"
+	case "git_repos":
+		orderBy = "git_repo_count"
+	case "ready":
+		orderBy = "ready_nodes"
+	case "blocked":
+		orderBy = "blocked_nodes"
+	}
+	dir := "ASC"
+	if strings.EqualFold(f.SortDir, "desc") {
+		dir = "DESC"
+	}
+
+	// Build the readiness CTE. When no target version is given we still
+	// need the CTE to exist (as empty) so the LEFT JOIN works.
+	readinessCTE := `
+		readiness AS (
+			SELECT 'none' AS entity_key, false AS is_ready, false AS stale_data
+			WHERE false
+		)`
+	if targetChefVersion != "" {
+		// Use a parameter placeholder for the target version.
+		tvParam := fmt.Sprintf("$%d", argN)
+		args = append(args, targetChefVersion)
+		argN++
+		readinessCTE = fmt.Sprintf(`
+		readiness AS (
+			SELECT nr.node_name AS entity_key, nr.is_ready, nr.stale_data
+			FROM node_readiness nr
+			WHERE nr.target_chef_version = %s
+			  AND nr.id IN (
+				SELECT DISTINCT ON (nr2.node_name) nr2.id
+				FROM node_readiness nr2
+				WHERE nr2.target_chef_version = %s
+				ORDER BY nr2.node_name, nr2.evaluated_at DESC
+			  )
+		)`, tvParam, tvParam)
+	}
+
+	limitParam := fmt.Sprintf("$%d", argN)
+	args = append(args, limit)
+	argN++
+	offsetParam := fmt.Sprintf("$%d", argN)
+	args = append(args, offset)
+
+	dataQuery := fmt.Sprintf(`
+		WITH
+		counts AS (
+			SELECT
+				oa.owner_id,
+				COUNT(*) FILTER (WHERE oa.entity_type = 'node')     AS node_count,
+				COUNT(*) FILTER (WHERE oa.entity_type = 'cookbook')  AS cookbook_count,
+				COUNT(*) FILTER (WHERE oa.entity_type = 'git_repo') AS git_repo_count,
+				COUNT(*) FILTER (WHERE oa.entity_type = 'role')     AS role_count,
+				COUNT(*) FILTER (WHERE oa.entity_type = 'policy')   AS policy_count
+			FROM ownership_assignments oa
+			GROUP BY oa.owner_id
+		),
+		node_keys AS (
+			SELECT oa.owner_id, oa.entity_key
+			FROM ownership_assignments oa
+			WHERE oa.entity_type = 'node'
+		),
+		%s,
+		owner_readiness AS (
+			SELECT
+				nk.owner_id,
+				COUNT(*)                              AS total_nodes,
+				COUNT(*) FILTER (WHERE r.is_ready AND NOT r.stale_data)  AS ready_nodes,
+				COUNT(*) FILTER (WHERE NOT r.is_ready AND NOT r.stale_data) AS blocked_nodes,
+				COUNT(*) FILTER (WHERE r.stale_data)  AS stale_nodes
+			FROM node_keys nk
+			LEFT JOIN readiness r ON r.entity_key = nk.entity_key
+			GROUP BY nk.owner_id
+		)
+		SELECT
+			o.id, o.name, o.display_name, o.contact_email, o.contact_channel,
+			o.owner_type, o.metadata, o.created_at, o.updated_at,
+			COALESCE(c.node_count, 0),
+			COALESCE(c.cookbook_count, 0),
+			COALESCE(c.git_repo_count, 0),
+			COALESCE(c.role_count, 0),
+			COALESCE(c.policy_count, 0),
+			COALESCE(orr.ready_nodes, 0),
+			COALESCE(orr.blocked_nodes, 0),
+			COALESCE(orr.stale_nodes, 0),
+			COALESCE(orr.total_nodes, 0)
+		FROM owners o
+		LEFT JOIN counts c ON c.owner_id = o.id
+		LEFT JOIN owner_readiness orr ON orr.owner_id = o.id
+		%s
+		ORDER BY %s %s, o.name ASC
+		LIMIT %s OFFSET %s
+	`, readinessCTE, where, orderBy, dir, limitParam, offsetParam)
+
+	rows, err := q.QueryContext(ctx, dataQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("datastore: listing owners with summary: %w", err)
+	}
+	defer rows.Close()
+
+	var results []OwnerWithSummary
+	for rows.Next() {
+		var o OwnerWithSummary
+		var displayName, contactEmail, contactChannel sql.NullString
+		var metadata []byte
+
+		if err := rows.Scan(
+			&o.ID,
+			&o.Name,
+			&displayName,
+			&contactEmail,
+			&contactChannel,
+			&o.OwnerType,
+			&metadata,
+			&o.CreatedAt,
+			&o.UpdatedAt,
+			&o.NodeCount,
+			&o.CookbookCount,
+			&o.GitRepoCount,
+			&o.RoleCount,
+			&o.PolicyCount,
+			&o.ReadyNodes,
+			&o.BlockedNodes,
+			&o.StaleNodes,
+			&o.TotalNodes,
+		); err != nil {
+			return nil, 0, fmt.Errorf("datastore: scanning owner with summary: %w", err)
+		}
+
+		o.DisplayName = stringFromNull(displayName)
+		o.ContactEmail = stringFromNull(contactEmail)
+		o.ContactChannel = stringFromNull(contactChannel)
+		if metadata != nil {
+			o.Metadata = json.RawMessage(metadata)
+		}
+		results = append(results, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("datastore: iterating owner summary rows: %w", err)
+	}
+
+	return results, total, nil
+}
+
 // UpdateOwner updates an existing owner by name. Returns ErrNotFound if no
 // such owner exists.
 func (db *DB) UpdateOwner(ctx context.Context, name string, p UpdateOwnerParams) (Owner, error) {

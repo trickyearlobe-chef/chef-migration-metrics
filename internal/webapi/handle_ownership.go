@@ -179,20 +179,19 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 		Offset:    pg.Offset(),
 	}
 
-	owners, total, err := r.db.ListOwners(req.Context(), f)
-	if err != nil {
-		r.logf("ERROR", "ownership: listing owners: %v", err)
-		WriteInternalError(w, "Failed to list owners.")
-		return
-	}
-
 	// Determine target chef version for readiness enrichment.
 	targetVersion := q.Get("target_chef_version")
 	if targetVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
 		targetVersion = r.cfg.TargetChefVersions[0]
 	}
 
-	// Build response with assignment counts and optional readiness data.
+	owners, total, err := r.db.ListOwnersWithSummary(req.Context(), f, targetVersion)
+	if err != nil {
+		r.logf("ERROR", "ownership: listing owners: %v", err)
+		WriteInternalError(w, "Failed to list owners.")
+		return
+	}
+
 	type readinessSummary struct {
 		TargetChefVersion string `json:"target_chef_version"`
 		TotalNodes        int    `json:"total_nodes"`
@@ -214,47 +213,33 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 		UpdatedAt        time.Time         `json:"updated_at"`
 	}
 
-	ctx := req.Context()
 	data := make([]ownerResp, 0, len(owners))
 	for _, o := range owners {
-		counts, err := r.db.CountAssignmentsByOwner(ctx, o.Name)
-		if err != nil {
-			r.logf("WARN", "ownership: counting assignments for %s: %v", o.Name, err)
-			counts = map[string]int{}
-		}
-		// Ensure all entity types are present.
-		for _, et := range []string{"node", "cookbook", "git_repo", "role", "policy"} {
-			if _, ok := counts[et]; !ok {
-				counts[et] = 0
-			}
-		}
-
 		resp := ownerResp{
-			Name:             o.Name,
-			DisplayName:      o.DisplayName,
-			ContactEmail:     o.ContactEmail,
-			ContactChannel:   o.ContactChannel,
-			OwnerType:        o.OwnerType,
-			Metadata:         o.Metadata,
-			AssignmentCounts: counts,
-			CreatedAt:        o.CreatedAt,
-			UpdatedAt:        o.UpdatedAt,
+			Name:           o.Name,
+			DisplayName:    o.DisplayName,
+			ContactEmail:   o.ContactEmail,
+			ContactChannel: o.ContactChannel,
+			OwnerType:      o.OwnerType,
+			Metadata:       o.Metadata,
+			AssignmentCounts: map[string]int{
+				"node":     o.NodeCount,
+				"cookbook": o.CookbookCount,
+				"git_repo": o.GitRepoCount,
+				"role":     o.RoleCount,
+				"policy":   o.PolicyCount,
+			},
+			CreatedAt: o.CreatedAt,
+			UpdatedAt: o.UpdatedAt,
 		}
 
-		// Enrich with readiness summary if a target version is available
-		// and the owner has node assignments.
-		if targetVersion != "" && counts["node"] > 0 {
-			rs, err := r.db.GetOwnerReadinessSummary(ctx, o.Name, targetVersion)
-			if err != nil {
-				r.logf("WARN", "ownership: readiness summary for %s: %v", o.Name, err)
-			} else {
-				resp.Readiness = &readinessSummary{
-					TargetChefVersion: rs.TargetChefVersion,
-					TotalNodes:        rs.TotalNodes,
-					Ready:             rs.Ready,
-					Blocked:           rs.Blocked,
-					Stale:             rs.Stale,
-				}
+		if targetVersion != "" && o.TotalNodes > 0 {
+			resp.Readiness = &readinessSummary{
+				TargetChefVersion: targetVersion,
+				TotalNodes:        o.TotalNodes,
+				Ready:             o.ReadyNodes,
+				Blocked:           o.BlockedNodes,
+				Stale:             o.StaleNodes,
 			}
 		}
 
@@ -961,14 +946,14 @@ func (r *Router) handleOwnershipEndpoints(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	switch {
-	case req.URL.Path == "/api/v1/ownership/reassign":
+	switch req.URL.Path {
+	case "/api/v1/ownership/reassign":
 		r.handleOwnershipReassign(w, req)
-	case req.URL.Path == "/api/v1/ownership/lookup":
+	case "/api/v1/ownership/lookup":
 		r.handleOwnershipLookup(w, req)
-	case req.URL.Path == "/api/v1/ownership/audit-log":
+	case "/api/v1/ownership/audit-log":
 		r.handleOwnershipAuditLog(w, req)
-	case req.URL.Path == "/api/v1/ownership/import":
+	case "/api/v1/ownership/import":
 		r.handleOwnershipImport(w, req)
 	default:
 		WriteNotFound(w, fmt.Sprintf("Unknown ownership endpoint: %s", req.URL.Path))

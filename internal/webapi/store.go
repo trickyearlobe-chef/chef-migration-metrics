@@ -214,6 +214,11 @@ type DataStore interface {
 	// for the given owner name.
 	CountAssignmentsByOwner(ctx context.Context, ownerName string) (map[string]int, error)
 
+	// ListOwnersWithSummary returns owners with pre-computed assignment
+	// counts and readiness data in a single query. Pass targetChefVersion
+	// as "" to skip readiness enrichment.
+	ListOwnersWithSummary(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error)
+
 	// -----------------------------------------------------------------
 	// Ownership assignments
 	// -----------------------------------------------------------------

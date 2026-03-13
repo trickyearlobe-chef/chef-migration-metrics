@@ -51,6 +51,7 @@ type mockStore struct {
 	ListExportJobsByStatusFn                  func(ctx context.Context, status string) ([]datastore.ExportJob, error)
 	ListExpiredExportJobsFn                   func(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
 	ListOwnersFn                              func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error)
+	ListOwnersWithSummaryFn                   func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error)
 	GetOwnerByNameFn                          func(ctx context.Context, name string) (datastore.Owner, error)
 	InsertOwnerFn                             func(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error)
 	UpdateOwnerFn                             func(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error)
@@ -323,6 +324,13 @@ func (m *mockStore) ListExpiredExportJobs(ctx context.Context, now time.Time) ([
 func (m *mockStore) ListOwners(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
 	if m.ListOwnersFn != nil {
 		return m.ListOwnersFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) ListOwnersWithSummary(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error) {
+	if m.ListOwnersWithSummaryFn != nil {
+		return m.ListOwnersWithSummaryFn(ctx, f, targetChefVersion)
 	}
 	return nil, 0, nil
 }
