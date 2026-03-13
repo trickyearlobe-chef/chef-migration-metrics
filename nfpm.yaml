@@ -33,6 +33,9 @@ license: Apache-2.0
 depends:
   - git
 
+recommends:
+  - chef-workstation
+
 contents:
   # Go binary
   - src: ./build/chef-migration-metrics
@@ -64,16 +67,6 @@ contents:
     type: dir
     file_info:
       mode: 0750
-
-  # Embedded Ruby environment (CookStyle, Test Kitchen, InSpec, kitchen drivers)
-  # type: tree preserves the full directory structure and avoids content
-  # collisions that occur with the default glob when deeply nested gems
-  # contain identically named files (e.g. google-api-client classes.rb).
-  - src: ./build/embedded/
-    dst: /opt/chef-migration-metrics/embedded/
-    type: tree
-    file_info:
-      mode: 0755
 
   # systemd unit file
   - src: ./deploy/pkg/chef-migration-metrics.service

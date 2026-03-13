@@ -29,6 +29,63 @@ spec:
       serviceAccountName: {{ include "chef-migration-metrics.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.chefWorkstation.enabled }}
+      initContainers:
+        - name: chef-workstation-tools
+          image: "{{ .Values.chefWorkstation.image.repository }}:{{ .Values.chefWorkstation.image.tag }}"
+          imagePullPolicy: {{ .Values.chefWorkstation.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Copying Chef Workstation binaries to shared tools volume..."
+              mkdir -p /opt/chef-tools/bin
+
+              # Chef Workstation omnibus installs binaries under /opt/chef-workstation/bin
+              # and the embedded Ruby + gems under /opt/chef-workstation/embedded.
+              # The tools (cookstyle, kitchen, inspec) are binstubs that need the
+              # embedded Ruby tree to function, so we copy the entire embedded dir
+              # alongside the requested binaries.
+              {{- range .Values.chefWorkstation.binaries }}
+              if [ -f "/opt/chef-workstation/bin/{{ . }}" ]; then
+                cp -a "/opt/chef-workstation/bin/{{ . }}" /opt/chef-tools/bin/
+                echo "  ✓ {{ . }}"
+              else
+                echo "  ✗ {{ . }} not found in /opt/chef-workstation/bin/" >&2
+              fi
+              {{- end }}
+
+              # Copy the embedded Ruby environment that the binstubs depend on.
+              # This includes the Ruby interpreter, gem libraries, and native extensions.
+              if [ -d "/opt/chef-workstation/embedded" ]; then
+                cp -a /opt/chef-workstation/embedded /opt/chef-tools/embedded
+                echo "  ✓ embedded Ruby environment"
+              else
+                echo "  ✗ embedded directory not found" >&2
+                exit 1
+              fi
+
+              # Patch binstubs to point at the copied embedded Ruby location.
+              # Chef Workstation binstubs have a shebang like:
+              #   #!/opt/chef-workstation/embedded/bin/ruby
+              # We rewrite it to:
+              #   #!/opt/chef-tools/embedded/bin/ruby
+              for f in /opt/chef-tools/bin/*; do
+                if head -1 "$f" | grep -q '/opt/chef-workstation/'; then
+                  sed -i 's|/opt/chef-workstation/|/opt/chef-tools/|g' "$f"
+                fi
+              done
+
+              echo "Chef Workstation tools ready."
+          volumeMounts:
+            - name: chef-tools
+              mountPath: /opt/chef-tools
+          {{- with .Values.chefWorkstation.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -65,6 +122,11 @@ spec:
             - name: data
               mountPath: /var/lib/chef-migration-metrics
             {{- end }}
+            {{- if .Values.chefWorkstation.enabled }}
+            - name: chef-tools
+              mountPath: /opt/chef-tools
+              readOnly: true
+            {{- end }}
             {{- if and (eq .Values.config.server.tls.mode "static") (or .Values.tlsSecret.existingSecret .Values.tlsSecret.cert) }}
             - name: tls
               mountPath: /etc/chef-migration-metrics/tls
@@ -78,6 +140,10 @@ spec:
         - name: config
           configMap:
             name: {{ .Values.existingConfigMap | default (include "chef-migration-metrics.fullname" .) }}
+        {{- if .Values.chefWorkstation.enabled }}
+        - name: chef-tools
+          emptyDir: {}
+        {{- end }}
         {{- if .Values.chefKeys.existingSecret }}
         - name: chef-keys
           secret:

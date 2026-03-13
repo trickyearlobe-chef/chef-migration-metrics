@@ -19,3 +19,14 @@ To access the web dashboard:
   kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "chef-migration-metrics.fullname" . }} 8080:{{ .Values.service.port }}
   Visit: http://localhost:8080
 {{- end }}
+
+CookStyle & Test Kitchen:
+{{- if .Values.chefWorkstation.enabled }}
+  Chef Workstation init container is ENABLED ({{ .Values.chefWorkstation.image.repository }}:{{ .Values.chefWorkstation.image.tag }}).
+  The following tools will be available: {{ join ", " .Values.chefWorkstation.binaries }}
+{{- else }}
+  Chef Workstation init container is DISABLED.
+  CookStyle scanning and Test Kitchen testing will not be available.
+  To enable, set chefWorkstation.enabled=true:
+    helm upgrade {{ .Release.Name }} {{ .Chart.Name }} --set chefWorkstation.enabled=true
+{{- end }}

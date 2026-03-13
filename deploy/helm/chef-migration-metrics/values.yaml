@@ -82,7 +82,11 @@ config:
   readiness:
     min_free_disk_mb: 2048
 
-  # analysis_tools:
+  analysis_tools:
+    # -- Directory where cookstyle/kitchen binaries are located.
+    # When chefWorkstation.enabled is true, the init container copies
+    # binaries here. Otherwise the app falls back to PATH lookup.
+    embedded_bin_dir: "/opt/chef-tools/bin"
   #   cookstyle_enabled: true    # Set to false to disable CookStyle scanning
   #   cookstyle_timeout_minutes: 10
   #   test_kitchen_timeout_minutes: 30
@@ -299,6 +303,45 @@ affinity: {}
 # Enable to deploy PostgreSQL alongside the application. For production,
 # disable and point databaseUrl or secrets.databaseUrl at an externally
 # managed PostgreSQL instance (e.g. RDS, Cloud SQL).
+
+# ---------------------------------------------------------------------------
+# Chef Workstation Init Container (optional)
+# ---------------------------------------------------------------------------
+# When enabled, an init container based on the Chef Workstation image copies
+# cookstyle, kitchen, and related Ruby binaries into a shared emptyDir volume.
+# The main application container picks them up via analysis_tools.embedded_bin_dir.
+#
+# This is the Kubernetes equivalent of the "recommends: chef-workstation"
+# package dependency in RPM/DEB — it provides CookStyle scanning and Test
+# Kitchen testing capabilities without baking Ruby into the main image.
+#
+# When disabled, the application starts without CookStyle/Kitchen support
+# (gracefully degraded — it logs a warning and skips cookbook analysis).
+
+chefWorkstation:
+  # -- Enable the Chef Workstation init container
+  enabled: false
+  image:
+    # -- Chef Workstation image repository
+    repository: chef/chef-workstation
+    # -- Image tag (pin to a specific Workstation release)
+    tag: "25.1.1080"
+    # -- Image pull policy
+    pullPolicy: IfNotPresent
+  # -- Binaries to copy from the Workstation image into the shared tools volume.
+  # These are resolved from the Workstation omnibus bin directory.
+  binaries:
+    - cookstyle
+    - kitchen
+    - inspec
+  # -- Resource limits for the init container (runs briefly then exits)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
 
 postgresql:
   # -- Deploy PostgreSQL as a subchart
