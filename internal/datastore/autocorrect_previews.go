@@ -302,3 +302,13 @@ func (db *DB) scanAutocorrectPreviews(ctx context.Context, query string, args ..
 	}
 	return results, nil
 }
+
+// DeleteAllAutocorrectPreviews removes all autocorrect preview records.
+func (db *DB) DeleteAllAutocorrectPreviews(ctx context.Context) error {
+	const query = `DELETE FROM autocorrect_previews`
+	_, err := db.pool.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("datastore: deleting all autocorrect previews: %w", err)
+	}
+	return nil
+}

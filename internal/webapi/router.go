@@ -320,6 +320,7 @@ func (r *Router) registerRoutes() {
 		r.adminOnly("/api/v1/admin/users/", r.handleNotImplemented)
 	}
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
+	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
 
 	// -----------------------------------------------------------------
 	// Frontend SPA fallback — serves index.html for client-side routing.

@@ -321,10 +321,27 @@ export interface CookstyleResult {
   created_at: string;
 }
 
+export interface TestKitchenResult {
+  id: string;
+  cookbook_id: string;
+  target_chef_version: string;
+  commit_sha: string;
+  converge_passed: boolean;
+  tests_passed: boolean;
+  compatible: boolean;
+  timed_out: boolean;
+  driver_used: string;
+  platform_tested: string;
+  duration_seconds: number;
+  started_at: string;
+  completed_at: string;
+  created_at: string;
+}
+
 export interface CookbookVersionDetail {
   cookbook: CookbookListItem;
-  complexity?: CookbookComplexity[];
   cookstyle?: CookstyleResult[];
+  test_kitchen?: TestKitchenResult[];
 }
 
 export interface CookbookDetailResponse {

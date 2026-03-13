@@ -35,9 +35,13 @@ type mockStore struct {
 	DeleteCookstyleResultsForCookbookFn       func(ctx context.Context, cookbookID string) error
 	DeleteCookbookComplexitiesForCookbookFn   func(ctx context.Context, cookbookID string) error
 	DeleteAutocorrectPreviewsForCookbookFn    func(ctx context.Context, cookbookID string) error
+	DeleteAllCookstyleResultsFn               func(ctx context.Context) error
+	DeleteAllCookbookComplexitiesFn           func(ctx context.Context) error
+	DeleteAllAutocorrectPreviewsFn            func(ctx context.Context) error
 	GetAutocorrectPreviewFn                   func(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error)
 	ListAutocorrectPreviewsForCookbookFn      func(ctx context.Context, cookbookID string) ([]datastore.AutocorrectPreview, error)
 	GetLatestTestKitchenResultFn              func(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error)
+	ListTestKitchenResultsForCookbookFn       func(ctx context.Context, cookbookID string) ([]datastore.TestKitchenResult, error)
 	ListLogEntriesFn                          func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
 	CountLogEntriesFn                         func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
 	GetLogEntryFn                             func(ctx context.Context, id string) (datastore.LogEntry, error)
@@ -216,6 +220,27 @@ func (m *mockStore) DeleteAutocorrectPreviewsForCookbook(ctx context.Context, co
 	return nil
 }
 
+func (m *mockStore) DeleteAllCookstyleResults(ctx context.Context) error {
+	if m.DeleteAllCookstyleResultsFn != nil {
+		return m.DeleteAllCookstyleResultsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllCookbookComplexities(ctx context.Context) error {
+	if m.DeleteAllCookbookComplexitiesFn != nil {
+		return m.DeleteAllCookbookComplexitiesFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllAutocorrectPreviews(ctx context.Context) error {
+	if m.DeleteAllAutocorrectPreviewsFn != nil {
+		return m.DeleteAllAutocorrectPreviewsFn(ctx)
+	}
+	return nil
+}
+
 func (m *mockStore) GetAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error) {
 	if m.GetAutocorrectPreviewFn != nil {
 		return m.GetAutocorrectPreviewFn(ctx, cookstyleResultID)
@@ -233,6 +258,13 @@ func (m *mockStore) ListAutocorrectPreviewsForCookbook(ctx context.Context, cook
 func (m *mockStore) GetLatestTestKitchenResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error) {
 	if m.GetLatestTestKitchenResultFn != nil {
 		return m.GetLatestTestKitchenResultFn(ctx, cookbookID, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListTestKitchenResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.TestKitchenResult, error) {
+	if m.ListTestKitchenResultsForCookbookFn != nil {
+		return m.ListTestKitchenResultsForCookbookFn(ctx, cookbookID)
 	}
 	return nil, nil
 }
