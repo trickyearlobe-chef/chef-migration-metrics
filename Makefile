@@ -176,6 +176,9 @@ build-frontend: ## Build the React SPA frontend (creates placeholder dist/ if np
 	else \
 		echo "$(YELLOW)npm not found or frontend/ missing — creating placeholder dist/$(RESET)"; \
 	fi
+	@# Touch embed.go so that Go's build cache sees the embedding source file
+	@# as changed and re-embeds the fresh dist/ contents into the binary.
+	@touch $(FRONTEND_DIR)/embed.go
 	@# Ensure dist/ always exists with at least a placeholder index.html so
 	@# that the go:embed directive in frontend/embed.go succeeds at compile time.
 	@mkdir -p $(FRONTEND_DIR)/dist

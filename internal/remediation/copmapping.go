@@ -50,10 +50,11 @@ type EnrichedOffense struct {
 
 // OffenseLocation mirrors the location fields from CookStyle JSON output.
 type OffenseLocation struct {
-	StartLine   int `json:"start_line"`
-	StartColumn int `json:"start_column"`
-	LastLine    int `json:"last_line"`
-	LastColumn  int `json:"last_column"`
+	File        string `json:"file,omitempty"`
+	StartLine   int    `json:"start_line"`
+	StartColumn int    `json:"start_column"`
+	LastLine    int    `json:"last_line"`
+	LastColumn  int    `json:"last_column"`
 }
 
 // copMappingIndex is the in-memory lookup table keyed by cop_name.

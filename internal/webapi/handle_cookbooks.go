@@ -207,29 +207,31 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Gather complexity and cookstyle results for each cookbook version.
+	// Gather cookstyle and test kitchen results for each cookbook version.
 	type versionDetail struct {
-		Cookbook   datastore.Cookbook             `json:"cookbook"`
-		Complexity []datastore.CookbookComplexity `json:"complexity,omitempty"`
-		Cookstyle  []datastore.CookstyleResult    `json:"cookstyle,omitempty"`
+		Cookbook    datastore.Cookbook            `json:"cookbook"`
+		Cookstyle   []datastore.CookstyleResult   `json:"cookstyle,omitempty"`
+		TestKitchen []datastore.TestKitchenResult `json:"test_kitchen,omitempty"`
 	}
 
 	details := make([]versionDetail, 0, len(cookbooks))
 	for _, cb := range cookbooks {
 		detail := versionDetail{Cookbook: cb}
 
-		complexity, err := r.db.ListCookbookComplexitiesForCookbook(req.Context(), cb.ID)
-		if err != nil {
-			r.logf("WARN", "listing complexity for cookbook %s: %v", cb.ID, err)
-		} else {
-			detail.Complexity = complexity
-		}
-
 		cookstyle, err := r.db.ListCookstyleResultsForCookbook(req.Context(), cb.ID)
 		if err != nil {
 			r.logf("WARN", "listing cookstyle results for cookbook %s: %v", cb.ID, err)
 		} else {
 			detail.Cookstyle = cookstyle
+		}
+
+		if cb.Source == "git" {
+			tk, err := r.db.ListTestKitchenResultsForCookbook(req.Context(), cb.ID)
+			if err != nil {
+				r.logf("WARN", "listing test kitchen results for cookbook %s: %v", cb.ID, err)
+			} else {
+				detail.TestKitchen = tk
+			}
 		}
 
 		details = append(details, detail)
