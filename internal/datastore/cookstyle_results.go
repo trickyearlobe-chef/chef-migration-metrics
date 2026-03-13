@@ -398,3 +398,14 @@ func (db *DB) DeleteCookstyleResult(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// DeleteAllCookstyleResults removes all cookstyle results from all cookbooks.
+// This forces a full rescan on the next collection cycle.
+func (db *DB) DeleteAllCookstyleResults(ctx context.Context) error {
+	const query = `DELETE FROM cookstyle_results`
+	_, err := db.pool.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("datastore: deleting all cookstyle results: %w", err)
+	}
+	return nil
+}

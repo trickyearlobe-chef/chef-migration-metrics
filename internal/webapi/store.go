@@ -121,6 +121,16 @@ type DataStore interface {
 	// for the given cookbook ID. Forces regeneration on the next cycle.
 	DeleteAutocorrectPreviewsForCookbook(ctx context.Context, cookbookID string) error
 
+	// DeleteAllCookstyleResults removes all cookstyle results. Forces a
+	// full rescan on the next collection cycle.
+	DeleteAllCookstyleResults(ctx context.Context) error
+
+	// DeleteAllCookbookComplexities removes all cookbook complexity records.
+	DeleteAllCookbookComplexities(ctx context.Context) error
+
+	// DeleteAllAutocorrectPreviews removes all autocorrect previews.
+	DeleteAllAutocorrectPreviews(ctx context.Context) error
+
 	// GetAutocorrectPreview returns the autocorrect preview for the given
 	// cookstyle result ID. Returns (nil, nil) if no preview exists.
 	GetAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error)
@@ -129,6 +139,10 @@ type DataStore interface {
 	// for the given cookbook ID and target Chef version. Returns (nil, nil)
 	// if no result exists.
 	GetLatestTestKitchenResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error)
+
+	// ListTestKitchenResultsForCookbook returns all test kitchen results for
+	// the given cookbook ID, ordered by target_chef_version then started_at desc.
+	ListTestKitchenResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.TestKitchenResult, error)
 
 	// -----------------------------------------------------------------
 	// Log entries

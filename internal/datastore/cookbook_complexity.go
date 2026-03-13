@@ -337,6 +337,16 @@ func scanCookbookComplexity(row interface{ Scan(dest ...any) error }) (CookbookC
 	return r, nil
 }
 
+// DeleteAllCookbookComplexities removes all cookbook complexity records.
+func (db *DB) DeleteAllCookbookComplexities(ctx context.Context) error {
+	const query = `DELETE FROM cookbook_complexity`
+	_, err := db.pool.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("datastore: deleting all cookbook complexities: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) scanCookbookComplexities(ctx context.Context, query string, args ...any) ([]CookbookComplexity, error) {
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {

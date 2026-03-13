@@ -59,6 +59,10 @@ type CookstyleOffense struct {
 	CopName   string                   `json:"cop_name"`
 	Corrected bool                     `json:"corrected"`
 	Location  CookstyleOffenseLocation `json:"location"`
+	// File is the source file path. Not part of the RuboCop per-offense
+	// JSON — it comes from the parent CookstyleFile.Path and is set by
+	// the scan pipeline after unmarshalling.
+	File string `json:"file,omitempty"`
 }
 
 // CookstyleOffenseLocation describes the source location of an offense.
@@ -497,6 +501,7 @@ func (s *CookstyleScanner) scanOne(
 
 	for _, file := range output.Files {
 		for _, off := range file.Offenses {
+			off.File = file.Path
 			sr.Offenses = append(sr.Offenses, off)
 
 			if isDeprecation(off.CopName) {
@@ -624,6 +629,7 @@ func enrichOffenses(offenses []CookstyleOffense) []remediation.EnrichedOffense {
 			Severity: off.Severity,
 			Message:  off.Message,
 			Location: remediation.OffenseLocation{
+				File:        off.File,
 				StartLine:   off.Location.StartLine,
 				StartColumn: off.Location.StartColumn,
 				LastLine:    off.Location.LastLine,
