@@ -105,14 +105,10 @@ func (db *DB) Ping(ctx context.Context) error {
 // Migrations
 // ---------------------------------------------------------------------------
 
-// MigrateUp reads SQL migration files from the given directory and applies
-// any that have not yet been run. Migrations are applied in order of their
-// numeric prefix (e.g. 0001, 0002, ...).
-//
-// The schema_migrations table is created automatically if it does not exist.
-// Each migration is applied within a transaction — if a migration fails, it
-// is rolled back and the error is returned. Subsequent migrations are not
-// attempted.
+// MigrateUp reads SQL migration files from the given directory on disk and
+// applies any that have not yet been run. This is the legacy entry point
+// retained for backward compatibility — callers that have an fs.FS (e.g.
+// embedded migrations) should use MigrateUpFS instead.
 //
 // Migration files must follow the naming convention:
 //
@@ -120,11 +116,32 @@ func (db *DB) Ping(ctx context.Context) error {
 //
 // Only .up.sql files are applied by this function.
 func (db *DB) MigrateUp(ctx context.Context, migrationsDir string) (applied int, err error) {
+	return db.MigrateUpFS(ctx, os.DirFS(migrationsDir))
+}
+
+// MigrateUpFS reads SQL migration files from the given fs.FS and applies any
+// that have not yet been run. Migrations are applied in order of their
+// numeric prefix (e.g. 0001, 0002, ...).
+//
+// The schema_migrations table is created automatically if it does not exist.
+// Each migration is applied within a transaction — if a migration fails, it
+// is rolled back and the error is returned. Subsequent migrations are not
+// attempted.
+//
+// The fsys parameter can be an embed.FS (for self-contained binaries),
+// os.DirFS (for disk-based migrations), or any other fs.FS implementation.
+//
+// Migration files must follow the naming convention:
+//
+//	NNNN_short_description.up.sql
+//
+// Only .up.sql files are applied by this function.
+func (db *DB) MigrateUpFS(ctx context.Context, fsys fs.FS) (applied int, err error) {
 	if err := db.ensureMigrationsTable(ctx); err != nil {
 		return 0, fmt.Errorf("datastore: creating schema_migrations table: %w", err)
 	}
 
-	migrations, err := discoverMigrations(migrationsDir)
+	migrations, err := discoverMigrationsFS(fsys)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: discovering migrations: %w", err)
 	}
@@ -143,7 +160,7 @@ func (db *DB) MigrateUp(ctx context.Context, migrationsDir string) (applied int,
 			continue
 		}
 
-		if err := db.applyMigration(ctx, m); err != nil {
+		if err := db.applyMigrationFS(ctx, fsys, m); err != nil {
 			return applied, fmt.Errorf("datastore: applying migration %04d (%s): %w", m.Version, m.Name, err)
 		}
 		applied++
@@ -152,22 +169,20 @@ func (db *DB) MigrateUp(ctx context.Context, migrationsDir string) (applied int,
 	return applied, nil
 }
 
-// migration represents a single migration file discovered on disk.
+// migration represents a single migration file discovered from an fs.FS.
 type migration struct {
 	Version  int
 	Name     string
-	FilePath string
+	Filename string // bare filename (e.g. "0001_initial_schema.up.sql")
 }
 
-// discoverMigrations scans the given directory for *.up.sql files and returns
-// them sorted by version number.
-func discoverMigrations(dir string) ([]migration, error) {
-	entries, err := os.ReadDir(dir)
+// discoverMigrationsFS scans the given fs.FS for *.up.sql files and returns
+// them sorted by version number. The fs.FS is read at its root — files are
+// expected to be at the top level (e.g. "0001_initial_schema.up.sql").
+func discoverMigrationsFS(fsys fs.FS) ([]migration, error) {
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("migrations directory does not exist: %s", dir)
-		}
-		return nil, fmt.Errorf("reading migrations directory: %w", err)
+		return nil, fmt.Errorf("reading migrations filesystem: %w", err)
 	}
 
 	var migrations []migration
@@ -185,7 +200,6 @@ func discoverMigrations(dir string) ([]migration, error) {
 			// Skip files that don't match the expected naming convention.
 			continue
 		}
-		m.FilePath = filepath.Join(dir, name)
 		migrations = append(migrations, m)
 	}
 
@@ -202,6 +216,26 @@ func discoverMigrations(dir string) ([]migration, error) {
 	}
 
 	return migrations, nil
+}
+
+// discoverMigrations scans the given directory on disk for *.up.sql files
+// and returns them sorted by version number. This is a convenience wrapper
+// around discoverMigrationsFS for callers that have a directory path.
+//
+// It checks that the directory exists before delegating so that the error
+// message includes the original path for operator diagnostics.
+func discoverMigrations(dir string) ([]migration, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("migrations directory does not exist: %s", dir)
+		}
+		return nil, fmt.Errorf("checking migrations directory %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("migrations path is not a directory: %s", dir)
+	}
+	return discoverMigrationsFS(os.DirFS(dir))
 }
 
 // parseMigrationFilename extracts the version number and descriptive name
@@ -228,8 +262,9 @@ func parseMigrationFilename(filename string) (migration, error) {
 	}
 
 	return migration{
-		Version: version,
-		Name:    name,
+		Version:  version,
+		Name:     name,
+		Filename: filename,
 	}, nil
 }
 
@@ -262,18 +297,19 @@ func (db *DB) currentMigrationVersion(ctx context.Context) (int, error) {
 	return int(version.Int64), nil
 }
 
-// applyMigration reads the SQL file and executes it within a transaction.
-// On success, a row is inserted into schema_migrations to record the
-// migration. On failure, the transaction is rolled back.
-func (db *DB) applyMigration(ctx context.Context, m migration) error {
-	sqlBytes, err := os.ReadFile(m.FilePath)
+// applyMigrationFS reads a migration SQL file from the given fs.FS and
+// executes it within a transaction. On success, a row is inserted into
+// schema_migrations to record the migration. On failure, the transaction
+// is rolled back.
+func (db *DB) applyMigrationFS(ctx context.Context, fsys fs.FS, m migration) error {
+	sqlBytes, err := fs.ReadFile(fsys, m.Filename)
 	if err != nil {
-		return fmt.Errorf("reading migration file: %w", err)
+		return fmt.Errorf("reading migration file %s: %w", m.Filename, err)
 	}
 
 	sqlStr := string(sqlBytes)
 	if strings.TrimSpace(sqlStr) == "" {
-		return fmt.Errorf("migration file is empty: %s", m.FilePath)
+		return fmt.Errorf("migration file is empty: %s", m.Filename)
 	}
 
 	tx, err := db.pool.BeginTx(ctx, nil)
@@ -298,6 +334,22 @@ func (db *DB) applyMigration(ctx context.Context, m migration) error {
 	}
 
 	return nil
+}
+
+// applyMigration reads a migration SQL file from disk and executes it.
+// This is a backward-compatible wrapper around applyMigrationFS for callers
+// that still use directory-based migrations.
+func (db *DB) applyMigration(ctx context.Context, m migration) error {
+	dir := filepath.Dir(m.Filename)
+	if dir == "." || dir == "" {
+		// Filename is bare — caller must use applyMigrationFS instead.
+		return fmt.Errorf("applyMigration requires a full file path, got: %s", m.Filename)
+	}
+	return db.applyMigrationFS(ctx, os.DirFS(dir), migration{
+		Version:  m.Version,
+		Name:     m.Name,
+		Filename: filepath.Base(m.Filename),
+	})
 }
 
 // MigrationVersion returns the current (highest applied) migration version,

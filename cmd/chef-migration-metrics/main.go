@@ -35,6 +35,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
+	migrations "github.com/trickyearlobe-chef/chef-migration-metrics/migrations"
 )
 
 // version is set at build time via -ldflags.
@@ -183,16 +184,27 @@ func run() int {
 	startup.Debug("database log writer attached")
 
 	// -------------------------------------------------------------------
-	// Migrations
+	// Migrations — prefer embedded SQL files baked into the binary;
+	// fall back to a directory on disk when -migrations-dir is given or
+	// the migrations/ directory exists alongside the binary/working dir.
 	// -------------------------------------------------------------------
-	migDir := resolveMigrationsDir(migrationsDir)
-	if migDir == "" {
-		startup.Error("migrations directory not found — pass -migrations-dir or place migrations in ./migrations")
-		return 1
-	}
-
 	ctx := context.Background()
-	applied, err := db.MigrateUp(ctx, migDir)
+
+	var applied int
+	if migrationsDir != "" {
+		// Explicit disk path requested via flag — honour it.
+		migDir := resolveMigrationsDir(migrationsDir)
+		if migDir == "" {
+			startup.Error("migrations directory not found — pass a valid -migrations-dir path")
+			return 1
+		}
+		startup.Info(fmt.Sprintf("using disk migrations from %s", migDir))
+		applied, err = db.MigrateUp(ctx, migDir)
+	} else {
+		// Use embedded migrations compiled into the binary.
+		startup.Info("using embedded migrations")
+		applied, err = db.MigrateUpFS(ctx, migrations.FS())
+	}
 	if err != nil {
 		startup.Error(fmt.Sprintf("running database migrations: %v", err))
 		return 1
