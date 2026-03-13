@@ -151,6 +151,10 @@ jobs:
           echo "Updated Chart.yaml appVersion to ${VERSION}"
           cat deploy/helm/chef-migration-metrics/Chart.yaml
 
+      - name: Build Helm dependencies
+        run: |
+          helm dependency build deploy/helm/chef-migration-metrics
+
       - name: Package Helm chart
         run: |
           helm package deploy/helm/chef-migration-metrics --destination .helm-packages/
