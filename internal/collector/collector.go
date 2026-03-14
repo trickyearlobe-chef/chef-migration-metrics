@@ -953,30 +953,41 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// Cookbook versions on the Chef server are immutable — once successfully
 	// downloaded, they are not re-downloaded. Failures are non-fatal and
 	// are recorded per-version so they can be retried on the next run.
+	//
+	// When collection.skip_server_cookbook_download is true, this step is
+	// skipped entirely — only git-sourced cookbooks will be scanned. The
+	// cookbook inventory and metadata (Steps 5–7) are still collected so
+	// the UI can display which server cookbooks exist and which nodes use
+	// them, but no content is downloaded for CookStyle/Test Kitchen analysis.
 	fetchConcurrency := c.cfg.Concurrency.GitPull
 	if fetchConcurrency <= 0 {
 		fetchConcurrency = 1
 	}
 
-	log.Info("fetching active cookbook versions from Chef server",
-		logging.WithCollectionRunID(run.ID))
-
-	fetchResult := fetchCookbooks(ctx, client, c.db, log, org, fetchConcurrency, c.cookbookCacheDir)
-
-	if fetchResult.Total == 0 {
-		log.Info("no cookbook versions need downloading",
+	if c.cfg.Collection.SkipServerCookbookDownload {
+		log.Info("skipping Chef server cookbook download (collection.skip_server_cookbook_download is enabled)",
 			logging.WithCollectionRunID(run.ID))
 	} else {
-		log.Info(fmt.Sprintf(
-			"cookbook fetch complete: %d total, %d downloaded, %d failed, %d skipped, %d files written in %s",
-			fetchResult.Total, fetchResult.Downloaded, fetchResult.Failed,
-			fetchResult.Skipped, fetchResult.FilesWritten, fetchResult.Duration.Round(time.Millisecond)),
+		log.Info("fetching active cookbook versions from Chef server",
 			logging.WithCollectionRunID(run.ID))
-	}
 
-	for _, fe := range fetchResult.Errors {
-		log.Warn(fmt.Sprintf("cookbook download failed: %s/%s: %v", fe.Name, fe.Version, fe.Err),
-			logging.WithCollectionRunID(run.ID))
+		fetchResult := fetchCookbooks(ctx, client, c.db, log, org, fetchConcurrency, c.cookbookCacheDir)
+
+		if fetchResult.Total == 0 {
+			log.Info("no cookbook versions need downloading",
+				logging.WithCollectionRunID(run.ID))
+		} else {
+			log.Info(fmt.Sprintf(
+				"cookbook fetch complete: %d total, %d downloaded, %d failed, %d skipped, %d files written in %s",
+				fetchResult.Total, fetchResult.Downloaded, fetchResult.Failed,
+				fetchResult.Skipped, fetchResult.FilesWritten, fetchResult.Duration.Round(time.Millisecond)),
+				logging.WithCollectionRunID(run.ID))
+		}
+
+		for _, fe := range fetchResult.Errors {
+			log.Warn(fmt.Sprintf("cookbook download failed: %s/%s: %v", fe.Name, fe.Version, fe.Err),
+				logging.WithCollectionRunID(run.ID))
+		}
 	}
 
 	// Step 7c: Fetch cookbooks from git repositories. For each active
