@@ -576,11 +576,13 @@ func run() int {
 		startup.Info("ownership evaluator enabled")
 	}
 
-	// Cookbook directory resolver. Chef server cookbooks are downloaded
-	// to a cache directory keyed by org/name/version. Git cookbooks are
-	// cloned under the git cookbook directory. Both paths are configured
-	// via storage.cookbook_cache_dir and storage.git_cookbook_dir (which
-	// default to subdirectories of storage.data_dir).
+	// Cookbook directory resolver. Git cookbooks are cloned under the git
+	// cookbook directory and persist on disk for rescanning when HEAD changes.
+	// Server cookbooks are handled by the streaming pipeline (download →
+	// scan → delete to temp dir) so they are never present in the cache
+	// directory at query time — cookbookDirFn only resolves git cookbooks.
+	// The cookbookCacheDir is still passed to the collector so the pipeline
+	// can clean up legacy cached files from pre-pipeline runs.
 	gitCookbookDir := cfg.Storage.GitCookbookDir
 	cookbookCacheDir := cfg.Storage.CookbookCacheDir
 	collOpts = append(collOpts, collector.WithCookbookCacheDir(cookbookCacheDir))
@@ -589,9 +591,10 @@ func run() int {
 		if cb.IsGit() {
 			return filepath.Join(gitCookbookDir, cb.Name)
 		}
-		if cb.IsChefServer() && cb.IsDownloaded() {
-			return filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
-		}
+		// Server cookbooks are no longer on disk after scanning — the
+		// streaming pipeline downloads to a temp dir, scans, and deletes
+		// immediately. Returning "" signals that the files are unavailable,
+		// which is correct: Steps 11/13 only process git cookbooks.
 		return ""
 	}))
 
