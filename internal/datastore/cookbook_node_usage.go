@@ -13,14 +13,14 @@ import (
 )
 
 // CookbookNodeUsage represents a row in the cookbook_node_usage table. Each
-// row records that a specific node snapshot was running a specific cookbook
-// at a specific version.
+// row records that a specific node snapshot was running a specific server
+// cookbook at a specific version.
 type CookbookNodeUsage struct {
-	ID              string    `json:"id"`
-	CookbookID      string    `json:"cookbook_id"`
-	NodeSnapshotID  string    `json:"node_snapshot_id"`
-	CookbookVersion string    `json:"cookbook_version"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	ServerCookbookID string    `json:"server_cookbook_id"`
+	NodeSnapshotID   string    `json:"node_snapshot_id"`
+	CookbookVersion  string    `json:"cookbook_version"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // MarshalJSON implements json.Marshaler for CookbookNodeUsage.
@@ -36,9 +36,9 @@ func (u CookbookNodeUsage) MarshalJSON() ([]byte, error) {
 // InsertCookbookNodeUsageParams holds the fields required to insert a single
 // cookbook-node usage record.
 type InsertCookbookNodeUsageParams struct {
-	CookbookID      string
-	NodeSnapshotID  string
-	CookbookVersion string
+	ServerCookbookID string
+	NodeSnapshotID   string
+	CookbookVersion  string
 }
 
 // InsertCookbookNodeUsage inserts a single cookbook-node usage record and
@@ -53,13 +53,13 @@ func (db *DB) insertCookbookNodeUsage(ctx context.Context, q queryable, p Insert
 	}
 
 	const query = `
-		INSERT INTO cookbook_node_usage (cookbook_id, node_snapshot_id, cookbook_version)
+		INSERT INTO cookbook_node_usage (server_cookbook_id, node_snapshot_id, cookbook_version)
 		VALUES ($1, $2, $3)
-		RETURNING id, cookbook_id, node_snapshot_id, cookbook_version, created_at
+		RETURNING id, server_cookbook_id, node_snapshot_id, cookbook_version, created_at
 	`
 
 	return scanCookbookNodeUsage(q.QueryRowContext(ctx, query,
-		p.CookbookID,
+		p.ServerCookbookID,
 		p.NodeSnapshotID,
 		p.CookbookVersion,
 	))
@@ -99,7 +99,7 @@ func (db *DB) BulkInsertCookbookNodeUsage(ctx context.Context, params []InsertCo
 
 			// Build multi-row VALUES clause.
 			var sb strings.Builder
-			sb.WriteString(`INSERT INTO cookbook_node_usage (cookbook_id, node_snapshot_id, cookbook_version) VALUES `)
+			sb.WriteString(`INSERT INTO cookbook_node_usage (server_cookbook_id, node_snapshot_id, cookbook_version) VALUES `)
 
 			args := make([]interface{}, 0, len(batch)*numCols)
 			for i, p := range batch {
@@ -108,7 +108,7 @@ func (db *DB) BulkInsertCookbookNodeUsage(ctx context.Context, params []InsertCo
 				}
 				offset := i * numCols
 				sb.WriteString(fmt.Sprintf("($%d, $%d, $%d)", offset+1, offset+2, offset+3))
-				args = append(args, p.CookbookID, p.NodeSnapshotID, p.CookbookVersion)
+				args = append(args, p.ServerCookbookID, p.NodeSnapshotID, p.CookbookVersion)
 			}
 
 			result, err := tx.ExecContext(ctx, sb.String(), args...)
@@ -152,15 +152,15 @@ func (db *DB) DeleteCookbookNodeUsageByCollectionRun(ctx context.Context, collec
 	return int(n), nil
 }
 
-// DeleteCookbookNodeUsageByCookbook removes all usage records for the given
-// cookbook. Returns the number of rows deleted.
-func (db *DB) DeleteCookbookNodeUsageByCookbook(ctx context.Context, cookbookID string) (int, error) {
+// DeleteCookbookNodeUsageByServerCookbook removes all usage records for the
+// given server cookbook. Returns the number of rows deleted.
+func (db *DB) DeleteCookbookNodeUsageByServerCookbook(ctx context.Context, serverCookbookID string) (int, error) {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM cookbook_node_usage WHERE cookbook_id = $1`,
-		cookbookID,
+		`DELETE FROM cookbook_node_usage WHERE server_cookbook_id = $1`,
+		serverCookbookID,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("datastore: deleting cookbook node usage by cookbook: %w", err)
+		return 0, fmt.Errorf("datastore: deleting cookbook node usage by server cookbook: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
@@ -173,20 +173,20 @@ func (db *DB) DeleteCookbookNodeUsageByCookbook(ctx context.Context, cookbookID 
 // Query methods
 // ---------------------------------------------------------------------------
 
-// ListCookbookNodeUsageByCookbook returns all usage records for the given
-// cookbook, ordered by cookbook_version then node_snapshot_id.
-func (db *DB) ListCookbookNodeUsageByCookbook(ctx context.Context, cookbookID string) ([]CookbookNodeUsage, error) {
-	return db.listCookbookNodeUsageByCookbook(ctx, db.q(), cookbookID)
+// ListCookbookNodeUsageByServerCookbook returns all usage records for the
+// given server cookbook, ordered by cookbook_version then node_snapshot_id.
+func (db *DB) ListCookbookNodeUsageByServerCookbook(ctx context.Context, serverCookbookID string) ([]CookbookNodeUsage, error) {
+	return db.listCookbookNodeUsageByServerCookbook(ctx, db.q(), serverCookbookID)
 }
 
-func (db *DB) listCookbookNodeUsageByCookbook(ctx context.Context, q queryable, cookbookID string) ([]CookbookNodeUsage, error) {
+func (db *DB) listCookbookNodeUsageByServerCookbook(ctx context.Context, q queryable, serverCookbookID string) ([]CookbookNodeUsage, error) {
 	const query = `
-		SELECT id, cookbook_id, node_snapshot_id, cookbook_version, created_at
+		SELECT id, server_cookbook_id, node_snapshot_id, cookbook_version, created_at
 		FROM cookbook_node_usage
-		WHERE cookbook_id = $1
+		WHERE server_cookbook_id = $1
 		ORDER BY cookbook_version, node_snapshot_id
 	`
-	return scanCookbookNodeUsages(q.QueryContext(ctx, query, cookbookID))
+	return scanCookbookNodeUsages(q.QueryContext(ctx, query, serverCookbookID))
 }
 
 // ListCookbookNodeUsageByNodeSnapshot returns all usage records for the
@@ -197,7 +197,7 @@ func (db *DB) ListCookbookNodeUsageByNodeSnapshot(ctx context.Context, nodeSnaps
 
 func (db *DB) listCookbookNodeUsageByNodeSnapshot(ctx context.Context, q queryable, nodeSnapshotID string) ([]CookbookNodeUsage, error) {
 	const query = `
-		SELECT id, cookbook_id, node_snapshot_id, cookbook_version, created_at
+		SELECT id, server_cookbook_id, node_snapshot_id, cookbook_version, created_at
 		FROM cookbook_node_usage
 		WHERE node_snapshot_id = $1
 		ORDER BY cookbook_version
@@ -214,11 +214,11 @@ func (db *DB) ListCookbookNodeUsageByCollectionRun(ctx context.Context, collecti
 
 func (db *DB) listCookbookNodeUsageByCollectionRun(ctx context.Context, q queryable, collectionRunID string) ([]CookbookNodeUsage, error) {
 	const query = `
-		SELECT u.id, u.cookbook_id, u.node_snapshot_id, u.cookbook_version, u.created_at
+		SELECT u.id, u.server_cookbook_id, u.node_snapshot_id, u.cookbook_version, u.created_at
 		FROM cookbook_node_usage u
 		INNER JOIN node_snapshots ns ON ns.id = u.node_snapshot_id
 		WHERE ns.collection_run_id = $1
-		ORDER BY u.cookbook_id, u.node_snapshot_id
+		ORDER BY u.server_cookbook_id, u.node_snapshot_id
 	`
 	return scanCookbookNodeUsages(q.QueryContext(ctx, query, collectionRunID))
 }
@@ -229,9 +229,9 @@ func (db *DB) listCookbookNodeUsageByCollectionRun(ctx context.Context, q querya
 
 // CookbookUsageCount holds the result of a count-by-cookbook aggregation.
 type CookbookUsageCount struct {
-	CookbookID      string `json:"cookbook_id"`
-	CookbookVersion string `json:"cookbook_version"`
-	NodeCount       int    `json:"node_count"`
+	ServerCookbookID string `json:"server_cookbook_id"`
+	CookbookVersion  string `json:"cookbook_version"`
+	NodeCount        int    `json:"node_count"`
 }
 
 // CountNodesByCookbook returns the number of distinct node snapshots using
@@ -243,12 +243,12 @@ func (db *DB) CountNodesByCookbook(ctx context.Context, collectionRunID string) 
 
 func (db *DB) countNodesByCookbook(ctx context.Context, q queryable, collectionRunID string) ([]CookbookUsageCount, error) {
 	const query = `
-		SELECT u.cookbook_id, u.cookbook_version, COUNT(DISTINCT u.node_snapshot_id) AS node_count
+		SELECT u.server_cookbook_id, u.cookbook_version, COUNT(DISTINCT u.node_snapshot_id) AS node_count
 		FROM cookbook_node_usage u
 		INNER JOIN node_snapshots ns ON ns.id = u.node_snapshot_id
 		WHERE ns.collection_run_id = $1
-		GROUP BY u.cookbook_id, u.cookbook_version
-		ORDER BY node_count DESC, u.cookbook_id, u.cookbook_version
+		GROUP BY u.server_cookbook_id, u.cookbook_version
+		ORDER BY node_count DESC, u.server_cookbook_id, u.cookbook_version
 	`
 
 	rows, err := q.QueryContext(ctx, query, collectionRunID)
@@ -260,7 +260,7 @@ func (db *DB) countNodesByCookbook(ctx context.Context, q queryable, collectionR
 	var counts []CookbookUsageCount
 	for rows.Next() {
 		var c CookbookUsageCount
-		if err := rows.Scan(&c.CookbookID, &c.CookbookVersion, &c.NodeCount); err != nil {
+		if err := rows.Scan(&c.ServerCookbookID, &c.CookbookVersion, &c.NodeCount); err != nil {
 			return nil, fmt.Errorf("datastore: scanning cookbook usage count: %w", err)
 		}
 		counts = append(counts, c)
@@ -280,21 +280,21 @@ func (db *DB) CountNodesByCookbookName(ctx context.Context, organisationID, cook
 
 func (db *DB) countNodesByCookbookName(ctx context.Context, q queryable, organisationID, cookbookName string) ([]CookbookUsageCount, error) {
 	const query = `
-		SELECT u.cookbook_id, u.cookbook_version, COUNT(DISTINCT u.node_snapshot_id) AS node_count
+		SELECT u.server_cookbook_id, u.cookbook_version, COUNT(DISTINCT u.node_snapshot_id) AS node_count
 		FROM cookbook_node_usage u
 		INNER JOIN node_snapshots ns ON ns.id = u.node_snapshot_id
 		INNER JOIN collection_runs cr ON cr.id = ns.collection_run_id
-		INNER JOIN cookbooks cb ON cb.id = u.cookbook_id
-		WHERE ns.organisation_id = $1
-		  AND cb.name = $2
+		INNER JOIN server_cookbooks sc ON sc.id = u.server_cookbook_id
+		WHERE cr.organisation_id = $1
 		  AND cr.status = 'completed'
+		  AND sc.name = $2
 		  AND cr.started_at = (
 			SELECT MAX(cr2.started_at)
 			FROM collection_runs cr2
 			WHERE cr2.organisation_id = $1 AND cr2.status = 'completed'
 		  )
-		GROUP BY u.cookbook_id, u.cookbook_version
-		ORDER BY node_count DESC, u.cookbook_version
+		GROUP BY u.server_cookbook_id, u.cookbook_version
+		ORDER BY node_count DESC
 	`
 
 	rows, err := q.QueryContext(ctx, query, organisationID, cookbookName)
@@ -306,7 +306,7 @@ func (db *DB) countNodesByCookbookName(ctx context.Context, q queryable, organis
 	var counts []CookbookUsageCount
 	for rows.Next() {
 		var c CookbookUsageCount
-		if err := rows.Scan(&c.CookbookID, &c.CookbookVersion, &c.NodeCount); err != nil {
+		if err := rows.Scan(&c.ServerCookbookID, &c.CookbookVersion, &c.NodeCount); err != nil {
 			return nil, fmt.Errorf("datastore: scanning cookbook usage count: %w", err)
 		}
 		counts = append(counts, c)
@@ -322,8 +322,8 @@ func (db *DB) countNodesByCookbookName(ctx context.Context, q queryable, organis
 // ---------------------------------------------------------------------------
 
 func validateUsageParams(p InsertCookbookNodeUsageParams) error {
-	if p.CookbookID == "" {
-		return fmt.Errorf("datastore: cookbook ID is required for cookbook node usage")
+	if p.ServerCookbookID == "" {
+		return fmt.Errorf("datastore: server cookbook ID is required for cookbook node usage")
 	}
 	if p.NodeSnapshotID == "" {
 		return fmt.Errorf("datastore: node snapshot ID is required for cookbook node usage")
@@ -342,7 +342,7 @@ func scanCookbookNodeUsage(row *sql.Row) (CookbookNodeUsage, error) {
 	var u CookbookNodeUsage
 	err := row.Scan(
 		&u.ID,
-		&u.CookbookID,
+		&u.ServerCookbookID,
 		&u.NodeSnapshotID,
 		&u.CookbookVersion,
 		&u.CreatedAt,
@@ -367,7 +367,7 @@ func scanCookbookNodeUsages(rows *sql.Rows, err error) ([]CookbookNodeUsage, err
 		var u CookbookNodeUsage
 		if err := rows.Scan(
 			&u.ID,
-			&u.CookbookID,
+			&u.ServerCookbookID,
 			&u.NodeSnapshotID,
 			&u.CookbookVersion,
 			&u.CreatedAt,
