@@ -24,8 +24,8 @@ type fakeStore struct {
 	orgs         []datastore.Organisation
 	nodesByOrg   map[string][]datastore.NodeSnapshot
 	readiness    map[string][]datastore.NodeReadiness
-	cookbooks    map[string][]datastore.Cookbook
-	complexities map[string][]datastore.CookbookComplexity
+	cookbooks    map[string][]datastore.ServerCookbook
+	complexities map[string][]datastore.ServerCookbookComplexity
 	countReady   map[string][3]int // orgID+version -> [total, ready, blocked]
 }
 
@@ -41,11 +41,15 @@ func (f *fakeStore) ListNodeReadinessForSnapshot(_ context.Context, snapID strin
 	return f.readiness[snapID], nil
 }
 
-func (f *fakeStore) ListCookbooksByOrganisation(_ context.Context, orgID string) ([]datastore.Cookbook, error) {
+func (f *fakeStore) ListServerCookbooksByOrganisation(_ context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 	return f.cookbooks[orgID], nil
 }
 
-func (f *fakeStore) ListCookbookComplexitiesForOrganisation(_ context.Context, orgID string) ([]datastore.CookbookComplexity, error) {
+func (f *fakeStore) ListGitRepos(_ context.Context) ([]datastore.GitRepo, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) ListServerCookbookComplexitiesByOrganisation(_ context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 	return f.complexities[orgID], nil
 }
 
@@ -138,18 +142,18 @@ func testStore() *fakeStore {
 		}},
 	}
 
-	cookbooks := map[string][]datastore.Cookbook{
+	cookbooks := map[string][]datastore.ServerCookbook{
 		"org-1": {
 			{ID: "cb-1", OrganisationID: "org-1", Name: "legacy-db", Version: "1.0.0"},
 			{ID: "cb-2", OrganisationID: "org-1", Name: "webserver", Version: "2.0.0"},
 		},
 	}
 
-	complexities := map[string][]datastore.CookbookComplexity{
+	complexities := map[string][]datastore.ServerCookbookComplexity{
 		"org-1": {
 			{
 				ID:                   "cc-1",
-				CookbookID:           "cb-1",
+				ServerCookbookID:     "cb-1",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      75,
 				ComplexityLabel:      "high",
@@ -162,7 +166,7 @@ func testStore() *fakeStore {
 			},
 			{
 				ID:                   "cc-2",
-				CookbookID:           "cb-2",
+				ServerCookbookID:     "cb-2",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      10,
 				ComplexityLabel:      "low",

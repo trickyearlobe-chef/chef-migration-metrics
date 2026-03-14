@@ -1292,7 +1292,7 @@ func newExportMockStore() *mockStore {
 		},
 	}
 
-	cookbooks := []datastore.Cookbook{
+	cookbooks := []datastore.ServerCookbook{
 		{
 			ID:             "cb-1",
 			OrganisationID: "org-1",
@@ -1307,17 +1307,17 @@ func newExportMockStore() *mockStore {
 		},
 	}
 
-	complexities := []datastore.CookbookComplexity{
+	complexities := []datastore.ServerCookbookComplexity{
 		{
 			ID:                "cc-1",
-			CookbookID:        "cb-1",
+			ServerCookbookID:  "cb-1",
 			TargetChefVersion: "18.0.0",
 			ComplexityScore:   5,
 			ComplexityLabel:   "trivial",
 		},
 		{
 			ID:                "cc-2",
-			CookbookID:        "cb-2",
+			ServerCookbookID:  "cb-2",
 			TargetChefVersion: "18.0.0",
 			ComplexityScore:   42,
 			ComplexityLabel:   "moderate",
@@ -1341,13 +1341,13 @@ func newExportMockStore() *mockStore {
 			// 2 total, 1 ready, 1 blocked
 			return 2, 1, 1, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			if organisationID == "org-1" {
 				return cookbooks, nil
 			}
 			return nil, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
 			if organisationID == "org-1" {
 				return complexities, nil
 			}

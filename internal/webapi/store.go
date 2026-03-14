@@ -86,91 +86,153 @@ type DataStore interface {
 	CountNodeReadiness(ctx context.Context, organisationID, targetChefVersion string) (total, ready, blocked int, err error)
 
 	// -----------------------------------------------------------------
-	// Cookbooks
+	// Server cookbooks
 	// -----------------------------------------------------------------
 
-	// ListCookbooksByOrganisation returns all cookbooks belonging to the
-	// given organisation.
-	ListCookbooksByOrganisation(ctx context.Context, organisationID string) ([]datastore.Cookbook, error)
+	// ListServerCookbooksByOrganisation returns all server cookbooks
+	// belonging to the given organisation.
+	ListServerCookbooksByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
 
-	// ListCookbooksByName returns all cookbook versions with the given name
-	// across all organisations and sources.
-	ListCookbooksByName(ctx context.Context, name string) ([]datastore.Cookbook, error)
+	// ListServerCookbooksByName returns all server cookbook versions with
+	// the given name across all organisations.
+	ListServerCookbooksByName(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
 
-	// ListGitCookbooks returns all git-sourced cookbooks.
-	ListGitCookbooks(ctx context.Context) ([]datastore.Cookbook, error)
-
-	// -----------------------------------------------------------------
-	// Cookbook analysis results
-	// -----------------------------------------------------------------
-
-	// ListCookbookComplexitiesForCookbook returns all complexity records for
-	// the given cookbook ID, ordered by target_chef_version.
-	ListCookbookComplexitiesForCookbook(ctx context.Context, cookbookID string) ([]datastore.CookbookComplexity, error)
-
-	// ListCookbookComplexitiesForOrganisation returns all complexity records
-	// for cookbooks belonging to the given organisation, ordered by cookbook
-	// name, version, and target Chef version.
-	ListCookbookComplexitiesForOrganisation(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error)
-
-	// ListCookstyleResultsForCookbook returns all cookstyle results for the
-	// given cookbook ID, ordered by target_chef_version.
-	ListCookstyleResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.CookstyleResult, error)
-
-	// GetCookstyleResult returns the cookstyle result for the given cookbook
-	// ID and target Chef version. Returns (nil, nil) if no result exists.
-	GetCookstyleResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
-
-	// ResetCookbookDownloadStatus resets the download_status to 'pending'
-	// for a server cookbook, forcing the streaming pipeline to re-download
-	// and re-scan it on the next collection cycle.
-	ResetCookbookDownloadStatus(ctx context.Context, id string) (datastore.Cookbook, error)
+	// ResetServerCookbookDownloadStatus resets the download_status to
+	// 'pending' for a server cookbook, forcing the streaming pipeline to
+	// re-download and re-scan it on the next collection cycle.
+	ResetServerCookbookDownloadStatus(ctx context.Context, id string) (datastore.ServerCookbook, error)
 
 	// ResetAllServerCookbookDownloadStatuses resets download_status to
 	// 'pending' for all server cookbooks with status 'ok', forcing the
 	// streaming pipeline to re-download and re-scan them all.
 	ResetAllServerCookbookDownloadStatuses(ctx context.Context) (int, error)
 
-	// DeleteCookstyleResultsForCookbook removes all cookstyle results for
-	// the given cookbook ID. Forces a rescan on the next collection cycle.
-	DeleteCookstyleResultsForCookbook(ctx context.Context, cookbookID string) error
+	// -----------------------------------------------------------------
+	// Git repos
+	// -----------------------------------------------------------------
 
-	// DeleteCookbookComplexitiesForCookbook removes all complexity records
-	// for the given cookbook ID. Forces recomputation on the next cycle.
-	DeleteCookbookComplexitiesForCookbook(ctx context.Context, cookbookID string) error
+	// GetGitRepo returns a git repo by UUID. Returns datastore.ErrNotFound
+	// if no such git repo exists.
+	GetGitRepo(ctx context.Context, id string) (datastore.GitRepo, error)
 
-	// DeleteAutocorrectPreviewsForCookbook removes all autocorrect previews
-	// for the given cookbook ID. Forces regeneration on the next cycle.
-	DeleteAutocorrectPreviewsForCookbook(ctx context.Context, cookbookID string) error
+	// ListGitRepos returns all git repos, deduplicated by name (most
+	// recently fetched row per name), ordered by name.
+	ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
 
-	// DeleteAllCookstyleResults removes all cookstyle results. Forces a
-	// full rescan on the next collection cycle.
-	DeleteAllCookstyleResults(ctx context.Context) error
+	// ListGitReposByName returns all git repo rows with the given cookbook
+	// name, ordered by last_fetched_at DESC.
+	ListGitReposByName(ctx context.Context, name string) ([]datastore.GitRepo, error)
 
-	// DeleteAllCookbookComplexities removes all cookbook complexity records.
-	DeleteAllCookbookComplexities(ctx context.Context) error
+	// DeleteGitReposByName removes all git repo rows for the given cookbook
+	// name and deletes associated committer data. Returns
+	// datastore.ErrNotFound if no git repo with that name exists.
+	DeleteGitReposByName(ctx context.Context, name string) (datastore.DeleteGitRepoResult, error)
 
-	// DeleteAllAutocorrectPreviews removes all autocorrect previews.
-	DeleteAllAutocorrectPreviews(ctx context.Context) error
+	// -----------------------------------------------------------------
+	// Server cookbook analysis results
+	// -----------------------------------------------------------------
 
-	// GetAutocorrectPreview returns the autocorrect preview for the given
-	// cookstyle result ID. Returns (nil, nil) if no preview exists.
-	GetAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error)
+	// ListServerCookbookComplexitiesByCookbook returns all complexity
+	// records for the given server cookbook ID, ordered by
+	// target_chef_version.
+	ListServerCookbookComplexitiesByCookbook(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error)
 
-	// GetLatestTestKitchenResult returns the most recent test kitchen result
-	// for the given cookbook ID and target Chef version. Returns (nil, nil)
+	// ListServerCookbookComplexitiesByOrganisation returns all complexity
+	// records for server cookbooks belonging to the given organisation,
+	// ordered by cookbook name, version, and target Chef version.
+	ListServerCookbookComplexitiesByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error)
+
+	// ListServerCookbookCookstyleResults returns all cookstyle results for
+	// the given server cookbook ID, ordered by target_chef_version.
+	ListServerCookbookCookstyleResults(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookCookstyleResult, error)
+
+	// GetServerCookbookCookstyleResult returns the cookstyle result for the
+	// given server cookbook ID and target Chef version. Returns (nil, nil)
 	// if no result exists.
-	GetLatestTestKitchenResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error)
+	GetServerCookbookCookstyleResult(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
 
-	// ListTestKitchenResultsForCookbook returns all test kitchen results for
-	// the given cookbook ID, ordered by target_chef_version then started_at desc.
-	ListTestKitchenResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.TestKitchenResult, error)
+	// GetServerCookbookAutocorrectPreview returns the autocorrect preview
+	// for the given cookstyle result ID. Returns (nil, nil) if no preview
+	// exists.
+	GetServerCookbookAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error)
 
-	// CountCookbookCompatibility returns aggregated compatibility counts
-	// across the given organisations and target Chef versions in a single
-	// query. If cookbookNames is non-nil only cookbooks whose name is in the
-	// map are considered.
-	CountCookbookCompatibility(ctx context.Context, organisationIDs []string, targetVersions []string, cookbookNames map[string]bool) ([]datastore.CookbookCompatibilitySummary, error)
+	// DeleteServerCookbookCookstyleResultsByCookbook removes all cookstyle
+	// results for the given server cookbook ID.
+	DeleteServerCookbookCookstyleResultsByCookbook(ctx context.Context, serverCookbookID string) error
+
+	// DeleteServerCookbookComplexitiesByCookbook removes all complexity
+	// records for the given server cookbook ID.
+	DeleteServerCookbookComplexitiesByCookbook(ctx context.Context, serverCookbookID string) error
+
+	// DeleteServerCookbookAutocorrectPreviewsByCookbook removes all
+	// autocorrect previews for the given server cookbook ID.
+	DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx context.Context, serverCookbookID string) error
+
+	// DeleteAllServerCookbookCookstyleResults removes all server cookbook
+	// cookstyle results. Forces a full rescan on the next collection cycle.
+	DeleteAllServerCookbookCookstyleResults(ctx context.Context) error
+
+	// DeleteAllServerCookbookComplexities removes all server cookbook
+	// complexity records.
+	DeleteAllServerCookbookComplexities(ctx context.Context) error
+
+	// DeleteAllServerCookbookAutocorrectPreviews removes all server cookbook
+	// autocorrect preview records.
+	DeleteAllServerCookbookAutocorrectPreviews(ctx context.Context) error
+
+	// -----------------------------------------------------------------
+	// Git repo analysis results
+	// -----------------------------------------------------------------
+
+	// ListGitRepoCookstyleResults returns all cookstyle results for the
+	// given git repo ID, ordered by target_chef_version.
+	ListGitRepoCookstyleResults(ctx context.Context, gitRepoID string) ([]datastore.GitRepoCookstyleResult, error)
+
+	// GetGitRepoCookstyleResult returns the cookstyle result for the given
+	// git repo ID and target Chef version. Returns (nil, nil) if no result
+	// exists.
+	GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
+
+	// ListGitRepoComplexitiesByRepo returns all complexity records for the
+	// given git repo ID, ordered by target_chef_version.
+	ListGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) ([]datastore.GitRepoComplexity, error)
+
+	// GetGitRepoAutocorrectPreview returns the autocorrect preview for the
+	// given cookstyle result ID. Returns (nil, nil) if no preview exists.
+	GetGitRepoAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.GitRepoAutocorrectPreview, error)
+
+	// GetLatestGitRepoTestKitchenResult returns the most recent test
+	// kitchen result for the given git repo ID and target Chef version.
+	// Returns (nil, nil) if no result exists.
+	GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
+
+	// ListGitRepoTestKitchenResults returns all test kitchen results for
+	// the given git repo ID, ordered by target_chef_version then
+	// started_at desc.
+	ListGitRepoTestKitchenResults(ctx context.Context, gitRepoID string) ([]datastore.GitRepoTestKitchenResult, error)
+
+	// DeleteGitRepoCookstyleResultsByRepo removes all cookstyle results for
+	// the given git repo ID.
+	DeleteGitRepoCookstyleResultsByRepo(ctx context.Context, gitRepoID string) error
+
+	// DeleteGitRepoComplexitiesByRepo removes all complexity records for
+	// the given git repo ID.
+	DeleteGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) error
+
+	// DeleteGitRepoAutocorrectPreviewsByRepo removes all autocorrect
+	// previews for the given git repo ID.
+	DeleteGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoID string) error
+
+	// DeleteAllGitRepoCookstyleResults removes all git repo cookstyle
+	// results.
+	DeleteAllGitRepoCookstyleResults(ctx context.Context) error
+
+	// DeleteAllGitRepoComplexities removes all git repo complexity records.
+	DeleteAllGitRepoComplexities(ctx context.Context) error
+
+	// DeleteAllGitRepoAutocorrectPreviews removes all git repo autocorrect
+	// preview records.
+	DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error
 
 	// -----------------------------------------------------------------
 	// Log entries
@@ -318,11 +380,6 @@ type DataStore interface {
 	// with sorting, pagination, and an optional since filter. Returns the
 	// matching rows and the total count for pagination.
 	ListCommittersByRepo(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
-
-	// DeleteGitCookbooksByName removes all git-sourced cookbook rows for the
-	// given cookbook name and deletes associated committer data. Returns
-	// datastore.ErrNotFound if no git-sourced cookbook exists with that name.
-	DeleteGitCookbooksByName(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error)
 
 	// -----------------------------------------------------------------
 	// Ownership audit log

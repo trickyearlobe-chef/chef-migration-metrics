@@ -558,37 +558,37 @@ func TestNodeSnapshot_IsPolicyfileNode(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Cookbook.IsGit / IsChefServer tests
+// ServerCookbook.IsDownloaded / NeedsDownload tests
 // ---------------------------------------------------------------------------
 
-func TestCookbook_SourceHelpers(t *testing.T) {
-	t.Run("git source", func(t *testing.T) {
-		cb := Cookbook{Source: "git"}
-		if !cb.IsGit() {
-			t.Error("expected IsGit() = true")
+func TestServerCookbook_DownloadHelpers(t *testing.T) {
+	t.Run("pending status", func(t *testing.T) {
+		sc := ServerCookbook{DownloadStatus: DownloadStatusPending}
+		if sc.IsDownloaded() {
+			t.Error("expected IsDownloaded() = false for pending")
 		}
-		if cb.IsChefServer() {
-			t.Error("expected IsChefServer() = false")
-		}
-	})
-
-	t.Run("chef_server source", func(t *testing.T) {
-		cb := Cookbook{Source: "chef_server"}
-		if cb.IsGit() {
-			t.Error("expected IsGit() = false")
-		}
-		if !cb.IsChefServer() {
-			t.Error("expected IsChefServer() = true")
+		if !sc.NeedsDownload() {
+			t.Error("expected NeedsDownload() = true for pending")
 		}
 	})
 
-	t.Run("unknown source", func(t *testing.T) {
-		cb := Cookbook{Source: "other"}
-		if cb.IsGit() {
-			t.Error("expected IsGit() = false")
+	t.Run("ok status", func(t *testing.T) {
+		sc := ServerCookbook{DownloadStatus: DownloadStatusOK}
+		if !sc.IsDownloaded() {
+			t.Error("expected IsDownloaded() = true for ok")
 		}
-		if cb.IsChefServer() {
-			t.Error("expected IsChefServer() = false")
+		if sc.NeedsDownload() {
+			t.Error("expected NeedsDownload() = false for ok")
+		}
+	})
+
+	t.Run("failed status", func(t *testing.T) {
+		sc := ServerCookbook{DownloadStatus: DownloadStatusFailed}
+		if sc.IsDownloaded() {
+			t.Error("expected IsDownloaded() = false for failed")
+		}
+		if !sc.NeedsDownload() {
+			t.Error("expected NeedsDownload() = true for failed")
 		}
 	})
 }
@@ -600,9 +600,9 @@ func TestCookbook_SourceHelpers(t *testing.T) {
 func TestValidateUsageParams(t *testing.T) {
 	t.Run("valid params", func(t *testing.T) {
 		p := InsertCookbookNodeUsageParams{
-			CookbookID:      "cb-1",
-			NodeSnapshotID:  "ns-1",
-			CookbookVersion: "1.0.0",
+			ServerCookbookID: "cb-1",
+			NodeSnapshotID:   "ns-1",
+			CookbookVersion:  "1.0.0",
 		}
 		if err := validateUsageParams(p); err != nil {
 			t.Errorf("unexpected error: %v", err)
@@ -621,8 +621,8 @@ func TestValidateUsageParams(t *testing.T) {
 
 	t.Run("missing node snapshot ID", func(t *testing.T) {
 		p := InsertCookbookNodeUsageParams{
-			CookbookID:      "cb-1",
-			CookbookVersion: "1.0.0",
+			ServerCookbookID: "cb-1",
+			CookbookVersion:  "1.0.0",
 		}
 		if err := validateUsageParams(p); err == nil {
 			t.Error("expected error for missing node snapshot ID")
@@ -631,8 +631,8 @@ func TestValidateUsageParams(t *testing.T) {
 
 	t.Run("missing cookbook version", func(t *testing.T) {
 		p := InsertCookbookNodeUsageParams{
-			CookbookID:     "cb-1",
-			NodeSnapshotID: "ns-1",
+			ServerCookbookID: "cb-1",
+			NodeSnapshotID:   "ns-1",
 		}
 		if err := validateUsageParams(p); err == nil {
 			t.Error("expected error for missing cookbook version")
@@ -701,13 +701,30 @@ func TestNodeSnapshot_MarshalJSON(t *testing.T) {
 	}
 }
 
-func TestCookbook_MarshalJSON(t *testing.T) {
-	cb := Cookbook{
-		ID:     "cb-id",
-		Name:   "apache2",
-		Source: "chef_server",
+func TestServerCookbook_MarshalJSON(t *testing.T) {
+	sc := ServerCookbook{
+		ID:             "cb-id",
+		OrganisationID: "org-id",
+		Name:           "apache2",
+		Version:        "1.0.0",
+		DownloadStatus: DownloadStatusPending,
 	}
-	data, err := cb.MarshalJSON()
+	data, err := sc.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON() error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty JSON output")
+	}
+}
+
+func TestGitRepo_MarshalJSON(t *testing.T) {
+	gr := GitRepo{
+		ID:         "gr-id",
+		Name:       "apache2",
+		GitRepoURL: "https://github.com/example/apache2",
+	}
+	data, err := gr.MarshalJSON()
 	if err != nil {
 		t.Fatalf("MarshalJSON() error: %v", err)
 	}
@@ -718,11 +735,11 @@ func TestCookbook_MarshalJSON(t *testing.T) {
 
 func TestCookbookNodeUsage_MarshalJSON(t *testing.T) {
 	u := CookbookNodeUsage{
-		ID:              "usage-id",
-		CookbookID:      "cb-id",
-		NodeSnapshotID:  "snap-id",
-		CookbookVersion: "2.1.0",
-		CreatedAt:       time.Now(),
+		ID:               "usage-id",
+		ServerCookbookID: "cb-id",
+		NodeSnapshotID:   "snap-id",
+		CookbookVersion:  "2.1.0",
+		CreatedAt:        time.Now(),
 	}
 	data, err := u.MarshalJSON()
 	if err != nil {

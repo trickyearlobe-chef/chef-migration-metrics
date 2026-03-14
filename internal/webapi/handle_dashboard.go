@@ -549,25 +549,15 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		CompatiblePercent     float64 `json:"compatible_percent"`
 	}
 
-	// Collect organisation IDs.
-	orgIDs := make([]string, len(orgs))
-	for i, org := range orgs {
-		orgIDs[i] = org.ID
-	}
-
-	// Convert owned keys to an allowed-names set for filtering (nil if no filter).
+	// Build an allowed-names set for ownership filtering (nil = no filter).
 	var allowedNames map[string]bool
 	if ownerFilterActive && ownedKeys != nil {
 		if of.Unowned {
-			// For "unowned" we need to exclude owned cookbooks. CountCookbookCompatibility
-			// filters by inclusion, so we pass nil (all cookbooks) and will subtract later.
-			// Actually, we need a different approach: get all cookbook names, then exclude owned.
-			// For simplicity, fetch all names first and build the complement.
 			allCookbooks := make(map[string]bool)
 			for _, org := range orgs {
-				cbs, err := r.db.ListCookbooksByOrganisation(ctx, org.ID)
+				cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
 				if err != nil {
-					r.logf("WARN", "listing cookbooks for org %s: %v", org.Name, err)
+					r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, err)
 					continue
 				}
 				for _, cb := range cbs {
@@ -585,25 +575,107 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		}
 	}
 
-	dbSummaries, err := r.db.CountCookbookCompatibility(ctx, orgIDs, targetVersions, allowedNames)
-	if err != nil {
-		r.logf("ERROR", "counting cookbook compatibility: %v", err)
-		WriteInternalError(w, "Failed to compute cookbook compatibility.")
-		return
+	// Compute compatibility from server cookbook cookstyle results, aggregated
+	// per target Chef version. A cookbook is "compatible" when cookstyle passed,
+	// "incompatible" when it did not, and "untested" when no result exists.
+	// We deduplicate by cookbook name so each name counts once per target version.
+	type perVersion struct {
+		total        int
+		compatible   int
+		incompatible int
+		untested     int
+	}
+	byTV := make(map[string]*perVersion)
+	for _, tv := range targetVersions {
+		byTV[tv] = &perVersion{}
+	}
+
+	// Track which cookbook names we have already counted per target version
+	// so we only count each name once (the first version encountered).
+	type tvName struct {
+		tv   string
+		name string
+	}
+	seen := make(map[tvName]bool)
+
+	for _, org := range orgs {
+		cookstyleResults, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		if err != nil {
+			r.logf("WARN", "listing server cookbook complexities for org %s: %v", org.Name, err)
+			continue
+		}
+
+		// Also need the cookbook metadata to get the name.
+		serverCookbooks, scErr := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+		if scErr != nil {
+			r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, scErr)
+			continue
+		}
+		cookbookNameByID := make(map[string]string, len(serverCookbooks))
+		for _, sc := range serverCookbooks {
+			cookbookNameByID[sc.ID] = sc.Name
+		}
+
+		// Derive compatibility from complexity records: a cookbook with no
+		// errors and no deprecations is considered compatible.
+		for _, cc := range cookstyleResults {
+			cbName := cookbookNameByID[cc.ServerCookbookID]
+			if cbName == "" {
+				continue
+			}
+			if allowedNames != nil && !allowedNames[cbName] {
+				continue
+			}
+			pv, ok := byTV[cc.TargetChefVersion]
+			if !ok {
+				continue
+			}
+			key := tvName{tv: cc.TargetChefVersion, name: cbName}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			pv.total++
+			// A cookbook with complexity score 0 and no errors is compatible.
+			if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+				pv.compatible++
+			} else {
+				pv.incompatible++
+			}
+		}
+
+		// Count untested: server cookbooks with no complexity record for a
+		// given target version.
+		for _, sc := range serverCookbooks {
+			if allowedNames != nil && !allowedNames[sc.Name] {
+				continue
+			}
+			for _, tv := range targetVersions {
+				key := tvName{tv: tv, name: sc.Name}
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				pv := byTV[tv]
+				pv.total++
+				pv.untested++
+			}
+		}
 	}
 
 	var summaries []compatSummary
-	for _, s := range dbSummaries {
+	for _, tv := range targetVersions {
+		pv := byTV[tv]
 		pct := 0.0
-		if s.TotalCookbooks > 0 {
-			pct = float64(s.CompatibleCookbooks) / float64(s.TotalCookbooks) * 100
+		if pv.total > 0 {
+			pct = float64(pv.compatible) / float64(pv.total) * 100
 		}
 		summaries = append(summaries, compatSummary{
-			TargetChefVersion:     s.TargetChefVersion,
-			TotalCookbooks:        s.TotalCookbooks,
-			CompatibleCookbooks:   s.CompatibleCookbooks,
-			IncompatibleCookbooks: s.IncompatibleCookbooks,
-			UntestedCookbooks:     s.UntestedCookbooks,
+			TargetChefVersion:     tv,
+			TotalCookbooks:        pv.total,
+			CompatibleCookbooks:   pv.compatible,
+			IncompatibleCookbooks: pv.incompatible,
+			UntestedCookbooks:     pv.untested,
 			CompatiblePercent:     pct,
 		})
 	}
@@ -649,14 +721,14 @@ func (r *Router) handleDashboardComplexityTrend(w http.ResponseWriter, req *http
 
 	var points []trendPoint
 	for _, org := range orgs {
-		complexities, err := r.db.ListCookbookComplexitiesForOrganisation(req.Context(), org.ID)
+		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(req.Context(), org.ID)
 		if err != nil {
 			r.logf("WARN", "listing complexities for org %s in trend: %v", org.Name, err)
 			continue
 		}
 
 		// Group by target chef version.
-		byVersion := make(map[string][]datastore.CookbookComplexity)
+		byVersion := make(map[string][]datastore.ServerCookbookComplexity)
 		for _, cc := range complexities {
 			byVersion[cc.TargetChefVersion] = append(byVersion[cc.TargetChefVersion], cc)
 		}
@@ -805,19 +877,14 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 	}
 
 	for _, org := range orgs {
-		cookbooks, cbErr := r.db.ListCookbooksByOrganisation(req.Context(), org.ID)
+		serverCookbooks, cbErr := r.db.ListServerCookbooksByOrganisation(req.Context(), org.ID)
 		if cbErr != nil {
-			r.logf("WARN", "listing cookbooks for org %s in download status: %v", org.Name, cbErr)
+			r.logf("WARN", "listing server cookbooks for org %s in download status: %v", org.Name, cbErr)
 			continue
 		}
-		for _, cb := range cookbooks {
-			// Only count Chef server-sourced cookbooks — git cookbooks don't
-			// have a download_status lifecycle.
-			if cb.Source != "chef_server" {
-				continue
-			}
+		for _, sc := range serverCookbooks {
 			totalCookbooks++
-			status := cb.DownloadStatus
+			status := sc.DownloadStatus
 			if status == "" {
 				status = "pending"
 			}
@@ -825,13 +892,13 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 
 			if status == "failed" {
 				failedList = append(failedList, failedCookbook{
-					ID:             cb.ID,
-					OrganisationID: cb.OrganisationID,
-					OrgName:        orgNameByID[cb.OrganisationID],
-					Name:           cb.Name,
-					Version:        cb.Version,
-					DownloadError:  cb.DownloadError,
-					IsActive:       cb.IsActive,
+					ID:             sc.ID,
+					OrganisationID: sc.OrganisationID,
+					OrgName:        orgNameByID[sc.OrganisationID],
+					Name:           sc.Name,
+					Version:        sc.Version,
+					DownloadError:  sc.DownloadError,
+					IsActive:       sc.IsActive,
 				})
 			}
 		}
@@ -896,4 +963,4 @@ func cookbookDownloadFailureMessage(failedCount int) string {
 }
 
 // Ensure datastore import is used.
-var _ datastore.NodeSnapshot
+var _ = datastore.NodeSnapshot{}

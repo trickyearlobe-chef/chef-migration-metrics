@@ -726,15 +726,16 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		CountCookbookCompatibilityFn: func(ctx context.Context, organisationIDs []string, targetVersions []string, cookbookNames map[string]bool) ([]datastore.CookbookCompatibilitySummary, error) {
-			return []datastore.CookbookCompatibilitySummary{
-				{
-					TargetChefVersion:     "18.0.0",
-					TotalCookbooks:        2,
-					CompatibleCookbooks:   1,
-					IncompatibleCookbooks: 1,
-					UntestedCookbooks:     0,
-				},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{ID: "cb-2", Name: "nginx", Version: "1.0.0"},
+			}, nil
+		},
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
+				{ID: "cc-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ErrorCount: 0, DeprecationCount: 0},
+				{ID: "cc-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ErrorCount: 1, DeprecationCount: 0},
 			}, nil
 		},
 	}
@@ -895,11 +896,11 @@ func TestHandleDashboardComplexityTrend_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
-				{ID: "cc-1", CookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, ComplexityLabel: "low"},
-				{ID: "cc-2", CookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 45, ComplexityLabel: "high"},
-				{ID: "cc-3", CookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 80, ComplexityLabel: "critical"},
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
+				{ID: "cc-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, ComplexityLabel: "low"},
+				{ID: "cc-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 45, ComplexityLabel: "high"},
+				{ID: "cc-3", ServerCookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 80, ComplexityLabel: "critical"},
 			}, nil
 		},
 	}
@@ -961,7 +962,7 @@ func TestHandleDashboardComplexityTrend_HappyPath_Empty(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.CookbookComplexity, error) {
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
 	}
@@ -1012,15 +1013,15 @@ func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
 				{ID: "org-2", Name: "staging"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.CookbookComplexity, error) {
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 			if orgID == "org-1" {
-				return []datastore.CookbookComplexity{
-					{ID: "cc-1", CookbookID: "cb-1", TargetChefVersion: "17.0.0", ComplexityScore: 20, ComplexityLabel: "medium"},
-					{ID: "cc-2", CookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 5, ComplexityLabel: "low"},
+				return []datastore.ServerCookbookComplexity{
+					{ID: "cc-1", ServerCookbookID: "cb-1", TargetChefVersion: "17.0.0", ComplexityScore: 20, ComplexityLabel: "medium"},
+					{ID: "cc-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 5, ComplexityLabel: "low"},
 				}, nil
 			}
-			return []datastore.CookbookComplexity{
-				{ID: "cc-3", CookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 60, ComplexityLabel: "critical"},
+			return []datastore.ServerCookbookComplexity{
+				{ID: "cc-3", ServerCookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 60, ComplexityLabel: "critical"},
 			}, nil
 		},
 	}
@@ -1364,7 +1365,7 @@ func TestHandleDashboardCookbookDownloadStatus_HappyPath_NoCookbooks(t *testing.
 				{ID: "org-1", Name: "test-org"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1423,13 +1424,13 @@ func TestHandleDashboardCookbookDownloadStatus_HappyPath_MixedStatuses(t *testin
 				{ID: "org-1", Name: "prod-org"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok", IsActive: true},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "apache2", Version: "5.1.0", Source: "chef_server", DownloadStatus: "ok", IsActive: true},
-				{ID: "cb-3", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
-				{ID: "cb-4", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", Source: "chef_server", DownloadStatus: "pending", IsActive: false},
-				{ID: "cb-5", OrganisationID: "org-1", Name: "java", Version: "2.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "connection timeout", IsActive: false},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok", IsActive: true},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "apache2", Version: "5.1.0", DownloadStatus: "ok", IsActive: true},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
+				{ID: "cb-4", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", DownloadStatus: "pending", IsActive: false},
+				{ID: "cb-5", OrganisationID: "org-1", Name: "java", Version: "2.0.0", DownloadStatus: "failed", DownloadError: "connection timeout", IsActive: false},
 			}, nil
 		},
 	}
@@ -1547,10 +1548,9 @@ func TestHandleDashboardCookbookDownloadStatus_IgnoresGitCookbooks(t *testing.T)
 				{ID: "org-1", Name: "test-org"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "my-cookbook", Version: "", Source: "git", DownloadStatus: ""},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -1590,11 +1590,11 @@ func TestHandleDashboardCookbookDownloadStatus_AllOK(t *testing.T) {
 				{ID: "org-1", Name: "test-org"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server", DownloadStatus: "ok"},
-				{ID: "cb-3", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", Source: "chef_server", DownloadStatus: "ok"},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", DownloadStatus: "ok"},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -1661,16 +1661,16 @@ func TestHandleDashboardCookbookDownloadStatus_MultipleOrgs(t *testing.T) {
 				{ID: "org-2", Name: "staging"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			if organisationID == "org-1" {
-				return []datastore.Cookbook{
-					{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
-					{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "404 Not Found", IsActive: true},
+				return []datastore.ServerCookbook{
+					{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+					{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "404 Not Found", IsActive: true},
 				}, nil
 			}
-			return []datastore.Cookbook{
-				{ID: "cb-3", OrganisationID: "org-2", Name: "mysql", Version: "8.0.0", Source: "chef_server", DownloadStatus: "ok"},
-				{ID: "cb-4", OrganisationID: "org-2", Name: "redis", Version: "1.0.0", Source: "chef_server", DownloadStatus: "pending"},
+			return []datastore.ServerCookbook{
+				{ID: "cb-3", OrganisationID: "org-2", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
+				{ID: "cb-4", OrganisationID: "org-2", Name: "redis", Version: "1.0.0", DownloadStatus: "pending"},
 			}, nil
 		},
 	}
@@ -1752,12 +1752,12 @@ func TestHandleDashboardCookbookDownloadStatus_CookbookListError_NonFatal(t *tes
 				{ID: "org-2", Name: "org2"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			if organisationID == "org-1" {
 				return nil, errors.New("timeout")
 			}
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-2", Name: "apache2", Version: "5.0.0", Source: "chef_server", DownloadStatus: "ok"},
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-2", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -1798,9 +1798,9 @@ func TestHandleDashboardCookbookDownloadStatus_EmptyDownloadStatusTreatedAsPendi
 				{ID: "org-1", Name: "test-org"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "legacy", Version: "1.0.0", Source: "chef_server", DownloadStatus: ""},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "legacy", Version: "1.0.0", DownloadStatus: ""},
 			}, nil
 		},
 	}
@@ -1844,12 +1844,12 @@ func TestHandleDashboardCookbookDownloadStatus_FailedSortedActiveFirst(t *testin
 				{ID: "org-1", Name: "test-org"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "zebra", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err1", IsActive: false},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "alpha", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err2", IsActive: true},
-				{ID: "cb-3", OrganisationID: "org-1", Name: "beta", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err3", IsActive: true},
-				{ID: "cb-4", OrganisationID: "org-1", Name: "delta", Version: "1.0.0", Source: "chef_server", DownloadStatus: "failed", DownloadError: "err4", IsActive: false},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "zebra", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err1", IsActive: false},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "alpha", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err2", IsActive: true},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "beta", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err3", IsActive: true},
+				{ID: "cb-4", OrganisationID: "org-1", Name: "delta", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err4", IsActive: false},
 			}, nil
 		},
 	}

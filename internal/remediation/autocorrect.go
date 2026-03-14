@@ -160,6 +160,12 @@ func NewAutocorrectGenerator(
 // without requiring a full CookstyleResult from the datastore.
 // ---------------------------------------------------------------------------
 
+// Source constants identify which table a cookstyle result belongs to.
+const (
+	SourceServerCookbook = "server_cookbook"
+	SourceGitRepo        = "git_repo"
+)
+
 // CookstyleResultInfo carries the minimal information about a CookStyle
 // scan result needed to decide whether to generate a preview and to
 // associate the preview with the result.
@@ -167,7 +173,7 @@ type CookstyleResultInfo struct {
 	// ResultID is the datastore ID (primary key) of the cookstyle_results row.
 	ResultID string
 
-	// CookbookID is the datastore ID of the cookbook.
+	// CookbookID is the datastore ID of the cookbook (ServerCookbookID or GitRepoID).
 	CookbookID string
 
 	// CookbookName is the cookbook's display name (for logging).
@@ -184,6 +190,10 @@ type CookstyleResultInfo struct {
 
 	// Passed is true when there are zero error/fatal offenses.
 	Passed bool
+
+	// Source indicates which table the cookbook belongs to.
+	// Must be SourceServerCookbook or SourceGitRepo.
+	Source string
 }
 
 // GeneratePreviews generates auto-correct previews for all provided
@@ -273,13 +283,25 @@ func (g *AutocorrectGenerator) generateOne(
 	}
 
 	// Step 2: check for existing preview (immutability cache for server cookbooks).
-	existing, err := g.db.GetAutocorrectPreview(ctx, csResult.ResultID)
-	if err == nil && existing != nil {
+	var existingGeneratedAt *time.Time
+	switch csResult.Source {
+	case SourceGitRepo:
+		existing, err := g.db.GetGitRepoAutocorrectPreview(ctx, csResult.ResultID)
+		if err == nil && existing != nil {
+			existingGeneratedAt = &existing.GeneratedAt
+		}
+	default: // SourceServerCookbook or unset — default to server cookbook
+		existing, err := g.db.GetServerCookbookAutocorrectPreview(ctx, csResult.ResultID)
+		if err == nil && existing != nil {
+			existingGeneratedAt = &existing.GeneratedAt
+		}
+	}
+	if existingGeneratedAt != nil {
 		pr.Skipped = true
 		pr.SkipReason = fmt.Sprintf("existing preview from %s",
-			existing.GeneratedAt.Format(time.RFC3339))
+			existingGeneratedAt.Format(time.RFC3339))
 		log.Debug(fmt.Sprintf("skipping — existing preview from %s",
-			existing.GeneratedAt.Format(time.RFC3339)))
+			existingGeneratedAt.Format(time.RFC3339)))
 		return pr
 	}
 
@@ -358,7 +380,7 @@ func (g *AutocorrectGenerator) generateOne(
 	pr.GeneratedAt = time.Now().UTC()
 
 	// Step 10: persist.
-	g.persistPreview(ctx, pr)
+	g.persistPreview(ctx, csResult.Source, pr)
 
 	log.Info(fmt.Sprintf(
 		"autocorrect preview: %d total, %d correctable, %d remaining, %d files modified",
@@ -435,7 +457,7 @@ func writeAutocorrectTargetConfig(cookbookDir, targetChefVersion string) string 
 // Persistence
 // ---------------------------------------------------------------------------
 
-func (g *AutocorrectGenerator) persistPreview(ctx context.Context, pr AutocorrectPreviewResult) {
+func (g *AutocorrectGenerator) persistPreview(ctx context.Context, source string, pr AutocorrectPreviewResult) {
 	if pr.CookbookID == "" || pr.CookstyleResultID == "" {
 		return
 	}
@@ -443,18 +465,35 @@ func (g *AutocorrectGenerator) persistPreview(ctx context.Context, pr Autocorrec
 	log := g.logger.WithScope(logging.ScopeRemediation,
 		logging.WithCookbook(pr.CookbookName, pr.CookbookVersion))
 
-	params := datastore.UpsertAutocorrectPreviewParams{
-		CookbookID:          pr.CookbookID,
-		CookstyleResultID:   pr.CookstyleResultID,
-		TotalOffenses:       pr.TotalOffenses,
-		CorrectableOffenses: pr.CorrectableOffenses,
-		RemainingOffenses:   pr.RemainingOffenses,
-		FilesModified:       pr.FilesModified,
-		DiffOutput:          pr.DiffOutput,
-		GeneratedAt:         pr.GeneratedAt,
+	var persistErr error
+	switch source {
+	case SourceGitRepo:
+		params := datastore.UpsertGitRepoAutocorrectPreviewParams{
+			GitRepoID:           pr.CookbookID,
+			CookstyleResultID:   pr.CookstyleResultID,
+			TotalOffenses:       pr.TotalOffenses,
+			CorrectableOffenses: pr.CorrectableOffenses,
+			RemainingOffenses:   pr.RemainingOffenses,
+			FilesModified:       pr.FilesModified,
+			DiffOutput:          pr.DiffOutput,
+			GeneratedAt:         pr.GeneratedAt,
+		}
+		_, persistErr = g.db.UpsertGitRepoAutocorrectPreview(ctx, params)
+	default: // SourceServerCookbook or unset — default to server cookbook
+		params := datastore.UpsertServerCookbookAutocorrectPreviewParams{
+			ServerCookbookID:    pr.CookbookID,
+			CookstyleResultID:   pr.CookstyleResultID,
+			TotalOffenses:       pr.TotalOffenses,
+			CorrectableOffenses: pr.CorrectableOffenses,
+			RemainingOffenses:   pr.RemainingOffenses,
+			FilesModified:       pr.FilesModified,
+			DiffOutput:          pr.DiffOutput,
+			GeneratedAt:         pr.GeneratedAt,
+		}
+		_, persistErr = g.db.UpsertServerCookbookAutocorrectPreview(ctx, params)
 	}
 
-	if _, persistErr := g.db.UpsertAutocorrectPreview(ctx, params); persistErr != nil {
+	if persistErr != nil {
 		log.Error(fmt.Sprintf("failed to persist autocorrect preview: %v", persistErr))
 	}
 }
@@ -464,15 +503,24 @@ func (g *AutocorrectGenerator) persistPreview(ctx context.Context, pr Autocorrec
 // ---------------------------------------------------------------------------
 
 // ResetPreviews deletes existing auto-correct previews for the given
-// cookbook, so they will be regenerated on the next analysis cycle.
-func (g *AutocorrectGenerator) ResetPreviews(ctx context.Context, cookbookID string) error {
-	return g.db.DeleteAutocorrectPreviewsForCookbook(ctx, cookbookID)
+// cookbook or repo, so they will be regenerated on the next analysis cycle.
+// The source parameter determines which table to delete from.
+func (g *AutocorrectGenerator) ResetPreviews(ctx context.Context, source string, id string) error {
+	switch source {
+	case SourceGitRepo:
+		return g.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, id)
+	default: // SourceServerCookbook or unset
+		return g.db.DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx, id)
+	}
 }
 
 // ResetAllPreviews deletes all auto-correct previews for the given
-// organisation.
+// organisation (server cookbooks) and all git repo previews.
 func (g *AutocorrectGenerator) ResetAllPreviews(ctx context.Context, organisationID string) error {
-	return g.db.DeleteAutocorrectPreviewsForOrganisation(ctx, organisationID)
+	if err := g.db.DeleteServerCookbookAutocorrectPreviewsByOrganisation(ctx, organisationID); err != nil {
+		return err
+	}
+	return g.db.DeleteAllGitRepoAutocorrectPreviews(ctx)
 }
 
 // ---------------------------------------------------------------------------

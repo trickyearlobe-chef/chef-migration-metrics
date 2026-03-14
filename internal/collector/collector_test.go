@@ -1167,9 +1167,9 @@ func buildUsageParams(
 			}
 
 			params = append(params, datastore.InsertCookbookNodeUsageParams{
-				CookbookID:      cookbookID,
-				NodeSnapshotID:  snapshotID,
-				CookbookVersion: cbVersion,
+				ServerCookbookID: cookbookID,
+				NodeSnapshotID:   snapshotID,
+				CookbookVersion:  cbVersion,
 			})
 		}
 	}
@@ -1203,8 +1203,8 @@ func TestBuildUsageParams_AllMatch(t *testing.T) {
 
 	// Verify all params have the required fields populated.
 	for i, p := range params {
-		if p.CookbookID == "" {
-			t.Errorf("param[%d]: cookbook ID is empty", i)
+		if p.ServerCookbookID == "" {
+			t.Errorf("param[%d]: server cookbook ID is empty", i)
 		}
 		if p.NodeSnapshotID == "" {
 			t.Errorf("param[%d]: node snapshot ID is empty", i)
@@ -1218,7 +1218,7 @@ func TestBuildUsageParams_AllMatch(t *testing.T) {
 	type pair struct{ snap, cb string }
 	seen := make(map[pair]bool)
 	for _, p := range params {
-		seen[pair{p.NodeSnapshotID, p.CookbookID}] = true
+		seen[pair{p.NodeSnapshotID, p.ServerCookbookID}] = true
 	}
 	if !seen[pair{"snap-aaa", "cb-111"}] {
 		t.Error("missing usage record for web-01 ↔ apache2")
@@ -1380,8 +1380,8 @@ func TestBuildUsageParams_SameCookbookDifferentNodes(t *testing.T) {
 	// Both should reference the same cookbook ID but different snapshot IDs.
 	snapshotIDs := make(map[string]bool)
 	for _, p := range params {
-		if p.CookbookID != "cb-111" {
-			t.Errorf("expected cookbook ID cb-111, got %q", p.CookbookID)
+		if p.ServerCookbookID != "cb-111" {
+			t.Errorf("expected server cookbook ID cb-111, got %q", p.ServerCookbookID)
 		}
 		if p.CookbookVersion != "5.0.1" {
 			t.Errorf("expected version 5.0.1, got %q", p.CookbookVersion)
@@ -1423,7 +1423,7 @@ func TestBuildUsageParams_SameCookbookDifferentVersions(t *testing.T) {
 	type pair struct{ snap, cb string }
 	seen := make(map[pair]bool)
 	for _, p := range params {
-		seen[pair{p.NodeSnapshotID, p.CookbookID}] = true
+		seen[pair{p.NodeSnapshotID, p.ServerCookbookID}] = true
 	}
 	if !seen[pair{"snap-aaa", "cb-111"}] {
 		t.Error("missing usage record for web-01 ↔ apache2@5.0.1")
@@ -1864,8 +1864,11 @@ func TestCollector_PipelineFields_NilByDefault(t *testing.T) {
 	if c.readinessEval != nil {
 		t.Error("expected readinessEval to be nil by default")
 	}
-	if c.cookbookDirFn != nil {
-		t.Error("expected cookbookDirFn to be nil by default")
+	if c.serverCookbookDirFn != nil {
+		t.Error("expected serverCookbookDirFn to be nil by default")
+	}
+	if c.gitRepoDirFn != nil {
+		t.Error("expected gitRepoDirFn to be nil by default")
 	}
 }
 
@@ -1939,11 +1942,11 @@ func TestWithReadinessEvaluator_SetsField(t *testing.T) {
 	}
 }
 
-func TestWithCookbookDirFn_SetsField(t *testing.T) {
+func TestWithServerCookbookDirFn_SetsField(t *testing.T) {
 	called := false
-	fn := func(cb datastore.Cookbook) string {
+	fn := func(sc datastore.ServerCookbook) string {
 		called = true
-		return "/some/path/" + cb.Name
+		return "/some/path/" + sc.Name
 	}
 
 	memWriter := logging.NewMemoryWriter()
@@ -1951,29 +1954,67 @@ func TestWithCookbookDirFn_SetsField(t *testing.T) {
 	cfg := &config.Config{}
 	resolver := secrets.NewCredentialResolver(nil)
 
-	c := New(nil, cfg, logger, resolver, WithCookbookDirFn(fn))
-	if c.cookbookDirFn == nil {
-		t.Fatal("expected cookbookDirFn to be non-nil after WithCookbookDirFn")
+	c := New(nil, cfg, logger, resolver, WithServerCookbookDirFn(fn))
+	if c.serverCookbookDirFn == nil {
+		t.Fatal("expected serverCookbookDirFn to be non-nil after WithServerCookbookDirFn")
 	}
 
-	result := c.cookbookDirFn(datastore.Cookbook{Name: "test"})
+	result := c.serverCookbookDirFn(datastore.ServerCookbook{Name: "test"})
 	if !called {
-		t.Error("expected cookbookDirFn to be called")
+		t.Error("expected serverCookbookDirFn to be called")
 	}
 	if result != "/some/path/test" {
-		t.Errorf("cookbookDirFn returned %q, want %q", result, "/some/path/test")
+		t.Errorf("serverCookbookDirFn returned %q, want %q", result, "/some/path/test")
 	}
 }
 
-func TestWithCookbookDirFn_NilIsAccepted(t *testing.T) {
+func TestWithGitRepoDirFn_SetsField(t *testing.T) {
+	called := false
+	fn := func(repo datastore.GitRepo) string {
+		called = true
+		return "/git/repos/" + repo.Name
+	}
+
 	memWriter := logging.NewMemoryWriter()
 	logger := logging.New(logging.Options{Level: logging.DEBUG, Writers: []logging.Writer{memWriter}})
 	cfg := &config.Config{}
 	resolver := secrets.NewCredentialResolver(nil)
 
-	c := New(nil, cfg, logger, resolver, WithCookbookDirFn(nil))
-	if c.cookbookDirFn != nil {
-		t.Error("expected cookbookDirFn to remain nil when WithCookbookDirFn(nil) is passed")
+	c := New(nil, cfg, logger, resolver, WithGitRepoDirFn(fn))
+	if c.gitRepoDirFn == nil {
+		t.Fatal("expected gitRepoDirFn to be non-nil after WithGitRepoDirFn")
+	}
+
+	result := c.gitRepoDirFn(datastore.GitRepo{Name: "test"})
+	if !called {
+		t.Error("expected gitRepoDirFn to be called")
+	}
+	if result != "/git/repos/test" {
+		t.Errorf("gitRepoDirFn returned %q, want %q", result, "/git/repos/test")
+	}
+}
+
+func TestWithServerCookbookDirFn_NilIsAccepted(t *testing.T) {
+	memWriter := logging.NewMemoryWriter()
+	logger := logging.New(logging.Options{Level: logging.DEBUG, Writers: []logging.Writer{memWriter}})
+	cfg := &config.Config{}
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver, WithServerCookbookDirFn(nil))
+	if c.serverCookbookDirFn != nil {
+		t.Error("expected serverCookbookDirFn to remain nil when WithServerCookbookDirFn(nil) is passed")
+	}
+}
+
+func TestWithGitRepoDirFn_NilIsAccepted(t *testing.T) {
+	memWriter := logging.NewMemoryWriter()
+	logger := logging.New(logging.Options{Level: logging.DEBUG, Writers: []logging.Writer{memWriter}})
+	cfg := &config.Config{}
+	resolver := secrets.NewCredentialResolver(nil)
+
+	c := New(nil, cfg, logger, resolver, WithGitRepoDirFn(nil))
+	if c.gitRepoDirFn != nil {
+		t.Error("expected gitRepoDirFn to remain nil when WithGitRepoDirFn(nil) is passed")
 	}
 }
 
@@ -2300,7 +2341,8 @@ func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 	acGen := remediation.NewAutocorrectGenerator(nil, nil, "/usr/bin/cookstyle", 10)
 	cxScorer := remediation.NewComplexityScorer(nil, nil)
 	readEval := analysis.NewReadinessEvaluator(nil, nil, 2, 2048)
-	dirFn := func(cb datastore.Cookbook) string { return "/cookbooks/" + cb.Name }
+	scDirFn := func(sc datastore.ServerCookbook) string { return "/cookbooks/" + sc.Name }
+	grDirFn := func(repo datastore.GitRepo) string { return "/git/" + repo.Name }
 
 	memWriter := logging.NewMemoryWriter()
 	logger := logging.New(logging.Options{Level: logging.DEBUG, Writers: []logging.Writer{memWriter}})
@@ -2313,7 +2355,8 @@ func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 		WithAutocorrectGenerator(acGen),
 		WithComplexityScorer(cxScorer),
 		WithReadinessEvaluator(readEval),
-		WithCookbookDirFn(dirFn),
+		WithServerCookbookDirFn(scDirFn),
+		WithGitRepoDirFn(grDirFn),
 	)
 
 	if c.cookstyleScanner != csScanner {
@@ -2331,8 +2374,11 @@ func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 	if c.readinessEval != readEval {
 		t.Error("readinessEval not set")
 	}
-	if c.cookbookDirFn == nil {
-		t.Error("cookbookDirFn not set")
+	if c.serverCookbookDirFn == nil {
+		t.Error("serverCookbookDirFn not set")
+	}
+	if c.gitRepoDirFn == nil {
+		t.Error("gitRepoDirFn not set")
 	}
 
 	// Also verify original fields still work.

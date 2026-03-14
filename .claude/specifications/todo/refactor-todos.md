@@ -374,73 +374,73 @@ Individual commits on a single branch, in dependency order:
 - [x] Remove `Cookbook` type, `IsGit()`, `IsChefServer()`, `IsDownloaded()`, `NeedsDownload()` helpers
 
 ### Commit 11 — Collector: Server Cookbook Pipeline + Metadata
-- [ ] Update `internal/collector/server_cookbook_pipeline.go` to work with `ServerCookbook`
-- [ ] After `GetCookbookVersionManifest`, parse metadata and call `UpdateServerCookbookMetadata`
-- [ ] `downloadToTempDir` takes `ServerCookbook`
+- [x] Update `internal/collector/server_cookbook_pipeline.go` to work with `ServerCookbook`
+- [x] After `GetCookbookVersionManifest`, parse metadata and call `UpdateServerCookbookMetadata`
+- [x] `downloadToTempDir` takes `ServerCookbook`
 
 ### Commit 12 — Collector: Git Repos
-- [ ] Refactor `internal/collector/git.go`: `fetchGitCookbooks` → `fetchGitRepos`
-- [ ] `UpsertGitCookbook` → `UpsertGitRepo`
-- [ ] Work with `GitRepo` type throughout
+- [x] Refactor `internal/collector/git.go`: `fetchGitCookbooks` → `fetchGitRepos`
+- [x] `UpsertGitCookbook` → `UpsertGitRepo`
+- [x] Work with `GitRepo` type throughout
 
 ### Commit 13 — Collector: Orchestration
-- [ ] Update `internal/collector/collector.go`: split `cookbookDirFn func(datastore.Cookbook) string` into two callbacks: `serverCookbookDirFn func(datastore.ServerCookbook) string` + `gitRepoDirFn func(datastore.GitRepo) string`
-- [ ] Update `WithCookbookDirFn` option → `WithServerCookbookDirFn` + `WithGitRepoDirFn`
-- [ ] Remove source branching — each step already targets one source
-- [ ] Update `cbByID` map used for autocorrect preview dir resolution to use `GitRepo` type
+- [x] Update `internal/collector/collector.go`: split `cookbookDirFn func(datastore.Cookbook) string` into two callbacks: `serverCookbookDirFn func(datastore.ServerCookbook) string` + `gitRepoDirFn func(datastore.GitRepo) string`
+- [x] Update `WithCookbookDirFn` option → `WithServerCookbookDirFn` + `WithGitRepoDirFn`
+- [x] Remove source branching — each step already targets one source
+- [x] Update `cbByID` map used for autocorrect preview dir resolution to use `GitRepo` type
 
 ### Commit 14 — Collector: Ownership + Ownership Assignments
-- [ ] Update `internal/collector/ownership.go`: `evaluateCookbookNamePatternRule` queries `ListServerCookbooksByOrganisation` + `ListGitRepos`
-- [ ] `evaluateGitRepoURLPatternRule` queries `ListGitRepos`
+- [x] Update `internal/collector/ownership.go`: `evaluateCookbookNamePatternRule` queries `ListServerCookbooksByOrganisation` + `ListGitRepos`
+- [x] `evaluateGitRepoURLPatternRule` queries `ListGitRepos`
 - [ ] Update `internal/datastore/ownership_assignments.go`: `lookupGitRepoInheritedOwnership` — change query from `FROM cookbooks WHERE name = $1 AND source = 'git'` to `FROM git_repos WHERE name = $1`
 
 ### Commit 15 — Analysis: Split Cookstyle Scanner
-- [ ] Split `internal/analysis/cookstyle.go`: `ScanCookbooks` → `ScanServerCookbooks` + `ScanGitRepos`
-- [ ] Split `ScanSingleCookbook` → `ScanSingleServerCookbook` + `ScanSingleGitRepo` (called from different pipelines)
-- [ ] Split `scanOne` → two variants with source-specific `workItem` structs
-- [ ] `persistResult` → two variants for different tables
-- [ ] Split `cookbookDir` callback parameter into source-specific callbacks
-- [ ] Skip logic becomes first-class (immutable version vs HEAD SHA)
+- [x] Split `internal/analysis/cookstyle.go`: `ScanCookbooks` → `ScanServerCookbooks` + `ScanGitRepos`
+- [x] Split `ScanSingleCookbook` → `ScanSingleServerCookbook` + `ScanSingleGitRepo` (called from different pipelines)
+- [x] Split `scanOne` → two variants with source-specific `workItem` structs
+- [x] `persistResult` → two variants for different tables
+- [x] Split `cookbookDir` callback parameter into source-specific callbacks
+- [x] Skip logic becomes first-class (immutable version vs HEAD SHA)
 
 ### Commit 16 — Analysis: Readiness Evaluator
-- [ ] Update `internal/analysis/readiness.go`: `checkCookbookCompatibility` queries both cookstyle result tables
-- [ ] `ReadinessDataStore` interface gets source-specific lookup methods
+- [x] Update `internal/analysis/readiness.go`: `checkCookbookCompatibility` queries both cookstyle result tables
+- [x] `ReadinessDataStore` interface gets source-specific lookup methods
 
 ### Commit 17 — Analysis: Kitchen Scanner
-- [ ] Update `internal/analysis/kitchen.go` to accept `GitRepo` instead of `Cookbook`
-- [ ] Persist to `git_repo_test_kitchen_results`
+- [x] Update `internal/analysis/kitchen.go` to accept `GitRepo` instead of `Cookbook`
+- [x] Persist to `git_repo_test_kitchen_results`
 
 ### Commit 18 — Remediation: Autocorrect + Complexity
-- [ ] Split `internal/remediation/autocorrect.go`: `GeneratePreviews` / `GenerateSinglePreview` parameterised by source
-- [ ] `persistPreview` writes to the correct table
-- [ ] Split `internal/remediation/complexity.go`: `ScoreCookbooks` → `ScoreServerCookbooks` + `ScoreGitRepos`
-- [ ] Persist to source-specific complexity tables
-- [ ] `loadBlastRadii` is name-based — no change
-- [ ] Split `cookbookDir` callback parameter into source-specific callbacks
+- [x] Split `internal/remediation/autocorrect.go`: `GeneratePreviews` / `GenerateSinglePreview` parameterised by source
+- [x] `persistPreview` writes to the correct table
+- [x] Split `internal/remediation/complexity.go`: `ScoreCookbooks` → `ScoreServerCookbooks` + `ScoreGitRepos`
+- [x] Persist to source-specific complexity tables
+- [x] `loadBlastRadii` is name-based — no change
+- [x] Split `cookbookDir` callback parameter into source-specific callbacks
 
 ### Commit 19 — Export Layer
-- [ ] Update `internal/export/export.go`: `DataStore` interface updated, `ListCookbooksByOrganisation` → `ListServerCookbooksByOrganisation` + `ListGitRepos`
-- [ ] Update `internal/export/cookbook_remediation.go`: Build two maps from both sources, join with source-specific complexity tables
-- [ ] Update `internal/export/blocked_nodes.go`: Build unified name-keyed maps from both `ServerCookbook` and `GitRepo`
+- [x] Update `internal/export/export.go`: `DataStore` interface updated, `ListCookbooksByOrganisation` → `ListServerCookbooksByOrganisation` + `ListGitRepos`
+- [x] Update `internal/export/cookbook_remediation.go`: Build two maps from both sources, join with source-specific complexity tables
+- [x] Update `internal/export/blocked_nodes.go`: Build unified name-keyed maps from both `ServerCookbook` and `GitRepo`
 
 ### Commit 20 — Web API: Split Handlers and Routes
 - [ ] Update `internal/webapi/router.go`: keep `/api/v1/cookbooks` for server cookbooks, add `/api/v1/git-repos` routes
-- [ ] Refactor `internal/webapi/handle_cookbooks.go` to serve only server cookbooks (remove git cookbook logic and collapse-by-name merging)
+- [x] Refactor `internal/webapi/handle_cookbooks.go` to serve only server cookbooks (remove git cookbook logic and collapse-by-name merging)
 - [ ] Create new `internal/webapi/handle_git_repos.go` for git repo list, detail, rescan, reset
-- [ ] Refactor `internal/webapi/handle_cookbook_rescan.go` for server cookbooks only
-- [ ] Refactor `internal/webapi/handle_cookbook_remediation.go` for server cookbooks only
+- [x] Refactor `internal/webapi/handle_cookbook_rescan.go` for server cookbooks only
+- [x] Refactor `internal/webapi/handle_cookbook_remediation.go` for server cookbooks only
 - [ ] Create new `internal/webapi/handle_git_repo_remediation.go` for git repo remediation
-- [ ] Move `internal/webapi/handle_cookbook_reset_git.go` → `handle_git_repo_reset.go`
+- [x] Move `internal/webapi/handle_cookbook_reset_git.go` → `handle_git_repo_reset.go`
 - [ ] Move committer endpoints under `/api/v1/git-repos/:name/committers`
-- [ ] Refactor `internal/webapi/handle_dashboard.go`: `handleDashboardCookbookCompatibility` aggregates from both sources; `handleDashboardCookbookDownloadStatus` queries `server_cookbooks` directly (remove in-Go source filter); `handleDashboardComplexityTrend` joins source-specific complexity tables
-- [ ] Refactor `internal/webapi/handle_admin_rescan_all.go`: `DeleteAllCookbookComplexities` → hit both complexity tables; bulk cookstyle delete → hit both result tables
+- [x] Refactor `internal/webapi/handle_dashboard.go`: `handleDashboardCookbookCompatibility` aggregates from both sources; `handleDashboardCookbookDownloadStatus` queries `server_cookbooks` directly (remove in-Go source filter); `handleDashboardComplexityTrend` joins source-specific complexity tables
+- [x] Refactor `internal/webapi/handle_admin_rescan_all.go`: `DeleteAllCookbookComplexities` → hit both complexity tables; bulk cookstyle delete → hit both result tables
 - [ ] Consider splitting `EventCookbookStatusChanged` into `EventServerCookbookStatusChanged` + `EventGitRepoStatusChanged` in `internal/webapi/eventhub.go`
 
 ### Commit 21 — Web API: Store Interface
-- [ ] Update `internal/webapi/store.go` with new method signatures
+- [x] Update `internal/webapi/store.go` with new method signatures
 
 ### Commit 22 — Entry Point
-- [ ] Update `main.go`: split `WithCookbookDirFn` closure into `WithServerCookbookDirFn` + `WithGitRepoDirFn`, remove `cb.IsGit()` branch
+- [x] Update `main.go`: split `WithCookbookDirFn` closure into `WithServerCookbookDirFn` + `WithGitRepoDirFn`, remove `cb.IsGit()` branch
 
 ### Commit 23 — Frontend: Types and API Client
 - [ ] Update `frontend/src/types.ts`: refactor `CookbookListItem` to reflect server cookbook metadata fields (frozen, maintainer, description, license, platforms, dependencies). Add new `GitRepoListItem` type.
@@ -460,18 +460,18 @@ Individual commits on a single branch, in dependency order:
 - [ ] Add Git Repos navigation item to sidebar/nav
 
 ### Commit 25 — Tests
-- [ ] Regenerate or rewrite `internal/webapi/store_mock_test.go` (~136 symbols) to match the new `DataStore` interface
-- [ ] Update `internal/webapi/handle_cookbooks_test.go` — remove git cookbook test cases, update for `ServerCookbook` type
-- [ ] Update `internal/webapi/handle_cookbook_remediation_test.go` — `ListCookbooksByNameFn` → server-cookbook-only variant (~12 test functions)
-- [ ] Rename/refactor `internal/webapi/handle_cookbook_reset_git_test.go` → `handle_git_repo_reset_test.go`
-- [ ] Update `internal/export/export_test.go` — `fakeStore` uses `ServerCookbook` + `GitRepo` types
-- [ ] Update `internal/analysis/cookstyle_test.go` — split test cases by source
-- [ ] Update `internal/analysis/kitchen_test.go` — use `GitRepo` type (~8 test cases constructing `Cookbook{}` literals)
-- [ ] Update `internal/collector/fetcher_test.go` — remove `IsGit()`/`IsChefServer()` helper tests, update `IsDownloaded()`/`NeedsDownload()` for `ServerCookbook`, update JSON marshal tests
-- [ ] Update `internal/collector/server_cookbook_pipeline_test.go` — use `ServerCookbook` type
-- [ ] Update `internal/collector/collector_test.go` — new callback types
-- [ ] Update `internal/datastore/datastore_test.go` — remove `TestCookbook_SourceHelpers`
-- [ ] Update all remaining `*_test.go` files for split types
+- [x] Regenerate or rewrite `internal/webapi/store_mock_test.go` (~136 symbols) to match the new `DataStore` interface
+- [x] Update `internal/webapi/handle_cookbooks_test.go` — remove git cookbook test cases, update for `ServerCookbook` type
+- [x] Update `internal/webapi/handle_cookbook_remediation_test.go` — `ListCookbooksByNameFn` → server-cookbook-only variant (~12 test functions)
+- [x] Rename/refactor `internal/webapi/handle_cookbook_reset_git_test.go` → `handle_git_repo_reset_test.go`
+- [x] Update `internal/export/export_test.go` — `fakeStore` uses `ServerCookbook` + `GitRepo` types
+- [x] Update `internal/analysis/cookstyle_test.go` — split test cases by source
+- [x] Update `internal/analysis/kitchen_test.go` — use `GitRepo` type (~8 test cases constructing `Cookbook{}` literals)
+- [x] Update `internal/collector/fetcher_test.go` — remove `IsGit()`/`IsChefServer()` helper tests, update `IsDownloaded()`/`NeedsDownload()` for `ServerCookbook`, update JSON marshal tests
+- [x] Update `internal/collector/server_cookbook_pipeline_test.go` — use `ServerCookbook` type
+- [x] Update `internal/collector/collector_test.go` — new callback types
+- [x] Update `internal/datastore/datastore_test.go` — remove `TestCookbook_SourceHelpers`
+- [x] Update all remaining `*_test.go` files for split types
 
 ### Commit 26 — Documentation
 - [ ] Update `.claude/specifications/datastore/Specification.md` — replace section 4 (`cookbooks`) with `server_cookbooks` + `git_repos` tables and split analysis result tables

@@ -5,6 +5,7 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,7 +67,7 @@ func runServerCookbookPipeline(
 	// Get all active server cookbooks for this organisation — not just
 	// those needing download. We want to scan any that haven't been
 	// scanned yet, even if they were previously downloaded.
-	cookbooks, err := db.ListActiveCookbooksNeedingDownload(ctx, org.ID)
+	cookbooks, err := db.ListActiveServerCookbooksNeedingDownload(ctx, org.ID)
 	if err != nil {
 		log.Error(fmt.Sprintf("failed to list cookbooks for pipeline: %v", err))
 		result.Duration = time.Since(start)
@@ -120,7 +121,7 @@ func runServerCookbookPipeline(
 						break
 					}
 
-					sr := cookstyleScanner.ScanSingleCookbook(ctx, cb, tv, tmpDir)
+					sr := cookstyleScanner.ScanSingleServerCookbook(ctx, cb, tv, tmpDir)
 					if sr.Skipped {
 						result.Skipped++
 						skipCount++
@@ -134,7 +135,7 @@ func runServerCookbookPipeline(
 						// Step 3: Autocorrect preview (only if scan produced offenses).
 						if autocorrectGen != nil && sr.OffenseCount > 0 {
 							// Look up the persisted cookstyle result ID (scanOne persists it).
-							dbResult, dbErr := db.GetCookstyleResult(ctx, cb.ID, tv)
+							dbResult, dbErr := db.GetServerCookbookCookstyleResult(ctx, cb.ID, tv)
 							if dbErr == nil && dbResult != nil {
 								csInfo := remediation.CookstyleResultInfo{
 									ResultID:          dbResult.ID,
@@ -144,6 +145,7 @@ func runServerCookbookPipeline(
 									TargetChefVersion: tv,
 									OffenseCount:      sr.OffenseCount,
 									Passed:            sr.Passed,
+									Source:            remediation.SourceServerCookbook,
 								}
 								autocorrectGen.GenerateSinglePreview(ctx, csInfo, tmpDir)
 							}
@@ -219,7 +221,7 @@ func downloadToTempDir(
 	ctx context.Context,
 	client *chefapi.Client,
 	db *datastore.DB,
-	cb datastore.Cookbook,
+	cb datastore.ServerCookbook,
 ) (string, error) {
 	// Always use a true temp directory. The streaming pipeline deletes
 	// these files immediately after scanning, so there is no benefit to
@@ -247,8 +249,28 @@ func downloadToTempDir(
 		return "", extractErr
 	}
 
+	// Parse and persist cookbook metadata from the manifest. This populates
+	// maintainer, description, license, platforms, dependencies, and the
+	// frozen flag on the server_cookbooks row. Non-fatal — if parsing or
+	// persistence fails, the cookbook is still usable for scanning.
+	meta, metaErr := manifest.ParseMetadata()
+	if metaErr == nil {
+		platformsJSON, _ := json.Marshal(meta.Platforms)
+		dependenciesJSON, _ := json.Marshal(meta.Dependencies)
+		_, _ = db.UpdateServerCookbookMetadata(ctx, datastore.UpdateServerCookbookMetadataParams{
+			ID:              cb.ID,
+			IsFrozen:        manifest.Frozen,
+			Maintainer:      meta.Maintainer,
+			Description:     meta.Description,
+			LongDescription: meta.LongDescription,
+			License:         meta.License,
+			Platforms:       platformsJSON,
+			Dependencies:    dependenciesJSON,
+		})
+	}
+
 	// Mark as downloaded.
-	if _, markErr := db.MarkCookbookDownloadOK(ctx, cb.ID); markErr != nil {
+	if _, markErr := db.MarkServerCookbookDownloadOK(ctx, cb.ID); markErr != nil {
 		// Non-fatal — files are on disk and scannable even if the DB
 		// status update fails.
 		_ = markErr

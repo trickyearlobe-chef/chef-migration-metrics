@@ -93,17 +93,17 @@ type ReadinessDataStore interface {
 	// Node snapshots
 	ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 
-	// Cookbooks — used to resolve cookbook name+version to cookbook ID
+	// Server cookbooks — used to resolve cookbook name+version to server cookbook ID
 	GetServerCookbookIDMap(ctx context.Context, organisationID string) (map[string]map[string]string, error)
 
-	// Test Kitchen results
-	GetLatestTestKitchenResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error)
+	// Test Kitchen results (git repo)
+	GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
 
-	// CookStyle results
-	GetCookstyleResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
+	// CookStyle results (server cookbook)
+	GetServerCookbookCookstyleResult(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
 
-	// Cookbook complexity
-	GetCookbookComplexity(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookbookComplexity, error)
+	// Server cookbook complexity
+	GetServerCookbookComplexity(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookComplexity, error)
 
 	// Persistence
 	UpsertNodeReadiness(ctx context.Context, p datastore.UpsertNodeReadinessParams) (*datastore.NodeReadiness, error)
@@ -364,7 +364,7 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 			// Try to enrich with complexity data.
 			cookbookID := lookupCookbookID(cookbookIDMap, cbName, cbVersion)
 			if cookbookID != "" {
-				if cc, err := e.db.GetCookbookComplexity(ctx, cookbookID, targetChefVersion); err == nil && cc != nil {
+				if cc, err := e.db.GetServerCookbookComplexity(ctx, cookbookID, targetChefVersion); err == nil && cc != nil {
 					bc.ComplexityScore = cc.ComplexityScore
 					bc.ComplexityLabel = cc.ComplexityLabel
 				}
@@ -412,10 +412,16 @@ func parseCookbooksAttribute(raw json.RawMessage) map[string]string {
 // cookbook × version against the target Chef Client version.
 //
 // Algorithm (per spec):
-//  1. Check for a passing Test Kitchen result → compatible
-//  2. If no TK result, check CookStyle: passed → compatible_cookstyle_only,
-//     failed → incompatible
+//  1. Check for a passing Test Kitchen result (git repo) → compatible
+//  2. If no TK result, check server cookbook CookStyle: passed →
+//     compatible_cookstyle_only, failed → incompatible
 //  3. No results at all → untested
+//
+// NOTE: Test Kitchen results live in git_repo_test_kitchen_results keyed by
+// git_repo_id, but readiness evaluation resolves cookbooks via the server
+// cookbook ID map. For now, TK results are not checked here because we lack
+// a server-cookbook-to-git-repo mapping. A future enhancement should cross-
+// reference git repos by cookbook name to incorporate TK verdicts.
 func (e *ReadinessEvaluator) checkCookbookCompatibility(
 	ctx context.Context,
 	cookbookName string,
@@ -429,18 +435,13 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 		return StatusUntested, SourceNone
 	}
 
-	// Step 1: Check Test Kitchen.
-	tkResult, err := e.db.GetLatestTestKitchenResult(ctx, cookbookID, targetChefVersion)
-	if err == nil && tkResult != nil {
-		if tkResult.ConvergePassed && tkResult.TestsPassed {
-			return StatusCompatible, SourceTestKitchen
-		}
-		return StatusIncompatible, SourceTestKitchen
-	}
+	// TODO: Check Test Kitchen results from git_repo_test_kitchen_results.
+	// This requires resolving the cookbook name to a git repo ID, which is
+	// not yet available via the ReadinessDataStore interface. For now we
+	// skip straight to the CookStyle check.
 
-	// Step 2: Check CookStyle (with empty target version for server-sourced
-	// cookbooks, then with the specific target version).
-	csResult, err := e.db.GetCookstyleResult(ctx, cookbookID, targetChefVersion)
+	// Step 1: Check server cookbook CookStyle result with the specific target version.
+	csResult, err := e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, targetChefVersion)
 	if err == nil && csResult != nil {
 		if csResult.Passed {
 			return StatusCompatibleCookstyleOnly, SourceCookstyle
@@ -450,7 +451,7 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 
 	// Also check CookStyle without a target version — server-sourced
 	// cookbooks may have been scanned without a target version profile.
-	csResult, err = e.db.GetCookstyleResult(ctx, cookbookID, "")
+	csResult, err = e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, "")
 	if err == nil && csResult != nil {
 		if csResult.Passed {
 			return StatusCompatibleCookstyleOnly, SourceCookstyle
@@ -458,7 +459,7 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 		return StatusIncompatible, SourceCookstyle
 	}
 
-	// Step 3: Nothing found.
+	// Step 2: Nothing found.
 	return StatusUntested, SourceNone
 }
 

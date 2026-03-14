@@ -133,11 +133,11 @@ func FilterOrganisations(orgs []datastore.Organisation, orgName string) []datast
 // target Chef version and optional complexity label. If targetVersion is
 // empty, all versions are included. If complexityLabel is empty, all labels
 // are included.
-func FilterComplexities(complexities []datastore.CookbookComplexity, targetVersion, complexityLabel string) []datastore.CookbookComplexity {
+func FilterComplexities(complexities []datastore.ServerCookbookComplexity, targetVersion, complexityLabel string) []datastore.ServerCookbookComplexity {
 	if targetVersion == "" && complexityLabel == "" {
 		return complexities
 	}
-	filtered := make([]datastore.CookbookComplexity, 0, len(complexities))
+	filtered := make([]datastore.ServerCookbookComplexity, 0, len(complexities))
 	for _, cc := range complexities {
 		if targetVersion != "" && cc.TargetChefVersion != targetVersion {
 			continue

@@ -983,10 +983,10 @@ func TestDestroyBestEffort_Arguments(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Tests: TestCookbooks (batch orchestration)
+// Tests: TestGitRepos (batch orchestration)
 // ---------------------------------------------------------------------------
 
-func TestTestCookbooks_EmptyInput(t *testing.T) {
+func TestTestGitRepos_EmptyInput(t *testing.T) {
 	mock := newMockKitchenExecutor()
 	s := &KitchenScanner{
 		executor:    mock,
@@ -996,13 +996,13 @@ func TestTestCookbooks_EmptyInput(t *testing.T) {
 		tkConfig:    config.TestKitchenConfig{},
 	}
 
-	result := s.TestCookbooks(context.Background(), nil, []string{"18.0.0"}, func(cb datastore.Cookbook) string { return "" })
+	result := s.TestGitRepos(context.Background(), nil, []string{"18.0.0"}, func(gr datastore.GitRepo) string { return "" })
 	if result.Total != 0 {
 		t.Errorf("expected 0 total, got %d", result.Total)
 	}
 }
 
-func TestTestCookbooks_FiltersNonGitCookbooks(t *testing.T) {
+func TestTestGitRepos_FiltersReposWithoutTestSuite(t *testing.T) {
 	mock := newMockKitchenExecutor()
 	s := &KitchenScanner{
 		executor:    mock,
@@ -1012,19 +1012,18 @@ func TestTestCookbooks_FiltersNonGitCookbooks(t *testing.T) {
 		tkConfig:    config.TestKitchenConfig{},
 	}
 
-	cookbooks := []datastore.Cookbook{
-		{ID: "1", Name: "server-cb", Source: "chef_server", HasTestSuite: true, HeadCommitSHA: "abc123"},
-		{ID: "2", Name: "no-tests", Source: "git", HasTestSuite: false, HeadCommitSHA: "abc123"},
-		{ID: "3", Name: "no-sha", Source: "git", HasTestSuite: true, HeadCommitSHA: ""},
+	repos := []datastore.GitRepo{
+		{ID: "1", Name: "no-tests", HasTestSuite: false, HeadCommitSHA: "abc123"},
+		{ID: "2", Name: "no-sha", HasTestSuite: true, HeadCommitSHA: ""},
 	}
 
-	result := s.TestCookbooks(context.Background(), cookbooks, []string{"18.0.0"}, func(cb datastore.Cookbook) string { return "/tmp/" + cb.Name })
+	result := s.TestGitRepos(context.Background(), repos, []string{"18.0.0"}, func(gr datastore.GitRepo) string { return "/tmp/" + gr.Name })
 	if result.Total != 0 {
 		t.Errorf("expected 0 work items (all filtered), got %d", result.Total)
 	}
 }
 
-func TestTestCookbooks_NoTargetVersions(t *testing.T) {
+func TestTestGitRepos_NoTargetVersions(t *testing.T) {
 	mock := newMockKitchenExecutor()
 	s := &KitchenScanner{
 		executor:    mock,
@@ -1034,17 +1033,17 @@ func TestTestCookbooks_NoTargetVersions(t *testing.T) {
 		tkConfig:    config.TestKitchenConfig{},
 	}
 
-	cookbooks := []datastore.Cookbook{
-		{ID: "1", Name: "good-cb", Source: "git", HasTestSuite: true, HeadCommitSHA: "abc123"},
+	repos := []datastore.GitRepo{
+		{ID: "1", Name: "good-cb", HasTestSuite: true, HeadCommitSHA: "abc123"},
 	}
 
-	result := s.TestCookbooks(context.Background(), cookbooks, nil, func(cb datastore.Cookbook) string { return "/tmp/" + cb.Name })
+	result := s.TestGitRepos(context.Background(), repos, nil, func(gr datastore.GitRepo) string { return "/tmp/" + gr.Name })
 	if result.Total != 0 {
 		t.Errorf("expected 0 work items with no target versions, got %d", result.Total)
 	}
 }
 
-func TestTestCookbooks_WorkItemCount(t *testing.T) {
+func TestTestGitRepos_WorkItemCount(t *testing.T) {
 	mock := newMockKitchenExecutor()
 	// Provide list response so testOne doesn't fail during instance discovery.
 	// But since db is nil, testOne will error on skip check — that's fine,
@@ -1058,16 +1057,16 @@ func TestTestCookbooks_WorkItemCount(t *testing.T) {
 		db:          nil, // Will cause errors in testOne, but we check the batch shape.
 	}
 
-	cookbooks := []datastore.Cookbook{
-		{ID: "1", Name: "cb-a", Source: "git", HasTestSuite: true, HeadCommitSHA: "aaa"},
-		{ID: "2", Name: "cb-b", Source: "git", HasTestSuite: true, HeadCommitSHA: "bbb"},
+	repos := []datastore.GitRepo{
+		{ID: "1", Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
+		{ID: "2", Name: "cb-b", HasTestSuite: true, HeadCommitSHA: "bbb"},
 	}
 	versions := []string{"17.0.0", "18.0.0", "18.5.0"}
 
-	result := s.TestCookbooks(context.Background(), cookbooks, versions,
-		func(cb datastore.Cookbook) string { return "/tmp/" + cb.Name })
+	result := s.TestGitRepos(context.Background(), repos, versions,
+		func(gr datastore.GitRepo) string { return "/tmp/" + gr.Name })
 
-	// 2 cookbooks × 3 versions = 6 work items.
+	// 2 repos × 3 versions = 6 work items.
 	if result.Total != 6 {
 		t.Errorf("expected 6 work items, got %d", result.Total)
 	}
@@ -1077,7 +1076,7 @@ func TestTestCookbooks_WorkItemCount(t *testing.T) {
 	}
 }
 
-func TestTestCookbooks_EmptyDir(t *testing.T) {
+func TestTestGitRepos_EmptyDir(t *testing.T) {
 	mock := newMockKitchenExecutor()
 	s := &KitchenScanner{
 		executor:    mock,
@@ -1087,20 +1086,20 @@ func TestTestCookbooks_EmptyDir(t *testing.T) {
 		tkConfig:    config.TestKitchenConfig{},
 	}
 
-	cookbooks := []datastore.Cookbook{
-		{ID: "1", Name: "cb-a", Source: "git", HasTestSuite: true, HeadCommitSHA: "aaa"},
+	repos := []datastore.GitRepo{
+		{ID: "1", Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
 	}
 
-	result := s.TestCookbooks(context.Background(), cookbooks, []string{"18.0.0"},
-		func(cb datastore.Cookbook) string { return "" })
+	result := s.TestGitRepos(context.Background(), repos, []string{"18.0.0"},
+		func(gr datastore.GitRepo) string { return "" })
 
-	// Empty dir means the cookbook is filtered out.
+	// Empty dir means the repo is filtered out.
 	if result.Total != 0 {
 		t.Errorf("expected 0 work items for empty dir, got %d", result.Total)
 	}
 }
 
-func TestTestCookbooks_ContextCancelled(t *testing.T) {
+func TestTestGitRepos_ContextCancelled(t *testing.T) {
 	mock := newMockKitchenExecutor()
 	s := &KitchenScanner{
 		executor:    mock,
@@ -1110,15 +1109,15 @@ func TestTestCookbooks_ContextCancelled(t *testing.T) {
 		tkConfig:    config.TestKitchenConfig{},
 	}
 
-	cookbooks := []datastore.Cookbook{
-		{ID: "1", Name: "cb-a", Source: "git", HasTestSuite: true, HeadCommitSHA: "aaa"},
+	repos := []datastore.GitRepo{
+		{ID: "1", Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately.
 
-	result := s.TestCookbooks(ctx, cookbooks, []string{"18.0.0"},
-		func(cb datastore.Cookbook) string { return "/tmp/cb-a" })
+	result := s.TestGitRepos(ctx, repos, []string{"18.0.0"},
+		func(gr datastore.GitRepo) string { return "/tmp/cb-a" })
 
 	// The run should complete quickly with the items either errored or skipped.
 	if result.Total > 1 {

@@ -587,15 +587,14 @@ func run() int {
 	cookbookCacheDir := cfg.Storage.CookbookCacheDir
 	collOpts = append(collOpts, collector.WithCookbookCacheDir(cookbookCacheDir))
 	collOpts = append(collOpts, collector.WithGitCookbookDir(gitCookbookDir))
-	collOpts = append(collOpts, collector.WithCookbookDirFn(func(cb datastore.Cookbook) string {
-		if cb.IsGit() {
-			return filepath.Join(gitCookbookDir, cb.Name)
-		}
+	collOpts = append(collOpts, collector.WithServerCookbookDirFn(func(sc datastore.ServerCookbook) string {
 		// Server cookbooks are no longer on disk after scanning — the
 		// streaming pipeline downloads to a temp dir, scans, and deletes
-		// immediately. Returning "" signals that the files are unavailable,
-		// which is correct: Steps 11/13 only process git cookbooks.
+		// immediately. Returning "" signals that the files are unavailable.
 		return ""
+	}))
+	collOpts = append(collOpts, collector.WithGitRepoDirFn(func(repo datastore.GitRepo) string {
+		return filepath.Join(gitCookbookDir, repo.Name)
 	}))
 
 	startup.Info(fmt.Sprintf("storage paths: data_dir=%s, cookbook_cache=%s, git_cookbooks=%s",

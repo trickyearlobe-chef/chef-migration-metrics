@@ -1646,7 +1646,7 @@ func TestCookbookCommitters_HappyPath(t *testing.T) {
 			}, 1, nil
 		},
 		// The cookbook detail handler may also call these, so provide defaults.
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1692,7 +1692,7 @@ func TestCookbookCommitters_NotGitSourced(t *testing.T) {
 		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
 			return "", datastore.ErrNotFound
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1714,7 +1714,7 @@ func TestCookbookCommitters_EmptyResults(t *testing.T) {
 		ListCommittersByRepoFn: func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error) {
 			return nil, 0, nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1749,7 +1749,7 @@ func TestCookbookCommitters_WithSortAndSince(t *testing.T) {
 			capturedFilter = f
 			return []datastore.GitRepoCommitter{}, 0, nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1777,7 +1777,7 @@ func TestCookbookCommitters_InvalidSince(t *testing.T) {
 		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
 			return "https://gitlab.example.com/cookbooks/nginx.git", nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1799,7 +1799,7 @@ func TestCookbookCommitters_DBError(t *testing.T) {
 		ListCommittersByRepoFn: func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error) {
 			return nil, 0, errors.New("timeout")
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1815,7 +1815,7 @@ func TestCookbookCommitters_DBError(t *testing.T) {
 
 func TestCookbookCommitters_MethodNotAllowed(t *testing.T) {
 	store := &mockStore{
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1850,7 +1850,7 @@ func TestCookbookCommittersAssign_HappyPath(t *testing.T) {
 		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
 			return nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1894,7 +1894,7 @@ func TestCookbookCommittersAssign_ExistingOwner(t *testing.T) {
 		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
 			return nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1934,7 +1934,7 @@ func TestCookbookCommittersAssign_DuplicateAssignment(t *testing.T) {
 		InsertAssignmentFn: func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
 			return datastore.OwnershipAssignment{}, datastore.ErrAlreadyExists
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1964,7 +1964,7 @@ func TestCookbookCommittersAssign_NotGitSourced(t *testing.T) {
 		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
 			return "", datastore.ErrNotFound
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -1984,7 +1984,7 @@ func TestCookbookCommittersAssign_MissingAuthorEmail(t *testing.T) {
 		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
 			return "https://gitlab.example.com/cookbooks/nginx.git", nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -2004,7 +2004,7 @@ func TestCookbookCommittersAssign_MissingOwnerName(t *testing.T) {
 		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
 			return "https://gitlab.example.com/cookbooks/nginx.git", nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -2024,7 +2024,7 @@ func TestCookbookCommittersAssign_EmptyCommitters(t *testing.T) {
 		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
 			return "https://gitlab.example.com/cookbooks/nginx.git", nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -2044,7 +2044,7 @@ func TestCookbookCommittersAssign_OwnershipDisabled(t *testing.T) {
 		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
 			return "https://gitlab.example.com/cookbooks/nginx.git", nil
 		},
-		ListCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}

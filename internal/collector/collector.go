@@ -57,10 +57,15 @@ type Collector struct {
 	readinessEval    *analysis.ReadinessEvaluator
 	ownershipEval    *OwnershipEvaluator
 
-	// cookbookDirFn resolves the filesystem path for a cookbook. Required
+	// serverCookbookDirFn resolves the filesystem path for a server
+	// cookbook. Required by CookStyle scanning of server cookbooks and
+	// autocorrect preview generation. When nil, those steps are skipped.
+	serverCookbookDirFn func(cb datastore.ServerCookbook) string
+
+	// gitRepoDirFn resolves the filesystem path for a git repo. Required
 	// by CookStyle scanning, Test Kitchen, and autocorrect preview
-	// generation. When nil, those steps are skipped.
-	cookbookDirFn func(cb datastore.Cookbook) string
+	// generation for git-sourced cookbooks. When nil, those steps are skipped.
+	gitRepoDirFn func(repo datastore.GitRepo) string
 
 	// cookbookCacheDir is the base directory for extracting Chef server
 	// cookbook files to disk. Files are written to
@@ -128,11 +133,18 @@ func WithOwnershipEvaluator(e *OwnershipEvaluator) Option {
 	return func(c *Collector) { c.ownershipEval = e }
 }
 
-// WithCookbookDirFn sets the function that resolves a cookbook to its
+// WithServerCookbookDirFn sets the function that resolves a server cookbook
+// to its filesystem path. Required by CookStyle scanning and autocorrect
+// preview generation for server cookbooks.
+func WithServerCookbookDirFn(fn func(cb datastore.ServerCookbook) string) Option {
+	return func(c *Collector) { c.serverCookbookDirFn = fn }
+}
+
+// WithGitRepoDirFn sets the function that resolves a git repo to its
 // filesystem path. Required by CookStyle scanning, Test Kitchen, and
-// autocorrect preview generation.
-func WithCookbookDirFn(fn func(cb datastore.Cookbook) string) Option {
-	return func(c *Collector) { c.cookbookDirFn = fn }
+// autocorrect preview generation for git-sourced cookbooks.
+func WithGitRepoDirFn(fn func(repo datastore.GitRepo) string) Option {
+	return func(c *Collector) { c.gitRepoDirFn = fn }
 }
 
 // WithCookbookCacheDir sets the base directory for extracting Chef server
@@ -900,7 +912,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				OrganisationID:  org.ID,
 				Name:            cbName,
 				Version:         ver.Version,
-				HasTestSuite:    false, // Server cookbooks don't include test suites
 				IsActive:        isActive,
 				IsStaleCookbook: false, // Will be updated below
 				FirstSeenAt:     now,
@@ -929,7 +940,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	for name := range activeCookbookNames {
 		activeNames = append(activeNames, name)
 	}
-	if err := c.db.MarkCookbooksActiveForOrg(ctx, org.ID, activeNames); err != nil {
+	if err := c.db.MarkServerCookbooksActiveForOrg(ctx, org.ID, activeNames); err != nil {
 		log.Warn(fmt.Sprintf("failed to mark active cookbooks: %v", err),
 			logging.WithCollectionRunID(run.ID))
 	}
@@ -938,7 +949,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// recent version's first_seen_at is older than the configured threshold.
 	// This is done via a database update for cookbooks belonging to this org.
 	staleCookbookCutoff := now.Add(-staleCookbookThreshold)
-	staleCount, staleErr := c.db.MarkStaleCookbooksForOrg(ctx, org.ID, staleCookbookCutoff)
+	staleCount, staleErr := c.db.MarkStaleServerCookbooksForOrg(ctx, org.ID, staleCookbookCutoff)
 	if staleErr != nil {
 		log.Warn(fmt.Sprintf("failed to mark stale cookbooks: %v", staleErr),
 			logging.WithCollectionRunID(run.ID))
@@ -1072,9 +1083,9 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				}
 
 				usageParams = append(usageParams, datastore.InsertCookbookNodeUsageParams{
-					CookbookID:      cookbookID,
-					NodeSnapshotID:  snapshotID,
-					CookbookVersion: cbVersion,
+					ServerCookbookID: cookbookID,
+					NodeSnapshotID:   snapshotID,
+					CookbookVersion:  cbVersion,
 				})
 			}
 		}
@@ -1172,50 +1183,46 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// Git cookbooks live in persistent clones and are rescanned when the
 	// HEAD commit changes. Skipped if the scanner is not configured or no
 	// cookbook directory resolver is set. Non-fatal.
-	if c.cookstyleScanner != nil && c.cookbookDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
-		gitCookbooks, gitListErr := c.db.ListGitCookbooks(ctx)
+	if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+		gitRepos, gitListErr := c.db.ListGitRepos(ctx)
 		if gitListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list git cookbooks for CookStyle scanning: %v", gitListErr),
+			log.Warn(fmt.Sprintf("failed to list git repos for CookStyle scanning: %v", gitListErr),
 				logging.WithCollectionRunID(run.ID))
-		} else if len(gitCookbooks) > 0 {
-			log.Info(fmt.Sprintf("running CookStyle scanning on %d git cookbook(s)", len(gitCookbooks)),
+		} else if len(gitRepos) > 0 {
+			log.Info(fmt.Sprintf("running CookStyle scanning on %d git repo(s)", len(gitRepos)),
 				logging.WithCollectionRunID(run.ID))
 
-			csBatch := c.cookstyleScanner.ScanCookbooks(ctx, gitCookbooks, c.cfg.TargetChefVersions, c.cookbookDirFn)
-			log.Info(fmt.Sprintf(
-				"CookStyle scanning complete: %d total, %d scanned, %d skipped, %d passed, %d failed, %d errors in %s",
-				csBatch.Total, csBatch.Scanned, csBatch.Skipped,
-				csBatch.Passed, csBatch.Failed, csBatch.Errors,
-				csBatch.Duration.Round(time.Millisecond)),
+			// TODO: Update when analysis layer is refactored to use split types
+			// csBatch := c.cookstyleScanner.ScanGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+			_ = gitRepos // suppress unused variable until analysis layer is refactored
+			log.Warn("CookStyle scanning for git repos skipped — analysis layer not yet refactored to split types",
 				logging.WithCollectionRunID(run.ID))
 		}
-	} else if c.cookstyleScanner != nil && c.cookbookDirFn == nil {
-		log.Debug("skipping CookStyle scanning — no cookbook directory resolver configured",
+	} else if c.cookstyleScanner != nil && c.gitRepoDirFn == nil {
+		log.Debug("skipping CookStyle scanning — no git repo directory resolver configured",
 			logging.WithCollectionRunID(run.ID))
 	}
 
 	// Step 12: Test Kitchen. Run Test Kitchen on git-sourced cookbooks
 	// that have test suites. Skipped if the scanner is not configured.
 	// Non-fatal — failures are logged as WARN.
-	if c.kitchenScanner != nil && c.cookbookDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+	if c.kitchenScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
 		log.Info("running Test Kitchen",
 			logging.WithCollectionRunID(run.ID))
 
-		gitCookbooks, tkListErr := c.db.ListGitCookbooks(ctx)
+		gitRepos, tkListErr := c.db.ListGitRepos(ctx)
 		if tkListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list git cookbooks for Test Kitchen: %v", tkListErr),
+			log.Warn(fmt.Sprintf("failed to list git repos for Test Kitchen: %v", tkListErr),
 				logging.WithCollectionRunID(run.ID))
 		} else {
-			tkBatch := c.kitchenScanner.TestCookbooks(ctx, gitCookbooks, c.cfg.TargetChefVersions, c.cookbookDirFn)
-			log.Info(fmt.Sprintf(
-				"Test Kitchen complete: %d total, %d tested, %d skipped, %d passed, %d failed, %d timed out, %d errors in %s",
-				tkBatch.Total, tkBatch.Tested, tkBatch.Skipped,
-				tkBatch.Passed, tkBatch.Failed, tkBatch.TimedOut, tkBatch.Errors,
-				tkBatch.Duration.Round(time.Millisecond)),
+			// TODO: Update when analysis layer is refactored to use split types
+			// tkBatch := c.kitchenScanner.TestGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+			_ = gitRepos // suppress unused variable until analysis layer is refactored
+			log.Warn("Test Kitchen for git repos skipped — analysis layer not yet refactored to split types",
 				logging.WithCollectionRunID(run.ID))
 		}
-	} else if c.kitchenScanner != nil && c.cookbookDirFn == nil {
-		log.Debug("skipping Test Kitchen — no cookbook directory resolver configured",
+	} else if c.kitchenScanner != nil && c.gitRepoDirFn == nil {
+		log.Debug("skipping Test Kitchen — no git repo directory resolver configured",
 			logging.WithCollectionRunID(run.ID))
 	}
 
@@ -1226,21 +1233,21 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// Server cookbook previews are now generated inline during the Step 7b
 	// pipeline (before files are deleted from disk). Git cookbook previews
 	// are generated here because git clones persist on disk.
-	if c.autocorrectGen != nil && c.cookbookDirFn != nil {
-		gitCBsForAC, gitCBListErr := c.db.ListGitCookbooks(ctx)
-		if gitCBListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list git cookbooks for autocorrect previews: %v", gitCBListErr),
+	if c.autocorrectGen != nil && c.gitRepoDirFn != nil {
+		gitReposForAC, gitRepoListErr := c.db.ListGitRepos(ctx)
+		if gitRepoListErr != nil {
+			log.Warn(fmt.Sprintf("failed to list git repos for autocorrect previews: %v", gitRepoListErr),
 				logging.WithCollectionRunID(run.ID))
-		} else if len(gitCBsForAC) > 0 {
-			var csResults []datastore.CookstyleResult
-			for _, gcb := range gitCBsForAC {
-				gcbResults, err := c.db.ListCookstyleResultsForCookbook(ctx, gcb.ID)
+		} else if len(gitReposForAC) > 0 {
+			var csResults []datastore.GitRepoCookstyleResult
+			for _, repo := range gitReposForAC {
+				repoResults, err := c.db.ListGitRepoCookstyleResults(ctx, repo.ID)
 				if err != nil {
-					log.Warn(fmt.Sprintf("failed to list CookStyle results for git cookbook %s: %v", gcb.Name, err),
+					log.Warn(fmt.Sprintf("failed to list CookStyle results for git repo %s: %v", repo.Name, err),
 						logging.WithCollectionRunID(run.ID))
 					continue
 				}
-				csResults = append(csResults, gcbResults...)
+				csResults = append(csResults, repoResults...)
 			}
 
 			if len(csResults) > 0 {
@@ -1251,23 +1258,24 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				for _, csr := range csResults {
 					csInfos = append(csInfos, remediation.CookstyleResultInfo{
 						ResultID:          csr.ID,
-						CookbookID:        csr.CookbookID,
+						CookbookID:        csr.GitRepoID,
 						TargetChefVersion: csr.TargetChefVersion,
 						OffenseCount:      csr.OffenceCount,
 						Passed:            csr.Passed,
+						Source:            remediation.SourceGitRepo,
 					})
 				}
 
-				cbByID := make(map[string]datastore.Cookbook, len(gitCBsForAC))
-				for _, cb := range gitCBsForAC {
-					cbByID[cb.ID] = cb
+				repoByID := make(map[string]datastore.GitRepo, len(gitReposForAC))
+				for _, repo := range gitReposForAC {
+					repoByID[repo.ID] = repo
 				}
 				dirFn := func(cookbookID string) string {
-					cb, ok := cbByID[cookbookID]
+					repo, ok := repoByID[cookbookID]
 					if !ok {
 						return ""
 					}
-					return c.cookbookDirFn(cb)
+					return c.gitRepoDirFn(repo)
 				}
 
 				acBatch := c.autocorrectGen.GeneratePreviews(ctx, csInfos, dirFn)
@@ -1284,12 +1292,12 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		log.Info("running complexity scoring",
 			logging.WithCollectionRunID(run.ID))
 
-		orgCBs, cxListErr := c.db.ListCookbooksByOrganisation(ctx, org.ID)
+		orgCBs, cxListErr := c.db.ListServerCookbooksByOrganisation(ctx, org.ID)
 		if cxListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list cookbooks for complexity scoring: %v", cxListErr),
+			log.Warn(fmt.Sprintf("failed to list server cookbooks for complexity scoring: %v", cxListErr),
 				logging.WithCollectionRunID(run.ID))
 		} else {
-			cxBatch := c.complexityScorer.ScoreCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.ID)
+			cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.ID)
 			log.Info(fmt.Sprintf(
 				"complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
 				cxBatch.Total, cxBatch.Scored, cxBatch.Skipped, cxBatch.Errors,

@@ -59,13 +59,16 @@ type DataStore interface {
 	// given node snapshot, ordered by target_chef_version.
 	ListNodeReadinessForSnapshot(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error)
 
-	// ListCookbooksByOrganisation returns all cookbooks belonging to the
-	// given organisation.
-	ListCookbooksByOrganisation(ctx context.Context, organisationID string) ([]datastore.Cookbook, error)
+	// ListServerCookbooksByOrganisation returns all server cookbooks belonging
+	// to the given organisation.
+	ListServerCookbooksByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
 
-	// ListCookbookComplexitiesForOrganisation returns all complexity records
-	// for cookbooks belonging to the given organisation.
-	ListCookbookComplexitiesForOrganisation(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error)
+	// ListGitRepos returns all git repos (not org-scoped).
+	ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
+
+	// ListServerCookbookComplexitiesByOrganisation returns all complexity
+	// records for server cookbooks belonging to the given organisation.
+	ListServerCookbookComplexitiesByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error)
 
 	// CountNodeReadiness returns the total, ready, and blocked counts for
 	// the given organisation and target Chef version.

@@ -102,19 +102,19 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 	var results []cookbookRemediationRow
 
 	for _, org := range orgs {
-		cookbooks, err := db.ListCookbooksByOrganisation(ctx, org.ID)
+		cookbooks, err := db.ListServerCookbooksByOrganisation(ctx, org.ID)
 		if err != nil {
 			// Non-fatal — skip this org.
 			continue
 		}
 
 		// Build a map from cookbook ID to cookbook metadata for joining.
-		cbMap := make(map[string]datastore.Cookbook, len(cookbooks))
+		cbMap := make(map[string]datastore.ServerCookbook, len(cookbooks))
 		for _, cb := range cookbooks {
 			cbMap[cb.ID] = cb
 		}
 
-		complexities, err := db.ListCookbookComplexitiesForOrganisation(ctx, org.ID)
+		complexities, err := db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
 		if err != nil {
 			// Non-fatal — skip this org's complexity data.
 			continue
@@ -128,7 +128,7 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 		)
 
 		for _, cc := range complexities {
-			cb, ok := cbMap[cc.CookbookID]
+			cb, ok := cbMap[cc.ServerCookbookID]
 			if !ok {
 				// Orphaned complexity record — skip.
 				continue

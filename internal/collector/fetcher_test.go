@@ -244,9 +244,9 @@ func TestCookbook_IsDownloaded(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.status, func(t *testing.T) {
-			cb := datastore.Cookbook{DownloadStatus: tt.status}
+			cb := datastore.ServerCookbook{DownloadStatus: tt.status}
 			if got := cb.IsDownloaded(); got != tt.want {
-				t.Errorf("Cookbook{DownloadStatus: %q}.IsDownloaded() = %v, want %v",
+				t.Errorf("ServerCookbook{DownloadStatus: %q}.IsDownloaded() = %v, want %v",
 					tt.status, got, tt.want)
 			}
 		})
@@ -266,9 +266,9 @@ func TestCookbook_NeedsDownload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.status, func(t *testing.T) {
-			cb := datastore.Cookbook{DownloadStatus: tt.status}
+			cb := datastore.ServerCookbook{DownloadStatus: tt.status}
 			if got := cb.NeedsDownload(); got != tt.want {
-				t.Errorf("Cookbook{DownloadStatus: %q}.NeedsDownload() = %v, want %v",
+				t.Errorf("ServerCookbook{DownloadStatus: %q}.NeedsDownload() = %v, want %v",
 					tt.status, got, tt.want)
 			}
 		})
@@ -276,22 +276,21 @@ func TestCookbook_NeedsDownload(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Cookbook JSON serialisation tests (download fields included)
+// ServerCookbook JSON serialisation tests (download fields included)
 // ---------------------------------------------------------------------------
 
 func TestCookbook_MarshalJSON_IncludesDownloadStatus(t *testing.T) {
-	cb := datastore.Cookbook{
+	cb := datastore.ServerCookbook{
 		ID:             "abc-123",
 		Name:           "nginx",
 		Version:        "5.1.0",
-		Source:         "chef_server",
 		DownloadStatus: datastore.DownloadStatusFailed,
 		DownloadError:  "404 Not Found",
 	}
 
 	data, err := json.Marshal(cb)
 	if err != nil {
-		t.Fatalf("json.Marshal(Cookbook) error: %v", err)
+		t.Fatalf("json.Marshal(ServerCookbook) error: %v", err)
 	}
 
 	var m map[string]interface{}
@@ -313,18 +312,17 @@ func TestCookbook_MarshalJSON_IncludesDownloadStatus(t *testing.T) {
 }
 
 func TestCookbook_MarshalJSON_OmitsEmptyDownloadError(t *testing.T) {
-	cb := datastore.Cookbook{
+	cb := datastore.ServerCookbook{
 		ID:             "abc-123",
 		Name:           "nginx",
 		Version:        "5.1.0",
-		Source:         "chef_server",
 		DownloadStatus: datastore.DownloadStatusOK,
 		DownloadError:  "", // Empty — should be omitted
 	}
 
 	data, err := json.Marshal(cb)
 	if err != nil {
-		t.Fatalf("json.Marshal(Cookbook) error: %v", err)
+		t.Fatalf("json.Marshal(ServerCookbook) error: %v", err)
 	}
 
 	var m map[string]interface{}
@@ -344,11 +342,11 @@ func TestCookbook_MarshalJSON_OmitsEmptyDownloadError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// UpdateCookbookDownloadStatusParams validation tests
+// UpdateServerCookbookDownloadStatusParams validation tests
 // ---------------------------------------------------------------------------
 
 func TestUpdateCookbookDownloadStatusParams_Fields(t *testing.T) {
-	p := datastore.UpdateCookbookDownloadStatusParams{
+	p := datastore.UpdateServerCookbookDownloadStatusParams{
 		ID:             "abc-123",
 		DownloadStatus: datastore.DownloadStatusFailed,
 		DownloadError:  "timeout after 30s",
@@ -478,72 +476,46 @@ func TestFormatDownloadError_APIError_LargeBody(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Cookbook source type interaction with download status
+// ServerCookbook download status tests
 // ---------------------------------------------------------------------------
 
-func TestCookbook_GitSource_DownloadStatus(t *testing.T) {
-	// Git-sourced cookbooks should have download_status = 'ok' since
-	// they're managed via git clone/pull, not the Chef server download
-	// pipeline. Verify the struct methods work correctly.
-	cb := datastore.Cookbook{
-		Source:         "git",
+func TestServerCookbook_DownloadStatusOK(t *testing.T) {
+	cb := datastore.ServerCookbook{
 		DownloadStatus: datastore.DownloadStatusOK,
 	}
 
-	if !cb.IsGit() {
-		t.Error("expected IsGit() to be true")
-	}
 	if !cb.IsDownloaded() {
-		t.Error("expected IsDownloaded() to be true for git cookbook with status ok")
+		t.Error("expected IsDownloaded() to be true for server cookbook with status ok")
 	}
 	if cb.NeedsDownload() {
-		t.Error("expected NeedsDownload() to be false for git cookbook with status ok")
+		t.Error("expected NeedsDownload() to be false for server cookbook with status ok")
 	}
 }
 
-func TestCookbook_ChefServerSource_PendingStatus(t *testing.T) {
-	cb := datastore.Cookbook{
-		Source:         "chef_server",
+func TestServerCookbook_PendingStatus(t *testing.T) {
+	cb := datastore.ServerCookbook{
 		DownloadStatus: datastore.DownloadStatusPending,
 	}
 
-	if !cb.IsChefServer() {
-		t.Error("expected IsChefServer() to be true")
-	}
 	if cb.IsDownloaded() {
-		t.Error("expected IsDownloaded() to be false for pending cookbook")
+		t.Error("expected IsDownloaded() to be false for pending server cookbook")
 	}
 	if !cb.NeedsDownload() {
-		t.Error("expected NeedsDownload() to be true for pending cookbook")
+		t.Error("expected NeedsDownload() to be true for pending server cookbook")
 	}
 }
 
-func TestCookbook_ChefServerSource_FailedStatus(t *testing.T) {
-	cb := datastore.Cookbook{
-		Source:         "chef_server",
+func TestServerCookbook_FailedStatus(t *testing.T) {
+	cb := datastore.ServerCookbook{
 		DownloadStatus: datastore.DownloadStatusFailed,
 		DownloadError:  "connection reset",
 	}
 
 	if cb.IsDownloaded() {
-		t.Error("expected IsDownloaded() to be false for failed cookbook")
+		t.Error("expected IsDownloaded() to be false for failed server cookbook")
 	}
 	if !cb.NeedsDownload() {
-		t.Error("expected NeedsDownload() to be true for failed cookbook")
-	}
-}
-
-func TestCookbook_ChefServerSource_OKStatus(t *testing.T) {
-	cb := datastore.Cookbook{
-		Source:         "chef_server",
-		DownloadStatus: datastore.DownloadStatusOK,
-	}
-
-	if !cb.IsDownloaded() {
-		t.Error("expected IsDownloaded() to be true for ok cookbook")
-	}
-	if cb.NeedsDownload() {
-		t.Error("expected NeedsDownload() to be false for ok cookbook")
+		t.Error("expected NeedsDownload() to be true for failed server cookbook")
 	}
 }
 

@@ -530,16 +530,13 @@ func fetchGitCookbooks(
 
 				// Upsert into the datastore.
 				now := time.Now().UTC()
-				_, upsertErr := db.UpsertGitCookbook(ctx, datastore.UpsertGitCookbookParams{
-					Name:            cbName,
-					GitRepoURL:      repoURL,
-					HeadCommitSHA:   repoResult.HeadCommitSHA,
-					DefaultBranch:   repoResult.DefaultBranch,
-					HasTestSuite:    repoResult.HasTestSuite,
-					IsActive:        true,
-					IsStaleCookbook: false,
-					FirstSeenAt:     now,
-					LastFetchedAt:   now,
+				_, upsertErr := db.UpsertGitRepo(ctx, datastore.UpsertGitRepoParams{
+					Name:          cbName,
+					GitRepoURL:    repoURL,
+					HeadCommitSHA: repoResult.HeadCommitSHA,
+					DefaultBranch: repoResult.DefaultBranch,
+					HasTestSuite:  repoResult.HasTestSuite,
+					LastFetchedAt: now,
 				})
 				if upsertErr != nil {
 					log.Warn(fmt.Sprintf("git cookbook upsert failed for %s: %v", cbName, upsertErr))
