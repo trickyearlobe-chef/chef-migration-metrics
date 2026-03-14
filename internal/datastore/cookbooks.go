@@ -11,10 +11,12 @@ import (
 	"time"
 )
 
-// Cookbook represents a row in the cookbooks table. A cookbook can be sourced
-// from a Chef server (has organisation_id, name, version) or from a git
-// repository (has name, git_repo_url, head_commit_sha).
-// Download status constants for the cookbooks table.
+// Cookbook represents a row in the legacy cookbooks table. This type is
+// retained temporarily during the refactor to support callers that have not
+// yet been migrated to ServerCookbook / GitRepo. It will be deleted once all
+// consumers are updated.
+//
+// Download status constants are shared with ServerCookbook.
 const (
 	DownloadStatusOK      = "ok"      // Content fetched successfully
 	DownloadStatusFailed  = "failed"  // Download attempted but failed
@@ -70,86 +72,7 @@ func (c Cookbook) MarshalJSON() ([]byte, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Upsert — Chef Server cookbooks
-// ---------------------------------------------------------------------------
-
-// UpsertServerCookbookParams holds the fields required to upsert a cookbook
-// sourced from a Chef server. The upsert key is (organisation_id, name,
-// version) — Chef server cookbook versions are immutable, so an existing row
-// is only updated with metadata changes (active status, stale flag, etc.).
-type UpsertServerCookbookParams struct {
-	OrganisationID  string
-	Name            string
-	Version         string
-	HasTestSuite    bool
-	IsActive        bool
-	IsStaleCookbook bool
-	FirstSeenAt     time.Time // set on first insert, not overwritten on update
-	LastFetchedAt   time.Time
-}
-
-// UpsertServerCookbook inserts or updates a Chef-server-sourced cookbook.
-func (db *DB) UpsertServerCookbook(ctx context.Context, p UpsertServerCookbookParams) (Cookbook, error) {
-	return db.upsertServerCookbook(ctx, db.q(), p)
-}
-
-func (db *DB) upsertServerCookbook(ctx context.Context, q queryable, p UpsertServerCookbookParams) (Cookbook, error) {
-	if p.OrganisationID == "" {
-		return Cookbook{}, fmt.Errorf("datastore: organisation ID is required for server cookbook")
-	}
-	if p.Name == "" {
-		return Cookbook{}, fmt.Errorf("datastore: cookbook name is required")
-	}
-	if p.Version == "" {
-		return Cookbook{}, fmt.Errorf("datastore: cookbook version is required for server cookbook")
-	}
-	if p.LastFetchedAt.IsZero() {
-		p.LastFetchedAt = time.Now().UTC()
-	}
-	if p.FirstSeenAt.IsZero() {
-		p.FirstSeenAt = time.Now().UTC()
-	}
-
-	// The partial unique index uq_cookbooks_server covers (organisation_id, name, version)
-	// WHERE source = 'chef_server'. We use a CTE to perform a conditional upsert
-	// that works with the partial index.
-	const query = `
-		INSERT INTO cookbooks (
-			organisation_id, name, version, source,
-			has_test_suite, is_active, is_stale_cookbook,
-			first_seen_at, last_fetched_at
-		) VALUES (
-			$1, $2, $3, 'chef_server',
-			$4, $5, $6, $7, $8
-		)
-		ON CONFLICT (organisation_id, name, version) WHERE source = 'chef_server'
-		DO UPDATE SET
-			has_test_suite    = EXCLUDED.has_test_suite,
-			is_active         = EXCLUDED.is_active,
-			is_stale_cookbook  = EXCLUDED.is_stale_cookbook,
-			last_fetched_at   = EXCLUDED.last_fetched_at,
-			updated_at        = now()
-		RETURNING id, organisation_id, name, version, source,
-		          git_repo_url, head_commit_sha, default_branch,
-		          has_test_suite, is_active, is_stale_cookbook,
-		          download_status, download_error,
-		          first_seen_at, last_fetched_at, created_at, updated_at
-	`
-
-	return scanCookbook(q.QueryRowContext(ctx, query,
-		p.OrganisationID,
-		p.Name,
-		p.Version,
-		p.HasTestSuite,
-		p.IsActive,
-		p.IsStaleCookbook,
-		p.FirstSeenAt,
-		p.LastFetchedAt,
-	))
-}
-
-// ---------------------------------------------------------------------------
-// Upsert — Git cookbooks
+// Upsert — Git cookbooks (retained until Commit 4 introduces git_repos.go)
 // ---------------------------------------------------------------------------
 
 // UpsertGitCookbookParams holds the fields required to upsert a cookbook
@@ -189,11 +112,10 @@ func (db *DB) upsertGitCookbook(ctx context.Context, q queryable, p UpsertGitCoo
 		INSERT INTO cookbooks (
 			name, source, git_repo_url, head_commit_sha, default_branch,
 			has_test_suite, is_active, is_stale_cookbook,
-			download_status,
 			first_seen_at, last_fetched_at
 		) VALUES (
 			$1, 'git', $2, $3, $4,
-			$5, $6, $7, 'ok',
+			$5, $6, $7,
 			$8, $9
 		)
 		ON CONFLICT (name, git_repo_url) WHERE source = 'git'
@@ -203,7 +125,6 @@ func (db *DB) upsertGitCookbook(ctx context.Context, q queryable, p UpsertGitCoo
 			has_test_suite    = EXCLUDED.has_test_suite,
 			is_active         = EXCLUDED.is_active,
 			is_stale_cookbook  = EXCLUDED.is_stale_cookbook,
-			download_status   = EXCLUDED.download_status,
 			last_fetched_at   = EXCLUDED.last_fetched_at,
 			updated_at        = now()
 		RETURNING id, organisation_id, name, version, source,
@@ -227,162 +148,7 @@ func (db *DB) upsertGitCookbook(ctx context.Context, q queryable, p UpsertGitCoo
 }
 
 // ---------------------------------------------------------------------------
-// Bulk upsert
-// ---------------------------------------------------------------------------
-
-// BulkUpsertServerCookbooks upserts multiple Chef-server-sourced cookbooks
-// within a single transaction for efficiency. Returns the count of rows
-// upserted. If any upsert fails, the entire batch is rolled back.
-func (db *DB) BulkUpsertServerCookbooks(ctx context.Context, params []UpsertServerCookbookParams) (int, error) {
-	if len(params) == 0 {
-		return 0, nil
-	}
-
-	upserted := 0
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		for i, p := range params {
-			_, err := db.upsertServerCookbook(ctx, tx, p)
-			if err != nil {
-				return fmt.Errorf("row %d: %w", i, err)
-			}
-			upserted++
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return upserted, nil
-}
-
-// ---------------------------------------------------------------------------
-// Mark active/inactive
-// ---------------------------------------------------------------------------
-
-// MarkCookbooksActiveForOrg sets is_active = true for the named cookbooks
-// (by name) within the given organisation, and is_active = false for all
-// others. This is called after a collection run to reflect which cookbooks
-// are actually in use by at least one node.
-func (db *DB) MarkCookbooksActiveForOrg(ctx context.Context, organisationID string, activeNames []string) error {
-	return db.Tx(ctx, func(tx *sql.Tx) error {
-		// Deactivate all server cookbooks for this org.
-		_, err := tx.ExecContext(ctx,
-			`UPDATE cookbooks SET is_active = FALSE, updated_at = now()
-			 WHERE organisation_id = $1 AND source = 'chef_server'`,
-			organisationID,
-		)
-		if err != nil {
-			return fmt.Errorf("datastore: deactivating cookbooks: %w", err)
-		}
-
-		if len(activeNames) == 0 {
-			return nil
-		}
-
-		// Activate the ones that are in use. We use ANY($2) to match a
-		// PostgreSQL text array parameter.
-		_, err = tx.ExecContext(ctx,
-			`UPDATE cookbooks SET is_active = TRUE, updated_at = now()
-			 WHERE organisation_id = $1 AND source = 'chef_server'
-			   AND name = ANY($2)`,
-			organisationID,
-			stringSliceToArray(activeNames),
-		)
-		if err != nil {
-			return fmt.Errorf("datastore: activating cookbooks: %w", err)
-		}
-
-		return nil
-	})
-}
-
-// MarkStaleCookbooksForOrg updates the is_stale_cookbook flag for all server
-// cookbooks belonging to the given organisation. A cookbook is marked stale
-// if its first_seen_at is before the cutoff time, and not stale otherwise.
-// Returns the number of cookbooks marked as stale.
-func (db *DB) MarkStaleCookbooksForOrg(ctx context.Context, organisationID string, cutoff time.Time) (int, error) {
-	if organisationID == "" {
-		return 0, fmt.Errorf("datastore: organisation ID is required to mark stale cookbooks")
-	}
-
-	var staleCount int
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		// Clear stale flag for all cookbooks in the org.
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE cookbooks SET is_stale_cookbook = FALSE, updated_at = now()
-			 WHERE organisation_id = $1 AND source = 'chef_server'`,
-			organisationID,
-		); err != nil {
-			return fmt.Errorf("datastore: clearing stale cookbook flags: %w", err)
-		}
-
-		// Set stale flag where first_seen_at is before the cutoff.
-		res, err := tx.ExecContext(ctx,
-			`UPDATE cookbooks SET is_stale_cookbook = TRUE, updated_at = now()
-			 WHERE organisation_id = $1 AND source = 'chef_server'
-			   AND first_seen_at < $2`,
-			organisationID, cutoff,
-		)
-		if err != nil {
-			return fmt.Errorf("datastore: marking stale cookbooks: %w", err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("datastore: checking rows affected: %w", err)
-		}
-		staleCount = int(n)
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return staleCount, nil
-}
-
-// ---------------------------------------------------------------------------
-// Batch lookup
-// ---------------------------------------------------------------------------
-
-// GetServerCookbookIDMap returns a nested map of cookbook name → version → ID
-// for all Chef-server-sourced cookbooks belonging to the given organisation.
-// This is used during collection to efficiently resolve cookbook IDs when
-// building cookbook-node usage records, avoiding N+1 queries.
-func (db *DB) GetServerCookbookIDMap(ctx context.Context, organisationID string) (map[string]map[string]string, error) {
-	return db.getServerCookbookIDMap(ctx, db.q(), organisationID)
-}
-
-func (db *DB) getServerCookbookIDMap(ctx context.Context, q queryable, organisationID string) (map[string]map[string]string, error) {
-	const query = `
-		SELECT id, name, version
-		FROM cookbooks
-		WHERE organisation_id = $1 AND source = 'chef_server'
-	`
-
-	rows, err := q.QueryContext(ctx, query, organisationID)
-	if err != nil {
-		return nil, fmt.Errorf("datastore: querying server cookbook ID map: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[string]map[string]string)
-	for rows.Next() {
-		var id, name, version string
-		if err := rows.Scan(&id, &name, &version); err != nil {
-			return nil, fmt.Errorf("datastore: scanning server cookbook ID map row: %w", err)
-		}
-		if result[name] == nil {
-			result[name] = make(map[string]string)
-		}
-		result[name][version] = id
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("datastore: iterating server cookbook ID map rows: %w", err)
-	}
-	return result, nil
-}
-
-// ---------------------------------------------------------------------------
-// Query methods
+// Query methods (retained until callers are migrated)
 // ---------------------------------------------------------------------------
 
 // GetCookbook returns the cookbook with the given UUID. Returns ErrNotFound
@@ -404,27 +170,7 @@ func (db *DB) getCookbook(ctx context.Context, q queryable, id string) (Cookbook
 	return scanCookbook(q.QueryRowContext(ctx, query, id))
 }
 
-// GetServerCookbook returns a Chef-server-sourced cookbook by organisation,
-// name, and version. Returns ErrNotFound if no match exists.
-func (db *DB) GetServerCookbook(ctx context.Context, organisationID, name, version string) (Cookbook, error) {
-	return db.getServerCookbook(ctx, db.q(), organisationID, name, version)
-}
-
-func (db *DB) getServerCookbook(ctx context.Context, q queryable, organisationID, name, version string) (Cookbook, error) {
-	const query = `
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM cookbooks
-		WHERE organisation_id = $1 AND name = $2 AND version = $3
-		  AND source = 'chef_server'
-	`
-	return scanCookbook(q.QueryRowContext(ctx, query, organisationID, name, version))
-}
-
-// GetGitCookbook returns a git-sourced cookbook by name and repo URL.
+// GetGitCookbook returns a git-sourced cookbook by name and git repo URL.
 // Returns ErrNotFound if no match exists.
 func (db *DB) GetGitCookbook(ctx context.Context, name, gitRepoURL string) (Cookbook, error) {
 	return db.getGitCookbook(ctx, db.q(), name, gitRepoURL)
@@ -441,62 +187,6 @@ func (db *DB) getGitCookbook(ctx context.Context, q queryable, name, gitRepoURL 
 		WHERE name = $1 AND git_repo_url = $2 AND source = 'git'
 	`
 	return scanCookbook(q.QueryRowContext(ctx, query, name, gitRepoURL))
-}
-
-// ListCookbooksByOrganisation returns all cookbooks for the given
-// organisation (Chef-server-sourced only), ordered by name then version.
-func (db *DB) ListCookbooksByOrganisation(ctx context.Context, organisationID string) ([]Cookbook, error) {
-	return db.listCookbooksByOrganisation(ctx, db.q(), organisationID)
-}
-
-func (db *DB) listCookbooksByOrganisation(ctx context.Context, q queryable, organisationID string) ([]Cookbook, error) {
-	const query = `
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM cookbooks
-		WHERE organisation_id = $1 AND source = 'chef_server'
-		ORDER BY name, version
-	`
-	return scanCookbooks(q.QueryContext(ctx, query, organisationID))
-}
-
-// ListCookbooksByName returns all cookbook rows with the given name,
-// regardless of source or organisation. Ordered by source, organisation_id,
-// version.
-func (db *DB) ListCookbooksByName(ctx context.Context, name string) ([]Cookbook, error) {
-	return db.listCookbooksByName(ctx, db.q(), name)
-}
-
-func (db *DB) listCookbooksByName(ctx context.Context, q queryable, name string) ([]Cookbook, error) {
-	const query = `
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM cookbooks
-		WHERE name = $1 AND source = 'chef_server'
-
-		UNION ALL
-
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM (
-			SELECT DISTINCT ON (name) *
-			FROM cookbooks
-			WHERE name = $1 AND source = 'git'
-			ORDER BY name, last_fetched_at DESC NULLS LAST
-		) git_deduped
-
-		ORDER BY source, organisation_id, version
-	`
-	return scanCookbooks(q.QueryContext(ctx, query, name))
 }
 
 // ListGitCookbooks returns all git-sourced cookbooks, ordered by name.
@@ -519,94 +209,100 @@ func (db *DB) listGitCookbooks(ctx context.Context, q queryable) ([]Cookbook, er
 	return scanCookbooks(q.QueryContext(ctx, query))
 }
 
-// ListActiveCookbooksByOrganisation returns only active cookbooks for the
-// given organisation, ordered by name then version.
-func (db *DB) ListActiveCookbooksByOrganisation(ctx context.Context, organisationID string) ([]Cookbook, error) {
-	return db.listActiveCookbooksByOrganisation(ctx, db.q(), organisationID)
+// ---------------------------------------------------------------------------
+// Delete (git cookbooks)
+// ---------------------------------------------------------------------------
+
+// DeleteGitCookbookResult holds the outcome of a DeleteGitCookbooksByName
+// operation, including how many cookbook and committer rows were removed and
+// which git repo URLs were cleaned up.
+type DeleteGitCookbookResult struct {
+	CookbooksDeleted  int
+	CommittersDeleted int
+	RepoURLs          []string
 }
 
-func (db *DB) listActiveCookbooksByOrganisation(ctx context.Context, q queryable, organisationID string) ([]Cookbook, error) {
-	const query = `
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM cookbooks
-		WHERE organisation_id = $1 AND source = 'chef_server' AND is_active = TRUE
-		ORDER BY name, version
-	`
-	return scanCookbooks(q.QueryContext(ctx, query, organisationID))
-}
+// DeleteGitCookbooksByName removes all git-sourced cookbook rows for the given
+// cookbook name and deletes associated committer data from
+// git_repo_committers. There may be multiple rows for the same cookbook name
+// with different git_repo_url values (stale data from URL changes); this
+// method cleans up all of them in a single transaction.
+//
+// Cascading foreign-key deletes handle cookstyle results, complexity records,
+// and other dependent rows automatically.
+//
+// Returns ErrNotFound if no git-sourced cookbook with that name exists.
+func (db *DB) DeleteGitCookbooksByName(ctx context.Context, cookbookName string) (DeleteGitCookbookResult, error) {
+	var result DeleteGitCookbookResult
 
-// ListStaleCookbooksByOrganisation returns cookbooks flagged as stale for
-// the given organisation, ordered by name then version.
-func (db *DB) ListStaleCookbooksByOrganisation(ctx context.Context, organisationID string) ([]Cookbook, error) {
-	return db.listStaleCookbooksByOrganisation(ctx, db.q(), organisationID)
-}
+	err := db.Tx(ctx, func(tx *sql.Tx) error {
+		// Collect all git_repo_url values for this cookbook name so we can
+		// clean up committer data after deleting the cookbook rows.
+		rows, err := tx.QueryContext(ctx,
+			`SELECT git_repo_url FROM cookbooks
+			 WHERE name = $1 AND source = 'git' AND git_repo_url IS NOT NULL`,
+			cookbookName,
+		)
+		if err != nil {
+			return fmt.Errorf("datastore: selecting git repo URLs for cookbook %q: %w", cookbookName, err)
+		}
+		defer rows.Close()
 
-func (db *DB) listStaleCookbooksByOrganisation(ctx context.Context, q queryable, organisationID string) ([]Cookbook, error) {
-	const query = `
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM cookbooks
-		WHERE organisation_id = $1 AND source = 'chef_server' AND is_stale_cookbook = TRUE
-		ORDER BY name, version
-	`
-	return scanCookbooks(q.QueryContext(ctx, query, organisationID))
-}
+		for rows.Next() {
+			var url string
+			if err := rows.Scan(&url); err != nil {
+				return fmt.Errorf("datastore: scanning git repo URL: %w", err)
+			}
+			result.RepoURLs = append(result.RepoURLs, url)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("datastore: iterating git repo URLs: %w", err)
+		}
 
-// ServerCookbookExists checks whether a Chef-server-sourced cookbook with
-// the given organisation, name, and version already exists in the database.
-// This is used by the collection process to skip downloading cookbook
-// versions that are already stored (immutability optimisation).
-func (db *DB) ServerCookbookExists(ctx context.Context, organisationID, name, version string) (bool, error) {
-	return db.serverCookbookExists(ctx, db.q(), organisationID, name, version)
-}
+		// Delete all git-sourced cookbook rows for this name. Cascading FK
+		// deletes remove cookstyle results, complexity, test results, etc.
+		res, err := tx.ExecContext(ctx,
+			`DELETE FROM cookbooks WHERE name = $1 AND source = 'git'`,
+			cookbookName,
+		)
+		if err != nil {
+			return fmt.Errorf("datastore: deleting git cookbooks for %q: %w", cookbookName, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("datastore: checking rows affected: %w", err)
+		}
+		if n == 0 {
+			return ErrNotFound
+		}
+		result.CookbooksDeleted = int(n)
 
-func (db *DB) serverCookbookExists(ctx context.Context, q queryable, organisationID, name, version string) (bool, error) {
-	var exists bool
-	err := q.QueryRowContext(ctx,
-		`SELECT EXISTS(
-			SELECT 1 FROM cookbooks
-			WHERE organisation_id = $1 AND name = $2 AND version = $3
-			  AND source = 'chef_server'
-			  AND download_status = 'ok'
-		)`,
-		organisationID, name, version,
-	).Scan(&exists)
+		// Delete committer data for all collected repo URLs.
+		if len(result.RepoURLs) > 0 {
+			res, err := tx.ExecContext(ctx,
+				`DELETE FROM git_repo_committers WHERE git_repo_url = ANY($1)`,
+				stringSliceToArray(result.RepoURLs),
+			)
+			if err != nil {
+				return fmt.Errorf("datastore: deleting committers for cookbook %q: %w", cookbookName, err)
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("datastore: checking committer rows affected: %w", err)
+			}
+			result.CommittersDeleted = int(n)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return false, fmt.Errorf("datastore: checking cookbook existence: %w", err)
+		return DeleteGitCookbookResult{}, err
 	}
-	return exists, nil
-}
-
-// DeleteCookbook removes the cookbook with the given UUID. Returns
-// ErrNotFound if no such cookbook exists. Cascading deletes will remove
-// associated test results, cookstyle results, complexity records, and
-// usage records.
-func (db *DB) DeleteCookbook(ctx context.Context, id string) error {
-	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM cookbooks WHERE id = $1`, id,
-	)
-	if err != nil {
-		return fmt.Errorf("datastore: deleting cookbook: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("datastore: checking rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return result, nil
 }
 
 // ---------------------------------------------------------------------------
-// Row scanning helpers
+// Row scanning helpers (legacy Cookbook type)
 // ---------------------------------------------------------------------------
 
 func scanCookbook(row *sql.Row) (Cookbook, error) {
@@ -699,242 +395,4 @@ func scanCookbooks(rows *sql.Rows, err error) ([]Cookbook, error) {
 		return nil, fmt.Errorf("datastore: iterating cookbook rows: %w", err)
 	}
 	return cookbooks, nil
-}
-
-// ---------------------------------------------------------------------------
-// Download status management
-// ---------------------------------------------------------------------------
-
-// UpdateCookbookDownloadStatusParams holds the fields required to update a
-// cookbook's download status.
-type UpdateCookbookDownloadStatusParams struct {
-	ID             string
-	DownloadStatus string // "ok", "failed", or "pending"
-	DownloadError  string // Error detail (only set when status = "failed")
-}
-
-// UpdateCookbookDownloadStatus updates the download_status and download_error
-// for a single cookbook. Returns the updated cookbook. Returns ErrNotFound if
-// no such cookbook exists.
-func (db *DB) UpdateCookbookDownloadStatus(ctx context.Context, p UpdateCookbookDownloadStatusParams) (Cookbook, error) {
-	return db.updateCookbookDownloadStatus(ctx, db.q(), p)
-}
-
-func (db *DB) updateCookbookDownloadStatus(ctx context.Context, q queryable, p UpdateCookbookDownloadStatusParams) (Cookbook, error) {
-	if p.ID == "" {
-		return Cookbook{}, fmt.Errorf("datastore: cookbook ID is required to update download status")
-	}
-	if p.DownloadStatus != DownloadStatusOK && p.DownloadStatus != DownloadStatusFailed && p.DownloadStatus != DownloadStatusPending {
-		return Cookbook{}, fmt.Errorf("datastore: invalid download status: %q", p.DownloadStatus)
-	}
-
-	// Clear download_error when status is not 'failed'.
-	var dlError sql.NullString
-	if p.DownloadStatus == DownloadStatusFailed && p.DownloadError != "" {
-		dlError = sql.NullString{String: p.DownloadError, Valid: true}
-	}
-
-	const query = `
-		UPDATE cookbooks
-		SET download_status = $2,
-		    download_error  = $3,
-		    updated_at      = now()
-		WHERE id = $1
-		RETURNING id, organisation_id, name, version, source,
-		          git_repo_url, head_commit_sha, default_branch,
-		          has_test_suite, is_active, is_stale_cookbook,
-		          download_status, download_error,
-		          first_seen_at, last_fetched_at, created_at, updated_at
-	`
-
-	return scanCookbook(q.QueryRowContext(ctx, query, p.ID, p.DownloadStatus, dlError))
-}
-
-// MarkCookbookDownloadOK is a convenience wrapper that marks a cookbook as
-// successfully downloaded.
-func (db *DB) MarkCookbookDownloadOK(ctx context.Context, id string) (Cookbook, error) {
-	return db.UpdateCookbookDownloadStatus(ctx, UpdateCookbookDownloadStatusParams{
-		ID:             id,
-		DownloadStatus: DownloadStatusOK,
-	})
-}
-
-// MarkCookbookDownloadFailed is a convenience wrapper that marks a cookbook
-// download as failed with the given error detail.
-func (db *DB) MarkCookbookDownloadFailed(ctx context.Context, id, downloadError string) (Cookbook, error) {
-	return db.UpdateCookbookDownloadStatus(ctx, UpdateCookbookDownloadStatusParams{
-		ID:             id,
-		DownloadStatus: DownloadStatusFailed,
-		DownloadError:  downloadError,
-	})
-}
-
-// ListCookbooksNeedingDownload returns all Chef-server-sourced cookbooks for
-// the given organisation that have a download_status of 'pending' or 'failed'.
-// These are the cookbook versions that should be (re-)downloaded on the next
-// collection run. Results are ordered by name then version.
-func (db *DB) ListCookbooksNeedingDownload(ctx context.Context, organisationID string) ([]Cookbook, error) {
-	return db.listCookbooksNeedingDownload(ctx, db.q(), organisationID)
-}
-
-func (db *DB) listCookbooksNeedingDownload(ctx context.Context, q queryable, organisationID string) ([]Cookbook, error) {
-	const query = `
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM cookbooks
-		WHERE organisation_id = $1
-		  AND source = 'chef_server'
-		  AND download_status IN ('pending', 'failed')
-		ORDER BY name, version
-	`
-	return scanCookbooks(q.QueryContext(ctx, query, organisationID))
-}
-
-// ListActiveCookbooksNeedingDownload returns active Chef-server-sourced
-// cookbooks for the given organisation that need downloading. Only active
-// cookbooks (applied to at least one node) are returned, as per the spec:
-// unused cookbooks are flagged but do not need to be fetched for analysis.
-func (db *DB) ListActiveCookbooksNeedingDownload(ctx context.Context, organisationID string) ([]Cookbook, error) {
-	return db.listActiveCookbooksNeedingDownload(ctx, db.q(), organisationID)
-}
-
-func (db *DB) listActiveCookbooksNeedingDownload(ctx context.Context, q queryable, organisationID string) ([]Cookbook, error) {
-	const query = `
-		SELECT id, organisation_id, name, version, source,
-		       git_repo_url, head_commit_sha, default_branch,
-		       has_test_suite, is_active, is_stale_cookbook,
-		       download_status, download_error,
-		       first_seen_at, last_fetched_at, created_at, updated_at
-		FROM cookbooks
-		WHERE organisation_id = $1
-		  AND source = 'chef_server'
-		  AND is_active = TRUE
-		  AND download_status IN ('pending', 'failed')
-		ORDER BY name, version
-	`
-	return scanCookbooks(q.QueryContext(ctx, query, organisationID))
-}
-
-// ResetCookbookDownloadStatus resets the download_status to 'pending' and
-// clears the download_error for a specific cookbook. This is the "manual
-// rescan" operation that forces a fresh download attempt on the next run.
-// Returns ErrNotFound if no such cookbook exists.
-func (db *DB) ResetCookbookDownloadStatus(ctx context.Context, id string) (Cookbook, error) {
-	return db.UpdateCookbookDownloadStatus(ctx, UpdateCookbookDownloadStatusParams{
-		ID:             id,
-		DownloadStatus: DownloadStatusPending,
-	})
-}
-
-// ResetAllServerCookbookDownloadStatuses resets download_status to 'pending'
-// and clears download_error for ALL server-sourced cookbooks that currently
-// have status 'ok'. This is used by the admin "rescan all" endpoint to force
-// the streaming pipeline to re-download and re-scan every server cookbook on
-// the next collection cycle. Returns the number of rows updated.
-func (db *DB) ResetAllServerCookbookDownloadStatuses(ctx context.Context) (int, error) {
-	const query = `
-		UPDATE cookbooks
-		   SET download_status = 'pending',
-		       download_error  = NULL,
-		       updated_at      = now()
-		 WHERE source = 'chef_server'
-		   AND download_status = 'ok'
-	`
-	result, err := db.pool.ExecContext(ctx, query)
-	if err != nil {
-		return 0, fmt.Errorf("datastore: resetting all server cookbook download statuses: %w", err)
-	}
-	n, _ := result.RowsAffected()
-	return int(n), nil
-}
-
-// DeleteGitCookbookResult holds the outcome of a DeleteGitCookbooksByName
-// operation, including how many cookbook and committer rows were removed and
-// which git repo URLs were cleaned up.
-type DeleteGitCookbookResult struct {
-	CookbooksDeleted  int
-	CommittersDeleted int
-	RepoURLs          []string
-}
-
-// DeleteGitCookbooksByName removes all git-sourced cookbook rows for the given
-// cookbook name and deletes associated committer data from
-// git_repo_committers. There may be multiple rows for the same cookbook name
-// with different git_repo_url values (stale data from URL changes); this
-// method cleans up all of them in a single transaction.
-//
-// Cascading foreign-key deletes handle cookstyle results, complexity records,
-// and other dependent rows automatically.
-//
-// Returns ErrNotFound if no git-sourced cookbook with that name exists.
-func (db *DB) DeleteGitCookbooksByName(ctx context.Context, cookbookName string) (DeleteGitCookbookResult, error) {
-	var result DeleteGitCookbookResult
-
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		// Collect all git_repo_url values for this cookbook name so we can
-		// clean up committer data after deleting the cookbook rows.
-		rows, err := tx.QueryContext(ctx,
-			`SELECT git_repo_url FROM cookbooks
-			 WHERE name = $1 AND source = 'git' AND git_repo_url IS NOT NULL`,
-			cookbookName,
-		)
-		if err != nil {
-			return fmt.Errorf("datastore: selecting git repo URLs for cookbook %q: %w", cookbookName, err)
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var url string
-			if err := rows.Scan(&url); err != nil {
-				return fmt.Errorf("datastore: scanning git repo URL: %w", err)
-			}
-			result.RepoURLs = append(result.RepoURLs, url)
-		}
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("datastore: iterating git repo URLs: %w", err)
-		}
-
-		// Delete all git-sourced cookbook rows for this name. Cascading FK
-		// deletes remove cookstyle results, complexity, test results, etc.
-		res, err := tx.ExecContext(ctx,
-			`DELETE FROM cookbooks WHERE name = $1 AND source = 'git'`,
-			cookbookName,
-		)
-		if err != nil {
-			return fmt.Errorf("datastore: deleting git cookbooks for %q: %w", cookbookName, err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("datastore: checking rows affected: %w", err)
-		}
-		if n == 0 {
-			return ErrNotFound
-		}
-		result.CookbooksDeleted = int(n)
-
-		// Delete committer data for all collected repo URLs.
-		if len(result.RepoURLs) > 0 {
-			res, err := tx.ExecContext(ctx,
-				`DELETE FROM git_repo_committers WHERE git_repo_url = ANY($1)`,
-				stringSliceToArray(result.RepoURLs),
-			)
-			if err != nil {
-				return fmt.Errorf("datastore: deleting committers for cookbook %q: %w", cookbookName, err)
-			}
-			n, err := res.RowsAffected()
-			if err != nil {
-				return fmt.Errorf("datastore: checking committer rows affected: %w", err)
-			}
-			result.CommittersDeleted = int(n)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return DeleteGitCookbookResult{}, err
-	}
-	return result, nil
 }

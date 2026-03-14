@@ -12,6 +12,7 @@ package datastore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -467,4 +468,13 @@ func intFromNull(ni sql.NullInt64) int {
 		return int(ni.Int64)
 	}
 	return 0
+}
+
+// normaliseJSON converts a potentially nil byte slice from a JSONB column
+// scan into a json.RawMessage, returning nil when the value is SQL NULL.
+func normaliseJSON(b []byte) json.RawMessage {
+	if len(b) == 0 {
+		return nil
+	}
+	return json.RawMessage(b)
 }
