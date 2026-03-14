@@ -233,6 +233,20 @@ func (g *AutocorrectGenerator) GeneratePreviews(
 	return batch
 }
 
+// GenerateSinglePreview generates an autocorrect preview for a single
+// CookStyle result. This is used by the streaming download-scan-delete
+// pipeline where each cookbook is processed immediately after CookStyle
+// scanning and deleted afterwards. The cookbookDir is the filesystem path
+// to the cookbook.
+func (g *AutocorrectGenerator) GenerateSinglePreview(
+	ctx context.Context,
+	csResult CookstyleResultInfo,
+	cookbookDir string,
+) AutocorrectPreviewResult {
+	dirFn := func(cookbookID string) string { return cookbookDir }
+	return g.generateOne(ctx, csResult, dirFn)
+}
+
 // generateOne generates a single auto-correct preview for one CookStyle
 // result.
 func (g *AutocorrectGenerator) generateOne(
