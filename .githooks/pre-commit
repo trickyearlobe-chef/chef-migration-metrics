@@ -104,6 +104,7 @@ skip_content_allowlist() {
     .githooks/pre-commit) return 0 ;;
     .gitleaks.toml) return 0 ;;
     .claude/Claude.md|.claude/Structure.md) return 0 ;;
+    cmd/chef-migration-metrics/main.go) return 0 ;; # default seed password constant, not a real secret
     deploy/docker-compose/.env.example) return 0 ;;
     deploy/docker-compose/README.md) return 0 ;;
     deploy/elk/.env.example) return 0 ;;
