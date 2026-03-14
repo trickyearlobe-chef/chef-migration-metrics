@@ -631,6 +631,7 @@ type CookbookVersionManifest struct {
 	CookbookName string            `json:"cookbook_name"`
 	Name         string            `json:"name"`
 	Version      string            `json:"version"`
+	Frozen       bool              `json:"frozen?"`
 	Metadata     json.RawMessage   `json:"metadata"`
 	Recipes      []CookbookFileRef `json:"recipes"`
 	Definitions  []CookbookFileRef `json:"definitions"`
@@ -641,6 +642,35 @@ type CookbookVersionManifest struct {
 	Resources    []CookbookFileRef `json:"resources"`
 	Providers    []CookbookFileRef `json:"providers"`
 	RootFiles    []CookbookFileRef `json:"root_files"`
+}
+
+// CookbookMetadata holds the fields we extract from the Chef API metadata
+// blob returned in a cookbook version manifest. The metadata object in the
+// Chef API response contains many fields; we persist only the subset that
+// is useful for migration assessment.
+type CookbookMetadata struct {
+	Maintainer      string            `json:"maintainer"`
+	Description     string            `json:"description"`
+	LongDescription string            `json:"long_description"`
+	License         string            `json:"license"`
+	Platforms       map[string]string `json:"platforms"`
+	Dependencies    map[string]string `json:"dependencies"`
+}
+
+// ParseMetadata deserialises the raw JSON metadata blob from the cookbook
+// version manifest into a CookbookMetadata struct. Only the fields defined
+// on CookbookMetadata are extracted; all other metadata fields are silently
+// ignored. Returns a zero-value CookbookMetadata (not an error) if the
+// Metadata field is nil or empty, so callers can always use the result.
+func (m *CookbookVersionManifest) ParseMetadata() (CookbookMetadata, error) {
+	var meta CookbookMetadata
+	if len(m.Metadata) == 0 {
+		return meta, nil
+	}
+	if err := json.Unmarshal(m.Metadata, &meta); err != nil {
+		return meta, fmt.Errorf("chefapi: parsing cookbook metadata for %s/%s: %w", m.CookbookName, m.Version, err)
+	}
+	return meta, nil
 }
 
 // CookbookFileRef describes a single file in a cookbook version manifest.
