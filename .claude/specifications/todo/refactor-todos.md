@@ -330,48 +330,48 @@ This means a new datastore method like `UpdateServerCookbookMetadata(id, params)
 Individual commits on a single branch, in dependency order:
 
 ### Commit 1 — Migrations
-- [ ] Delete all 11 existing migration files (`0001` through `0011`)
-- [ ] Write new `0001_initial_schema.up.sql` — all 25+ tables from scratch, incorporating the split
-- [ ] Write new `0001_initial_schema.down.sql` — `DROP TABLE` in reverse dependency order
+- [x] Delete all 11 existing migration files (`0001` through `0011`)
+- [x] Write new `0001_initial_schema.up.sql` — all 25+ tables from scratch, incorporating the split
+- [x] Write new `0001_initial_schema.down.sql` — `DROP TABLE` in reverse dependency order
 
 ### Commit 2 — Chef API Types
-- [ ] Add `Frozen bool` field (`json:"frozen?"`) to `CookbookVersionManifest` in `internal/chefapi/client.go`
-- [ ] Add `CookbookMetadata` type in `internal/chefapi/client.go`
-- [ ] Add `ParseMetadata()` method on `CookbookVersionManifest`
+- [x] Add `Frozen bool` field (`json:"frozen?"`) to `CookbookVersionManifest` in `internal/chefapi/client.go`
+- [x] Add `CookbookMetadata` type in `internal/chefapi/client.go`
+- [x] Add `ParseMetadata()` method on `CookbookVersionManifest`
 
 ### Commit 3 — Datastore: `server_cookbooks` CRUD
-- [ ] Create `internal/datastore/server_cookbooks.go` with `ServerCookbook` type
-- [ ] Implement CRUD: `UpsertServerCookbook`, `ListServerCookbooksByOrganisation`, `GetServerCookbook`, `UpdateServerCookbookDownloadStatus`, `UpdateServerCookbookMetadata`, `DeleteServerCookbook`, `MarkStaleServerCookbooks`
+- [x] Create `internal/datastore/server_cookbooks.go` with `ServerCookbook` type
+- [x] Implement CRUD: `UpsertServerCookbook`, `ListServerCookbooksByOrganisation`, `GetServerCookbook`, `UpdateServerCookbookDownloadStatus`, `UpdateServerCookbookMetadata`, `DeleteServerCookbook`, `MarkStaleServerCookbooks`
 
 ### Commit 4 — Datastore: `git_repos` CRUD
-- [ ] Create `internal/datastore/git_repos.go` with `GitRepo` type
-- [ ] Implement CRUD: `UpsertGitRepo`, `ListGitRepos`, `GetGitRepo`, `DeleteGitReposByName`
+- [x] Create `internal/datastore/git_repos.go` with `GitRepo` type
+- [x] Implement CRUD: `UpsertGitRepo`, `ListGitRepos`, `GetGitRepo`, `DeleteGitReposByName`
 
 ### Commit 5 — Datastore: Split `cookstyle_results`
-- [ ] Create `internal/datastore/server_cookbook_cookstyle_results.go`
-- [ ] Create `internal/datastore/git_repo_cookstyle_results.go`
-- [ ] Delete old `internal/datastore/cookstyle_results.go`
+- [x] Create `internal/datastore/server_cookbook_cookstyle_results.go`
+- [x] Create `internal/datastore/git_repo_cookstyle_results.go`
+- [x] Delete old `internal/datastore/cookstyle_results.go`
 
 ### Commit 6 — Datastore: Split `test_kitchen_results`
-- [ ] Create `internal/datastore/git_repo_test_kitchen_results.go`
-- [ ] Delete/refactor old `internal/datastore/test_kitchen_results.go`
+- [x] Create `internal/datastore/git_repo_test_kitchen_results.go`
+- [x] Delete/refactor old `internal/datastore/test_kitchen_results.go`
 
 ### Commit 7 — Datastore: Split `autocorrect_previews`
-- [ ] Create `internal/datastore/server_cookbook_autocorrect_previews.go`
-- [ ] Create `internal/datastore/git_repo_autocorrect_previews.go`
-- [ ] Delete old `internal/datastore/autocorrect_previews.go`
+- [x] Create `internal/datastore/server_cookbook_autocorrect_previews.go`
+- [x] Create `internal/datastore/git_repo_autocorrect_previews.go`
+- [x] Delete old `internal/datastore/autocorrect_previews.go`
 
 ### Commit 8 — Datastore: Split `cookbook_complexity`
-- [ ] Create `internal/datastore/server_cookbook_complexity.go`
-- [ ] Create `internal/datastore/git_repo_complexity.go`
-- [ ] Delete old `internal/datastore/cookbook_complexity.go`
+- [x] Create `internal/datastore/server_cookbook_complexity.go`
+- [x] Create `internal/datastore/git_repo_complexity.go`
+- [x] Delete old `internal/datastore/cookbook_complexity.go`
 
 ### Commit 9 — Datastore: Update `cookbook_node_usage`
-- [ ] Refactor `internal/datastore/cookbook_node_usage.go` — rename `CookbookID` → `ServerCookbookID`
+- [x] Refactor `internal/datastore/cookbook_node_usage.go` — rename `CookbookID` → `ServerCookbookID`
 
 ### Commit 10 — Datastore: Delete Unified `cookbooks.go`
-- [ ] Delete `internal/datastore/cookbooks.go`
-- [ ] Remove `Cookbook` type, `IsGit()`, `IsChefServer()`, `IsDownloaded()`, `NeedsDownload()` helpers
+- [x] Delete `internal/datastore/cookbooks.go`
+- [x] Remove `Cookbook` type, `IsGit()`, `IsChefServer()`, `IsDownloaded()`, `NeedsDownload()` helpers
 
 ### Commit 11 — Collector: Server Cookbook Pipeline + Metadata
 - [ ] Update `internal/collector/server_cookbook_pipeline.go` to work with `ServerCookbook`
