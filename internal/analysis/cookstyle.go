@@ -400,6 +400,22 @@ func (s *CookstyleScanner) ScanCookbooks(
 	return result
 }
 
+// ScanSingleCookbook scans a single cookbook against a single target Chef
+// version and returns the result. This is used by the streaming download-
+// scan-delete pipeline for server cookbooks, where each cookbook is scanned
+// immediately after download and deleted afterwards to minimise disk usage.
+//
+// The caller is responsible for checking whether the cookbook has already
+// been scanned (IsDownloaded, etc.) — this method does NOT filter.
+func (s *CookstyleScanner) ScanSingleCookbook(
+	ctx context.Context,
+	cb datastore.Cookbook,
+	targetChefVersion string,
+	cookbookDir string,
+) CookstyleScanResult {
+	return s.scanOne(ctx, cb, targetChefVersion, cookbookDir)
+}
+
 // ---------------------------------------------------------------------------
 // Single cookbook scan
 // ---------------------------------------------------------------------------
