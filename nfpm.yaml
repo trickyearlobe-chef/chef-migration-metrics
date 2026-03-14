@@ -43,9 +43,22 @@ contents:
     file_info:
       mode: 0755
 
-  # Example configuration file — always shipped fresh on install/upgrade.
-  # The postinstall script copies this to config.yml only if config.yml
-  # does not already exist, so operator edits are never clobbered.
+  # Main configuration file — config|noreplace ensures RPM/DEB never
+  # overwrite the operator's edits. On fresh install the example content
+  # is laid down; on upgrade the existing file is left untouched.
+  #
+  # IMPORTANT: this path MUST stay in the package across versions.
+  # If it is ever removed from contents, RPM treats it as an obsolete
+  # file and deletes it during upgrade (even with noreplace on the old
+  # package). That was the root cause of the config-clobbering bug.
+  - src: ./deploy/pkg/config.yml.example
+    dst: /etc/chef-migration-metrics/config.yml
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
+  # Example / reference copy — always replaced on upgrade so operators
+  # can diff against the latest defaults.
   - src: ./deploy/pkg/config.yml.example
     dst: /etc/chef-migration-metrics/config.yml.example
     file_info:
