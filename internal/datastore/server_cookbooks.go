@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+// Download status constants for the server_cookbooks table.
+const (
+	DownloadStatusOK      = "ok"      // Content fetched successfully
+	DownloadStatusFailed  = "failed"  // Download attempted but failed
+	DownloadStatusPending = "pending" // Not yet downloaded
+)
+
 // ServerCookbook represents a row in the server_cookbooks table. Each row is
 // a single cookbook name+version pair fetched from a Chef Infra Server,
 // scoped to an organisation.
