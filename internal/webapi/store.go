@@ -56,6 +56,18 @@ type DataStore interface {
 	// during the given collection run.
 	ListNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
 
+	// CountChefVersionsByCollectionRun returns a map of chef_version → count
+	// for all node snapshots in the given collection run.
+	CountChefVersionsByCollectionRun(ctx context.Context, collectionRunID string) (map[string]int, error)
+
+	// CountChefVersionsByCollectionRunFiltered returns a map of chef_version → count
+	// for node snapshots in the given collection run whose node_name is in allowedNodes.
+	CountChefVersionsByCollectionRunFiltered(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error)
+
+	// CountStaleFreshByCollectionRun returns the total, stale, and fresh
+	// node counts for the given collection run.
+	CountStaleFreshByCollectionRun(ctx context.Context, collectionRunID string) (total, stale, fresh int, err error)
+
 	// GetNodeSnapshotByName returns the most recent snapshot for a node
 	// identified by organisation ID and node name. Returns
 	// datastore.ErrNotFound if no such snapshot exists.
@@ -143,6 +155,12 @@ type DataStore interface {
 	// ListTestKitchenResultsForCookbook returns all test kitchen results for
 	// the given cookbook ID, ordered by target_chef_version then started_at desc.
 	ListTestKitchenResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.TestKitchenResult, error)
+
+	// CountCookbookCompatibility returns aggregated compatibility counts
+	// across the given organisations and target Chef versions in a single
+	// query. If cookbookNames is non-nil only cookbooks whose name is in the
+	// map are considered.
+	CountCookbookCompatibility(ctx context.Context, organisationIDs []string, targetVersions []string, cookbookNames map[string]bool) ([]datastore.CookbookCompatibilitySummary, error)
 
 	// -----------------------------------------------------------------
 	// Log entries

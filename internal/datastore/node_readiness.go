@@ -59,28 +59,22 @@ const nrColumns = `id, node_snapshot_id, organisation_id, node_name,
        sufficient_disk_space, blocking_cookbooks, available_disk_mb,
        required_disk_mb, stale_data, evaluated_at, created_at, updated_at`
 
-// latestReadinessPerNode is a subquery that returns the single most recent
-// node_readiness row ID for each unique (organisation_id, node_name,
-// target_chef_version) combination, based on evaluated_at. This ensures
-// that dashboard counts reflect exactly one readiness verdict per node per
-// target version — regardless of how many collection cycles have run.
+// latestReadinessForOrg returns a SQL fragment that restricts results to the
+// single most recent node_readiness row for each (node_name, target_chef_version)
+// combination within the specified organisation. The orgParam argument is the
+// SQL parameter placeholder for the organisation_id (e.g. "$1").
 //
-// This uses a non-correlated subquery that computes the full set of latest
-// IDs once via DISTINCT ON, then uses a semi-join against the outer query.
-// The idx_node_readiness_latest covering index satisfies the DISTINCT ON +
-// ORDER BY via an index-only scan (Heap Fetches: 0).
-//
-// The previous correlated version (WHERE nr2.organisation_id =
-// node_readiness.organisation_id) caused O(N²) behaviour with PostgreSQL's
-// generic plans for parameterized queries — the planner re-scanned the
-// entire table for every outer row, turning a millisecond query into one
-// that took minutes on tables with tens of thousands of rows.
-const latestReadinessPerNode = `
-    id IN (
-        SELECT DISTINCT ON (organisation_id, node_name, target_chef_version) id
+// By scoping the inner DISTINCT ON to a single organisation, the query can
+// satisfy the ORDER BY via the idx_node_readiness_latest covering index
+// without scanning rows for other organisations.
+func latestReadinessForOrg(orgParam string) string {
+	return fmt.Sprintf(`id IN (
+        SELECT DISTINCT ON (node_name, target_chef_version) id
           FROM node_readiness
-         ORDER BY organisation_id, node_name, target_chef_version, evaluated_at DESC
-    )`
+         WHERE organisation_id = %s
+         ORDER BY node_name, target_chef_version, evaluated_at DESC
+    )`, orgParam)
+}
 
 // ---------------------------------------------------------------------------
 // Get
@@ -153,7 +147,7 @@ func (db *DB) ListNodeReadinessForOrganisation(ctx context.Context, organisation
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
 		 WHERE organisation_id = $1
-		   AND ` + latestReadinessPerNode + `
+		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name, target_chef_version
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID)
@@ -168,7 +162,7 @@ func (db *DB) ListNodeReadinessForOrganisationAndTarget(ctx context.Context, org
 		  FROM node_readiness
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
-		   AND ` + latestReadinessPerNode + `
+		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
@@ -184,7 +178,7 @@ func (db *DB) ListReadyNodes(ctx context.Context, organisationID, targetChefVers
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
 		   AND is_ready = TRUE
-		   AND ` + latestReadinessPerNode + `
+		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
@@ -200,7 +194,7 @@ func (db *DB) ListBlockedNodes(ctx context.Context, organisationID, targetChefVe
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
 		   AND is_ready = FALSE
-		   AND ` + latestReadinessPerNode + `
+		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
@@ -215,7 +209,7 @@ func (db *DB) ListStaleNodeReadiness(ctx context.Context, organisationID string)
 		  FROM node_readiness
 		 WHERE organisation_id = $1
 		   AND stale_data = TRUE
-		   AND ` + latestReadinessPerNode + `
+		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name, target_chef_version
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID)
@@ -230,7 +224,7 @@ func (db *DB) ListStaleNodeReadiness(ctx context.Context, organisationID string)
 // collection run. Without this scoping, every historical collection cycle's
 // readiness rows would be counted, inflating the totals.
 func (db *DB) CountNodeReadiness(ctx context.Context, organisationID, targetChefVersion string) (total, ready, blocked int, err error) {
-	const query = `
+	query := `
 		SELECT
 			COUNT(*),
 			COUNT(*) FILTER (WHERE is_ready = TRUE),
@@ -238,7 +232,7 @@ func (db *DB) CountNodeReadiness(ctx context.Context, organisationID, targetChef
 		  FROM node_readiness
 		 WHERE organisation_id = $1
 		   AND target_chef_version = $2
-		   AND ` + latestReadinessPerNode + `
+		   AND ` + latestReadinessForOrg("$1") + `
 	`
 	err = db.pool.QueryRowContext(ctx, query, organisationID, targetChefVersion).Scan(&total, &ready, &blocked)
 	if err != nil {
