@@ -77,10 +77,15 @@ func runServerCookbookPipeline(
 
 	log.Info(fmt.Sprintf("streaming server cookbook pipeline: %d version(s) to process", len(cookbooks)))
 
-	for _, cb := range cookbooks {
+	// Log progress every 25 cookbooks so operators can monitor long runs.
+	const progressInterval = 25
+
+	for i, cb := range cookbooks {
 		if ctx.Err() != nil {
 			break
 		}
+
+		cbStart := time.Now()
 
 		// Step 1: Download to a temporary directory.
 		tmpDir, downloadErr := downloadToTempDir(ctx, client, db, cb, cookbookCacheDir)
@@ -92,12 +97,15 @@ func runServerCookbookPipeline(
 				Version:    cb.Version,
 				Err:        downloadErr,
 			})
-			log.Warn(fmt.Sprintf("cookbook download failed: %s/%s: %v", cb.Name, cb.Version, downloadErr))
+			log.Warn(fmt.Sprintf("[%d/%d] cookbook download failed: %s/%s: %v",
+				i+1, len(cookbooks), cb.Name, cb.Version, downloadErr))
 			continue
 		}
 		result.Downloaded++
 
 		// Step 2: CookStyle scan for each target version.
+		scanCount := 0
+		skipCount := 0
 		if cookstyleScanner != nil && len(targetChefVersions) > 0 {
 			for _, tv := range targetChefVersions {
 				if ctx.Err() != nil {
@@ -107,11 +115,13 @@ func runServerCookbookPipeline(
 				sr := cookstyleScanner.ScanSingleCookbook(ctx, cb, tv, tmpDir)
 				if sr.Skipped {
 					result.Skipped++
+					skipCount++
 				} else if sr.Error != nil {
-					log.Warn(fmt.Sprintf("CookStyle scan failed: %s/%s target %s: %v",
-						cb.Name, cb.Version, tv, sr.Error))
+					log.Warn(fmt.Sprintf("[%d/%d] CookStyle scan failed: %s/%s target %s: %v",
+						i+1, len(cookbooks), cb.Name, cb.Version, tv, sr.Error))
 				} else {
 					result.Scanned++
+					scanCount++
 
 					// Step 3: Autocorrect preview (only if scan produced offenses).
 					if autocorrectGen != nil && sr.OffenseCount > 0 {
@@ -137,9 +147,26 @@ func runServerCookbookPipeline(
 		// Step 4: Delete the downloaded files.
 		if tmpDir != "" {
 			if removeErr := os.RemoveAll(tmpDir); removeErr != nil {
-				log.Warn(fmt.Sprintf("failed to clean up cookbook files %s/%s at %s: %v",
-					cb.Name, cb.Version, tmpDir, removeErr))
+				log.Warn(fmt.Sprintf("[%d/%d] failed to clean up cookbook files %s/%s at %s: %v",
+					i+1, len(cookbooks), cb.Name, cb.Version, tmpDir, removeErr))
 			}
+		}
+
+		// Per-cookbook completion log.
+		elapsed := time.Since(cbStart).Round(time.Millisecond)
+		if skipCount > 0 && scanCount == 0 {
+			log.Debug(fmt.Sprintf("[%d/%d] %s/%s — skipped (already scanned) in %s",
+				i+1, len(cookbooks), cb.Name, cb.Version, elapsed))
+		} else {
+			log.Info(fmt.Sprintf("[%d/%d] %s/%s — downloaded, %d scanned, %d skipped in %s",
+				i+1, len(cookbooks), cb.Name, cb.Version, scanCount, skipCount, elapsed))
+		}
+
+		// Periodic progress summary.
+		if (i+1)%progressInterval == 0 {
+			totalElapsed := time.Since(start).Round(time.Second)
+			log.Info(fmt.Sprintf("pipeline progress: %d/%d processed (%d downloaded, %d scanned, %d skipped, %d failed) in %s",
+				i+1, len(cookbooks), result.Downloaded, result.Scanned, result.Skipped, result.Failed, totalElapsed))
 		}
 	}
 
