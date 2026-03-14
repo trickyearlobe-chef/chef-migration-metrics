@@ -517,7 +517,7 @@ func (s *CookstyleScanner) scanOne(
 
 	for _, file := range output.Files {
 		for _, off := range file.Offenses {
-			off.File = file.Path
+			off.File = relativeCookstylePath(file.Path, cookbookDir)
 			sr.Offenses = append(sr.Offenses, off)
 
 			if isDeprecation(off.CopName) {
@@ -550,6 +550,33 @@ func (s *CookstyleScanner) scanOne(
 	// Step 8: persist.
 	s.persistResult(ctx, sr)
 	return sr
+}
+
+// relativeCookstylePath strips the cookbook directory prefix from a CookStyle
+// file path so that persisted offense locations show developer-friendly
+// relative paths (e.g. "recipes/default.rb") instead of opaque absolute
+// paths like "/tmp/cmm-cb-apache2-5.0.1-abc123/recipes/default.rb".
+//
+// CookStyle/RuboCop reports absolute paths when the input directory is
+// absolute, which it always is (temp dirs for server cookbooks, persistent
+// clones for git cookbooks). Neither path is meaningful to an end-user.
+//
+// If the path does not start with cookbookDir (shouldn't happen in
+// practice), it is returned unchanged as a defensive fallback.
+func relativeCookstylePath(filePath, cookbookDir string) string {
+	if cookbookDir == "" {
+		return filePath
+	}
+	// Ensure the prefix ends with a separator so we don't match partial
+	// directory names (e.g. "/tmp/cb" matching "/tmp/cb-extra/file.rb").
+	prefix := cookbookDir
+	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
+		prefix += string(filepath.Separator)
+	}
+	if strings.HasPrefix(filePath, prefix) {
+		return filePath[len(prefix):]
+	}
+	return filePath
 }
 
 // ---------------------------------------------------------------------------

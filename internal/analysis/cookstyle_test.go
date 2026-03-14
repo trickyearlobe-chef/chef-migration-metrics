@@ -803,6 +803,98 @@ func TestEnrichOffenses_JSONRoundTrip(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// relativeCookstylePath tests
+// ---------------------------------------------------------------------------
+
+func TestRelativeCookstylePath_TempDir(t *testing.T) {
+	// Simulates the streaming pipeline temp dir path.
+	got := relativeCookstylePath(
+		"/tmp/cmm-cb-apache2-5.0.1-abc123/recipes/default.rb",
+		"/tmp/cmm-cb-apache2-5.0.1-abc123",
+	)
+	if got != "recipes/default.rb" {
+		t.Errorf("got %q, want %q", got, "recipes/default.rb")
+	}
+}
+
+func TestRelativeCookstylePath_TempDirTrailingSlash(t *testing.T) {
+	// cookbookDir already has a trailing separator.
+	got := relativeCookstylePath(
+		"/tmp/cmm-cb-apache2-5.0.1-abc123/recipes/default.rb",
+		"/tmp/cmm-cb-apache2-5.0.1-abc123/",
+	)
+	if got != "recipes/default.rb" {
+		t.Errorf("got %q, want %q", got, "recipes/default.rb")
+	}
+}
+
+func TestRelativeCookstylePath_GitDir(t *testing.T) {
+	// Git cookbook clone path.
+	got := relativeCookstylePath(
+		"/data/git-cookbooks/nginx/attributes/default.rb",
+		"/data/git-cookbooks/nginx",
+	)
+	if got != "attributes/default.rb" {
+		t.Errorf("got %q, want %q", got, "attributes/default.rb")
+	}
+}
+
+func TestRelativeCookstylePath_NestedFile(t *testing.T) {
+	got := relativeCookstylePath(
+		"/tmp/cmm-cb-java-2.0.0-xyz/recipes/sub/nested/deep.rb",
+		"/tmp/cmm-cb-java-2.0.0-xyz",
+	)
+	if got != "recipes/sub/nested/deep.rb" {
+		t.Errorf("got %q, want %q", got, "recipes/sub/nested/deep.rb")
+	}
+}
+
+func TestRelativeCookstylePath_TopLevelFile(t *testing.T) {
+	got := relativeCookstylePath(
+		"/tmp/cmm-cb-mycb-1.0.0-def/metadata.rb",
+		"/tmp/cmm-cb-mycb-1.0.0-def",
+	)
+	if got != "metadata.rb" {
+		t.Errorf("got %q, want %q", got, "metadata.rb")
+	}
+}
+
+func TestRelativeCookstylePath_EmptyCookbookDir(t *testing.T) {
+	// When cookbookDir is empty, the path should be returned as-is.
+	path := "/tmp/cmm-cb-apache2-5.0.1-abc123/recipes/default.rb"
+	got := relativeCookstylePath(path, "")
+	if got != path {
+		t.Errorf("got %q, want %q (unchanged)", got, path)
+	}
+}
+
+func TestRelativeCookstylePath_NoMatch(t *testing.T) {
+	// Path does not start with cookbookDir — returned unchanged.
+	path := "/some/other/path/recipes/default.rb"
+	got := relativeCookstylePath(path, "/tmp/cmm-cb-apache2-5.0.1-abc123")
+	if got != path {
+		t.Errorf("got %q, want %q (unchanged)", got, path)
+	}
+}
+
+func TestRelativeCookstylePath_PartialDirNameNoFalseMatch(t *testing.T) {
+	// Ensure "/tmp/cb" does not falsely match "/tmp/cb-extra/file.rb".
+	path := "/tmp/cb-extra/recipes/default.rb"
+	got := relativeCookstylePath(path, "/tmp/cb")
+	if got != path {
+		t.Errorf("got %q, want %q (should not match partial dir name)", got, path)
+	}
+}
+
+func TestRelativeCookstylePath_RelativeInput(t *testing.T) {
+	// If CookStyle somehow returns a relative path already, leave it alone.
+	got := relativeCookstylePath("recipes/default.rb", "/tmp/cmm-cb-x-1.0.0-abc")
+	if got != "recipes/default.rb" {
+		t.Errorf("got %q, want %q", got, "recipes/default.rb")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // NewCookstyleScanner tests
 // ---------------------------------------------------------------------------
 

@@ -990,9 +990,9 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				logging.WithCollectionRunID(run.ID))
 		} else {
 			log.Info(fmt.Sprintf(
-				"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed in %s",
+				"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed, %d legacy cached cleaned in %s",
 				pipelineResult.Total, pipelineResult.Downloaded, pipelineResult.Scanned,
-				pipelineResult.Skipped, pipelineResult.Failed,
+				pipelineResult.Skipped, pipelineResult.Failed, pipelineResult.Cleaned,
 				pipelineResult.Duration.Round(time.Millisecond)),
 				logging.WithCollectionRunID(run.ID))
 		}
