@@ -112,6 +112,7 @@ type CollectionConfig struct {
 	Schedule                   string `yaml:"schedule"`
 	StaleNodeThresholdDays     int    `yaml:"stale_node_threshold_days"`
 	StaleCookbookThresholdDays int    `yaml:"stale_cookbook_threshold_days"`
+	SkipServerCookbookDownload bool   `yaml:"skip_server_cookbook_download"`
 }
 
 // ---------------------------------------------------------------------------
