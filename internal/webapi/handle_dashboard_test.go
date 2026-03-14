@@ -672,11 +672,8 @@ func TestHandleDashboardVersionDistributionTrend_HappyPath(t *testing.T) {
 				{ID: "run-1", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
 			}, nil
 		},
-		ListNodeSnapshotsByCollectionRunFn: func(ctx context.Context, runID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{ID: "n1", ChefVersion: "18.0.0"},
-				{ID: "n2", ChefVersion: "17.0.0"},
-			}, nil
+		CountChefVersionsByCollectionRunFn: func(ctx context.Context, collectionRunID string) (map[string]int, error) {
+			return map[string]int{"18.0.0": 1, "17.0.0": 1}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -729,17 +726,16 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", Name: "apt"},
-				{ID: "cb-2", Name: "nginx"},
+		CountCookbookCompatibilityFn: func(ctx context.Context, organisationIDs []string, targetVersions []string, cookbookNames map[string]bool) ([]datastore.CookbookCompatibilitySummary, error) {
+			return []datastore.CookbookCompatibilitySummary{
+				{
+					TargetChefVersion:     "18.0.0",
+					TotalCookbooks:        2,
+					CompatibleCookbooks:   1,
+					IncompatibleCookbooks: 1,
+					UntestedCookbooks:     0,
+				},
 			}, nil
-		},
-		GetLatestTestKitchenResultFn: func(ctx context.Context, cbID, tv string) (*datastore.TestKitchenResult, error) {
-			if cbID == "cb-1" {
-				return &datastore.TestKitchenResult{Compatible: true}, nil
-			}
-			return &datastore.TestKitchenResult{Compatible: false}, nil
 		},
 	}
 	cfg := testConfig()
@@ -1106,14 +1102,8 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 				{ID: "run-1", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
 			}, nil
 		},
-		ListNodeSnapshotsByCollectionRunFn: func(ctx context.Context, runID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{ID: "n1", IsStale: false},
-				{ID: "n2", IsStale: true},
-				{ID: "n3", IsStale: true},
-				{ID: "n4", IsStale: false},
-				{ID: "n5", IsStale: true},
-			}, nil
+		CountStaleFreshByCollectionRunFn: func(ctx context.Context, collectionRunID string) (int, int, int, error) {
+			return 5, 3, 2, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -1202,10 +1192,8 @@ func TestHandleDashboardStaleTrend_SkipsNonCompletedRuns(t *testing.T) {
 				{ID: "run-3", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
 			}, nil
 		},
-		ListNodeSnapshotsByCollectionRunFn: func(ctx context.Context, runID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{ID: "n1", IsStale: true},
-			}, nil
+		CountStaleFreshByCollectionRunFn: func(ctx context.Context, collectionRunID string) (int, int, int, error) {
+			return 1, 1, 0, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -1262,18 +1250,11 @@ func TestHandleDashboardStaleTrend_MultipleRuns(t *testing.T) {
 				{ID: "run-2", OrganisationID: "org-1", Status: "completed", CompletedAt: t2},
 			}, nil
 		},
-		ListNodeSnapshotsByCollectionRunFn: func(ctx context.Context, runID string) ([]datastore.NodeSnapshot, error) {
-			if runID == "run-1" {
-				return []datastore.NodeSnapshot{
-					{ID: "n1", IsStale: true},
-					{ID: "n2", IsStale: true},
-				}, nil
+		CountStaleFreshByCollectionRunFn: func(ctx context.Context, collectionRunID string) (int, int, int, error) {
+			if collectionRunID == "run-1" {
+				return 2, 2, 0, nil
 			}
-			return []datastore.NodeSnapshot{
-				{ID: "n3", IsStale: false},
-				{ID: "n4", IsStale: true},
-				{ID: "n5", IsStale: false},
-			}, nil
+			return 3, 1, 2, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
