@@ -121,6 +121,16 @@ type DataStore interface {
 	// ID and target Chef version. Returns (nil, nil) if no result exists.
 	GetCookstyleResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
 
+	// ResetCookbookDownloadStatus resets the download_status to 'pending'
+	// for a server cookbook, forcing the streaming pipeline to re-download
+	// and re-scan it on the next collection cycle.
+	ResetCookbookDownloadStatus(ctx context.Context, id string) (datastore.Cookbook, error)
+
+	// ResetAllServerCookbookDownloadStatuses resets download_status to
+	// 'pending' for all server cookbooks with status 'ok', forcing the
+	// streaming pipeline to re-download and re-scan them all.
+	ResetAllServerCookbookDownloadStatuses(ctx context.Context) (int, error)
+
 	// DeleteCookstyleResultsForCookbook removes all cookstyle results for
 	// the given cookbook ID. Forces a rescan on the next collection cycle.
 	DeleteCookstyleResultsForCookbook(ctx context.Context, cookbookID string) error

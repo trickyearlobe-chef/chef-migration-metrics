@@ -59,6 +59,19 @@ func (r *Router) handleAdminRescanAllCookstyle(w http.ResponseWriter, req *http.
 		return
 	}
 
+	// Reset download_status to 'pending' for all server cookbooks so the
+	// streaming pipeline re-downloads and re-scans them on the next cycle
+	// (cookbook files are deleted from disk after each scan).
+	resetCount, resetErr := r.db.ResetAllServerCookbookDownloadStatuses(ctx)
+	if resetErr != nil {
+		r.logf("ERROR", "resetting server cookbook download statuses: %v", resetErr)
+		WriteInternalError(w, "Failed to reset cookbook download statuses.")
+		return
+	}
+	if resetCount > 0 {
+		r.logf("INFO", "admin rescan-all-cookstyle: reset download status for %d server cookbook version(s)", resetCount)
+	}
+
 	// Broadcast a rescan event so the UI can update.
 	if r.hub != nil {
 		r.hub.Broadcast(NewEvent(EventRescanStarted, map[string]any{

@@ -829,6 +829,28 @@ func (db *DB) ResetCookbookDownloadStatus(ctx context.Context, id string) (Cookb
 	})
 }
 
+// ResetAllServerCookbookDownloadStatuses resets download_status to 'pending'
+// and clears download_error for ALL server-sourced cookbooks that currently
+// have status 'ok'. This is used by the admin "rescan all" endpoint to force
+// the streaming pipeline to re-download and re-scan every server cookbook on
+// the next collection cycle. Returns the number of rows updated.
+func (db *DB) ResetAllServerCookbookDownloadStatuses(ctx context.Context) (int, error) {
+	const query = `
+		UPDATE cookbooks
+		   SET download_status = 'pending',
+		       download_error  = NULL,
+		       updated_at      = now()
+		 WHERE source = 'chef_server'
+		   AND download_status = 'ok'
+	`
+	result, err := db.pool.ExecContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: resetting all server cookbook download statuses: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
 // DeleteGitCookbookResult holds the outcome of a DeleteGitCookbooksByName
 // operation, including how many cookbook and committer rows were removed and
 // which git repo URLs were cleaned up.
