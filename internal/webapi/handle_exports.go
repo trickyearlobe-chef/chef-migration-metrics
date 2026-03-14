@@ -449,7 +449,7 @@ func (r *Router) estimateExportRows(req *http.Request, body exportRequest) int {
 
 		totalEstimate := 0
 		for _, org := range orgs {
-			cbs, err := r.db.ListCookbooksByOrganisation(ctx, org.ID)
+			cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
 			if err != nil {
 				continue
 			}

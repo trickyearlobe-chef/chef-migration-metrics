@@ -16,12 +16,12 @@ import (
 
 func TestHandleCookbookResetGit_Success(t *testing.T) {
 	store := &mockStore{
-		DeleteGitCookbooksByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error) {
+		DeleteGitReposByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitRepoResult, error) {
 			if cookbookName != "cron" {
-				t.Errorf("DeleteGitCookbooksByName called with %q, want %q", cookbookName, "cron")
+				t.Errorf("DeleteGitReposByName called with %q, want %q", cookbookName, "cron")
 			}
-			return datastore.DeleteGitCookbookResult{
-				CookbooksDeleted:  1,
+			return datastore.DeleteGitRepoResult{
+				ReposDeleted:      1,
 				CommittersDeleted: 5,
 				RepoURLs:          []string{"git@github.com:old-org/cron"},
 			}, nil
@@ -46,8 +46,8 @@ func TestHandleCookbookResetGit_Success(t *testing.T) {
 	if resp["cookbook_name"] != "cron" {
 		t.Errorf("cookbook_name = %v, want %q", resp["cookbook_name"], "cron")
 	}
-	if resp["cookbooks_deleted"] != float64(1) {
-		t.Errorf("cookbooks_deleted = %v, want 1", resp["cookbooks_deleted"])
+	if resp["repos_deleted"] != float64(1) {
+		t.Errorf("repos_deleted = %v, want 1", resp["repos_deleted"])
 	}
 	if resp["committers_deleted"] != float64(5) {
 		t.Errorf("committers_deleted = %v, want 5", resp["committers_deleted"])
@@ -68,9 +68,9 @@ func TestHandleCookbookResetGit_Success(t *testing.T) {
 
 func TestHandleCookbookResetGit_SuccessNilRepoURLs(t *testing.T) {
 	store := &mockStore{
-		DeleteGitCookbooksByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error) {
-			return datastore.DeleteGitCookbookResult{
-				CookbooksDeleted:  2,
+		DeleteGitReposByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitRepoResult, error) {
+			return datastore.DeleteGitRepoResult{
+				ReposDeleted:      2,
 				CommittersDeleted: 0,
 				RepoURLs:          nil, // nil should be serialised as []
 			}, nil
@@ -104,8 +104,8 @@ func TestHandleCookbookResetGit_SuccessNilRepoURLs(t *testing.T) {
 
 func TestHandleCookbookResetGit_NotFound(t *testing.T) {
 	store := &mockStore{
-		DeleteGitCookbooksByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error) {
-			return datastore.DeleteGitCookbookResult{}, datastore.ErrNotFound
+		DeleteGitReposByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitRepoResult, error) {
+			return datastore.DeleteGitRepoResult{}, datastore.ErrNotFound
 		},
 	}
 
@@ -139,8 +139,8 @@ func TestHandleCookbookResetGit_MethodNotAllowed(t *testing.T) {
 
 func TestHandleCookbookResetGit_InternalError(t *testing.T) {
 	store := &mockStore{
-		DeleteGitCookbooksByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error) {
-			return datastore.DeleteGitCookbookResult{}, fmt.Errorf("db connection lost")
+		DeleteGitReposByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitRepoResult, error) {
+			return datastore.DeleteGitRepoResult{}, fmt.Errorf("db connection lost")
 		},
 	}
 
@@ -160,10 +160,10 @@ func TestHandleCookbookResetGit_CookbookNamePassedCorrectly(t *testing.T) {
 	var gotName string
 
 	store := &mockStore{
-		DeleteGitCookbooksByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error) {
+		DeleteGitReposByNameFn: func(ctx context.Context, cookbookName string) (datastore.DeleteGitRepoResult, error) {
 			gotName = cookbookName
-			return datastore.DeleteGitCookbookResult{
-				CookbooksDeleted: 1,
+			return datastore.DeleteGitRepoResult{
+				ReposDeleted: 1,
 			}, nil
 		},
 	}
@@ -179,6 +179,6 @@ func TestHandleCookbookResetGit_CookbookNamePassedCorrectly(t *testing.T) {
 	}
 
 	if gotName != wantName {
-		t.Errorf("DeleteGitCookbooksByName received name %q, want %q", gotName, wantName)
+		t.Errorf("DeleteGitReposByName received name %q, want %q", gotName, wantName)
 	}
 }

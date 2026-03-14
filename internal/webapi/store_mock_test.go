@@ -15,72 +15,82 @@ import (
 // a function field. If the field is nil the method returns zero values (and
 // nil error) so tests only need to set the stubs they care about.
 type mockStore struct {
-	PingFn                                     func(ctx context.Context) error
-	ListOrganisationsFn                        func(ctx context.Context) ([]datastore.Organisation, error)
-	GetOrganisationByNameFn                    func(ctx context.Context, name string) (datastore.Organisation, error)
-	GetLatestCollectionRunFn                   func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
-	ListCollectionRunsFn                       func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
-	ListNodeSnapshotsByOrganisationFn          func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
-	ListNodeSnapshotsByCollectionRunFn         func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
-	CountChefVersionsByCollectionRunFn         func(ctx context.Context, collectionRunID string) (map[string]int, error)
-	CountChefVersionsByCollectionRunFilteredFn func(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error)
-	CountStaleFreshByCollectionRunFn           func(ctx context.Context, collectionRunID string) (int, int, int, error)
-	GetNodeSnapshotByNameFn                    func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
-	ListNodeReadinessForSnapshotFn             func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error)
-	CountNodeReadinessFn                       func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error)
-	ListCookbooksByOrganisationFn              func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error)
-	ListCookbooksByNameFn                      func(ctx context.Context, name string) ([]datastore.Cookbook, error)
-	ListGitCookbooksFn                         func(ctx context.Context) ([]datastore.Cookbook, error)
-	ListCookbookComplexitiesForCookbookFn      func(ctx context.Context, cookbookID string) ([]datastore.CookbookComplexity, error)
-	ListCookbookComplexitiesForOrganisationFn  func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error)
-	ListCookstyleResultsForCookbookFn          func(ctx context.Context, cookbookID string) ([]datastore.CookstyleResult, error)
-	GetCookstyleResultFn                       func(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
-	ResetCookbookDownloadStatusFn              func(ctx context.Context, id string) (datastore.Cookbook, error)
-	ResetAllServerCookbookDownloadStatusesFn   func(ctx context.Context) (int, error)
-	DeleteCookstyleResultsForCookbookFn        func(ctx context.Context, cookbookID string) error
-	DeleteCookbookComplexitiesForCookbookFn    func(ctx context.Context, cookbookID string) error
-	DeleteAutocorrectPreviewsForCookbookFn     func(ctx context.Context, cookbookID string) error
-	DeleteAllCookstyleResultsFn                func(ctx context.Context) error
-	DeleteAllCookbookComplexitiesFn            func(ctx context.Context) error
-	DeleteAllAutocorrectPreviewsFn             func(ctx context.Context) error
-	GetAutocorrectPreviewFn                    func(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error)
-	ListAutocorrectPreviewsForCookbookFn       func(ctx context.Context, cookbookID string) ([]datastore.AutocorrectPreview, error)
-	GetLatestTestKitchenResultFn               func(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error)
-	ListTestKitchenResultsForCookbookFn        func(ctx context.Context, cookbookID string) ([]datastore.TestKitchenResult, error)
-	ListLogEntriesFn                           func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
-	CountLogEntriesFn                          func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
-	GetLogEntryFn                              func(ctx context.Context, id string) (datastore.LogEntry, error)
-	ListRoleDependenciesByOrgFn                func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
-	CountDependenciesByRoleFn                  func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
-	CountRolesPerCookbookFn                    func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
-	InsertExportJobFn                          func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error)
-	GetExportJobFn                             func(ctx context.Context, id string) (*datastore.ExportJob, error)
-	UpdateExportJobStatusFn                    func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error
-	UpdateExportJobExpiredFn                   func(ctx context.Context, id string) error
-	ListExportJobsByStatusFn                   func(ctx context.Context, status string) ([]datastore.ExportJob, error)
-	ListExpiredExportJobsFn                    func(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
-	ListOwnersFn                               func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error)
-	ListOwnersWithSummaryFn                    func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error)
-	GetOwnerByNameFn                           func(ctx context.Context, name string) (datastore.Owner, error)
-	InsertOwnerFn                              func(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error)
-	UpdateOwnerFn                              func(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error)
-	DeleteOwnerFn                              func(ctx context.Context, name string) (int, error)
-	CountAssignmentsByOwnerFn                  func(ctx context.Context, ownerName string) (map[string]int, error)
-	InsertAssignmentFn                         func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error)
-	ListAssignmentsByOwnerFn                   func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error)
-	GetAssignmentFn                            func(ctx context.Context, id string) (datastore.OwnershipAssignment, error)
-	DeleteAssignmentFn                         func(ctx context.Context, id string) error
-	ReassignOwnershipFn                        func(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (int, int, error)
-	LookupOwnershipFn                          func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
-	GetOwnerReadinessSummaryFn                 func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
-	GetOwnerCookbookSummaryFn                  func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
-	GetOwnerGitRepoSummaryFn                   func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
-	InsertAuditEntryFn                         func(ctx context.Context, p datastore.InsertAuditEntryParams) error
-	ListAuditLogFn                             func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
-	GetGitRepoURLForCookbookFn                 func(ctx context.Context, cookbookName string) (string, error)
-	ListCommittersByRepoFn                     func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
-	DeleteGitCookbooksByNameFn                 func(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error)
-	CountCookbookCompatibilityFn               func(ctx context.Context, organisationIDs []string, targetVersions []string, cookbookNames map[string]bool) ([]datastore.CookbookCompatibilitySummary, error)
+	PingFn                                              func(ctx context.Context) error
+	ListOrganisationsFn                                 func(ctx context.Context) ([]datastore.Organisation, error)
+	GetOrganisationByNameFn                             func(ctx context.Context, name string) (datastore.Organisation, error)
+	GetLatestCollectionRunFn                            func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
+	ListCollectionRunsFn                                func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
+	ListNodeSnapshotsByOrganisationFn                   func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
+	ListNodeSnapshotsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
+	CountChefVersionsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) (map[string]int, error)
+	CountChefVersionsByCollectionRunFilteredFn          func(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error)
+	CountStaleFreshByCollectionRunFn                    func(ctx context.Context, collectionRunID string) (int, int, int, error)
+	GetNodeSnapshotByNameFn                             func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
+	ListNodeReadinessForSnapshotFn                      func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error)
+	CountNodeReadinessFn                                func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error)
+	ListServerCookbooksByOrganisationFn                 func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
+	ListServerCookbooksByNameFn                         func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
+	ResetServerCookbookDownloadStatusFn                 func(ctx context.Context, id string) (datastore.ServerCookbook, error)
+	ResetAllServerCookbookDownloadStatusesFn            func(ctx context.Context) (int, error)
+	GetGitRepoFn                                        func(ctx context.Context, id string) (datastore.GitRepo, error)
+	ListGitReposFn                                      func(ctx context.Context) ([]datastore.GitRepo, error)
+	ListGitReposByNameFn                                func(ctx context.Context, name string) ([]datastore.GitRepo, error)
+	DeleteGitReposByNameFn                              func(ctx context.Context, name string) (datastore.DeleteGitRepoResult, error)
+	ListServerCookbookComplexitiesByCookbookFn          func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error)
+	ListServerCookbookComplexitiesByOrganisationFn      func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error)
+	ListServerCookbookCookstyleResultsFn                func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookCookstyleResult, error)
+	GetServerCookbookCookstyleResultFn                  func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
+	GetServerCookbookAutocorrectPreviewFn               func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error)
+	DeleteServerCookbookCookstyleResultsByCookbookFn    func(ctx context.Context, serverCookbookID string) error
+	DeleteServerCookbookComplexitiesByCookbookFn        func(ctx context.Context, serverCookbookID string) error
+	DeleteServerCookbookAutocorrectPreviewsByCookbookFn func(ctx context.Context, serverCookbookID string) error
+	DeleteAllServerCookbookCookstyleResultsFn           func(ctx context.Context) error
+	DeleteAllServerCookbookComplexitiesFn               func(ctx context.Context) error
+	DeleteAllServerCookbookAutocorrectPreviewsFn        func(ctx context.Context) error
+	ListGitRepoCookstyleResultsFn                       func(ctx context.Context, gitRepoID string) ([]datastore.GitRepoCookstyleResult, error)
+	GetGitRepoCookstyleResultFn                         func(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
+	ListGitRepoComplexitiesByRepoFn                     func(ctx context.Context, gitRepoID string) ([]datastore.GitRepoComplexity, error)
+	GetGitRepoAutocorrectPreviewFn                      func(ctx context.Context, cookstyleResultID string) (*datastore.GitRepoAutocorrectPreview, error)
+	GetLatestGitRepoTestKitchenResultFn                 func(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
+	ListGitRepoTestKitchenResultsFn                     func(ctx context.Context, gitRepoID string) ([]datastore.GitRepoTestKitchenResult, error)
+	DeleteGitRepoCookstyleResultsByRepoFn               func(ctx context.Context, gitRepoID string) error
+	DeleteGitRepoComplexitiesByRepoFn                   func(ctx context.Context, gitRepoID string) error
+	DeleteGitRepoAutocorrectPreviewsByRepoFn            func(ctx context.Context, gitRepoID string) error
+	DeleteAllGitRepoCookstyleResultsFn                  func(ctx context.Context) error
+	DeleteAllGitRepoComplexitiesFn                      func(ctx context.Context) error
+	DeleteAllGitRepoAutocorrectPreviewsFn               func(ctx context.Context) error
+	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
+	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
+	GetLogEntryFn                                       func(ctx context.Context, id string) (datastore.LogEntry, error)
+	ListRoleDependenciesByOrgFn                         func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
+	CountDependenciesByRoleFn                           func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
+	CountRolesPerCookbookFn                             func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
+	InsertExportJobFn                                   func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error)
+	GetExportJobFn                                      func(ctx context.Context, id string) (*datastore.ExportJob, error)
+	UpdateExportJobStatusFn                             func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error
+	UpdateExportJobExpiredFn                            func(ctx context.Context, id string) error
+	ListExportJobsByStatusFn                            func(ctx context.Context, status string) ([]datastore.ExportJob, error)
+	ListExpiredExportJobsFn                             func(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
+	ListOwnersFn                                        func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error)
+	ListOwnersWithSummaryFn                             func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error)
+	GetOwnerByNameFn                                    func(ctx context.Context, name string) (datastore.Owner, error)
+	InsertOwnerFn                                       func(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error)
+	UpdateOwnerFn                                       func(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error)
+	DeleteOwnerFn                                       func(ctx context.Context, name string) (int, error)
+	CountAssignmentsByOwnerFn                           func(ctx context.Context, ownerName string) (map[string]int, error)
+	InsertAssignmentFn                                  func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error)
+	ListAssignmentsByOwnerFn                            func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error)
+	GetAssignmentFn                                     func(ctx context.Context, id string) (datastore.OwnershipAssignment, error)
+	DeleteAssignmentFn                                  func(ctx context.Context, id string) error
+	ReassignOwnershipFn                                 func(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (int, int, error)
+	LookupOwnershipFn                                   func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
+	GetOwnerReadinessSummaryFn                          func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
+	GetOwnerCookbookSummaryFn                           func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
+	GetOwnerGitRepoSummaryFn                            func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
+	GetGitRepoURLForCookbookFn                          func(ctx context.Context, cookbookName string) (string, error)
+	ListCommittersByRepoFn                              func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
+	InsertAuditEntryFn                                  func(ctx context.Context, p datastore.InsertAuditEntryParams) error
+	ListAuditLogFn                                      func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 }
 
 // compile-time check
@@ -177,60 +187,29 @@ func (m *mockStore) CountNodeReadiness(ctx context.Context, organisationID, targ
 	return 0, 0, 0, nil
 }
 
-func (m *mockStore) ListCookbooksByOrganisation(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-	if m.ListCookbooksByOrganisationFn != nil {
-		return m.ListCookbooksByOrganisationFn(ctx, organisationID)
+// -----------------------------------------------------------------
+// Server cookbooks
+// -----------------------------------------------------------------
+
+func (m *mockStore) ListServerCookbooksByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+	if m.ListServerCookbooksByOrganisationFn != nil {
+		return m.ListServerCookbooksByOrganisationFn(ctx, organisationID)
 	}
 	return nil, nil
 }
 
-func (m *mockStore) ListCookbooksByName(ctx context.Context, name string) ([]datastore.Cookbook, error) {
-	if m.ListCookbooksByNameFn != nil {
-		return m.ListCookbooksByNameFn(ctx, name)
+func (m *mockStore) ListServerCookbooksByName(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
+	if m.ListServerCookbooksByNameFn != nil {
+		return m.ListServerCookbooksByNameFn(ctx, name)
 	}
 	return nil, nil
 }
 
-func (m *mockStore) ListGitCookbooks(ctx context.Context) ([]datastore.Cookbook, error) {
-	if m.ListGitCookbooksFn != nil {
-		return m.ListGitCookbooksFn(ctx)
+func (m *mockStore) ResetServerCookbookDownloadStatus(ctx context.Context, id string) (datastore.ServerCookbook, error) {
+	if m.ResetServerCookbookDownloadStatusFn != nil {
+		return m.ResetServerCookbookDownloadStatusFn(ctx, id)
 	}
-	return nil, nil
-}
-
-func (m *mockStore) ListCookbookComplexitiesForCookbook(ctx context.Context, cookbookID string) ([]datastore.CookbookComplexity, error) {
-	if m.ListCookbookComplexitiesForCookbookFn != nil {
-		return m.ListCookbookComplexitiesForCookbookFn(ctx, cookbookID)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) ListCookbookComplexitiesForOrganisation(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-	if m.ListCookbookComplexitiesForOrganisationFn != nil {
-		return m.ListCookbookComplexitiesForOrganisationFn(ctx, organisationID)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) ListCookstyleResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.CookstyleResult, error) {
-	if m.ListCookstyleResultsForCookbookFn != nil {
-		return m.ListCookstyleResultsForCookbookFn(ctx, cookbookID)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) GetCookstyleResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error) {
-	if m.GetCookstyleResultFn != nil {
-		return m.GetCookstyleResultFn(ctx, cookbookID, targetChefVersion)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) ResetCookbookDownloadStatus(ctx context.Context, id string) (datastore.Cookbook, error) {
-	if m.ResetCookbookDownloadStatusFn != nil {
-		return m.ResetCookbookDownloadStatusFn(ctx, id)
-	}
-	return datastore.Cookbook{}, nil
+	return datastore.ServerCookbook{}, nil
 }
 
 func (m *mockStore) ResetAllServerCookbookDownloadStatuses(ctx context.Context) (int, error) {
@@ -240,75 +219,210 @@ func (m *mockStore) ResetAllServerCookbookDownloadStatuses(ctx context.Context) 
 	return 0, nil
 }
 
-func (m *mockStore) DeleteCookstyleResultsForCookbook(ctx context.Context, cookbookID string) error {
-	if m.DeleteCookstyleResultsForCookbookFn != nil {
-		return m.DeleteCookstyleResultsForCookbookFn(ctx, cookbookID)
+// -----------------------------------------------------------------
+// Git repos
+// -----------------------------------------------------------------
+
+func (m *mockStore) GetGitRepo(ctx context.Context, id string) (datastore.GitRepo, error) {
+	if m.GetGitRepoFn != nil {
+		return m.GetGitRepoFn(ctx, id)
 	}
-	return nil
+	return datastore.GitRepo{}, nil
 }
 
-func (m *mockStore) DeleteCookbookComplexitiesForCookbook(ctx context.Context, cookbookID string) error {
-	if m.DeleteCookbookComplexitiesForCookbookFn != nil {
-		return m.DeleteCookbookComplexitiesForCookbookFn(ctx, cookbookID)
-	}
-	return nil
-}
-
-func (m *mockStore) DeleteAutocorrectPreviewsForCookbook(ctx context.Context, cookbookID string) error {
-	if m.DeleteAutocorrectPreviewsForCookbookFn != nil {
-		return m.DeleteAutocorrectPreviewsForCookbookFn(ctx, cookbookID)
-	}
-	return nil
-}
-
-func (m *mockStore) DeleteAllCookstyleResults(ctx context.Context) error {
-	if m.DeleteAllCookstyleResultsFn != nil {
-		return m.DeleteAllCookstyleResultsFn(ctx)
-	}
-	return nil
-}
-
-func (m *mockStore) DeleteAllCookbookComplexities(ctx context.Context) error {
-	if m.DeleteAllCookbookComplexitiesFn != nil {
-		return m.DeleteAllCookbookComplexitiesFn(ctx)
-	}
-	return nil
-}
-
-func (m *mockStore) DeleteAllAutocorrectPreviews(ctx context.Context) error {
-	if m.DeleteAllAutocorrectPreviewsFn != nil {
-		return m.DeleteAllAutocorrectPreviewsFn(ctx)
-	}
-	return nil
-}
-
-func (m *mockStore) GetAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.AutocorrectPreview, error) {
-	if m.GetAutocorrectPreviewFn != nil {
-		return m.GetAutocorrectPreviewFn(ctx, cookstyleResultID)
+func (m *mockStore) ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error) {
+	if m.ListGitReposFn != nil {
+		return m.ListGitReposFn(ctx)
 	}
 	return nil, nil
 }
 
-func (m *mockStore) ListAutocorrectPreviewsForCookbook(ctx context.Context, cookbookID string) ([]datastore.AutocorrectPreview, error) {
-	if m.ListAutocorrectPreviewsForCookbookFn != nil {
-		return m.ListAutocorrectPreviewsForCookbookFn(ctx, cookbookID)
+func (m *mockStore) ListGitReposByName(ctx context.Context, name string) ([]datastore.GitRepo, error) {
+	if m.ListGitReposByNameFn != nil {
+		return m.ListGitReposByNameFn(ctx, name)
 	}
 	return nil, nil
 }
 
-func (m *mockStore) GetLatestTestKitchenResult(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.TestKitchenResult, error) {
-	if m.GetLatestTestKitchenResultFn != nil {
-		return m.GetLatestTestKitchenResultFn(ctx, cookbookID, targetChefVersion)
+func (m *mockStore) DeleteGitReposByName(ctx context.Context, name string) (datastore.DeleteGitRepoResult, error) {
+	if m.DeleteGitReposByNameFn != nil {
+		return m.DeleteGitReposByNameFn(ctx, name)
+	}
+	return datastore.DeleteGitRepoResult{}, datastore.ErrNotFound
+}
+
+// -----------------------------------------------------------------
+// Server cookbook analysis results
+// -----------------------------------------------------------------
+
+func (m *mockStore) ListServerCookbookComplexitiesByCookbook(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+	if m.ListServerCookbookComplexitiesByCookbookFn != nil {
+		return m.ListServerCookbookComplexitiesByCookbookFn(ctx, serverCookbookID)
 	}
 	return nil, nil
 }
 
-func (m *mockStore) ListTestKitchenResultsForCookbook(ctx context.Context, cookbookID string) ([]datastore.TestKitchenResult, error) {
-	if m.ListTestKitchenResultsForCookbookFn != nil {
-		return m.ListTestKitchenResultsForCookbookFn(ctx, cookbookID)
+func (m *mockStore) ListServerCookbookComplexitiesByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+	if m.ListServerCookbookComplexitiesByOrganisationFn != nil {
+		return m.ListServerCookbookComplexitiesByOrganisationFn(ctx, organisationID)
 	}
 	return nil, nil
 }
+
+func (m *mockStore) ListServerCookbookCookstyleResults(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookCookstyleResult, error) {
+	if m.ListServerCookbookCookstyleResultsFn != nil {
+		return m.ListServerCookbookCookstyleResultsFn(ctx, serverCookbookID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetServerCookbookCookstyleResult(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+	if m.GetServerCookbookCookstyleResultFn != nil {
+		return m.GetServerCookbookCookstyleResultFn(ctx, serverCookbookID, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetServerCookbookAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+	if m.GetServerCookbookAutocorrectPreviewFn != nil {
+		return m.GetServerCookbookAutocorrectPreviewFn(ctx, cookstyleResultID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) DeleteServerCookbookCookstyleResultsByCookbook(ctx context.Context, serverCookbookID string) error {
+	if m.DeleteServerCookbookCookstyleResultsByCookbookFn != nil {
+		return m.DeleteServerCookbookCookstyleResultsByCookbookFn(ctx, serverCookbookID)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteServerCookbookComplexitiesByCookbook(ctx context.Context, serverCookbookID string) error {
+	if m.DeleteServerCookbookComplexitiesByCookbookFn != nil {
+		return m.DeleteServerCookbookComplexitiesByCookbookFn(ctx, serverCookbookID)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx context.Context, serverCookbookID string) error {
+	if m.DeleteServerCookbookAutocorrectPreviewsByCookbookFn != nil {
+		return m.DeleteServerCookbookAutocorrectPreviewsByCookbookFn(ctx, serverCookbookID)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllServerCookbookCookstyleResults(ctx context.Context) error {
+	if m.DeleteAllServerCookbookCookstyleResultsFn != nil {
+		return m.DeleteAllServerCookbookCookstyleResultsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllServerCookbookComplexities(ctx context.Context) error {
+	if m.DeleteAllServerCookbookComplexitiesFn != nil {
+		return m.DeleteAllServerCookbookComplexitiesFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllServerCookbookAutocorrectPreviews(ctx context.Context) error {
+	if m.DeleteAllServerCookbookAutocorrectPreviewsFn != nil {
+		return m.DeleteAllServerCookbookAutocorrectPreviewsFn(ctx)
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------
+// Git repo analysis results
+// -----------------------------------------------------------------
+
+func (m *mockStore) ListGitRepoCookstyleResults(ctx context.Context, gitRepoID string) ([]datastore.GitRepoCookstyleResult, error) {
+	if m.ListGitRepoCookstyleResultsFn != nil {
+		return m.ListGitRepoCookstyleResultsFn(ctx, gitRepoID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error) {
+	if m.GetGitRepoCookstyleResultFn != nil {
+		return m.GetGitRepoCookstyleResultFn(ctx, gitRepoID, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) ([]datastore.GitRepoComplexity, error) {
+	if m.ListGitRepoComplexitiesByRepoFn != nil {
+		return m.ListGitRepoComplexitiesByRepoFn(ctx, gitRepoID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetGitRepoAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.GitRepoAutocorrectPreview, error) {
+	if m.GetGitRepoAutocorrectPreviewFn != nil {
+		return m.GetGitRepoAutocorrectPreviewFn(ctx, cookstyleResultID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error) {
+	if m.GetLatestGitRepoTestKitchenResultFn != nil {
+		return m.GetLatestGitRepoTestKitchenResultFn(ctx, gitRepoID, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListGitRepoTestKitchenResults(ctx context.Context, gitRepoID string) ([]datastore.GitRepoTestKitchenResult, error) {
+	if m.ListGitRepoTestKitchenResultsFn != nil {
+		return m.ListGitRepoTestKitchenResultsFn(ctx, gitRepoID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) DeleteGitRepoCookstyleResultsByRepo(ctx context.Context, gitRepoID string) error {
+	if m.DeleteGitRepoCookstyleResultsByRepoFn != nil {
+		return m.DeleteGitRepoCookstyleResultsByRepoFn(ctx, gitRepoID)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) error {
+	if m.DeleteGitRepoComplexitiesByRepoFn != nil {
+		return m.DeleteGitRepoComplexitiesByRepoFn(ctx, gitRepoID)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoID string) error {
+	if m.DeleteGitRepoAutocorrectPreviewsByRepoFn != nil {
+		return m.DeleteGitRepoAutocorrectPreviewsByRepoFn(ctx, gitRepoID)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllGitRepoCookstyleResults(ctx context.Context) error {
+	if m.DeleteAllGitRepoCookstyleResultsFn != nil {
+		return m.DeleteAllGitRepoCookstyleResultsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllGitRepoComplexities(ctx context.Context) error {
+	if m.DeleteAllGitRepoComplexitiesFn != nil {
+		return m.DeleteAllGitRepoComplexitiesFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error {
+	if m.DeleteAllGitRepoAutocorrectPreviewsFn != nil {
+		return m.DeleteAllGitRepoAutocorrectPreviewsFn(ctx)
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------
+// Log entries
+// -----------------------------------------------------------------
 
 func (m *mockStore) ListLogEntries(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error) {
 	if m.ListLogEntriesFn != nil {
@@ -331,6 +445,10 @@ func (m *mockStore) GetLogEntry(ctx context.Context, id string) (datastore.LogEn
 	return datastore.LogEntry{}, nil
 }
 
+// -----------------------------------------------------------------
+// Role dependencies
+// -----------------------------------------------------------------
+
 func (m *mockStore) ListRoleDependenciesByOrg(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 	if m.ListRoleDependenciesByOrgFn != nil {
 		return m.ListRoleDependenciesByOrgFn(ctx, organisationID)
@@ -351,6 +469,10 @@ func (m *mockStore) CountRolesPerCookbook(ctx context.Context, organisationID st
 	}
 	return nil, nil
 }
+
+// -----------------------------------------------------------------
+// Export jobs
+// -----------------------------------------------------------------
 
 func (m *mockStore) InsertExportJob(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
 	if m.InsertExportJobFn != nil {
@@ -393,6 +515,10 @@ func (m *mockStore) ListExpiredExportJobs(ctx context.Context, now time.Time) ([
 	}
 	return nil, nil
 }
+
+// -----------------------------------------------------------------
+// Owners
+// -----------------------------------------------------------------
 
 func (m *mockStore) ListOwners(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
 	if m.ListOwnersFn != nil {
@@ -443,6 +569,10 @@ func (m *mockStore) CountAssignmentsByOwner(ctx context.Context, ownerName strin
 	return nil, nil
 }
 
+// -----------------------------------------------------------------
+// Ownership assignments
+// -----------------------------------------------------------------
+
 func (m *mockStore) InsertAssignment(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
 	if m.InsertAssignmentFn != nil {
 		return m.InsertAssignmentFn(ctx, p)
@@ -485,6 +615,10 @@ func (m *mockStore) LookupOwnership(ctx context.Context, entityType, entityKey, 
 	return nil, nil
 }
 
+// -----------------------------------------------------------------
+// Owner detail summaries
+// -----------------------------------------------------------------
+
 func (m *mockStore) GetOwnerReadinessSummary(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error) {
 	if m.GetOwnerReadinessSummaryFn != nil {
 		return m.GetOwnerReadinessSummaryFn(ctx, ownerName, targetChefVersion)
@@ -506,19 +640,9 @@ func (m *mockStore) GetOwnerGitRepoSummary(ctx context.Context, ownerName, targe
 	return datastore.OwnerGitRepoSummary{}, nil
 }
 
-func (m *mockStore) InsertAuditEntry(ctx context.Context, p datastore.InsertAuditEntryParams) error {
-	if m.InsertAuditEntryFn != nil {
-		return m.InsertAuditEntryFn(ctx, p)
-	}
-	return nil
-}
-
-func (m *mockStore) ListAuditLog(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error) {
-	if m.ListAuditLogFn != nil {
-		return m.ListAuditLogFn(ctx, f)
-	}
-	return nil, 0, nil
-}
+// -----------------------------------------------------------------
+// Git repo committers
+// -----------------------------------------------------------------
 
 func (m *mockStore) GetGitRepoURLForCookbook(ctx context.Context, cookbookName string) (string, error) {
 	if m.GetGitRepoURLForCookbookFn != nil {
@@ -534,18 +658,22 @@ func (m *mockStore) ListCommittersByRepo(ctx context.Context, f datastore.Commit
 	return nil, 0, nil
 }
 
-func (m *mockStore) DeleteGitCookbooksByName(ctx context.Context, cookbookName string) (datastore.DeleteGitCookbookResult, error) {
-	if m.DeleteGitCookbooksByNameFn != nil {
-		return m.DeleteGitCookbooksByNameFn(ctx, cookbookName)
+// -----------------------------------------------------------------
+// Ownership audit log
+// -----------------------------------------------------------------
+
+func (m *mockStore) InsertAuditEntry(ctx context.Context, p datastore.InsertAuditEntryParams) error {
+	if m.InsertAuditEntryFn != nil {
+		return m.InsertAuditEntryFn(ctx, p)
 	}
-	return datastore.DeleteGitCookbookResult{}, datastore.ErrNotFound
+	return nil
 }
 
-func (m *mockStore) CountCookbookCompatibility(ctx context.Context, organisationIDs []string, targetVersions []string, cookbookNames map[string]bool) ([]datastore.CookbookCompatibilitySummary, error) {
-	if m.CountCookbookCompatibilityFn != nil {
-		return m.CountCookbookCompatibilityFn(ctx, organisationIDs, targetVersions, cookbookNames)
+func (m *mockStore) ListAuditLog(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error) {
+	if m.ListAuditLogFn != nil {
+		return m.ListAuditLogFn(ctx, f)
 	}
-	return nil, nil
+	return nil, 0, nil
 }
 
 // ---------------------------------------------------------------------------

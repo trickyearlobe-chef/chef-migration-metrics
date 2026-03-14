@@ -38,24 +38,45 @@ func (r *Router) handleAdminRescanAllCookstyle(w http.ResponseWriter, req *http.
 
 	ctx := req.Context()
 
-	// Delete all cookstyle results.
-	if err := r.db.DeleteAllCookstyleResults(ctx); err != nil {
-		r.logf("ERROR", "deleting all cookstyle results: %v", err)
-		WriteInternalError(w, "Failed to delete cookstyle results.")
+	// Delete all server cookbook cookstyle results.
+	if err := r.db.DeleteAllServerCookbookCookstyleResults(ctx); err != nil {
+		r.logf("ERROR", "deleting all server cookbook cookstyle results: %v", err)
+		WriteInternalError(w, "Failed to delete server cookbook cookstyle results.")
 		return
 	}
 
-	// Delete all cookbook complexity records.
-	if err := r.db.DeleteAllCookbookComplexities(ctx); err != nil {
-		r.logf("ERROR", "deleting all cookbook complexities: %v", err)
-		WriteInternalError(w, "Failed to delete cookbook complexity records.")
+	// Delete all git repo cookstyle results.
+	if err := r.db.DeleteAllGitRepoCookstyleResults(ctx); err != nil {
+		r.logf("ERROR", "deleting all git repo cookstyle results: %v", err)
+		WriteInternalError(w, "Failed to delete git repo cookstyle results.")
 		return
 	}
 
-	// Delete all autocorrect previews.
-	if err := r.db.DeleteAllAutocorrectPreviews(ctx); err != nil {
-		r.logf("ERROR", "deleting all autocorrect previews: %v", err)
-		WriteInternalError(w, "Failed to delete autocorrect previews.")
+	// Delete all server cookbook complexity records.
+	if err := r.db.DeleteAllServerCookbookComplexities(ctx); err != nil {
+		r.logf("ERROR", "deleting all server cookbook complexities: %v", err)
+		WriteInternalError(w, "Failed to delete server cookbook complexity records.")
+		return
+	}
+
+	// Delete all git repo complexity records.
+	if err := r.db.DeleteAllGitRepoComplexities(ctx); err != nil {
+		r.logf("ERROR", "deleting all git repo complexities: %v", err)
+		WriteInternalError(w, "Failed to delete git repo complexity records.")
+		return
+	}
+
+	// Delete all server cookbook autocorrect previews.
+	if err := r.db.DeleteAllServerCookbookAutocorrectPreviews(ctx); err != nil {
+		r.logf("ERROR", "deleting all server cookbook autocorrect previews: %v", err)
+		WriteInternalError(w, "Failed to delete server cookbook autocorrect previews.")
+		return
+	}
+
+	// Delete all git repo autocorrect previews.
+	if err := r.db.DeleteAllGitRepoAutocorrectPreviews(ctx); err != nil {
+		r.logf("ERROR", "deleting all git repo autocorrect previews: %v", err)
+		WriteInternalError(w, "Failed to delete git repo autocorrect previews.")
 		return
 	}
 

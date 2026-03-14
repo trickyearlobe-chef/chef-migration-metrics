@@ -496,31 +496,31 @@ func (e *OwnershipEvaluator) evaluateCookbookNamePatternRule(ctx context.Context
 	var matches []entityMatch
 
 	// Server cookbooks for this org.
-	serverCookbooks, err := e.db.ListCookbooksByOrganisation(ctx, orgID)
+	serverCookbooks, err := e.db.ListServerCookbooksByOrganisation(ctx, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("listing server cookbooks: %w", err)
 	}
-	for _, cb := range serverCookbooks {
-		if re.MatchString(cb.Name) && !seen[cb.Name] {
-			seen[cb.Name] = true
+	for _, sc := range serverCookbooks {
+		if re.MatchString(sc.Name) && !seen[sc.Name] {
+			seen[sc.Name] = true
 			matches = append(matches, entityMatch{
 				EntityType: "cookbook",
-				EntityKey:  cb.Name,
+				EntityKey:  sc.Name,
 			})
 		}
 	}
 
 	// Git-sourced cookbooks (cross-org).
-	gitCookbooks, err := e.db.ListGitCookbooks(ctx)
+	gitRepos, err := e.db.ListGitRepos(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing git cookbooks: %w", err)
+		return nil, fmt.Errorf("listing git repos: %w", err)
 	}
-	for _, cb := range gitCookbooks {
-		if re.MatchString(cb.Name) && !seen[cb.Name] {
-			seen[cb.Name] = true
+	for _, repo := range gitRepos {
+		if re.MatchString(repo.Name) && !seen[repo.Name] {
+			seen[repo.Name] = true
 			matches = append(matches, entityMatch{
 				EntityType: "cookbook",
-				EntityKey:  cb.Name,
+				EntityKey:  repo.Name,
 			})
 		}
 	}
@@ -540,23 +540,23 @@ func (e *OwnershipEvaluator) evaluateGitRepoURLPatternRule(ctx context.Context, 
 		return nil, fmt.Errorf("invalid regex pattern %q: %w", rule.Pattern, err)
 	}
 
-	gitCookbooks, err := e.db.ListGitCookbooks(ctx)
+	gitRepos, err := e.db.ListGitRepos(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing git cookbooks: %w", err)
+		return nil, fmt.Errorf("listing git repos: %w", err)
 	}
 
 	// Extract distinct git repo URLs.
 	seen := make(map[string]bool)
 	var matches []entityMatch
-	for _, cb := range gitCookbooks {
-		if cb.GitRepoURL == "" || seen[cb.GitRepoURL] {
+	for _, repo := range gitRepos {
+		if repo.GitRepoURL == "" || seen[repo.GitRepoURL] {
 			continue
 		}
-		seen[cb.GitRepoURL] = true
-		if re.MatchString(cb.GitRepoURL) {
+		seen[repo.GitRepoURL] = true
+		if re.MatchString(repo.GitRepoURL) {
 			matches = append(matches, entityMatch{
 				EntityType: "git_repo",
-				EntityKey:  cb.GitRepoURL,
+				EntityKey:  repo.GitRepoURL,
 			})
 		}
 	}

@@ -92,7 +92,7 @@ func fetchCookbooks(
 	}
 
 	// Find all active cookbook versions that need downloading.
-	cookbooks, err := db.ListActiveCookbooksNeedingDownload(ctx, org.ID)
+	cookbooks, err := db.ListActiveServerCookbooksNeedingDownload(ctx, org.ID)
 	if err != nil {
 		log.Error(fmt.Sprintf("failed to list cookbooks needing download: %v", err))
 		return CookbookFetchResult{
@@ -127,7 +127,7 @@ func fetchCookbooks(
 		}
 
 		wg.Add(1)
-		go func(cb datastore.Cookbook) {
+		go func(cb datastore.ServerCookbook) {
 			defer wg.Done()
 
 			// Acquire semaphore slot.
@@ -188,7 +188,7 @@ func downloadCookbookVersion(
 	ctx context.Context,
 	client *chefapi.Client,
 	db *datastore.DB,
-	cb datastore.Cookbook,
+	cb datastore.ServerCookbook,
 	cookbookCacheDir string,
 ) (int, error) {
 	// Fetch the cookbook version manifest from the Chef server.
@@ -215,7 +215,7 @@ func downloadCookbookVersion(
 	}
 
 	// Download succeeded — mark as 'ok'.
-	if _, markErr := db.MarkCookbookDownloadOK(ctx, cb.ID); markErr != nil {
+	if _, markErr := db.MarkServerCookbookDownloadOK(ctx, cb.ID); markErr != nil {
 		return filesWritten, fmt.Errorf("downloaded successfully but failed to update status: %w", markErr)
 	}
 
@@ -380,7 +380,7 @@ func markDownloadFailed(ctx context.Context, db *datastore.DB, cookbookID string
 	}
 	// Best-effort — if this also fails, the cookbook remains in its current
 	// status (pending or failed) and will be retried on the next run.
-	_, _ = db.MarkCookbookDownloadFailed(dbCtx, cookbookID, errStr)
+	_, _ = db.MarkServerCookbookDownloadFailed(dbCtx, cookbookID, errStr)
 }
 
 // formatDownloadError produces a human-readable error string suitable for

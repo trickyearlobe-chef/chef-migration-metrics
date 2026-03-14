@@ -97,10 +97,10 @@ func TestHandleRemediationPriority_HappyPath_Empty(t *testing.T) {
 				{ID: "org-1", Name: "prod"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return nil, nil
 		},
 	}
@@ -153,17 +153,17 @@ func TestHandleRemediationPriority_HappyPath_WithData(t *testing.T) {
 				{ID: "org-1", Name: "prod"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server"},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server"},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
 				{
 					ID:                   "cc-1",
-					CookbookID:           "cb-1",
+					ServerCookbookID:    "cb-1",
 					TargetChefVersion:    "18.0.0",
 					ComplexityScore:      42,
 					ComplexityLabel:      "high",
@@ -177,7 +177,7 @@ func TestHandleRemediationPriority_HappyPath_WithData(t *testing.T) {
 				},
 				{
 					ID:                   "cc-2",
-					CookbookID:           "cb-2",
+					ServerCookbookID:    "cb-2",
 					TargetChefVersion:    "18.0.0",
 					ComplexityScore:      10,
 					ComplexityLabel:      "low",
@@ -192,7 +192,7 @@ func TestHandleRemediationPriority_HappyPath_WithData(t *testing.T) {
 				{
 					// Different target version — should be filtered out.
 					ID:                "cc-3",
-					CookbookID:        "cb-1",
+					ServerCookbookID: "cb-1",
 					TargetChefVersion: "17.0.0",
 					ComplexityScore:   99,
 				},
@@ -291,16 +291,16 @@ func TestHandleRemediationPriority_SortByName(t *testing.T) {
 				{ID: "org-1", Name: "prod"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
 				{ID: "cb-1", Name: "zookeeper", Version: "1.0.0"},
 				{ID: "cb-2", Name: "apache2", Version: "1.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
-				{CookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 5, AffectedNodeCount: 1, EvaluatedAt: now},
-				{CookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 50, AffectedNodeCount: 10, EvaluatedAt: now},
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
+				{ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 5, AffectedNodeCount: 1, EvaluatedAt: now},
+				{ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 50, AffectedNodeCount: 10, EvaluatedAt: now},
 			}, nil
 		},
 	}
@@ -352,15 +352,15 @@ func TestHandleRemediationPriority_ExplicitTargetVersion(t *testing.T) {
 				{ID: "org-1", Name: "prod"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
 				{ID: "cb-1", Name: "test", Version: "1.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
-				{CookbookID: "cb-1", TargetChefVersion: "17.0.0", ComplexityScore: 10, AffectedNodeCount: 5, EvaluatedAt: now},
-				{CookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 20, AffectedNodeCount: 3, EvaluatedAt: now},
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
+				{ServerCookbookID: "cb-1", TargetChefVersion: "17.0.0", ComplexityScore: 10, AffectedNodeCount: 5, EvaluatedAt: now},
+				{ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 20, AffectedNodeCount: 3, EvaluatedAt: now},
 			}, nil
 		},
 	}
@@ -418,24 +418,24 @@ func TestHandleRemediationPriority_OrganisationFilter(t *testing.T) {
 				{ID: "org-2", Name: "staging"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			if organisationID == "org-1" {
-				return []datastore.Cookbook{
+				return []datastore.ServerCookbook{
 					{ID: "cb-1", Name: "prod-cookbook", Version: "1.0.0"},
 				}, nil
 			}
-			return []datastore.Cookbook{
+			return []datastore.ServerCookbook{
 				{ID: "cb-2", Name: "staging-cookbook", Version: "1.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
 			if organisationID == "org-1" {
-				return []datastore.CookbookComplexity{
-					{CookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, AffectedNodeCount: 1, EvaluatedAt: now},
+				return []datastore.ServerCookbookComplexity{
+					{ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, AffectedNodeCount: 1, EvaluatedAt: now},
 				}, nil
 			}
-			return []datastore.CookbookComplexity{
-				{CookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 20, AffectedNodeCount: 2, EvaluatedAt: now},
+			return []datastore.ServerCookbookComplexity{
+				{ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 20, AffectedNodeCount: 2, EvaluatedAt: now},
 			}, nil
 		},
 	}
@@ -512,14 +512,14 @@ func TestHandleRemediationPriority_ZeroAffectedNodesUsesOne(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
 				{ID: "cb-1", Name: "unused", Version: "1.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
-				{CookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 25, AffectedNodeCount: 0, EvaluatedAt: now},
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
+				{ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 25, AffectedNodeCount: 0, EvaluatedAt: now},
 			}, nil
 		},
 	}
@@ -634,7 +634,7 @@ func TestHandleRemediationSummary_HappyPath_Empty(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
@@ -688,10 +688,10 @@ func TestHandleRemediationSummary_HappyPath_WithData(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
 				{
-					CookbookID:           "cb-1",
+					ServerCookbookID:    "cb-1",
 					TargetChefVersion:    "18.0.0",
 					ComplexityScore:      42,
 					AutoCorrectableCount: 5,
@@ -701,7 +701,7 @@ func TestHandleRemediationSummary_HappyPath_WithData(t *testing.T) {
 				},
 				{
 					// Quick win: auto-correctable only, no manual fixes.
-					CookbookID:           "cb-2",
+					ServerCookbookID:    "cb-2",
 					TargetChefVersion:    "18.0.0",
 					ComplexityScore:      5,
 					AutoCorrectableCount: 3,
@@ -711,7 +711,7 @@ func TestHandleRemediationSummary_HappyPath_WithData(t *testing.T) {
 				},
 				{
 					// Zero complexity — not needing remediation.
-					CookbookID:        "cb-3",
+					ServerCookbookID: "cb-3",
 					TargetChefVersion: "18.0.0",
 					ComplexityScore:   0,
 					EvaluatedAt:       now,
@@ -818,14 +818,14 @@ func TestHandleRemediationSummary_OrganisationFilter(t *testing.T) {
 				{ID: "org-2", Name: "staging"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
 			if organisationID == "org-1" {
-				return []datastore.CookbookComplexity{
-					{CookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, AffectedNodeCount: 5, ManualFixCount: 1, EvaluatedAt: now},
+				return []datastore.ServerCookbookComplexity{
+					{ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, AffectedNodeCount: 5, ManualFixCount: 1, EvaluatedAt: now},
 				}, nil
 			}
-			return []datastore.CookbookComplexity{
-				{CookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 20, AffectedNodeCount: 10, ManualFixCount: 3, EvaluatedAt: now},
+			return []datastore.ServerCookbookComplexity{
+				{ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 20, AffectedNodeCount: 10, ManualFixCount: 3, EvaluatedAt: now},
 			}, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
@@ -924,20 +924,20 @@ func TestHandleRemediationPriority_Pagination(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			cbs := make([]datastore.Cookbook, 5)
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			cbs := make([]datastore.ServerCookbook, 5)
 			for i := range cbs {
 				id := string(rune('a' + i))
-				cbs[i] = datastore.Cookbook{ID: "cb-" + id, Name: "cookbook-" + id, Version: "1.0.0"}
+				cbs[i] = datastore.ServerCookbook{ID: "cb-" + id, Name: "cookbook-" + id, Version: "1.0.0"}
 			}
 			return cbs, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			ccs := make([]datastore.CookbookComplexity, 5)
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			ccs := make([]datastore.ServerCookbookComplexity, 5)
 			for i := range ccs {
 				id := string(rune('a' + i))
-				ccs[i] = datastore.CookbookComplexity{
-					CookbookID:        "cb-" + id,
+				ccs[i] = datastore.ServerCookbookComplexity{
+					ServerCookbookID: "cb-" + id,
 					TargetChefVersion: "18.0.0",
 					ComplexityScore:   (5 - i) * 10,
 					AffectedNodeCount: 1,
@@ -1071,18 +1071,18 @@ func TestHandleRemediationPriority_ComplexityLabelFilter(t *testing.T) {
 				{ID: "org-1", Name: "prod"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server"},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server"},
-				{ID: "cb-3", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", Source: "chef_server"},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0"},
+				{ID: "cb-3", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
 				{
 					ID:                   "cc-1",
-					CookbookID:           "cb-1",
+					ServerCookbookID:    "cb-1",
 					TargetChefVersion:    "18.0.0",
 					ComplexityScore:      42,
 					ComplexityLabel:      "high",
@@ -1095,7 +1095,7 @@ func TestHandleRemediationPriority_ComplexityLabelFilter(t *testing.T) {
 				},
 				{
 					ID:                   "cc-2",
-					CookbookID:           "cb-2",
+					ServerCookbookID:    "cb-2",
 					TargetChefVersion:    "18.0.0",
 					ComplexityScore:      10,
 					ComplexityLabel:      "low",
@@ -1108,7 +1108,7 @@ func TestHandleRemediationPriority_ComplexityLabelFilter(t *testing.T) {
 				},
 				{
 					ID:                   "cc-3",
-					CookbookID:           "cb-3",
+					ServerCookbookID:    "cb-3",
 					TargetChefVersion:    "18.0.0",
 					ComplexityScore:      80,
 					ComplexityLabel:      "high",
@@ -1179,16 +1179,16 @@ func TestHandleRemediationPriority_ComplexityLabelFilter_NoMatch(t *testing.T) {
 				{ID: "org-1", Name: "prod"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server"},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
 				{
 					ID:                "cc-1",
-					CookbookID:        "cb-1",
+					ServerCookbookID: "cb-1",
 					TargetChefVersion: "18.0.0",
 					ComplexityScore:   10,
 					ComplexityLabel:   "low",
@@ -1246,17 +1246,17 @@ func TestHandleRemediationPriority_ComplexityLabelFilter_OmittedReturnsAll(t *te
 				{ID: "org-1", Name: "prod"},
 			}, nil
 		},
-		ListCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.Cookbook, error) {
-			return []datastore.Cookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", Source: "chef_server"},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", Source: "chef_server"},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0"},
+				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0"},
 			}, nil
 		},
-		ListCookbookComplexitiesForOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error) {
-			return []datastore.CookbookComplexity{
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
 				{
 					ID:                "cc-1",
-					CookbookID:        "cb-1",
+					ServerCookbookID: "cb-1",
 					TargetChefVersion: "18.0.0",
 					ComplexityScore:   42,
 					ComplexityLabel:   "high",
@@ -1265,7 +1265,7 @@ func TestHandleRemediationPriority_ComplexityLabelFilter_OmittedReturnsAll(t *te
 				},
 				{
 					ID:                "cc-2",
-					CookbookID:        "cb-2",
+					ServerCookbookID: "cb-2",
 					TargetChefVersion: "18.0.0",
 					ComplexityScore:   10,
 					ComplexityLabel:   "low",

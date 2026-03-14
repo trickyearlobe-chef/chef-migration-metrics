@@ -71,8 +71,8 @@ func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request
 
 	ctx := req.Context()
 
-	// Delete all git-sourced cookbook rows and associated committer data.
-	result, err := r.db.DeleteGitCookbooksByName(ctx, cookbookName)
+	// Delete all git repo rows and associated committer data.
+	result, err := r.db.DeleteGitReposByName(ctx, cookbookName)
 	if err != nil {
 		// Check for not-found (no git-sourced rows for this name).
 		if errors.Is(err, datastore.ErrNotFound) {
@@ -102,7 +102,7 @@ func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request
 		r.hub.Broadcast(NewEvent(EventCookbookStatusChanged, map[string]any{
 			"cookbook_name":      cookbookName,
 			"action":             "reset-git",
-			"cookbooks_deleted":  result.CookbooksDeleted,
+			"repos_deleted":      result.ReposDeleted,
 			"committers_deleted": result.CommittersDeleted,
 		}))
 	}
@@ -113,15 +113,15 @@ func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request
 		repoURLs = []string{}
 	}
 
-	r.logf("INFO", "git cookbook reset for %s — %d cookbook(s), %d committer(s) deleted, %d repo URL(s) cleaned up, local clone removed: %v",
-		cookbookName, result.CookbooksDeleted, result.CommittersDeleted, len(repoURLs), localCloneRemoved)
+	r.logf("INFO", "git repo reset for %s — %d repo(s), %d committer(s) deleted, %d repo URL(s) cleaned up, local clone removed: %v",
+		cookbookName, result.ReposDeleted, result.CommittersDeleted, len(repoURLs), localCloneRemoved)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"cookbook_name":       cookbookName,
-		"cookbooks_deleted":   result.CookbooksDeleted,
+		"repos_deleted":       result.ReposDeleted,
 		"committers_deleted":  result.CommittersDeleted,
 		"repo_urls_removed":   repoURLs,
 		"local_clone_removed": localCloneRemoved,
-		"message":             "Git cookbook reset — will be re-cloned on the next collection cycle.",
+		"message":             "Git repo reset — will be re-cloned on the next collection cycle.",
 	})
 }

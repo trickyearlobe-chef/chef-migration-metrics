@@ -221,7 +221,7 @@ type ComplexityResult struct {
 // ComplexityScorer computes and persists cookbook complexity scores. It
 // reads CookStyle results, auto-correct previews, Test Kitchen results,
 // and usage/role data from the datastore, computes a weighted score, and
-// persists the result to the cookbook_complexity table.
+// persists the result to the appropriate complexity table.
 type ComplexityScorer struct {
 	db     *datastore.DB
 	logger *logging.Logger
@@ -250,18 +250,18 @@ type ComplexityBatchResult struct {
 	Results  []ComplexityResult
 }
 
-// ScoreCookbooks computes complexity scores for all provided cookbooks
-// against all provided target Chef versions. For each combination it:
+// ScoreServerCookbooks computes complexity scores for all provided server
+// cookbooks against all provided target Chef versions. For each combination
+// it:
 //
 //  1. Loads the CookStyle scan result and classifies offenses.
 //  2. Loads the auto-correct preview (if any) for manual fix counts.
-//  3. Loads the Test Kitchen result (if any).
-//  4. Computes the blast radius from usage analysis and role dependencies.
-//  5. Computes the weighted score and label.
-//  6. Persists to the cookbook_complexity table.
-func (s *ComplexityScorer) ScoreCookbooks(
+//  3. Computes the blast radius from usage analysis and role dependencies.
+//  4. Computes the weighted score and label.
+//  5. Persists to the server_cookbook_complexity table.
+func (s *ComplexityScorer) ScoreServerCookbooks(
 	ctx context.Context,
-	cookbooks []datastore.Cookbook,
+	cookbooks []datastore.ServerCookbook,
 	targetChefVersions []string,
 	organisationID string,
 ) ComplexityBatchResult {
@@ -281,7 +281,7 @@ func (s *ComplexityScorer) ScoreCookbooks(
 
 	// Build work items.
 	type workItem struct {
-		Cookbook      datastore.Cookbook
+		Cookbook      datastore.ServerCookbook
 		TargetVersion string
 	}
 
@@ -302,7 +302,7 @@ func (s *ComplexityScorer) ScoreCookbooks(
 			break
 		}
 
-		result := s.scoreOne(ctx, item.Cookbook, item.TargetVersion, blastRadii)
+		result := s.scoreOneServerCookbook(ctx, item.Cookbook, item.TargetVersion, blastRadii)
 		batch.Results = append(batch.Results, result)
 
 		switch {
@@ -317,17 +317,92 @@ func (s *ComplexityScorer) ScoreCookbooks(
 
 	batch.Duration = time.Since(start)
 	log.Info(fmt.Sprintf(
-		"complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
+		"server cookbook complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
 		batch.Total, batch.Scored, batch.Skipped, batch.Errors,
 		batch.Duration.Round(time.Millisecond)))
 	return batch
 }
 
-// scoreOne computes the complexity score for a single cookbook × target
-// Chef version.
-func (s *ComplexityScorer) scoreOne(
+// ScoreGitRepos computes complexity scores for all provided git repos
+// against all provided target Chef versions. For each combination it:
+//
+//  1. Loads the CookStyle scan result and classifies offenses.
+//  2. Loads the auto-correct preview (if any) for manual fix counts.
+//  3. Loads the Test Kitchen result (if any).
+//  4. Computes the blast radius from usage analysis and role dependencies.
+//  5. Computes the weighted score and label.
+//  6. Persists to the git_repo_complexity table.
+func (s *ComplexityScorer) ScoreGitRepos(
 	ctx context.Context,
-	cb datastore.Cookbook,
+	repos []datastore.GitRepo,
+	targetChefVersions []string,
+	organisationID string,
+) ComplexityBatchResult {
+	start := time.Now()
+	log := s.logger.WithScope(logging.ScopeRemediation)
+
+	// Pre-load blast radius data for the organisation.
+	blastRadii, blastErr := s.loadBlastRadii(ctx, organisationID)
+	if blastErr != nil {
+		log.Error(fmt.Sprintf("failed to load blast radius data: %v", blastErr))
+		if blastRadii == nil {
+			blastRadii = make(map[string]BlastRadius)
+		}
+	}
+
+	// Build work items.
+	type workItem struct {
+		Repo          datastore.GitRepo
+		TargetVersion string
+	}
+
+	var items []workItem
+	for _, repo := range repos {
+		for _, tv := range targetChefVersions {
+			items = append(items, workItem{Repo: repo, TargetVersion: tv})
+		}
+	}
+
+	batch := ComplexityBatchResult{
+		Total:   len(items),
+		Results: make([]ComplexityResult, 0, len(items)),
+	}
+
+	for _, item := range items {
+		if ctx.Err() != nil {
+			break
+		}
+
+		result := s.scoreOneGitRepo(ctx, item.Repo, item.TargetVersion, blastRadii)
+		batch.Results = append(batch.Results, result)
+
+		switch {
+		case result.Error != nil:
+			batch.Errors++
+			log.Error(fmt.Sprintf("complexity scoring error: %s target %s: %v",
+				result.CookbookName, result.TargetChefVersion, result.Error))
+		default:
+			batch.Scored++
+		}
+	}
+
+	batch.Duration = time.Since(start)
+	log.Info(fmt.Sprintf(
+		"git repo complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
+		batch.Total, batch.Scored, batch.Skipped, batch.Errors,
+		batch.Duration.Round(time.Millisecond)))
+	return batch
+}
+
+// ---------------------------------------------------------------------------
+// Per-item scoring
+// ---------------------------------------------------------------------------
+
+// scoreOneServerCookbook computes the complexity score for a single server
+// cookbook × target Chef version.
+func (s *ComplexityScorer) scoreOneServerCookbook(
+	ctx context.Context,
+	cb datastore.ServerCookbook,
 	targetChefVersion string,
 	blastRadii map[string]BlastRadius,
 ) ComplexityResult {
@@ -339,7 +414,7 @@ func (s *ComplexityScorer) scoreOne(
 	}
 
 	// Step 1: Load CookStyle result.
-	csResult, csErr := s.db.GetCookstyleResult(ctx, cb.ID, targetChefVersion)
+	csResult, csErr := s.db.GetServerCookbookCookstyleResult(ctx, cb.ID, targetChefVersion)
 	if csErr != nil {
 		result.Error = fmt.Errorf("loading cookstyle result: %w", csErr)
 		return result
@@ -347,21 +422,92 @@ func (s *ComplexityScorer) scoreOne(
 
 	var offenseSummary CookstyleOffenseSummary
 	if csResult != nil {
-		offenseSummary = classifyOffenses(csResult)
+		offenseSummary = classifyOffenses(csResult.Offences, csResult.DeprecationCount, csResult.CorrectnessCount)
 	}
 
 	// Step 2: Load auto-correct preview for manual fix count.
 	if csResult != nil {
-		preview, previewErr := s.db.GetAutocorrectPreview(ctx, csResult.ID)
+		preview, previewErr := s.db.GetServerCookbookAutocorrectPreview(ctx, csResult.ID)
 		if previewErr == nil && preview != nil {
 			offenseSummary.AutoCorrectableCount = preview.CorrectableOffenses
 			offenseSummary.ManualFixCount = preview.RemainingOffenses
 		}
 	}
 
-	// Step 3: Load Test Kitchen result.
+	// Step 3: Look up blast radius. Server cookbooks do not have Test
+	// Kitchen results — that is a git-repo-only concept.
+	blast := blastRadii[cb.Name]
+
+	// Step 4: Compute score.
+	input := ComplexityInput{
+		CookbookID:        cb.ID,
+		CookbookName:      cb.Name,
+		CookbookVersion:   cb.Version,
+		TargetChefVersion: targetChefVersion,
+		Cookstyle:         offenseSummary,
+		Blast:             blast,
+	}
+
+	score := ComputeComplexityScore(input)
+	label := ScoreToLabel(score)
+
+	result.ComplexityScore = score
+	result.ComplexityLabel = label
+	result.ErrorCount = offenseSummary.ErrorFatalCount
+	result.DeprecationCount = offenseSummary.DeprecationCount
+	result.CorrectnessCount = offenseSummary.CorrectnessCount
+	result.ModernizeCount = offenseSummary.ModernizeCount
+	result.AutoCorrectableCount = offenseSummary.AutoCorrectableCount
+	result.ManualFixCount = offenseSummary.ManualFixCount
+	result.AffectedNodeCount = blast.AffectedNodeCount
+	result.AffectedRoleCount = blast.AffectedRoleCount
+	result.AffectedPolicyCount = blast.AffectedPolicyCount
+	result.EvaluatedAt = time.Now().UTC()
+
+	// Step 5: Persist.
+	s.persistServerCookbookComplexity(ctx, result)
+
+	return result
+}
+
+// scoreOneGitRepo computes the complexity score for a single git repo ×
+// target Chef version.
+func (s *ComplexityScorer) scoreOneGitRepo(
+	ctx context.Context,
+	repo datastore.GitRepo,
+	targetChefVersion string,
+	blastRadii map[string]BlastRadius,
+) ComplexityResult {
+	result := ComplexityResult{
+		CookbookID:        repo.ID,
+		CookbookName:      repo.Name,
+		TargetChefVersion: targetChefVersion,
+	}
+
+	// Step 1: Load CookStyle result.
+	csResult, csErr := s.db.GetGitRepoCookstyleResult(ctx, repo.ID, targetChefVersion)
+	if csErr != nil {
+		result.Error = fmt.Errorf("loading cookstyle result: %w", csErr)
+		return result
+	}
+
+	var offenseSummary CookstyleOffenseSummary
+	if csResult != nil {
+		offenseSummary = classifyOffenses(csResult.Offences, csResult.DeprecationCount, csResult.CorrectnessCount)
+	}
+
+	// Step 2: Load auto-correct preview for manual fix count.
+	if csResult != nil {
+		preview, previewErr := s.db.GetGitRepoAutocorrectPreview(ctx, csResult.ID)
+		if previewErr == nil && preview != nil {
+			offenseSummary.AutoCorrectableCount = preview.CorrectableOffenses
+			offenseSummary.ManualFixCount = preview.RemainingOffenses
+		}
+	}
+
+	// Step 3: Load Test Kitchen result (git repos only).
 	var tkSummary TestKitchenSummary
-	tkResult, tkErr := s.db.GetLatestTestKitchenResult(ctx, cb.ID, targetChefVersion)
+	tkResult, tkErr := s.db.GetLatestGitRepoTestKitchenResult(ctx, repo.ID, targetChefVersion)
 	if tkErr == nil && tkResult != nil {
 		tkSummary.HasResult = true
 		tkSummary.ConvergePassed = tkResult.ConvergePassed
@@ -369,13 +515,12 @@ func (s *ComplexityScorer) scoreOne(
 	}
 
 	// Step 4: Look up blast radius.
-	blast := blastRadii[cb.Name]
+	blast := blastRadii[repo.Name]
 
 	// Step 5: Compute score.
 	input := ComplexityInput{
-		CookbookID:        cb.ID,
-		CookbookName:      cb.Name,
-		CookbookVersion:   cb.Version,
+		CookbookID:        repo.ID,
+		CookbookName:      repo.Name,
 		TargetChefVersion: targetChefVersion,
 		Cookstyle:         offenseSummary,
 		TestKitchen:       tkSummary,
@@ -399,7 +544,7 @@ func (s *ComplexityScorer) scoreOne(
 	result.EvaluatedAt = time.Now().UTC()
 
 	// Step 6: Persist.
-	s.persistComplexity(ctx, result)
+	s.persistGitRepoComplexity(ctx, result)
 
 	return result
 }
@@ -417,21 +562,23 @@ type storedOffense struct {
 	Corrected bool   `json:"corrected"`
 }
 
-// classifyOffenses parses the JSONB offenses from a CookStyle result and
-// counts offenses by category.
-func classifyOffenses(csResult *datastore.CookstyleResult) CookstyleOffenseSummary {
+// classifyOffenses parses the JSONB offenses byte slice and counts offenses
+// by category. The fallbackDeprecationCount and fallbackCorrectnessCount are
+// used when the JSONB cannot be parsed — they should come from the
+// pre-aggregated counts on the cookstyle result row.
+func classifyOffenses(offencesJSON []byte, fallbackDeprecationCount, fallbackCorrectnessCount int) CookstyleOffenseSummary {
 	var summary CookstyleOffenseSummary
 
-	if len(csResult.Offences) == 0 {
+	if len(offencesJSON) == 0 {
 		return summary
 	}
 
 	var offenses []storedOffense
-	if err := json.Unmarshal(csResult.Offences, &offenses); err != nil {
+	if err := json.Unmarshal(offencesJSON, &offenses); err != nil {
 		// If we can't parse the JSONB, fall back to the pre-aggregated
 		// counts already on the result row.
-		summary.DeprecationCount = csResult.DeprecationCount
-		summary.CorrectnessCount = csResult.CorrectnessCount
+		summary.DeprecationCount = fallbackDeprecationCount
+		summary.CorrectnessCount = fallbackCorrectnessCount
 		return summary
 	}
 
@@ -537,7 +684,7 @@ func countJSONBStringArray(data []byte) int {
 // Persistence
 // ---------------------------------------------------------------------------
 
-func (s *ComplexityScorer) persistComplexity(ctx context.Context, result ComplexityResult) {
+func (s *ComplexityScorer) persistServerCookbookComplexity(ctx context.Context, result ComplexityResult) {
 	if result.CookbookID == "" || result.TargetChefVersion == "" {
 		return
 	}
@@ -545,8 +692,8 @@ func (s *ComplexityScorer) persistComplexity(ctx context.Context, result Complex
 	log := s.logger.WithScope(logging.ScopeRemediation,
 		logging.WithCookbook(result.CookbookName, result.CookbookVersion))
 
-	params := datastore.UpsertCookbookComplexityParams{
-		CookbookID:           result.CookbookID,
+	params := datastore.UpsertServerCookbookComplexityParams{
+		ServerCookbookID:     result.CookbookID,
 		TargetChefVersion:    result.TargetChefVersion,
 		ComplexityScore:      result.ComplexityScore,
 		ComplexityLabel:      result.ComplexityLabel,
@@ -562,8 +709,38 @@ func (s *ComplexityScorer) persistComplexity(ctx context.Context, result Complex
 		EvaluatedAt:          result.EvaluatedAt,
 	}
 
-	if _, persistErr := s.db.UpsertCookbookComplexity(ctx, params); persistErr != nil {
-		log.Error(fmt.Sprintf("failed to persist complexity score: %v", persistErr))
+	if _, persistErr := s.db.UpsertServerCookbookComplexity(ctx, params); persistErr != nil {
+		log.Error(fmt.Sprintf("failed to persist server cookbook complexity score: %v", persistErr))
+	}
+}
+
+func (s *ComplexityScorer) persistGitRepoComplexity(ctx context.Context, result ComplexityResult) {
+	if result.CookbookID == "" || result.TargetChefVersion == "" {
+		return
+	}
+
+	log := s.logger.WithScope(logging.ScopeRemediation,
+		logging.WithCookbook(result.CookbookName, ""))
+
+	params := datastore.UpsertGitRepoComplexityParams{
+		GitRepoID:            result.CookbookID,
+		TargetChefVersion:    result.TargetChefVersion,
+		ComplexityScore:      result.ComplexityScore,
+		ComplexityLabel:      result.ComplexityLabel,
+		ErrorCount:           result.ErrorCount,
+		DeprecationCount:     result.DeprecationCount,
+		CorrectnessCount:     result.CorrectnessCount,
+		ModernizeCount:       result.ModernizeCount,
+		AutoCorrectableCount: result.AutoCorrectableCount,
+		ManualFixCount:       result.ManualFixCount,
+		AffectedNodeCount:    result.AffectedNodeCount,
+		AffectedRoleCount:    result.AffectedRoleCount,
+		AffectedPolicyCount:  result.AffectedPolicyCount,
+		EvaluatedAt:          result.EvaluatedAt,
+	}
+
+	if _, persistErr := s.db.UpsertGitRepoComplexity(ctx, params); persistErr != nil {
+		log.Error(fmt.Sprintf("failed to persist git repo complexity score: %v", persistErr))
 	}
 }
 
@@ -571,13 +748,26 @@ func (s *ComplexityScorer) persistComplexity(ctx context.Context, result Complex
 // Reset
 // ---------------------------------------------------------------------------
 
-// ResetScores deletes existing complexity scores for the given cookbook,
-// so they will be recomputed on the next analysis cycle.
-func (s *ComplexityScorer) ResetScores(ctx context.Context, cookbookID string) error {
-	return s.db.DeleteCookbookComplexitiesForCookbook(ctx, cookbookID)
+// ResetServerCookbookScores deletes existing complexity scores for the given
+// server cookbook, so they will be recomputed on the next analysis cycle.
+func (s *ComplexityScorer) ResetServerCookbookScores(ctx context.Context, serverCookbookID string) error {
+	return s.db.DeleteServerCookbookComplexitiesByCookbook(ctx, serverCookbookID)
 }
 
-// ResetAllScores deletes all complexity scores for the given organisation.
-func (s *ComplexityScorer) ResetAllScores(ctx context.Context, organisationID string) error {
-	return s.db.DeleteCookbookComplexitiesForOrganisation(ctx, organisationID)
+// ResetGitRepoScores deletes existing complexity scores for the given git
+// repo, so they will be recomputed on the next analysis cycle.
+func (s *ComplexityScorer) ResetGitRepoScores(ctx context.Context, gitRepoID string) error {
+	return s.db.DeleteGitRepoComplexitiesByRepo(ctx, gitRepoID)
+}
+
+// ResetAllScores deletes all complexity scores from both the
+// server_cookbook_complexity and git_repo_complexity tables.
+func (s *ComplexityScorer) ResetAllScores(ctx context.Context) error {
+	if err := s.db.DeleteAllServerCookbookComplexities(ctx); err != nil {
+		return fmt.Errorf("deleting all server cookbook complexities: %w", err)
+	}
+	if err := s.db.DeleteAllGitRepoComplexities(ctx); err != nil {
+		return fmt.Errorf("deleting all git repo complexities: %w", err)
+	}
+	return nil
 }

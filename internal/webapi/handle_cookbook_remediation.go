@@ -60,59 +60,116 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	// Find the cookbook by name — we need to locate the specific version.
-	cookbooks, err := r.db.ListCookbooksByName(ctx, cookbookName)
-	if err != nil {
-		r.logf("ERROR", "listing cookbooks for remediation detail %s: %v", cookbookName, err)
-		WriteInternalError(w, "Failed to look up cookbook.")
-		return
-	}
-
-	// Find the matching version.
-	var cookbookID string
-	for _, cb := range cookbooks {
-		if cb.Version == cookbookVersion {
-			cookbookID = cb.ID
-			break
-		}
-	}
-	if cookbookID == "" {
-		WriteNotFound(w, fmt.Sprintf("Cookbook %q version %q not found.", cookbookName, cookbookVersion))
-		return
-	}
-
-	// Fetch the cookstyle result for this cookbook + target version.
-	cookstyleResult, err := r.db.GetCookstyleResult(ctx, cookbookID, targetVersion)
-	if err != nil {
-		r.logf("ERROR", "getting cookstyle result for %s@%s target %s: %v", cookbookName, cookbookVersion, targetVersion, err)
-		WriteInternalError(w, "Failed to fetch cookstyle results.")
-		return
-	}
-
-	// Also fetch the complexity record for summary stats.
-	complexities, err := r.db.ListCookbookComplexitiesForCookbook(ctx, cookbookID)
-	if err != nil {
-		r.logf("WARN", "listing complexity for cookbook %s: %v", cookbookID, err)
-	}
-
-	// Find the matching complexity for our target version.
+	// Try to find the cookbook as a server cookbook first (which has versions),
+	// then fall back to git repos.
+	var cookstyleOffences []byte
+	var cookstylePassed *bool
+	var cookstyleScannedAt string
+	var cookstyleResultID string
 	var complexityScore int
 	var complexityLabel string
 	var autoCorrectableCount int
 	var manualFixCount int
 	var deprecationCount int
 	var errorCount int
-	for _, cc := range complexities {
-		if cc.TargetChefVersion == targetVersion {
-			complexityScore = cc.ComplexityScore
-			complexityLabel = cc.ComplexityLabel
-			autoCorrectableCount = cc.AutoCorrectableCount
-			manualFixCount = cc.ManualFixCount
-			deprecationCount = cc.DeprecationCount
-			errorCount = cc.ErrorCount
+	isGitRepo := false
+
+	serverCookbooks, err := r.db.ListServerCookbooksByName(ctx, cookbookName)
+	if err != nil {
+		r.logf("ERROR", "listing server cookbooks for remediation detail %s: %v", cookbookName, err)
+		WriteInternalError(w, "Failed to look up cookbook.")
+		return
+	}
+
+	// Find the matching version among server cookbooks.
+	var serverCookbookID string
+	for _, sc := range serverCookbooks {
+		if sc.Version == cookbookVersion {
+			serverCookbookID = sc.ID
 			break
 		}
 	}
+
+	if serverCookbookID != "" {
+		// Fetch server cookbook cookstyle result.
+		csResult, csErr := r.db.GetServerCookbookCookstyleResult(ctx, serverCookbookID, targetVersion)
+		if csErr != nil {
+			r.logf("ERROR", "getting cookstyle result for server cookbook %s@%s target %s: %v", cookbookName, cookbookVersion, targetVersion, csErr)
+			WriteInternalError(w, "Failed to fetch cookstyle results.")
+			return
+		}
+		if csResult != nil {
+			cookstyleOffences = csResult.Offences
+			p := csResult.Passed
+			cookstylePassed = &p
+			cookstyleScannedAt = csResult.ScannedAt.Format("2006-01-02T15:04:05Z")
+			cookstyleResultID = csResult.ID
+		}
+
+		// Fetch complexity records for summary stats.
+		complexities, cxErr := r.db.ListServerCookbookComplexitiesByCookbook(ctx, serverCookbookID)
+		if cxErr != nil {
+			r.logf("WARN", "listing complexity for server cookbook %s: %v", serverCookbookID, cxErr)
+		}
+		for _, cc := range complexities {
+			if cc.TargetChefVersion == targetVersion {
+				complexityScore = cc.ComplexityScore
+				complexityLabel = cc.ComplexityLabel
+				autoCorrectableCount = cc.AutoCorrectableCount
+				manualFixCount = cc.ManualFixCount
+				deprecationCount = cc.DeprecationCount
+				errorCount = cc.ErrorCount
+				break
+			}
+		}
+	} else {
+		// Try git repos — git repos don't have a per-version concept in the
+		// same way; use the first repo matching the name.
+		gitRepos, grErr := r.db.ListGitReposByName(ctx, cookbookName)
+		if grErr != nil {
+			r.logf("ERROR", "listing git repos for remediation detail %s: %v", cookbookName, grErr)
+			WriteInternalError(w, "Failed to look up cookbook.")
+			return
+		}
+		if len(gitRepos) == 0 {
+			WriteNotFound(w, fmt.Sprintf("Cookbook %q version %q not found.", cookbookName, cookbookVersion))
+			return
+		}
+		isGitRepo = true
+		gitRepoID := gitRepos[0].ID
+
+		csResult, csErr := r.db.GetGitRepoCookstyleResult(ctx, gitRepoID, targetVersion)
+		if csErr != nil {
+			r.logf("ERROR", "getting cookstyle result for git repo %s target %s: %v", cookbookName, targetVersion, csErr)
+			WriteInternalError(w, "Failed to fetch cookstyle results.")
+			return
+		}
+		if csResult != nil {
+			cookstyleOffences = csResult.Offences
+			p := csResult.Passed
+			cookstylePassed = &p
+			cookstyleScannedAt = csResult.ScannedAt.Format("2006-01-02T15:04:05Z")
+			cookstyleResultID = csResult.ID
+		}
+
+		complexities, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, gitRepoID)
+		if cxErr != nil {
+			r.logf("WARN", "listing complexity for git repo %s: %v", gitRepoID, cxErr)
+		}
+		for _, cc := range complexities {
+			if cc.TargetChefVersion == targetVersion {
+				complexityScore = cc.ComplexityScore
+				complexityLabel = cc.ComplexityLabel
+				autoCorrectableCount = cc.AutoCorrectableCount
+				manualFixCount = cc.ManualFixCount
+				deprecationCount = cc.DeprecationCount
+				errorCount = cc.ErrorCount
+				break
+			}
+		}
+	}
+	// Suppress unused variable warning for isGitRepo.
+	_ = isGitRepo
 
 	// Build offense groups from the cookstyle result offenses JSON.
 	type offenseLocation struct {
@@ -182,7 +239,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 
 	var flatOffenses []offense
 
-	if cookstyleResult != nil && len(cookstyleResult.Offences) > 0 {
+	if len(cookstyleOffences) > 0 {
 		// Try the file-based (RuboCop) format first.
 		type fileOffense struct {
 			CopName     string `json:"cop_name"`
@@ -202,7 +259,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		}
 
 		var fileEntries []fileEntry
-		if err := json.Unmarshal(cookstyleResult.Offences, &fileEntries); err == nil && len(fileEntries) > 0 && fileEntries[0].Path != "" {
+		if err := json.Unmarshal(cookstyleOffences, &fileEntries); err == nil && len(fileEntries) > 0 && fileEntries[0].Path != "" {
 			for _, fe := range fileEntries {
 				for _, o := range fe.Offenses {
 					flatOffenses = append(flatOffenses, offense{
@@ -235,7 +292,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 					LastColumn  int    `json:"last_column"`
 				} `json:"location"`
 			}
-			if err := json.Unmarshal(cookstyleResult.Offences, &flatParsed); err == nil {
+			if err := json.Unmarshal(cookstyleOffences, &flatParsed); err == nil {
 				for _, o := range flatParsed {
 					flatOffenses = append(flatOffenses, offense{
 						CopName:     o.CopName,
@@ -318,33 +375,38 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 
 	acPreview := autocorrectPreviewResp{Available: false}
 
-	if cookstyleResult != nil {
-		preview, err := r.db.GetAutocorrectPreview(ctx, cookstyleResult.ID)
-		if err != nil {
-			r.logf("WARN", "getting autocorrect preview for cookstyle result %s: %v", cookstyleResult.ID, err)
-		} else if preview != nil {
-			acPreview = autocorrectPreviewResp{
-				Available:           true,
-				TotalOffenses:       preview.TotalOffenses,
-				CorrectableOffenses: preview.CorrectableOffenses,
-				RemainingOffenses:   preview.RemainingOffenses,
-				FilesModified:       preview.FilesModified,
-				DiffOutput:          preview.DiffOutput,
-				GeneratedAt:         preview.GeneratedAt.Format("2006-01-02T15:04:05Z"),
+	if cookstyleResultID != "" {
+		if isGitRepo {
+			preview, acErr := r.db.GetGitRepoAutocorrectPreview(ctx, cookstyleResultID)
+			if acErr != nil {
+				r.logf("WARN", "getting git repo autocorrect preview for cookstyle result %s: %v", cookstyleResultID, acErr)
+			} else if preview != nil {
+				acPreview = autocorrectPreviewResp{
+					Available:           true,
+					TotalOffenses:       preview.TotalOffenses,
+					CorrectableOffenses: preview.CorrectableOffenses,
+					RemainingOffenses:   preview.RemainingOffenses,
+					FilesModified:       preview.FilesModified,
+					DiffOutput:          preview.DiffOutput,
+					GeneratedAt:         preview.GeneratedAt.Format("2006-01-02T15:04:05Z"),
+				}
+			}
+		} else {
+			preview, acErr := r.db.GetServerCookbookAutocorrectPreview(ctx, cookstyleResultID)
+			if acErr != nil {
+				r.logf("WARN", "getting server cookbook autocorrect preview for cookstyle result %s: %v", cookstyleResultID, acErr)
+			} else if preview != nil {
+				acPreview = autocorrectPreviewResp{
+					Available:           true,
+					TotalOffenses:       preview.TotalOffenses,
+					CorrectableOffenses: preview.CorrectableOffenses,
+					RemainingOffenses:   preview.RemainingOffenses,
+					FilesModified:       preview.FilesModified,
+					DiffOutput:          preview.DiffOutput,
+					GeneratedAt:         preview.GeneratedAt.Format("2006-01-02T15:04:05Z"),
+				}
 			}
 		}
-	}
-
-	// Build scanned_at from the cookstyle result if available.
-	var scannedAt string
-	if cookstyleResult != nil {
-		scannedAt = cookstyleResult.ScannedAt.Format("2006-01-02T15:04:05Z")
-	}
-
-	var passed *bool
-	if cookstyleResult != nil {
-		p := cookstyleResult.Passed
-		passed = &p
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{
@@ -353,8 +415,8 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		"target_chef_version": targetVersion,
 		"complexity_score":    complexityScore,
 		"complexity_label":    complexityLabel,
-		"cookstyle_passed":    passed,
-		"scanned_at":          scannedAt,
+		"cookstyle_passed":    cookstylePassed,
+		"scanned_at":          cookstyleScannedAt,
 		"statistics": map[string]any{
 			"total_offenses":         totalOffenses,
 			"correctable_offenses":   correctableOffenses,

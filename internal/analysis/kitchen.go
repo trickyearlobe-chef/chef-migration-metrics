@@ -221,41 +221,42 @@ func NewKitchenScanner(
 // Batch execution
 // ---------------------------------------------------------------------------
 
-// TestCookbooks runs Test Kitchen against all provided git-sourced cookbooks
-// in parallel, once per target Chef Client version. For each combination it:
+// TestGitRepos runs Test Kitchen against all provided git repos that have
+// test suites, in parallel, once per target Chef Client version. For each
+// combination it:
 //
 //  1. Checks if a result already exists for the same commit SHA (skip if unchanged).
-//  2. Verifies the cookbook has a .kitchen.yml.
+//  2. Verifies the repo has a .kitchen.yml.
 //  3. Generates a .kitchen.local.yml with driver, provisioner, and platform overrides.
 //  4. Runs converge → verify → destroy.
 //  5. Persists the result.
 //
-// cookbookDir maps a cookbook to its local filesystem clone directory.
-func (s *KitchenScanner) TestCookbooks(
+// repoDir maps a git repo to its local filesystem clone directory.
+func (s *KitchenScanner) TestGitRepos(
 	ctx context.Context,
-	cookbooks []datastore.Cookbook,
+	repos []datastore.GitRepo,
 	targetChefVersions []string,
-	cookbookDir func(cb datastore.Cookbook) string,
+	repoDir func(gr datastore.GitRepo) string,
 ) KitchenBatchResult {
 	start := time.Now()
 	log := s.logger.WithScope(logging.ScopeTestKitchenRun)
 
 	type workItem struct {
-		Cookbook      datastore.Cookbook
+		Repo          datastore.GitRepo
 		TargetVersion string
 		Dir           string
 	}
 
-	// Build work items: only git-sourced cookbooks with a test suite.
+	// Build work items: only git repos with a test suite.
 	var items []workItem
-	for _, cb := range cookbooks {
-		if !cb.IsGit() || !cb.HasTestSuite {
+	for _, gr := range repos {
+		if !gr.HasTestSuite {
 			continue
 		}
-		if cb.HeadCommitSHA == "" {
+		if gr.HeadCommitSHA == "" {
 			continue
 		}
-		dir := cookbookDir(cb)
+		dir := repoDir(gr)
 		if dir == "" {
 			continue
 		}
@@ -264,7 +265,7 @@ func (s *KitchenScanner) TestCookbooks(
 			continue
 		}
 		for _, tv := range targetChefVersions {
-			items = append(items, workItem{Cookbook: cb, TargetVersion: tv, Dir: dir})
+			items = append(items, workItem{Repo: gr, TargetVersion: tv, Dir: dir})
 		}
 	}
 
@@ -296,15 +297,15 @@ func (s *KitchenScanner) TestCookbooks(
 				defer func() { <-sem }()
 			case <-ctx.Done():
 				resultsCh <- KitchenRunResult{
-					CookbookID:        wi.Cookbook.ID,
-					CookbookName:      wi.Cookbook.Name,
+					CookbookID:        wi.Repo.ID,
+					CookbookName:      wi.Repo.Name,
 					TargetChefVersion: wi.TargetVersion,
-					CommitSHA:         wi.Cookbook.HeadCommitSHA,
+					CommitSHA:         wi.Repo.HeadCommitSHA,
 					Error:             ctx.Err(),
 				}
 				return
 			}
-			resultsCh <- s.testOne(ctx, wi.Cookbook, wi.TargetVersion, wi.Dir)
+			resultsCh <- s.testOne(ctx, wi.Repo, wi.TargetVersion, wi.Dir)
 		}(item)
 	}
 	go func() {
@@ -350,15 +351,15 @@ func (s *KitchenScanner) TestCookbooks(
 // Single cookbook × target version test run
 // ---------------------------------------------------------------------------
 
-func (s *KitchenScanner) testOne(ctx context.Context, cb datastore.Cookbook, targetVersion, dir string) KitchenRunResult {
+func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targetVersion, dir string) KitchenRunResult {
 	log := s.logger.WithScope(logging.ScopeTestKitchenRun,
-		logging.WithOrganisation(cb.Name))
+		logging.WithOrganisation(gr.Name))
 
 	result := KitchenRunResult{
-		CookbookID:        cb.ID,
-		CookbookName:      cb.Name,
+		CookbookID:        gr.ID,
+		CookbookName:      gr.Name,
 		TargetChefVersion: targetVersion,
-		CommitSHA:         cb.HeadCommitSHA,
+		CommitSHA:         gr.HeadCommitSHA,
 		StartedAt:         time.Now().UTC(),
 	}
 
@@ -371,23 +372,23 @@ func (s *KitchenScanner) testOne(ctx context.Context, cb datastore.Cookbook, tar
 
 	// Step 1: Check skip condition — if a result exists for this commit SHA,
 	// skip the run.
-	existing, err := s.db.GetLatestTestKitchenResult(ctx, cb.ID, targetVersion)
+	existing, err := s.db.GetLatestGitRepoTestKitchenResult(ctx, gr.ID, targetVersion)
 	if err != nil {
 		result.Error = fmt.Errorf("checking existing result: %w", err)
 		return result
 	}
-	if existing != nil && existing.CommitSHA == cb.HeadCommitSHA {
+	if existing != nil && existing.CommitSHA == gr.HeadCommitSHA {
 		log.Info(fmt.Sprintf("skipping %s (target %s): commit %s already tested",
-			cb.Name, targetVersion, truncSHA(cb.HeadCommitSHA)))
+			gr.Name, targetVersion, truncSHA(gr.HeadCommitSHA)))
 		result.Skipped = true
-		result.SkipReason = fmt.Sprintf("commit %s already tested", truncSHA(cb.HeadCommitSHA))
+		result.SkipReason = fmt.Sprintf("commit %s already tested", truncSHA(gr.HeadCommitSHA))
 		return result
 	}
 
 	// Step 2: Check for .kitchen.yml.
 	kitchenYMLPath := findKitchenYML(dir)
 	if kitchenYMLPath == "" {
-		log.Warn(fmt.Sprintf("skipping %s: no .kitchen.yml found in %s", cb.Name, dir))
+		log.Warn(fmt.Sprintf("skipping %s: no .kitchen.yml found in %s", gr.Name, dir))
 		result.Skipped = true
 		result.SkipReason = "no .kitchen.yml"
 		return result
@@ -428,14 +429,14 @@ func (s *KitchenScanner) testOne(ctx context.Context, cb datastore.Cookbook, tar
 		return result
 	}
 	if len(instances) == 0 {
-		log.Error(fmt.Sprintf("no Test Kitchen instances defined for %s", cb.Name))
+		log.Error(fmt.Sprintf("no Test Kitchen instances defined for %s", gr.Name))
 		result.Error = fmt.Errorf("no Test Kitchen instances defined")
 		s.destroyBestEffort(ctx, dir, &result)
 		return result
 	}
 
 	log.Info(fmt.Sprintf("testing %s (target %s, commit %s): %d instance(s), driver=%s",
-		cb.Name, targetVersion, truncSHA(cb.HeadCommitSHA), len(instances), result.DriverUsed))
+		gr.Name, targetVersion, truncSHA(gr.HeadCommitSHA), len(instances), result.DriverUsed))
 
 	// Step 6: Run converge with timeout.
 	convergeCtx, convergeCancel := context.WithTimeout(ctx, s.timeout)
@@ -453,7 +454,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, cb datastore.Cookbook, tar
 		result.CompletedAt = time.Now().UTC()
 		result.Duration = result.CompletedAt.Sub(result.StartedAt)
 		s.destroyBestEffort(ctx, dir, &result)
-		s.persistResult(ctx, cb, result)
+		s.persistResult(ctx, gr, result)
 		return result
 	}
 
@@ -464,7 +465,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, cb datastore.Cookbook, tar
 		result.CompletedAt = time.Now().UTC()
 		result.Duration = result.CompletedAt.Sub(result.StartedAt)
 		s.destroyBestEffort(ctx, dir, &result)
-		s.persistResult(ctx, cb, result)
+		s.persistResult(ctx, gr, result)
 		return result
 	}
 
@@ -494,16 +495,16 @@ func (s *KitchenScanner) testOne(ctx context.Context, cb datastore.Cookbook, tar
 	result.Duration = result.CompletedAt.Sub(result.StartedAt)
 
 	// Step 9: Persist result.
-	s.persistResult(ctx, cb, result)
+	s.persistResult(ctx, gr, result)
 
 	// Step 10: Log outcome.
 	if result.Compatible {
 		log.Info(fmt.Sprintf("PASS: %s (target %s, commit %s) in %s",
-			cb.Name, targetVersion, truncSHA(cb.HeadCommitSHA),
+			gr.Name, targetVersion, truncSHA(gr.HeadCommitSHA),
 			result.Duration.Round(time.Second)))
 	} else {
 		log.Error(fmt.Sprintf("FAIL: %s (target %s, commit %s) converge=%v verify=%v in %s",
-			cb.Name, targetVersion, truncSHA(cb.HeadCommitSHA),
+			gr.Name, targetVersion, truncSHA(gr.HeadCommitSHA),
 			result.ConvergePassed, result.TestsPassed,
 			result.Duration.Round(time.Second)))
 	}
@@ -718,7 +719,7 @@ func (s *KitchenScanner) effectivePlatformSummary() string {
 // Persistence
 // ---------------------------------------------------------------------------
 
-func (s *KitchenScanner) persistResult(ctx context.Context, cb datastore.Cookbook, rr KitchenRunResult) {
+func (s *KitchenScanner) persistResult(ctx context.Context, gr datastore.GitRepo, rr KitchenRunResult) {
 	// Combine per-phase outputs into the legacy process_stdout field for
 	// backward compatibility with the original schema.
 	var combinedStdout bytes.Buffer
@@ -743,8 +744,8 @@ func (s *KitchenScanner) persistResult(ctx context.Context, cb datastore.Cookboo
 		processStderr = rr.Error.Error()
 	}
 
-	params := datastore.UpsertTestKitchenResultParams{
-		CookbookID:        cb.ID,
+	params := datastore.UpsertGitRepoTestKitchenResultParams{
+		GitRepoID:         gr.ID,
 		TargetChefVersion: rr.TargetChefVersion,
 		CommitSHA:         rr.CommitSHA,
 		ConvergePassed:    rr.ConvergePassed,
@@ -764,25 +765,25 @@ func (s *KitchenScanner) persistResult(ctx context.Context, cb datastore.Cookboo
 		CompletedAt:       rr.CompletedAt,
 	}
 
-	if _, err := s.db.UpsertTestKitchenResult(ctx, params); err != nil {
+	if _, err := s.db.UpsertGitRepoTestKitchenResult(ctx, params); err != nil {
 		log := s.logger.WithScope(logging.ScopeTestKitchenRun)
 		log.Error(fmt.Sprintf("failed to persist test kitchen result for %s (target %s): %v",
-			cb.Name, rr.TargetChefVersion, err))
+			gr.Name, rr.TargetChefVersion, err))
 	}
 }
 
 // ResetResults deletes all test kitchen results for the given cookbook,
 // forcing a full retest on the next analysis cycle regardless of commit SHA.
-func (s *KitchenScanner) ResetResults(cookbookID string) error {
-	return s.db.DeleteTestKitchenResultsForCookbook(context.Background(), cookbookID)
+func (s *KitchenScanner) ResetResults(gitRepoID string) error {
+	return s.db.DeleteGitRepoTestKitchenResultsByRepo(context.Background(), gitRepoID)
 }
 
-// ResetAllResults deletes all test kitchen results for all git-sourced
-// cookbooks. This is the nuclear option.
+// ResetAllResults deletes all test kitchen results for all git repos.
+// This is the nuclear option.
 func (s *KitchenScanner) ResetAllResults() error {
 	// There's no single "delete all" method, but we can list and delete.
-	// For now, surface the cookbook-level delete through the scanner.
-	return fmt.Errorf("not implemented: use DeleteTestKitchenResultsForCookbook per cookbook")
+	// For now, surface the repo-level delete through the scanner.
+	return fmt.Errorf("not implemented: use DeleteGitRepoTestKitchenResultsByRepo per repo")
 }
 
 // ---------------------------------------------------------------------------
