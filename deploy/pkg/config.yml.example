@@ -84,6 +84,14 @@ collection:
   schedule: "0 * * * *"
   stale_node_threshold_days: 7
   stale_cookbook_threshold_days: 365
+  # skip_server_cookbook_download: false  # Set to true to skip downloading
+                                          # cookbook content from the Chef server.
+                                          # Cookbook inventory and metadata are
+                                          # still collected so the UI shows which
+                                          # cookbooks exist and which nodes use
+                                          # them, but only git-sourced cookbooks
+                                          # will be scanned by CookStyle and
+                                          # Test Kitchen.
 
 # ---------------------------------------------------------------------------
 # Concurrency
