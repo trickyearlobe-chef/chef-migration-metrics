@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -69,44 +70,57 @@ func (db *DB) insertCookbookNodeUsage(ctx context.Context, q queryable, p Insert
 // ---------------------------------------------------------------------------
 
 // BulkInsertCookbookNodeUsage inserts multiple cookbook-node usage records
-// within a single transaction for efficiency. Returns the count of rows
-// inserted. If any insert fails, the entire batch is rolled back.
+// within a single transaction for efficiency using multi-row INSERT
+// statements. Returns the count of rows inserted. If any insert fails, the
+// entire batch is rolled back.
 func (db *DB) BulkInsertCookbookNodeUsage(ctx context.Context, params []InsertCookbookNodeUsageParams) (int, error) {
 	if len(params) == 0 {
 		return 0, nil
 	}
 
+	const batchSize = 2000 // 3 columns × 2000 = 6000 params, well under 65535
+	const numCols = 3
 	inserted := 0
+
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		const query = `
-			INSERT INTO cookbook_node_usage (cookbook_id, node_snapshot_id, cookbook_version)
-			VALUES ($1, $2, $3)
-		`
+		for start := 0; start < len(params); start += batchSize {
+			end := start + batchSize
+			if end > len(params) {
+				end = len(params)
+			}
+			batch := params[start:end]
 
-		stmt, err := tx.PrepareContext(ctx, query)
-		if err != nil {
-			return fmt.Errorf("datastore: preparing cookbook node usage insert: %w", err)
-		}
-		defer stmt.Close()
-
-		for i, p := range params {
-			if err := validateUsageParams(p); err != nil {
-				return fmt.Errorf("row %d: %w", i, err)
+			// Validate batch.
+			for i, p := range batch {
+				if err := validateUsageParams(p); err != nil {
+					return fmt.Errorf("row %d: %w", start+i, err)
+				}
 			}
 
-			_, err := stmt.ExecContext(ctx,
-				p.CookbookID,
-				p.NodeSnapshotID,
-				p.CookbookVersion,
-			)
+			// Build multi-row VALUES clause.
+			var sb strings.Builder
+			sb.WriteString(`INSERT INTO cookbook_node_usage (cookbook_id, node_snapshot_id, cookbook_version) VALUES `)
+
+			args := make([]interface{}, 0, len(batch)*numCols)
+			for i, p := range batch {
+				if i > 0 {
+					sb.WriteString(", ")
+				}
+				offset := i * numCols
+				sb.WriteString(fmt.Sprintf("($%d, $%d, $%d)", offset+1, offset+2, offset+3))
+				args = append(args, p.CookbookID, p.NodeSnapshotID, p.CookbookVersion)
+			}
+
+			result, err := tx.ExecContext(ctx, sb.String(), args...)
 			if err != nil {
-				return fmt.Errorf("datastore: inserting cookbook node usage (row %d): %w", i, err)
+				return fmt.Errorf("datastore: batch inserting cookbook node usage (rows %d-%d): %w", start, end-1, err)
 			}
-			inserted++
+			n, _ := result.RowsAffected()
+			inserted += int(n)
 		}
-
 		return nil
 	})
+
 	if err != nil {
 		return 0, err
 	}

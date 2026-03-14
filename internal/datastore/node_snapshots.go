@@ -8,7 +8,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // NodeSnapshot represents a row in the node_snapshots table. Each snapshot
@@ -173,95 +176,115 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 		idMap = make(map[string]string, len(params))
 	}
 
+	const batchSize = 500
+	const numCols = 18
 	inserted := 0
+
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		var queryStr string
-		if returnIDs {
-			queryStr = `
+		for start := 0; start < len(params); start += batchSize {
+			end := start + batchSize
+			if end > len(params) {
+				end = len(params)
+			}
+			batch := params[start:end]
+
+			// Validate the batch.
+			for i, p := range batch {
+				idx := start + i
+				if p.CollectionRunID == "" {
+					return fmt.Errorf("datastore: collection run ID is required (row %d)", idx)
+				}
+				if p.OrganisationID == "" {
+					return fmt.Errorf("datastore: organisation ID is required (row %d)", idx)
+				}
+				if p.NodeName == "" {
+					return fmt.Errorf("datastore: node name is required (row %d)", idx)
+				}
+			}
+
+			// Build multi-row VALUES clause.
+			var sb strings.Builder
+			sb.WriteString(`
 				INSERT INTO node_snapshots (
 					collection_run_id, organisation_id, node_name,
 					chef_environment, chef_version, platform, platform_version,
 					platform_family, filesystem, cookbooks, run_list, roles,
 					policy_name, policy_group, ohai_time, custom_attributes,
 					is_stale, collected_at
-				) VALUES (
-					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-					$13, $14, $15, $16, $17, $18
+				) VALUES `)
+
+			args := make([]interface{}, 0, len(batch)*numCols)
+			for i, p := range batch {
+				if i > 0 {
+					sb.WriteString(", ")
+				}
+				offset := i * numCols
+				sb.WriteString(fmt.Sprintf(
+					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+					offset+1, offset+2, offset+3, offset+4, offset+5, offset+6,
+					offset+7, offset+8, offset+9, offset+10, offset+11, offset+12,
+					offset+13, offset+14, offset+15, offset+16, offset+17, offset+18,
+				))
+
+				if p.CollectedAt.IsZero() {
+					p.CollectedAt = time.Now().UTC()
+				}
+
+				args = append(args,
+					p.CollectionRunID,
+					p.OrganisationID,
+					p.NodeName,
+					nullString(p.ChefEnvironment),
+					nullString(p.ChefVersion),
+					nullString(p.Platform),
+					nullString(p.PlatformVersion),
+					nullString(p.PlatformFamily),
+					nullJSON(p.Filesystem),
+					nullJSON(p.Cookbooks),
+					nullJSON(p.RunList),
+					nullJSON(p.Roles),
+					nullString(p.PolicyName),
+					nullString(p.PolicyGroup),
+					nullFloat(p.OhaiTime),
+					nullJSON(p.CustomAttributes),
+					p.IsStale,
+					p.CollectedAt,
 				)
-				RETURNING id
-			`
-		} else {
-			queryStr = `
-				INSERT INTO node_snapshots (
-					collection_run_id, organisation_id, node_name,
-					chef_environment, chef_version, platform, platform_version,
-					platform_family, filesystem, cookbooks, run_list, roles,
-					policy_name, policy_group, ohai_time, custom_attributes,
-					is_stale, collected_at
-				) VALUES (
-					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-					$13, $14, $15, $16, $17, $18
-				)
-			`
-		}
-
-		stmt, err := tx.PrepareContext(ctx, queryStr)
-		if err != nil {
-			return fmt.Errorf("datastore: preparing node snapshot insert: %w", err)
-		}
-		defer stmt.Close()
-
-		for i, p := range params {
-			if p.CollectionRunID == "" {
-				return fmt.Errorf("datastore: collection run ID is required (row %d)", i)
-			}
-			if p.OrganisationID == "" {
-				return fmt.Errorf("datastore: organisation ID is required (row %d)", i)
-			}
-			if p.NodeName == "" {
-				return fmt.Errorf("datastore: node name is required (row %d)", i)
-			}
-			if p.CollectedAt.IsZero() {
-				p.CollectedAt = time.Now().UTC()
-			}
-
-			args := []interface{}{
-				p.CollectionRunID,
-				p.OrganisationID,
-				p.NodeName,
-				nullString(p.ChefEnvironment),
-				nullString(p.ChefVersion),
-				nullString(p.Platform),
-				nullString(p.PlatformVersion),
-				nullString(p.PlatformFamily),
-				nullJSON(p.Filesystem),
-				nullJSON(p.Cookbooks),
-				nullJSON(p.RunList),
-				nullJSON(p.Roles),
-				nullString(p.PolicyName),
-				nullString(p.PolicyGroup),
-				nullFloat(p.OhaiTime),
-				nullJSON(p.CustomAttributes),
-				p.IsStale,
-				p.CollectedAt,
 			}
 
 			if returnIDs {
-				var snapshotID string
-				if err := stmt.QueryRowContext(ctx, args...).Scan(&snapshotID); err != nil {
-					return fmt.Errorf("datastore: inserting node snapshot %q (row %d): %w", p.NodeName, i, err)
+				sb.WriteString(" RETURNING id")
+				rows, err := tx.QueryContext(ctx, sb.String(), args...)
+				if err != nil {
+					return fmt.Errorf("datastore: batch inserting node snapshots (rows %d-%d): %w", start, end-1, err)
 				}
-				idMap[p.NodeName] = snapshotID
+				i := 0
+				for rows.Next() {
+					var snapshotID string
+					if err := rows.Scan(&snapshotID); err != nil {
+						rows.Close()
+						return fmt.Errorf("datastore: scanning batch node snapshot ID: %w", err)
+					}
+					idMap[batch[i].NodeName] = snapshotID
+					i++
+					inserted++
+				}
+				rows.Close()
+				if err := rows.Err(); err != nil {
+					return fmt.Errorf("datastore: iterating batch node snapshot IDs: %w", err)
+				}
 			} else {
-				if _, err := stmt.ExecContext(ctx, args...); err != nil {
-					return fmt.Errorf("datastore: inserting node snapshot %q (row %d): %w", p.NodeName, i, err)
+				result, err := tx.ExecContext(ctx, sb.String(), args...)
+				if err != nil {
+					return fmt.Errorf("datastore: batch inserting node snapshots (rows %d-%d): %w", start, end-1, err)
 				}
+				n, _ := result.RowsAffected()
+				inserted += int(n)
 			}
-			inserted++
 		}
-
 		return nil
 	})
+
 	if err != nil {
 		return nil, 0, err
 	}
@@ -413,6 +436,92 @@ func (db *DB) DeleteNodeSnapshotsByCollectionRun(ctx context.Context, collection
 		return 0, fmt.Errorf("datastore: checking rows affected: %w", err)
 	}
 	return int(n), nil
+}
+
+// CountChefVersionsByCollectionRun returns a map of chef_version -> count
+// for all node snapshots in the given collection run. This is dramatically
+// more efficient than loading full node snapshot rows when only version
+// counts are needed (e.g. version distribution trend).
+func (db *DB) CountChefVersionsByCollectionRun(ctx context.Context, collectionRunID string) (map[string]int, error) {
+	const query = `
+		SELECT COALESCE(NULLIF(chef_version, ''), 'unknown') AS version,
+		       COUNT(*) AS cnt
+		  FROM node_snapshots
+		 WHERE collection_run_id = $1
+		 GROUP BY version
+	`
+	rows, err := db.pool.QueryContext(ctx, query, collectionRunID)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: counting chef versions by collection run: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var version string
+		var count int
+		if err := rows.Scan(&version, &count); err != nil {
+			return nil, fmt.Errorf("datastore: scanning chef version count: %w", err)
+		}
+		result[version] = count
+	}
+	return result, rows.Err()
+}
+
+// CountStaleFreshByCollectionRun returns total, stale, and fresh node counts
+// for the given collection run without loading full node snapshot rows.
+func (db *DB) CountStaleFreshByCollectionRun(ctx context.Context, collectionRunID string) (total, stale, fresh int, err error) {
+	const query = `
+		SELECT COUNT(*) AS total,
+		       COUNT(*) FILTER (WHERE is_stale = TRUE) AS stale,
+		       COUNT(*) FILTER (WHERE is_stale = FALSE) AS fresh
+		  FROM node_snapshots
+		 WHERE collection_run_id = $1
+	`
+	err = db.pool.QueryRowContext(ctx, query, collectionRunID).Scan(&total, &stale, &fresh)
+	if err != nil {
+		err = fmt.Errorf("datastore: counting stale/fresh by collection run: %w", err)
+	}
+	return
+}
+
+// CountChefVersionsByCollectionRunFiltered returns chef_version -> count
+// for node snapshots in the given collection run, filtered to only include
+// nodes whose names are in the allowedNodes set. Pass nil to include all nodes.
+func (db *DB) CountChefVersionsByCollectionRunFiltered(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error) {
+	var query string
+	var args []interface{}
+
+	if len(allowedNodes) == 0 {
+		return db.CountChefVersionsByCollectionRun(ctx, collectionRunID)
+	}
+
+	query = `
+		SELECT COALESCE(NULLIF(chef_version, ''), 'unknown') AS version,
+		       COUNT(*) AS cnt
+		  FROM node_snapshots
+		 WHERE collection_run_id = $1
+		   AND node_name = ANY($2)
+		 GROUP BY version
+	`
+	args = []interface{}{collectionRunID, pq.Array(allowedNodes)}
+
+	rows, err := db.pool.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: counting filtered chef versions: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var version string
+		var count int
+		if err := rows.Scan(&version, &count); err != nil {
+			return nil, fmt.Errorf("datastore: scanning filtered chef version count: %w", err)
+		}
+		result[version] = count
+	}
+	return result, rows.Err()
 }
 
 // ---------------------------------------------------------------------------

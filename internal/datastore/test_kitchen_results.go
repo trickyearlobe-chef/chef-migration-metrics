@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // TestKitchenResult represents a row in the test_kitchen_results table.
@@ -384,6 +386,139 @@ func scanTestKitchenResult(row interface{ Scan(dest ...any) error }) (TestKitche
 	}
 
 	return r, nil
+}
+
+// ---------------------------------------------------------------------------
+// Batch compatibility
+// ---------------------------------------------------------------------------
+
+// CookbookCompatibilitySummary holds aggregated compatibility counts for a
+// set of cookbooks against target Chef versions.
+type CookbookCompatibilitySummary struct {
+	TargetChefVersion     string
+	TotalCookbooks        int
+	CompatibleCookbooks   int
+	IncompatibleCookbooks int
+	UntestedCookbooks     int
+}
+
+// CountCookbookCompatibility returns compatibility summaries across all
+// cookbooks for the given organisation IDs and target Chef versions in a
+// single query, replacing the previous N×M×T loop that called
+// GetLatestTestKitchenResult per cookbook.
+//
+// When cookbookNames is non-nil, only cookbooks whose name is in that set
+// are counted (for owner filtering). Pass nil to include all cookbooks.
+func (db *DB) CountCookbookCompatibility(ctx context.Context, organisationIDs []string, targetVersions []string, cookbookNames map[string]bool) ([]CookbookCompatibilitySummary, error) {
+	if len(organisationIDs) == 0 || len(targetVersions) == 0 {
+		return nil, nil
+	}
+
+	// Step 1: Get all cookbook IDs and names for the given orgs, optionally
+	// filtered by allowed cookbook names.
+	cbQuery := `
+		SELECT id, name FROM cookbooks
+		 WHERE organisation_id = ANY($1)
+	`
+	cbRows, err := db.pool.QueryContext(ctx, cbQuery, pq.Array(organisationIDs))
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing cookbooks for compatibility: %w", err)
+	}
+	defer cbRows.Close()
+
+	type cbInfo struct {
+		id   string
+		name string
+	}
+	var cookbooks []cbInfo
+	for cbRows.Next() {
+		var c cbInfo
+		if err := cbRows.Scan(&c.id, &c.name); err != nil {
+			return nil, fmt.Errorf("datastore: scanning cookbook for compatibility: %w", err)
+		}
+		if cookbookNames != nil && !cookbookNames[c.name] {
+			continue
+		}
+		cookbooks = append(cookbooks, c)
+	}
+	if err := cbRows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating cookbooks for compatibility: %w", err)
+	}
+
+	if len(cookbooks) == 0 {
+		// Return zero-valued summaries for each target version.
+		result := make([]CookbookCompatibilitySummary, len(targetVersions))
+		for i, tv := range targetVersions {
+			result[i] = CookbookCompatibilitySummary{TargetChefVersion: tv}
+		}
+		return result, nil
+	}
+
+	// Collect cookbook IDs.
+	cbIDs := make([]string, len(cookbooks))
+	for i, c := range cookbooks {
+		cbIDs[i] = c.id
+	}
+
+	// Step 2: Get latest test kitchen result per (cookbook_id, target_chef_version).
+	tkQuery := `
+		SELECT DISTINCT ON (tkr.cookbook_id, tkr.target_chef_version)
+		       tkr.cookbook_id, tkr.target_chef_version, tkr.compatible
+		  FROM test_kitchen_results tkr
+		 WHERE tkr.cookbook_id = ANY($1)
+		   AND tkr.target_chef_version = ANY($2)
+		 ORDER BY tkr.cookbook_id, tkr.target_chef_version, tkr.started_at DESC
+	`
+	tkRows, err := db.pool.QueryContext(ctx, tkQuery, pq.Array(cbIDs), pq.Array(targetVersions))
+	if err != nil {
+		return nil, fmt.Errorf("datastore: querying test kitchen compatibility: %w", err)
+	}
+	defer tkRows.Close()
+
+	// Map (cookbook_id, target_version) -> compatible bool.
+	type tkKey struct {
+		cookbookID    string
+		targetVersion string
+	}
+	tkResults := make(map[tkKey]bool)
+	for tkRows.Next() {
+		var cbID, tv string
+		var compatible bool
+		if err := tkRows.Scan(&cbID, &tv, &compatible); err != nil {
+			return nil, fmt.Errorf("datastore: scanning test kitchen result: %w", err)
+		}
+		tkResults[tkKey{cbID, tv}] = compatible
+	}
+	if err := tkRows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating test kitchen results: %w", err)
+	}
+
+	// Step 3: Aggregate counts per target version.
+	totalCookbooks := len(cookbooks)
+	result := make([]CookbookCompatibilitySummary, 0, len(targetVersions))
+	for _, tv := range targetVersions {
+		var compat, incompat int
+		for _, cb := range cookbooks {
+			compatible, tested := tkResults[tkKey{cb.id, tv}]
+			if !tested {
+				continue
+			}
+			if compatible {
+				compat++
+			} else {
+				incompat++
+			}
+		}
+		result = append(result, CookbookCompatibilitySummary{
+			TargetChefVersion:     tv,
+			TotalCookbooks:        totalCookbooks,
+			CompatibleCookbooks:   compat,
+			IncompatibleCookbooks: incompat,
+			UntestedCookbooks:     totalCookbooks - compat - incompat,
+		})
+	}
+
+	return result, nil
 }
 
 func (db *DB) scanTestKitchenResults(ctx context.Context, query string, args ...any) ([]TestKitchenResult, error) {

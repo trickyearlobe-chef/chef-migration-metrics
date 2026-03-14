@@ -191,32 +191,72 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 			if run.Status != "completed" {
 				continue
 			}
-			nodes, err := r.db.ListNodeSnapshotsByCollectionRun(ctx, run.ID)
-			if err != nil {
-				r.logf("WARN", "listing nodes for run %s in trend: %v", run.ID, err)
-				continue
-			}
-			dist := make(map[string]int)
-			total := 0
-			for _, n := range nodes {
-				if ownerFilterActive && ownedKeys != nil {
+
+			var dist map[string]int
+			var total int
+
+			if ownerFilterActive && ownedKeys != nil {
+				// Build an allowed-node list from the owned keys.
+				var allowed []string
+				for k := range ownedKeys {
 					if of.Unowned {
-						if ownedKeys[n.NodeName] {
-							continue
-						}
-					} else {
-						if !ownedKeys[n.NodeName] {
-							continue
+						// ownedKeys contains ALL owned nodes; we want the complement.
+						// We can't filter by exclusion easily here, so fall back to
+						// the filtered query with all non-owned nodes.
+						// Instead, just pass nil and filter below.
+						break
+					}
+					allowed = append(allowed, k)
+				}
+
+				if of.Unowned {
+					// For "unowned" we need to exclude owned nodes. The filtered
+					// query supports inclusion only, so we fall back to the full
+					// result and subtract owned node counts.
+					allDist, err := r.db.CountChefVersionsByCollectionRun(ctx, run.ID)
+					if err != nil {
+						r.logf("WARN", "counting versions for run %s in trend: %v", run.ID, err)
+						continue
+					}
+					// Get owned-only counts so we can subtract.
+					ownedNodeNames := make([]string, 0, len(ownedKeys))
+					for k := range ownedKeys {
+						ownedNodeNames = append(ownedNodeNames, k)
+					}
+					ownedDist, err := r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, ownedNodeNames)
+					if err != nil {
+						r.logf("WARN", "counting owned versions for run %s in trend: %v", run.ID, err)
+						continue
+					}
+					dist = make(map[string]int)
+					for v, cnt := range allDist {
+						remaining := cnt - ownedDist[v]
+						if remaining > 0 {
+							dist[v] = remaining
+							total += remaining
 						}
 					}
+				} else {
+					dist, err = r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, allowed)
+					if err != nil {
+						r.logf("WARN", "counting filtered versions for run %s in trend: %v", run.ID, err)
+						continue
+					}
+					for _, cnt := range dist {
+						total += cnt
+					}
 				}
-				v := n.ChefVersion
-				if v == "" {
-					v = "unknown"
+			} else {
+				dist, err = r.db.CountChefVersionsByCollectionRun(ctx, run.ID)
+				if err != nil {
+					r.logf("WARN", "counting versions for run %s in trend: %v", run.ID, err)
+					continue
 				}
-				dist[v]++
-				total++
+				for _, cnt := range dist {
+					total += cnt
+				}
 			}
+
 			completedAt := ""
 			if !run.CompletedAt.IsZero() {
 				completedAt = run.CompletedAt.Format("2006-01-02T15:04:05Z")
@@ -509,60 +549,61 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		CompatiblePercent     float64 `json:"compatible_percent"`
 	}
 
-	var summaries []compatSummary
-	for _, tv := range targetVersions {
-		var totalAll, compatAll, incompatAll int
+	// Collect organisation IDs.
+	orgIDs := make([]string, len(orgs))
+	for i, org := range orgs {
+		orgIDs[i] = org.ID
+	}
 
-		for _, org := range orgs {
-			cookbooks, err := r.db.ListCookbooksByOrganisation(ctx, org.ID)
-			if err != nil {
-				r.logf("WARN", "listing cookbooks for org %s: %v", org.Name, err)
-				continue
-			}
-			for _, cb := range cookbooks {
-				// Apply owner filter if active.
-				if ownerFilterActive && ownedKeys != nil {
-					if of.Unowned {
-						if ownedKeys[cb.Name] {
-							continue
-						}
-					} else {
-						if !ownedKeys[cb.Name] {
-							continue
-						}
-					}
-				}
-
-				totalAll++
-				result, err := r.db.GetLatestTestKitchenResult(ctx, cb.ID, tv)
+	// Convert owned keys to an allowed-names set for filtering (nil if no filter).
+	var allowedNames map[string]bool
+	if ownerFilterActive && ownedKeys != nil {
+		if of.Unowned {
+			// For "unowned" we need to exclude owned cookbooks. CountCookbookCompatibility
+			// filters by inclusion, so we pass nil (all cookbooks) and will subtract later.
+			// Actually, we need a different approach: get all cookbook names, then exclude owned.
+			// For simplicity, fetch all names first and build the complement.
+			allCookbooks := make(map[string]bool)
+			for _, org := range orgs {
+				cbs, err := r.db.ListCookbooksByOrganisation(ctx, org.ID)
 				if err != nil {
-					r.logf("WARN", "getting test kitchen result for cookbook %s version %s: %v", cb.ID, tv, err)
+					r.logf("WARN", "listing cookbooks for org %s: %v", org.Name, err)
 					continue
 				}
-				if result == nil {
-					// No test result — counted as untested (neither compat nor incompat).
-					continue
-				}
-				if result.Compatible {
-					compatAll++
-				} else {
-					incompatAll++
+				for _, cb := range cbs {
+					allCookbooks[cb.Name] = true
 				}
 			}
+			allowedNames = make(map[string]bool)
+			for name := range allCookbooks {
+				if !ownedKeys[name] {
+					allowedNames[name] = true
+				}
+			}
+		} else {
+			allowedNames = ownedKeys
 		}
+	}
 
-		untestedAll := totalAll - compatAll - incompatAll
+	dbSummaries, err := r.db.CountCookbookCompatibility(ctx, orgIDs, targetVersions, allowedNames)
+	if err != nil {
+		r.logf("ERROR", "counting cookbook compatibility: %v", err)
+		WriteInternalError(w, "Failed to compute cookbook compatibility.")
+		return
+	}
+
+	var summaries []compatSummary
+	for _, s := range dbSummaries {
 		pct := 0.0
-		if totalAll > 0 {
-			pct = float64(compatAll) / float64(totalAll) * 100
+		if s.TotalCookbooks > 0 {
+			pct = float64(s.CompatibleCookbooks) / float64(s.TotalCookbooks) * 100
 		}
-
 		summaries = append(summaries, compatSummary{
-			TargetChefVersion:     tv,
-			TotalCookbooks:        totalAll,
-			CompatibleCookbooks:   compatAll,
-			IncompatibleCookbooks: incompatAll,
-			UntestedCookbooks:     untestedAll,
+			TargetChefVersion:     s.TargetChefVersion,
+			TotalCookbooks:        s.TotalCookbooks,
+			CompatibleCookbooks:   s.CompatibleCookbooks,
+			IncompatibleCookbooks: s.IncompatibleCookbooks,
+			UntestedCookbooks:     s.UntestedCookbooks,
 			CompatiblePercent:     pct,
 		})
 	}
@@ -693,16 +734,10 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 			if run.Status != "completed" {
 				continue
 			}
-			nodes, err := r.db.ListNodeSnapshotsByCollectionRun(req.Context(), run.ID)
+			total, stale, fresh, err := r.db.CountStaleFreshByCollectionRun(req.Context(), run.ID)
 			if err != nil {
-				r.logf("WARN", "listing nodes for run %s in stale trend: %v", run.ID, err)
+				r.logf("WARN", "counting stale/fresh for run %s in stale trend: %v", run.ID, err)
 				continue
-			}
-			stale := 0
-			for _, n := range nodes {
-				if n.IsStale {
-					stale++
-				}
 			}
 			completedAt := ""
 			if !run.CompletedAt.IsZero() {
@@ -712,9 +747,9 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 				OrganisationName: org.Name,
 				CollectionRunID:  run.ID,
 				CompletedAt:      completedAt,
-				TotalNodes:       len(nodes),
+				TotalNodes:       total,
 				StaleNodes:       stale,
-				FreshNodes:       len(nodes) - stale,
+				FreshNodes:       fresh,
 			})
 		}
 	}
