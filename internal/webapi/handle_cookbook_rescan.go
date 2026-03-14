@@ -69,8 +69,11 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 	}
 
 	// Invalidate cookstyle results, complexity scores, and autocorrect
-	// previews for every version. Errors are logged but don't abort the
-	// loop — we want to invalidate as much as possible.
+	// previews for every version. For server cookbooks, also reset the
+	// download_status to 'pending' so the streaming pipeline will
+	// re-download and re-scan them on the next collection cycle (the
+	// pipeline deletes cookbook files from disk after scanning, so the
+	// files are no longer available for a re-scan without re-downloading).
 	invalidated := 0
 	var lastErr error
 	for _, cb := range cookbooks {
@@ -90,6 +93,16 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 		if acErr != nil {
 			r.logf("WARN", "deleting autocorrect previews for cookbook %s (%s): %v", cb.ID, cb.Name, acErr)
 			lastErr = acErr
+		}
+
+		// Server cookbooks: reset download_status to 'pending' so the
+		// streaming pipeline re-downloads the files (they were deleted
+		// after the previous scan).
+		if cb.IsChefServer() {
+			if _, dlErr := r.db.ResetCookbookDownloadStatus(ctx, cb.ID); dlErr != nil {
+				r.logf("WARN", "resetting download status for cookbook %s (%s): %v", cb.ID, cb.Name, dlErr)
+				lastErr = dlErr
+			}
 		}
 
 		if csErr == nil && cxErr == nil && acErr == nil {

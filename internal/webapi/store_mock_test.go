@@ -35,6 +35,8 @@ type mockStore struct {
 	ListCookbookComplexitiesForOrganisationFn  func(ctx context.Context, organisationID string) ([]datastore.CookbookComplexity, error)
 	ListCookstyleResultsForCookbookFn          func(ctx context.Context, cookbookID string) ([]datastore.CookstyleResult, error)
 	GetCookstyleResultFn                       func(ctx context.Context, cookbookID, targetChefVersion string) (*datastore.CookstyleResult, error)
+	ResetCookbookDownloadStatusFn              func(ctx context.Context, id string) (datastore.Cookbook, error)
+	ResetAllServerCookbookDownloadStatusesFn   func(ctx context.Context) (int, error)
 	DeleteCookstyleResultsForCookbookFn        func(ctx context.Context, cookbookID string) error
 	DeleteCookbookComplexitiesForCookbookFn    func(ctx context.Context, cookbookID string) error
 	DeleteAutocorrectPreviewsForCookbookFn     func(ctx context.Context, cookbookID string) error
@@ -222,6 +224,20 @@ func (m *mockStore) GetCookstyleResult(ctx context.Context, cookbookID, targetCh
 		return m.GetCookstyleResultFn(ctx, cookbookID, targetChefVersion)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) ResetCookbookDownloadStatus(ctx context.Context, id string) (datastore.Cookbook, error) {
+	if m.ResetCookbookDownloadStatusFn != nil {
+		return m.ResetCookbookDownloadStatusFn(ctx, id)
+	}
+	return datastore.Cookbook{}, nil
+}
+
+func (m *mockStore) ResetAllServerCookbookDownloadStatuses(ctx context.Context) (int, error) {
+	if m.ResetAllServerCookbookDownloadStatusesFn != nil {
+		return m.ResetAllServerCookbookDownloadStatusesFn(ctx)
+	}
+	return 0, nil
 }
 
 func (m *mockStore) DeleteCookstyleResultsForCookbook(ctx context.Context, cookbookID string) error {
