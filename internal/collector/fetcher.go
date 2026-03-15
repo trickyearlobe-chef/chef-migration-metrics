@@ -76,7 +76,7 @@ func (e CookbookFetchError) Error() string {
 // If cookbookCacheDir is empty, file extraction to disk is skipped and only
 // the manifest is fetched (legacy behaviour for environments where disk
 // extraction is not yet configured). The download_status is still updated.
-func fetchCookbooks(
+func fetchCookbooks( //nolint:unused // complete feature, not yet wired into collector pipeline
 	ctx context.Context,
 	client *chefapi.Client,
 	db *datastore.DB,
@@ -184,7 +184,7 @@ func fetchCookbooks(
 // manifest fetch + status update are performed.
 //
 // Returns the number of files written to disk and any error.
-func downloadCookbookVersion(
+func downloadCookbookVersion( //nolint:unused // called by fetchCookbooks which is not yet wired in
 	ctx context.Context,
 	client *chefapi.Client,
 	db *datastore.DB,

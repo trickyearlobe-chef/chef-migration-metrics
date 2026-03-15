@@ -212,15 +212,6 @@ func (f *fakeReadinessDS) addGitRepo(name, id, headSHA string) {
 	}
 }
 
-func (f *fakeReadinessDS) addGitComplexity(gitRepoID, targetChefVersion string, score int, label string) {
-	f.gitComplexities[gcKey(gitRepoID, targetChefVersion)] = &datastore.GitRepoComplexity{
-		GitRepoID:         gitRepoID,
-		TargetChefVersion: targetChefVersion,
-		ComplexityScore:   score,
-		ComplexityLabel:   label,
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Helper to make a node snapshot
 // ---------------------------------------------------------------------------

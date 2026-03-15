@@ -107,7 +107,7 @@ func (db *DB) BulkInsertCookbookNodeUsage(ctx context.Context, params []InsertCo
 					sb.WriteString(", ")
 				}
 				offset := i * numCols
-				sb.WriteString(fmt.Sprintf("($%d, $%d, $%d)", offset+1, offset+2, offset+3))
+				fmt.Fprintf(&sb, "($%d, $%d, $%d)", offset+1, offset+2, offset+3)
 				args = append(args, p.ServerCookbookID, p.NodeSnapshotID, p.CookbookVersion)
 			}
 
