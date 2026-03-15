@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -113,24 +114,48 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 		end = total
 	}
 
-	type nodeResp struct {
-		ID               string `json:"id"`
-		OrganisationID   string `json:"organisation_id"`
-		OrganisationName string `json:"organisation_name"`
-		NodeName         string `json:"node_name"`
-		ChefEnvironment  string `json:"chef_environment,omitempty"`
-		ChefVersion      string `json:"chef_version,omitempty"`
-		Platform         string `json:"platform,omitempty"`
-		PlatformVersion  string `json:"platform_version,omitempty"`
-		PlatformFamily   string `json:"platform_family,omitempty"`
-		PolicyName       string `json:"policy_name,omitempty"`
-		PolicyGroup      string `json:"policy_group,omitempty"`
-		IsStale          bool   `json:"is_stale"`
-		CollectedAt      string `json:"collected_at"`
+	// Pre-load readiness data for the page's nodes so we can attach a
+	// summary to each row without N+1 queries. Index by node_snapshot_id
+	// for O(1) lookup.
+	pageNodes := allNodes[start:end]
+	readinessBySnapshotID := make(map[string][]nodeReadinessSummaryEntry)
+	for _, n := range pageNodes {
+		recs, err := r.db.ListNodeReadinessForSnapshot(req.Context(), n.ID)
+		if err != nil {
+			continue // non-fatal — readiness just won't be shown
+		}
+		for _, rec := range recs {
+			readinessBySnapshotID[n.ID] = append(readinessBySnapshotID[n.ID], nodeReadinessSummaryEntry{
+				TargetChefVersion:      rec.TargetChefVersion,
+				IsReady:                rec.IsReady,
+				AllCookbooksCompatible: rec.AllCookbooksCompatible,
+				SufficientDiskSpace:    rec.SufficientDiskSpace,
+				BlockingCookbookCount:  countBlockingCookbooks(rec.BlockingCookbooks),
+				StaleData:              rec.StaleData,
+			})
+		}
 	}
 
-	result := make([]nodeResp, 0, end-start)
-	for _, n := range allNodes[start:end] {
+	type nodeResp struct {
+		ID               string                      `json:"id"`
+		OrganisationID   string                      `json:"organisation_id"`
+		OrganisationName string                      `json:"organisation_name"`
+		NodeName         string                      `json:"node_name"`
+		ChefEnvironment  string                      `json:"chef_environment,omitempty"`
+		ChefVersion      string                      `json:"chef_version,omitempty"`
+		Platform         string                      `json:"platform,omitempty"`
+		PlatformVersion  string                      `json:"platform_version,omitempty"`
+		PlatformFamily   string                      `json:"platform_family,omitempty"`
+		PolicyName       string                      `json:"policy_name,omitempty"`
+		PolicyGroup      string                      `json:"policy_group,omitempty"`
+		IsStale          bool                        `json:"is_stale"`
+		OhaiTime         float64                     `json:"ohai_time,omitempty"`
+		CollectedAt      string                      `json:"collected_at"`
+		Readiness        []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
+	}
+
+	result := make([]nodeResp, 0, len(pageNodes))
+	for _, n := range pageNodes {
 		result = append(result, nodeResp{
 			ID:               n.ID,
 			OrganisationID:   n.OrganisationID,
@@ -144,11 +169,38 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 			PolicyName:       n.PolicyName,
 			PolicyGroup:      n.PolicyGroup,
 			IsStale:          n.IsStale,
+			OhaiTime:         n.OhaiTime,
 			CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
+			Readiness:        readinessBySnapshotID[n.ID],
 		})
 	}
 
 	WritePaginated(w, result, pg, total)
+}
+
+// nodeReadinessSummaryEntry is a compact readiness summary for the node list.
+type nodeReadinessSummaryEntry struct {
+	TargetChefVersion      string `json:"target_chef_version"`
+	IsReady                bool   `json:"is_ready"`
+	AllCookbooksCompatible bool   `json:"all_cookbooks_compatible"`
+	SufficientDiskSpace    *bool  `json:"sufficient_disk_space"`
+	BlockingCookbookCount  int    `json:"blocking_cookbook_count"`
+	StaleData              bool   `json:"stale_data"`
+}
+
+// countBlockingCookbooks returns the number of blocking cookbooks from the
+// JSONB column. It handles both the legacy string array and structured
+// BlockingCookbook array formats.
+func countBlockingCookbooks(raw json.RawMessage) int {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0
+	}
+	// Try as array of any — just count the elements.
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		return len(arr)
+	}
+	return 0
 }
 
 // handleNodeDetail handles GET /api/v1/nodes/:organisation/:name — returns

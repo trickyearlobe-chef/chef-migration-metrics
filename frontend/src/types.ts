@@ -219,6 +219,15 @@ export interface GitRepoCompatibilityResponse {
 // Nodes
 // ---------------------------------------------------------------------------
 
+export interface NodeReadinessSummary {
+  target_chef_version: string;
+  is_ready: boolean;
+  all_cookbooks_compatible: boolean;
+  sufficient_disk_space: boolean | null;
+  blocking_cookbook_count: number;
+  stale_data: boolean;
+}
+
 export interface NodeListItem {
   id: string;
   organisation_id: string;
@@ -232,7 +241,9 @@ export interface NodeListItem {
   policy_name?: string;
   policy_group?: string;
   is_stale: boolean;
+  ohai_time?: number;
   collected_at: string;
+  readiness?: NodeReadinessSummary[];
 }
 
 export type NodeListResponse = PaginatedResponse<NodeListItem>;
