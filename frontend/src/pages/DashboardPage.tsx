@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { useOrg } from "../context/OrgContext";
 import {
   fetchVersionDistribution,
+  fetchPlatformDistribution,
   fetchReadiness,
   fetchCookbookCompatibility,
+  fetchGitRepoCompatibility,
   fetchVersionDistributionTrend,
   fetchReadinessTrend,
   fetchComplexityTrend,
@@ -11,8 +13,10 @@ import {
 } from "../api";
 import type {
   VersionDistributionResponse,
+  PlatformDistributionResponse,
   ReadinessResponse,
   CookbookCompatibilityResponse,
+  GitRepoCompatibilityResponse,
   VersionDistributionTrendResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
@@ -28,8 +32,10 @@ import type { TrendSeries } from "../components/TrendChart";
 // ---------------------------------------------------------------------------
 // Dashboard page — summary panels + historical trend charts:
 //   1. Chef Client Version Distribution (bar chart + trend)
-//   2. Node Upgrade Readiness (ready / blocked / stale counts + trend)
-//   3. Cookbook Compatibility (compatible / incompatible / untested)
+//   2. OS Platform Distribution (bar chart)
+//   3. Node Upgrade Readiness (ready / blocked / stale counts + trend)
+//   4. Server Cookbook CookStyle Compatibility (compatible / incompatible / untested)
+//   5. Git Repo CookStyle Compatibility (compatible / incompatible / untested)
 // ---------------------------------------------------------------------------
 
 export function DashboardPage() {
@@ -41,10 +47,12 @@ export function DashboardPage() {
       <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
 
       {/* ---- Point-in-time summary cards ---- */}
-      <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-2">
         <VersionDistributionCard organisation={org} />
+        <PlatformDistributionCard organisation={org} />
         <ReadinessCard organisation={org} />
         <CookbookCompatibilityCard organisation={org} />
+        <GitRepoCompatibilityCard organisation={org} />
       </div>
 
       {/* ---- Historical trend charts ---- */}
@@ -100,6 +108,65 @@ function VersionDistributionCard({ organisation }: { organisation?: string }) {
                     <div className="bar-chart-track">
                       <div
                         className="bar-chart-fill bg-blue-500"
+                        style={{ width: `${Math.max(pct, 2)}%` }}
+                      >
+                        {pct >= 8 && <span>{pct.toFixed(1)}%</span>}
+                      </div>
+                    </div>
+                    <span className="bar-chart-value">{v.count.toLocaleString()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Platform Distribution Card (point-in-time)
+// ---------------------------------------------------------------------------
+
+function PlatformDistributionCard({ organisation }: { organisation?: string }) {
+  const [data, setData] = useState<PlatformDistributionResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchPlatformDistribution(organisation)
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [organisation]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="card">
+      <h3 className="card-header">OS Platform Distribution</h3>
+      {loading && <LoadingSpinner message="Loading platform data…" />}
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {!loading && !error && data && (
+        <>
+          <p className="mb-4 text-sm text-gray-500">
+            {data.total_nodes.toLocaleString()} total nodes
+          </p>
+          {data.distribution.length === 0 ? (
+            <EmptyState title="No platform data" description="No nodes have been collected yet." />
+          ) : (
+            <div className="space-y-1">
+              {data.distribution.map((v) => {
+                const pct = data.total_nodes > 0 ? (v.count / data.total_nodes) * 100 : 0;
+                return (
+                  <div key={v.platform} className="bar-chart-row">
+                    <span className="w-44 shrink-0 truncate text-right text-sm text-gray-600" title={v.platform}>{v.platform}</span>
+                    <div className="bar-chart-track">
+                      <div
+                        className="bar-chart-fill bg-purple-500"
                         style={{ width: `${Math.max(pct, 2)}%` }}
                       >
                         {pct >= 8 && <span>{pct.toFixed(1)}%</span>}
@@ -211,7 +278,7 @@ function CookbookCompatibilityCard({ organisation }: { organisation?: string }) 
 
   return (
     <div className="card">
-      <h3 className="card-header">Cookbook Compatibility</h3>
+      <h3 className="card-header">Server Cookbook CookStyle Compatibility</h3>
       {loading && <LoadingSpinner message="Loading compatibility…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && data && (
@@ -258,6 +325,87 @@ function CookbookCompatibilityCard({ organisation }: { organisation?: string }) 
                     <span className="flex items-center gap-1">
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
                       Untested: {c.untested_cookbooks}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Git Repo CookStyle Compatibility Card
+// ---------------------------------------------------------------------------
+
+function GitRepoCompatibilityCard({ organisation }: { organisation?: string }) {
+  const [data, setData] = useState<GitRepoCompatibilityResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchGitRepoCompatibility(organisation)
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [organisation]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="card">
+      <h3 className="card-header">Git Repo CookStyle Compatibility</h3>
+      {loading && <LoadingSpinner message="Loading compatibility…" />}
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {!loading && !error && data && (
+        <>
+          {data.data.length === 0 ? (
+            <EmptyState title="No compatibility data" description="Configure target Chef versions to see compatibility." />
+          ) : (
+            <div className="space-y-4">
+              {data.data.map((c) => (
+                <div key={c.target_chef_version} className="rounded-lg border border-gray-100 p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Target: {c.target_chef_version}</span>
+                    <span className="text-xs text-gray-400">{c.total_repos} git repos</span>
+                  </div>
+                  {/* Stacked progress bar */}
+                  {c.total_repos > 0 && (
+                    <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        className="bg-green-500 transition-all duration-500"
+                        style={{ width: `${(c.compatible_repos / c.total_repos) * 100}%` }}
+                        title={`Compatible: ${c.compatible_repos}`}
+                      />
+                      <div
+                        className="bg-red-400 transition-all duration-500"
+                        style={{ width: `${(c.incompatible_repos / c.total_repos) * 100}%` }}
+                        title={`Incompatible: ${c.incompatible_repos}`}
+                      />
+                      <div
+                        className="bg-gray-300 transition-all duration-500"
+                        style={{ width: `${(c.untested_repos / c.total_repos) * 100}%` }}
+                        title={`Untested: ${c.untested_repos}`}
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+                      Compatible: {c.compatible_repos}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
+                      Incompatible: {c.incompatible_repos}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
+                      Untested: {c.untested_repos}
                     </span>
                   </div>
                 </div>

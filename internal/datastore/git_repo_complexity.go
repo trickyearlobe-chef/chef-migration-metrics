@@ -143,6 +143,17 @@ func (db *DB) ListGitRepoComplexitiesByName(ctx context.Context, name string) ([
 	return db.scanGitRepoComplexities(ctx, query, name)
 }
 
+// ListAllGitRepoComplexities returns all git repo complexity records,
+// ordered by target_chef_version.
+func (db *DB) ListAllGitRepoComplexities(ctx context.Context) ([]GitRepoComplexity, error) {
+	query := `
+		SELECT ` + grcColumns + `
+		  FROM git_repo_complexity
+		 ORDER BY target_chef_version
+	`
+	return db.scanGitRepoComplexities(ctx, query)
+}
+
 // ---------------------------------------------------------------------------
 // Upsert
 // ---------------------------------------------------------------------------

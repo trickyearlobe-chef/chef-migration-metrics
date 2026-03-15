@@ -197,6 +197,10 @@ type DataStore interface {
 	// given git repo ID, ordered by target_chef_version.
 	ListGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) ([]datastore.GitRepoComplexity, error)
 
+	// ListAllGitRepoComplexities returns all git repo complexity records,
+	// ordered by target_chef_version.
+	ListAllGitRepoComplexities(ctx context.Context) ([]datastore.GitRepoComplexity, error)
+
 	// GetGitRepoAutocorrectPreview returns the autocorrect preview for the
 	// given cookstyle result ID. Returns (nil, nil) if no preview exists.
 	GetGitRepoAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*datastore.GitRepoAutocorrectPreview, error)
