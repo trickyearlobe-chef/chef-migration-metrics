@@ -19,7 +19,6 @@ Upgrading Chef Client across a large fleet is a significant project. Chef Migrat
 - **Assesses node upgrade readiness** based on cookbook compatibility, available disk space, and blocking cookbook complexity
 - **Detects stale nodes and cookbooks** — flags nodes that haven't checked in recently and cookbooks that haven't been updated in a long time
 - **Exports data** — ready/blocked node lists (CSV, JSON, Chef search query) and remediation reports for use in external upgrade automation workflows
-- **Sends notifications** — webhook (Slack, Teams, PagerDuty) and email alerts for cookbook status changes, readiness milestones, collection failures, and more
 - **Visualises metrics** in a web dashboard with interactive filters, drill-downs, confidence indicators, and trend charts
 - **Captures logs** from all background jobs and external processes, viewable from the web UI
 
@@ -33,50 +32,54 @@ Knowing which cookbooks are incompatible is only half the battle — practitione
 
 ## Architecture
 
-Chef Migration Metrics is a Go application with the following major components:
+Chef Migration Metrics is a Go application with an embedded React frontend. CookStyle and Test Kitchen are **not** bundled in the application — they are external tools provided by [Chef Workstation](https://docs.chef.io/workstation/) and must be available at runtime for cookbook compatibility analysis. If they are not available, data collection and the dashboard still work but cookbook analysis is skipped.
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Web Dashboard                             │
+┌───────────────────────────────────────────────────────────────────┐
+│                         Web Dashboard                             │
 │  Version distribution · Cookbook compatibility · Node readiness   │
-│  Dependency graph · Remediation guidance · Complexity scores     │
-│  Confidence indicators · Exports · Notifications · Log viewer    │
-│  Interactive filters (org, env, role, policy, platform, stale)   │
-└──────────────────────────────┬───────────────────────────────────┘
-                           │ HTTP API
-┌──────────────────────────┴───────────────────────────────────────┐
-│                        Go Backend                                │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-│  │   Data       │  │   Analysis   │  │   Web API / Auth       │ │
-│  │  Collection  │  │              │  │                        │ │
-│  │              │  │  Cookbook     │  │  REST endpoints        │ │
-│  │  Node data   │  │  usage       │  │  SAML / LDAP / local   │ │
-│  │  Policyfiles │  │  Test Kitchen│  │  RBAC                  │ │
-│  │  Cookbooks   │  │  CookStyle   │  │  Session management    │ │
-│  │  Git repos   │  │  Remediation │  │  Exports               │ │
-│  │  Role graph  │  │  Complexity  │  │  Notifications         │ │
-│  │  Stale nodes │  │  Readiness   │  │                        │ │
-│  └──────┬───────┘  └──────┬───────┘  └────────────┬───────────┘ │
-│         │                 │                        │             │
-│  ┌──────┴─────────────────┴────────────────────────┴───────────┐ │
-│  │                    PostgreSQL Datastore                      │ │
-│  │  Nodes · Server Cookbooks · Git Repos · Test results ·     │ │
-│  │  Remediation · Complexity · Dependency graph · Logs ·       │ │
-│  │  Metrics · Notifications · Exports                          │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────┘
-         │                                         │
-         │  Chef Infra Server API          Git (clone/pull)      Webhooks / Email
-         ▼                                 ▼                     ▼
-  ┌──────────────┐                  ┌──────────────┐      ┌──────────────┐
-  │ Chef Infra   │                  │ Git repos    │      │ Notification │
-  │ Server(s)    │                  │ (GitHub,     │      │ Channels     │
-  │              │                  │  GitLab,     │      │ (Slack,      │
-  │ Org 1        │                  │  etc.)       │      │  Teams,      │
-  │ Org 2        │                  │              │      │  Email,      │
-  │ ...          │                  │              │      │  PagerDuty)  │
-  └──────────────┘                  └──────────────┘      └──────────────┘
+│  Dependency graph · Remediation guidance · Complexity scores      │
+│  Confidence indicators · Exports · Log viewer                     │
+│  Interactive filters (org, env, role, policy, platform, stale)    │
+└───────────────────────────────┬───────────────────────────────────┘
+                                │
+                                │ HTTP API
+                                │
+┌───────────────────────────────┴───────────────────────────────────┐
+│                         Go Backend                                │
+│                                                                   │
+│  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────────┐  │
+│  │ Data            │ │ Analysis        │ │ Web API / Auth      │  │
+│  │ Collection      │ │                 │ │                     │  │
+│  │                 │ │ Cookbook usage  │ │ REST endpoints      │  │
+│  │ Node data       │ │ CookStyle *     │ │ Local accounts      │  │
+│  │ Policyfiles     │ │ Kitchen *       │ │ RBAC                │  │
+│  │ Cookbooks       │ │ Remediation     │ │ Session management  │  │
+│  │ Git repos       │ │ Complexity      │ │ Exports             │  │
+│  │ Role graph      │ │ Readiness       │ │                     │  │
+│  │ Stale nodes     │ │                 │ │                     │  │
+│  └────────┬────────┘ └────────┬────────┘ └──────────┬──────────┘  │
+│           │                   │                     │             │
+│  ┌────────┴───────────────────┴─────────────────────┴──────────┐  │
+│  │                   PostgreSQL Datastore                      │  │
+│  │  Nodes · Server Cookbooks · Git Repos · Test results        │  │
+│  │  Remediation · Complexity · Dependency graph · Logs         │  │
+│  │  Metrics · Exports                                          │  │
+│  └──────┬─────────────────────────────────────┬────────────────┘  │
+│         │                                     │                   │
+└─────────┼─────────────────────────────────────┼───────────────────┘
+          │                                     │
+          │ Chef Infra Server API               │ Git (clone/pull)
+          ▼                                     ▼
+  ┌──────────────────┐              ┌───────────────────┐
+  │ Chef Infra       │              │ Git repos         │
+  │ Server(s)        │              │ (GitHub, GitLab,  │
+  │                  │              │  Bitbucket, etc.) │
+  │ Org 1, Org 2 …   │              │                   │
+  └──────────────────┘              └───────────────────┘
+
+  * CookStyle and Test Kitchen require Chef Workstation
+    to be installed separately (see Prerequisites).
 ```
 
 ### Components
@@ -84,12 +87,11 @@ Chef Migration Metrics is a Go application with the following major components:
 | Component | Description |
 |-----------|-------------|
 | **Data Collection** | Periodically collects node attributes from Chef Infra Server organisations using partial search. Supports both classic and Policyfile nodes. Fetches server cookbooks from the Chef server and manages git repository clones for cookbooks with known git repos. Collects role dependency graphs. Detects stale nodes and cookbooks. |
-| **Analysis** | Computes cookbook usage statistics, runs Test Kitchen and CookStyle compatibility tests, generates remediation guidance (auto-correct previews, migration docs), computes complexity scores and blast radius, and evaluates per-node upgrade readiness. |
-| **Web Dashboard** | Presents version distribution, cookbook compatibility (with confidence indicators), node readiness, dependency graph, remediation guidance, and logs through an interactive web UI. Supports data exports and notification configuration. |
-| **Notifications** | Sends webhook and email notifications for cookbook status changes, readiness milestones, collection failures, and stale node threshold alerts. |
+| **Analysis** | Computes cookbook usage statistics, runs Test Kitchen and CookStyle compatibility tests (when Chef Workstation is available), generates remediation guidance (auto-correct previews, migration docs), computes complexity scores and blast radius, and evaluates per-node upgrade readiness. |
+| **Web Dashboard** | Presents version distribution, cookbook compatibility (with confidence indicators), node readiness, dependency graph, remediation guidance, and logs through an interactive web UI. Supports data exports. |
 | **Exports** | Generates ready/blocked node lists and remediation reports in CSV, JSON, and Chef search query formats for use in external upgrade automation. |
-| **Logging** | Structured logging subsystem that captures all job activity, notification deliveries, export operations, and external process output, persisted to the datastore and viewable in the web UI. |
-| **Authentication** | Supports local accounts, LDAP, and SAML authentication with role-based access control. |
+| **Logging** | Structured logging subsystem that captures all job activity, export operations, and external process output, persisted to the datastore and viewable in the web UI. |
+| **Authentication** | Local accounts with bcrypt password hashing and role-based access control (Admin / Viewer). |
 
 ## Prerequisites
 
@@ -98,22 +100,31 @@ Chef Migration Metrics is a Go application with the following major components:
 - **PostgreSQL** 14 or later
 - **Git** (for cloning cookbook repositories)
 - Network access to the Chef Infra Server(s) and git repositories
-- Network access to webhook URLs and/or SMTP server (if notifications are enabled)
 
 ### Optional (for Cookbook Compatibility Testing)
 
-- **Docker** (required by the embedded Test Kitchen `kitchen-dokken` driver for container-based cookbook testing)
+- **Chef Workstation** — provides CookStyle, Test Kitchen, and InSpec
+- **Docker** (required by the Test Kitchen `kitchen-dokken` driver for container-based cookbook testing)
 
-CookStyle and Test Kitchen are **embedded** in all packaging formats (RPM, DEB, container image) along with a self-contained Ruby runtime under `/opt/chef-migration-metrics/embedded/`. There is no need to install Chef Workstation or manage Ruby gems separately. Docker is the only external runtime dependency for cookbook compatibility testing. If Docker is not available, Test Kitchen testing is disabled and git-sourced cookbooks are reported as `untested`; CookStyle linting of Chef server-sourced cookbooks still functions without Docker.
+The application looks for `cookstyle` and `kitchen` binaries in a configurable directory first (see `analysis_tools.embedded_bin_dir` in the configuration), then falls back to searching `PATH`. If neither is found, cookbook analysis is skipped gracefully — data collection and the dashboard still work.
+
+For **Kubernetes** deployments, the Helm chart includes an optional init container that copies Chef Workstation tools into a shared volume at pod startup (see Option 5 below).
+
+For **standalone Docker** usage, mount a Chef Workstation installation into the container:
+
+```
+docker run \
+  -v /opt/chef-workstation/bin:/opt/chef-tools/bin:ro \
+  -v /opt/chef-workstation/embedded:/opt/chef-tools/embedded:ro \
+  ghcr.io/trickyearlobe-chef/chef-migration-metrics:latest
+```
 
 ### Building from Source
 
-- **Go** 1.22 or later
+- **Go** 1.25 or later
 - **Node.js** 20 or later and **npm** (for building the React frontend)
 - **nFPM** (for building RPM and DEB packages)
-- **Docker** (for building container images and the embedded Ruby environment)
-
-> **Note:** When building from source and running directly (without packaging), CookStyle and Test Kitchen are **not** embedded automatically. You can either run `make build-embedded` to build the embedded Ruby environment locally, or install `cookstyle` and `kitchen` via Chef Workstation or `gem install`. The application falls back to `PATH` lookup when the embedded directory is not present.
+- **Docker** (for building container images)
 
 ## Installation
 
@@ -141,13 +152,14 @@ The RPM installs:
 | `/etc/sysconfig/chef-migration-metrics` | Environment variable overrides (secrets) |
 | `/var/lib/chef-migration-metrics/` | Working directory for git clones |
 | `/usr/lib/systemd/system/chef-migration-metrics.service` | systemd unit |
-| `/opt/chef-migration-metrics/embedded/` | Self-contained Ruby environment with CookStyle and Test Kitchen |
+
+The package lists `chef-workstation` as a soft dependency (`Recommends`). Install Chef Workstation separately to enable cookbook compatibility testing.
 
 After installing, edit the configuration and start the service:
 
 ```
 sudo vim /etc/chef-migration-metrics/config.yml
-sudo vim /etc/sysconfig/chef-migration-metrics   # set DATABASE_URL, LDAP_BIND_PASSWORD, etc.
+sudo vim /etc/sysconfig/chef-migration-metrics   # set DATABASE_URL, etc.
 sudo systemctl start chef-migration-metrics
 sudo systemctl status chef-migration-metrics
 ```
@@ -168,7 +180,7 @@ The DEB installs the same filesystem layout as the RPM, with the environment fil
 
 ```
 sudo vim /etc/chef-migration-metrics/config.yml
-sudo vim /etc/default/chef-migration-metrics   # set DATABASE_URL, LDAP_BIND_PASSWORD, etc.
+sudo vim /etc/default/chef-migration-metrics   # set DATABASE_URL, etc.
 sudo systemctl start chef-migration-metrics
 sudo systemctl status chef-migration-metrics
 ```
@@ -233,12 +245,7 @@ docker run -d \
   ghcr.io/trickyearlobe-chef/chef-migration-metrics:<version>
 ```
 
-Two image variants are available:
-
-| Image | Description |
-|-------|-------------|
-| `chef-migration-metrics:<version>` | Base image with Git. Suitable when Test Kitchen and CookStyle run externally. |
-| `chef-migration-metrics:<version>-analysis` | Extended image including Test Kitchen, CookStyle, and Ruby. For self-contained deployments. |
+The container image includes only Git and the Go binary — **CookStyle and Test Kitchen are not included**. To enable cookbook compatibility testing, mount a Chef Workstation installation into the container (see Prerequisites above).
 
 ### Option 5: Kubernetes with Helm
 
@@ -275,6 +282,7 @@ Key Helm values:
 | `config.*` | Application configuration (rendered into a ConfigMap) |
 | `secrets.databaseUrl` | PostgreSQL connection string (stored in a Secret) |
 | `chefKeys.keys` | Inline Chef API private keys (or use `chefKeys.existingSecret`) |
+| `chefWorkstation.enabled` | Enable init container that copies CookStyle/Kitchen from `chef/chef-workstation` image (default: `false`) |
 | `ingress.enabled` | Enable Kubernetes Ingress |
 | `postgresql.enabled` | Deploy bundled PostgreSQL (disable to use an external database) |
 | `persistence.enabled` | Enable PVC for git clone working directory |
@@ -321,6 +329,8 @@ make package-docker   # builds the container image locally
 make package-all      # all of the above
 ```
 
+When running from source, CookStyle and Test Kitchen are resolved from `PATH`. Install [Chef Workstation](https://docs.chef.io/workstation/install/) or `gem install cookstyle test-kitchen` to make them available.
+
 ## Configuration
 
 Configuration is stored in a YAML file. Sensitive values (passwords, key paths) can be overridden via environment variables.
@@ -336,7 +346,6 @@ See the [Configuration specification](.claude/specifications/configuration/Speci
 
 - Full YAML schema with all available settings
 - Environment variable override conventions
-- Notification channel configuration (webhooks, email, SMTP)
 - Export settings (async thresholds, retention)
 - Stale node and cookbook threshold settings
 - Validation rules
@@ -364,13 +373,11 @@ The application runs database migrations automatically on startup — no manual 
 
 ## Authentication
 
-The web UI supports three authentication providers, which can be used simultaneously:
+The web UI currently supports **local accounts** with bcrypt password hashing, session-based authentication, and role-based access control with **Admin** and **Viewer** roles.
 
-- **Local accounts** — built-in user management with bcrypt password hashing
-- **LDAP** — authenticate against an existing LDAP/Active Directory server
-- **SAML 2.0** — federated authentication with an external identity provider
+See the [Authentication specification](.claude/specifications/auth/Specification.md) for details.
 
-Role-based access control provides **Admin** and **Viewer** roles. See the [Authentication specification](.claude/specifications/auth/Specification.md) for details.
+> **Planned:** LDAP and SAML 2.0 authentication providers are defined in the configuration schema but not yet implemented.
 
 ## Security — Never Commit Secrets
 
@@ -403,6 +410,17 @@ The `.gitignore` file excludes common secret file types (`*.pem`, `*.key`, `.env
 ### Credential Management
 
 For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [Secrets Storage Specification](.claude/specifications/secrets-storage/Specification.md).
+
+## Roadmap
+
+The following features are defined in the specifications but not yet implemented:
+
+| Feature | Status |
+|---------|--------|
+| Webhook notifications (Slack, Teams, PagerDuty) | Configuration and validation in place; runtime dispatcher not yet built |
+| Email notifications (SMTP) | Configuration and validation in place; SMTP sender not yet built |
+| LDAP authentication | Configuration, validation, and credential storage in place; authenticator not yet built |
+| SAML 2.0 authentication | Configuration and validation in place; SP logic not yet built (endpoints return 501) |
 
 ## Specifications
 
