@@ -263,14 +263,45 @@ export interface NodeSnapshot {
   created_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Per-source cookbook compatibility verdict (from multi-source readiness evaluation)
+// ---------------------------------------------------------------------------
+
+export interface CookbookSourceVerdict {
+  source: string;           // "server_cookstyle", "git_cookstyle", "git_test_kitchen"
+  status: string;           // "compatible", "incompatible", "untested"
+  version?: string;         // server version or "HEAD" for git
+  commit_sha?: string;      // git HEAD SHA (git sources only)
+  complexity_score?: number;
+  complexity_label?: string;
+}
+
+export interface BlockingCookbook {
+  name: string;
+  version: string;
+  reason: string;           // "incompatible" or "untested"
+  source: string;           // primary source (backward compat)
+  complexity_score: number;
+  complexity_label: string;
+  verdicts?: CookbookSourceVerdict[];
+}
+
 export interface NodeReadiness {
   id: string;
   node_snapshot_id: string;
+  organisation_id: string;
+  node_name: string;
   target_chef_version: string;
-  ready: boolean;
-  blocking_cookbooks: string[] | null;
-  blocking_reasons: string[] | null;
+  is_ready: boolean;
+  all_cookbooks_compatible: boolean;
+  sufficient_disk_space: boolean | null;
+  blocking_cookbooks: BlockingCookbook[] | null;
+  available_disk_mb: number | null;
+  required_disk_mb: number | null;
+  stale_data: boolean;
+  evaluated_at: string;
   created_at: string;
+  updated_at: string;
 }
 
 export interface NodeDetailResponse {
