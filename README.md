@@ -393,15 +393,11 @@ make install-hooks
 
 The hook runs automatically on every `git commit` and blocks the commit if potential secrets are detected. To bypass it in exceptional cases (e.g. committing test fixtures with obviously fake keys), use `git commit --no-verify`.
 
-### CI Secret Scanning
+### Secret Scanning
 
-The CI pipeline runs [gitleaks](https://github.com/gitleaks/gitleaks) on every push and pull request. The configuration is in `.gitleaks.toml`. The build will fail if secrets are detected in any commit.
+The pre-commit hook (installed via `make install-hooks`) scans staged files for secret patterns including private keys, AWS credentials, GitHub tokens, database connection strings, and more. This catches secrets **before** they enter the repository.
 
-To run the same scan locally:
-
-```
-make scan-secrets
-```
+GitHub's built-in secret scanning provides an additional layer of protection at the repository level.
 
 ### .gitignore Protection
 
