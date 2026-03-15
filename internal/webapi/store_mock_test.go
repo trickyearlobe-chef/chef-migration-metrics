@@ -50,6 +50,7 @@ type mockStore struct {
 	ListGitRepoCookstyleResultsFn                       func(ctx context.Context, gitRepoID string) ([]datastore.GitRepoCookstyleResult, error)
 	GetGitRepoCookstyleResultFn                         func(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
 	ListGitRepoComplexitiesByRepoFn                     func(ctx context.Context, gitRepoID string) ([]datastore.GitRepoComplexity, error)
+	ListAllGitRepoComplexitiesFn                        func(ctx context.Context) ([]datastore.GitRepoComplexity, error)
 	GetGitRepoAutocorrectPreviewFn                      func(ctx context.Context, cookstyleResultID string) (*datastore.GitRepoAutocorrectPreview, error)
 	GetLatestGitRepoTestKitchenResultFn                 func(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
 	ListGitRepoTestKitchenResultsFn                     func(ctx context.Context, gitRepoID string) ([]datastore.GitRepoTestKitchenResult, error)
@@ -353,6 +354,13 @@ func (m *mockStore) GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, ta
 func (m *mockStore) ListGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) ([]datastore.GitRepoComplexity, error) {
 	if m.ListGitRepoComplexitiesByRepoFn != nil {
 		return m.ListGitRepoComplexitiesByRepoFn(ctx, gitRepoID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListAllGitRepoComplexities(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
+	if m.ListAllGitRepoComplexitiesFn != nil {
+		return m.ListAllGitRepoComplexitiesFn(ctx)
 	}
 	return nil, nil
 }

@@ -687,6 +687,186 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
 }
 
+// handleDashboardGitRepoCompatibility handles
+// GET /api/v1/dashboard/git-repo-compatibility — CookStyle compatibility
+// breakdown for git repos, aggregated per target Chef version.
+func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned cookbook keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned cookbook keys for git repo compatibility: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving owned cookbook keys for git repo compatibility: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
+	targetVersions := r.cfg.TargetChefVersions
+
+	type compatSummary struct {
+		TargetChefVersion string  `json:"target_chef_version"`
+		TotalRepos        int     `json:"total_repos"`
+		CompatibleRepos   int     `json:"compatible_repos"`
+		IncompatibleRepos int     `json:"incompatible_repos"`
+		UntestedRepos     int     `json:"untested_repos"`
+		CompatiblePercent float64 `json:"compatible_percent"`
+	}
+
+	// Build an allowed-names set for ownership filtering (nil = no filter).
+	var allowedNames map[string]bool
+	if ownerFilterActive && ownedKeys != nil {
+		gitRepos, err := r.db.ListGitRepos(ctx)
+		if err != nil {
+			r.logf("ERROR", "listing git repos for compatibility ownership filter: %v", err)
+			WriteInternalError(w, "Failed to compute git repo compatibility.")
+			return
+		}
+		if of.Unowned {
+			allNames := make(map[string]bool, len(gitRepos))
+			for _, gr := range gitRepos {
+				allNames[gr.Name] = true
+			}
+			allowedNames = make(map[string]bool)
+			for name := range allNames {
+				if !ownedKeys[name] {
+					allowedNames[name] = true
+				}
+			}
+		} else {
+			allowedNames = ownedKeys
+		}
+	}
+
+	// Compute compatibility from git repo complexity records.
+	type perVersion struct {
+		total        int
+		compatible   int
+		incompatible int
+		untested     int
+	}
+	byTV := make(map[string]*perVersion)
+	for _, tv := range targetVersions {
+		byTV[tv] = &perVersion{}
+	}
+
+	type tvName struct {
+		tv   string
+		name string
+	}
+	seen := make(map[tvName]bool)
+
+	// Load all git repos and build a name-by-ID lookup.
+	gitRepos, err := r.db.ListGitRepos(ctx)
+	if err != nil {
+		r.logf("ERROR", "listing git repos for compatibility: %v", err)
+		WriteInternalError(w, "Failed to compute git repo compatibility.")
+		return
+	}
+	repoNameByID := make(map[string]string, len(gitRepos))
+	for _, gr := range gitRepos {
+		repoNameByID[gr.ID] = gr.Name
+	}
+
+	// Load all git repo complexities.
+	complexities, err := r.db.ListAllGitRepoComplexities(ctx)
+	if err != nil {
+		r.logf("ERROR", "listing git repo complexities for compatibility: %v", err)
+		WriteInternalError(w, "Failed to compute git repo compatibility.")
+		return
+	}
+
+	for _, cc := range complexities {
+		repoName := repoNameByID[cc.GitRepoID]
+		if repoName == "" {
+			continue
+		}
+		if allowedNames != nil && !allowedNames[repoName] {
+			continue
+		}
+		pv, ok := byTV[cc.TargetChefVersion]
+		if !ok {
+			continue
+		}
+		key := tvName{tv: cc.TargetChefVersion, name: repoName}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		pv.total++
+		if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+			pv.compatible++
+		} else {
+			pv.incompatible++
+		}
+	}
+
+	// Count untested: git repos with no complexity record for a given
+	// target version.
+	for _, gr := range gitRepos {
+		if allowedNames != nil && !allowedNames[gr.Name] {
+			continue
+		}
+		for _, tv := range targetVersions {
+			key := tvName{tv: tv, name: gr.Name}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			pv := byTV[tv]
+			pv.total++
+			pv.untested++
+		}
+	}
+
+	var summaries []compatSummary
+	for _, tv := range targetVersions {
+		pv := byTV[tv]
+		pct := 0.0
+		if pv.total > 0 {
+			pct = float64(pv.compatible) / float64(pv.total) * 100
+		}
+		summaries = append(summaries, compatSummary{
+			TargetChefVersion: tv,
+			TotalRepos:        pv.total,
+			CompatibleRepos:   pv.compatible,
+			IncompatibleRepos: pv.incompatible,
+			UntestedRepos:     pv.untested,
+			CompatiblePercent: pct,
+		})
+	}
+
+	if summaries == nil {
+		summaries = []compatSummary{}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
+}
+
 // handleDashboardComplexityTrend handles
 // GET /api/v1/dashboard/complexity/trend.
 // Returns aggregate cookbook complexity scores over time by examining
@@ -831,6 +1011,118 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": points})
+}
+
+// handleDashboardPlatformDistribution handles
+// GET /api/v1/dashboard/platform-distribution.
+// Returns a count of nodes grouped by their OS platform (combining platform
+// and platform_version) across all organisations.
+func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned node keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned node keys for platform distribution: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+			if err != nil {
+				r.logf("ERROR", "resolving owned node keys for platform distribution: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
+	orgs, err := r.db.ListOrganisations(ctx)
+	if err != nil {
+		r.logf("ERROR", "listing organisations for platform distribution: %v", err)
+		WriteInternalError(w, "Failed to compute platform distribution.")
+		return
+	}
+
+	counts := make(map[string]int)
+	totalNodes := 0
+	for _, org := range orgs {
+		nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
+		if err != nil {
+			r.logf("WARN", "listing nodes for org %s in platform distribution: %v", org.Name, err)
+			continue
+		}
+		for _, n := range nodes {
+			if ownerFilterActive && ownedKeys != nil {
+				if of.Unowned {
+					if ownedKeys[n.NodeName] {
+						continue
+					}
+				} else {
+					if !ownedKeys[n.NodeName] {
+						continue
+					}
+				}
+			}
+			p := n.Platform
+			if p == "" {
+				p = "unknown"
+			}
+			if n.PlatformVersion != "" {
+				p = p + " " + n.PlatformVersion
+			}
+			counts[p]++
+			totalNodes++
+		}
+	}
+
+	type platformCount struct {
+		Platform string  `json:"platform"`
+		Count    int     `json:"count"`
+		Percent  float64 `json:"percent"`
+	}
+
+	result := make([]platformCount, 0, len(counts))
+	for p, c := range counts {
+		pct := 0.0
+		if totalNodes > 0 {
+			pct = float64(c) / float64(totalNodes) * 100
+		}
+		result = append(result, platformCount{
+			Platform: p,
+			Count:    c,
+			Percent:  pct,
+		})
+	}
+
+	// Sort by count descending, then platform ascending for stability.
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count != result[j].Count {
+			return result[i].Count > result[j].Count
+		}
+		return result[i].Platform < result[j].Platform
+	})
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"total_nodes":  totalNodes,
+		"distribution": result,
+	})
 }
 
 // handleDashboardCookbookDownloadStatus handles

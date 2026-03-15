@@ -85,6 +85,21 @@ export interface VersionDistributionResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard — Platform Distribution
+// ---------------------------------------------------------------------------
+
+export interface PlatformCount {
+  platform: string;
+  count: number;
+  percent: number;
+}
+
+export interface PlatformDistributionResponse {
+  total_nodes: number;
+  distribution: PlatformCount[];
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard — Version Distribution Trend
 // ---------------------------------------------------------------------------
 
@@ -185,6 +200,19 @@ export interface CookbookCompatibilitySummary {
 
 export interface CookbookCompatibilityResponse {
   data: CookbookCompatibilitySummary[];
+}
+
+export interface GitRepoCompatibilitySummary {
+  target_chef_version: string;
+  total_repos: number;
+  compatible_repos: number;
+  incompatible_repos: number;
+  untested_repos: number;
+  compatible_percent: number;
+}
+
+export interface GitRepoCompatibilityResponse {
+  data: GitRepoCompatibilitySummary[];
 }
 
 // ---------------------------------------------------------------------------

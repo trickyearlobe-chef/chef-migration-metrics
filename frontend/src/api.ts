@@ -13,12 +13,14 @@ import type {
   VersionResponse,
   OrganisationsResponse,
   VersionDistributionResponse,
+  PlatformDistributionResponse,
   VersionDistributionTrendResponse,
   ReadinessResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
   StaleTrendResponse,
   CookbookCompatibilityResponse,
+  GitRepoCompatibilityResponse,
   CookbookRemediationResponse,
   NodeListResponse,
   NodeDetailResponse,
@@ -196,6 +198,14 @@ export function fetchVersionDistribution(
   );
 }
 
+export function fetchPlatformDistribution(
+  organisation?: string,
+): Promise<PlatformDistributionResponse> {
+  return apiFetch<PlatformDistributionResponse>(
+    buildUrl("/dashboard/platform-distribution", { organisation }),
+  );
+}
+
 export function fetchReadiness(
   organisation?: string,
 ): Promise<ReadinessResponse> {
@@ -241,6 +251,14 @@ export function fetchCookbookCompatibility(
 ): Promise<CookbookCompatibilityResponse> {
   return apiFetch<CookbookCompatibilityResponse>(
     buildUrl("/dashboard/cookbook-compatibility", { organisation }),
+  );
+}
+
+export function fetchGitRepoCompatibility(
+  organisation?: string,
+): Promise<GitRepoCompatibilityResponse> {
+  return apiFetch<GitRepoCompatibilityResponse>(
+    buildUrl("/dashboard/git-repo-compatibility", { organisation }),
   );
 }
 
