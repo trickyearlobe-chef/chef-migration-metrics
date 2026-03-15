@@ -333,9 +333,13 @@ func collapseCookbookSummaries(cookbooks []cookbookSummary) ([]cookbookSummary, 
 	seen := make(map[string]bool)
 	collapsed := make([]cookbookSummary, 0, len(cookbooks))
 
-	// First pass: count all versions per cookbook name.
+	// First pass: count server cookbook versions per cookbook name.
+	// Git repos are not versioned artifacts, so they are excluded from the
+	// version count to avoid inflating numbers on the list page.
 	for _, cb := range cookbooks {
-		versionCounts[cb.Name]++
+		if cb.Source == "chef_server" {
+			versionCounts[cb.Name]++
+		}
 	}
 
 	// Second pass: keep only the first occurrence of each name.
