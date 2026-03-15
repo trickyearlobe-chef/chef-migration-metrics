@@ -23,6 +23,7 @@ const adminNavItems = [
 export function AppLayout() {
   const { user, isAdmin, logout } = useAuth();
 
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar */}

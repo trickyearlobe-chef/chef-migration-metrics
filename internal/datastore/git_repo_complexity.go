@@ -12,23 +12,23 @@ import (
 
 // GitRepoComplexity represents a row in the git_repo_complexity table.
 type GitRepoComplexity struct {
-	ID                   string
-	GitRepoID            string
-	TargetChefVersion    string
-	ComplexityScore      int
-	ComplexityLabel      string
-	ErrorCount           int
-	DeprecationCount     int
-	CorrectnessCount     int
-	ModernizeCount       int
-	AutoCorrectableCount int
-	ManualFixCount       int
-	AffectedNodeCount    int
-	AffectedRoleCount    int
-	AffectedPolicyCount  int
-	EvaluatedAt          time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                   string    `json:"id"`
+	GitRepoID            string    `json:"git_repo_id"`
+	TargetChefVersion    string    `json:"target_chef_version"`
+	ComplexityScore      int       `json:"complexity_score"`
+	ComplexityLabel      string    `json:"complexity_label"`
+	ErrorCount           int       `json:"error_count"`
+	DeprecationCount     int       `json:"deprecation_count"`
+	CorrectnessCount     int       `json:"correctness_count"`
+	ModernizeCount       int       `json:"modernize_count"`
+	AutoCorrectableCount int       `json:"auto_correctable_count"`
+	ManualFixCount       int       `json:"manual_fix_count"`
+	AffectedNodeCount    int       `json:"affected_node_count"`
+	AffectedRoleCount    int       `json:"affected_role_count"`
+	AffectedPolicyCount  int       `json:"affected_policy_count"`
+	EvaluatedAt          time.Time `json:"evaluated_at"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 // UpsertGitRepoComplexityParams contains the fields needed to insert or
