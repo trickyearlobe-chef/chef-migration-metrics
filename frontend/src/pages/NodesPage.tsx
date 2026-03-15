@@ -11,11 +11,80 @@ import {
   fetchFilterTargetChefVersions,
   type NodeFilterQuery,
 } from "../api";
-import type { NodeListItem, Pagination as PaginationType, ExportFilters } from "../types";
+import type { NodeListItem, NodeReadinessSummary, Pagination as PaginationType, ExportFilters } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StaleBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
+
+// ---------------------------------------------------------------------------
+// Readiness badges for the node list table
+// ---------------------------------------------------------------------------
+
+function ReadinessBadges({ readiness }: { readiness?: NodeReadinessSummary[] }) {
+  if (!readiness || readiness.length === 0) {
+    return <span className="text-xs text-gray-300">—</span>;
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {readiness.map((r) => (
+        <div key={r.target_chef_version} className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-400 w-10 shrink-0">{r.target_chef_version}</span>
+          <CookbookBadge r={r} />
+          <DiskBadge r={r} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CookbookBadge({ r }: { r: NodeReadinessSummary }) {
+  if (r.all_cookbooks_compatible) {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700" title="All cookbooks compatible">
+        📦 ✓
+      </span>
+    );
+  }
+  const count = r.blocking_cookbook_count;
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700" title={`${count} blocking cookbook${count !== 1 ? "s" : ""}`}>
+      📦 {count}
+    </span>
+  );
+}
+
+function DiskBadge({ r }: { r: NodeReadinessSummary }) {
+  if (r.sufficient_disk_space === null || r.sufficient_disk_space === undefined) {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500" title="Disk space unknown">
+        💾 ?
+      </span>
+    );
+  }
+  if (r.sufficient_disk_space) {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700" title="Sufficient disk space">
+        💾 ✓
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700" title="Insufficient disk space">
+      💾 ✗
+    </span>
+  );
+}
+
+function formatOhaiTime(ohaiTime?: number): string {
+  if (!ohaiTime) return "—";
+  try {
+    return new Date(ohaiTime * 1000).toLocaleString();
+  } catch {
+    return "—";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Nodes list page — paginated table from GET /api/v1/nodes with filter
@@ -268,7 +337,8 @@ export function NodesPage() {
                     <th>Chef Version</th>
                     <th>Platform</th>
                     <th>Status</th>
-                    <th>Collected</th>
+                    <th>Ohai Time</th>
+                    <th>Readiness</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -303,7 +373,10 @@ export function NodesPage() {
                         <StaleBadge isStale={node.is_stale} size="sm" />
                       </td>
                       <td className="text-xs text-gray-400">
-                        {new Date(node.collected_at).toLocaleString()}
+                        {formatOhaiTime(node.ohai_time)}
+                      </td>
+                      <td>
+                        <ReadinessBadges readiness={node.readiness} />
                       </td>
                     </tr>
                   ))}
