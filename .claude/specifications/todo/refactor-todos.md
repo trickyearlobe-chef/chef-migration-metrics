@@ -481,6 +481,128 @@ Individual commits on a single branch, in dependency order:
 
 ---
 
+## Multi-Source Cookbook Readiness Enhancement
+
+### Motivation
+
+The current readiness evaluator uses a **short-circuit waterfall** to determine cookbook compatibility: it checks git repo Test Kitchen first, and if that returns any result (pass or fail), it stops. If no TK result exists, it checks server cookbook CookStyle, and stops. It never checks **both** the server version and the git version, which means:
+
+- If the server cookbook version is incompatible but a fixed version exists in git, the operator has no visibility into this.
+- Git repo CookStyle results are never checked by the readiness evaluator at all — only Test Kitchen results from git are considered.
+- The blocking reason gives no guidance on what action to take (upload git version? fix the cookbook? run tests?).
+
+### Design
+
+Replace the short-circuit approach with a **multi-source evaluation** that checks all available sources and records per-source verdicts.
+
+#### New Types
+
+```go
+// CookbookSourceVerdict records the compatibility result from one source.
+type CookbookSourceVerdict struct {
+    Source          string `json:"source"`                      // "server_cookstyle", "git_cookstyle", "git_test_kitchen"
+    Status          string `json:"status"`                      // "compatible", "incompatible", "untested"
+    Version         string `json:"version,omitempty"`           // server version or "HEAD" for git
+    CommitSHA       string `json:"commit_sha,omitempty"`        // git HEAD SHA (git sources only)
+    ComplexityScore int    `json:"complexity_score,omitempty"`
+    ComplexityLabel string `json:"complexity_label,omitempty"`
+}
+
+// BlockingCookbook — updated to include per-source verdicts.
+type BlockingCookbook struct {
+    Name            string                  `json:"name"`
+    Version         string                  `json:"version"`            // version on the node
+    Reason          string                  `json:"reason"`             // overall: "incompatible" or "untested"
+    Source          string                  `json:"source"`             // primary source (backward compat)
+    ComplexityScore int                     `json:"complexity_score"`
+    ComplexityLabel string                  `json:"complexity_label"`
+    Verdicts        []CookbookSourceVerdict `json:"verdicts"`           // NEW: all sources checked
+}
+```
+
+#### Algorithm Change
+
+For each cookbook on a node, check **all three sources** independently:
+
+1. **Git repo Test Kitchen** — query `GetLatestGitRepoTestKitchenResult(gitRepoID, targetVersion)` → record verdict
+2. **Git repo CookStyle** — query `GetGitRepoCookstyleResult(gitRepoID, targetVersion)` → record verdict (currently **not queried** by readiness evaluator)
+3. **Server cookbook CookStyle** — query `GetServerCookbookCookstyleResult(cookbookID, targetVersion)` → record verdict
+
+Overall status:
+- **Compatible** if **any** source says compatible (a compatible version exists somewhere)
+- **Incompatible** if all tested sources say incompatible (none compatible)
+- **Untested** if no sources have results
+
+#### Readiness Policy
+
+If the server version is incompatible but the git version is compatible, the node is considered **ready** — a compatible version exists and can be uploaded to the Chef Server. The per-source verdicts make it clear what action is needed.
+
+#### Interface Change
+
+Add `GetGitRepoCookstyleResult` to the `ReadinessDataStore` interface (already exists on `datastore.DB`, just not in the interface):
+
+```go
+type ReadinessDataStore interface {
+    // ... existing methods ...
+    GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
+}
+```
+
+#### Frontend Changes
+
+Update the node detail page's **Upgrade Readiness** section to render per-source verdicts for each blocking cookbook:
+
+- Show the cookbook name, node version, and overall verdict
+- Expandable panel listing each source verdict with status icon and version/commit info
+- Action hint when server is incompatible but git is compatible: *"A compatible version exists in git — upload to Chef Server to resolve."*
+- Update `NodeReadiness` TypeScript type to include structured `blocking_cookbooks` with `verdicts` array
+
+### Commit Plan
+
+#### Commit 27 — Analysis: Multi-source cookbook readiness evaluation
+- [ ] Add `CookbookSourceVerdict` type to `internal/analysis/readiness.go`
+- [ ] Add `Verdicts` field to `BlockingCookbook` struct
+- [ ] Add `GetGitRepoCookstyleResult` to `ReadinessDataStore` interface
+- [ ] Refactor `checkCookbookCompatibility` to check all 3 sources and collect verdicts
+- [ ] Update overall status logic: compatible if any source is compatible
+- [ ] Update `evaluateCookbooks` to populate verdicts on each blocking entry
+- [ ] Update tests in `internal/analysis/readiness_test.go`
+
+#### Commit 28 — Web API: Return enriched readiness data
+- [ ] Verify `handleNodeDetail` returns the new `verdicts` field (already passes through `blocking_cookbooks` JSONB — should Just Work if the evaluator populates it)
+- [ ] Update any readiness-related API handlers that transform blocking cookbook data
+
+#### Commit 29 — Frontend: Per-source verdicts on node detail page
+- [ ] Update `NodeReadiness` TypeScript type to include structured `blocking_cookbooks` with per-source `verdicts`
+- [ ] Update `NodeDetailPage.tsx` readiness section to render per-source verdicts
+- [ ] Add expandable verdict panel with status icons and action hints
+- [ ] Add links from verdict entries to cookbook/git-repo detail pages
+
+#### Commit 30 — Documentation
+- [ ] Update `.claude/specifications/analysis/Specification.md` — multi-source algorithm ✅ (already done)
+- [ ] Update `.claude/specifications/web-api/Specification.md` — node detail response with verdicts ✅ (already done)
+- [ ] Update `.claude/specifications/visualisation/Specification.md` — per-source verdict display ✅ (already done)
+
+### Files Affected
+
+| File | Change |
+|------|--------|
+| `internal/analysis/readiness.go` | New types, refactored `checkCookbookCompatibility`, updated `BlockingCookbook` |
+| `internal/analysis/readiness_test.go` | Updated tests for multi-source evaluation |
+| `frontend/src/types.ts` | Updated `NodeReadiness` with structured blocking cookbooks + verdicts |
+| `frontend/src/pages/NodeDetailPage.tsx` | Per-source verdict rendering, action hints |
+
+### Risks & Mitigation
+
+| Risk | Mitigation |
+|------|-----------|
+| Backward compatibility of `blocking_cookbooks` JSONB | Keep `reason` and `source` fields for backward compat; `verdicts` is additive |
+| Performance — 3 DB queries per cookbook per node | Queries are simple index lookups; pre-load maps where possible (same pattern as existing code) |
+| Policy change — "compatible if any source compatible" may surprise users | Verdicts make it explicit; action hints explain what to do |
+| `ReadinessDataStore` interface change | Only adds one method; mock update is trivial |
+
+---
+
 ## New API Endpoints
 
 | Endpoint | Method | Description |
@@ -497,7 +619,9 @@ Individual commits on a single branch, in dependency order:
 | `/api/v1/git-repos/:name/committers` | GET | List committers |
 | `/api/v1/git-repos/:name/committers/assign` | POST | Assign committers as owners |
 | `/api/v1/admin/rescan-all-cookstyle` | POST | Hits both result tables |
-| `/api/v1/dashboard/cookbook-compatibility` | GET | Aggregates from both sources |
+| `/api/v1/dashboard/cookbook-compatibility` | GET | Server cookbook CookStyle compatibility per target version |
+| `/api/v1/dashboard/git-repo-compatibility` | GET | Git repo CookStyle compatibility per target version |
+| `/api/v1/dashboard/platform-distribution` | GET | Node OS platform distribution |
 | `/api/v1/dashboard/cookbook-download-status` | GET | Server cookbooks only (from `/api/v1/cookbooks`) |
 
 ---

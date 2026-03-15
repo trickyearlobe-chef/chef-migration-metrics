@@ -563,9 +563,32 @@ Returns full detail for a single node, including readiness status per target ver
           "type": "incompatible_cookbook",
           "cookbook_name": "nginx",
           "cookbook_version": "5.1.0",
-          "detail": "Test Kitchen tests failed against Chef Client 19.0.0",
+          "detail": "Server version incompatible; git version compatible — upload git version to Chef Server",
           "complexity_score": 30,
-          "complexity_label": "medium"
+          "complexity_label": "medium",
+          "verdicts": [
+            {
+              "source": "git_test_kitchen",
+              "status": "compatible",
+              "version": "HEAD",
+              "commit_sha": "a1b2c3d4e5f6"
+            },
+            {
+              "source": "git_cookstyle",
+              "status": "compatible",
+              "version": "HEAD",
+              "commit_sha": "a1b2c3d4e5f6",
+              "complexity_score": 0,
+              "complexity_label": "low"
+            },
+            {
+              "source": "server_cookstyle",
+              "status": "incompatible",
+              "version": "5.1.0",
+              "complexity_score": 30,
+              "complexity_label": "medium"
+            }
+          ]
         }
       ]
     }

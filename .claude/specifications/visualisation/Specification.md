@@ -155,6 +155,30 @@ All dashboard views must support filtering by the following dimensions. Filters 
 - From the remediation guidance view → cookbook detail view with full deprecation documentation and auto-correct diff
 - From a blocking cookbook in the node detail → remediation guidance for that specific cookbook
 
+### Node Detail — Per-Source Compatibility Verdicts
+
+The node detail page's **Upgrade Readiness** section must display per-source compatibility verdicts for each blocking (or resolved) cookbook. This gives operators actionable insight into which source is compatible and what remediation steps to take.
+
+**Display requirements:**
+
+- For each blocking cookbook, show the cookbook name, the version running on the node, and the overall verdict (incompatible / untested).
+- Below the overall verdict, render an expandable **source verdicts** panel listing each source that was checked:
+
+  | Source | Verdict Display | Action Hint |
+  |--------|----------------|-------------|
+  | Git Test Kitchen: Compatible | Green — "TK Pass (HEAD `a1b2c3d`)" | None needed |
+  | Git Test Kitchen: Incompatible | Red — "TK Fail (HEAD `a1b2c3d`)" | Fix cookbook source |
+  | Git CookStyle: Compatible | Amber — "CookStyle Pass (HEAD)" | Consider adding Test Kitchen |
+  | Git CookStyle: Incompatible | Red — "CookStyle Fail (HEAD)" | Fix cookbook source |
+  | Server CookStyle: Compatible | Amber — "CookStyle Pass (v5.1.0)" | Upload to server if git is also compatible |
+  | Server CookStyle: Incompatible | Red — "CookStyle Fail (v5.1.0)" | Upload fixed version from git |
+  | Any source: Untested | Grey — "Not tested" | Run CookStyle / Test Kitchen |
+
+- When the **server version is incompatible but the git version is compatible**, show a prominent action hint: *"A compatible version exists in git — upload to Chef Server to resolve."*
+- When **all sources are incompatible**, show: *"All sources report incompatibility — remediation required."*
+- When **no sources have been tested**, show: *"No CookStyle or Test Kitchen results — run analysis to determine compatibility."*
+- Complexity score and label should be shown from the highest-confidence source that has data (Test Kitchen > CookStyle).
+
 ---
 
 ## Ownership Views
