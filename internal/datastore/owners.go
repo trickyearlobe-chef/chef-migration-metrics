@@ -834,16 +834,15 @@ func (db *DB) getOwnerGitRepoSummary(ctx context.Context, q queryable, ownerName
 		return summary, nil
 	}
 
-	// Step 2: For each git repo, find cookbooks by git_repo_url and check
+	// Step 2: For each git repo, check git_repo_complexity
 	// whether any has a failing complexity record.
 	for _, repoURL := range repoURLs {
 		const compatQuery = `
-			SELECT COALESCE(MIN(cc.error_count), -1)
-			FROM cookbooks c
-			LEFT JOIN cookbook_complexity cc
-			       ON cc.cookbook_id = c.id AND cc.target_chef_version = $2
-			WHERE c.git_repo_url = $1
-			  AND c.source = 'git'
+			SELECT COALESCE(MIN(grc.error_count), -1)
+			FROM git_repos gr
+			LEFT JOIN git_repo_complexity grc
+			       ON grc.git_repo_id = gr.id AND grc.target_chef_version = $2
+			WHERE gr.git_repo_url = $1
 		`
 		var minErrors int
 		err := q.QueryRowContext(ctx, compatQuery, repoURL, targetChefVersion).Scan(&minErrors)

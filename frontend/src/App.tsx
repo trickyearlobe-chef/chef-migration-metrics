@@ -10,6 +10,9 @@ import { CookbooksPage } from "./pages/CookbooksPage";
 import { CookbookDetailPage } from "./pages/CookbookDetailPage";
 import { CookbookCommittersPage } from "./pages/CookbookCommittersPage";
 import { CookbookRemediationPage } from "./pages/CookbookRemediationPage";
+import { GitReposPage } from "./pages/GitReposPage";
+import { GitRepoDetailPage } from "./pages/GitRepoDetailPage";
+import { GitRepoRemediationPage } from "./pages/GitRepoRemediationPage";
 import { RemediationPage } from "./pages/RemediationPage";
 import { DependencyGraphPage } from "./pages/DependencyGraphPage";
 import { LogsPage } from "./pages/LogsPage";
@@ -110,6 +113,13 @@ export function App() {
             <Route
               path="/cookbooks/:name/:version/remediation"
               element={<CookbookRemediationPage />}
+            />
+            <Route path="/git-repos" element={<GitReposPage />} />
+            <Route path="/git-repos/:name" element={<GitRepoDetailPage />} />
+            <Route path="/git-repos/:name/committers" element={<CookbookCommittersPage />} />
+            <Route
+              path="/git-repos/:name/:version/remediation"
+              element={<GitRepoRemediationPage />}
             />
             <Route path="/remediation" element={<RemediationPage />} />
             <Route path="/ownership" element={<OwnersPage />} />

@@ -373,11 +373,12 @@ func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, enti
 }
 
 func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, cookbookName, organisationID string) ([]OwnershipLookupResult, error) {
-	// Find the git repo URL for this cookbook.
+	// Find the git repo URL from the git_repos table.
 	var gitRepoURL sql.NullString
 	err := q.QueryRowContext(ctx, `
-		SELECT git_repo_url FROM cookbooks
-		WHERE name = $1 AND source = 'git' AND git_repo_url IS NOT NULL
+		SELECT git_repo_url FROM git_repos
+		WHERE name = $1 AND git_repo_url IS NOT NULL
+		ORDER BY last_fetched_at DESC NULLS LAST
 		LIMIT 1
 	`, cookbookName).Scan(&gitRepoURL)
 	if err != nil || !gitRepoURL.Valid {

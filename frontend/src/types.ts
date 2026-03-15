@@ -291,6 +291,18 @@ export interface CookbookListItem {
 
 export type CookbookListResponse = PaginatedResponse<CookbookListItem>;
 
+export interface GitRepoListItem {
+  id: string;
+  name: string;
+  git_repo_url: string;
+  head_commit_sha?: string;
+  default_branch?: string;
+  has_test_suite: boolean;
+  last_fetched_at?: string;
+}
+
+export type GitRepoListResponse = PaginatedResponse<GitRepoListItem>;
+
 // ---------------------------------------------------------------------------
 // Cookbook detail
 // ---------------------------------------------------------------------------
@@ -344,9 +356,27 @@ export interface CookbookVersionDetail {
   test_kitchen?: TestKitchenResult[];
 }
 
+export interface ServerCookbookVersionDetail {
+  cookbook: CookbookListItem;
+  cookstyle?: CookstyleResult[];
+}
+
+export interface GitRepoDetail {
+  git_repo: GitRepoListItem;
+  cookstyle?: CookstyleResult[];
+  test_kitchen?: TestKitchenResult[];
+  complexity?: CookbookComplexity[];
+}
+
 export interface CookbookDetailResponse {
   name: string;
-  data: CookbookVersionDetail[];
+  server_cookbooks: ServerCookbookVersionDetail[];
+  git_repos: GitRepoDetail[];
+}
+
+export interface GitRepoDetailResponse {
+  name: string;
+  git_repos: GitRepoDetail[];
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +680,20 @@ export interface CookbookRemediationResponse {
   autocorrect_preview: AutocorrectPreview;
 }
 
+export interface GitRepoRemediationResponse {
+  git_repo_name: string;
+  version: string;
+  target_chef_version: string;
+  source: string;
+  complexity_score: number;
+  complexity_label: ComplexityLabel | string;
+  cookstyle_passed: boolean | null;
+  scanned_at: string;
+  statistics: RemediationStatistics;
+  offense_groups: OffenseGroup[];
+  autocorrect_preview: AutocorrectPreview;
+}
+
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
@@ -870,8 +914,9 @@ export interface CommitterAssignResponse {
 }
 
 export interface ResetGitCookbookResponse {
-  cookbook_name: string;
-  cookbooks_deleted: number;
+  cookbook_name?: string;
+  git_repo_name?: string;
+  repos_deleted: number;
   committers_deleted: number;
   repo_urls_removed: string[];
   local_clone_removed: boolean;

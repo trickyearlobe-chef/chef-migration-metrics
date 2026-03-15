@@ -159,9 +159,9 @@ func (db *DB) replaceCommittersForRepo(ctx context.Context, gitRepoURL string, c
 	})
 }
 
-// GetGitRepoURLForCookbook looks up the git_repo_url from the cookbooks table
-// for a cookbook with source = 'git'. Returns ErrNotFound if no git-sourced
-// cookbook exists with that name.
+// GetGitRepoURLForCookbook looks up the git_repo_url from the git_repos table
+// for a git repo with the given cookbook name. Returns ErrNotFound if no
+// git repo exists with that name.
 func (db *DB) GetGitRepoURLForCookbook(ctx context.Context, cookbookName string) (string, error) {
 	return db.getGitRepoURLForCookbook(ctx, db.q(), cookbookName)
 }
@@ -169,9 +169,9 @@ func (db *DB) GetGitRepoURLForCookbook(ctx context.Context, cookbookName string)
 func (db *DB) getGitRepoURLForCookbook(ctx context.Context, q queryable, cookbookName string) (string, error) {
 	const query = `
 		SELECT git_repo_url
-		FROM cookbooks
-		WHERE name = $1 AND source = 'git'
-		ORDER BY last_fetched_at DESC
+		FROM git_repos
+		WHERE name = $1
+		ORDER BY last_fetched_at DESC NULLS LAST
 		LIMIT 1
 	`
 
@@ -179,13 +179,13 @@ func (db *DB) getGitRepoURLForCookbook(ctx context.Context, q queryable, cookboo
 	err := q.QueryRowContext(ctx, query, cookbookName).Scan(&repoURL)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("datastore: git cookbook %q: %w", cookbookName, ErrNotFound)
+			return "", fmt.Errorf("datastore: git repo %q: %w", cookbookName, ErrNotFound)
 		}
-		return "", fmt.Errorf("datastore: looking up git repo URL for cookbook %q: %w", cookbookName, err)
+		return "", fmt.Errorf("datastore: looking up git repo URL for git repo %q: %w", cookbookName, err)
 	}
 
 	if !repoURL.Valid || repoURL.String == "" {
-		return "", fmt.Errorf("datastore: git cookbook %q has no repo URL: %w", cookbookName, ErrNotFound)
+		return "", fmt.Errorf("datastore: git repo %q has no repo URL: %w", cookbookName, ErrNotFound)
 	}
 
 	return repoURL.String, nil

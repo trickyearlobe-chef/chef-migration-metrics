@@ -418,8 +418,8 @@ func BuildGitCookbookURLs(cookbookName string, gitBaseURLs []string) []string {
 //  1. Determines which active cookbook names should be checked for git repos
 //     by building candidate URLs from the configured git_base_urls.
 //  2. For each candidate, attempts a clone or pull via GitCookbookManager.
-//  3. On success, upserts the cookbook record with source = 'git', recording
-//     the HEAD commit SHA, default branch, and test suite presence.
+//  3. On success, upserts a row in the git_repos table, recording the HEAD
+//     commit SHA, default branch, and test suite presence.
 //  4. On failure, logs the error and continues — git failures are non-fatal.
 //
 // The activeCookbookNames set comes from the node collection phase and

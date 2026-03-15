@@ -247,6 +247,12 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/cookbooks/", r.handleCookbookDetail)
 
 	// -----------------------------------------------------------------
+	// Git repo endpoints (viewer)
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/git-repos", r.handleGitRepos)
+	r.protect("/api/v1/git-repos/", r.handleGitRepoDetail)
+
+	// -----------------------------------------------------------------
 	// Remediation endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/remediation/priority", r.handleRemediationPriority)
