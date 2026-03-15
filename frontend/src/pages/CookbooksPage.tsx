@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
-import { fetchCookbooks, type CookbookFilterQuery } from "../api";
+import {
+  fetchCookbooks,
+  fetchFilterTargetChefVersions,
+  type CookbookFilterQuery,
+} from "../api";
 import type { CookbookListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
 
 // ---------------------------------------------------------------------------
 // Cookbooks list page — paginated table from GET /api/v1/cookbooks showing
-// name, version count, active/stale indicators, download status.
+// name, version count, active/stale indicators, compatibility, and download
+// status.
 //
 // Server cookbooks are downloaded from the Chef Infra Server and do not
 // have test suites (Test Kitchen is only applicable to git repos, which
@@ -26,8 +31,26 @@ export function CookbooksPage() {
   // Filters
   const [active, setActive] = useState("");
   const [nameFilter, setNameFilter] = useState("");
+  const [compatibility, setCompatibility] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 50;
+
+  // Target Chef versions loaded from backend config.
+  const [targetVersions, setTargetVersions] = useState<string[]>([]);
+  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>("");
+
+  // Load target Chef versions once on mount.
+  useEffect(() => {
+    fetchFilterTargetChefVersions()
+      .then((res) => {
+        const versions = res.data ?? [];
+        setTargetVersions(versions);
+        if (versions.length > 0 && !selectedTargetVersion) {
+          setSelectedTargetVersion(versions[0]);
+        }
+      })
+      .catch(() => setTargetVersions([]));
+  }, []); // intentionally run only on mount
 
   const load = useCallback(() => {
     setLoading(true);
@@ -40,6 +63,8 @@ export function CookbooksPage() {
     if (selectedOrg) filters.organisation = selectedOrg;
     if (active) filters.active = active;
     if (nameFilter) filters.name = nameFilter;
+    if (compatibility) filters.compatibility = compatibility;
+    if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
 
     fetchCookbooks(filters)
       .then((res) => {
@@ -48,10 +73,10 @@ export function CookbooksPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, active, nameFilter, page]);
+  }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion, page]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter]);
+  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion]);
 
   return (
     <div className="space-y-4">
@@ -81,6 +106,33 @@ export function CookbooksPage() {
             <option value="false">Inactive</option>
           </select>
         </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Compatibility</label>
+          <select
+            value={compatibility}
+            onChange={(e) => setCompatibility(e.target.value)}
+            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">All</option>
+            <option value="compatible">Compatible</option>
+            <option value="incompatible">Incompatible</option>
+            <option value="untested">Untested</option>
+          </select>
+        </div>
+        {targetVersions.length > 1 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Target Version</label>
+            <select
+              value={selectedTargetVersion}
+              onChange={(e) => setSelectedTargetVersion(e.target.value)}
+              className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {targetVersions.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -97,6 +149,7 @@ export function CookbooksPage() {
                   <tr>
                     <th>Name</th>
                     <th>Versions</th>
+                    <th>Compatibility</th>
                     <th>Status</th>
                     <th>Download</th>
                   </tr>
@@ -119,6 +172,12 @@ export function CookbooksPage() {
                         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
                           {cb.version_count === 1 ? "1 version" : `${cb.version_count} versions`}
                         </span>
+                      </td>
+                      <td>
+                        <CompatibilityBadge
+                          status={cb.compatibility ?? "untested"}
+                          size="sm"
+                        />
                       </td>
                       <td>
                         <div className="flex gap-1">

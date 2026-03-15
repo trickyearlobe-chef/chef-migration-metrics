@@ -359,6 +359,8 @@ export interface CookbookListItem {
   is_frozen?: boolean;
   download_status: string;
   download_error?: string;
+  compatibility?: CompatibilityStatus;
+  target_chef_version?: string;
   maintainer?: string;
   description?: string;
   long_description?: string;
@@ -381,6 +383,8 @@ export interface GitRepoListItem {
   default_branch?: string;
   has_test_suite: boolean;
   last_fetched_at?: string;
+  compatibility?: CompatibilityStatus;
+  target_chef_version?: string;
 }
 
 export type GitRepoListResponse = PaginatedResponse<GitRepoListItem>;
