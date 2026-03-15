@@ -12,26 +12,26 @@ import (
 
 // GitRepoTestKitchenResult represents a row in the git_repo_test_kitchen_results table.
 type GitRepoTestKitchenResult struct {
-	ID                string
-	GitRepoID         string
-	TargetChefVersion string
-	CommitSHA         string
-	ConvergePassed    bool
-	TestsPassed       bool
-	Compatible        bool
-	TimedOut          bool
-	ProcessStdout     string
-	ProcessStderr     string
-	ConvergeOutput    string
-	VerifyOutput      string
-	DestroyOutput     string
-	DriverUsed        string
-	PlatformTested    string
-	OverridesApplied  bool
-	DurationSeconds   int
-	StartedAt         time.Time
-	CompletedAt       time.Time
-	CreatedAt         time.Time
+	ID                string    `json:"id"`
+	GitRepoID         string    `json:"git_repo_id"`
+	TargetChefVersion string    `json:"target_chef_version"`
+	CommitSHA         string    `json:"commit_sha"`
+	ConvergePassed    bool      `json:"converge_passed"`
+	TestsPassed       bool      `json:"tests_passed"`
+	Compatible        bool      `json:"compatible"`
+	TimedOut          bool      `json:"timed_out"`
+	ProcessStdout     string    `json:"process_stdout,omitempty"`
+	ProcessStderr     string    `json:"process_stderr,omitempty"`
+	ConvergeOutput    string    `json:"converge_output,omitempty"`
+	VerifyOutput      string    `json:"verify_output,omitempty"`
+	DestroyOutput     string    `json:"destroy_output,omitempty"`
+	DriverUsed        string    `json:"driver_used,omitempty"`
+	PlatformTested    string    `json:"platform_tested,omitempty"`
+	OverridesApplied  bool      `json:"overrides_applied"`
+	DurationSeconds   int       `json:"duration_seconds"`
+	StartedAt         time.Time `json:"started_at"`
+	CompletedAt       time.Time `json:"completed_at"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // UpsertGitRepoTestKitchenResultParams contains the fields needed to insert or

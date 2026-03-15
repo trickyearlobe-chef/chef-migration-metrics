@@ -59,7 +59,7 @@ export function GitRepoDetailPage() {
 
   if (loading) return <LoadingSpinner message="Loading git repo detail…" />;
   if (error) return <ErrorAlert message={error} onRetry={load} />;
-  if (!data) return null;
+  if (!data) return <LoadingSpinner message="Loading git repo detail…" />;
 
   const hasGitRepos = data.git_repos && data.git_repos.length > 0;
 
@@ -274,7 +274,7 @@ export function GitRepoDetailPage() {
                                     : cx.complexity_label === "critical" ? "critical"
                                       : "unknown"
                             }
-                            label={`${cx.complexity_label.charAt(0).toUpperCase() + cx.complexity_label.slice(1)} (${cx.complexity_score})`}
+                            label={`${(cx.complexity_label ?? "unknown").charAt(0).toUpperCase() + (cx.complexity_label ?? "unknown").slice(1)} (${cx.complexity_score ?? 0})`}
                             size="sm"
                           />
                           <span className="text-xs text-gray-500">
