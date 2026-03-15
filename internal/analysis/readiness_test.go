@@ -292,6 +292,45 @@ type windowsDrive struct {
 }
 
 // ---------------------------------------------------------------------------
+// Ohai 14+ filesystem format helpers (by_pair / by_device / by_mountpoint)
+// ---------------------------------------------------------------------------
+
+type ohaiPairEntry struct {
+	Mount       string      `json:"mount"`
+	Device      string      `json:"device"`
+	FSType      string      `json:"fs_type"`
+	KBSize      interface{} `json:"kb_size,omitempty"`
+	KBUsed      interface{} `json:"kb_used,omitempty"`
+	KBAvailable interface{} `json:"kb_available,omitempty"`
+	PercentUsed interface{} `json:"percent_used,omitempty"`
+}
+
+// ohai14LinuxFilesystemJSON builds an Ohai 14+ filesystem JSON with by_pair,
+// by_device, and by_mountpoint sections. The pairs map is keyed by "device,mount".
+func ohai14LinuxFilesystemJSON(pairs map[string]ohaiPairEntry) json.RawMessage {
+	byPair := make(map[string]interface{}, len(pairs))
+	byMount := make(map[string]interface{}, len(pairs))
+	byDevice := make(map[string]interface{}, len(pairs))
+	for key, entry := range pairs {
+		byPair[key] = entry
+		byMount[entry.Mount] = entry
+		byDevice[entry.Device] = entry
+	}
+	m := map[string]interface{}{
+		"by_pair":       byPair,
+		"by_mountpoint": byMount,
+		"by_device":     byDevice,
+	}
+	b, _ := json.Marshal(m)
+	return b
+}
+
+// ohai14WindowsFilesystemJSON builds an Ohai 14+ filesystem JSON for Windows.
+func ohai14WindowsFilesystemJSON(pairs map[string]ohaiPairEntry) json.RawMessage {
+	return ohai14LinuxFilesystemJSON(pairs) // same structure
+}
+
+// ---------------------------------------------------------------------------
 // parseCookbooksAttribute tests
 // ---------------------------------------------------------------------------
 
@@ -371,6 +410,72 @@ func TestParseFilesystemAttribute_Linux(t *testing.T) {
 	entry := result["/dev/sda1"]
 	if toString(entry.Mount) != "/" {
 		t.Errorf("mount: expected /, got %s", toString(entry.Mount))
+	}
+}
+
+func TestParseFilesystemAttribute_Ohai14_ByPair(t *testing.T) {
+	raw := ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
+		"/dev/vda2,/": {
+			Mount: "/", Device: "/dev/vda2", FSType: "ext4",
+			KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%",
+		},
+		"tmpfs,/run": {
+			Mount: "/run", Device: "tmpfs", FSType: "tmpfs",
+			KBSize: "3206072", KBUsed: "75484", KBAvailable: "3130588", PercentUsed: "3%",
+		},
+		"none,/dev": {
+			Mount: "/dev", Device: "none", FSType: "devtmpfs",
+		},
+	})
+	result := parseFilesystemAttribute(raw)
+	if result == nil {
+		t.Fatal("expected non-nil result for Ohai 14+ format")
+	}
+	// Should have extracted from by_pair.
+	if len(result) != 3 {
+		t.Fatalf("expected 3 entries from by_pair, got %d", len(result))
+	}
+	// Verify the root entry has the right data.
+	root := result["/dev/vda2,/"]
+	if toString(root.Mount) != "/" {
+		t.Errorf("root mount: expected /, got %s", toString(root.Mount))
+	}
+	kbAvail := toInt64(root.KBAvailable)
+	if kbAvail != 14340800 {
+		t.Errorf("root kb_available: expected 14340800, got %d", kbAvail)
+	}
+}
+
+func TestParseFilesystemAttribute_Ohai14_Windows(t *testing.T) {
+	raw := ohai14WindowsFilesystemJSON(map[string]ohaiPairEntry{
+		",C:": {
+			Mount: "C:", Device: "", FSType: "ntfs",
+			KBSize: 41949327, KBUsed: 41488511, KBAvailable: 460816, PercentUsed: 98,
+		},
+	})
+	result := parseFilesystemAttribute(raw)
+	if result == nil {
+		t.Fatal("expected non-nil result for Ohai 14+ Windows format")
+	}
+	entry := result[",C:"]
+	if toString(entry.Mount) != "C:" {
+		t.Errorf("mount: expected C:, got %s", toString(entry.Mount))
+	}
+	kbAvail := toInt64(entry.KBAvailable)
+	if kbAvail != 460816 {
+		t.Errorf("kb_available: expected 460816, got %d", kbAvail)
+	}
+}
+
+func TestParseFilesystemAttribute_Ohai14_EmptyByPair(t *testing.T) {
+	// by_pair exists but is empty — falls through to legacy parse which
+	// produces 3 entries (by_pair, by_device, by_mountpoint as keys with
+	// empty filesystemEntry values). These have no mount or kb_available
+	// so findBestMount will correctly return nothing.
+	raw := json.RawMessage(`{"by_pair": {}, "by_device": {}, "by_mountpoint": {}}`)
+	result := parseFilesystemAttribute(raw)
+	if len(result) != 3 {
+		t.Errorf("expected 3 entries from legacy fallback, got %d", len(result))
 	}
 }
 
@@ -1824,6 +1929,191 @@ func TestMultiSourceConstants(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Edge case: disk space with /hab as a sub-mount under /opt
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// evaluateDiskSpace — Ohai 14+ format tests
+// ---------------------------------------------------------------------------
+
+func TestEvaluateDiskSpace_Ohai14_LinuxSufficientSpace(t *testing.T) {
+	ds := newFakeReadinessDS()
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+
+	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
+			"/dev/vda2,/": {
+				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
+				KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%",
+			},
+			"tmpfs,/run": {
+				Mount: "/run", Device: "tmpfs", FSType: "tmpfs",
+				KBSize: "3206072", KBUsed: "75484", KBAvailable: "3130588", PercentUsed: "3%",
+			},
+		}))
+
+	availMB, known := e.evaluateDiskSpace(snap)
+	if !known {
+		t.Fatal("expected disk space to be known for Ohai 14+ format")
+	}
+	// 14340800 KB / 1024 = 14004 MB
+	if availMB != 14004 {
+		t.Errorf("expected 14004 MB available, got %d", availMB)
+	}
+}
+
+func TestEvaluateDiskSpace_Ohai14_LinuxInsufficientSpace(t *testing.T) {
+	ds := newFakeReadinessDS()
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+
+	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
+			"/dev/vda2,/": {
+				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
+				KBSize: "2097152", KBUsed: "1048576", KBAvailable: "1048576", PercentUsed: "50%",
+			},
+		}))
+
+	availMB, known := e.evaluateDiskSpace(snap)
+	if !known {
+		t.Fatal("expected disk space to be known")
+	}
+	// 1048576 KB / 1024 = 1024 MB — below the 2048 MB threshold.
+	if availMB != 1024 {
+		t.Errorf("expected 1024 MB, got %d", availMB)
+	}
+}
+
+func TestEvaluateDiskSpace_Ohai14_LinuxDedicatedHabMount(t *testing.T) {
+	ds := newFakeReadinessDS()
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+
+	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
+			"/dev/vda2,/": {
+				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
+				KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%",
+			},
+			"/dev/vdb1,/hab": {
+				Mount: "/hab", Device: "/dev/vdb1", FSType: "ext4",
+				KBSize: "10000000", KBUsed: "1000000", KBAvailable: "8000000", PercentUsed: "10%",
+			},
+		}))
+
+	availMB, known := e.evaluateDiskSpace(snap)
+	if !known {
+		t.Fatal("expected disk space to be known")
+	}
+	// Should prefer /hab mount (longest prefix of /hab).
+	// 8000000 KB / 1024 = 7812 MB
+	if availMB != 7812 {
+		t.Errorf("expected 7812 MB (from /hab mount), got %d", availMB)
+	}
+}
+
+func TestEvaluateDiskSpace_Ohai14_WindowsDrive(t *testing.T) {
+	ds := newFakeReadinessDS()
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+
+	snap := makeSnapshot("snap-1", "org-1", "win-node", false, nil,
+		ohai14WindowsFilesystemJSON(map[string]ohaiPairEntry{
+			",C:": {
+				Mount: "C:", Device: "", FSType: "ntfs",
+				KBSize: 41949327, KBUsed: 41488511, KBAvailable: 460816, PercentUsed: 98,
+			},
+		}))
+	snap.Platform = "windows"
+
+	availMB, known := e.evaluateDiskSpace(snap)
+	if !known {
+		t.Fatal("expected disk space to be known for Ohai 14+ Windows format")
+	}
+	// 460816 KB / 1024 = 450 MB (integer truncation of 450.015625)
+	if availMB != 450 {
+		t.Errorf("expected 450 MB available, got %d", availMB)
+	}
+}
+
+func TestEvaluateDiskSpace_Ohai14_IntegerValues(t *testing.T) {
+	// Ohai may return integer values instead of strings for kb_* fields.
+	ds := newFakeReadinessDS()
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+
+	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
+			"/dev/vda2,/": {
+				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
+				KBSize: 20511356, KBUsed: 5123456, KBAvailable: 14340800, PercentUsed: 26,
+			},
+		}))
+
+	availMB, known := e.evaluateDiskSpace(snap)
+	if !known {
+		t.Fatal("expected disk space to be known with integer values")
+	}
+	if availMB != 14004 {
+		t.Errorf("expected 14004 MB available, got %d", availMB)
+	}
+}
+
+func TestEvaluateOne_Ohai14_ReadyWithSufficientDisk(t *testing.T) {
+	// End-to-end: all cookbooks compatible, Ohai 14+ filesystem, sufficient disk.
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCSResult("id-apt", "18.0", true)
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
+		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
+			"/dev/vda2,/": {
+				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
+				KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%",
+			},
+		}))
+
+	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+
+	if !result.IsReady {
+		t.Error("expected node to be ready with Ohai 14+ filesystem")
+	}
+	if result.SufficientDiskSpace == nil || !*result.SufficientDiskSpace {
+		t.Error("expected sufficient disk space")
+	}
+	if result.AvailableDiskMB == nil || *result.AvailableDiskMB != 14004 {
+		t.Errorf("expected 14004 MB, got %v", result.AvailableDiskMB)
+	}
+}
+
+func TestEvaluateOne_Ohai14_BlockedByDisk(t *testing.T) {
+	// End-to-end: all cookbooks compatible, Ohai 14+ filesystem, insufficient disk.
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCSResult("id-apt", "18.0", true)
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
+		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
+			"/dev/vda2,/": {
+				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
+				KBSize: "2097152", KBUsed: "1048576", KBAvailable: "1048576", PercentUsed: "50%",
+			},
+		}))
+
+	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+
+	if result.IsReady {
+		t.Error("expected node NOT ready (insufficient disk)")
+	}
+	if !result.AllCookbooksCompatible {
+		t.Error("expected all cookbooks compatible")
+	}
+	if result.SufficientDiskSpace == nil {
+		t.Fatal("expected disk space known")
+	}
+	if *result.SufficientDiskSpace {
+		t.Error("expected insufficient disk space")
+	}
+}
 
 func TestEvaluateDiskSpace_HabUnderOpt(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
