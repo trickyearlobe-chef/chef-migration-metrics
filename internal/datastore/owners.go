@@ -563,6 +563,39 @@ type BlockingCookbookSummary struct {
 	AffectedNodeCount int    `json:"affected_node_count"`
 }
 
+// parseBlockingCookbookNames extracts cookbook names from the blocking_cookbooks
+// JSONB column. It handles two formats:
+//   - Legacy: simple string array, e.g. ["apt", "nginx"]
+//   - Multi-source: array of structured objects with a "name" field,
+//     e.g. [{"name":"apt","version":"7.4.0","reason":"incompatible",...}]
+func parseBlockingCookbookNames(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	// Try simple string array first (legacy format).
+	var names []string
+	if err := json.Unmarshal(raw, &names); err == nil {
+		return names
+	}
+
+	// Try structured array with "name" field (multi-source format).
+	var objs []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &objs); err == nil {
+		result := make([]string, 0, len(objs))
+		for _, o := range objs {
+			if o.Name != "" {
+				result = append(result, o.Name)
+			}
+		}
+		return result
+	}
+
+	return nil
+}
+
 // OwnerCookbookSummary holds compatibility data for cookbooks owned by an owner.
 type OwnerCookbookSummary struct {
 	Total        int `json:"total"`
@@ -672,13 +705,13 @@ func (db *DB) getOwnerReadinessSummary(ctx context.Context, q queryable, ownerNa
 		default:
 			summary.Blocked++
 
-			// Parse blocking cookbooks JSON array.
+			// Parse blocking cookbooks JSON array. The JSONB column may
+			// contain either a simple string array (legacy) or an array
+			// of structured BlockingCookbook objects (multi-source).
 			if len(blockingCookbooks) > 0 {
-				var cbNames []string
-				if err := json.Unmarshal(blockingCookbooks, &cbNames); err == nil {
-					for _, cb := range cbNames {
-						blockingCounts[cb]++
-					}
+				names := parseBlockingCookbookNames(blockingCookbooks)
+				for _, cb := range names {
+					blockingCounts[cb]++
 				}
 			}
 		}
