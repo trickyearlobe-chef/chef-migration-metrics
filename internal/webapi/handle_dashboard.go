@@ -54,7 +54,7 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 		}
 	}
 
-	orgs, err := r.db.ListOrganisations(ctx)
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for version distribution: %v", err)
 		WriteInternalError(w, "Failed to compute version distribution.")
@@ -164,7 +164,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 		}
 	}
 
-	orgs, err := r.db.ListOrganisations(ctx)
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for version trend: %v", err)
 		WriteInternalError(w, "Failed to compute version distribution trend.")
@@ -317,7 +317,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		}
 	}
 
-	orgs, err := r.db.ListOrganisations(ctx)
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for readiness: %v", err)
 		WriteInternalError(w, "Failed to compute readiness summary.")
@@ -440,7 +440,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for readiness trend: %v", err)
 		WriteInternalError(w, "Failed to compute readiness trend.")
@@ -531,7 +531,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		}
 	}
 
-	orgs, err := r.db.ListOrganisations(ctx)
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for cookbook compatibility: %v", err)
 		WriteInternalError(w, "Failed to compute cookbook compatibility.")
@@ -878,7 +878,7 @@ func (r *Router) handleDashboardComplexityTrend(w http.ResponseWriter, req *http
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for complexity trend: %v", err)
 		WriteInternalError(w, "Failed to compute complexity trend.")
@@ -959,7 +959,7 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for stale trend: %v", err)
 		WriteInternalError(w, "Failed to compute stale node trend.")
@@ -1053,7 +1053,7 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		}
 	}
 
-	orgs, err := r.db.ListOrganisations(ctx)
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for platform distribution: %v", err)
 		WriteInternalError(w, "Failed to compute platform distribution.")
@@ -1135,7 +1135,7 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for cookbook download status: %v", err)
 		WriteInternalError(w, "Failed to compute cookbook download status.")

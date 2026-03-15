@@ -162,6 +162,8 @@ export interface CookbookFilterQuery extends PaginationQuery {
   organisation?: string;
   active?: string; // "true" | "false" | ""
   name?: string;
+  compatibility?: string; // "compatible" | "incompatible" | "untested" | ""
+  target_chef_version?: string;
   sort?: string;
   order?: "asc" | "desc";
 }
@@ -371,7 +373,7 @@ export function fetchCookbookRemediation(
 // ---------------------------------------------------------------------------
 
 export function fetchGitRepos(
-  filters?: { name?: string; page?: number; per_page?: number },
+  filters?: { name?: string; compatibility?: string; target_chef_version?: string; page?: number; per_page?: number },
 ): Promise<GitRepoListResponse> {
   return apiFetch<GitRepoListResponse>(
     buildUrl("/git-repos", filters as Record<string, string | number | undefined>),

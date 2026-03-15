@@ -50,7 +50,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for nodes: %v", err)
 		WriteInternalError(w, "Failed to list nodes.")
@@ -302,7 +302,7 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for nodes-by-version: %v", err)
 		WriteInternalError(w, "Failed to list nodes.")
@@ -393,7 +393,7 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for nodes-by-cookbook: %v", err)
 		WriteInternalError(w, "Failed to list nodes.")

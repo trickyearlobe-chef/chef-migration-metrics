@@ -18,11 +18,19 @@ import (
 //
 // GET /api/v1/git-repos
 //
-// Returns all git repos, optionally filtered by name (substring match).
+// Returns all git repos, optionally filtered by name (substring match)
+// and/or compatibility status. Each repo includes a compatibility field
+// ("compatible", "incompatible", or "untested") computed from git repo
+// complexity records for the specified target Chef version.
+//
 // Supports pagination via page/per_page query parameters.
 //
 // Query parameters:
 //   - name: case-insensitive substring filter on repo name
+//   - target_chef_version: Chef version to evaluate compatibility against
+//     (defaults to the first configured target version)
+//   - compatibility: filter by status — "compatible", "incompatible",
+//     "untested", or "" (no filter)
 //   - page: page number (default 1)
 //   - per_page: items per page (default 25)
 //
@@ -50,12 +58,65 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Determine target Chef version for compatibility.
+	targetChefVersion := queryString(req, "target_chef_version", "")
+	if targetChefVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
+		targetChefVersion = r.cfg.TargetChefVersions[0]
+	}
+
+	// Build compatibility map from git repo complexity records.
+	compatByName := make(map[string]string)
+	if targetChefVersion != "" {
+		repoNameByID := make(map[string]string, len(repos))
+		for _, gr := range repos {
+			repoNameByID[gr.ID] = gr.Name
+		}
+		allComplexities, cxErr := r.db.ListAllGitRepoComplexities(ctx)
+		if cxErr != nil {
+			r.logf("WARN", "listing git repo complexities for compatibility: %v", cxErr)
+		} else {
+			for _, cc := range allComplexities {
+				if cc.TargetChefVersion != targetChefVersion {
+					continue
+				}
+				name := repoNameByID[cc.GitRepoID]
+				if name == "" {
+					continue
+				}
+				if _, seen := compatByName[name]; seen {
+					continue
+				}
+				if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+					compatByName[name] = "compatible"
+				} else {
+					compatByName[name] = "incompatible"
+				}
+			}
+		}
+	}
+
 	// Apply optional name filter (case-insensitive substring).
 	nameFilter := queryString(req, "name", "")
 	if nameFilter != "" {
 		filtered := repos[:0]
 		for _, gr := range repos {
 			if containsFold(gr.Name, nameFilter) {
+				filtered = append(filtered, gr)
+			}
+		}
+		repos = filtered
+	}
+
+	// Apply optional compatibility filter.
+	compatFilter := queryString(req, "compatibility", "")
+	if compatFilter != "" {
+		filtered := repos[:0]
+		for _, gr := range repos {
+			c := compatByName[gr.Name]
+			if c == "" {
+				c = "untested"
+			}
+			if c == compatFilter {
 				filtered = append(filtered, gr)
 			}
 		}
@@ -75,24 +136,32 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 	}
 
 	type gitRepoResp struct {
-		ID            string `json:"id"`
-		Name          string `json:"name"`
-		GitRepoURL    string `json:"git_repo_url"`
-		HeadCommitSHA string `json:"head_commit_sha,omitempty"`
-		DefaultBranch string `json:"default_branch,omitempty"`
-		HasTestSuite  bool   `json:"has_test_suite"`
-		LastFetchedAt string `json:"last_fetched_at,omitempty"`
+		ID                string `json:"id"`
+		Name              string `json:"name"`
+		GitRepoURL        string `json:"git_repo_url"`
+		HeadCommitSHA     string `json:"head_commit_sha,omitempty"`
+		DefaultBranch     string `json:"default_branch,omitempty"`
+		HasTestSuite      bool   `json:"has_test_suite"`
+		LastFetchedAt     string `json:"last_fetched_at,omitempty"`
+		Compatibility     string `json:"compatibility"`
+		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
 	result := make([]gitRepoResp, 0, end-start)
 	for _, gr := range repos[start:end] {
+		c := compatByName[gr.Name]
+		if c == "" {
+			c = "untested"
+		}
 		resp := gitRepoResp{
-			ID:            gr.ID,
-			Name:          gr.Name,
-			GitRepoURL:    gr.GitRepoURL,
-			HeadCommitSHA: gr.HeadCommitSHA,
-			DefaultBranch: gr.DefaultBranch,
-			HasTestSuite:  gr.HasTestSuite,
+			ID:                gr.ID,
+			Name:              gr.Name,
+			GitRepoURL:        gr.GitRepoURL,
+			HeadCommitSHA:     gr.HeadCommitSHA,
+			DefaultBranch:     gr.DefaultBranch,
+			HasTestSuite:      gr.HasTestSuite,
+			Compatibility:     c,
+			TargetChefVersion: targetChefVersion,
 		}
 		if !gr.LastFetchedAt.IsZero() {
 			resp.LastFetchedAt = gr.LastFetchedAt.Format("2006-01-02T15:04:05Z")

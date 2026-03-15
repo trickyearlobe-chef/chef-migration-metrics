@@ -144,7 +144,7 @@ type nodeFilterRecord struct {
 // organisations, extracts a string value from each using extractFn, and
 // returns a sorted slice of distinct non-empty values.
 func (r *Router) collectDistinctNodeValues(req *http.Request, extractFn func(nodeFilterRecord) string) ([]string, error) {
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func (r *Router) collectDistinctNodeValues(req *http.Request, extractFn func(nod
 // for fields that are stored as JSON arrays of strings (e.g. roles). It
 // unmarshals each array and collects all distinct non-empty elements.
 func (r *Router) collectDistinctNodeJSONArrayValues(req *http.Request, extractFn func(nodeFilterRecord) []byte) ([]string, error) {
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		return nil, err
 	}

@@ -27,6 +27,7 @@ type cookbookSummary struct {
 	IsStaleCookbook bool
 	DownloadStatus  string
 	DownloadError   string
+	Compatibility   string // "compatible", "incompatible", "untested"
 }
 
 func serverCookbookToSummary(sc datastore.ServerCookbook) cookbookSummary {
@@ -64,6 +65,8 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	ctx := req.Context()
+
 	// Parse and validate owner filter.
 	of := parseOwnerFilter(req)
 	if !validateOwnerFilter(w, of) {
@@ -73,7 +76,6 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	// Resolve owned cookbook keys when ownership filtering is active.
 	var ownedKeys map[string]bool
 	if of.Active && r.cfg.Ownership.Enabled {
-		ctx := req.Context()
 		if of.Unowned {
 			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
 			if err != nil {
@@ -93,7 +95,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for cookbooks: %v", err)
 		WriteInternalError(w, "Failed to list cookbooks.")
@@ -103,7 +105,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	// Collect git-sourced cookbooks first so they become the preferred
 	// representative entry when collapsing by name.
 	var allCookbooks []cookbookSummary
-	gitRepos, err := r.db.ListGitRepos(req.Context())
+	gitRepos, err := r.db.ListGitRepos(ctx)
 	if err != nil {
 		r.logf("WARN", "listing git repos: %v", err)
 	} else {
@@ -113,7 +115,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	}
 
 	for _, org := range orgs {
-		cbs, err := r.db.ListServerCookbooksByOrganisation(req.Context(), org.ID)
+		cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
 		if err != nil {
 			r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, err)
 			continue
@@ -129,6 +131,89 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	// Collapse all cookbooks by name so the summary page shows one row per
 	// cookbook with a total version count across all sources.
 	allCookbooks, versionCounts := collapseCookbookSummaries(allCookbooks)
+
+	// Compute compatibility per cookbook name from complexity records.
+	targetChefVersion := queryString(req, "target_chef_version", "")
+	if targetChefVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
+		targetChefVersion = r.cfg.TargetChefVersions[0]
+	}
+
+	compatByName := make(map[string]string)
+	if targetChefVersion != "" {
+		// Server cookbook compatibility from complexity records.
+		for _, org := range orgs {
+			complexities, cErr := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+			if cErr != nil {
+				r.logf("WARN", "listing complexities for org %s: %v", org.Name, cErr)
+				continue
+			}
+			serverCBs, scErr := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+			if scErr != nil {
+				r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, scErr)
+				continue
+			}
+			nameByID := make(map[string]string, len(serverCBs))
+			for _, sc := range serverCBs {
+				nameByID[sc.ID] = sc.Name
+			}
+			for _, cc := range complexities {
+				if cc.TargetChefVersion != targetChefVersion {
+					continue
+				}
+				cbName := nameByID[cc.ServerCookbookID]
+				if cbName == "" {
+					continue
+				}
+				if _, seen := compatByName[cbName]; seen {
+					continue // first version wins
+				}
+				if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+					compatByName[cbName] = "compatible"
+				} else {
+					compatByName[cbName] = "incompatible"
+				}
+			}
+		}
+
+		// Git repo compatibility from complexity records.
+		allComplexities, cxErr := r.db.ListAllGitRepoComplexities(ctx)
+		if cxErr == nil {
+			repoNameByID := make(map[string]string)
+			if gitRepos != nil {
+				for _, gr := range gitRepos {
+					repoNameByID[gr.ID] = gr.Name
+				}
+			}
+			for _, cc := range allComplexities {
+				if cc.TargetChefVersion != targetChefVersion {
+					continue
+				}
+				name := repoNameByID[cc.GitRepoID]
+				if name == "" {
+					continue
+				}
+				if _, seen := compatByName[name]; seen {
+					continue
+				}
+				if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+					compatByName[name] = "compatible"
+				} else {
+					compatByName[name] = "incompatible"
+				}
+			}
+		} else {
+			r.logf("WARN", "listing git repo complexities: %v", cxErr)
+		}
+	}
+
+	// Assign compatibility to each collapsed cookbook.
+	for i := range allCookbooks {
+		if c, ok := compatByName[allCookbooks[i].Name]; ok {
+			allCookbooks[i].Compatibility = c
+		} else {
+			allCookbooks[i].Compatibility = "untested"
+		}
+	}
 
 	// Apply owner filter if active and ownership is enabled.
 	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
@@ -151,6 +236,18 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Apply compatibility filter if specified.
+	compatFilter := req.URL.Query().Get("compatibility")
+	if compatFilter != "" {
+		filtered := allCookbooks[:0]
+		for _, cb := range allCookbooks {
+			if cb.Compatibility == compatFilter {
+				filtered = append(filtered, cb)
+			}
+		}
+		allCookbooks = filtered
+	}
+
 	// Paginate the results.
 	pg := ParsePagination(req)
 	total := len(allCookbooks)
@@ -164,25 +261,29 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	}
 
 	type cookbookResp struct {
-		ID              string `json:"id"`
-		OrganisationID  string `json:"organisation_id,omitempty"`
-		Name            string `json:"name"`
-		VersionCount    int    `json:"version_count"`
-		IsActive        bool   `json:"is_active"`
-		IsStaleCookbook bool   `json:"is_stale_cookbook"`
-		DownloadStatus  string `json:"download_status"`
+		ID                string `json:"id"`
+		OrganisationID    string `json:"organisation_id,omitempty"`
+		Name              string `json:"name"`
+		VersionCount      int    `json:"version_count"`
+		IsActive          bool   `json:"is_active"`
+		IsStaleCookbook   bool   `json:"is_stale_cookbook"`
+		DownloadStatus    string `json:"download_status"`
+		Compatibility     string `json:"compatibility"`
+		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
 	result := make([]cookbookResp, 0, end-start)
 	for _, cb := range allCookbooks[start:end] {
 		resp := cookbookResp{
-			ID:              cb.ID,
-			OrganisationID:  cb.OrganisationID,
-			Name:            cb.Name,
-			IsActive:        cb.IsActive,
-			IsStaleCookbook: cb.IsStaleCookbook,
-			DownloadStatus:  cb.DownloadStatus,
-			VersionCount:    versionCounts[cb.Name],
+			ID:                cb.ID,
+			OrganisationID:    cb.OrganisationID,
+			Name:              cb.Name,
+			IsActive:          cb.IsActive,
+			IsStaleCookbook:   cb.IsStaleCookbook,
+			DownloadStatus:    cb.DownloadStatus,
+			VersionCount:      versionCounts[cb.Name],
+			Compatibility:     cb.Compatibility,
+			TargetChefVersion: targetChefVersion,
 		}
 		result = append(result, resp)
 	}

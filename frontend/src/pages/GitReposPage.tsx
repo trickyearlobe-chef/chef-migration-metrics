@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { fetchGitRepos } from "../api";
+import { fetchGitRepos, fetchFilterTargetChefVersions } from "../api";
 import type { GitRepoListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
 
 // ---------------------------------------------------------------------------
 // Git Repos list page — paginated table from GET /api/v1/git-repos showing
-// name, git URL, test suite indicator, head commit SHA, default branch, and
-// last fetched time.
+// name, git URL, test suite indicator, compatibility, head commit SHA,
+// default branch, and last fetched time.
 // ---------------------------------------------------------------------------
 
 /** Truncate a string to `max` characters, appending "…" when clipped. */
@@ -35,18 +35,44 @@ export function GitReposPage() {
 
   // Filters
   const [nameFilter, setNameFilter] = useState("");
+  const [compatibility, setCompatibility] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 50;
+
+  // Target Chef versions loaded from backend config.
+  const [targetVersions, setTargetVersions] = useState<string[]>([]);
+  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>("");
+
+  // Load target Chef versions once on mount.
+  useEffect(() => {
+    fetchFilterTargetChefVersions()
+      .then((res) => {
+        const versions = res.data ?? [];
+        setTargetVersions(versions);
+        if (versions.length > 0 && !selectedTargetVersion) {
+          setSelectedTargetVersion(versions[0]);
+        }
+      })
+      .catch(() => setTargetVersions([]));
+  }, []); // intentionally run only on mount
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
 
-    const filters: { name?: string; page?: number; per_page?: number } = {
+    const filters: {
+      name?: string;
+      compatibility?: string;
+      target_chef_version?: string;
+      page?: number;
+      per_page?: number;
+    } = {
       page,
       per_page: perPage,
     };
     if (nameFilter) filters.name = nameFilter;
+    if (compatibility) filters.compatibility = compatibility;
+    if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
 
     fetchGitRepos(filters)
       .then((res) => {
@@ -55,10 +81,10 @@ export function GitReposPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [nameFilter, page]);
+  }, [nameFilter, compatibility, selectedTargetVersion, page]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [nameFilter]);
+  useEffect(() => { setPage(1); }, [nameFilter, compatibility, selectedTargetVersion]);
 
   return (
     <div className="space-y-4">
@@ -76,6 +102,33 @@ export function GitReposPage() {
             className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Compatibility</label>
+          <select
+            value={compatibility}
+            onChange={(e) => setCompatibility(e.target.value)}
+            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">All</option>
+            <option value="compatible">Compatible</option>
+            <option value="incompatible">Incompatible</option>
+            <option value="untested">Untested</option>
+          </select>
+        </div>
+        {targetVersions.length > 1 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Target Version</label>
+            <select
+              value={selectedTargetVersion}
+              onChange={(e) => setSelectedTargetVersion(e.target.value)}
+              className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {targetVersions.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -93,6 +146,7 @@ export function GitReposPage() {
                     <th>Name</th>
                     <th>Git URL</th>
                     <th>Test Suite</th>
+                    <th>Compatibility</th>
                     <th>Head Commit</th>
                     <th>Default Branch</th>
                     <th>Last Fetched</th>
@@ -123,6 +177,12 @@ export function GitReposPage() {
                         ) : (
                           <StatusBadge variant="untested" label="No" size="sm" />
                         )}
+                      </td>
+                      <td>
+                        <CompatibilityBadge
+                          status={repo.compatibility ?? "untested"}
+                          size="sm"
+                        />
                       </td>
                       <td>
                         <span className="font-mono text-xs text-gray-600">
