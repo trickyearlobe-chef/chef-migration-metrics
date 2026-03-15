@@ -1192,10 +1192,12 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			log.Info(fmt.Sprintf("running CookStyle scanning on %d git repo(s)", len(gitRepos)),
 				logging.WithCollectionRunID(run.ID))
 
-			// TODO: Update when analysis layer is refactored to use split types
-			// csBatch := c.cookstyleScanner.ScanGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
-			_ = gitRepos // suppress unused variable until analysis layer is refactored
-			log.Warn("CookStyle scanning for git repos skipped — analysis layer not yet refactored to split types",
+			csBatch := c.cookstyleScanner.ScanGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+			log.Info(fmt.Sprintf(
+				"CookStyle batch complete (git repos): %d total, %d scanned, %d skipped, %d passed, %d failed, %d errors in %s",
+				csBatch.Total, csBatch.Scanned, csBatch.Skipped,
+				csBatch.Passed, csBatch.Failed, csBatch.Errors,
+				csBatch.Duration.Round(time.Millisecond)),
 				logging.WithCollectionRunID(run.ID))
 		}
 	} else if c.cookstyleScanner != nil && c.gitRepoDirFn == nil {
@@ -1215,10 +1217,12 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			log.Warn(fmt.Sprintf("failed to list git repos for Test Kitchen: %v", tkListErr),
 				logging.WithCollectionRunID(run.ID))
 		} else {
-			// TODO: Update when analysis layer is refactored to use split types
-			// tkBatch := c.kitchenScanner.TestGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
-			_ = gitRepos // suppress unused variable until analysis layer is refactored
-			log.Warn("Test Kitchen for git repos skipped — analysis layer not yet refactored to split types",
+			tkBatch := c.kitchenScanner.TestGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+			log.Info(fmt.Sprintf(
+				"Test Kitchen batch complete (git repos): %d total, %d tested, %d skipped, %d passed, %d failed, %d errors in %s",
+				tkBatch.Total, tkBatch.Tested, tkBatch.Skipped,
+				tkBatch.Passed, tkBatch.Failed, tkBatch.Errors,
+				tkBatch.Duration.Round(time.Millisecond)),
 				logging.WithCollectionRunID(run.ID))
 		}
 	} else if c.kitchenScanner != nil && c.gitRepoDirFn == nil {
@@ -1299,9 +1303,22 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		} else {
 			cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.ID)
 			log.Info(fmt.Sprintf(
-				"complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
+				"server cookbook complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
 				cxBatch.Total, cxBatch.Scored, cxBatch.Skipped, cxBatch.Errors,
 				cxBatch.Duration.Round(time.Millisecond)),
+				logging.WithCollectionRunID(run.ID))
+		}
+
+		gitReposForCX, grCXListErr := c.db.ListGitRepos(ctx)
+		if grCXListErr != nil {
+			log.Warn(fmt.Sprintf("failed to list git repos for complexity scoring: %v", grCXListErr),
+				logging.WithCollectionRunID(run.ID))
+		} else if len(gitReposForCX) > 0 {
+			grCXBatch := c.complexityScorer.ScoreGitRepos(ctx, gitReposForCX, c.cfg.TargetChefVersions, org.ID)
+			log.Info(fmt.Sprintf(
+				"git repo complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
+				grCXBatch.Total, grCXBatch.Scored, grCXBatch.Skipped, grCXBatch.Errors,
+				grCXBatch.Duration.Round(time.Millisecond)),
 				logging.WithCollectionRunID(run.ID))
 		}
 	}
