@@ -286,7 +286,19 @@ export interface CookbookListItem {
   has_test_suite: boolean;
   is_active: boolean;
   is_stale_cookbook: boolean;
+  is_frozen?: boolean;
   download_status: string;
+  download_error?: string;
+  maintainer?: string;
+  description?: string;
+  long_description?: string;
+  license?: string;
+  platforms?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  first_seen_at?: string;
+  last_fetched_at?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type CookbookListResponse = PaginatedResponse<CookbookListItem>;
