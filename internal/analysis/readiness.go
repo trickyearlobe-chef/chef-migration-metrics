@@ -46,6 +46,23 @@ const (
 	SourceNone        = "none"
 )
 
+// Multi-source verdict constants — identify which specific source produced a verdict.
+const (
+	SourceServerCookstyle = "server_cookstyle"
+	SourceGitCookstyle    = "git_cookstyle"
+	SourceGitTestKitchen  = "git_test_kitchen"
+)
+
+// CookbookSourceVerdict records the compatibility result from one source.
+type CookbookSourceVerdict struct {
+	Source          string `json:"source"`               // "server_cookstyle", "git_cookstyle", "git_test_kitchen"
+	Status          string `json:"status"`               // "compatible", "incompatible", "untested"
+	Version         string `json:"version,omitempty"`    // server version or "HEAD" for git
+	CommitSHA       string `json:"commit_sha,omitempty"` // git HEAD SHA (git sources only)
+	ComplexityScore int    `json:"complexity_score,omitempty"`
+	ComplexityLabel string `json:"complexity_label,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // BlockingCookbook — one entry in the blocking_cookbooks JSONB array
 // ---------------------------------------------------------------------------
@@ -53,12 +70,13 @@ const (
 // BlockingCookbook describes a single cookbook that is preventing a node from
 // being ready for upgrade.
 type BlockingCookbook struct {
-	Name            string `json:"name"`
-	Version         string `json:"version"`
-	Reason          string `json:"reason"`           // StatusIncompatible or StatusUntested
-	Source          string `json:"source"`           // SourceTestKitchen, SourceCookstyle, or SourceNone
-	ComplexityScore int    `json:"complexity_score"` // 0 if no complexity data
-	ComplexityLabel string `json:"complexity_label"` // "" if no complexity data
+	Name            string                  `json:"name"`
+	Version         string                  `json:"version"`
+	Reason          string                  `json:"reason"`           // StatusIncompatible or StatusUntested
+	Source          string                  `json:"source"`           // SourceTestKitchen, SourceCookstyle, or SourceNone
+	ComplexityScore int                     `json:"complexity_score"` // 0 if no complexity data
+	ComplexityLabel string                  `json:"complexity_label"` // "" if no complexity data
+	Verdicts        []CookbookSourceVerdict `json:"verdicts,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -105,8 +123,14 @@ type ReadinessDataStore interface {
 	// CookStyle results (server cookbook)
 	GetServerCookbookCookstyleResult(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
 
+	// CookStyle results (git repo)
+	GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
+
 	// Server cookbook complexity
 	GetServerCookbookComplexity(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookComplexity, error)
+
+	// Git repo complexity
+	GetGitRepoComplexity(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoComplexity, error)
 
 	// Persistence
 	UpsertNodeReadiness(ctx context.Context, p datastore.UpsertNodeReadinessParams) (*datastore.NodeReadiness, error)
@@ -350,7 +374,7 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 	var blocking []BlockingCookbook
 
 	for cbName, cbVersion := range cookbooks {
-		status, source := e.checkCookbookCompatibility(ctx, cbName, cbVersion, targetChefVersion, cookbookIDMap)
+		status, source, verdicts := e.checkCookbookCompatibility(ctx, cbName, cbVersion, targetChefVersion, cookbookIDMap)
 
 		switch status {
 		case StatusCompatible, StatusCompatibleCookstyleOnly:
@@ -358,18 +382,40 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 			continue
 		case StatusIncompatible, StatusUntested:
 			bc := BlockingCookbook{
-				Name:    cbName,
-				Version: cbVersion,
-				Reason:  status,
-				Source:  source,
+				Name:     cbName,
+				Version:  cbVersion,
+				Reason:   status,
+				Source:   source,
+				Verdicts: verdicts,
 			}
 
-			// Try to enrich with complexity data.
+			// Try to enrich with server cookbook complexity data.
 			cookbookID := lookupCookbookID(cookbookIDMap, cbName, cbVersion)
 			if cookbookID != "" {
 				if cc, err := e.db.GetServerCookbookComplexity(ctx, cookbookID, targetChefVersion); err == nil && cc != nil {
 					bc.ComplexityScore = cc.ComplexityScore
 					bc.ComplexityLabel = cc.ComplexityLabel
+				}
+			}
+
+			// Enrich verdicts with complexity data.
+			for i := range bc.Verdicts {
+				switch bc.Verdicts[i].Source {
+				case SourceServerCookstyle:
+					if cookbookID != "" {
+						if cc, err := e.db.GetServerCookbookComplexity(ctx, cookbookID, targetChefVersion); err == nil && cc != nil {
+							bc.Verdicts[i].ComplexityScore = cc.ComplexityScore
+							bc.Verdicts[i].ComplexityLabel = cc.ComplexityLabel
+						}
+					}
+				case SourceGitCookstyle, SourceGitTestKitchen:
+					gitRepo, grErr := e.db.GetGitRepoByName(ctx, cbName)
+					if grErr == nil && gitRepo.ID != "" {
+						if gc, gcErr := e.db.GetGitRepoComplexity(ctx, gitRepo.ID, targetChefVersion); gcErr == nil && gc != nil {
+							bc.Verdicts[i].ComplexityScore = gc.ComplexityScore
+							bc.Verdicts[i].ComplexityLabel = gc.ComplexityLabel
+						}
+					}
 				}
 			}
 
@@ -412,68 +458,148 @@ func parseCookbooksAttribute(raw json.RawMessage) map[string]string {
 }
 
 // checkCookbookCompatibility determines the compatibility status of a single
-// cookbook × version against the target Chef Client version.
+// cookbook × version against the target Chef Client version using multi-source
+// evaluation.
 //
-// Algorithm (per spec):
-//  1. Check for a passing Test Kitchen result (git repo) → compatible
-//  2. If no TK result, check server cookbook CookStyle: passed →
-//     compatible_cookstyle_only, failed → incompatible
-//  3. No results at all → untested
+// Algorithm:
+//  1. Check Git repo Test Kitchen result → verdict
+//  2. Check Git repo CookStyle result → verdict
+//  3. Check Server cookbook CookStyle result → verdict
+//  4. Aggregate: any compatible → compatible; all tested incompatible →
+//     incompatible; no results → untested
 //
-// checkCookbookCompatibility determines the compatibility status of a single
-// cookbook × version against the target Chef Client version.
-//
-// Algorithm (per spec):
-//  1. Check for a passing Test Kitchen result (git repo) → compatible
-//  2. If no TK result, check server cookbook CookStyle: passed →
-//     compatible_cookstyle_only, failed → incompatible
-//  3. No results at all → untested
+// Returns the overall status, primary source (for backward compat), and
+// per-source verdicts.
 func (e *ReadinessEvaluator) checkCookbookCompatibility(
 	ctx context.Context,
 	cookbookName string,
 	cookbookVersion string,
 	targetChefVersion string,
 	cookbookIDMap map[string]map[string]string,
-) (status, source string) {
+) (status, source string, verdicts []CookbookSourceVerdict) {
 	cookbookID := lookupCookbookID(cookbookIDMap, cookbookName, cookbookVersion)
-	if cookbookID == "" {
-		// Cookbook not in our inventory — untested.
-		return StatusUntested, SourceNone
-	}
 
-	// Step 1: Check Test Kitchen results by resolving cookbook name → git repo ID.
+	var anyCompatible bool
+	var anyTested bool
+
+	// --- Source 1: Git repo Test Kitchen ---
 	gitRepo, grErr := e.db.GetGitRepoByName(ctx, cookbookName)
 	if grErr == nil && gitRepo.ID != "" {
 		tkResult, tkErr := e.db.GetLatestGitRepoTestKitchenResult(ctx, gitRepo.ID, targetChefVersion)
 		if tkErr == nil && tkResult != nil {
-			if tkResult.Compatible {
-				return StatusCompatible, SourceTestKitchen
+			anyTested = true
+			v := CookbookSourceVerdict{
+				Source:    SourceGitTestKitchen,
+				Version:   "HEAD",
+				CommitSHA: gitRepo.HeadCommitSHA,
 			}
-			return StatusIncompatible, SourceTestKitchen
+			if tkResult.Compatible {
+				v.Status = StatusCompatible
+				anyCompatible = true
+			} else {
+				v.Status = StatusIncompatible
+			}
+			verdicts = append(verdicts, v)
+		}
+
+		// --- Source 2: Git repo CookStyle ---
+		gitCSResult, gitCSErr := e.db.GetGitRepoCookstyleResult(ctx, gitRepo.ID, targetChefVersion)
+		if gitCSErr == nil && gitCSResult != nil {
+			anyTested = true
+			v := CookbookSourceVerdict{
+				Source:    SourceGitCookstyle,
+				Version:   "HEAD",
+				CommitSHA: gitRepo.HeadCommitSHA,
+			}
+			if gitCSResult.Passed {
+				v.Status = StatusCompatible
+				anyCompatible = true
+			} else {
+				v.Status = StatusIncompatible
+			}
+			verdicts = append(verdicts, v)
 		}
 	}
 
-	// Step 2: Check server cookbook CookStyle result with the specific target version.
-	csResult, err := e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, targetChefVersion)
-	if err == nil && csResult != nil {
-		if csResult.Passed {
-			return StatusCompatibleCookstyleOnly, SourceCookstyle
+	// --- Source 3: Server cookbook CookStyle ---
+	if cookbookID != "" {
+		csResult, err := e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, targetChefVersion)
+		if err == nil && csResult != nil {
+			anyTested = true
+			v := CookbookSourceVerdict{
+				Source:  SourceServerCookstyle,
+				Version: cookbookVersion,
+			}
+			if csResult.Passed {
+				v.Status = StatusCompatible
+				anyCompatible = true
+			} else {
+				v.Status = StatusIncompatible
+			}
+			verdicts = append(verdicts, v)
+		} else {
+			// Also check CookStyle without a target version — server-sourced
+			// cookbooks may have been scanned without a target version profile.
+			csResult, err = e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, "")
+			if err == nil && csResult != nil {
+				anyTested = true
+				v := CookbookSourceVerdict{
+					Source:  SourceServerCookstyle,
+					Version: cookbookVersion,
+				}
+				if csResult.Passed {
+					v.Status = StatusCompatible
+					anyCompatible = true
+				} else {
+					v.Status = StatusIncompatible
+				}
+				verdicts = append(verdicts, v)
+			}
 		}
-		return StatusIncompatible, SourceCookstyle
 	}
 
-	// Also check CookStyle without a target version — server-sourced
-	// cookbooks may have been scanned without a target version profile.
-	csResult, err = e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, "")
-	if err == nil && csResult != nil {
-		if csResult.Passed {
-			return StatusCompatibleCookstyleOnly, SourceCookstyle
+	// --- Determine overall status ---
+	if anyCompatible {
+		// Determine primary source for backward compat
+		primarySource := SourceNone
+		for _, v := range verdicts {
+			if v.Status == StatusCompatible || v.Status == StatusCompatibleCookstyleOnly {
+				if v.Source == SourceGitTestKitchen {
+					primarySource = SourceTestKitchen
+					break // TK is highest confidence
+				}
+				if primarySource == SourceNone {
+					primarySource = SourceCookstyle
+				}
+			}
 		}
-		return StatusIncompatible, SourceCookstyle
+		// If TK is the compatible source, return StatusCompatible
+		// If only cookstyle sources are compatible, return StatusCompatibleCookstyleOnly
+		for _, v := range verdicts {
+			if v.Status == StatusCompatible && v.Source == SourceGitTestKitchen {
+				return StatusCompatible, primarySource, verdicts
+			}
+		}
+		return StatusCompatibleCookstyleOnly, primarySource, verdicts
 	}
 
-	// Step 3: Nothing found.
-	return StatusUntested, SourceNone
+	if anyTested {
+		// All tested sources say incompatible
+		primarySource := SourceNone
+		for _, v := range verdicts {
+			if v.Source == SourceGitTestKitchen {
+				primarySource = SourceTestKitchen
+				break
+			}
+			if primarySource == SourceNone {
+				primarySource = SourceCookstyle
+			}
+		}
+		return StatusIncompatible, primarySource, verdicts
+	}
+
+	// No results at all
+	return StatusUntested, SourceNone, verdicts
 }
 
 // lookupCookbookID resolves a cookbook name + version to its database ID
