@@ -560,23 +560,23 @@ Update the node detail page's **Upgrade Readiness** section to render per-source
 ### Commit Plan
 
 #### Commit 27 — Analysis: Multi-source cookbook readiness evaluation
-- [ ] Add `CookbookSourceVerdict` type to `internal/analysis/readiness.go`
-- [ ] Add `Verdicts` field to `BlockingCookbook` struct
-- [ ] Add `GetGitRepoCookstyleResult` to `ReadinessDataStore` interface
-- [ ] Refactor `checkCookbookCompatibility` to check all 3 sources and collect verdicts
-- [ ] Update overall status logic: compatible if any source is compatible
-- [ ] Update `evaluateCookbooks` to populate verdicts on each blocking entry
-- [ ] Update tests in `internal/analysis/readiness_test.go`
+- [x] Add `CookbookSourceVerdict` type to `internal/analysis/readiness.go`
+- [x] Add `Verdicts` field to `BlockingCookbook` struct
+- [x] Add `GetGitRepoCookstyleResult` to `ReadinessDataStore` interface
+- [x] Refactor `checkCookbookCompatibility` to check all 3 sources and collect verdicts
+- [x] Update overall status logic: compatible if any source is compatible
+- [x] Update `evaluateCookbooks` to populate verdicts on each blocking entry
+- [x] Update tests in `internal/analysis/readiness_test.go`
 
 #### Commit 28 — Web API: Return enriched readiness data
-- [ ] Verify `handleNodeDetail` returns the new `verdicts` field (already passes through `blocking_cookbooks` JSONB — should Just Work if the evaluator populates it)
-- [ ] Update any readiness-related API handlers that transform blocking cookbook data
+- [x] Verify `handleNodeDetail` returns the new `verdicts` field (already passes through `blocking_cookbooks` JSONB — should Just Work if the evaluator populates it)
+- [x] Update any readiness-related API handlers that transform blocking cookbook data
 
 #### Commit 29 — Frontend: Per-source verdicts on node detail page
-- [ ] Update `NodeReadiness` TypeScript type to include structured `blocking_cookbooks` with per-source `verdicts`
-- [ ] Update `NodeDetailPage.tsx` readiness section to render per-source verdicts
-- [ ] Add expandable verdict panel with status icons and action hints
-- [ ] Add links from verdict entries to cookbook/git-repo detail pages
+- [x] Update `NodeReadiness` TypeScript type to include structured `blocking_cookbooks` with per-source `verdicts`
+- [x] Update `NodeDetailPage.tsx` readiness section to render per-source verdicts
+- [x] Add expandable verdict panel with status icons and action hints
+- [x] Add links from verdict entries to cookbook/git-repo detail pages
 
 #### Commit 30 — Documentation
 - [x] Update `.claude/specifications/analysis/Specification.md` — multi-source algorithm
