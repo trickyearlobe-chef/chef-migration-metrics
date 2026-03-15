@@ -11,70 +11,48 @@ import {
   fetchFilterTargetChefVersions,
   type NodeFilterQuery,
 } from "../api";
-import type { NodeListItem, NodeReadinessSummary, Pagination as PaginationType, ExportFilters } from "../types";
+import type { NodeListItem, Pagination as PaginationType, ExportFilters } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StaleBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
 
 // ---------------------------------------------------------------------------
-// Readiness badges for the node list table
+// Readiness filter values
 // ---------------------------------------------------------------------------
+type ReadinessFilter = "" | "ready" | "blocked" | "cookbooks_blocked" | "disk_blocked" | "disk_unknown";
 
-function ReadinessBadges({ readiness }: { readiness?: NodeReadinessSummary[] }) {
-  if (!readiness || readiness.length === 0) {
-    return <span className="text-xs text-gray-300">—</span>;
-  }
+function matchesReadinessFilter(
+  node: NodeListItem,
+  targetVersion: string,
+  filter: ReadinessFilter,
+): boolean {
+  if (!filter) return true; // "All" — no filtering
 
-  return (
-    <div className="flex flex-col gap-1">
-      {readiness.map((r) => (
-        <div key={r.target_chef_version} className="flex items-center gap-1">
-          <span className="text-[10px] text-gray-400 w-10 shrink-0">{r.target_chef_version}</span>
-          <CookbookBadge r={r} />
-          <DiskBadge r={r} />
-        </div>
-      ))}
-    </div>
+  // Find the readiness entry for the selected target version.
+  const entry = (node.readiness ?? []).find(
+    (r) => r.target_chef_version === targetVersion,
   );
-}
 
-function CookbookBadge({ r }: { r: NodeReadinessSummary }) {
-  if (r.all_cookbooks_compatible) {
-    return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700" title="All cookbooks compatible">
-        📦 ✓
-      </span>
-    );
+  // If there's no readiness data for this target version, only show in "unknown".
+  if (!entry) {
+    return filter === "blocked"; // nodes with no data are implicitly not ready
   }
-  const count = r.blocking_cookbook_count;
-  return (
-    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700" title={`${count} blocking cookbook${count !== 1 ? "s" : ""}`}>
-      📦 {count}
-    </span>
-  );
-}
 
-function DiskBadge({ r }: { r: NodeReadinessSummary }) {
-  if (r.sufficient_disk_space === null || r.sufficient_disk_space === undefined) {
-    return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500" title="Disk space unknown">
-        💾 ?
-      </span>
-    );
+  switch (filter) {
+    case "ready":
+      return entry.is_ready;
+    case "blocked":
+      return !entry.is_ready;
+    case "cookbooks_blocked":
+      return !entry.all_cookbooks_compatible;
+    case "disk_blocked":
+      return entry.sufficient_disk_space === false;
+    case "disk_unknown":
+      return entry.sufficient_disk_space === null || entry.sufficient_disk_space === undefined;
+    default:
+      return true;
   }
-  if (r.sufficient_disk_space) {
-    return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700" title="Sufficient disk space">
-        💾 ✓
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700" title="Insufficient disk space">
-      💾 ✗
-    </span>
-  );
 }
 
 function formatOhaiTime(ohaiTime?: number): string {
@@ -89,7 +67,7 @@ function formatOhaiTime(ohaiTime?: number): string {
 // ---------------------------------------------------------------------------
 // Nodes list page — paginated table from GET /api/v1/nodes with filter
 // dropdowns for environment, platform, chef_version, role, policy name,
-// policy group, and stale status.
+// policy group, stale status, and readiness (for a selected target version).
 // Each row links to node detail. Stale nodes are colour-coded.
 // ---------------------------------------------------------------------------
 
@@ -109,10 +87,11 @@ export function NodesPage() {
   const [policyName, setPolicyName] = useState("");
   const [policyGroup, setPolicyGroup] = useState("");
   const [stale, setStale] = useState("");
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>("");
   const [page, setPage] = useState(1);
   const perPage = 50;
 
-  // Target Chef version for exports (loaded from backend config)
+  // Target Chef version for readiness filter and exports (loaded from backend config)
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
   const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>("");
 
@@ -198,7 +177,8 @@ export function NodesPage() {
   useEffect(() => { setPage(1); }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale]);
 
   // Count active filters for the clear button.
-  const activeFilterCount = [nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale].filter(Boolean).length;
+  // Readiness filter is counted only when set (target version selector is not counted as a filter).
+  const activeFilterCount = [nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, readinessFilter].filter(Boolean).length;
 
   const clearFilters = () => {
     setNodeName("");
@@ -209,7 +189,16 @@ export function NodesPage() {
     setPolicyName("");
     setPolicyGroup("");
     setStale("");
+    setReadinessFilter("");
   };
+
+  // Apply client-side readiness filter. The backend doesn't support readiness
+  // filtering directly, so we filter the already-fetched page of nodes.
+  // This means the displayed count may be less than the page size when a
+  // readiness filter is active, which is an acceptable trade-off for now.
+  const displayNodes = readinessFilter && selectedTargetVersion
+    ? nodes.filter((n) => matchesReadinessFilter(n, selectedTargetVersion, readinessFilter))
+    : nodes;
 
   // Build the current filter set for export buttons.
   const exportFilters: ExportFilters = {};
@@ -228,7 +217,7 @@ export function NodesPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold text-gray-800">Nodes</h2>
         <div className="flex items-center gap-3">
-          {/* Target version selector for exports */}
+          {/* Target version selector for readiness filter + exports */}
           {targetVersions.length > 0 && (
             <div className="flex items-center gap-2">
               <label className="text-xs font-medium text-gray-500">Target Version</label>
@@ -308,6 +297,20 @@ export function NodesPage() {
             { value: "false", label: "Fresh" },
           ]}
         />
+        <FilterSelect
+          label="Readiness"
+          value={readinessFilter}
+          onChange={(v) => setReadinessFilter(v as ReadinessFilter)}
+          options={[
+            { value: "", label: "All" },
+            { value: "ready", label: "✓ Ready" },
+            { value: "blocked", label: "✗ Blocked" },
+            { value: "cookbooks_blocked", label: "📦 Cookbooks Blocked" },
+            { value: "disk_blocked", label: "💾 Disk Blocked" },
+            { value: "disk_unknown", label: "💾 Disk Unknown" },
+          ]}
+          wide
+        />
         {activeFilterCount > 0 && (
           <button
             onClick={clearFilters}
@@ -324,7 +327,7 @@ export function NodesPage() {
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
         <>
-          {nodes.length === 0 ? (
+          {displayNodes.length === 0 ? (
             <EmptyState title="No nodes found" description="Adjust filters or wait for data collection." />
           ) : (
             <div className="table-container">
@@ -338,11 +341,10 @@ export function NodesPage() {
                     <th>Platform</th>
                     <th>Status</th>
                     <th>Ohai Time</th>
-                    <th>Readiness</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {nodes.map((node) => (
+                  {displayNodes.map((node) => (
                     <tr
                       key={node.id}
                       className={node.is_stale ? "bg-purple-50/50" : ""}
@@ -374,9 +376,6 @@ export function NodesPage() {
                       </td>
                       <td className="text-xs text-gray-400">
                         {formatOhaiTime(node.ohai_time)}
-                      </td>
-                      <td>
-                        <ReadinessBadges readiness={node.readiness} />
                       </td>
                     </tr>
                   ))}
@@ -428,11 +427,13 @@ function FilterSelect({
   value,
   onChange,
   options,
+  wide,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  wide?: boolean;
 }) {
   return (
     <div>
@@ -440,7 +441,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="block w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className={`block rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${wide ? "w-48" : "w-32"}`}
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>
