@@ -5,8 +5,40 @@ import type { CookbookDetailResponse } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
 
+/** Small helper – renders a label/value row in the metadata grid. */
+function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2 py-1.5 text-sm">
+      <dt className="w-36 shrink-0 font-medium text-gray-500">{label}</dt>
+      <dd className="text-gray-800 break-words min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+/** Render a JSON-style map (platforms or dependencies) as inline badges. */
+function MapBadges({ map }: { map?: Record<string, string> }) {
+  if (!map || Object.keys(map).length === 0) return <span className="text-gray-400 italic">None</span>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {Object.entries(map).map(([k, v]) => (
+        <span
+          key={k}
+          className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-700"
+        >
+          {k}{v ? ` ${v}` : ""}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 
 export function CookbookDetailPage() {
+  const [expandedMeta, setExpandedMeta] = useState<Record<string, boolean>>({});
+
+  const toggleMeta = (key: string) =>
+    setExpandedMeta((prev) => ({ ...prev, [key]: !prev[key] }));
+
   const { name } = useParams<{ name: string }>();
 
   const [data, setData] = useState<CookbookDetailResponse | null>(null);
@@ -143,6 +175,59 @@ export function CookbookDetailPage() {
                   <span className="badge badge-cookstyle">Chef Server</span>
                   <StatusBadge variant={cb.is_active ? "active" : "inactive"} size="sm" />
                   {cb.is_stale_cookbook && <StatusBadge variant="stale" label="Stale" size="sm" />}
+                  {cb.is_frozen && (
+                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                      Frozen
+                    </span>
+                  )}
+                </div>
+
+                {/* Metadata toggle */}
+                <div className="mb-4">
+                  <button
+                    onClick={() => toggleMeta(`sc-${idx}`)}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    <span className="text-xs">{expandedMeta[`sc-${idx}`] ? "▼" : "▶"}</span>
+                    {expandedMeta[`sc-${idx}`] ? "Hide" : "Show"} Metadata
+                  </button>
+
+                  {expandedMeta[`sc-${idx}`] && (
+                    <dl className="mt-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-2 divide-y divide-gray-100">
+                      {cb.description && (
+                        <MetaRow label="Description">{cb.description}</MetaRow>
+                      )}
+                      {cb.maintainer && (
+                        <MetaRow label="Maintainer">{cb.maintainer}</MetaRow>
+                      )}
+                      {cb.license && (
+                        <MetaRow label="License">{cb.license}</MetaRow>
+                      )}
+                      <MetaRow label="Download">
+                        <span className={cb.download_status === "ok" ? "text-green-700" : "text-amber-600"}>
+                          {cb.download_status}
+                        </span>
+                        {cb.download_error && (
+                          <span className="ml-2 text-xs text-red-500">({cb.download_error})</span>
+                        )}
+                      </MetaRow>
+                      <MetaRow label="Platforms">
+                        <MapBadges map={cb.platforms} />
+                      </MetaRow>
+                      <MetaRow label="Dependencies">
+                        <MapBadges map={cb.dependencies} />
+                      </MetaRow>
+                      {cb.first_seen_at && (
+                        <MetaRow label="First Seen">{new Date(cb.first_seen_at).toLocaleString()}</MetaRow>
+                      )}
+                      {cb.last_fetched_at && (
+                        <MetaRow label="Last Fetched">{new Date(cb.last_fetched_at).toLocaleString()}</MetaRow>
+                      )}
+                      {cb.updated_at && (
+                        <MetaRow label="Updated At">{new Date(cb.updated_at).toLocaleString()}</MetaRow>
+                      )}
+                    </dl>
+                  )}
                 </div>
 
                 {/* Cookstyle results */}
