@@ -517,7 +517,13 @@ func removeLocalGitClone(r *Router, cookbookName string) bool {
 		return false
 	}
 
-	repoDir := filepath.Join(r.cfg.Storage.GitCookbookDir, cookbookName)
+	clean, ok := safeName(cookbookName)
+	if !ok {
+		r.logf("WARN", "rejected unsafe cookbook name for clone removal: %q", cookbookName)
+		return false
+	}
+
+	repoDir := filepath.Join(r.cfg.Storage.GitCookbookDir, clean)
 	if _, statErr := os.Stat(repoDir); statErr != nil {
 		return false // Directory doesn't exist.
 	}

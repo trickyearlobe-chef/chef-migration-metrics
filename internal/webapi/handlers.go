@@ -5,6 +5,7 @@ package webapi
 
 import (
 	"net/http"
+	"path/filepath"
 	"strings"
 )
 
@@ -92,4 +93,34 @@ func queryStringSlice(req *http.Request, name string) []string {
 		return nil
 	}
 	return result
+}
+
+// ---------------------------------------------------------------------------
+// Path safety helpers
+// ---------------------------------------------------------------------------
+
+// safeName validates that a user-supplied name is a single, clean path
+// component with no directory traversal. It returns the cleaned name and
+// true if the name is safe, or ("", false) if the name is empty, contains
+// path separators, or attempts traversal (e.g. "..", ".", "/etc/passwd").
+//
+// This MUST be used before incorporating any user-controlled value into a
+// filesystem path (filepath.Join, os.Stat, os.RemoveAll, etc.).
+func safeName(name string) (string, bool) {
+	if name == "" {
+		return "", false
+	}
+
+	// Clean the name to resolve any ".." or "." components.
+	cleaned := filepath.Clean(name)
+
+	// Reject if cleaning changed the value (indicates traversal attempt),
+	// if it contains a path separator, or if it resolves to "." or "..".
+	if cleaned != name ||
+		strings.ContainsAny(cleaned, `/\`) ||
+		cleaned == "." || cleaned == ".." {
+		return "", false
+	}
+
+	return cleaned, true
 }
