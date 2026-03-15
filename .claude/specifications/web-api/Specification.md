@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config) and operator actions (ownership management, bulk import/reassignment). Key endpoint groups: nodes, cookbooks, compatibility results, readiness, remediation, ownership, dependency graph, exports, notifications, logs, and admin. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label, owner), and sorting. Auth via session cookie with RBAC middleware (viewer / operator / admin). CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Notification endpoints manage webhook/email channels and history. Ownership endpoints manage owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows (see [Ownership Specification](../ownership/Specification.md)). See `../auth/Specification.md` for auth details, `../datastore/Specification.md` for schema.
+RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config) and operator actions (ownership management, bulk import/reassignment). Key endpoint groups: nodes, server cookbooks, git repos, compatibility results, readiness, remediation, ownership, dependency graph, exports, notifications, logs, and admin. Cookbooks are split into **server cookbooks** (sourced from Chef Infra Server) and **git repos** (cloned from Git), each with their own endpoints. Dashboard and remediation priority endpoints aggregate across both sources. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label, owner), and sorting. Auth via session cookie with RBAC middleware (viewer / operator / admin). CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Notification endpoints manage webhook/email channels and history. Ownership endpoints manage owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows (see [Ownership Specification](../ownership/Specification.md)). See `../auth/Specification.md` for auth details, `../datastore/Specification.md` for schema.
 
 ---
 
@@ -379,7 +379,7 @@ Returns readiness counts over time for trend charts.
 
 #### `GET /api/v1/dashboard/cookbook-compatibility`
 
-Returns the compatibility status of each cookbook (and version) for each target Chef Client version.
+Returns the compatibility status of each cookbook (and version) for each target Chef Client version. This endpoint aggregates results from both **server cookbooks** and **git repos**. The `source` field in each entry indicates the origin (`"chef_server"` or `"git"`).
 
 **Query parameters:** standard filters, plus pagination and sorting. Supports `complexity_label` filter.
 
@@ -468,8 +468,8 @@ Returns the compatibility status of each cookbook (and version) for each target 
 
 | Status | Confidence | Meaning |
 |--------|------------|---------|
-| `compatible` | `high` | Test Kitchen converge and tests passed at HEAD |
-| `incompatible` | N/A | Test Kitchen converge or tests failed at HEAD |
+| `compatible` | `high` | Test Kitchen converge and tests passed at HEAD (git repos) |
+| `incompatible` | N/A | Test Kitchen converge or tests failed at HEAD (git repos) |
 | `cookstyle_only` | `medium` | Chef server-sourced; CookStyle results only — no integration test |
 | `untested` | N/A | No test or scan results available yet |
 
@@ -598,17 +598,19 @@ Returns nodes running a specific cookbook (any version).
 
 ---
 
-## Cookbook Endpoints
+## Server Cookbook Endpoints
 
-### List Cookbooks
+> **Note:** These endpoints serve **server cookbooks** only — cookbooks sourced from Chef Infra Server organisations. For git-sourced repositories, see [Git Repo Endpoints](#git-repo-endpoints) below.
+
+### List Server Cookbooks
 
 #### `GET /api/v1/cookbooks`
 
-Returns a paginated list of all known cookbooks with usage summary.
+Returns a paginated list of all known server cookbooks with usage summary.
 
 **Query parameters:** standard filters (including `cookbook_status`), pagination, sorting.
 
-**Sortable fields:** `name`, `version`, `source`, `node_count`, `active`.
+**Sortable fields:** `name`, `version`, `node_count`, `active`.
 
 **Response (200):**
 
@@ -619,23 +621,42 @@ Returns a paginated list of all known cookbooks with usage summary.
       "cookbook_name": "nginx",
       "versions": [
         {
-          "version": "5.1.0",
-          "source": "git",
-          "organisation": null,
+          "version": "4.0.0",
+          "organisation": "myorg-production",
           "node_count": 1200,
           "active": true,
-          "has_test_suite": true,
-          "commit_sha": "a1b2c3d4e5f6",
-          "last_tested_at": "2024-06-15T14:30:00Z"
+          "is_frozen": true,
+          "maintainer": "ops-team",
+          "description": "Installs and configures nginx",
+          "license": "Apache-2.0",
+          "platforms": ["ubuntu", "centos", "redhat"],
+          "dependencies": { "apt": ">= 0.0.0", "yum": ">= 0.0.0" },
+          "cookstyle_results": {
+            "passed": false,
+            "offence_count": 7,
+            "deprecation_count": 3,
+            "scanned_at": "2024-06-15T15:00:00Z"
+          },
+          "download_status": "complete"
         },
         {
-          "version": "4.0.0",
-          "source": "chef_server",
+          "version": "3.2.1",
           "organisation": "myorg-staging",
           "node_count": 5,
           "active": true,
-          "has_test_suite": false,
-          "last_scanned_at": "2024-06-15T15:00:00Z"
+          "is_frozen": false,
+          "maintainer": "ops-team",
+          "description": "Installs and configures nginx",
+          "license": "Apache-2.0",
+          "platforms": ["ubuntu", "centos"],
+          "dependencies": { "apt": ">= 0.0.0" },
+          "cookstyle_results": {
+            "passed": true,
+            "offence_count": 0,
+            "deprecation_count": 0,
+            "scanned_at": "2024-06-15T14:45:00Z"
+          },
+          "download_status": "complete"
         }
       ],
       "total_node_count": 1205
@@ -645,11 +666,11 @@ Returns a paginated list of all known cookbooks with usage summary.
 }
 ```
 
-### Get Cookbook Detail
+### Get Server Cookbook Detail
 
 #### `GET /api/v1/cookbooks/:name`
 
-Returns full detail for a specific cookbook across all versions and sources, including test history, CookStyle results, remediation guidance, complexity scores, and Policyfile references.
+Returns full detail for a specific server cookbook across all versions and organisations, including CookStyle results, complexity scores, associated git repos (matched by name), and Policyfile references.
 
 **Response (200):**
 
@@ -658,50 +679,19 @@ Returns full detail for a specific cookbook across all versions and sources, inc
   "cookbook_name": "nginx",
   "is_stale_cookbook": false,
   "first_seen_at": "2024-01-15T10:00:00Z",
-  "versions": [
-    {
-      "version": "5.1.0",
-      "source": "git",
-      "organisation": null,
-      "node_count": 1200,
-      "active": true,
-      "has_test_suite": true,
-      "commit_sha": "a1b2c3d4e5f6",
-      "default_branch": "main",
-      "test_results": [
-        {
-          "target_chef_version": "18.5.0",
-          "converge_passed": true,
-          "tests_passed": true,
-          "commit_sha": "a1b2c3d4e5f6",
-          "tested_at": "2024-06-15T14:30:00Z"
-        },
-        {
-          "target_chef_version": "19.0.0",
-          "converge_passed": true,
-          "tests_passed": false,
-          "commit_sha": "a1b2c3d4e5f6",
-          "tested_at": "2024-06-15T14:35:00Z"
-        }
-      ],
-      "complexity": [
-        {
-          "target_chef_version": "19.0.0",
-          "score": 30,
-          "label": "medium",
-          "affected_node_count": 1200,
-          "affected_role_count": 3,
-          "affected_policy_count": 0
-        }
-      ]
-    },
+  "server_cookbooks": [
     {
       "version": "4.0.0",
-      "source": "chef_server",
-      "organisation": "myorg-staging",
-      "node_count": 5,
+      "organisation": "myorg-production",
+      "node_count": 1200,
       "active": true,
-      "has_test_suite": false,
+      "is_frozen": true,
+      "maintainer": "ops-team",
+      "description": "Installs and configures nginx",
+      "long_description": "A comprehensive cookbook for installing and configuring the nginx web server.",
+      "license": "Apache-2.0",
+      "platforms": ["ubuntu", "centos", "redhat"],
+      "dependencies": { "apt": ">= 0.0.0", "yum": ">= 0.0.0" },
       "cookstyle_results": {
         "passed": false,
         "offence_count": 7,
@@ -715,11 +705,52 @@ Returns full detail for a specific cookbook across all versions and sources, inc
           "label": "medium",
           "auto_correctable": 4,
           "manual_fix": 3,
+          "affected_node_count": 1200,
+          "affected_role_count": 3,
+          "affected_policy_count": 0
+        }
+      ],
+      "download_status": "complete"
+    },
+    {
+      "version": "3.2.1",
+      "organisation": "myorg-staging",
+      "node_count": 5,
+      "active": true,
+      "is_frozen": false,
+      "maintainer": "ops-team",
+      "description": "Installs and configures nginx",
+      "long_description": "A comprehensive cookbook for installing and configuring the nginx web server.",
+      "license": "Apache-2.0",
+      "platforms": ["ubuntu", "centos"],
+      "dependencies": { "apt": ">= 0.0.0" },
+      "cookstyle_results": {
+        "passed": true,
+        "offence_count": 0,
+        "deprecation_count": 0,
+        "scanned_at": "2024-06-15T14:45:00Z"
+      },
+      "complexity": [
+        {
+          "target_chef_version": "18.5.0",
+          "score": 2,
+          "label": "low",
+          "auto_correctable": 0,
+          "manual_fix": 0,
           "affected_node_count": 5,
           "affected_role_count": 1,
           "affected_policy_count": 0
         }
-      ]
+      ],
+      "download_status": "complete"
+    }
+  ],
+  "git_repos": [
+    {
+      "name": "nginx",
+      "git_repo_url": "https://github.com/myorg/nginx-cookbook.git",
+      "default_branch": "main",
+      "detail_url": "/api/v1/git-repos/nginx"
     }
   ],
   "nodes_by_platform": [
@@ -745,11 +776,11 @@ Returns full detail for a specific cookbook across all versions and sources, inc
 
 ### Trigger Manual Rescan
 
-#### `POST /api/v1/cookbooks/:name/:version/rescan`
+#### `POST /api/v1/cookbooks/:name/rescan`
 
 **Requires: `admin` role.**
 
-Triggers a re-download and re-analysis of a specific cookbook version. Used for exceptional cases such as data corruption or tooling bugs.
+Resets the download status for a server cookbook, triggering a re-download and re-analysis on the next collection cycle. Used for exceptional cases such as data corruption or tooling bugs. For git repo rescans, see `POST /api/v1/git-repos/:name/rescan`.
 
 **Request body (optional):**
 
@@ -759,14 +790,320 @@ Triggers a re-download and re-analysis of a specific cookbook version. Used for 
 }
 ```
 
-If `organisation` is provided, only that organisation's copy is rescanned. If omitted, all copies across all organisations are rescanned (for Chef server-sourced cookbooks) or the git-sourced version is re-tested.
+If `organisation` is provided, only that organisation's copy is rescanned. If omitted, all copies across all organisations are rescanned.
 
 **Response (202):**
 
 ```json
 {
-  "message": "Rescan queued for cookbook nginx version 5.1.0.",
-  "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+  "message": "Download status reset for cookbook nginx. Re-download will occur on next collection cycle.",
+  "cookbook_name": "nginx",
+  "versions_reset": 2
+}
+```
+
+---
+
+## Git Repo Endpoints
+
+> **Note:** These endpoints serve **git repos** — cookbook source repositories cloned from Git. For Chef server-sourced cookbooks, see [Server Cookbook Endpoints](#server-cookbook-endpoints) above.
+
+### List Git Repos
+
+#### `GET /api/v1/git-repos`
+
+Returns a paginated list of all known git repos with optional name filtering.
+
+**Query parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Substring filter on repo name |
+| `page` | integer | Page number (default: 1) |
+| `per_page` | integer | Items per page (default: 50) |
+
+**Response (200):**
+
+```json
+{
+  "data": [
+    {
+      "id": 42,
+      "name": "nginx",
+      "git_repo_url": "https://github.com/myorg/nginx-cookbook.git",
+      "head_commit_sha": "a1b2c3d4e5f67890abcdef1234567890abcdef12",
+      "default_branch": "main",
+      "has_test_suite": true,
+      "last_fetched_at": "2024-06-15T14:30:00Z"
+    },
+    {
+      "id": 43,
+      "name": "base",
+      "git_repo_url": "https://github.com/myorg/base-cookbook.git",
+      "head_commit_sha": "b2c3d4e5f67890abcdef1234567890abcdef1234",
+      "default_branch": "main",
+      "has_test_suite": false,
+      "last_fetched_at": "2024-06-15T14:32:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 50,
+    "total_items": 87,
+    "total_pages": 2
+  }
+}
+```
+
+### Get Git Repo Detail
+
+#### `GET /api/v1/git-repos/:name`
+
+Returns full detail for a specific git repo, including CookStyle results, Test Kitchen results, and complexity scores.
+
+**Response (200):**
+
+```json
+{
+  "name": "nginx",
+  "git_repos": [
+    {
+      "git_repo": {
+        "id": 42,
+        "name": "nginx",
+        "git_repo_url": "https://github.com/myorg/nginx-cookbook.git",
+        "head_commit_sha": "a1b2c3d4e5f67890abcdef1234567890abcdef12",
+        "default_branch": "main",
+        "has_test_suite": true,
+        "last_fetched_at": "2024-06-15T14:30:00Z"
+      },
+      "cookstyle": [
+        {
+          "target_chef_version": "18.5.0",
+          "passed": true,
+          "offence_count": 0,
+          "deprecation_count": 0,
+          "scanned_at": "2024-06-15T14:35:00Z"
+        },
+        {
+          "target_chef_version": "19.0.0",
+          "passed": false,
+          "offence_count": 4,
+          "deprecation_count": 2,
+          "scanned_at": "2024-06-15T14:36:00Z"
+        }
+      ],
+      "test_kitchen": [
+        {
+          "target_chef_version": "18.5.0",
+          "converge_passed": true,
+          "tests_passed": true,
+          "commit_sha": "a1b2c3d4e5f67890abcdef1234567890abcdef12",
+          "tested_at": "2024-06-15T14:40:00Z"
+        },
+        {
+          "target_chef_version": "19.0.0",
+          "converge_passed": true,
+          "tests_passed": false,
+          "commit_sha": "a1b2c3d4e5f67890abcdef1234567890abcdef12",
+          "tested_at": "2024-06-15T14:42:00Z"
+        }
+      ],
+      "complexity": [
+        {
+          "target_chef_version": "19.0.0",
+          "score": 30,
+          "label": "medium",
+          "auto_correctable": 2,
+          "manual_fix": 2,
+          "affected_node_count": 1200,
+          "affected_role_count": 3,
+          "affected_policy_count": 0
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Trigger Git Repo Rescan
+
+#### `POST /api/v1/git-repos/:name/rescan`
+
+**Requires: authenticated user.**
+
+Invalidates all CookStyle results, complexity scores, and autocorrect previews for the named git repo. The next collection cycle will re-run analysis from the current HEAD.
+
+**Response (200):**
+
+```json
+{
+  "git_repo_name": "nginx",
+  "repos_invalidated": 1,
+  "message": "All analysis results invalidated for git repo nginx. Re-analysis will occur on next collection cycle."
+}
+```
+
+### Reset Git Repo
+
+#### `POST /api/v1/git-repos/:name/reset`
+
+**Requires: `operator` or `admin` role.**
+
+Deletes all git repo data (analysis results, committer records) and removes the local clone from disk. The repo will be re-cloned and re-analysed on the next collection cycle.
+
+**Response (200):**
+
+```json
+{
+  "git_repo_name": "nginx",
+  "repos_deleted": 1,
+  "committers_deleted": 12,
+  "repo_urls_removed": ["https://github.com/myorg/nginx-cookbook.git"],
+  "local_clone_removed": true,
+  "message": "Git repo nginx fully reset. Re-clone will occur on next collection cycle."
+}
+```
+
+### List Git Repo Committers
+
+#### `GET /api/v1/git-repos/:name/committers`
+
+Returns a list of committers for the named git repo.
+
+**Response (200):**
+
+```json
+{
+  "git_repo_name": "nginx",
+  "committers": [
+    {
+      "name": "Jane Smith",
+      "email": "jane.smith@example.com",
+      "commit_count": 47,
+      "last_commit_at": "2024-06-14T09:15:00Z",
+      "is_owner": true
+    },
+    {
+      "name": "John Doe",
+      "email": "john.doe@example.com",
+      "commit_count": 12,
+      "last_commit_at": "2024-05-20T16:30:00Z",
+      "is_owner": false
+    }
+  ]
+}
+```
+
+### Assign Git Repo Committers as Owners
+
+#### `POST /api/v1/git-repos/:name/committers/assign`
+
+**Requires: `operator` or `admin` role.**
+
+Assigns one or more committers as owners of the git repo for ownership tracking.
+
+**Request body:**
+
+```json
+{
+  "emails": ["jane.smith@example.com", "john.doe@example.com"]
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "git_repo_name": "nginx",
+  "assigned": 2,
+  "message": "2 committers assigned as owners for git repo nginx."
+}
+```
+
+### Get Git Repo Remediation Detail
+
+#### `GET /api/v1/git-repos/:name/:version/remediation`
+
+Returns the full remediation guidance for a specific git repo version, including offense groups, autocorrect preview, and cop-level remediation guidance.
+
+**Query parameters:** `target_chef_version` (optional, defaults to all configured targets).
+
+**Response (200):**
+
+```json
+{
+  "git_repo_name": "nginx",
+  "version": "5.1.0",
+  "target_chef_version": "19.0.0",
+  "source": "git",
+  "complexity_score": 30,
+  "complexity_label": "medium",
+  "statistics": {
+    "error_count": 1,
+    "deprecation_count": 2,
+    "correctness_count": 0,
+    "modernize_count": 1,
+    "auto_correctable_count": 2,
+    "manual_fix_count": 2
+  },
+  "offense_groups": [
+    {
+      "cop_name": "ChefDeprecations/ResourceWithoutUnifiedTrue",
+      "severity": "warning",
+      "count": 2,
+      "all_auto_correctable": true,
+      "offenses": [
+        {
+          "message": "Set unified_mode true in Chef Infra Client 15.3+",
+          "file": "resources/my_resource.rb",
+          "location": { "start_line": 10, "start_column": 1, "last_line": 10, "last_column": 30 },
+          "corrected_by_autocorrect": true
+        },
+        {
+          "message": "Set unified_mode true in Chef Infra Client 15.3+",
+          "file": "resources/other_resource.rb",
+          "location": { "start_line": 5, "start_column": 1, "last_line": 5, "last_column": 28 },
+          "corrected_by_autocorrect": true
+        }
+      ],
+      "remediation": {
+        "description": "Custom resources should enable unified mode for compatibility with Chef 18+.",
+        "migration_url": "https://docs.chef.io/unified_mode/",
+        "introduced_in": "15.3",
+        "removed_in": null,
+        "replacement_pattern": "# Before:\nresource_name :my_resource\n\n# After:\nresource_name :my_resource\nunified_mode true"
+      }
+    },
+    {
+      "cop_name": "ChefDeprecations/Cheffile",
+      "severity": "error",
+      "count": 1,
+      "all_auto_correctable": false,
+      "offenses": [
+        {
+          "message": "Cheffile is deprecated. Use a Policyfile or Berkshelf instead.",
+          "file": "Cheffile",
+          "location": { "start_line": 1, "start_column": 1, "last_line": 1, "last_column": 1 },
+          "corrected_by_autocorrect": false
+        }
+      ],
+      "remediation": {
+        "description": "The Cheffile dependency format is no longer supported. Migrate to Policyfile.rb or Berksfile.",
+        "migration_url": "https://docs.chef.io/policyfile/",
+        "introduced_in": "14.0",
+        "removed_in": "15.0",
+        "replacement_pattern": null
+      }
+    }
+  ],
+  "autocorrect_preview": {
+    "total_offenses": 4,
+    "correctable_offenses": 2,
+    "remaining_offenses": 2,
+    "files_modified": 2,
+    "diff": "--- a/resources/my_resource.rb\n+++ b/resources/my_resource.rb\n@@ -10,1 +10,2 @@\n-resource_name :my_resource\n+resource_name :my_resource\n+unified_mode true\n"
+  }
 }
 ```
 
@@ -774,13 +1111,13 @@ If `organisation` is provided, only that organisation's copy is rescanned. If om
 
 ## Remediation Endpoints
 
-### Get Cookbook Remediation Detail
+### Get Server Cookbook Remediation Detail
 
 #### `GET /api/v1/cookbooks/:name/:version/remediation`
 
-Returns the full remediation guidance for a specific cookbook version, including auto-correct preview, enriched deprecation offenses with migration documentation, and complexity score.
+Returns the full remediation guidance for a specific server cookbook version, including auto-correct preview, enriched deprecation offenses with migration documentation, and complexity score. This endpoint serves **server cookbooks only**. For git repo remediation, see `GET /api/v1/git-repos/:name/:version/remediation`.
 
-**Query parameters:** `organisation` (optional, for Chef server-sourced cookbooks), `target_chef_version` (optional, defaults to all configured targets).
+**Query parameters:** `organisation` (optional, scopes to a specific organisation's copy), `target_chef_version` (optional, defaults to all configured targets).
 
 **Response (200):**
 
@@ -862,7 +1199,7 @@ Returns the full remediation guidance for a specific cookbook version, including
 
 #### `GET /api/v1/remediation/priority`
 
-Returns all incompatible and CookStyle-flagged cookbooks sorted by a priority score that combines complexity and blast radius. This powers the remediation guidance view in the dashboard.
+Returns all incompatible and CookStyle-flagged cookbooks sorted by a priority score that combines complexity and blast radius. This powers the remediation guidance view in the dashboard. This endpoint aggregates results from both **server cookbooks** and **git repos**. The `source` field in each entry (`"chef_server"` or `"git"`) indicates the origin.
 
 **Query parameters:** `target_chef_version` (required), standard filters, pagination.
 
@@ -2012,6 +2349,7 @@ All events use a consistent JSON envelope:
 | `complexity_updated` | Complexity scores recalculated for cookbooks | `{ "cookbook_name": "nginx", "cookbook_version": "5.1.0" }` |
 | `rescan_started` | A manual cookbook rescan was triggered | `{ "cookbook_name": "nginx", "cookbook_version": "5.1.0", "job_id": "..." }` |
 | `rescan_complete` | A manual cookbook rescan finished | `{ "cookbook_name": "nginx", "cookbook_version": "5.1.0", "job_id": "..." }` |
+| `git_repo_status_changed` | Git repo rescan/reset requested | `{ "git_repo_name": "nginx", "action": "rescan", "repos_affected": 1 }` |
 
 #### Export Events
 

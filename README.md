@@ -61,8 +61,9 @@ Chef Migration Metrics is a Go application with the following major components:
 │         │                 │                        │             │
 │  ┌──────┴─────────────────┴────────────────────────┴───────────┐ │
 │  │                    PostgreSQL Datastore                      │ │
-│  │  Nodes · Cookbooks · Test results · Remediation · Complexity│ │
-│  │  Dependency graph · Logs · Metrics · Notifications · Exports│ │
+│  │  Nodes · Server Cookbooks · Git Repos · Test results ·     │ │
+│  │  Remediation · Complexity · Dependency graph · Logs ·       │ │
+│  │  Metrics · Notifications · Exports                          │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
          │                                         │
@@ -82,7 +83,7 @@ Chef Migration Metrics is a Go application with the following major components:
 
 | Component | Description |
 |-----------|-------------|
-| **Data Collection** | Periodically collects node attributes from Chef Infra Server organisations using partial search. Supports both classic and Policyfile nodes. Fetches cookbooks from git repositories and the Chef server. Collects role dependency graphs. Detects stale nodes and cookbooks. |
+| **Data Collection** | Periodically collects node attributes from Chef Infra Server organisations using partial search. Supports both classic and Policyfile nodes. Fetches server cookbooks from the Chef server and manages git repository clones for cookbooks with known git repos. Collects role dependency graphs. Detects stale nodes and cookbooks. |
 | **Analysis** | Computes cookbook usage statistics, runs Test Kitchen and CookStyle compatibility tests, generates remediation guidance (auto-correct previews, migration docs), computes complexity scores and blast radius, and evaluates per-node upgrade readiness. |
 | **Web Dashboard** | Presents version distribution, cookbook compatibility (with confidence indicators), node readiness, dependency graph, remediation guidance, and logs through an interactive web UI. Supports data exports and notification configuration. |
 | **Notifications** | Sends webhook and email notifications for cookbook status changes, readiness milestones, collection failures, and stale node threshold alerts. |
@@ -417,7 +418,7 @@ Detailed specifications for every component are maintained under `.claude/specif
 | [Authentication](.claude/specifications/auth/Specification.md) | Local, LDAP, SAML providers and RBAC |
 | [Logging](.claude/specifications/logging/Specification.md) | Structured logging, scopes (including notifications and exports), retention |
 | [Chef API](.claude/specifications/chef-api/Specification.md) | Chef Infra Server API endpoints and signing protocol |
-| [Datastore](.claude/specifications/datastore/Specification.md) | Database schema, tables, indexes, relationships (including remediation, complexity, dependency graph, notifications, and exports) |
+| [Datastore](.claude/specifications/datastore/Specification.md) | Database schema, tables, indexes, relationships — server cookbooks, git repos, split analysis result tables, remediation, complexity, dependency graph, notifications, and exports |
 | [Web API](.claude/specifications/web-api/Specification.md) | HTTP API endpoints between backend and frontend (including remediation, dependency graph, exports, and notifications) |
 | [Packaging](.claude/specifications/packaging/Specification.md) | RPM, DEB, container image, Docker Compose, and Helm chart |
 | [Ownership](.claude/specifications/ownership/Specification.md) | Ownership tracking for nodes, roles, policyfiles, cookbooks, and git repositories — owner model, auto-derivation rules, bulk import, owner-scoped views and exports |

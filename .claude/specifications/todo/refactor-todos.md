@@ -474,10 +474,10 @@ Individual commits on a single branch, in dependency order:
 - [x] Update all remaining `*_test.go` files for split types
 
 ### Commit 26 — Documentation
-- [ ] Update `.claude/specifications/datastore/Specification.md` — replace section 4 (`cookbooks`) with `server_cookbooks` + `git_repos` tables and split analysis result tables
-- [ ] Update `.claude/specifications/data-collection/Specification.md` — section 2 ("Cookbook Fetching") clarify server vs git repo paths
-- [ ] Update `.claude/specifications/web-api/Specification.md` — new endpoint documentation
-- [ ] Update `README.md`
+- [x] Update `.claude/specifications/datastore/Specification.md` — replace section 4 (`cookbooks`) with `server_cookbooks` + `git_repos` tables and split analysis result tables
+- [x] Update `.claude/specifications/data-collection/Specification.md` — section 2 ("Cookbook Fetching") clarify server vs git repo paths
+- [x] Update `.claude/specifications/web-api/Specification.md` — new endpoint documentation
+- [x] Update `README.md`
 
 ---
 

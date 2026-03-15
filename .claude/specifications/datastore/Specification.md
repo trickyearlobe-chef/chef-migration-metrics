@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-PostgreSQL schema for all persisted data. Key tables: `credentials` (AES-256-GCM encrypted secrets — Chef API keys, LDAP passwords, SMTP passwords, webhook URLs), `organisations` (with optional FK to stored credentials), `collection_runs`, `node_snapshots` (with `is_stale`, `policy_name`, `policy_group`), `cookbook_versions`, `cookstyle_results`, `test_kitchen_results`, `readiness_results`, `autocorrect_previews`, `cookbook_complexity`, `role_dependencies`, `notification_history`, `export_jobs`, `log_entries`, `metric_snapshots`, `owners`, `ownership_assignments`, `git_repo_committers`, `ownership_audit_log`. Schema managed via sequential numbered migrations. Retention policies apply to snapshots, logs, exports, and metric data.
+PostgreSQL schema for all persisted data. Key tables: `credentials` (AES-256-GCM encrypted secrets — Chef API keys, LDAP passwords, SMTP passwords, webhook URLs), `organisations` (with optional FK to stored credentials), `collection_runs`, `node_snapshots` (with `is_stale`, `policy_name`, `policy_group`), `server_cookbooks` (Chef server-sourced cookbook versions), `git_repos` (git-sourced repositories), `server_cookbook_cookstyle_results`, `git_repo_cookstyle_results`, `git_repo_test_kitchen_results`, `readiness_results`, `server_cookbook_autocorrect_previews`, `git_repo_autocorrect_previews`, `server_cookbook_complexity`, `git_repo_complexity`, `role_dependencies`, `notification_history`, `export_jobs`, `log_entries`, `metric_snapshots`, `owners`, `ownership_assignments`, `git_repo_committers`, `ownership_audit_log`. Schema managed via sequential numbered migrations. Retention policies apply to snapshots, logs, exports, and metric data.
 
 ---
 
@@ -218,69 +218,94 @@ Stores a point-in-time snapshot of each node's attributes as collected during a 
 
 ---
 
-### 4. `cookbooks`
+### 4a. `server_cookbooks`
 
-Stores metadata about each known cookbook. A cookbook is uniquely identified by organisation + name + version for Chef server-sourced cookbooks. Git-sourced cookbooks are identified by name alone (versions are managed via git).
+Stores metadata about each known Chef server-sourced cookbook version. A server cookbook is uniquely identified by organisation + name + version.
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
-| `organisation_id` | UUID | Yes | FK → `organisations.id`. Null for git-sourced cookbooks that span organisations |
+| `organisation_id` | UUID | No | FK → `organisations.id` |
 | `name` | TEXT | No | Cookbook name |
-| `version` | TEXT | Yes | Cookbook version. Null for git-sourced cookbooks (HEAD is tested) |
-| `source` | TEXT | No | One of: `git`, `chef_server` |
-| `git_repo_url` | TEXT | Yes | Full git repository URL (git-sourced only) |
-| `head_commit_sha` | TEXT | Yes | Latest HEAD commit SHA of the default branch (git-sourced only) |
-| `default_branch` | TEXT | Yes | Detected default branch name, e.g. `main` or `master` (git-sourced only) |
-| `has_test_suite` | BOOLEAN | No | Whether the cookbook contains a Test Kitchen configuration |
+| `version` | TEXT | No | Cookbook version |
 | `is_active` | BOOLEAN | No | Whether the cookbook is applied to at least one node |
 | `is_stale_cookbook` | BOOLEAN | No | Whether the cookbook's most recent version is older than the configured stale threshold |
+| `is_frozen` | BOOLEAN | No | Whether the cookbook version is frozen on the Chef server |
 | `download_status` | TEXT | No | Download status: `ok` (content fetched successfully), `failed` (download attempted but failed), or `pending` (not yet downloaded). Default: `pending`. Cookbook versions with `failed` status are excluded from CookStyle and compatibility analysis but still appear in the dashboard with a failure indicator. Versions with `failed` or `pending` status are retried on the next collection run (not treated as "already present" by the immutability optimisation). |
 | `download_error` | TEXT | Yes | Human-readable error detail when `download_status = 'failed'`. Includes the error message and HTTP status code if applicable (e.g. `"404 Not Found: cookbook version not found on server"`, `"checksum mismatch: expected abc123, got def456"`, `"connection timeout after 30s"`). Null when status is `ok` or `pending`. |
+| `maintainer` | TEXT | Yes | Cookbook maintainer name from metadata |
+| `description` | TEXT | Yes | Short description from cookbook metadata |
+| `long_description` | TEXT | Yes | Long description (typically from README) from cookbook metadata |
+| `license` | TEXT | Yes | License identifier from cookbook metadata |
+| `platforms` | JSONB | Yes | Supported platforms from cookbook metadata (e.g. `{"ubuntu": ">= 18.04", "centos": ">= 7.0"}`) |
+| `dependencies` | JSONB | Yes | Cookbook dependencies from metadata (e.g. `{"apt": ">= 2.0", "yum": "~> 5.0"}`) |
 | `first_seen_at` | TIMESTAMPTZ | Yes | When this cookbook version was first observed by the application (proxy for upload date) |
-| `last_fetched_at` | TIMESTAMPTZ | Yes | When the cookbook was last fetched or pulled |
+| `last_fetched_at` | TIMESTAMPTZ | Yes | When the cookbook was last fetched |
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
 | `updated_at` | TIMESTAMPTZ | No | Last update time |
 
 **Unique constraints:**
-- `(organisation_id, name, version)` WHERE `source = 'chef_server'`
-- `(name, git_repo_url)` WHERE `source = 'git'`
+- `(organisation_id, name, version)`
 
 **Check constraints:**
-- `chk_cookbooks_download_status CHECK (download_status IN ('ok', 'failed', 'pending'))`
+- `chk_sc_download_status CHECK (download_status IN ('ok', 'failed', 'pending'))`
 
 **Indexes:**
-- `idx_cookbooks_organisation_id` on `organisation_id`
-- `idx_cookbooks_name` on `name`
-- `idx_cookbooks_source` on `source`
-- `idx_cookbooks_is_active` on `is_active`
-- `idx_cookbooks_is_stale_cookbook` on `is_stale_cookbook`
-- `idx_cookbooks_download_status` on `download_status`
-- `idx_cookbooks_name_version` on `(name, version)`
-- `idx_cookbooks_first_seen_at` on `first_seen_at`
+- `idx_server_cookbooks_organisation_id` on `organisation_id`
+- `idx_server_cookbooks_name` on `name`
+- `idx_server_cookbooks_is_active` on `is_active`
+- `idx_server_cookbooks_is_stale_cookbook` on `is_stale_cookbook`
+- `idx_server_cookbooks_download_status` on `download_status`
+- `idx_server_cookbooks_name_version` on `(name, version)`
+- `idx_server_cookbooks_first_seen_at` on `first_seen_at`
+
+---
+
+### 4b. `git_repos`
+
+Stores metadata about each known git-sourced repository. A git repo is uniquely identified by name + git_repo_url.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `name` | TEXT | No | Repository/cookbook name |
+| `git_repo_url` | TEXT | No | Full git repository URL |
+| `head_commit_sha` | TEXT | Yes | Latest HEAD commit SHA of the default branch |
+| `default_branch` | TEXT | Yes | Detected default branch name, e.g. `main` or `master` |
+| `has_test_suite` | BOOLEAN | No | Whether the repository contains a Test Kitchen configuration |
+| `last_fetched_at` | TIMESTAMPTZ | Yes | When the repository was last fetched or pulled |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+| `updated_at` | TIMESTAMPTZ | No | Last update time |
+
+**Unique constraints:**
+- `(name, git_repo_url)`
+
+**Indexes:**
+- `idx_git_repos_name` on `name`
+- `idx_git_repos_git_repo_url` on `git_repo_url`
 
 ---
 
 ### 5. `cookbook_node_usage`
 
-Junction table recording which nodes use which cookbooks. Derived from `node_snapshots.cookbooks` during each collection run. Represents the current state (most recent collection run).
+Junction table recording which nodes use which server cookbooks. Derived from `node_snapshots.cookbooks` during each collection run. Represents the current state (most recent collection run).
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
-| `cookbook_id` | UUID | No | FK → `cookbooks.id` |
+| `server_cookbook_id` | UUID | No | FK → `server_cookbooks.id` |
 | `node_snapshot_id` | UUID | No | FK → `node_snapshots.id` |
 | `cookbook_version` | TEXT | No | The specific version of the cookbook the node is running |
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
 
 **Foreign keys:**
-- `cookbook_id` → `cookbooks(id)` ON DELETE CASCADE
+- `server_cookbook_id` → `server_cookbooks(id)` ON DELETE CASCADE
 - `node_snapshot_id` → `node_snapshots(id)` ON DELETE CASCADE
 
 **Indexes:**
-- `idx_cookbook_node_usage_cookbook_id` on `cookbook_id`
+- `idx_cookbook_node_usage_server_cookbook_id` on `server_cookbook_id`
 - `idx_cookbook_node_usage_node_snapshot_id` on `node_snapshot_id`
-- `idx_cookbook_node_usage_cookbook_version` on `(cookbook_id, cookbook_version)`
+- `idx_cookbook_node_usage_cookbook_version` on `(server_cookbook_id, cookbook_version)`
 
 ---
 
@@ -310,14 +335,14 @@ Records which roles reference which cookbooks. Derived from role data collected 
 
 ---
 
-### 7. `test_kitchen_results`
+### 7. `git_repo_test_kitchen_results`
 
-Stores Test Kitchen test results for git-sourced cookbooks tested against target Chef Client versions.
+Stores Test Kitchen test results for git-sourced repositories tested against target Chef Client versions.
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
-| `cookbook_id` | UUID | No | FK → `cookbooks.id` |
+| `git_repo_id` | UUID | No | FK → `git_repos.id` |
 | `target_chef_version` | TEXT | No | Target Chef Client version tested against |
 | `commit_sha` | TEXT | No | Git commit SHA at the time of testing |
 | `converge_passed` | BOOLEAN | No | Whether the cookbook converged successfully |
@@ -331,28 +356,28 @@ Stores Test Kitchen test results for git-sourced cookbooks tested against target
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
 
 **Foreign keys:**
-- `cookbook_id` → `cookbooks(id)` ON DELETE CASCADE
+- `git_repo_id` → `git_repos(id)` ON DELETE CASCADE
 
 **Unique constraints:**
-- `(cookbook_id, target_chef_version, commit_sha)` — ensures one result per cookbook + version + commit
+- `(git_repo_id, target_chef_version, commit_sha)` — ensures one result per git repo + target version + commit
 
 **Indexes:**
-- `idx_test_kitchen_results_cookbook_id` on `cookbook_id`
-- `idx_test_kitchen_results_target_chef_version` on `target_chef_version`
-- `idx_test_kitchen_results_commit_sha` on `commit_sha`
-- `idx_test_kitchen_results_compatible` on `compatible`
-- `idx_test_kitchen_results_cookbook_target` on `(cookbook_id, target_chef_version)`
+- `idx_git_repo_test_kitchen_results_git_repo_id` on `git_repo_id`
+- `idx_git_repo_test_kitchen_results_target_chef_version` on `target_chef_version`
+- `idx_git_repo_test_kitchen_results_commit_sha` on `commit_sha`
+- `idx_git_repo_test_kitchen_results_compatible` on `compatible`
+- `idx_git_repo_test_kitchen_results_repo_target` on `(git_repo_id, target_chef_version)`
 
 ---
 
-### 8. `cookstyle_results`
+### 8a. `server_cookbook_cookstyle_results`
 
 Stores CookStyle scan results for Chef server-sourced cookbooks. Offenses are enriched with remediation guidance from the built-in cop-to-documentation mapping (see [Analysis Specification](../analysis/Specification.md)).
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
-| `cookbook_id` | UUID | No | FK → `cookbooks.id` |
+| `server_cookbook_id` | UUID | No | FK → `server_cookbooks.id` |
 | `target_chef_version` | TEXT | Yes | Target Chef Client version this scan was run for (null if run with full rule set) |
 | `passed` | BOOLEAN | No | Whether CookStyle reported no errors |
 | `offence_count` | INTEGER | No | Total number of CookStyle offences |
@@ -367,27 +392,62 @@ Stores CookStyle scan results for Chef server-sourced cookbooks. Offenses are en
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
 
 **Foreign keys:**
-- `cookbook_id` → `cookbooks(id)` ON DELETE CASCADE
+- `server_cookbook_id` → `server_cookbooks(id)` ON DELETE CASCADE
 
 **Unique constraints:**
-- `(cookbook_id, target_chef_version)` — one result per Chef server cookbook version per target Chef version (immutable; rescan replaces the row)
+- `(server_cookbook_id, target_chef_version)` — one result per server cookbook version per target Chef version (immutable; rescan replaces the row)
 
 **Indexes:**
-- `idx_cookstyle_results_cookbook_id` on `cookbook_id`
-- `idx_cookstyle_results_target_chef_version` on `target_chef_version`
-- `idx_cookstyle_results_passed` on `passed`
+- `idx_sc_cookstyle_results_server_cookbook_id` on `server_cookbook_id`
+- `idx_sc_cookstyle_results_target_chef_version` on `target_chef_version`
+- `idx_sc_cookstyle_results_passed` on `passed`
 
 ---
 
-### 9. `autocorrect_previews`
+### 8b. `git_repo_cookstyle_results`
 
-Stores CookStyle auto-correct preview results — a diff showing what `cookstyle --auto-correct` would change for cookbooks with offenses. Generated by the Analysis component as part of the remediation guidance pipeline.
+Stores CookStyle scan results for git-sourced repositories. Offenses are enriched with remediation guidance from the built-in cop-to-documentation mapping (see [Analysis Specification](../analysis/Specification.md)).
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
-| `cookbook_id` | UUID | No | FK → `cookbooks.id` |
-| `cookstyle_result_id` | UUID | No | FK → `cookstyle_results.id` — links to the scan that triggered this preview |
+| `git_repo_id` | UUID | No | FK → `git_repos.id` |
+| `target_chef_version` | TEXT | Yes | Target Chef Client version this scan was run for (null if run with full rule set) |
+| `commit_sha` | TEXT | Yes | Git commit SHA at the time of scanning |
+| `passed` | BOOLEAN | No | Whether CookStyle reported no errors |
+| `offence_count` | INTEGER | No | Total number of CookStyle offences |
+| `deprecation_count` | INTEGER | No | Number of `ChefDeprecations/*` offences |
+| `correctness_count` | INTEGER | No | Number of `ChefCorrectness/*` offences |
+| `deprecation_warnings` | JSONB | Yes | Array of deprecation warning objects |
+| `offences` | JSONB | Yes | Full CookStyle offence report (JSON format output), enriched with remediation guidance |
+| `process_stdout` | TEXT | Yes | Captured stdout from the CookStyle process |
+| `process_stderr` | TEXT | Yes | Captured stderr from the CookStyle process |
+| `duration_seconds` | INTEGER | Yes | Wall-clock time for the scan |
+| `scanned_at` | TIMESTAMPTZ | No | When the scan was performed |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+
+**Foreign keys:**
+- `git_repo_id` → `git_repos(id)` ON DELETE CASCADE
+
+**Unique constraints:**
+- `(git_repo_id, target_chef_version)` — one result per git repo per target Chef version (immutable; rescan replaces the row)
+
+**Indexes:**
+- `idx_gr_cookstyle_results_git_repo_id` on `git_repo_id`
+- `idx_gr_cookstyle_results_target_chef_version` on `target_chef_version`
+- `idx_gr_cookstyle_results_passed` on `passed`
+
+---
+
+### 9a. `server_cookbook_autocorrect_previews`
+
+Stores CookStyle auto-correct preview results for server cookbooks — a diff showing what `cookstyle --auto-correct` would change for cookbooks with offenses. Generated by the Analysis component as part of the remediation guidance pipeline.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `server_cookbook_id` | UUID | No | FK → `server_cookbooks.id` |
+| `cookstyle_result_id` | UUID | No | FK → `server_cookbook_cookstyle_results.id` — links to the scan that triggered this preview |
 | `total_offenses` | INTEGER | No | Total offenses before auto-correct |
 | `correctable_offenses` | INTEGER | No | Offenses that auto-correct can fix |
 | `remaining_offenses` | INTEGER | No | Offenses requiring manual intervention |
@@ -397,26 +457,56 @@ Stores CookStyle auto-correct preview results — a diff showing what `cookstyle
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
 
 **Foreign keys:**
-- `cookbook_id` → `cookbooks(id)` ON DELETE CASCADE
-- `cookstyle_result_id` → `cookstyle_results(id)` ON DELETE CASCADE
+- `server_cookbook_id` → `server_cookbooks(id)` ON DELETE CASCADE
+- `cookstyle_result_id` → `server_cookbook_cookstyle_results(id)` ON DELETE CASCADE
 
 **Unique constraints:**
 - `(cookstyle_result_id)` — one preview per CookStyle result
 
 **Indexes:**
-- `idx_autocorrect_previews_cookbook_id` on `cookbook_id`
-- `idx_autocorrect_previews_cookstyle_result_id` on `cookstyle_result_id`
+- `idx_sc_autocorrect_previews_server_cookbook_id` on `server_cookbook_id`
+- `idx_sc_autocorrect_previews_cookstyle_result_id` on `cookstyle_result_id`
 
 ---
 
-### 10. `cookbook_complexity`
+### 9b. `git_repo_autocorrect_previews`
 
-Stores computed complexity scores and blast radius metrics per cookbook per target Chef Client version. Used by the dashboard to help teams prioritise remediation effort.
+Stores CookStyle auto-correct preview results for git repositories — a diff showing what `cookstyle --auto-correct` would change for repositories with offenses. Generated by the Analysis component as part of the remediation guidance pipeline.
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
-| `cookbook_id` | UUID | No | FK → `cookbooks.id` |
+| `git_repo_id` | UUID | No | FK → `git_repos.id` |
+| `cookstyle_result_id` | UUID | No | FK → `git_repo_cookstyle_results.id` — links to the scan that triggered this preview |
+| `total_offenses` | INTEGER | No | Total offenses before auto-correct |
+| `correctable_offenses` | INTEGER | No | Offenses that auto-correct can fix |
+| `remaining_offenses` | INTEGER | No | Offenses requiring manual intervention |
+| `files_modified` | INTEGER | No | Number of files that would be changed |
+| `diff_output` | TEXT | Yes | Unified diff of all changes |
+| `generated_at` | TIMESTAMPTZ | No | When the preview was generated |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+
+**Foreign keys:**
+- `git_repo_id` → `git_repos(id)` ON DELETE CASCADE
+- `cookstyle_result_id` → `git_repo_cookstyle_results(id)` ON DELETE CASCADE
+
+**Unique constraints:**
+- `(cookstyle_result_id)` — one preview per CookStyle result
+
+**Indexes:**
+- `idx_gr_autocorrect_previews_git_repo_id` on `git_repo_id`
+- `idx_gr_autocorrect_previews_cookstyle_result_id` on `cookstyle_result_id`
+
+---
+
+### 10a. `server_cookbook_complexity`
+
+Stores computed complexity scores and blast radius metrics per server cookbook per target Chef Client version. Used by the dashboard to help teams prioritise remediation effort.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `server_cookbook_id` | UUID | No | FK → `server_cookbooks.id` |
 | `target_chef_version` | TEXT | No | Target Chef Client version |
 | `complexity_score` | INTEGER | No | Numeric complexity score |
 | `complexity_label` | TEXT | No | One of: `none`, `low`, `medium`, `high`, `critical` |
@@ -434,17 +524,56 @@ Stores computed complexity scores and blast radius metrics per cookbook per targ
 | `updated_at` | TIMESTAMPTZ | No | Last update time |
 
 **Foreign keys:**
-- `cookbook_id` → `cookbooks(id)` ON DELETE CASCADE
+- `server_cookbook_id` → `server_cookbooks(id)` ON DELETE CASCADE
 
 **Unique constraints:**
-- `(cookbook_id, target_chef_version)` — one score per cookbook per target version
+- `(server_cookbook_id, target_chef_version)` — one score per server cookbook per target version
 
 **Indexes:**
-- `idx_cookbook_complexity_cookbook_id` on `cookbook_id`
-- `idx_cookbook_complexity_target_chef_version` on `target_chef_version`
-- `idx_cookbook_complexity_complexity_score` on `complexity_score`
-- `idx_cookbook_complexity_complexity_label` on `complexity_label`
-- `idx_cookbook_complexity_affected_node_count` on `affected_node_count`
+- `idx_sc_complexity_server_cookbook_id` on `server_cookbook_id`
+- `idx_sc_complexity_target_chef_version` on `target_chef_version`
+- `idx_sc_complexity_complexity_score` on `complexity_score`
+- `idx_sc_complexity_complexity_label` on `complexity_label`
+- `idx_sc_complexity_affected_node_count` on `affected_node_count`
+
+---
+
+### 10b. `git_repo_complexity`
+
+Stores computed complexity scores and blast radius metrics per git repository per target Chef Client version. Used by the dashboard to help teams prioritise remediation effort.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `git_repo_id` | UUID | No | FK → `git_repos.id` |
+| `target_chef_version` | TEXT | No | Target Chef Client version |
+| `complexity_score` | INTEGER | No | Numeric complexity score |
+| `complexity_label` | TEXT | No | One of: `none`, `low`, `medium`, `high`, `critical` |
+| `error_count` | INTEGER | No | Count of error/fatal CookStyle offenses |
+| `deprecation_count` | INTEGER | No | Count of `ChefDeprecations/*` offenses |
+| `correctness_count` | INTEGER | No | Count of `ChefCorrectness/*` offenses |
+| `modernize_count` | INTEGER | No | Count of `ChefModernize/*` offenses |
+| `auto_correctable_count` | INTEGER | No | Offenses fixable by auto-correct |
+| `manual_fix_count` | INTEGER | No | Offenses requiring manual intervention |
+| `affected_node_count` | INTEGER | No | Blast radius — number of nodes running this cookbook |
+| `affected_role_count` | INTEGER | No | Blast radius — number of roles that include this cookbook (directly or transitively) |
+| `affected_policy_count` | INTEGER | No | Blast radius — number of Policyfile policy names that include this cookbook |
+| `evaluated_at` | TIMESTAMPTZ | No | When the complexity score was computed |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+| `updated_at` | TIMESTAMPTZ | No | Last update time |
+
+**Foreign keys:**
+- `git_repo_id` → `git_repos(id)` ON DELETE CASCADE
+
+**Unique constraints:**
+- `(git_repo_id, target_chef_version)` — one score per git repo per target version
+
+**Indexes:**
+- `idx_gr_complexity_git_repo_id` on `git_repo_id`
+- `idx_gr_complexity_target_chef_version` on `target_chef_version`
+- `idx_gr_complexity_complexity_score` on `complexity_score`
+- `idx_gr_complexity_complexity_label` on `complexity_label`
+- `idx_gr_complexity_affected_node_count` on `affected_node_count`
 
 ---
 
@@ -787,12 +916,12 @@ Links owners to the entities they are responsible for. An owner can have many as
 
 ### 21. `git_repo_committers`
 
-Stores committer information extracted from git repository history during collection. Updated in full on each collection run for each git-sourced cookbook. Supports the committer sub-page on the cookbook detail view where operators can identify active contributors and assign them as owners. See the [Ownership Specification](../ownership/Specification.md) § 7.2.
+Stores committer information extracted from git repository history during collection. Updated in full on each collection run for each git-sourced repository. Supports the committer sub-page on the repository detail view where operators can identify active contributors and assign them as owners. See the [Ownership Specification](../ownership/Specification.md) § 7.2.
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
-| `git_repo_url` | TEXT | No | Git repository URL (matches `cookbooks.git_repo_url`) |
+| `git_repo_url` | TEXT | No | Git repository URL (matches `git_repos.git_repo_url`) |
 | `author_name` | TEXT | No | Committer's name as recorded in git |
 | `author_email` | TEXT | No | Committer's email as recorded in git |
 | `commit_count` | INTEGER | No | Total number of commits by this author |
@@ -848,13 +977,12 @@ organisations ──────────┬───────────
     │                   │                                                       │
     │ 1:N               │ 1:N                                                   │ 1:N
     ▼                   ▼                                                       ▼
-collection_runs    cookbooks                                             metric_snapshots
+collection_runs    server_cookbooks                                      metric_snapshots
     │                   │
-    │ 1:N               ├── 1:N ──► test_kitchen_results
-    │                   ├── 1:N ──► cookstyle_results (per target version)
+    │ 1:N               ├── 1:N ──► server_cookbook_cookstyle_results (per target version)
     │                   │              │
-    │                   │              └── 1:1 ──► autocorrect_previews
-    │                   ├── 1:N ──► cookbook_complexity (per target version)
+    │                   │              └── 1:1 ──► server_cookbook_autocorrect_previews
+    │                   ├── 1:N ──► server_cookbook_complexity (per target version)
     ▼                   │
 node_snapshots ◄────────┤ (via cookbook_node_usage)
     │                   │
@@ -865,6 +993,14 @@ node_snapshots ◄────────┤ (via cookbook_node_usage)
     │ 1:N
     ▼
 node_readiness
+
+git_repos
+    │
+    ├── 1:N ──► git_repo_test_kitchen_results
+    ├── 1:N ──► git_repo_cookstyle_results (per target version)
+    │              │
+    │              └── 1:1 ──► git_repo_autocorrect_previews
+    ├── 1:N ──► git_repo_complexity (per target version)
 
 organisations ── 1:N ── role_dependencies
 
@@ -882,7 +1018,7 @@ users ── 1:N ── sessions
 owners ── 1:N ── ownership_assignments
 ownership_assignments ── N:1 ── organisations (optional, nullable FK)
 
-git_repo_committers (standalone — references cookbooks by git_repo_url)
+git_repo_committers (standalone — references git_repos by git_repo_url)
 
 ownership_audit_log (standalone — append-only audit trail)
 ```
@@ -945,7 +1081,7 @@ Completed export files are deleted after the configured `exports.retention_hours
 
 ### Auto-Correct Preview Retention
 
-Auto-correct previews are linked to their parent `cookstyle_results` row via CASCADE delete. When a CookStyle result is replaced by a rescan, the associated preview is automatically deleted.
+Auto-correct previews (both `server_cookbook_autocorrect_previews` and `git_repo_autocorrect_previews`) are linked to their parent cookstyle results row (`server_cookbook_cookstyle_results` or `git_repo_cookstyle_results` respectively) via CASCADE delete. When a CookStyle result is replaced by a rescan, the associated preview is automatically deleted.
 
 ---
 
@@ -977,11 +1113,11 @@ Committer data is fully refreshed on each collection run. No time-based retentio
 
 ## Performance Considerations
 
-- **JSONB columns** (`filesystem`, `cookbooks`, `run_list`, `roles`, `data`, `blocking_cookbooks`, `deprecation_warnings`, `offences`, `payload`, `filters`) support efficient querying with GIN indexes if needed, but GIN indexes should only be added if query patterns demand it — they are expensive to maintain.
+- **JSONB columns** (`filesystem`, `cookbooks`, `run_list`, `roles`, `data`, `blocking_cookbooks`, `deprecation_warnings`, `offences`, `payload`, `filters`, `platforms`, `dependencies`) support efficient querying with GIN indexes if needed, but GIN indexes should only be added if query patterns demand it — they are expensive to maintain.
 - **`metric_snapshots`** pre-aggregates data specifically so that dashboard summary views avoid scanning the full `node_snapshots` table. The dashboard should query `metric_snapshots` for trend charts and only fall back to `node_snapshots` for drill-down detail.
-- **`cookbook_complexity`** is queried heavily by the remediation guidance view. The composite index on `(cookbook_id, target_chef_version)` ensures fast lookups. The `affected_node_count` index supports sorting by blast radius.
+- **`server_cookbook_complexity`** is queried heavily by the remediation guidance view. The composite index on `(server_cookbook_id, target_chef_version)` ensures fast lookups. The `affected_node_count` index supports sorting by blast radius. The same applies to **`git_repo_complexity`** with its composite index on `(git_repo_id, target_chef_version)`.
 - **`role_dependencies`** is queried to build the dependency graph. For organisations with hundreds of roles, the graph traversal should be performed as a recursive CTE in PostgreSQL rather than multiple round-trips from the application.
-- **`autocorrect_previews`** can contain large `diff_output` values. The diff should not be included in list queries — only fetched when the user views a specific cookbook's remediation detail.
+- **`server_cookbook_autocorrect_previews`** and **`git_repo_autocorrect_previews`** can contain large `diff_output` values. The diff should not be included in list queries — only fetched when the user views a specific cookbook's or repository's remediation detail.
 - **Partitioning** `node_snapshots` by `collected_at` (range partitioning) should be considered if the table grows beyond tens of millions of rows, as it enables efficient retention purge (drop partition) and faster time-scoped queries.
 - **`log_entries`** should similarly be considered for partitioning by `timestamp` at scale.
 - **`notification_history`** and **`export_jobs`** are low-volume tables and do not require special performance considerations.
