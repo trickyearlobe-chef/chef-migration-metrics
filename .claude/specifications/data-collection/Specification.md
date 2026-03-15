@@ -105,16 +105,18 @@ Nodes that have not checked in recently may have stale attribute data (especiall
 
 ### 2.1 Determining Cookbooks to Fetch
 
-- After node collection, the set of cookbooks in active use is determined from the `cookbooks` attribute collected from nodes.
-- Only cookbooks in active use need to be fetched. Unused cookbooks (present on the Chef server but not applied to any node) must be identified and flagged but do not need to be fetched for analysis.
+- After node collection, the set of cookbooks in active use is determined from the `cookbooks` attribute collected from nodes. The active cookbook set is matched against `server_cookbooks` to identify which Chef server-sourced versions need to be fetched.
+- Git repos in `git_repos` are managed independently and are always pulled on every collection run, regardless of active use status.
+- Only Chef server-sourced cookbooks in active use need to be fetched. Unused cookbooks (present on the Chef server but not applied to any node) must be identified and flagged in `server_cookbooks` but do not need to be fetched for analysis.
 
 ### 2.2 Git Repositories
 
-- Cookbooks with a known git repository are cloned and kept up to date.
+- Cookbooks with a known git repository are cloned and kept up to date. Git repository data is stored in the `git_repos` table.
 - Multiple base git URLs must be supported (e.g. internal GitLab, GitHub).
 - On every collection run, each git repository must be **pulled** to fetch the latest changes.
 - The **default branch** (`main` or `master`) must be detected automatically.
-- The **HEAD commit SHA** of the default branch must be recorded after each pull. This is used by the Analysis component to skip test runs when HEAD has not changed.
+- The **HEAD commit SHA** of the default branch must be recorded in `git_repos` after each pull. This is used by the Analysis component to skip test runs when HEAD has not changed.
+- The **default branch** name and **`has_test_suite`** flag are also stored in the `git_repos` row.
 - Git-sourced cookbooks include test suites (Test Kitchen, InSpec profiles, etc.) and are eligible for full compatibility testing.
 - All git operations must be logged (see [Logging Specification](../logging/Specification.md)).
 - Git pull operations across multiple repositories must run **in parallel** using goroutines, bounded by the `concurrency.git_pull` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
@@ -137,11 +139,12 @@ All git commands must be invoked with the flags listed below to ensure output is
 
 ### 2.3 Chef Infra Server
 
-- Cookbook versions not available via git are downloaded directly from the Chef server using `GET /organizations/<ORG>/cookbooks/<NAME>/<VERSION>`.
+- Cookbook versions not available via git are downloaded directly from the Chef server using `GET /organizations/<ORG>/cookbooks/<NAME>/<VERSION>`. Data for these cookbooks is stored in the `server_cookbooks` table.
+- The manifest response from the Chef server also populates metadata fields on the `server_cookbooks` row: `maintainer`, `description`, `long_description`, `license`, `platforms`, `dependencies`, and `is_frozen`.
 - Cookbook versions on the Chef server are **immutable** — once uploaded, their content never changes. Therefore:
-  - A given cookbook version only needs to be **downloaded once**. Subsequent collection runs must skip versions already present in the datastore.
+  - A given cookbook version only needs to be **downloaded once**. Subsequent collection runs must skip versions already present in `server_cookbooks`.
   - A **manual rescan** option must be provided to force re-download of a specific cookbook version, for exceptional cases such as data corruption or tooling bugs.
-- The same cookbook name and version may differ in content between organisations. Cookbook versions must be keyed in the datastore by **organisation + cookbook name + version**.
+- The same cookbook name and version may differ in content between organisations. Cookbook versions must be keyed in `server_cookbooks` by **organisation + cookbook name + version**.
 - Cookbooks downloaded from the Chef server do **not** include test suites and are not eligible for Test Kitchen testing. They are eligible for CookStyle linting only.
 
 ### 2.4 Cookbook Download Failure Handling
@@ -156,7 +159,7 @@ Individual cookbook version downloads can fail for reasons including but not lim
 These failures must be handled as follows:
 
 1. **Non-fatal** — A download failure for one cookbook version must **not** cause the collection run to fail. Collection must continue for all remaining cookbooks and organisations.
-2. **Flagged** — Each failed cookbook version must be flagged in the datastore with a `download_status` indicating the failure. Valid statuses are `ok`, `failed`, and `pending`. The failure reason (error message, HTTP status code if applicable) must be recorded alongside the flag.
+2. **Flagged** — Each failed cookbook version must be flagged in `server_cookbooks` with a `download_status` indicating the failure. Valid statuses are `ok`, `failed`, and `pending`. The failure reason (error message, HTTP status code if applicable) must be recorded alongside the flag. (Git repos in `git_repos` do not have a `download_status` field.)
 3. **Logged** — Each failure must be logged at `WARN` severity with the `collection_run` scope, including the organisation name, cookbook name, cookbook version, and error detail.
 4. **Excluded from analysis** — Cookbook versions with a `failed` download status must be excluded from CookStyle scanning and compatibility analysis. They must still appear in the dashboard with a visual indicator showing the download failure, so operators can investigate.
 5. **Retried on next run** — Cookbook versions with a `failed` or `pending` download status must be retried on the next collection run (they are not treated as "already present" by the immutability optimisation). If the retry succeeds, the status is updated to `ok` and the cookbook becomes eligible for analysis.
@@ -166,7 +169,7 @@ These failures must be handled as follows:
 
 - When fetching the cookbook inventory from the Chef server (`GET /organizations/<ORG>/cookbooks?num_versions=all`), record the **version creation timestamp** for each cookbook version if available from the Chef server API.
 - If the Chef server does not expose a creation timestamp directly, record the timestamp of the first time the application observed the cookbook version during collection. This serves as a proxy for upload date.
-- The upload/first-seen date is stored in the `cookbooks` table and displayed in the dashboard to help teams identify stale cookbooks that may be candidates for cleanup or consolidation as part of the migration project.
+- The upload/first-seen date is stored in the `server_cookbooks` table and displayed in the dashboard to help teams identify stale cookbooks that may be candidates for cleanup or consolidation as part of the migration project.
 - Cookbooks whose most recent version was uploaded more than a configurable threshold ago (`collection.stale_cookbook_threshold_days`, default: 365 days) are flagged as **stale cookbooks** in the dashboard. This is distinct from the active/unused flag — a cookbook can be actively used but stale (i.e. it hasn't been updated in a long time and may need attention).
 
 ---
