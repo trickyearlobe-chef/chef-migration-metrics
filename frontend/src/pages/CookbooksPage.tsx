@@ -9,13 +9,11 @@ import { StatusBadge } from "../components/StatusBadge";
 
 // ---------------------------------------------------------------------------
 // Cookbooks list page — paginated table from GET /api/v1/cookbooks showing
-// name, version count, test suite status, active/stale indicators.
+// name, version count, active/stale indicators, download status.
 //
-// Colour coding per spec:
-//   green  = has test suite (TK pass capable)
-//   amber  = CookStyle only (no test suite)
-//   red    = incompatible (not shown here — compat is per target version)
-//   grey   = untested / unknown
+// Server cookbooks are downloaded from the Chef Infra Server and do not
+// have test suites (Test Kitchen is only applicable to git repos, which
+// have their own page at /git-repos).
 // ---------------------------------------------------------------------------
 
 export function CookbooksPage() {
@@ -99,7 +97,6 @@ export function CookbooksPage() {
                   <tr>
                     <th>Name</th>
                     <th>Versions</th>
-                    <th>Test Suite</th>
                     <th>Status</th>
                     <th>Download</th>
                   </tr>
@@ -122,13 +119,6 @@ export function CookbooksPage() {
                         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
                           {cb.version_count === 1 ? "1 version" : `${cb.version_count} versions`}
                         </span>
-                      </td>
-                      <td>
-                        {cb.has_test_suite ? (
-                          <StatusBadge variant="compatible" label="Yes" size="sm" />
-                        ) : (
-                          <StatusBadge variant="untested" label="No" size="sm" />
-                        )}
                       </td>
                       <td>
                         <div className="flex gap-1">

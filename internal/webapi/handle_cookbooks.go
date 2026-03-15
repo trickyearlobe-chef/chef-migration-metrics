@@ -168,7 +168,6 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		OrganisationID  string `json:"organisation_id,omitempty"`
 		Name            string `json:"name"`
 		VersionCount    int    `json:"version_count"`
-		HasTestSuite    bool   `json:"has_test_suite"`
 		IsActive        bool   `json:"is_active"`
 		IsStaleCookbook bool   `json:"is_stale_cookbook"`
 		DownloadStatus  string `json:"download_status"`
@@ -180,7 +179,6 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			ID:              cb.ID,
 			OrganisationID:  cb.OrganisationID,
 			Name:            cb.Name,
-			HasTestSuite:    cb.HasTestSuite,
 			IsActive:        cb.IsActive,
 			IsStaleCookbook: cb.IsStaleCookbook,
 			DownloadStatus:  cb.DownloadStatus,
