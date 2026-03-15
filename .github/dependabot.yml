@@ -1,0 +1,113 @@
+# =============================================================================
+# Dependabot — Automated Dependency Updates
+# =============================================================================
+# Monitors Go modules, npm packages, GitHub Actions, and Docker base images
+# for known vulnerabilities and outdated versions. Opens PRs automatically.
+#
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+# =============================================================================
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # Go modules (go.mod / go.sum)
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    reviewers:
+      - trickyearlobe-chef
+    labels:
+      - dependencies
+      - go
+    commit-message:
+      prefix: "deps(go):"
+
+  # ---------------------------------------------------------------------------
+  # npm — frontend React SPA
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    reviewers:
+      - trickyearlobe-chef
+    labels:
+      - dependencies
+      - frontend
+    commit-message:
+      prefix: "deps(npm):"
+    groups:
+      # Bundle minor/patch React updates into a single PR
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      # Bundle dev tooling updates together
+      dev-tooling:
+        dependency-type: development
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "eslint"
+          - "typescript"
+          - "typescript-eslint"
+          - "tailwindcss"
+          - "autoprefixer"
+          - "postcss"
+          - "globals"
+          - "@eslint/*"
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — CI/CD workflow dependencies
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    reviewers:
+      - trickyearlobe-chef
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "deps(actions):"
+
+  # ---------------------------------------------------------------------------
+  # Docker — base images in Dockerfile
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    reviewers:
+      - trickyearlobe-chef
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "deps(docker):"
+
+  # ---------------------------------------------------------------------------
+  # Helm — chart dependencies (e.g. bitnami/postgresql subchart)
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: docker
+    directory: /deploy/helm/chef-migration-metrics
+    schedule:
+      interval: weekly
+      day: monday
+    reviewers:
+      - trickyearlobe-chef
+    labels:
+      - dependencies
+      - helm
+    commit-message:
+      prefix: "deps(helm):"
