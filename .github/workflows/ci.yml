@@ -103,3 +103,42 @@ jobs:
         run: |
           npm ci
           npm test -- --coverage
+
+  # ---------------------------------------------------------------------------
+  # Security
+  # ---------------------------------------------------------------------------
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Create placeholder frontend dist (for go:embed)
+        run: |
+          mkdir -p frontend/dist
+          echo '<!DOCTYPE html><html><head><title>placeholder</title></head><body></body></html>' > frontend/dist/index.html
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run npm audit
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit
