@@ -594,45 +594,70 @@ For each node, the readiness evaluator must determine whether **all** cookbooks 
 
 1. **Get the node's cookbook list.** Read the `automatic.cookbooks` attribute, which is a map of `cookbook_name → { version, ... }`.
 
-2. **For each cookbook + version in the map:**
+2. **For each cookbook + version in the map, check ALL available sources:**
 
-   a. **Check for a Test Kitchen result.** Query the datastore for the most recent test result where:
-      - `cookbook_name` matches
+   a. **Check for a git repo Test Kitchen result.** Query the datastore for the most recent test result where:
+      - `cookbook_name` matches (via `git_repos.name`)
       - `target_chef_version` matches
-      - `converge_passed = true` AND `verify_passed = true`
+      - Result exists (pass or fail)
 
-      If a passing result exists, the cookbook is **compatible**.
+      Record the verdict: `compatible` if `converge_passed = true` AND `verify_passed = true`, otherwise `incompatible`.
 
-   b. **If no Test Kitchen result exists, check for a CookStyle result.** Query the datastore for a CookStyle result where:
+   b. **Check for a git repo CookStyle result.** Query the datastore for a CookStyle result where:
+      - `cookbook_name` matches (via `git_repos.name`)
+      - `target_chef_version` matches
+
+      Record the verdict: `compatible` if `passed = true`, otherwise `incompatible`. If no result exists, record `untested`.
+
+   c. **Check for a server cookbook CookStyle result.** Query the datastore for a CookStyle result where:
       - `organisation` matches the node's organisation
-      - `cookbook_name` matches
-      - `cookbook_version` matches
+      - `cookbook_name` and `cookbook_version` match the version on the node
+      - `target_chef_version` matches (also try with no target version as fallback)
 
-      CookStyle results are treated as follows:
-      - `passed = true` (no error/fatal offenses) → **compatible (CookStyle only)** — the cookbook has no detected errors but has not been integration-tested
-      - `passed = false` → **incompatible (CookStyle)** — the cookbook has errors that likely indicate incompatibility
-      - No CookStyle result exists → **untested**
+      Record the verdict: `compatible` if `passed = true`, otherwise `incompatible`. If no result exists, record `untested`.
 
-   c. **Classify the cookbook:**
+   d. **Compute the overall status from all verdicts:**
 
-      | Status | Meaning | Blocks readiness? |
-      |--------|---------|-------------------|
-      | `compatible` | Test Kitchen pass | No |
-      | `compatible_cookstyle_only` | CookStyle pass, no Test Kitchen | No |
-      | `incompatible` | Test Kitchen fail or CookStyle error/fatal | **Yes** |
-      | `untested` | No test or scan results | **Yes** |
+      | Scenario | Overall Status | Blocks Readiness? |
+      |----------|---------------|-------------------|
+      | Any source says `compatible` | `compatible` | No |
+      | All tested sources say `incompatible` (none compatible) | `incompatible` | **Yes** |
+      | No sources have results at all | `untested` | **Yes** |
 
-3. **Aggregate blocking reasons.** Collect the list of cookbooks that are `incompatible` or `untested`. Each entry in the blocking list records:
-   - Cookbook name and version
-   - Reason (`incompatible` or `untested`)
-   - Source (`test_kitchen` or `cookstyle` or `none`)
-   - Complexity score and label (from the remediation guidance, if available)
+      > **Policy note:** If the server version is incompatible but the git version is compatible, the node is still considered **ready** because a compatible version exists and can be uploaded. The per-source verdicts make it clear what action is needed.
 
-4. **Combine with disk space result.** The node is **ready** only if:
+   e. **Record per-source verdicts.** Each cookbook in the blocking list (or non-blocking list) carries a `verdicts` array with one entry per source checked:
+
+      | Field | Description |
+      |-------|-------------|
+      | `source` | `server_cookstyle`, `git_cookstyle`, or `git_test_kitchen` |
+      | `status` | `compatible`, `incompatible`, or `untested` |
+      | `version` | The version that was tested (server version for server CookStyle, `HEAD` for git sources) |
+      | `commit_sha` | Git HEAD SHA (git sources only, empty for server) |
+      | `complexity_score` | Complexity score from the matching source (0 if not available) |
+      | `complexity_label` | Complexity label from the matching source (empty if not available) |
+
+3. **Classify the cookbook with confidence level:**
+
+   | Overall Status | Confidence | Meaning |
+   |---------------|------------|---------|
+   | `compatible` (Test Kitchen) | High | Full integration test passed |
+   | `compatible` (CookStyle only — git or server) | Medium | Static analysis only — no integration test |
+   | `incompatible` | N/A | All tested sources report incompatibility |
+   | `untested` | N/A | No test or scan results from any source |
+
+4. **Aggregate blocking reasons.** Collect the list of cookbooks that are `incompatible` or `untested`. Each entry in the blocking list records:
+   - Cookbook name and version (the version on the node)
+   - Overall reason (`incompatible` or `untested`)
+   - Primary source (the source that determined the overall status)
+   - Complexity score and label (from the highest-confidence source, if available)
+   - Per-source verdicts array (all sources checked with their individual results)
+
+5. **Combine with disk space result.** The node is **ready** only if:
    - The cookbook blocking list is empty, AND
-   - Disk space is sufficient (or unknown — see note below)
+   - Disk space is sufficient
 
-   > **Note on unknown disk space:** Nodes with unknown disk space status are classified as **blocked (unknown disk space)** to err on the side of caution. The dashboard must surface these nodes distinctly so that operators can investigate.
+   > **Note on unknown disk space:** Nodes with unknown disk space status are classified as **blocked (unknown disk space)** to err on the side of caution.
 
 **Persistence:**
 
@@ -646,24 +671,7 @@ Write one readiness record per node per target Chef Client version:
 | `ready` | Boolean |
 | `disk_space_available_mb` | Available MB on the installation mount (null if unknown) |
 | `disk_space_sufficient` | Boolean or null (unknown) |
-| `blocking_cookbooks` | JSON array of `{ name, version, reason, source }` |
-| `evaluated_at` | UTC timestamp |
-
----
-
-**Persistence (updated for stale data):**
-
-Write one readiness record per node per target Chef Client version:
-
-| Field | Value |
-|-------|-------|
-| `organisation` | Chef server organisation name |
-| `node_name` | Node name |
-| `target_chef_version` | Target Chef Client version |
-| `ready` | Boolean |
-| `disk_space_available_mb` | Available MB on the installation mount (null if unknown) |
-| `disk_space_sufficient` | Boolean or null (unknown) |
-| `blocking_cookbooks` | JSON array of `{ name, version, reason, source, complexity_score, complexity_label }` |
+| `blocking_cookbooks` | JSON array of `{ name, version, reason, source, complexity_score, complexity_label, verdicts: [{ source, status, version, commit_sha, complexity_score, complexity_label }] }` |
 | `stale_data` | Boolean — true if the node's last check-in exceeds the stale threshold |
 | `evaluated_at` | UTC timestamp |
 
