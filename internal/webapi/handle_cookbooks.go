@@ -179,10 +179,8 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		allComplexities, cxErr := r.db.ListAllGitRepoComplexities(ctx)
 		if cxErr == nil {
 			repoNameByID := make(map[string]string)
-			if gitRepos != nil {
-				for _, gr := range gitRepos {
-					repoNameByID[gr.ID] = gr.Name
-				}
+			for _, gr := range gitRepos {
+				repoNameByID[gr.ID] = gr.Name
 			}
 			for _, cc := range allComplexities {
 				if cc.TargetChefVersion != targetChefVersion {

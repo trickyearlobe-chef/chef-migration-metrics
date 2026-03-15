@@ -6,7 +6,7 @@
 // directory is required at runtime.
 //
 // This package lives inside migrations/ (alongside the .sql files) because
-// go:embed paths are relative to the source file and cannot use "..".
+// embed paths are relative to the source file and cannot use "..".
 // Placing it here lets the directive reference *.sql directly.
 //
 // The internal/datastore package can accept an fs.FS for migration discovery,

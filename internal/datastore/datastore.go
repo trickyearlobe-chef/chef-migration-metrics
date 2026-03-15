@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -335,22 +334,6 @@ func (db *DB) applyMigrationFS(ctx context.Context, fsys fs.FS, m migration) err
 	}
 
 	return nil
-}
-
-// applyMigration reads a migration SQL file from disk and executes it.
-// This is a backward-compatible wrapper around applyMigrationFS for callers
-// that still use directory-based migrations.
-func (db *DB) applyMigration(ctx context.Context, m migration) error {
-	dir := filepath.Dir(m.Filename)
-	if dir == "." || dir == "" {
-		// Filename is bare — caller must use applyMigrationFS instead.
-		return fmt.Errorf("applyMigration requires a full file path, got: %s", m.Filename)
-	}
-	return db.applyMigrationFS(ctx, os.DirFS(dir), migration{
-		Version:  m.Version,
-		Name:     m.Name,
-		Filename: filepath.Base(m.Filename),
-	})
 }
 
 // MigrationVersion returns the current (highest applied) migration version,

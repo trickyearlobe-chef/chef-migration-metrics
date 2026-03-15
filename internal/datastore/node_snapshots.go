@@ -219,12 +219,12 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					sb.WriteString(", ")
 				}
 				offset := i * numCols
-				sb.WriteString(fmt.Sprintf(
+				fmt.Fprintf(&sb,
 					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 					offset+1, offset+2, offset+3, offset+4, offset+5, offset+6,
 					offset+7, offset+8, offset+9, offset+10, offset+11, offset+12,
 					offset+13, offset+14, offset+15, offset+16, offset+17, offset+18,
-				))
+				)
 
 				if p.CollectedAt.IsZero() {
 					p.CollectedAt = time.Now().UTC()
