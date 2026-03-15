@@ -55,6 +55,9 @@ import type {
   CommitterAssignResponse,
   Owner,
   ResetGitCookbookResponse,
+  GitRepoListResponse,
+  GitRepoDetailResponse,
+  GitRepoRemediationResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -341,6 +344,69 @@ export function fetchCookbookRemediation(
     buildUrl(
       `/cookbooks/${encodeURIComponent(name)}/${encodeURIComponent(version)}/remediation`,
       params,
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Git Repos
+// ---------------------------------------------------------------------------
+
+export function fetchGitRepos(
+  filters?: { name?: string; page?: number; per_page?: number },
+): Promise<GitRepoListResponse> {
+  return apiFetch<GitRepoListResponse>(
+    buildUrl("/git-repos", filters as Record<string, string | number | undefined>),
+  );
+}
+
+export function fetchGitRepoDetail(
+  name: string,
+): Promise<GitRepoDetailResponse> {
+  return apiFetch<GitRepoDetailResponse>(
+    buildUrl(`/git-repos/${encodeURIComponent(name)}`),
+  );
+}
+
+export function requestGitRepoRescan(
+  name: string,
+): Promise<{ git_repo_name: string; repos_invalidated: number; message: string }> {
+  return apiFetch(
+    `/api/v1/git-repos/${encodeURIComponent(name)}/rescan`,
+    { method: "POST" },
+  );
+}
+
+export function resetGitRepo(
+  name: string,
+): Promise<ResetGitCookbookResponse> {
+  return apiFetch<ResetGitCookbookResponse>(
+    `/api/v1/git-repos/${encodeURIComponent(name)}/reset`,
+    { method: "POST" },
+  );
+}
+
+export function fetchGitRepoRemediation(
+  name: string,
+  version: string,
+  params?: { target_chef_version?: string },
+): Promise<GitRepoRemediationResponse> {
+  return apiFetch<GitRepoRemediationResponse>(
+    buildUrl(
+      `/git-repos/${encodeURIComponent(name)}/${encodeURIComponent(version)}/remediation`,
+      params,
+    ),
+  );
+}
+
+export function fetchGitRepoCommitters(
+  repoName: string,
+  filters?: CommitterFilterQuery,
+): Promise<CookbookCommittersResponse> {
+  return apiFetch<CookbookCommittersResponse>(
+    buildUrl(
+      `/git-repos/${encodeURIComponent(repoName)}/committers`,
+      filters as Record<string, string | number | undefined>,
     ),
   );
 }

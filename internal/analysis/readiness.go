@@ -96,6 +96,9 @@ type ReadinessDataStore interface {
 	// Server cookbooks — used to resolve cookbook name+version to server cookbook ID
 	GetServerCookbookIDMap(ctx context.Context, organisationID string) (map[string]map[string]string, error)
 
+	// Git repos — used to resolve cookbook name to git repo for TK cross-lookup
+	GetGitRepoByName(ctx context.Context, name string) (datastore.GitRepo, error)
+
 	// Test Kitchen results (git repo)
 	GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
 
@@ -417,11 +420,14 @@ func parseCookbooksAttribute(raw json.RawMessage) map[string]string {
 //     compatible_cookstyle_only, failed → incompatible
 //  3. No results at all → untested
 //
-// NOTE: Test Kitchen results live in git_repo_test_kitchen_results keyed by
-// git_repo_id, but readiness evaluation resolves cookbooks via the server
-// cookbook ID map. For now, TK results are not checked here because we lack
-// a server-cookbook-to-git-repo mapping. A future enhancement should cross-
-// reference git repos by cookbook name to incorporate TK verdicts.
+// checkCookbookCompatibility determines the compatibility status of a single
+// cookbook × version against the target Chef Client version.
+//
+// Algorithm (per spec):
+//  1. Check for a passing Test Kitchen result (git repo) → compatible
+//  2. If no TK result, check server cookbook CookStyle: passed →
+//     compatible_cookstyle_only, failed → incompatible
+//  3. No results at all → untested
 func (e *ReadinessEvaluator) checkCookbookCompatibility(
 	ctx context.Context,
 	cookbookName string,
@@ -435,12 +441,19 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 		return StatusUntested, SourceNone
 	}
 
-	// TODO: Check Test Kitchen results from git_repo_test_kitchen_results.
-	// This requires resolving the cookbook name to a git repo ID, which is
-	// not yet available via the ReadinessDataStore interface. For now we
-	// skip straight to the CookStyle check.
+	// Step 1: Check Test Kitchen results by resolving cookbook name → git repo ID.
+	gitRepo, grErr := e.db.GetGitRepoByName(ctx, cookbookName)
+	if grErr == nil && gitRepo.ID != "" {
+		tkResult, tkErr := e.db.GetLatestGitRepoTestKitchenResult(ctx, gitRepo.ID, targetChefVersion)
+		if tkErr == nil && tkResult != nil {
+			if tkResult.Compatible {
+				return StatusCompatible, SourceTestKitchen
+			}
+			return StatusIncompatible, SourceTestKitchen
+		}
+	}
 
-	// Step 1: Check server cookbook CookStyle result with the specific target version.
+	// Step 2: Check server cookbook CookStyle result with the specific target version.
 	csResult, err := e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, targetChefVersion)
 	if err == nil && csResult != nil {
 		if csResult.Passed {
@@ -459,7 +472,7 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 		return StatusIncompatible, SourceCookstyle
 	}
 
-	// Step 2: Nothing found.
+	// Step 3: Nothing found.
 	return StatusUntested, SourceNone
 }
 

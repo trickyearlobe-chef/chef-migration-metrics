@@ -33,6 +33,7 @@ const (
 
 	// Analysis events.
 	EventCookbookStatusChanged = "cookbook_status_changed"
+	EventGitRepoStatusChanged  = "git_repo_status_changed"
 	EventReadinessUpdated      = "readiness_updated"
 	EventComplexityUpdated     = "complexity_updated"
 	EventRescanStarted         = "rescan_started"

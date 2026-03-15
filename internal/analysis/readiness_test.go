@@ -24,6 +24,7 @@ type fakeReadinessDS struct {
 
 	snapshots    []datastore.NodeSnapshot
 	cookbookIDs  map[string]map[string]string // name → version → id
+	gitRepos     map[string]datastore.GitRepo // name → GitRepo
 	tkResults    map[string]*datastore.GitRepoTestKitchenResult
 	csResults    map[string]*datastore.ServerCookbookCookstyleResult
 	complexities map[string]*datastore.ServerCookbookComplexity
@@ -32,6 +33,7 @@ type fakeReadinessDS struct {
 	// Error injection
 	listSnapshotsErr error
 	cookbookIDMapErr error
+	gitRepoErr       error
 	tkErr            error
 	csErr            error
 	complexityErr    error
@@ -44,6 +46,7 @@ type fakeReadinessDS struct {
 func newFakeReadinessDS() *fakeReadinessDS {
 	return &fakeReadinessDS{
 		cookbookIDs:  make(map[string]map[string]string),
+		gitRepos:     make(map[string]datastore.GitRepo),
 		tkResults:    make(map[string]*datastore.GitRepoTestKitchenResult),
 		csResults:    make(map[string]*datastore.ServerCookbookCookstyleResult),
 		complexities: make(map[string]*datastore.ServerCookbookComplexity),
@@ -62,6 +65,17 @@ func (f *fakeReadinessDS) GetServerCookbookIDMap(_ context.Context, _ string) (m
 		return nil, f.cookbookIDMapErr
 	}
 	return f.cookbookIDs, nil
+}
+
+func (f *fakeReadinessDS) GetGitRepoByName(_ context.Context, name string) (datastore.GitRepo, error) {
+	if f.gitRepoErr != nil {
+		return datastore.GitRepo{}, f.gitRepoErr
+	}
+	gr, ok := f.gitRepos[name]
+	if !ok {
+		return datastore.GitRepo{}, fmt.Errorf("not found")
+	}
+	return gr, nil
 }
 
 func tkKey(cookbookID, targetChefVersion string) string {
