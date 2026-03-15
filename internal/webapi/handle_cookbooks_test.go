@@ -184,15 +184,16 @@ func TestCollapseCookbooks_GitAndChefServerMerged(t *testing.T) {
 		{ID: "cb-3", Name: "myapp", Version: "3.0.0", Source: "chef_server"},
 	}
 	collapsed, counts := collapseCookbookSummaries(cookbooks)
-	// All three versions of myapp collapse into one row.
+	// All three entries of myapp collapse into one row.
 	if len(collapsed) != 1 {
 		t.Fatalf("expected 1 collapsed cookbook, got %d", len(collapsed))
 	}
 	if collapsed[0].Source != "git" || collapsed[0].ID != "cb-1" {
 		t.Errorf("representative: source=%q id=%q, want git/cb-1", collapsed[0].Source, collapsed[0].ID)
 	}
-	if counts["myapp"] != 3 {
-		t.Errorf("myapp version count = %d, want 3", counts["myapp"])
+	// Version count only includes chef_server entries (2), not the git entry.
+	if counts["myapp"] != 2 {
+		t.Errorf("myapp version count = %d, want 2", counts["myapp"])
 	}
 }
 
@@ -215,11 +216,12 @@ func TestCollapseCookbooks_AllGit(t *testing.T) {
 	if len(collapsed) != 2 {
 		t.Errorf("expected 2 cookbooks, got %d", len(collapsed))
 	}
-	if counts["app1"] != 1 {
-		t.Errorf("app1 version count = %d, want 1", counts["app1"])
+	// Git-only repos have no server cookbook versions, so count is 0.
+	if counts["app1"] != 0 {
+		t.Errorf("app1 version count = %d, want 0", counts["app1"])
 	}
-	if counts["app2"] != 1 {
-		t.Errorf("app2 version count = %d, want 1", counts["app2"])
+	if counts["app2"] != 0 {
+		t.Errorf("app2 version count = %d, want 0", counts["app2"])
 	}
 }
 
@@ -384,8 +386,9 @@ func TestHandleCookbooks_HappyPath_VersionCountCollapsed(t *testing.T) {
 	if counts["nginx"] != 1 {
 		t.Errorf("nginx version_count = %d, want 1", counts["nginx"])
 	}
-	if counts["myapp"] != 1 {
-		t.Errorf("myapp version_count = %d, want 1", counts["myapp"])
+	// myapp is git-only, so server cookbook version count is 0.
+	if counts["myapp"] != 0 {
+		t.Errorf("myapp version_count = %d, want 0", counts["myapp"])
 	}
 }
 
@@ -429,7 +432,7 @@ func TestHandleCookbooks_HappyPath_GitAndChefServerMerged(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// All 3 versions (1 git + 2 chef_server) of myapp collapse to 1 row.
+	// All entries (1 git + 2 chef_server) of myapp collapse to 1 row.
 	if body.Pagination.TotalItems != 1 {
 		t.Fatalf("total_items = %d, want 1", body.Pagination.TotalItems)
 	}
@@ -440,8 +443,9 @@ func TestHandleCookbooks_HappyPath_GitAndChefServerMerged(t *testing.T) {
 	if body.Data[0].ID != "cb-1" {
 		t.Errorf("representative id = %q, want cb-1 (git preferred)", body.Data[0].ID)
 	}
-	if body.Data[0].VersionCount != 3 {
-		t.Errorf("myapp version_count = %d, want 3", body.Data[0].VersionCount)
+	// Version count only includes chef_server entries (2), not the git entry.
+	if body.Data[0].VersionCount != 2 {
+		t.Errorf("myapp version_count = %d, want 2", body.Data[0].VersionCount)
 	}
 }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchCookbookDetail, requestCookbookRescan, resetGitCookbook } from "../api";
+import { fetchCookbookDetail, requestCookbookRescan } from "../api";
 import type { CookbookDetailResponse } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
@@ -14,10 +14,6 @@ export function CookbookDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
   const [rescanMsg, setRescanMsg] = useState<string | null>(null);
-  const [resettingGit, setResettingGit] = useState(false);
-  const [resetGitMsg, setResetGitMsg] = useState<string | null>(null);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-
 
   const load = useCallback(() => {
     if (!name) return;
@@ -42,29 +38,14 @@ export function CookbookDetailPage() {
       .finally(() => setRescanning(false));
   }, [name, load]);
 
-  const handleResetGit = useCallback(() => {
-    if (!name) return;
-    setResettingGit(true);
-    setResetGitMsg(null);
-    setShowResetConfirm(false);
-    resetGitCookbook(name)
-      .then((res) => {
-        setResetGitMsg(res.message);
-        load();
-      })
-      .catch((e: Error) => setResetGitMsg(`Reset failed: ${e.message}`))
-      .finally(() => setResettingGit(false));
-  }, [name, load]);
-
-
-
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <LoadingSpinner message="Loading cookbook detail…" />;
   if (error) return <ErrorAlert message={error} onRetry={load} />;
   if (!data) return null;
 
-  const isGitSourced = data.data.some((vd) => vd.cookbook.source === "git");
+  const hasGitRepos = data.git_repos && data.git_repos.length > 0;
+  const hasServerCookbooks = data.server_cookbooks && data.server_cookbooks.length > 0;
 
   return (
     <div className="space-y-6">
@@ -80,45 +61,11 @@ export function CookbookDetailPage() {
           onClick={handleRescan}
           disabled={rescanning}
           className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Invalidate cached CookStyle results and rescan on the next collection cycle"
+          title="Invalidate cached CookStyle results for server cookbook versions and rescan on the next collection cycle"
         >
           {rescanning ? "Requesting…" : "Rescan CookStyle"}
         </button>
-        {isGitSourced && (
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            disabled={resettingGit}
-            className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Remove all git data for this cookbook — it will be re-cloned on the next collection cycle"
-          >
-            {resettingGit ? "Resetting…" : "Reset Git"}
-          </button>
-        )}
       </div>
-
-      {showResetConfirm && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          <p className="font-medium">Are you sure you want to reset git data for "{data.name}"?</p>
-          <p className="mt-1 text-red-600">
-            This will delete all git-sourced cookbook rows, committer data, and the local clone.
-            The cookbook will be re-cloned from the currently configured git base URLs on the next collection cycle.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={handleResetGit}
-              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-red-700"
-            >
-              Yes, Reset Git
-            </button>
-            <button
-              onClick={() => setShowResetConfirm(false)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {rescanMsg && (
         <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -126,41 +73,64 @@ export function CookbookDetailPage() {
         </div>
       )}
 
-      {resetGitMsg && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {resetGitMsg}
-        </div>
-      )}
-
-
-
-      {isGitSourced && (
+      {/* Link to the git repo detail page when a git repo exists for this cookbook */}
+      {hasGitRepos && (
         <div className="card">
           <div className="flex items-center justify-between">
             <div>
               <h4 className="text-sm font-medium text-gray-600">Git Repository</h4>
               <p className="mt-1 text-sm text-gray-500">
-                View committer history and assign repository owners
+                This cookbook also has a git repository source.
+                View CookStyle results, Test Kitchen results, committers, and remediation detail on the git repo page.
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {data.git_repos.map((gd, idx) => (
+                  <span
+                    key={idx}
+                    className="text-xs text-gray-400 truncate max-w-sm"
+                    title={gd.git_repo.git_repo_url}
+                  >
+                    {gd.git_repo.git_repo_url}
+                  </span>
+                ))}
+              </div>
             </div>
             <Link
-              to={`/cookbooks/${encodeURIComponent(data.name)}/committers`}
-              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 shadow-sm hover:bg-gray-50"
+              to={`/git-repos/${encodeURIComponent(data.name)}`}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 shadow-sm hover:bg-gray-50"
             >
-              View Committers →
+              View Git Repo →
             </Link>
           </div>
         </div>
       )}
 
-      {data.data.length === 0 ? (
+      {!hasServerCookbooks && !hasGitRepos ? (
         <EmptyState title="No versions found" />
+      ) : !hasServerCookbooks ? (
+        /* When there are only git repos and no server cookbooks, direct the user to the git repo page */
+        <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+          No Chef Server versions found for this cookbook.
+          {hasGitRepos && (
+            <span>
+              {" "}See the{" "}
+              <Link
+                to={`/git-repos/${encodeURIComponent(data.name)}`}
+                className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                git repo page
+              </Link>
+              {" "}for source repository details.
+            </span>
+          )}
+        </div>
       ) : (
         <div className="space-y-4">
-          {data.data.map((vd, idx) => {
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Chef Server Versions</h3>
+          {data.server_cookbooks.map((vd, idx) => {
             const cb = vd.cookbook;
             return (
-              <div key={idx} className="card">
+              <div key={`sc-${idx}`} className="card">
                 <div className="mb-4 flex flex-wrap items-center gap-3">
                   <h3 className="text-base font-semibold text-gray-800">
                     {cb.name}
@@ -170,16 +140,9 @@ export function CookbookDetailPage() {
                       </code>
                     )}
                   </h3>
-                  <span className={`badge ${cb.source === "git" ? "badge-compatible" : "badge-cookstyle"}`}>
-                    {cb.source === "git" ? "Git" : "Chef Server"}
-                  </span>
+                  <span className="badge badge-cookstyle">Chef Server</span>
                   <StatusBadge variant={cb.is_active ? "active" : "inactive"} size="sm" />
                   {cb.is_stale_cookbook && <StatusBadge variant="stale" label="Stale" size="sm" />}
-                  {cb.has_test_suite ? (
-                    <StatusBadge variant="compatible" label="Has Test Suite" size="sm" />
-                  ) : (
-                    <StatusBadge variant="untested" label="No Test Suite" size="sm" />
-                  )}
                 </div>
 
                 {/* Cookstyle results */}
@@ -209,37 +172,6 @@ export function CookbookDetailPage() {
                               View Remediation Detail →
                             </Link>
                           )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Test Kitchen results */}
-                {cb.source === "git" && vd.test_kitchen && vd.test_kitchen.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="mb-2 text-sm font-medium text-gray-600">Test Kitchen Results</h4>
-                    <div className="space-y-2">
-                      {vd.test_kitchen.map((tk) => (
-                        <div key={tk.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
-                          <span className="text-xs text-gray-500">Target: {tk.target_chef_version}</span>
-                          <StatusBadge
-                            variant={tk.compatible ? "compatible" : "incompatible"}
-                            label={tk.compatible ? "Compatible" : "Incompatible"}
-                            size="sm"
-                          />
-                          {tk.timed_out && <StatusBadge variant="stale" label="Timed Out" size="sm" />}
-                          <span className="text-xs text-gray-500">
-                            Converge: {tk.converge_passed ? "✓" : "✗"} | Tests: {tk.tests_passed ? "✓" : "✗"}
-                          </span>
-                          {tk.platform_tested && (
-                            <span className="text-xs text-gray-400">
-                              {tk.platform_tested}{tk.driver_used ? ` (${tk.driver_used})` : ""}
-                            </span>
-                          )}
-                          <span className="text-xs text-gray-400">
-                            {tk.duration_seconds}s · {new Date(tk.completed_at).toLocaleString()}
-                          </span>
                         </div>
                       ))}
                     </div>
