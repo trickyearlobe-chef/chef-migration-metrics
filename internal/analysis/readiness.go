@@ -665,11 +665,47 @@ func (e *ReadinessEvaluator) evaluateDiskSpace(snapshot datastore.NodeSnapshot) 
 
 // parseFilesystemAttribute parses the automatic.filesystem JSONB into a map
 // of device/mount-name → filesystemEntry.
+//
+// It handles two Ohai formats:
+//
+//  1. Legacy (Ohai < 14): top-level keys are device paths (e.g. "/dev/sda1"),
+//     each mapping directly to a filesystemEntry with kb_size, kb_available,
+//     mount, etc.
+//
+//  2. New (Ohai 14+): top-level keys are "by_pair", "by_device",
+//     "by_mountpoint", each containing a nested map of entries. We prefer
+//     "by_pair" because it contains the most complete data (mount + device
+//     in the key, all size fields in the value).
 func parseFilesystemAttribute(raw json.RawMessage) map[string]filesystemEntry {
 	if len(raw) == 0 {
 		return nil
 	}
 
+	// Try the new Ohai 14+ format first: { "by_pair": { ... }, "by_device": { ... }, "by_mountpoint": { ... } }
+	var nested map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &nested); err == nil {
+		// Check for the new format by looking for known top-level keys.
+		if byPair, ok := nested["by_pair"]; ok {
+			var pairMap map[string]filesystemEntry
+			if err := json.Unmarshal(byPair, &pairMap); err == nil && len(pairMap) > 0 {
+				return pairMap
+			}
+		}
+		if byMount, ok := nested["by_mountpoint"]; ok {
+			var mountMap map[string]filesystemEntry
+			if err := json.Unmarshal(byMount, &mountMap); err == nil && len(mountMap) > 0 {
+				return mountMap
+			}
+		}
+		if byDev, ok := nested["by_device"]; ok {
+			var devMap map[string]filesystemEntry
+			if err := json.Unmarshal(byDev, &devMap); err == nil && len(devMap) > 0 {
+				return devMap
+			}
+		}
+	}
+
+	// Legacy format: top-level keys are device paths mapping directly to entries.
 	var fsMap map[string]filesystemEntry
 	if err := json.Unmarshal(raw, &fsMap); err != nil {
 		return nil
