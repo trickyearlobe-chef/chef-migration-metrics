@@ -392,7 +392,7 @@ Individual commits on a single branch, in dependency order:
 ### Commit 14 — Collector: Ownership + Ownership Assignments
 - [x] Update `internal/collector/ownership.go`: `evaluateCookbookNamePatternRule` queries `ListServerCookbooksByOrganisation` + `ListGitRepos`
 - [x] `evaluateGitRepoURLPatternRule` queries `ListGitRepos`
-- [ ] Update `internal/datastore/ownership_assignments.go`: `lookupGitRepoInheritedOwnership` — change query from `FROM cookbooks WHERE name = $1 AND source = 'git'` to `FROM git_repos WHERE name = $1`
+- [x] Update `internal/datastore/ownership_assignments.go`: `lookupGitRepoInheritedOwnership` — change query from `FROM cookbooks WHERE name = $1 AND source = 'git'` to `FROM git_repos WHERE name = $1`
 
 ### Commit 15 — Analysis: Split Cookstyle Scanner
 - [x] Split `internal/analysis/cookstyle.go`: `ScanCookbooks` → `ScanServerCookbooks` + `ScanGitRepos`
@@ -424,17 +424,17 @@ Individual commits on a single branch, in dependency order:
 - [x] Update `internal/export/blocked_nodes.go`: Build unified name-keyed maps from both `ServerCookbook` and `GitRepo`
 
 ### Commit 20 — Web API: Split Handlers and Routes
-- [ ] Update `internal/webapi/router.go`: keep `/api/v1/cookbooks` for server cookbooks, add `/api/v1/git-repos` routes
+- [x] Update `internal/webapi/router.go`: keep `/api/v1/cookbooks` for server cookbooks, add `/api/v1/git-repos` routes
 - [x] Refactor `internal/webapi/handle_cookbooks.go` to serve only server cookbooks (remove git cookbook logic and collapse-by-name merging)
-- [ ] Create new `internal/webapi/handle_git_repos.go` for git repo list, detail, rescan, reset
+- [x] Create new `internal/webapi/handle_git_repos.go` for git repo list, detail, rescan, reset
 - [x] Refactor `internal/webapi/handle_cookbook_rescan.go` for server cookbooks only
 - [x] Refactor `internal/webapi/handle_cookbook_remediation.go` for server cookbooks only
-- [ ] Create new `internal/webapi/handle_git_repo_remediation.go` for git repo remediation
+- [x] Create new `internal/webapi/handle_git_repo_remediation.go` for git repo remediation
 - [x] Move `internal/webapi/handle_cookbook_reset_git.go` → `handle_git_repo_reset.go`
-- [ ] Move committer endpoints under `/api/v1/git-repos/:name/committers`
+- [x] Move committer endpoints under `/api/v1/git-repos/:name/committers`
 - [x] Refactor `internal/webapi/handle_dashboard.go`: `handleDashboardCookbookCompatibility` aggregates from both sources; `handleDashboardCookbookDownloadStatus` queries `server_cookbooks` directly (remove in-Go source filter); `handleDashboardComplexityTrend` joins source-specific complexity tables
 - [x] Refactor `internal/webapi/handle_admin_rescan_all.go`: `DeleteAllCookbookComplexities` → hit both complexity tables; bulk cookstyle delete → hit both result tables
-- [ ] Consider splitting `EventCookbookStatusChanged` into `EventServerCookbookStatusChanged` + `EventGitRepoStatusChanged` in `internal/webapi/eventhub.go`
+- [x] Split `EventCookbookStatusChanged` into `EventServerCookbookStatusChanged` + `EventGitRepoStatusChanged` in `internal/webapi/eventhub.go`
 
 ### Commit 21 — Web API: Store Interface
 - [x] Update `internal/webapi/store.go` with new method signatures
@@ -443,21 +443,21 @@ Individual commits on a single branch, in dependency order:
 - [x] Update `main.go`: split `WithCookbookDirFn` closure into `WithServerCookbookDirFn` + `WithGitRepoDirFn`, remove `cb.IsGit()` branch
 
 ### Commit 23 — Frontend: Types and API Client
-- [ ] Update `frontend/src/types.ts`: refactor `CookbookListItem` to reflect server cookbook metadata fields (frozen, maintainer, description, license, platforms, dependencies). Add new `GitRepoListItem` type.
-- [ ] Split result types for server cookbook vs git repo analysis
-- [ ] Update `frontend/src/api.ts`: refactor `fetchCookbooks` to fetch from `/api/v1/cookbooks` (server cookbooks only). Add new `fetchGitRepos` calling `/api/v1/git-repos`.
+- [x] Update `frontend/src/types.ts`: refactor `CookbookListItem` to reflect server cookbook metadata fields (frozen, maintainer, description, license, platforms, dependencies). Add new `GitRepoListItem` type.
+- [x] Split result types for server cookbook vs git repo analysis
+- [x] Update `frontend/src/api.ts`: refactor `fetchCookbooks` to fetch from `/api/v1/cookbooks` (server cookbooks only). Add new `fetchGitRepos` calling `/api/v1/git-repos`.
 
 ### Commit 24 — Frontend: Pages
-- [ ] Refactor `frontend/src/CookbooksPage.tsx` to show server cookbooks only (remove git cookbook rows/logic). Add new metadata columns where appropriate.
-- [ ] Refactor `frontend/src/CookbookDetailPage.tsx` for server cookbooks only (show metadata fields: frozen, maintainer, description, license, platforms, dependencies)
-- [ ] Create new `frontend/src/GitReposPage.tsx` — list page for git repos
-- [ ] Create new `frontend/src/GitRepoDetailPage.tsx` — detail page (cookstyle + test kitchen + autocorrect)
-- [ ] Create new `frontend/src/GitRepoRemediationPage.tsx` — remediation for git repos
-- [ ] Update `frontend/src/CookbookRemediationPage.tsx` for server cookbooks only
-- [ ] Move `frontend/src/CookbookCommittersPage.tsx` under git repo context (rename to `GitRepoCommittersPage.tsx`)
-- [ ] Update `frontend/src/DashboardPage.tsx` API calls
-- [ ] Update `frontend/src/App.tsx`: keep `/cookbooks` routes for server cookbooks, add new `/git-repos` routes
-- [ ] Add Git Repos navigation item to sidebar/nav
+- [x] Refactor `frontend/src/CookbooksPage.tsx` to show server cookbooks only (remove git cookbook rows/logic). Add new metadata columns where appropriate.
+- [x] Refactor `frontend/src/CookbookDetailPage.tsx` for server cookbooks only (show metadata fields: frozen, maintainer, description, license, platforms, dependencies)
+- [x] Create new `frontend/src/GitReposPage.tsx` — list page for git repos
+- [x] Create new `frontend/src/GitRepoDetailPage.tsx` — detail page (cookstyle + test kitchen + autocorrect)
+- [x] Create new `frontend/src/GitRepoRemediationPage.tsx` — remediation for git repos
+- [x] Update `frontend/src/CookbookRemediationPage.tsx` for server cookbooks only
+- [x] Reuse `CookbookCommittersPage.tsx` for git repo committers route (`/git-repos/:name/committers`) — component is context-agnostic so rename was unnecessary
+- [x] Update `frontend/src/DashboardPage.tsx` API calls
+- [x] Update `frontend/src/App.tsx`: keep `/cookbooks` routes for server cookbooks, add new `/git-repos` routes
+- [x] Add Git Repos navigation item to sidebar/nav
 
 ### Commit 25 — Tests
 - [x] Regenerate or rewrite `internal/webapi/store_mock_test.go` (~136 symbols) to match the new `DataStore` interface
@@ -579,9 +579,9 @@ Update the node detail page's **Upgrade Readiness** section to render per-source
 - [ ] Add links from verdict entries to cookbook/git-repo detail pages
 
 #### Commit 30 — Documentation
-- [ ] Update `.claude/specifications/analysis/Specification.md` — multi-source algorithm ✅ (already done)
-- [ ] Update `.claude/specifications/web-api/Specification.md` — node detail response with verdicts ✅ (already done)
-- [ ] Update `.claude/specifications/visualisation/Specification.md` — per-source verdict display ✅ (already done)
+- [x] Update `.claude/specifications/analysis/Specification.md` — multi-source algorithm
+- [x] Update `.claude/specifications/web-api/Specification.md` — node detail response with verdicts
+- [x] Update `.claude/specifications/visualisation/Specification.md` — per-source verdict display
 
 ### Files Affected
 
