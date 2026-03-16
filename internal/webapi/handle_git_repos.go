@@ -517,8 +517,10 @@ func removeLocalGitClone(r *Router, cookbookName string) bool {
 		return false
 	}
 
-	clean, ok := safeName(cookbookName)
-	if !ok {
+	// filepath.Base strips directory components so user-controlled input
+	// cannot escape the GitCookbookDir via path traversal (e.g. "../").
+	clean := filepath.Base(cookbookName)
+	if clean == "." || clean == ".." {
 		r.logf("WARN", "rejected unsafe cookbook name for clone removal: %q", cookbookName)
 		return false
 	}

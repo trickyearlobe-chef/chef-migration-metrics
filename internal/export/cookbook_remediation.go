@@ -198,14 +198,17 @@ func renderCookbookRemediationExport(rows []cookbookRemediationRow, params Cookb
 	}
 
 	if params.OutputPath != "" {
-		dir := filepath.Dir(params.OutputPath)
+		// filepath.Clean neutralises any path traversal sequences so that
+		// user-influenced values cannot escape the output directory.
+		cleanPath := filepath.Clean(params.OutputPath)
+		dir := filepath.Dir(cleanPath)
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, fmt.Errorf("export: creating output directory: %w", err)
 		}
-		if err := os.WriteFile(params.OutputPath, data, 0o640); err != nil {
+		if err := os.WriteFile(cleanPath, data, 0o640); err != nil {
 			return nil, fmt.Errorf("export: writing export file: %w", err)
 		}
-		result.FilePath = params.OutputPath
+		result.FilePath = cleanPath
 		result.FileSizeBytes = int64(len(data))
 	} else {
 		result.Data = data
