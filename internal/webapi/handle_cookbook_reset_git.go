@@ -85,8 +85,11 @@ func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request
 	}
 
 	// Remove the local git clone directory.
+	// filepath.Base strips directory components so user-controlled input
+	// cannot escape the GitCookbookDir via path traversal (e.g. "../").
 	localCloneRemoved := false
-	if cleanName, nameOK := safeName(cookbookName); nameOK && r.cfg.Storage.GitCookbookDir != "" {
+	cleanName := filepath.Base(cookbookName)
+	if cleanName != "." && cleanName != ".." && r.cfg.Storage.GitCookbookDir != "" {
 		repoDir := filepath.Join(r.cfg.Storage.GitCookbookDir, cleanName)
 		if _, statErr := os.Stat(repoDir); statErr == nil {
 			if rmErr := os.RemoveAll(repoDir); rmErr != nil {
@@ -97,8 +100,6 @@ func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request
 				r.logf("INFO", "removed local git clone for %s at %s", cookbookName, repoDir)
 			}
 		}
-	} else if !nameOK {
-		r.logf("WARN", "rejected unsafe cookbook name for clone removal: %q", cookbookName)
 	}
 
 	// Broadcast a WebSocket event so the UI can react.
