@@ -77,7 +77,6 @@ Key conventions:
 - The React frontend lives in `frontend/` and is built with `npm run build` into `frontend/build/` (or `frontend/dist/`).
 - The Go binary embeds the built frontend assets using `go:embed` and serves them from the web server.
 - The frontend communicates exclusively through the Web API (`/api/v1/...`). It never accesses the database directly.
-- All graphs and charts must use **zero-based axes**. Do not truncate the y-axis to exaggerate trends.
 
 ## Error Handling
 
