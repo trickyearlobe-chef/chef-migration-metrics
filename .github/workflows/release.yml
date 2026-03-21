@@ -291,7 +291,7 @@ jobs:
           done
 
       - name: Upload Helm chart as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: helm-chart
           path: .helm-packages/*.tgz
@@ -351,7 +351,7 @@ jobs:
           nfpm package --packager ${{ matrix.format }} --target build/
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: package-${{ matrix.format }}-${{ matrix.arch }}
           path: |
@@ -433,7 +433,7 @@ jobs:
           ls -lh build/archives/
 
       - name: Upload archive artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
           path: build/archives/*
