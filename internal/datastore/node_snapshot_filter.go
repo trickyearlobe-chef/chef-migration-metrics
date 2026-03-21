@@ -171,8 +171,10 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	}
 
 	// Role filter (case-insensitive substring match on any role in the JSONB array).
+	// Guard against JSONB null values (jsonb_typeof = 'null') which cause
+	// jsonb_array_elements_text to error with "cannot extract elements from a scalar".
 	if f.Role != "" {
-		where += " AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE LOWER(r) LIKE '%' || LOWER(" + nextArg() + ") || '%')"
+		where += " AND jsonb_typeof(cn.roles) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE LOWER(r) LIKE '%' || LOWER(" + nextArg() + ") || '%')"
 		args = append(args, f.Role)
 	}
 
@@ -428,6 +430,7 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter) (
 		  FROM completed_nodes cn,
 		       jsonb_array_elements_text(cn.roles) r(value)
 		%s
+		   AND jsonb_typeof(cn.roles) = 'array'
 		   AND r.value IS NOT NULL AND r.value != ''
 		 ORDER BY val
 	`, cte, where)
@@ -525,7 +528,7 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 	}
 
 	if f.Role != "" {
-		where += " AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE LOWER(r) LIKE '%' || LOWER(" + nextArg() + ") || '%')"
+		where += " AND jsonb_typeof(cn.roles) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE LOWER(r) LIKE '%' || LOWER(" + nextArg() + ") || '%')"
 		args = append(args, f.Role)
 	}
 
