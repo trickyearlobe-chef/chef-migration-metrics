@@ -109,10 +109,20 @@ type StorageConfig struct {
 // CollectionConfig controls the background collection schedule and staleness
 // thresholds.
 type CollectionConfig struct {
-	Schedule                   string `yaml:"schedule"`
-	StaleNodeThresholdDays     int    `yaml:"stale_node_threshold_days"`
-	StaleCookbookThresholdDays int    `yaml:"stale_cookbook_threshold_days"`
-	SkipServerCookbookDownload bool   `yaml:"skip_server_cookbook_download"`
+	Schedule                       string `yaml:"schedule"`
+	StaleNodeThresholdDays         int    `yaml:"stale_node_threshold_days"`
+	StaleCookbookThresholdDays     int    `yaml:"stale_cookbook_threshold_days"`
+	SkipServerCookbookDownload     bool   `yaml:"skip_server_cookbook_download"`
+	DeleteServerCookbooksAfterScan *bool  `yaml:"delete_server_cookbooks_after_scan"`
+}
+
+// DeleteServerCookbooksAfterScanEnabled reports whether server cookbook files
+// should be deleted after scanning. Defaults to true when omitted.
+func (c *CollectionConfig) DeleteServerCookbooksAfterScanEnabled() bool {
+	if c.DeleteServerCookbooksAfterScan == nil {
+		return true
+	}
+	return *c.DeleteServerCookbooksAfterScan
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +545,10 @@ func (c *Config) setDefaults() {
 	}
 	if c.Collection.StaleCookbookThresholdDays == 0 {
 		c.Collection.StaleCookbookThresholdDays = 365
+	}
+	if c.Collection.DeleteServerCookbooksAfterScan == nil {
+		t := true
+		c.Collection.DeleteServerCookbooksAfterScan = &t
 	}
 
 	// Concurrency
