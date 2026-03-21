@@ -8,6 +8,10 @@ The data visualisation component provides a web dashboard for monitoring and man
 
 This component has no write path to Chef servers or cookbook repositories — it is a read-side presentation layer over the datastore, with the exception of triggering exports and manual rescan operations.
 
+### Charting Conventions
+
+- All graphs and charts must use **zero-based axes**. The y-axis must always start at zero. Do not truncate axes to exaggerate trends.
+
 ---
 
 ## Dashboard Views
