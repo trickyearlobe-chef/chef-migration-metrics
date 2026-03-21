@@ -106,8 +106,11 @@ export function CookbookCommittersPage() {
     fetchCookbookCommitters(name, filters)
       .then((res) => {
         setResponse(res);
-        // Clear selection when data changes
-        setSelected(new Set());
+        // Pre-select committers that are already owners.
+        const ownerIds = new Set(
+          (res.data ?? []).filter((c) => c.is_owner).map((c) => c.id),
+        );
+        setSelected(ownerIds);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -329,6 +332,7 @@ export function CookbookCommittersPage() {
                     </th>
                     <th>Author Name</th>
                     <th>Email</th>
+                    <th>Owner</th>
                     <th>
                       <button
                         type="button"
@@ -362,7 +366,7 @@ export function CookbookCommittersPage() {
                 </thead>
                 <tbody>
                   {committers.map((c) => (
-                    <tr key={c.id}>
+                    <tr key={c.id} className={c.is_owner ? "bg-blue-50" : ""}>
                       <td>
                         <input
                           type="checkbox"
@@ -376,6 +380,13 @@ export function CookbookCommittersPage() {
                       </td>
                       <td className="text-sm text-gray-600">
                         {c.author_email}
+                      </td>
+                      <td className="text-sm">
+                        {c.is_owner && (
+                          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                            Owner
+                          </span>
+                        )}
                       </td>
                       <td className="text-sm text-gray-600">
                         {c.commit_count}

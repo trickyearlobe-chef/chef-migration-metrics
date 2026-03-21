@@ -394,6 +394,10 @@ type DataStore interface {
 	// matching rows and the total count for pagination.
 	ListCommittersByRepo(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
 
+	// GetOwnerEmailsForGitRepo returns the set of contact_email addresses
+	// for owners assigned to the given git repo URL.
+	GetOwnerEmailsForGitRepo(ctx context.Context, gitRepoURL string) (map[string]bool, error)
+
 	// -----------------------------------------------------------------
 	// Ownership audit log
 	// -----------------------------------------------------------------

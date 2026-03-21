@@ -91,6 +91,7 @@ type mockStore struct {
 	GetOwnerGitRepoSummaryFn                            func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
 	GetGitRepoURLForCookbookFn                          func(ctx context.Context, cookbookName string) (string, error)
 	ListCommittersByRepoFn                              func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
+	GetOwnerEmailsForGitRepoFn                          func(ctx context.Context, gitRepoURL string) (map[string]bool, error)
 	InsertAuditEntryFn                                  func(ctx context.Context, p datastore.InsertAuditEntryParams) error
 	ListAuditLogFn                                      func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 }
@@ -672,6 +673,13 @@ func (m *mockStore) ListCommittersByRepo(ctx context.Context, f datastore.Commit
 		return m.ListCommittersByRepoFn(ctx, f)
 	}
 	return nil, 0, nil
+}
+
+func (m *mockStore) GetOwnerEmailsForGitRepo(ctx context.Context, gitRepoURL string) (map[string]bool, error) {
+	if m.GetOwnerEmailsForGitRepoFn != nil {
+		return m.GetOwnerEmailsForGitRepoFn(ctx, gitRepoURL)
+	}
+	return nil, nil
 }
 
 // -----------------------------------------------------------------
