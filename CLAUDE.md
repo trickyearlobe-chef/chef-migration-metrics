@@ -39,6 +39,7 @@ This file contains the rules and conventions that must be followed at all times 
 - Specs live under `.claude/specifications/<component>.md` (flat layout, no subdirectories).
 - Before implementing any feature, check whether a specification exists. If not, write one first.
 - When completing tasks, update the relevant `todo-<component>.md` file.
+- Code does not live in specification files, it lives in actual code files.
 
 ## Database
 
