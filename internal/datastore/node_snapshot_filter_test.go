@@ -119,7 +119,7 @@ func TestBuildNodeSnapshotFilterQuery_Platform(t *testing.T) {
 		Platform: "ubuntu 22",
 	})
 
-	if !strings.Contains(q, "LOWER(CONCAT(cn.platform, ' ', COALESCE(cn.platform_version, '')))") {
+	if !strings.Contains(q, "LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, ''))") {
 		t.Errorf("query missing combined platform filter clause")
 	}
 	if len(args) != 1 || args[0] != "ubuntu 22" {
@@ -357,7 +357,7 @@ func TestBuildNodeSnapshotFilterQuery_AllFilters(t *testing.T) {
 		"organisation_id = ANY(",
 		"LOWER(cn.node_name) LIKE",
 		"LOWER(cn.chef_environment) LIKE",
-		"LOWER(CONCAT(cn.platform",
+		"LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, ''))",
 		"LOWER(cn.chef_version) LIKE",
 		"LOWER(cn.policy_name) LIKE",
 		"LOWER(cn.policy_group) LIKE",

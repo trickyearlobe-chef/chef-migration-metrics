@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_node_snapshots_roles_gin
 -- filtering. The filter matches against "platform platform_version"
 -- as a single string, mirroring the in-memory FilterNodes behaviour.
 CREATE INDEX IF NOT EXISTS idx_node_snapshots_platform_combined
-    ON node_snapshots (LOWER(CONCAT(platform, ' ', COALESCE(platform_version, ''))));
+    ON node_snapshots (LOWER(platform || ' ' || COALESCE(platform_version, '')));
 
 -- Expression index on LOWER(node_name) to support case-insensitive
 -- substring search on node names.
