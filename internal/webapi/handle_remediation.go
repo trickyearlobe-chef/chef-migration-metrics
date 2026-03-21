@@ -98,6 +98,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		DeprecationCount     int    `json:"deprecation_count"`
 		ErrorCount           int    `json:"error_count"`
 		TargetChefVersion    string `json:"target_chef_version"`
+		VersionCount         int    `json:"version_count"`
 	}
 
 	var items []priorityItem
@@ -151,8 +152,39 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 				DeprecationCount:     cc.DeprecationCount,
 				ErrorCount:           cc.ErrorCount,
 				TargetChefVersion:    cc.TargetChefVersion,
+				VersionCount:         1,
 			})
 		}
+	}
+
+	// Deduplicate: collapse multiple versions of the same cookbook into
+	// one row, keeping the version with the highest complexity score.
+	// The blast radius (node count) is already per-cookbook-name, so
+	// showing every version just creates noise with identical values.
+	// The version_count field records how many versions were collapsed.
+	{
+		type dedupeKey struct {
+			Name string
+			Org  string
+		}
+		best := make(map[dedupeKey]int) // key → index into deduped
+		var deduped []priorityItem
+		for _, item := range items {
+			k := dedupeKey{Name: item.CookbookName, Org: item.OrganisationID}
+			if idx, exists := best[k]; exists {
+				deduped[idx].VersionCount++
+				if item.ComplexityScore > deduped[idx].ComplexityScore {
+					// Preserve the accumulated version count.
+					vc := deduped[idx].VersionCount
+					deduped[idx] = item
+					deduped[idx].VersionCount = vc
+				}
+			} else {
+				best[k] = len(deduped)
+				deduped = append(deduped, item)
+			}
+		}
+		items = deduped
 	}
 
 	// Apply owner filter if active and ownership is enabled.
