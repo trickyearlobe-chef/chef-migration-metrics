@@ -645,6 +645,24 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 		}
 	}
 
+	// Purge old collection runs (keep only the latest terminal run per org).
+	purgedRuns, purgeRunsErr := c.db.PurgeOldCollectionRuns(ctx)
+	if purgeRunsErr != nil {
+		log.Warn(fmt.Sprintf("collection run purge failed: %v", purgeRunsErr))
+	} else if purgedRuns > 0 {
+		log.Info(fmt.Sprintf("purged %d old collection run(s)", purgedRuns))
+	}
+
+	// Purge metric snapshots older than 90 days. These are small rows used
+	// for dashboard trend charts; 90 days gives ample historical context.
+	metricCutoff := time.Now().Add(-90 * 24 * time.Hour)
+	purgedMetrics, purgeMetricsErr := c.db.PurgeMetricSnapshotsOlderThan(ctx, metricCutoff)
+	if purgeMetricsErr != nil {
+		log.Warn(fmt.Sprintf("metric snapshot purge failed: %v", purgeMetricsErr))
+	} else if purgedMetrics > 0 {
+		log.Info(fmt.Sprintf("purged %d metric snapshot(s) older than 90 days", purgedMetrics))
+	}
+
 	return result, nil
 }
 
@@ -870,6 +888,12 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			run.ID, inserted),
 			logging.WithCollectionRunID(run.ID))
 	}
+
+	// Step 4c: Record metric snapshots for trend charts. These
+	// pre-aggregated snapshots allow the dashboard to show historical
+	// trends without scanning the (now current-state-only) node_snapshots
+	// table.
+	c.recordMetricSnapshots(ctx, log, run.ID, org.ID, snapshotParams)
 
 	// Step 5: Fetch cookbook inventory from the Chef server.
 	log.Info("fetching cookbook inventory",
@@ -1381,4 +1405,59 @@ func (c *Collector) defaultClientFactory(ctx context.Context, org datastore.Orga
 	}
 
 	return client, nil
+}
+
+// recordMetricSnapshots persists pre-aggregated metric snapshots for the
+// organisation so that dashboard trend charts can display historical data
+// without scanning the (now current-state-only) node_snapshots table.
+func (c *Collector) recordMetricSnapshots(
+	ctx context.Context,
+	log *logging.ScopedLogger,
+	collectionRunID string,
+	organisationID string,
+	snapshotParams []datastore.InsertNodeSnapshotParams,
+) {
+	now := time.Now().UTC()
+
+	// Build version distribution and stale/fresh counts from the in-memory
+	// snapshot params (avoids a re-read from the database).
+	versionDist := make(map[string]int, 16)
+	var totalStale, totalFresh int
+	for _, p := range snapshotParams {
+		ver := p.ChefVersion
+		if ver == "" {
+			ver = "unknown"
+		}
+		versionDist[ver]++
+		if p.IsStale {
+			totalStale++
+		} else {
+			totalFresh++
+		}
+	}
+
+	// chef_version_distribution metric snapshot — used by the version
+	// distribution trend chart.
+	distJSON, err := json.Marshal(map[string]interface{}{
+		"distribution": versionDist,
+		"total_nodes":  len(snapshotParams),
+		"stale_nodes":  totalStale,
+		"fresh_nodes":  totalFresh,
+	})
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to marshal chef_version_distribution metric: %v", err),
+			logging.WithCollectionRunID(collectionRunID))
+		return
+	}
+
+	if _, msErr := c.db.InsertMetricSnapshot(ctx, datastore.InsertMetricSnapshotParams{
+		CollectionRunID: collectionRunID,
+		OrganisationID:  organisationID,
+		SnapshotType:    "chef_version_distribution",
+		Data:            distJSON,
+		SnapshotAt:      now,
+	}); msErr != nil {
+		log.Warn(fmt.Sprintf("failed to record chef_version_distribution metric: %v", msErr),
+			logging.WithCollectionRunID(collectionRunID))
+	}
 }
