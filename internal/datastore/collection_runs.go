@@ -49,8 +49,13 @@ type CreateCollectionRunParams struct {
 	OrganisationID string
 }
 
-// CreateCollectionRun inserts a new collection run in "running" status with
-// the current time as started_at. Returns the created run.
+// CreateCollectionRun upserts a collection run for the given organisation,
+// resetting it to "running" status with the current time as started_at.
+// With the UNIQUE constraint on organisation_id (migration 0006), each
+// organisation has at most one collection_runs row. Subsequent calls for
+// the same organisation update the existing row in place — the row ID is
+// stable across runs, which keeps foreign-key references (node_snapshots,
+// cookbook_usage_analysis, metric_snapshots, log_entries) intact.
 func (db *DB) CreateCollectionRun(ctx context.Context, p CreateCollectionRunParams) (CollectionRun, error) {
 	return db.createCollectionRun(ctx, db.q(), p)
 }
@@ -63,6 +68,16 @@ func (db *DB) createCollectionRun(ctx context.Context, q queryable, p CreateColl
 	const query = `
 		INSERT INTO collection_runs (organisation_id, status, started_at)
 		VALUES ($1, 'running', now())
+		ON CONFLICT (organisation_id)
+		DO UPDATE SET
+			status           = 'running',
+			started_at       = now(),
+			completed_at     = NULL,
+			total_nodes      = NULL,
+			nodes_collected  = NULL,
+			checkpoint_start = NULL,
+			error_message    = NULL,
+			updated_at       = now()
 		RETURNING id, organisation_id, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
@@ -422,6 +437,13 @@ func (db *DB) GetRunningCollectionRuns(ctx context.Context) ([]CollectionRun, er
 		ORDER BY started_at ASC
 	`
 	return scanCollectionRuns(db.q().QueryContext(ctx, query))
+}
+
+// PurgeOldCollectionRuns is a no-op retained for backward compatibility.
+// With the upsert model (migration 0006), each organisation has at most one
+// collection_runs row, so there are never stale rows to purge.
+func (db *DB) PurgeOldCollectionRuns(ctx context.Context) (int, error) {
+	return 0, nil
 }
 
 // ---------------------------------------------------------------------------
