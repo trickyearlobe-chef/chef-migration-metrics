@@ -132,8 +132,12 @@ func TestBuildNodeSnapshotFilterQuery_ChefVersion(t *testing.T) {
 		ChefVersion: "18.0",
 	})
 
-	if !strings.Contains(q, "LOWER(cn.chef_version) LIKE") {
-		t.Errorf("query missing chef_version filter clause")
+	if !strings.Contains(q, "LOWER(cn.chef_version) LIKE LOWER(") {
+		t.Errorf("query missing chef_version prefix filter clause")
+	}
+	// Must be a prefix match (no leading wildcard) so "17" doesn't match "13.17.4".
+	if strings.Contains(q, "'%' || LOWER(cn.chef_version)") || strings.Contains(q, "LIKE '%' || LOWER($") {
+		t.Errorf("chef_version filter should use prefix match, not substring match")
 	}
 	if len(args) != 1 || args[0] != "18.0" {
 		t.Errorf("args = %v, want [18.0]", args)

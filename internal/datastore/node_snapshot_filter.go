@@ -154,7 +154,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		where += " AND cn.chef_version = " + nextArg()
 		args = append(args, f.ChefVersionExact)
 	} else if f.ChefVersion != "" {
-		where += " AND LOWER(cn.chef_version) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
+		where += " AND LOWER(cn.chef_version) LIKE LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.ChefVersion)
 	}
 
@@ -510,7 +510,7 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 		where += " AND cn.chef_version = " + nextArg()
 		args = append(args, f.ChefVersionExact)
 	} else if f.ChefVersion != "" {
-		where += " AND LOWER(cn.chef_version) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
+		where += " AND LOWER(cn.chef_version) LIKE LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.ChefVersion)
 	}
 
