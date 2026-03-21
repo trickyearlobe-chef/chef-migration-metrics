@@ -169,22 +169,9 @@ func (db *DB) BulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 	return count, err
 }
 
-// BulkUpsertNodeSnapshotsReturningIDs inserts multiple node snapshots within
-// a single transaction and returns a map of node name → generated snapshot
-// UUID alongside the inserted count. This is used by the collector to
-// correlate node snapshots with their cookbook usage records without a
-// separate lookup query.
-//
-// If a node name appears more than once in params, the map will contain the
-// ID of the last inserted row for that name.
-func (db *DB) BulkUpsertNodeSnapshotsReturningIDs(ctx context.Context, params []InsertNodeSnapshotParams) (map[string]string, int, error) {
-	return db.bulkUpsertNodeSnapshots(ctx, params, true)
-}
-
-// bulkUpsertNodeSnapshots is the shared implementation for both
-// BulkUpsertNodeSnapshots and BulkUpsertNodeSnapshotsReturningIDs.
-// When returnIDs is true, the query uses RETURNING id and populates
-// the returned map. When false, the map is nil.
+// bulkUpsertNodeSnapshots is the implementation for BulkUpsertNodeSnapshots.
+// The returnIDs parameter controls whether the query uses RETURNING id to
+// populate the returned map. When false (the normal path), the map is nil.
 func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams, returnIDs bool) (map[string]string, int, error) {
 	if len(params) == 0 {
 		return nil, 0, nil
