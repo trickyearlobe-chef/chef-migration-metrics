@@ -63,7 +63,7 @@ collection:
   schedule: "0 * * * *"
   stale_node_threshold_days: 7
   stale_cookbook_threshold_days: 365
-  # delete_server_cookbooks_after_scan: true
+  # delete_server_cookbooks_after_scan: false
 
 # ---------------------------------------------------------------------------
 # Concurrency

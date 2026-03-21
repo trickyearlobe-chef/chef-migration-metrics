@@ -117,10 +117,10 @@ type CollectionConfig struct {
 }
 
 // DeleteServerCookbooksAfterScanEnabled reports whether server cookbook files
-// should be deleted after scanning. Defaults to true when omitted.
+// should be deleted after scanning. Defaults to false when omitted.
 func (c *CollectionConfig) DeleteServerCookbooksAfterScanEnabled() bool {
 	if c.DeleteServerCookbooksAfterScan == nil {
-		return true
+		return false
 	}
 	return *c.DeleteServerCookbooksAfterScan
 }
@@ -547,8 +547,8 @@ func (c *Config) setDefaults() {
 		c.Collection.StaleCookbookThresholdDays = 365
 	}
 	if c.Collection.DeleteServerCookbooksAfterScan == nil {
-		t := true
-		c.Collection.DeleteServerCookbooksAfterScan = &t
+		f := false
+		c.Collection.DeleteServerCookbooksAfterScan = &f
 	}
 
 	// Concurrency
