@@ -145,7 +145,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 
 	// Platform filter (case-insensitive substring on combined platform + version).
 	if f.Platform != "" {
-		where += " AND LOWER(CONCAT(cn.platform, ' ', COALESCE(cn.platform_version, ''))) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
+		where += " AND LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, '')) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.Platform)
 	}
 
@@ -502,7 +502,7 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 	}
 
 	if f.Platform != "" {
-		where += " AND LOWER(CONCAT(cn.platform, ' ', COALESCE(cn.platform_version, ''))) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
+		where += " AND LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, '')) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.Platform)
 	}
 
