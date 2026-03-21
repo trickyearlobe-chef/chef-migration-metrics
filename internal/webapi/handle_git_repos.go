@@ -86,7 +86,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 				if _, seen := compatByName[name]; seen {
 					continue
 				}
-				if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+				if cc.ErrorCount == 0 {
 					compatByName[name] = "compatible"
 				} else {
 					compatByName[name] = "incompatible"

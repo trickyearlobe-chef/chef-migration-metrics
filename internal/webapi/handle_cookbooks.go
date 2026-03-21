@@ -167,7 +167,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 				if _, seen := compatByName[cbName]; seen {
 					continue // first version wins
 				}
-				if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+				if cc.ErrorCount == 0 {
 					compatByName[cbName] = "compatible"
 				} else {
 					compatByName[cbName] = "incompatible"
@@ -193,7 +193,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 				if _, seen := compatByName[name]; seen {
 					continue
 				}
-				if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+				if cc.ErrorCount == 0 {
 					compatByName[name] = "compatible"
 				} else {
 					compatByName[name] = "incompatible"
