@@ -597,6 +597,86 @@ Returns full detail for a single node, including readiness status per target ver
 }
 ```
 
+### Get Node Disk Detail
+
+#### `GET /api/v1/nodes/disks/:organisation/:name`
+
+Returns parsed filesystem/disk data from the node's Ohai filesystem attribute. Data is extracted from the `by_mountpoint` key of the Ohai 14+ filesystem format.
+
+**Query Parameters:**
+
+| Parameter | Type    | Default | Description |
+|-----------|---------|---------|-------------|
+| `show_all`| boolean | `false` | When `true`, includes virtual/pseudo filesystems (proc, sysfs, tmpfs, squashfs, cgroup, etc.) |
+
+**Response (200):**
+
+```json
+{
+  "node_name": "pandora.home.arpa",
+  "organisation_name": "prod",
+  "platform": "ubuntu",
+  "disks": [
+    {
+      "mount": "/",
+      "device": "/dev/nvme0n1p1",
+      "fs_type": "ext4",
+      "kb_size": 120984300,
+      "kb_used": 22104852,
+      "kb_available": 92687576,
+      "percent_used": 20,
+      "uuid": "11e08d25-aae5-49af-9b08-a302795df03f",
+      "mount_options": ["rw", "relatime"],
+      "inodes_used": 234976,
+      "total_inodes": 7725056,
+      "inodes_available": 7490080,
+      "inodes_percent_used": 4
+    },
+    {
+      "mount": "/boot/efi",
+      "device": "/dev/nvme0n1p10",
+      "fs_type": "vfat",
+      "kb_size": 64511,
+      "kb_used": 110,
+      "kb_available": 64402,
+      "percent_used": 0
+    }
+  ]
+}
+```
+
+Windows nodes include additional fields per disk entry:
+
+```json
+{
+  "node_name": "win11-001.home.arpa",
+  "organisation_name": "prod",
+  "platform": "windows",
+  "disks": [
+    {
+      "mount": "C:",
+      "device": "",
+      "fs_type": "ntfs",
+      "kb_size": 41949327,
+      "kb_used": 36166840,
+      "kb_available": 5782487,
+      "percent_used": 86,
+      "drive_type": "Local Fixed Disk",
+      "volume_name": "",
+      "encryption_status": "FullyEncrypted"
+    }
+  ]
+}
+```
+
+**Behaviour notes:**
+
+- `percent_used` is parsed from the raw Ohai value (which may include a `%` suffix on Linux); if parsing fails, it is computed from `kb_used / kb_size`.
+- `inodes_percent_used` prefers the raw Ohai `inodes_percent_used` value; falls back to computing from `inodes_used / total_inodes`.
+- Virtual/pseudo filesystems (proc, sysfs, tmpfs, squashfs, cgroup, bpf, devtmpfs, etc.) and virtual mount paths (`/sys/`, `/proc/`, `/dev/`, `/run/`) are filtered out by default.
+- Disk entries are sorted by mount path.
+- If the node has no filesystem data, `disks` is an empty array.
+
 ### List Nodes by Chef Version
 
 #### `GET /api/v1/nodes/by-version/:chef_version`
