@@ -238,6 +238,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/nodes", r.handleNodes)
 	r.protect("/api/v1/nodes/by-version/", r.handleNodesByVersion)
 	r.protect("/api/v1/nodes/by-cookbook/", r.handleNodesByCookbook)
+	r.protect("/api/v1/nodes/disks/", r.handleNodeDisks)
 	// Node detail: /api/v1/nodes/:organisation/:name — uses a prefix
 	// pattern and the handler extracts path segments.
 	r.protect("/api/v1/nodes/", r.handleNodeDetail)
