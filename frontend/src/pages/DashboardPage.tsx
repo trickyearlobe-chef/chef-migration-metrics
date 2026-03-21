@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
   fetchVersionDistribution,
@@ -103,7 +104,11 @@ function VersionDistributionCard({ organisation }: { organisation?: string }) {
               {data.distribution.map((v) => {
                 const pct = data.total_nodes > 0 ? (v.count / data.total_nodes) * 100 : 0;
                 return (
-                  <div key={v.version} className="bar-chart-row">
+                  <Link
+                    key={v.version}
+                    to={`/nodes?chef_version=${encodeURIComponent(v.version)}`}
+                    className="bar-chart-row hover:bg-gray-50 rounded transition-colors"
+                  >
                     <span className="bar-chart-label" title={v.version}>{v.version}</span>
                     <div className="bar-chart-track">
                       <div
@@ -114,7 +119,7 @@ function VersionDistributionCard({ organisation }: { organisation?: string }) {
                       </div>
                     </div>
                     <span className="bar-chart-value">{v.count.toLocaleString()}</span>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -162,7 +167,11 @@ function PlatformDistributionCard({ organisation }: { organisation?: string }) {
               {data.distribution.map((v) => {
                 const pct = data.total_nodes > 0 ? (v.count / data.total_nodes) * 100 : 0;
                 return (
-                  <div key={v.platform} className="bar-chart-row">
+                  <Link
+                    key={v.platform}
+                    to={`/nodes?platform=${encodeURIComponent(v.platform)}`}
+                    className="bar-chart-row hover:bg-gray-50 rounded transition-colors"
+                  >
                     <span className="w-44 shrink-0 truncate text-right text-sm text-gray-600" title={v.platform}>{v.platform}</span>
                     <div className="bar-chart-track">
                       <div
@@ -173,7 +182,7 @@ function PlatformDistributionCard({ organisation }: { organisation?: string }) {
                       </div>
                     </div>
                     <span className="bar-chart-value">{v.count.toLocaleString()}</span>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -224,27 +233,35 @@ function ReadinessCard({ organisation }: { organisation?: string }) {
                   {/* Stacked progress bar */}
                   {r.total_nodes > 0 && (
                     <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className="bg-green-500 transition-all duration-500"
+                      <Link
+                        to={`/nodes?readiness=ready&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                        className="bg-green-500 transition-all duration-500 hover:bg-green-600"
                         style={{ width: `${(r.ready_nodes / r.total_nodes) * 100}%` }}
                         title={`Ready: ${r.ready_nodes}`}
                       />
-                      <div
-                        className="bg-red-400 transition-all duration-500"
+                      <Link
+                        to={`/nodes?readiness=blocked&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                        className="bg-red-400 transition-all duration-500 hover:bg-red-500"
                         style={{ width: `${(r.blocked_nodes / r.total_nodes) * 100}%` }}
                         title={`Blocked: ${r.blocked_nodes}`}
                       />
                     </div>
                   )}
                   <div className="flex gap-4 text-xs">
-                    <span className="flex items-center gap-1">
+                    <Link
+                      to={`/nodes?readiness=ready&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
                       Ready: {r.ready_nodes.toLocaleString()} ({r.ready_percent.toFixed(1)}%)
-                    </span>
-                    <span className="flex items-center gap-1">
+                    </Link>
+                    <Link
+                      to={`/nodes?readiness=blocked&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
                       Blocked: {r.blocked_nodes.toLocaleString()}
-                    </span>
+                    </Link>
                   </div>
                 </div>
               ))}
