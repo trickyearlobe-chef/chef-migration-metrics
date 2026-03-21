@@ -238,8 +238,8 @@ func TestAggregateTuples_SingleTuple(t *testing.T) {
 	if usage.NodeCount != 1 {
 		t.Errorf("expected NodeCount=1, got %d", usage.NodeCount)
 	}
-	if !usage.NodeNames["web1"] {
-		t.Error("expected web1 in NodeNames")
+	if !usage.seenNodes["web1"] {
+		t.Error("expected web1 in seenNodes")
 	}
 	if !usage.Roles["webserver"] {
 		t.Error("expected webserver in Roles")
@@ -281,8 +281,8 @@ func TestAggregateTuples_SameCookbookMultipleNodes(t *testing.T) {
 
 	expectedNodes := []string{"web1", "db1", "web2"}
 	for _, n := range expectedNodes {
-		if !usage.NodeNames[n] {
-			t.Errorf("expected %q in NodeNames", n)
+		if !usage.seenNodes[n] {
+			t.Errorf("expected %q in seenNodes", n)
 		}
 	}
 
@@ -599,7 +599,7 @@ func TestBuildDetailParams_ActiveCookbook(t *testing.T) {
 	agg := map[cookbookVersionKey]*aggregatedUsage{
 		{Name: "ntp", Version: "3.0.0"}: {
 			NodeCount: 2,
-			NodeNames: map[string]bool{"web1": true, "web2": true},
+			seenNodes: map[string]bool{"web1": true, "web2": true},
 			Roles:     map[string]bool{"base": true},
 			PlatformCounts: map[string]int{
 				"ubuntu/22.04": 2,
@@ -644,9 +644,7 @@ func TestBuildDetailParams_ActiveCookbook(t *testing.T) {
 	if !p.IsActive {
 		t.Error("expected IsActive=true")
 	}
-	if p.NodeNames == nil {
-		t.Error("expected NodeNames to be non-nil")
-	}
+
 	if p.Roles == nil {
 		t.Error("expected Roles to be non-nil")
 	}
@@ -680,9 +678,7 @@ func TestBuildDetailParams_UnusedCookbook(t *testing.T) {
 	if p.NodeCount != 0 {
 		t.Errorf("expected NodeCount=0, got %d", p.NodeCount)
 	}
-	if p.NodeNames != nil {
-		t.Error("expected NodeNames=nil for unused cookbook")
-	}
+
 	if p.Roles != nil {
 		t.Error("expected Roles=nil for unused cookbook")
 	}
@@ -692,7 +688,7 @@ func TestBuildDetailParams_MixedActiveAndUnused(t *testing.T) {
 	agg := map[cookbookVersionKey]*aggregatedUsage{
 		{Name: "apache2", Version: "5.0.0"}: {
 			NodeCount:            3,
-			NodeNames:            map[string]bool{"w1": true, "w2": true, "w3": true},
+			seenNodes:            map[string]bool{"w1": true, "w2": true, "w3": true},
 			Roles:                map[string]bool{},
 			PolicyNames:          map[string]bool{},
 			PolicyGroups:         map[string]bool{},
@@ -758,7 +754,7 @@ func TestBuildDetailParams_CookbookNotInInventoryButInAgg(t *testing.T) {
 	agg := map[cookbookVersionKey]*aggregatedUsage{
 		{Name: "ghost", Version: "1.0.0"}: {
 			NodeCount:            1,
-			NodeNames:            map[string]bool{"n1": true},
+			seenNodes:            map[string]bool{"n1": true},
 			Roles:                map[string]bool{},
 			PolicyNames:          map[string]bool{},
 			PolicyGroups:         map[string]bool{},
@@ -1325,15 +1321,6 @@ func TestEndToEnd_FullAnalysisPipeline(t *testing.T) {
 		t.Errorf("expected ntp/3.0.0 NodeCount=5, got %d", ntpDetail.NodeCount)
 	}
 
-	// Verify NodeNames JSON contains all 5 nodes.
-	var nodeNames []string
-	if err := json.Unmarshal(ntpDetail.NodeNames, &nodeNames); err != nil {
-		t.Fatalf("failed to unmarshal NodeNames: %v", err)
-	}
-	if len(nodeNames) != 5 {
-		t.Errorf("expected 5 node names, got %d", len(nodeNames))
-	}
-
 	// Verify Roles JSON for ntp.
 	var roles []string
 	if err := json.Unmarshal(ntpDetail.Roles, &roles); err != nil {
@@ -1481,7 +1468,7 @@ func TestBuildDetailParams_AllFieldsPopulated(t *testing.T) {
 	agg := map[cookbookVersionKey]*aggregatedUsage{
 		{Name: "full", Version: "1.0"}: {
 			NodeCount:            2,
-			NodeNames:            map[string]bool{"n1": true, "n2": true},
+			seenNodes:            map[string]bool{"n1": true, "n2": true},
 			Roles:                map[string]bool{"r1": true},
 			PolicyNames:          map[string]bool{"p1": true},
 			PolicyGroups:         map[string]bool{"g1": true},
@@ -1506,7 +1493,6 @@ func TestBuildDetailParams_AllFieldsPopulated(t *testing.T) {
 	p := params[0]
 
 	fields := map[string]json.RawMessage{
-		"NodeNames":            p.NodeNames,
 		"Roles":                p.Roles,
 		"PolicyNames":          p.PolicyNames,
 		"PolicyGroups":         p.PolicyGroups,
