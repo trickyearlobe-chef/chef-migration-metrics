@@ -37,18 +37,23 @@ The archive is a gzip-compressed tar file (`.tar.gz`) with the following layout:
 ├── .kitchen.yml
 ├── Berksfile                   # (classic nodes only)
 ├── Policyfile.rb               # (Policyfile nodes only)
-├── Policyfile.lock.json        # (Policyfile nodes only, if reconstructable)
 ├── roles/
 │   ├── base.json
 │   └── webserver.json
-├── data_bags/                  # (empty directory — placeholder for user)
+├── data_bags/
+│   └── example/
+│       ├── item1.json
+│       └── item2.json
 ├── cookbooks/
-│   ├── nginx/
+│   ├── nginx/                  # (git repo — full clone, directly editable)
+│   │   ├── .git/
+│   │   ├── .kitchen.yml
 │   │   ├── metadata.rb
 │   │   ├── recipes/
 │   │   └── ...
-│   ├── apt/
+│   ├── apt/                    # (server cookbook — reconstructed from manifest)
 │   │   ├── metadata.rb
+│   │   ├── recipes/
 │   │   └── ...
 │   └── ...
 ├── README.md
@@ -142,24 +147,36 @@ Operators can extend or override this mapping via the `kitchen_archive.platform_
 
 ### 2.3 Cookbooks
 
-All cookbooks from the node's resolved `cookbooks` attribute (`node_snapshots.cookbooks`) are included. Each cookbook is placed under `cookbooks/<cookbook_name>/`.
+The archive includes **all cookbooks required to converge the node**. This is computed by starting from the node's resolved `cookbooks` attribute (`node_snapshots.cookbooks`) and then **recursively expanding transitive dependencies** declared in each cookbook's metadata. Each cookbook is placed under `cookbooks/<cookbook_name>/`.
+
+#### Dependency Expansion
+
+The node's `cookbooks` map gives the direct set. However, a cookbook's `metadata.rb` (or `metadata.json`) may declare dependencies on other cookbooks that are not explicitly listed in the node's `cookbooks` attribute (e.g. library cookbooks, resource cookbooks). These transitive dependencies must also be included so that the archive converges without external network access.
+
+**Algorithm:**
+
+1. Start with the **seed set** — all cookbook name + version pairs from `node_snapshots.cookbooks`.
+2. For each cookbook in the set, look up its `dependencies` JSONB column from `server_cookbooks` (keyed by organisation + cookbook name + version). This contains entries like `{"apt": ">= 2.0", "yum": "~> 5.0"}`.
+3. For each dependency name not already in the set, resolve the **best available version** — the version present in `server_cookbooks` for this organisation that satisfies the constraint. If multiple versions satisfy the constraint, prefer the highest version. Add it to the set.
+4. Repeat until no new cookbooks are added (fixed-point).
+5. If a dependency cannot be resolved (not present in `server_cookbooks` for any satisfying version), record a warning and continue — the cookbook will appear as "unavailable" in the archive.
+
+**Note:** Git-sourced cookbooks do not have a `dependencies` column in `git_repos`. For git cookbooks, the dependency metadata is read from the cookbook's `metadata.rb` or `metadata.json` on disk in the local clone. If parsing fails, fall back to checking `server_cookbooks` for the same cookbook name, since the same cookbook may exist on both the Chef server and in git.
 
 #### Source Priority
 
-For each cookbook name + version in the node's `cookbooks` attribute:
+For each cookbook name + version in the expanded set:
 
-1. **Git repo** — If a matching entry exists in `git_repos` for this cookbook name, use the git clone at HEAD on the default branch. The entire cookbook directory is copied (excluding `.git/`).
+1. **Git repo** — If a matching entry exists in `git_repos` for this cookbook name, include the **full git clone as-is** (including `.git/` directory). This allows operators to directly edit the cookbook, commit changes, push to the remote, and run `kitchen test` against individual cookbooks within the archive. The git repo is included at HEAD of the default branch.
 2. **Chef server** — If no git repo exists, or the git repo fetch fails, download the cookbook version from the Chef server using the existing `chefapi.Client.DownloadFileContent()` mechanism (same as the server cookbook pipeline). The cookbook is reconstructed from the manifest file listing.
 3. **Unavailable** — If neither source is available (e.g. download failure, missing repo), include a placeholder directory with a `README.md` explaining the cookbook could not be fetched. The archive generation must **not** fail — partial archives are acceptable.
 
 #### Git Cookbook Inclusion
 
-When copying from a git repo clone:
+When including a git repo clone:
 
-- Exclude `.git/` directory
-- Exclude `.kitchen.yml`, `.kitchen.yaml`, `kitchen.yml`, `kitchen.yaml` (the archive provides its own)
-- Exclude `.kitchen.local.yml` (transient overlay)
-- Include everything else (recipes, attributes, libraries, templates, files, test directories, metadata, etc.)
+- Include the **entire directory as-is**, including `.git/`, `.kitchen.yml`, test suites, and all other files. This preserves the cookbook as a fully functional git working tree that operators can modify, commit, push, and test independently.
+- Exclude only `.kitchen.local.yml` (transient overlay generated by CMM's analysis pipeline — not part of the cookbook itself).
 
 ### 2.4 Roles
 
@@ -231,7 +248,43 @@ Each cookbook in the node's `cookbooks` attribute gets a `cookbook` line with a 
 
 ### 2.7 `data_bags/`
 
-An empty directory is included as a placeholder. The `README.md` instructs operators to populate it if their cookbooks require data bag items.
+A sample data bag is included to demonstrate the expected directory structure. Operators should replace or extend this with their own data bag items as needed.
+
+The sample data bag is structured as:
+
+```
+data_bags/
+└── example/
+    ├── item1.json
+    └── item2.json
+```
+
+**`data_bags/example/item1.json`:**
+
+```json
+{
+  "id": "item1",
+  "description": "This is a sample data bag item. Replace or remove this file.",
+  "key1": "value1",
+  "key2": "value2"
+}
+```
+
+**`data_bags/example/item2.json`:**
+
+```json
+{
+  "id": "item2",
+  "description": "This is a second sample data bag item showing a different structure.",
+  "users": ["alice", "bob"],
+  "config": {
+    "enabled": true,
+    "timeout": 30
+  }
+}
+```
+
+The `README.md` instructs operators to replace the `example` data bag with their own data bags, or add additional data bags alongside it.
 
 ### 2.8 `README.md`
 
@@ -258,11 +311,11 @@ Generated by Chef Migration Metrics on <timestamp>.
 
 ## Cookbooks (<count>)
 
-| Cookbook | Version | Source |
-|---------|---------|--------|
-| nginx | 5.1.0 | git |
-| apt | 7.4.0 | server |
-| base | 1.3.2 | unavailable |
+| Cookbook | Version | Source | Included Via |
+|---------|---------|--------|--------------|
+| nginx | 5.1.0 | git | node run_list |
+| apt | 7.4.0 | server | dependency of nginx |
+| base | 1.3.2 | unavailable | node run_list |
 
 ## Quick Start
 
@@ -294,10 +347,17 @@ kitchen destroy
 
 - This archive reproduces the node's cookbook set as observed during the
   last collection run. It may not reflect changes made since then.
-- The `data_bags/` directory is empty. If your cookbooks depend on data
-  bag items, populate this directory before converging.
+- Cookbooks sourced from git include the full `.git/` directory. You can
+  `cd` into any git-sourced cookbook, make changes, commit, push, and run
+  `kitchen test` directly against that individual cookbook.
+- The `data_bags/` directory contains a sample data bag (`example/`).
+  Replace it with your own data bags before converging, or add
+  additional data bags alongside it.
 - Cookbooks marked "unavailable" could not be fetched from either git
   or the Chef server. You may need to obtain them manually.
+- The cookbook list includes transitive dependencies declared in each
+  cookbook's metadata, not just the cookbooks directly in the node's
+  run_list.
 - <If Policyfile node>: Run `chef install Policyfile.rb` to generate a
   lock file if your workflow requires one.
 ```
@@ -407,80 +467,65 @@ internal/kitchenarchive/
 
 ### 4.2 Core Types
 
-```go
-// Builder assembles a node-specific Test Kitchen archive.
-type Builder struct {
-    db         DataStore
-    chefAPI    ChefAPIClient
-    gitManager GitRepoReader
-    cfg        Config
-    logger     Logger
-}
+**`Builder`** — The primary type in the package. Assembles a node-specific Test Kitchen archive. Holds references to the datastore, Chef API client, git repo reader, archive-specific configuration, and a logger.
 
-// Config holds kitchen archive-specific configuration.
-type Config struct {
-    DefaultDriver    string            // default: "dokken"
-    PlatformImages   map[string]string // platform → Docker image template
-    GitCookbookDir   string            // path to local git clones
-    IncludeTestDirs  bool              // include test/ and spec/ dirs from git cookbooks
-}
+**`Config`** — Archive-specific configuration passed into the builder:
 
-// ArchiveResult holds metadata about a generated archive.
-type ArchiveResult struct {
-    SizeBytes     int64
-    CookbookCount int
-    RoleCount     int
-    Duration      time.Duration
-    Warnings      []string  // non-fatal issues (missing cookbooks, roles, etc.)
-}
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `DefaultDriver` | string | `"dokken"` | Test Kitchen driver name |
+| `PlatformImages` | map of string → string | (see § 2.2.1) | Platform name → Docker image template |
+| `GitCookbookDir` | string | (from storage config) | Filesystem path to local git clones |
+| `IncludeTestDirs` | bool | `true` | Whether to include `test/` and `spec/` directories from git-sourced cookbooks |
+
+**`ArchiveResult`** — Returned after archive generation with metadata:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `SizeBytes` | int64 | Total archive size |
+| `CookbookCount` | int | Number of cookbooks included |
+| `RoleCount` | int | Number of roles included |
+| `Duration` | duration | Wall-clock generation time |
+| `Warnings` | string list | Non-fatal issues (missing cookbooks, unresolvable deps, etc.) |
 
 ### 4.3 DataStore Interface
 
-```go
-// DataStore defines the subset of datastore methods needed by the archive builder.
-type DataStore interface {
-    GetNodeSnapshotByOrgAndName(ctx context.Context, organisationID, nodeName string) (*datastore.NodeSnapshot, error)
-    GetOrganisation(ctx context.Context, id string) (*datastore.Organisation, error)
-    GetOrganisationByName(ctx context.Context, name string) (*datastore.Organisation, error)
-    ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
-    ListRoleDependenciesByOrganisation(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
-}
-```
+The archive builder consumes a `DataStore` interface with the following methods (a subset of the full `datastore.DB`):
+
+| Method | Purpose |
+|--------|---------|
+| `GetNodeSnapshotByOrgAndName` | Look up the target node |
+| `GetOrganisation` / `GetOrganisationByName` | Resolve organisation for Chef API connection |
+| `ListGitRepos` | Determine which cookbooks have git sources |
+| `ListRoleDependenciesByOrganisation` | Compute transitive role closure |
+| `ListServerCookbooksByOrganisation` | Read cookbook dependency metadata for transitive expansion |
 
 ### 4.4 ChefAPIClient Interface
 
-```go
-// ChefAPIClient defines the Chef server API methods needed for archive generation.
-type ChefAPIClient interface {
-    GetRoleDetail(ctx context.Context, roleName string) (*chefapi.RoleDetail, error)
-    GetCookbookVersionManifest(ctx context.Context, name, version string) (*chefapi.CookbookVersionManifest, error)
-    DownloadFileContent(ctx context.Context, fileURL, checksum string) ([]byte, error)
-}
-```
+The builder requires a Chef API client interface with these methods:
+
+| Method | Purpose |
+|--------|---------|
+| `GetRoleDetail` | Fetch full role content (run_list, attributes) for inclusion in `roles/` |
+| `GetCookbookVersionManifest` | Fetch the file listing for a server-sourced cookbook |
+| `DownloadFileContent` | Download individual cookbook files by bookshelf URL |
 
 ### 4.5 GitRepoReader Interface
 
-```go
-// GitRepoReader provides read access to locally cloned git cookbook repositories.
-type GitRepoReader interface {
-    // RepoPath returns the local filesystem path of the git clone for the
-    // given cookbook name, or empty string if not available.
-    RepoPath(cookbookName string) string
-}
-```
+A single-method interface providing read access to locally cloned git cookbook repositories. Given a cookbook name, it returns the local filesystem path of the git clone (or empty string if not available).
 
 ### 4.6 Archive Generation Flow
 
 1. **Resolve node** — Look up `node_snapshots` by organisation name + node name. Return 404 if not found.
 2. **Parse node data** — Unmarshal the JSONB fields: `cookbooks` (map of name→version), `run_list` (string array), `roles` (string array).
 3. **Resolve organisation** — Fetch the `organisations` row to obtain Chef server connection details for live role fetching.
-4. **Initialise tar writer** — Create a `*tar.Writer` wrapping a `*gzip.Writer` wrapping the HTTP response writer (streaming).
-5. **Generate static files** — Write `.kitchen.yml`, `Berksfile` or `Policyfile.rb`, `README.md`, `.gitignore` directly to the tar stream.
-6. **Fetch and write roles** — For each role referenced by the node (direct + transitive), fetch from Chef API and write as `roles/<name>.json`. Failures produce placeholder files.
-7. **Fetch and write cookbooks** — For each cookbook in the node's resolved set, copy from git clone or download from Chef server and write to `cookbooks/<name>/`. Cookbook fetches should run concurrently (bounded by a configurable worker pool, default: 4 workers). Results are collected and written to the tar stream sequentially (tar format requires sequential writes).
-8. **Write `data_bags/` placeholder** — Add the empty directory entry.
-9. **Finalise** — Close the tar and gzip writers. Emit WebSocket completion event.
+4. **Expand cookbook dependencies** — Starting from the node's `cookbooks` map, load all `server_cookbooks` for the organisation and recursively resolve transitive dependencies from each cookbook's `dependencies` JSONB column. For git-sourced cookbooks, parse `metadata.rb`/`metadata.json` from the local clone. The result is the full expanded cookbook set (see § 2.3 "Dependency Expansion").
+5. **Initialise tar writer** — Create a `*tar.Writer` wrapping a `*gzip.Writer` wrapping the HTTP response writer (streaming).
+6. **Generate static files** — Write `.kitchen.yml`, `Berksfile` or `Policyfile.rb`, `README.md`, `.gitignore` directly to the tar stream.
+7. **Fetch and write roles** — For each role referenced by the node (direct + transitive), fetch from Chef API and write as `roles/<name>.json`. Failures produce placeholder files.
+8. **Fetch and write cookbooks** — For each cookbook in the expanded set, copy from git clone (full repo including `.git/`) or download from Chef server and write to `cookbooks/<name>/`. Cookbook fetches should run concurrently (bounded by a configurable worker pool, default: 4 workers). Results are collected and written to the tar stream sequentially (tar format requires sequential writes).
+9. **Write `data_bags/` sample** — Add the `data_bags/example/` directory with sample items (see § 2.7).
+10. **Finalise** — Close the tar and gzip writers. Emit WebSocket completion event.
 
 #### Concurrency for Cookbook Fetching
 
@@ -515,7 +560,7 @@ Each fetched cookbook is represented as a slice of `tarEntry` structs (header + 
 
 For nodes with many large cookbooks, the in-memory approach could consume significant RAM. Mitigations:
 
-1. **Streaming from git clones** — Git cookbook files are read from disk and written to the tar stream without buffering the entire cookbook in memory.
+1. **Streaming from git clones** — Git cookbook files (including `.git/` pack files) are read from disk and written to the tar stream without buffering the entire cookbook in memory.
 2. **Chef server cookbook streaming** — Downloaded files are written to the tar stream as they arrive. The manifest is fetched first (small JSON), then each file is downloaded and streamed individually.
 3. **Size limit** — A configurable maximum archive size (`kitchen_archive.max_archive_size_mb`, default: 500 MB) acts as a safety valve. If the running total exceeds this limit, remaining cookbooks are replaced with placeholder entries and a warning is added to the README.
 
@@ -535,12 +580,7 @@ For nodes with many large cookbooks, the in-memory approach could consume signif
 
 ## 5. Web API Handler
 
-The handler is registered in `internal/webapi/router.go`:
-
-```go
-// Node Kitchen Archive
-authed.GET("/api/v1/nodes/:organisation/:name/kitchen-archive", h.handleNodeKitchenArchive)
-```
+The handler is registered in `internal/webapi/router.go` on the authenticated router group at the path defined in § 3.1.
 
 The handler:
 
@@ -626,19 +666,7 @@ kitchen_archive:
 
 ### 7.1 Config Struct
 
-Added to `internal/config/config.go`:
-
-```go
-type KitchenArchiveConfig struct {
-    DefaultDriver          string            `yaml:"default_driver"`
-    PlatformImages         map[string]string `yaml:"platform_images"`
-    IncludeTestDirs        bool              `yaml:"include_test_dirs"`
-    MaxArchiveSizeMB       int               `yaml:"max_archive_size_mb"`
-    CookbookFetchConcurrency int            `yaml:"cookbook_fetch_concurrency"`
-}
-```
-
-Defaults are applied during `config.Load()` if the section is absent or fields are zero-valued.
+A `KitchenArchiveConfig` struct is added to `internal/config/config.go` with fields corresponding to each YAML key above (`default_driver`, `platform_images`, `include_test_dirs`, `max_archive_size_mb`, `cookbook_fetch_concurrency`). It is embedded in the top-level `Config` struct under the `kitchen_archive` YAML key. Defaults are applied during `config.Load()` if the section is absent or fields are zero-valued.
 
 ### 7.2 Environment Variable Overrides
 
@@ -662,6 +690,7 @@ This feature requires **no new tables or migrations**. All data is read from exi
 | `node_snapshots` | Node metadata, cookbooks, run_list, roles, policy_name, policy_group |
 | `organisations` | Chef server connection details for live role/cookbook fetching |
 | `git_repos` | Determine which cookbooks have git sources |
+| `server_cookbooks` | Cookbook dependency metadata (`dependencies` JSONB) for transitive expansion |
 | `role_dependencies` | Compute transitive role closure |
 
 Role detail and Chef server cookbook content are fetched **live** from the Chef API at archive generation time — they are not cached in the database.
@@ -677,6 +706,7 @@ All archive generation activity is logged with scope `kitchen_archive`:
 | `INFO` | Archive generation started | `organisation`, `node_name`, `target_chef_version` |
 | `INFO` | Archive generation completed | `organisation`, `node_name`, `size_bytes`, `cookbook_count`, `role_count`, `duration_ms` |
 | `WARN` | Cookbook fetch failed (non-fatal) | `organisation`, `node_name`, `cookbook_name`, `cookbook_version`, `source`, `error` |
+| `WARN` | Cookbook dependency unresolvable | `organisation`, `node_name`, `parent_cookbook`, `dependency_name`, `version_constraint` |
 | `WARN` | Role fetch failed (non-fatal) | `organisation`, `node_name`, `role_name`, `error` |
 | `WARN` | Archive size limit exceeded | `organisation`, `node_name`, `current_size_mb`, `limit_mb`, `remaining_cookbooks` |
 | `WARN` | Client disconnected mid-stream | `organisation`, `node_name`, `bytes_written` |
@@ -701,6 +731,9 @@ All archive generation activity is logged with scope `kitchen_archive`:
 | Archive assembly | Correct tar structure, file permissions, directory entries |
 | Size limit enforcement | Archive truncated at limit, warning added |
 | Cookbook source priority | Git preferred over server, fallback to placeholder |
+| Dependency expansion | Transitive deps resolved from `server_cookbooks.dependencies` JSONB, fixed-point algorithm terminates, unresolvable deps produce warnings, circular deps handled |
+| Git cookbook completeness | Full repo including `.git/` directory, `.kitchen.yml` preserved, only `.kitchen.local.yml` excluded |
+| Sample data bags | Correct directory structure, valid JSON, both sample items present |
 
 ### 10.2 Integration Tests
 
@@ -723,6 +756,10 @@ Tagged with `//go:build functional`:
 - [ ] Run `kitchen list` in the extracted directory
 - [ ] Run `kitchen converge` successfully (requires Docker)
 - [ ] Verify the README contains accurate node metadata
+- [ ] Verify git-sourced cookbooks have working `.git/` (can `git log`, `git status`)
+- [ ] Verify transitive cookbook dependencies are included
+- [ ] Modify a git-sourced cookbook, commit, and run `kitchen test` on it
+- [ ] Verify `data_bags/example/` contains both sample items with valid JSON
 
 ---
 
