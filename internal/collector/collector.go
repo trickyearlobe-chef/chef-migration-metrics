@@ -738,7 +738,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// which can be very expensive when there are many stale nodes.
 	allCookbookNames := make(map[string]bool)
 	activeCookbookNames := make(map[string]bool)
-	nodeCookbookVersions := make(map[string]map[string]string, len(searchRows)) // node name → cookbook name → version
 
 	// Build NodeRecord slice for usage analysis (populated alongside snapshot params).
 	nodeRecords := make([]analysis.NodeRecord, 0, len(searchRows))
@@ -766,9 +765,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			if !nodeIsStale {
 				activeCookbookNames[cbName] = true
 			}
-		}
-		if len(cbVersions) > 0 {
-			nodeCookbookVersions[nd.Name()] = cbVersions
 		}
 
 		// Build a NodeRecord for usage analysis from the in-memory data,
@@ -839,9 +835,8 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		len(allCookbookNames), len(activeCookbookNames), staleOnlyCount),
 		logging.WithCollectionRunID(run.ID))
 
-	// Persist node snapshots in bulk, returning generated IDs so we can
-	// build cookbook-node usage records without a separate lookup.
-	snapshotIDMap, inserted, err := c.db.BulkInsertNodeSnapshotsReturningIDs(ctx, snapshotParams)
+	// Persist node snapshots in bulk.
+	inserted, err := c.db.BulkUpsertNodeSnapshots(ctx, snapshotParams)
 	if err != nil {
 		return 0, 0, fmt.Errorf("persisting node snapshots: %w", err)
 	}
@@ -1044,68 +1039,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				gitResult.Unchanged, gitResult.Failed,
 				gitResult.Duration.Round(time.Millisecond)),
 				logging.WithCollectionRunID(run.ID))
-		}
-	}
-
-	// Step 8: Build cookbook-node usage records. For each node's resolved
-	// cookbook set, record the cookbook_id ↔ node_snapshot_id linkage.
-	log.Info("building cookbook-node usage records",
-		logging.WithCollectionRunID(run.ID))
-
-	cookbookIDMap, err := c.db.GetServerCookbookIDMap(ctx, org.ID)
-	if err != nil {
-		log.Warn(fmt.Sprintf("failed to load cookbook ID map: %v", err),
-			logging.WithCollectionRunID(run.ID))
-		// Non-fatal — we still collected the data, just can't build linkage
-		// this run. The JSON columns on node_snapshots still have the data.
-	} else {
-		var usageParams []datastore.InsertCookbookNodeUsageParams
-		var missingCookbooks int
-
-		for nodeName, cbVersions := range nodeCookbookVersions {
-			snapshotID, ok := snapshotIDMap[nodeName]
-			if !ok {
-				// Node was in the search results but didn't get a snapshot ID.
-				// This shouldn't happen, but guard against it.
-				continue
-			}
-
-			for cbName, cbVersion := range cbVersions {
-				versions, nameFound := cookbookIDMap[cbName]
-				if !nameFound {
-					missingCookbooks++
-					continue
-				}
-				cookbookID, versionFound := versions[cbVersion]
-				if !versionFound {
-					missingCookbooks++
-					continue
-				}
-
-				usageParams = append(usageParams, datastore.InsertCookbookNodeUsageParams{
-					ServerCookbookID: cookbookID,
-					NodeSnapshotID:   snapshotID,
-					CookbookVersion:  cbVersion,
-				})
-			}
-		}
-
-		if missingCookbooks > 0 {
-			log.Warn(fmt.Sprintf(
-				"%d cookbook-node usage record(s) skipped — cookbook not found in ID map (may be resolved on next run)",
-				missingCookbooks),
-				logging.WithCollectionRunID(run.ID))
-		}
-
-		if len(usageParams) > 0 {
-			usageInserted, usageErr := c.db.BulkInsertCookbookNodeUsage(ctx, usageParams)
-			if usageErr != nil {
-				log.Warn(fmt.Sprintf("failed to insert cookbook-node usage records: %v", usageErr),
-					logging.WithCollectionRunID(run.ID))
-			} else {
-				log.Info(fmt.Sprintf("inserted %d cookbook-node usage record(s)", usageInserted),
-					logging.WithCollectionRunID(run.ID))
-			}
 		}
 	}
 
