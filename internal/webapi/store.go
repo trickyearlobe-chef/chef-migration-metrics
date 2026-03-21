@@ -52,6 +52,27 @@ type DataStore interface {
 	// the given organisation.
 	ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 
+	// ListNodeSnapshotsFiltered returns node snapshots matching the given
+	// filter with SQL WHERE clause push-down. Returns the matching rows,
+	// the total count of all matching rows (for pagination), and any error.
+	ListNodeSnapshotsFiltered(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
+
+	// CountNodeVersionDistribution returns a map of chef_version → count
+	// for nodes matching the given filter, aggregated in SQL.
+	CountNodeVersionDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
+
+	// CountNodePlatformDistribution returns a map of "platform version" → count
+	// for nodes matching the given filter, aggregated in SQL.
+	CountNodePlatformDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
+
+	// ListDistinctNodeValues returns sorted distinct non-empty values for the
+	// given column expression from nodes matching the filter.
+	ListDistinctNodeValues(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error)
+
+	// ListDistinctNodeRoles returns sorted distinct non-empty role names from
+	// the roles JSONB array across all nodes matching the filter.
+	ListDistinctNodeRoles(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error)
+
 	// ListNodeSnapshotsByCollectionRun returns all node snapshots captured
 	// during the given collection run.
 	ListNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)

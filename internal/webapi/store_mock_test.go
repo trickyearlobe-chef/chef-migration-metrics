@@ -21,6 +21,11 @@ type mockStore struct {
 	GetLatestCollectionRunFn                            func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
 	ListCollectionRunsFn                                func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
 	ListNodeSnapshotsByOrganisationFn                   func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
+	ListNodeSnapshotsFilteredFn                         func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
+	CountNodeVersionDistributionFn                      func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
+	CountNodePlatformDistributionFn                     func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
+	ListDistinctNodeValuesFn                            func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error)
+	ListDistinctNodeRolesFn                             func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error)
 	ListNodeSnapshotsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
 	CountChefVersionsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) (map[string]int, error)
 	CountChefVersionsByCollectionRunFilteredFn          func(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error)
@@ -137,6 +142,41 @@ func (m *mockStore) ListCollectionRuns(ctx context.Context, organisationID strin
 func (m *mockStore) ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
 	if m.ListNodeSnapshotsByOrganisationFn != nil {
 		return m.ListNodeSnapshotsByOrganisationFn(ctx, organisationID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListNodeSnapshotsFiltered(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
+	if m.ListNodeSnapshotsFilteredFn != nil {
+		return m.ListNodeSnapshotsFilteredFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) CountNodeVersionDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+	if m.CountNodeVersionDistributionFn != nil {
+		return m.CountNodeVersionDistributionFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) CountNodePlatformDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+	if m.CountNodePlatformDistributionFn != nil {
+		return m.CountNodePlatformDistributionFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) ListDistinctNodeValues(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+	if m.ListDistinctNodeValuesFn != nil {
+		return m.ListDistinctNodeValuesFn(ctx, f, columnExpr)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListDistinctNodeRoles(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error) {
+	if m.ListDistinctNodeRolesFn != nil {
+		return m.ListDistinctNodeRolesFn(ctx, f)
 	}
 	return nil, nil
 }

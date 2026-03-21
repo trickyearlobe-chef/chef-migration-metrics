@@ -502,18 +502,17 @@ func TestHandleDashboardVersionDistribution_HappyPath_Empty(t *testing.T) {
 }
 
 func TestHandleDashboardVersionDistribution_HappyPath_WithNodes(t *testing.T) {
-	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	_ = time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{ID: "n1", ChefVersion: "18.0.0", CollectedAt: now},
-				{ID: "n2", ChefVersion: "18.0.0", CollectedAt: now},
-				{ID: "n3", ChefVersion: "17.0.0", CollectedAt: now},
-				{ID: "n4", ChefVersion: "", CollectedAt: now},
-			}, nil
+		CountNodeVersionDistributionFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+			return map[string]int{
+				"18.0.0":  2,
+				"17.0.0":  1,
+				"unknown": 1,
+			}, 4, nil
 		},
 	}
 	r := newTestRouterWithMock(store)

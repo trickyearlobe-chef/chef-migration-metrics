@@ -57,8 +57,8 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 
 	// Resolve target Chef version — default to the first configured one.
 	targetVersion := queryString(req, "target_chef_version", "")
-	if targetVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
-		targetVersion = r.cfg.TargetChefVersions[0]
+	if targetVersion == "" {
+		targetVersion = r.defaultTargetVersion()
 	}
 	if targetVersion == "" {
 		WriteBadRequest(w, "No target_chef_version specified and none configured.")

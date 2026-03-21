@@ -390,11 +390,11 @@ func TestHandleNodes_HappyPath_WithNodes(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
+		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			return []datastore.NodeSnapshot{
 				{ID: "n1", OrganisationID: "org-1", NodeName: "web1", ChefVersion: "18.0.0", CollectedAt: now},
 				{ID: "n2", OrganisationID: "org-1", NodeName: "web2", ChefVersion: "17.0.0", CollectedAt: now},
-			}, nil
+			}, 2, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -530,11 +530,14 @@ func TestHandleNodesByVersion_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{ID: "n1", NodeName: "web1", ChefVersion: "18.0.0", CollectedAt: now},
-				{ID: "n2", NodeName: "web2", ChefVersion: "17.0.0", CollectedAt: now},
-			}, nil
+		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
+			// The handler sets ChefVersionExact, so only matching nodes returned.
+			if f.ChefVersionExact == "18.0.0" {
+				return []datastore.NodeSnapshot{
+					{ID: "n1", NodeName: "web1", ChefVersion: "18.0.0", CollectedAt: now},
+				}, 1, nil
+			}
+			return nil, 0, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -582,11 +585,11 @@ func TestHandleNodesByCookbook_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
+		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			return []datastore.NodeSnapshot{
-				{ID: "n1", NodeName: "web1", Cookbooks: json.RawMessage(`{"apt":{"version":"7.0"}}`), CollectedAt: now},
-				{ID: "n2", NodeName: "web2", Cookbooks: json.RawMessage(`{"nginx":{"version":"2.0"}}`), CollectedAt: now},
-			}, nil
+				{ID: "n1", OrganisationID: "org-1", NodeName: "web1", Cookbooks: json.RawMessage(`{"apt":{"version":"7.0"}}`), CollectedAt: now},
+				{ID: "n2", OrganisationID: "org-1", NodeName: "web2", Cookbooks: json.RawMessage(`{"nginx":{"version":"2.0"}}`), CollectedAt: now},
+			}, 2, nil
 		},
 	}
 	r := newTestRouterWithMock(store)

@@ -330,8 +330,34 @@ export function CookbookCommittersPage() {
                         className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                     </th>
-                    <th>Author Name</th>
-                    <th>Email</th>
+                    <th>
+                      <button
+                        type="button"
+                        className="inline-flex items-center font-semibold hover:text-blue-600"
+                        onClick={() => handleSort("author_name")}
+                      >
+                        Author Name
+                        <SortIndicator
+                          column="author_name"
+                          activeSort={sort}
+                          activeOrder={order}
+                        />
+                      </button>
+                    </th>
+                    <th>
+                      <button
+                        type="button"
+                        className="inline-flex items-center font-semibold hover:text-blue-600"
+                        onClick={() => handleSort("author_email")}
+                      >
+                        Email
+                        <SortIndicator
+                          column="author_email"
+                          activeSort={sort}
+                          activeOrder={order}
+                        />
+                      </button>
+                    </th>
                     <th>Owner</th>
                     <th>
                       <button
@@ -347,7 +373,20 @@ export function CookbookCommittersPage() {
                         />
                       </button>
                     </th>
-                    <th>First Commit</th>
+                    <th>
+                      <button
+                        type="button"
+                        className="inline-flex items-center font-semibold hover:text-blue-600"
+                        onClick={() => handleSort("first_commit_at")}
+                      >
+                        First Commit
+                        <SortIndicator
+                          column="first_commit_at"
+                          activeSort={sort}
+                          activeOrder={order}
+                        />
+                      </button>
+                    </th>
                     <th>
                       <button
                         type="button"

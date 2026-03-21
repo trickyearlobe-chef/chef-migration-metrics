@@ -928,6 +928,61 @@ target_chef_versions:
 }
 
 // ---------------------------------------------------------------------------
+// HighestVersion
+// ---------------------------------------------------------------------------
+
+func TestHighestVersion_Empty(t *testing.T) {
+	if got := HighestVersion(nil); got != "" {
+		t.Errorf("HighestVersion(nil) = %q, want empty", got)
+	}
+	if got := HighestVersion([]string{}); got != "" {
+		t.Errorf("HighestVersion([]) = %q, want empty", got)
+	}
+}
+
+func TestHighestVersion_Single(t *testing.T) {
+	if got := HighestVersion([]string{"18.5.0"}); got != "18.5.0" {
+		t.Errorf("HighestVersion([18.5.0]) = %q, want 18.5.0", got)
+	}
+}
+
+func TestHighestVersion_PicksHighestMajor(t *testing.T) {
+	got := HighestVersion([]string{"17.0.0", "19.1.164", "18.5.0"})
+	if got != "19.1.164" {
+		t.Errorf("HighestVersion = %q, want 19.1.164", got)
+	}
+}
+
+func TestHighestVersion_PicksHighestMinor(t *testing.T) {
+	got := HighestVersion([]string{"18.5.0", "18.10.17", "18.8.54"})
+	if got != "18.10.17" {
+		t.Errorf("HighestVersion = %q, want 18.10.17", got)
+	}
+}
+
+func TestHighestVersion_PicksHighestPatch(t *testing.T) {
+	got := HighestVersion([]string{"19.1.12", "19.1.164", "19.1.3"})
+	if got != "19.1.164" {
+		t.Errorf("HighestVersion = %q, want 19.1.164", got)
+	}
+}
+
+func TestHighestVersion_NumericNotLexicographic(t *testing.T) {
+	// Lexicographic sort would put "9.0.0" after "18.0.0".
+	got := HighestVersion([]string{"9.0.0", "18.0.0"})
+	if got != "18.0.0" {
+		t.Errorf("HighestVersion = %q, want 18.0.0", got)
+	}
+}
+
+func TestHighestVersion_PreservesOriginalString(t *testing.T) {
+	got := HighestVersion([]string{"18.05.0", "17.0.0"})
+	if got != "18.05.0" {
+		t.Errorf("HighestVersion = %q, want 18.05.0 (original string preserved)", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Collection validation
 // ---------------------------------------------------------------------------
 

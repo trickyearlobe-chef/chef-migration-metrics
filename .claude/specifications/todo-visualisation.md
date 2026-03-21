@@ -25,7 +25,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [x] Nodes page reads readiness, target_version, chef_version, and platform from URL search params to support dashboard click-through
 - [x] Platform filter matches against combined platform + platform_version string for precise filtering
-- [ ] Push node filters (environment, platform, chef_version, role, policy, stale) down to SQL WHERE clauses instead of in-memory filtering — current approach loads all nodes per organisation via ListNodeSnapshotsByOrganisation then filters in Go, which will not scale to 100k+ nodes
+- [x] Push node filters (environment, platform, chef_version, role, policy, stale) down to SQL WHERE clauses instead of in-memory filtering — implemented via NodeSnapshotFilter + ListNodeSnapshotsFiltered with dynamic WHERE builder, COUNT(*) OVER() for pagination, lightweight projection excluding heavy JSONB, aggregate helpers for dashboard distributions, and SQL DISTINCT queries for filter dropdowns
 
 ## Dependency Graph View
 

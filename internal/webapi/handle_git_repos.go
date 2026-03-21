@@ -60,8 +60,8 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 
 	// Determine target Chef version for compatibility.
 	targetChefVersion := queryString(req, "target_chef_version", "")
-	if targetChefVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
-		targetChefVersion = r.cfg.TargetChefVersions[0]
+	if targetChefVersion == "" {
+		targetChefVersion = r.defaultTargetVersion()
 	}
 
 	// Build compatibility map from git repo complexity records.
