@@ -195,9 +195,9 @@ export function GitRepoDetailPage() {
                 </div>
 
                 {/* Cookstyle results */}
-                {gd.cookstyle && gd.cookstyle.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 text-sm font-medium text-gray-600">CookStyle Results</h4>
+                <div>
+                  <h4 className="mb-2 text-sm font-medium text-gray-600">CookStyle Results</h4>
+                  {gd.cookstyle && gd.cookstyle.length > 0 ? (
                     <div className="space-y-2">
                       {gd.cookstyle.map((cs) => (
                         <div key={cs.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
@@ -224,13 +224,20 @@ export function GitRepoDetailPage() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 p-3">
+                      <StatusBadge variant="untested" label="Not Yet Scanned" size="sm" />
+                      <span className="text-xs text-gray-400">
+                        CookStyle results will appear here after the next collection run.
+                      </span>
+                    </div>
+                  )}
+                </div>
 
                 {/* Test Kitchen results */}
-                {gd.test_kitchen && gd.test_kitchen.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="mb-2 text-sm font-medium text-gray-600">Test Kitchen Results</h4>
+                <div className="mt-4">
+                  <h4 className="mb-2 text-sm font-medium text-gray-600">Test Kitchen Results</h4>
+                  {gd.test_kitchen && gd.test_kitchen.length > 0 ? (
                     <div className="space-y-2">
                       {gd.test_kitchen.map((tk) => (
                         <div key={tk.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
@@ -255,8 +262,28 @@ export function GitRepoDetailPage() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 p-3">
+                      {gr.has_test_suite ? (
+                        <>
+                          <StatusBadge variant="untested" label="Not Yet Run" size="sm" />
+                          <span className="text-xs text-gray-400">
+                            A test suite was detected but Test Kitchen has not run yet. Results will appear after the next collection run
+                            (requires Test Kitchen to be enabled in the server configuration).
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <StatusBadge variant="untested" label="No Test Suite" size="sm" />
+                          <span className="text-xs text-gray-400">
+                            This repository does not contain a <code className="rounded bg-gray-100 px-1 py-0.5">.kitchen.yml</code> file.
+                            Add one to enable integration testing with Test Kitchen.
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* Complexity results */}
                 {gd.complexity && gd.complexity.length > 0 && (

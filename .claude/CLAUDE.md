@@ -24,44 +24,6 @@ This file contains the rules and conventions that must be followed at all times 
   - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
 - Commit early and often.
 
-## Token Economy
-
-- The **hard context ceiling is 72 000 tokens**. The working budget for task selection is **60 000 tokens** — the remaining 12k is reserved for wrap-up (summary, commit, push).
-- **Thread-start budget: ≤ 4 000 tokens.** The only reads allowed before starting real work are: (1) the latest summary's "Recommended next steps" section, and (2) the task-to-spec lookup below. Nothing else. No browsing summaries.
-- Only read the specification documents relevant to the current task.
-- **Prefer reading specific line ranges** over entire files. Use file outlines first, then read only the sections you need.
-- Large spec files have a **TL;DR** at the top. Read that first to decide whether you need the full file.
-- Authoritative tasks live in `specifications/todo/*.md` — read only the one relevant to your work.
-
----
-
-## Task Summaries
-
-- At the end of every task (feature, bug fix, test addition, refactor, etc.), write a summary file in `.claude/summaries/`.
-- **Naming convention:** `YYYY-MM-DD-hh-mm-<component>-<short-description>.md` (e.g. `2025-01-01-secrets-rotation-tests.md`).
-- **Purpose:** Give future threads enough context to continue work without re-reading code or re-running tests.
-- **Summaries must be ≤ 80 lines / ≤ 4 KB.** If you exceed this, cut "What was done" detail first — the next thread can read the code.
-- **Required sections (in order):**
-  1. **Context** — 1–3 sentences: component, why, branch name.
-  2. **What was done** — bullet list of changes. One line per logical change. No implementation detail — just _what_ changed and _where_ (file path).
-  3. **Final state** — one line: test count, pass/fail. Only mention coverage if relevant.
-  5. **Recommended next steps** — prioritised list. Each item must include: which spec and todo file to read, and estimated token cost (S/M/L = <15k / 15–35k / 35–55k). **This is the single source of truth for what to work on next.**
-- Do NOT include a "Files modified" table. The git diff is the source of truth for that.
-- **At the start of a new thread**, read **only the "Recommended next steps" section** of the most recent summary (sorted by filename date prefix). Do NOT read the full summary. Do NOT list or scan other summaries. Do NOT read archived summaries.
-
-### Single Source of Truth for Next Steps
-
-- When finishing a task, put the full next-steps plan in the new summary file and nowhere else.
-
-### Archiving Old Summaries
-
-- Only recent summaries belong in `.claude/summaries/`. Older summaries live in `.claude/summaries/archive/`.
-- **When to archive:** After writing a new summary, if there are more than **2 files** in `.claude/summaries/` (excluding `archive/`), move the oldest summaries to `archive/` to keep the count at 2 or fewer. **This is mandatory — do not skip it.**
-- **Do not read archived summaries**
-
-### Context Budget and Incremental Saves
-
-Large tasks risk exhausting the context window before a summary can be written. Follow these rules to prevent losing work:
 
 
 ## Ignore Files
@@ -74,9 +36,9 @@ Large tasks risk exhausting the context window before a summary can be written. 
 
 ## Specifications
 
-- Specs live under `.claude/specifications/<component>/Specification.md`.
+- Specs live under `.claude/specifications/<component>.md` (flat layout, no subdirectories).
 - Before implementing any feature, check whether a specification exists. If not, write one first.
-- When completing tasks, update the relevant `todo/*.md` file.
+- When completing tasks, update the relevant `todo-<component>.md` file.
 
 ## Database
 
@@ -89,7 +51,7 @@ Large tasks risk exhausting the context window before a summary can be written. 
 - All backend components must be implemented in **Go**.
 - Use **goroutines** to parallelise work wherever independent units of work can proceed concurrently.
 - Use **channels** or **sync primitives** (e.g. `sync.WaitGroup`, `errgroup`) to coordinate goroutines and collect results or errors.
-- Goroutine concurrency must be **bounded** using worker pools. Each task type (organisation collection, node page fetching, git pulls, CookStyle scans, Test Kitchen runs, readiness evaluation) has its own independently configurable worker pool size. See `./specifications/configuration/Specification.md` for the concurrency configuration schema and default values.
+- Goroutine concurrency must be **bounded** using worker pools. Each task type (organisation collection, node page fetching, git pulls, CookStyle scans, Test Kitchen runs, readiness evaluation) has its own independently configurable worker pool size. See `.claude/specifications/configuration.md` for the concurrency configuration schema and default values.
 - Each concurrent work unit must propagate errors back to the caller rather than silently discarding them.
 
 ## Testing

@@ -191,6 +191,44 @@ func (db *DB) getGitRepoURLForCookbook(ctx context.Context, q queryable, cookboo
 	return repoURL.String, nil
 }
 
+// GetOwnerEmailsForGitRepo returns a set of contact_email addresses for
+// owners that have been assigned to the given git repo URL. This is used
+// to mark committers that are already registered as owners.
+func (db *DB) GetOwnerEmailsForGitRepo(ctx context.Context, gitRepoURL string) (map[string]bool, error) {
+	return db.getOwnerEmailsForGitRepo(ctx, db.q(), gitRepoURL)
+}
+
+func (db *DB) getOwnerEmailsForGitRepo(ctx context.Context, q queryable, gitRepoURL string) (map[string]bool, error) {
+	const query = `
+		SELECT LOWER(o.contact_email)
+		FROM owners o
+		JOIN ownership_assignments oa ON oa.owner_id = o.id
+		WHERE oa.entity_type = 'git_repo'
+		  AND oa.entity_key = $1
+		  AND o.contact_email != ''
+	`
+
+	rows, err := q.QueryContext(ctx, query, gitRepoURL)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing owner emails for git repo: %w", err)
+	}
+	defer rows.Close()
+
+	emails := make(map[string]bool)
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, fmt.Errorf("datastore: scanning owner email: %w", err)
+		}
+		emails[email] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating owner email rows: %w", err)
+	}
+
+	return emails, nil
+}
+
 // ---------------------------------------------------------------------------
 // Scan helpers
 // ---------------------------------------------------------------------------

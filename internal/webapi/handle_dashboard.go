@@ -661,8 +661,10 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 			}
 			seen[key] = true
 			pv.total++
-			// A cookbook with complexity score 0 and no errors is compatible.
-			if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+			// A cookbook with no error/fatal offenses is compatible.
+			// Deprecation warnings alone do not make a cookbook incompatible,
+			// matching the CookStyle passed logic (isErrorOrFatal only).
+			if cc.ErrorCount == 0 {
 				pv.compatible++
 			} else {
 				pv.incompatible++
@@ -843,7 +845,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		}
 		seen[key] = true
 		pv.total++
-		if cc.ErrorCount == 0 && cc.DeprecationCount == 0 {
+		if cc.ErrorCount == 0 {
 			pv.compatible++
 		} else {
 			pv.incompatible++
