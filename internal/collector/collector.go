@@ -663,6 +663,18 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 		log.Info(fmt.Sprintf("purged %d metric snapshot(s) older than 90 days", purgedMetrics))
 	}
 
+	// Purge expired export job rows. The export cleanup ticker marks rows
+	// as 'expired' after deleting files from disk; this removes the DB
+	// rows after the log retention period so they don't accumulate
+	// indefinitely.
+	exportCutoff := time.Now().Add(-time.Duration(c.cfg.Logging.RetentionDays) * 24 * time.Hour)
+	purgedExports, purgeExportsErr := c.db.DeleteExpiredExportJobRows(ctx, exportCutoff)
+	if purgeExportsErr != nil {
+		log.Warn(fmt.Sprintf("export job row purge failed: %v", purgeExportsErr))
+	} else if purgedExports > 0 {
+		log.Info(fmt.Sprintf("purged %d expired export job row(s) older than %d days", purgedExports, c.cfg.Logging.RetentionDays))
+	}
+
 	return result, nil
 }
 
