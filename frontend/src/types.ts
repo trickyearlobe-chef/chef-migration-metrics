@@ -1014,3 +1014,34 @@ export interface ResetGitCookbookResponse {
 export type OwnerListResponse = PaginatedResponse<Owner>;
 export type AssignmentListResponse = PaginatedResponse<OwnershipAssignment>;
 export type AuditLogResponse = PaginatedResponse<OwnershipAuditEntry>;
+
+// ---------------------------------------------------------------------------
+// Node disk detail (filesystem data from Ohai)
+// ---------------------------------------------------------------------------
+
+export interface DiskEntry {
+  mount: string;
+  device: string;
+  fs_type: string;
+  kb_size: number;
+  kb_used: number;
+  kb_available: number;
+  percent_used: number;
+  uuid?: string;
+  mount_options?: string[];
+  inodes_used?: number;
+  total_inodes?: number;
+  inodes_available?: number;
+  inodes_percent_used?: number;
+  // Windows-specific
+  drive_type?: string;
+  volume_name?: string;
+  encryption_status?: string;
+}
+
+export interface NodeDiskDetailResponse {
+  node_name: string;
+  organisation_name: string;
+  platform: string;
+  disks: DiskEntry[];
+}

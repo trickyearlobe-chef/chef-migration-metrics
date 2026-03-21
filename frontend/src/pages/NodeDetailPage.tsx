@@ -5,6 +5,11 @@ import type { NodeDetailResponse, NodeReadiness, BlockingCookbook, CookbookSourc
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { StaleBadge, StatusBadge } from "../components/StatusBadge";
 
+// Helper to build the disk detail link for a node.
+function diskDetailPath(org: string, name: string): string {
+  return `/nodes/${encodeURIComponent(org)}/${encodeURIComponent(name)}/disks`;
+}
+
 // ---------------------------------------------------------------------------
 // Node detail page — shows full information for a single node including
 // readiness status per target Chef version with per-source verdicts,
@@ -108,8 +113,8 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
         <span className="text-xs text-gray-500">@{bc.version}</span>
         <span
           className={`rounded px-1.5 py-0.5 text-xs font-medium ${bc.reason === "incompatible"
-              ? "bg-red-100 text-red-700"
-              : "bg-gray-100 text-gray-600"
+            ? "bg-red-100 text-red-700"
+            : "bg-gray-100 text-gray-600"
             }`}
         >
           {bc.reason}
@@ -181,7 +186,7 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
 // Disk space analysis panel
 // ---------------------------------------------------------------------------
 
-function DiskSpacePanel({ r }: { r: NodeReadiness }) {
+function DiskSpacePanel({ r, org, nodeName }: { r: NodeReadiness; org?: string; nodeName?: string }) {
   const available = r.available_disk_mb;
   const required = r.required_disk_mb;
   const sufficient = r.sufficient_disk_space;
@@ -204,6 +209,11 @@ function DiskSpacePanel({ r }: { r: NodeReadiness }) {
           <p className="mt-0.5 text-xs text-gray-400">
             Minimum required: {formatMB(required)}
           </p>
+        )}
+        {org && nodeName && (
+          <Link to={diskDetailPath(org, nodeName)} className="mt-1.5 inline-block text-xs text-blue-600 hover:text-blue-800 hover:underline">
+            View Filesystem Details →
+          </Link>
         )}
       </div>
     );
@@ -254,6 +264,12 @@ function DiskSpacePanel({ r }: { r: NodeReadiness }) {
         <p className="mt-1 text-xs text-gray-500">
           Available: <strong>{formatMB(available)}</strong> (no minimum configured)
         </p>
+      )}
+
+      {org && nodeName && (
+        <Link to={diskDetailPath(org, nodeName)} className="mt-2 inline-block text-xs text-blue-600 hover:text-blue-800 hover:underline">
+          View Filesystem Details →
+        </Link>
       )}
     </div>
   );
@@ -490,9 +506,13 @@ function CookbookCompatibilityTable({
 function ReadinessCard({
   r,
   nodeCookbooks,
+  org,
+  nodeName,
 }: {
   r: NodeReadiness;
   nodeCookbooks: Record<string, unknown> | null;
+  org?: string;
+  nodeName?: string;
 }) {
   const ready = r.is_ready;
 
@@ -541,7 +561,7 @@ function ReadinessCard({
       {/* Analysis panels */}
       <div className="mt-4 space-y-3">
         <CookbookCompatibilityTable nodeCookbooks={nodeCookbooks} r={r} />
-        <DiskSpacePanel r={r} />
+        <DiskSpacePanel r={r} org={org} nodeName={nodeName} />
       </div>
     </div>
   );
@@ -551,7 +571,7 @@ function ReadinessCard({
 // Readiness section (container)
 // ---------------------------------------------------------------------------
 
-function ReadinessSection({ data }: { data: NodeDetailResponse }) {
+function ReadinessSection({ data, org, nodeName }: { data: NodeDetailResponse; org?: string; nodeName?: string }) {
   if (!data.readiness || data.readiness.length === 0) return null;
 
   return (
@@ -563,6 +583,8 @@ function ReadinessSection({ data }: { data: NodeDetailResponse }) {
             key={r.id}
             r={r}
             nodeCookbooks={data.node.cookbooks}
+            org={org}
+            nodeName={nodeName}
           />
         ))}
       </div>
@@ -623,10 +645,22 @@ export function NodeDetailPage() {
         <InfoCard label="Policy" value={node.policy_name ? `${node.policy_name} / ${node.policy_group}` : "—"} />
         <InfoCard label="Last Collected" value={new Date(node.collected_at).toLocaleString()} />
         <InfoCard label="Ohai Time" value={node.ohai_time ? new Date(Number(node.ohai_time) * 1000).toLocaleString() : "—"} />
+        <Link
+          to={diskDetailPath(org!, name!)}
+          className="stat-card group flex items-center gap-2 hover:border-blue-300 hover:bg-blue-50/50"
+        >
+          <span className="text-lg">💾</span>
+          <div>
+            <span className="stat-label">Filesystem</span>
+            <span className="mt-1 text-sm font-medium text-blue-600 group-hover:text-blue-800">
+              View Disk Details →
+            </span>
+          </div>
+        </Link>
       </div>
 
       {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
-      <ReadinessSection data={data} />
+      <ReadinessSection data={data} org={org} nodeName={name} />
 
       {/* Run list */}
       {node.run_list && node.run_list.length > 0 && (
