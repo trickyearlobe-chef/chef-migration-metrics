@@ -1230,27 +1230,21 @@ func TestBulkUpsertNodeSnapshots_EmptySlice(t *testing.T) {
 	}
 }
 
-func TestBulkUpsertNodeSnapshotsReturningIDs_EmptySlice(t *testing.T) {
+func TestDeleteOrphanedNodeSnapshots_EmptySlice(t *testing.T) {
 	db := &DB{pool: nil}
-	idMap, count, err := db.BulkUpsertNodeSnapshotsReturningIDs(context.Background(), nil)
+	count, err := db.DeleteOrphanedNodeSnapshots(context.Background(), "org-1", nil)
 	if err != nil {
-		t.Fatalf("BulkUpsertNodeSnapshotsReturningIDs(nil) returned error: %v", err)
+		t.Fatalf("DeleteOrphanedNodeSnapshots(nil) returned error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("BulkUpsertNodeSnapshotsReturningIDs(nil) returned count %d, want 0", count)
-	}
-	if idMap != nil {
-		t.Errorf("BulkUpsertNodeSnapshotsReturningIDs(nil) returned non-nil map: %v", idMap)
+		t.Errorf("DeleteOrphanedNodeSnapshots(nil) returned count %d, want 0", count)
 	}
 
-	idMap, count, err = db.BulkUpsertNodeSnapshotsReturningIDs(context.Background(), []InsertNodeSnapshotParams{})
+	count, err = db.DeleteOrphanedNodeSnapshots(context.Background(), "org-1", []string{})
 	if err != nil {
-		t.Fatalf("BulkUpsertNodeSnapshotsReturningIDs([]) returned error: %v", err)
+		t.Fatalf("DeleteOrphanedNodeSnapshots([]) returned error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("BulkUpsertNodeSnapshotsReturningIDs([]) returned count %d, want 0", count)
-	}
-	if idMap != nil {
-		t.Errorf("BulkUpsertNodeSnapshotsReturningIDs([]) returned non-nil map: %v", idMap)
+		t.Errorf("DeleteOrphanedNodeSnapshots([]) returned count %d, want 0", count)
 	}
 }

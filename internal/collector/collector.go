@@ -870,6 +870,25 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			logging.WithCollectionRunID(run.ID))
 	}
 
+	// Step 4a: Remove snapshots for nodes no longer on the Chef Server.
+	// Nodes that were decommissioned won't appear in searchRows, so their
+	// snapshot rows become orphaned. This reconciliation step keeps the
+	// table proportional to the current fleet size.
+	if len(snapshotParams) > 0 {
+		activeNames := make([]string, len(snapshotParams))
+		for i, p := range snapshotParams {
+			activeNames[i] = p.NodeName
+		}
+		orphaned, orphanErr := c.db.DeleteOrphanedNodeSnapshots(ctx, org.ID, activeNames)
+		if orphanErr != nil {
+			log.Warn(fmt.Sprintf("failed to clean up orphaned node snapshots: %v", orphanErr),
+				logging.WithCollectionRunID(run.ID))
+		} else if orphaned > 0 {
+			log.Info(fmt.Sprintf("removed %d orphaned node snapshot(s) (decommissioned nodes)", orphaned),
+				logging.WithCollectionRunID(run.ID))
+		}
+	}
+
 	// Step 4b: Complete the collection run early so the UI can show fresh
 	// node data immediately. The remaining steps (cookbook inventory,
 	// downloads, analysis, CookStyle, etc.) can take a very long time with
