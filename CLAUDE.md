@@ -22,7 +22,7 @@ This file contains the rules and conventions that must be followed at all times 
 - Write clear, descriptive commit messages following conventional commit style
   - First line `<type>(<scope>): <summary>`
   - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
-- Commit early and often.
+- Commit early and often, but ask the user first.
 
 
 
