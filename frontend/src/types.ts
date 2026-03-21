@@ -484,6 +484,7 @@ export interface RemediationPriorityItem {
   deprecation_count: number;
   error_count: number;
   target_chef_version: string;
+  version_count: number;
 }
 
 export interface RemediationPriorityResponse {
@@ -984,6 +985,7 @@ export interface GitRepoCommitter {
   first_commit_at: string;
   last_commit_at: string;
   collected_at: string;
+  is_owner?: boolean;
 }
 
 export interface CookbookCommittersResponse {
