@@ -840,29 +840,67 @@ uninstall-hooks: ## Remove custom git hooks path (revert to default)
 	@echo "$(GREEN)Git hooks path reset to default.$(RESET)"
 
 # =============================================================================
+# Database (standalone PostgreSQL for local development)
+# =============================================================================
+# These targets start only the PostgreSQL container from the Docker Compose
+# stack, so you can run the app on the host with `make run` or `make dev`.
+
+COMPOSE_FILE := deploy/docker-compose/docker-compose.yml
+DB_SERVICE   := db
+DB_USER      := $(shell grep POSTGRES_USER deploy/docker-compose/.env 2>/dev/null | cut -d= -f2 || echo chef_migration_metrics)
+DB_NAME      := $(shell grep POSTGRES_DB deploy/docker-compose/.env 2>/dev/null | cut -d= -f2 || echo chef_migration_metrics)
+
+.PHONY: db-up
+db-up: ## Start only the PostgreSQL database container
+	@echo "$(GREEN)Starting PostgreSQL...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) up -d $(DB_SERVICE)
+	@echo "$(GREEN)Waiting for PostgreSQL to be healthy...$(RESET)"
+	@until docker compose -f $(COMPOSE_FILE) exec -T $(DB_SERVICE) pg_isready -U $(DB_USER) -d $(DB_NAME) >/dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "$(GREEN)PostgreSQL is ready on localhost:$${POSTGRES_PORT:-5432}$(RESET)"
+
+.PHONY: db-down
+db-down: ## Stop the PostgreSQL database container
+	@echo "$(GREEN)Stopping PostgreSQL...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) stop $(DB_SERVICE)
+
+.PHONY: db-reset
+db-reset: ## Stop PostgreSQL, destroy its volume, and start fresh
+	@echo "$(YELLOW)Destroying PostgreSQL data and restarting...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) rm -sfv $(DB_SERVICE)
+	docker volume rm -f docker-compose_pgdata 2>/dev/null || true
+	$(MAKE) db-up
+	@echo "$(GREEN)Database reset complete — run 'make run' to apply migrations.$(RESET)"
+
+.PHONY: db-psql
+db-psql: ## Open a psql shell in the running database container
+	docker compose -f $(COMPOSE_FILE) exec $(DB_SERVICE) psql -U $(DB_USER) -d $(DB_NAME)
+
+# =============================================================================
 # Docker Compose (local development stack)
 # =============================================================================
 
 .PHONY: compose-up
 compose-up: ## Start the local Docker Compose stack (app + PostgreSQL)
 	@echo "$(GREEN)Starting Docker Compose stack...$(RESET)"
-	docker compose -f deploy/docker-compose/docker-compose.yml up -d --build
+	docker compose -f $(COMPOSE_FILE) up -d --build
 
 .PHONY: compose-down
 compose-down: ## Stop the local Docker Compose stack
-	docker compose -f deploy/docker-compose/docker-compose.yml down
+	docker compose -f $(COMPOSE_FILE) down
 
 .PHONY: compose-down-volumes
 compose-down-volumes: ## Stop the stack and remove all volumes
-	docker compose -f deploy/docker-compose/docker-compose.yml down -v
+	docker compose -f $(COMPOSE_FILE) down -v
 
 .PHONY: compose-logs
 compose-logs: ## Tail logs from the Docker Compose stack
-	docker compose -f deploy/docker-compose/docker-compose.yml logs -f
+	docker compose -f $(COMPOSE_FILE) logs -f
 
 .PHONY: compose-ps
 compose-ps: ## Show status of Docker Compose services
-	docker compose -f deploy/docker-compose/docker-compose.yml ps
+	docker compose -f $(COMPOSE_FILE) ps
 
 # ---------------------------------------------------------------------------
 # ELK Testing Stack
