@@ -292,7 +292,7 @@ func (r *Router) handleCookbookCommitters(w http.ResponseWriter, req *http.Reque
 	// Parse sort parameters.
 	sortField := queryString(req, "sort", "last_commit_at")
 	switch sortField {
-	case "last_commit_at", "commit_count", "author_name":
+	case "last_commit_at", "first_commit_at", "commit_count", "author_name", "author_email":
 		// valid
 	default:
 		sortField = "last_commit_at"
