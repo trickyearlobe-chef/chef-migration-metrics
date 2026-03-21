@@ -87,8 +87,14 @@ func FilterNodes(nodes []datastore.NodeSnapshot, f Filters) []datastore.NodeSnap
 		if f.Environment != "" && !strings.Contains(strings.ToLower(n.ChefEnvironment), strings.ToLower(f.Environment)) {
 			continue
 		}
-		if f.Platform != "" && !strings.Contains(strings.ToLower(n.Platform), strings.ToLower(f.Platform)) {
-			continue
+		if f.Platform != "" {
+			platformFull := strings.ToLower(n.Platform)
+			if n.PlatformVersion != "" {
+				platformFull = platformFull + " " + strings.ToLower(n.PlatformVersion)
+			}
+			if !strings.Contains(platformFull, strings.ToLower(f.Platform)) {
+				continue
+			}
 		}
 		if f.ChefVersion != "" && !strings.Contains(strings.ToLower(n.ChefVersion), strings.ToLower(f.ChefVersion)) {
 			continue
