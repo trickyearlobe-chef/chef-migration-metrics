@@ -181,8 +181,8 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 
 	// Determine target chef version for readiness enrichment.
 	targetVersion := q.Get("target_chef_version")
-	if targetVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
-		targetVersion = r.cfg.TargetChefVersions[0]
+	if targetVersion == "" {
+		targetVersion = r.defaultTargetVersion()
 	}
 
 	owners, total, err := r.db.ListOwnersWithSummary(req.Context(), f, targetVersion)
@@ -401,8 +401,8 @@ func (r *Router) handleGetOwner(w http.ResponseWriter, req *http.Request, name s
 	// Determine target chef version: prefer query param, fall back to first
 	// configured version.
 	targetVersion := req.URL.Query().Get("target_chef_version")
-	if targetVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
-		targetVersion = r.cfg.TargetChefVersions[0]
+	if targetVersion == "" {
+		targetVersion = r.defaultTargetVersion()
 	}
 
 	resp := map[string]any{

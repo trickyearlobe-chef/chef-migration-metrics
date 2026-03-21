@@ -921,6 +921,51 @@ func (c *Config) validateTargetVersions(ve *ValidationError) {
 	}
 }
 
+// HighestVersion returns the highest semver string from a slice of version
+// strings. Each string is expected to be in MAJOR.MINOR.PATCH format (as
+// validated by validateTargetVersions). Returns an empty string if the
+// slice is empty.
+func HighestVersion(versions []string) string {
+	if len(versions) == 0 {
+		return ""
+	}
+
+	best := versions[0]
+	bestParts := parseSemverParts(best)
+
+	for _, v := range versions[1:] {
+		parts := parseSemverParts(v)
+		if compareSemverParts(parts, bestParts) > 0 {
+			best = v
+			bestParts = parts
+		}
+	}
+
+	return best
+}
+
+// parseSemverParts splits a "MAJOR.MINOR.PATCH" string into three ints.
+// Non-numeric or missing segments default to 0.
+func parseSemverParts(v string) [3]int {
+	var parts [3]int
+	segs := strings.SplitN(v, ".", 3)
+	for i := 0; i < len(segs) && i < 3; i++ {
+		n, _ := strconv.Atoi(segs[i])
+		parts[i] = n
+	}
+	return parts
+}
+
+// compareSemverParts returns >0 if a > b, <0 if a < b, 0 if equal.
+func compareSemverParts(a, b [3]int) int {
+	for i := 0; i < 3; i++ {
+		if a[i] != b[i] {
+			return a[i] - b[i]
+		}
+	}
+	return 0
+}
+
 // cronFieldRe is a deliberately permissive check — a cron expression has 5
 // space-separated fields. Full parsing is left to the scheduler library.
 var cronFieldRe = regexp.MustCompile(`^(\S+\s+){4}\S+$`)

@@ -888,23 +888,30 @@ export interface OwnerDetail extends Owner {
   git_repo_summary?: OwnerGitRepoSummary;
 }
 
+export interface BlockingCookbookSummary {
+  cookbook_name: string;
+  complexity_label: string;
+  affected_node_count: number;
+}
+
 export interface OwnerReadinessSummary {
   target_chef_version: string;
   total_nodes: number;
-  ready_nodes: number;
-  blocked_nodes: number;
-  blocking_cookbooks: string[];
+  ready: number;
+  blocked: number;
+  stale: number;
+  blocking_cookbooks: BlockingCookbookSummary[];
 }
 
 export interface OwnerCookbookSummary {
-  total_cookbooks: number;
+  total: number;
   compatible: number;
   incompatible: number;
   untested: number;
 }
 
 export interface OwnerGitRepoSummary {
-  total_repos: number;
+  total: number;
   compatible: number;
   incompatible: number;
 }

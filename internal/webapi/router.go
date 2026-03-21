@@ -470,3 +470,11 @@ func (r *Router) logf(level, format string, args ...any) {
 		r.logger(level, fmt.Sprintf(format, args...))
 	}
 }
+
+// defaultTargetVersion returns the highest configured target Chef version
+// (by semver comparison), or an empty string if none are configured.
+// Handlers use this as the fallback when no target_chef_version query
+// parameter is supplied.
+func (r *Router) defaultTargetVersion() string {
+	return config.HighestVersion(r.cfg.TargetChefVersions)
+}
