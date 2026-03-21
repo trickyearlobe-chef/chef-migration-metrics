@@ -230,6 +230,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/dashboard/platform-distribution", r.handleDashboardPlatformDistribution)
 	r.protect("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility)
 	r.protect("/api/v1/dashboard/git-repo-compatibility", r.handleDashboardGitRepoCompatibility)
+	r.protect("/api/v1/dashboard/test-kitchen-compatibility", r.handleDashboardTestKitchenCompatibility)
 	r.protect("/api/v1/dashboard/cookbook-download-status", r.handleDashboardCookbookDownloadStatus)
 
 	// -----------------------------------------------------------------
