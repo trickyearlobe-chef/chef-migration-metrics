@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -180,8 +181,48 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 	}
 
 	var points []trendPoint
+
+	// When no ownership filter is active, read from pre-aggregated
+	// metric_snapshots. This avoids scanning the (now current-state-only)
+	// node_snapshots table and supports historical trends even after old
+	// raw snapshots have been deduplicated.
+	if !ownerFilterActive {
+		for _, org := range orgs {
+			metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 10)
+			if err != nil {
+				r.logf("WARN", "listing metric snapshots for org %s in version trend: %v", org.Name, err)
+				continue
+			}
+			for _, ms := range metrics {
+				var payload struct {
+					Distribution map[string]int `json:"distribution"`
+					TotalNodes   int            `json:"total_nodes"`
+				}
+				if err := json.Unmarshal(ms.Data, &payload); err != nil {
+					r.logf("WARN", "unmarshalling metric snapshot %s: %v", ms.ID, err)
+					continue
+				}
+				points = append(points, trendPoint{
+					OrganisationName: org.Name,
+					CollectionRunID:  ms.CollectionRunID,
+					CompletedAt:      ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
+					TotalNodes:       payload.TotalNodes,
+					Distribution:     payload.Distribution,
+				})
+			}
+		}
+
+		if points == nil {
+			points = []trendPoint{}
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"data": points})
+		return
+	}
+
+	// Ownership-filtered path: fall back to querying node_snapshots via
+	// collection runs. This only returns data for runs that still have
+	// associated node snapshot rows (i.e. the current run).
 	for _, org := range orgs {
-		// Get recent completed runs (limit to 10 per org for performance).
 		runs, err := r.db.ListCollectionRuns(ctx, org.ID, 10)
 		if err != nil {
 			r.logf("WARN", "listing collection runs for org %s in trend: %v", org.Name, err)
@@ -195,61 +236,45 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 			var dist map[string]int
 			var total int
 
-			if ownerFilterActive && ownedKeys != nil {
-				// Build an allowed-node list from the owned keys.
-				var allowed []string
-				for k := range ownedKeys {
-					if of.Unowned {
-						// ownedKeys contains ALL owned nodes; we want the complement.
-						// We can't filter by exclusion easily here, so fall back to
-						// the filtered query with all non-owned nodes.
-						// Instead, just pass nil and filter below.
-						break
-					}
-					allowed = append(allowed, k)
-				}
-
+			// Build an allowed-node list from the owned keys.
+			var allowed []string
+			for k := range ownedKeys {
 				if of.Unowned {
-					// For "unowned" we need to exclude owned nodes. The filtered
-					// query supports inclusion only, so we fall back to the full
-					// result and subtract owned node counts.
-					allDist, err := r.db.CountChefVersionsByCollectionRun(ctx, run.ID)
-					if err != nil {
-						r.logf("WARN", "counting versions for run %s in trend: %v", run.ID, err)
-						continue
-					}
-					// Get owned-only counts so we can subtract.
-					ownedNodeNames := make([]string, 0, len(ownedKeys))
-					for k := range ownedKeys {
-						ownedNodeNames = append(ownedNodeNames, k)
-					}
-					ownedDist, err := r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, ownedNodeNames)
-					if err != nil {
-						r.logf("WARN", "counting owned versions for run %s in trend: %v", run.ID, err)
-						continue
-					}
-					dist = make(map[string]int)
-					for v, cnt := range allDist {
-						remaining := cnt - ownedDist[v]
-						if remaining > 0 {
-							dist[v] = remaining
-							total += remaining
-						}
-					}
-				} else {
-					dist, err = r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, allowed)
-					if err != nil {
-						r.logf("WARN", "counting filtered versions for run %s in trend: %v", run.ID, err)
-						continue
-					}
-					for _, cnt := range dist {
-						total += cnt
+					break
+				}
+				allowed = append(allowed, k)
+			}
+
+			if of.Unowned {
+				// For "unowned" we need to exclude owned nodes. The filtered
+				// query supports inclusion only, so we fall back to the full
+				// result and subtract owned node counts.
+				allDist, err := r.db.CountChefVersionsByCollectionRun(ctx, run.ID)
+				if err != nil {
+					r.logf("WARN", "counting versions for run %s in trend: %v", run.ID, err)
+					continue
+				}
+				ownedNodeNames := make([]string, 0, len(ownedKeys))
+				for k := range ownedKeys {
+					ownedNodeNames = append(ownedNodeNames, k)
+				}
+				ownedDist, err := r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, ownedNodeNames)
+				if err != nil {
+					r.logf("WARN", "counting owned versions for run %s in trend: %v", run.ID, err)
+					continue
+				}
+				dist = make(map[string]int)
+				for v, cnt := range allDist {
+					remaining := cnt - ownedDist[v]
+					if remaining > 0 {
+						dist[v] = remaining
+						total += remaining
 					}
 				}
 			} else {
-				dist, err = r.db.CountChefVersionsByCollectionRun(ctx, run.ID)
+				dist, err = r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, allowed)
 				if err != nil {
-					r.logf("WARN", "counting versions for run %s in trend: %v", run.ID, err)
+					r.logf("WARN", "counting filtered versions for run %s in trend: %v", run.ID, err)
 					continue
 				}
 				for _, cnt := range dist {
@@ -975,33 +1000,35 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 		FreshNodes       int    `json:"fresh_nodes"`
 	}
 
+	ctx := req.Context()
 	var points []trendPoint
+
+	// Read from pre-aggregated metric_snapshots. The
+	// chef_version_distribution snapshots contain stale/fresh counts
+	// alongside the version distribution data.
 	for _, org := range orgs {
-		runs, err := r.db.ListCollectionRuns(req.Context(), org.ID, 10)
+		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 10)
 		if err != nil {
-			r.logf("WARN", "listing collection runs for org %s in stale trend: %v", org.Name, err)
+			r.logf("WARN", "listing metric snapshots for org %s in stale trend: %v", org.Name, err)
 			continue
 		}
-		for _, run := range runs {
-			if run.Status != "completed" {
-				continue
+		for _, ms := range metrics {
+			var payload struct {
+				TotalNodes int `json:"total_nodes"`
+				StaleNodes int `json:"stale_nodes"`
+				FreshNodes int `json:"fresh_nodes"`
 			}
-			total, stale, fresh, err := r.db.CountStaleFreshByCollectionRun(req.Context(), run.ID)
-			if err != nil {
-				r.logf("WARN", "counting stale/fresh for run %s in stale trend: %v", run.ID, err)
+			if err := json.Unmarshal(ms.Data, &payload); err != nil {
+				r.logf("WARN", "unmarshalling metric snapshot %s for stale trend: %v", ms.ID, err)
 				continue
-			}
-			completedAt := ""
-			if !run.CompletedAt.IsZero() {
-				completedAt = run.CompletedAt.Format("2006-01-02T15:04:05Z")
 			}
 			points = append(points, trendPoint{
 				OrganisationName: org.Name,
-				CollectionRunID:  run.ID,
-				CompletedAt:      completedAt,
-				TotalNodes:       total,
-				StaleNodes:       stale,
-				FreshNodes:       fresh,
+				CollectionRunID:  ms.CollectionRunID,
+				CompletedAt:      ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
+				TotalNodes:       payload.TotalNodes,
+				StaleNodes:       payload.StaleNodes,
+				FreshNodes:       payload.FreshNodes,
 			})
 		}
 	}

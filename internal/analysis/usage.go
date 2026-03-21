@@ -84,7 +84,7 @@ type cookbookVersionKey struct {
 // version after Phase 2.
 type aggregatedUsage struct {
 	NodeCount    int
-	NodeNames    map[string]bool
+	seenNodes    map[string]bool // used for distinct counting only; not persisted
 	Roles        map[string]bool
 	PolicyNames  map[string]bool
 	PolicyGroups map[string]bool
@@ -191,6 +191,17 @@ func (a *Analyser) RunUsageAnalysis(
 	var detailCount int
 
 	err := a.db.Tx(ctx, func(tx *sql.Tx) error {
+		// Delete any existing analysis (and its cascade-deleted details)
+		// for this organisation before inserting the replacement. This
+		// keeps the table at one row per org rather than accumulating
+		// a new row per collection run.
+		if _, delErr := tx.ExecContext(ctx,
+			`DELETE FROM cookbook_usage_analysis WHERE organisation_id = $1`,
+			organisationID,
+		); delErr != nil {
+			return fmt.Errorf("deleting old usage analysis: %w", delErr)
+		}
+
 		header, err := a.db.InsertCookbookUsageAnalysisTx(ctx, tx, analysisHeader)
 		if err != nil {
 			return fmt.Errorf("inserting analysis header: %w", err)
@@ -323,7 +334,7 @@ func aggregateTuples(tuples []extractedTuple) map[cookbookVersionKey]*aggregated
 		usage, exists := agg[key]
 		if !exists {
 			usage = &aggregatedUsage{
-				NodeNames:            make(map[string]bool),
+				seenNodes:            make(map[string]bool),
 				Roles:                make(map[string]bool),
 				PolicyNames:          make(map[string]bool),
 				PolicyGroups:         make(map[string]bool),
@@ -334,8 +345,8 @@ func aggregateTuples(tuples []extractedTuple) map[cookbookVersionKey]*aggregated
 		}
 
 		// Distinct node count.
-		if !usage.NodeNames[t.NodeName] {
-			usage.NodeNames[t.NodeName] = true
+		if !usage.seenNodes[t.NodeName] {
+			usage.seenNodes[t.NodeName] = true
 			usage.NodeCount++
 		}
 
@@ -448,7 +459,6 @@ func buildDetailParams(
 
 		if usage != nil {
 			p.NodeCount = usage.NodeCount
-			p.NodeNames = marshalSortedStringSet(usage.NodeNames)
 			p.Roles = marshalSortedStringSet(usage.Roles)
 			p.PolicyNames = marshalSortedStringSet(usage.PolicyNames)
 			p.PolicyGroups = marshalSortedStringSet(usage.PolicyGroups)

@@ -667,13 +667,17 @@ func TestHandleDashboardVersionDistributionTrend_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
-			return []datastore.CollectionRun{
-				{ID: "run-1", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:              "ms-1",
+					CollectionRunID: "run-1",
+					OrganisationID:  "org-1",
+					SnapshotType:    "chef_version_distribution",
+					Data:            json.RawMessage(`{"distribution":{"18.0.0":1,"17.0.0":1},"total_nodes":2,"stale_nodes":0,"fresh_nodes":2}`),
+					SnapshotAt:      now,
+				},
 			}, nil
-		},
-		CountChefVersionsByCollectionRunFn: func(ctx context.Context, collectionRunID string) (map[string]int, error) {
-			return map[string]int{"18.0.0": 1, "17.0.0": 1}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -1098,13 +1102,17 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
-			return []datastore.CollectionRun{
-				{ID: "run-1", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:              "ms-1",
+					CollectionRunID: "run-1",
+					OrganisationID:  "org-1",
+					SnapshotType:    "chef_version_distribution",
+					Data:            json.RawMessage(`{"distribution":{"18.0.0":3,"17.0.0":2},"total_nodes":5,"stale_nodes":3,"fresh_nodes":2}`),
+					SnapshotAt:      now,
+				},
 			}, nil
-		},
-		CountStaleFreshByCollectionRunFn: func(ctx context.Context, collectionRunID string) (int, int, int, error) {
-			return 5, 3, 2, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -1157,7 +1165,7 @@ func TestHandleDashboardStaleTrend_HappyPath_Empty(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return nil, nil
 		},
 	}
@@ -1182,19 +1190,24 @@ func TestHandleDashboardStaleTrend_HappyPath_Empty(t *testing.T) {
 
 func TestHandleDashboardStaleTrend_SkipsNonCompletedRuns(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	// Metric snapshots are only recorded for completed runs, so the
+	// "skip non-completed" behaviour is implicit — only run-3's metric
+	// snapshot exists.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
-			return []datastore.CollectionRun{
-				{ID: "run-1", OrganisationID: "org-1", Status: "running"},
-				{ID: "run-2", OrganisationID: "org-1", Status: "failed"},
-				{ID: "run-3", OrganisationID: "org-1", Status: "completed", CompletedAt: now},
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:              "ms-3",
+					CollectionRunID: "run-3",
+					OrganisationID:  "org-1",
+					SnapshotType:    "chef_version_distribution",
+					Data:            json.RawMessage(`{"distribution":{},"total_nodes":1,"stale_nodes":1,"fresh_nodes":0}`),
+					SnapshotAt:      now,
+				},
 			}, nil
-		},
-		CountStaleFreshByCollectionRunFn: func(ctx context.Context, collectionRunID string) (int, int, int, error) {
-			return 1, 1, 0, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -1245,17 +1258,25 @@ func TestHandleDashboardStaleTrend_MultipleRuns(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
-			return []datastore.CollectionRun{
-				{ID: "run-1", OrganisationID: "org-1", Status: "completed", CompletedAt: t1},
-				{ID: "run-2", OrganisationID: "org-1", Status: "completed", CompletedAt: t2},
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:              "ms-1",
+					CollectionRunID: "run-1",
+					OrganisationID:  "org-1",
+					SnapshotType:    "chef_version_distribution",
+					Data:            json.RawMessage(`{"distribution":{},"total_nodes":2,"stale_nodes":2,"fresh_nodes":0}`),
+					SnapshotAt:      t1,
+				},
+				{
+					ID:              "ms-2",
+					CollectionRunID: "run-2",
+					OrganisationID:  "org-1",
+					SnapshotType:    "chef_version_distribution",
+					Data:            json.RawMessage(`{"distribution":{},"total_nodes":3,"stale_nodes":1,"fresh_nodes":2}`),
+					SnapshotAt:      t2,
+				},
 			}, nil
-		},
-		CountStaleFreshByCollectionRunFn: func(ctx context.Context, collectionRunID string) (int, int, int, error) {
-			if collectionRunID == "run-1" {
-				return 2, 2, 0, nil
-			}
-			return 3, 1, 2, nil
 		},
 	}
 	r := newTestRouterWithMock(store)

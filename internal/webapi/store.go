@@ -68,6 +68,15 @@ type DataStore interface {
 	// node counts for the given collection run.
 	CountStaleFreshByCollectionRun(ctx context.Context, collectionRunID string) (total, stale, fresh int, err error)
 
+	// -----------------------------------------------------------------
+	// Metric snapshots
+	// -----------------------------------------------------------------
+
+	// ListMetricSnapshotsByOrganisation returns pre-aggregated metric
+	// snapshots for the given organisation and snapshot type, ordered by
+	// snapshot_at descending. If limit > 0, at most limit rows are returned.
+	ListMetricSnapshotsByOrganisation(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
+
 	// GetNodeSnapshotByName returns the most recent snapshot for a node
 	// identified by organisation ID and node name. Returns
 	// datastore.ErrNotFound if no such snapshot exists.

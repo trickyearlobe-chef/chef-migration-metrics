@@ -2,18 +2,25 @@
 -- Migration 0001: Initial Schema (Consolidated)
 -- =============================================================================
 -- Creates all tables, indexes, unique constraints, and foreign keys for the
--- Chef Migration Metrics application. This consolidated migration replaces
--- the previous 11 incremental migrations (0001–0011) and incorporates the
--- server_cookbooks / git_repos split.
+-- Chef Migration Metrics application.
 --
--- Key change: The former unified `cookbooks` table (with a `source`
--- discriminator column) has been split into two first-class entities:
---   • `server_cookbooks` — cookbook versions from Chef Infra Server
---   • `git_repos`        — cookbook source repositories from Git
+-- This consolidated migration incorporates changes from the original
+-- incremental migrations (0002–0010):
 --
--- All analysis result tables (cookstyle_results, autocorrect_previews,
--- cookbook_complexity, test_kitchen_results) are similarly split into
--- source-specific tables with proper foreign keys.
+--   • node_snapshots: UNIQUE (organisation_id, node_name) — entity semantics
+--   • collection_runs: UNIQUE (organisation_id) — one row per org
+--   • cookbook_usage_analysis: UNIQUE (organisation_id) — one row per org
+--   • git_repo_test_kitchen_results: UNIQUE (git_repo_id, target_chef_version)
+--     instead of 3-column key including commit_sha
+--   • export_jobs: status CHECK includes 'expired'
+--   • cookbook_usage_detail: node_names column removed
+--   • cookbook_node_usage table removed (dead code)
+--   • cookbook_role_usage table removed (dead code)
+--   • notification_history table removed (dead code)
+--
+-- Key design principle: Entity tables store current state (one row per
+-- logical thing). Only metric_snapshots is intentionally append-only
+-- (timeseries with 90-day retention).
 --
 -- See datastore/Specification.md for full schema documentation.
 -- =============================================================================
@@ -77,6 +84,10 @@ CREATE INDEX idx_organisations_client_key_credential_id ON organisations (client
 -- ---------------------------------------------------------------------------
 -- 3. collection_runs
 -- ---------------------------------------------------------------------------
+-- Each organisation has at most one collection_runs row (entity semantics).
+-- The row is upserted on each collection cycle, resetting status to
+-- 'running'. Historical trend data lives in metric_snapshots.
+-- ---------------------------------------------------------------------------
 
 CREATE TABLE collection_runs (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -93,18 +104,22 @@ CREATE TABLE collection_runs (
 
     CONSTRAINT chk_collection_runs_status CHECK (
         status IN ('running', 'completed', 'failed', 'interrupted')
-    )
+    ),
+    CONSTRAINT uq_collection_runs_org UNIQUE (organisation_id)
 );
 
 CREATE INDEX idx_collection_runs_organisation_id ON collection_runs (organisation_id);
 CREATE INDEX idx_collection_runs_status ON collection_runs (status);
 CREATE INDEX idx_collection_runs_started_at ON collection_runs (started_at);
--- Performance: optimise the MAX(started_at) subquery pattern (from 0011)
 CREATE INDEX idx_collection_runs_org_status_started
     ON collection_runs (organisation_id, status, started_at DESC);
 
 -- ---------------------------------------------------------------------------
 -- 4. node_snapshots
+-- ---------------------------------------------------------------------------
+-- Current-state table: one row per (organisation_id, node_name). Upserted
+-- on each collection run. Orphaned rows (decommissioned nodes) are cleaned
+-- up by the collector after each run.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE node_snapshots (
@@ -127,7 +142,9 @@ CREATE TABLE node_snapshots (
     is_stale            BOOLEAN          NOT NULL DEFAULT FALSE,
     custom_attributes   JSONB,
     collected_at        TIMESTAMPTZ      NOT NULL,
-    created_at          TIMESTAMPTZ      NOT NULL DEFAULT now()
+    created_at          TIMESTAMPTZ      NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_node_snapshots_org_node UNIQUE (organisation_id, node_name)
 );
 
 CREATE INDEX idx_node_snapshots_collection_run_id ON node_snapshots (collection_run_id);
@@ -141,7 +158,6 @@ CREATE INDEX idx_node_snapshots_collected_at ON node_snapshots (collected_at);
 CREATE INDEX idx_node_snapshots_policy_name ON node_snapshots (policy_name);
 CREATE INDEX idx_node_snapshots_policy_group ON node_snapshots (policy_group);
 CREATE INDEX idx_node_snapshots_is_stale ON node_snapshots (is_stale);
--- Performance: optimise GetNodeSnapshotByName lookups (from 0011)
 CREATE INDEX idx_node_snapshots_org_name_collected
     ON node_snapshots (organisation_id, node_name, collected_at DESC);
 
@@ -213,45 +229,7 @@ CREATE INDEX idx_git_repos_name ON git_repos (name);
 CREATE INDEX idx_git_repos_git_repo_url ON git_repos (git_repo_url);
 
 -- ---------------------------------------------------------------------------
--- 7. cookbook_node_usage
--- ---------------------------------------------------------------------------
-
-CREATE TABLE cookbook_node_usage (
-    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    server_cookbook_id   UUID        NOT NULL REFERENCES server_cookbooks(id) ON DELETE CASCADE,
-    node_snapshot_id    UUID        NOT NULL REFERENCES node_snapshots(id) ON DELETE CASCADE,
-    cookbook_version     TEXT        NOT NULL,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_cookbook_node_usage_server_cookbook_id ON cookbook_node_usage (server_cookbook_id);
-CREATE INDEX idx_cookbook_node_usage_node_snapshot_id ON cookbook_node_usage (node_snapshot_id);
-CREATE INDEX idx_cookbook_node_usage_cookbook_version ON cookbook_node_usage (server_cookbook_id, cookbook_version);
--- Performance: composite for join + GROUP BY patterns (from 0011)
-CREATE INDEX idx_cookbook_node_usage_snapshot_cookbook
-    ON cookbook_node_usage (node_snapshot_id, server_cookbook_id);
-
--- ---------------------------------------------------------------------------
--- 8. cookbook_role_usage
--- ---------------------------------------------------------------------------
-
-CREATE TABLE cookbook_role_usage (
-    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    cookbook_name     TEXT        NOT NULL,
-    role_name        TEXT        NOT NULL,
-    organisation_id  UUID        NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT uq_cookbook_role_usage UNIQUE (cookbook_name, role_name, organisation_id)
-);
-
-CREATE INDEX idx_cookbook_role_usage_cookbook_name ON cookbook_role_usage (cookbook_name);
-CREATE INDEX idx_cookbook_role_usage_role_name ON cookbook_role_usage (role_name);
-CREATE INDEX idx_cookbook_role_usage_organisation_id ON cookbook_role_usage (organisation_id);
-
--- ---------------------------------------------------------------------------
--- 9. server_cookbook_cookstyle_results
+-- 7. server_cookbook_cookstyle_results
 -- ---------------------------------------------------------------------------
 -- Cookstyle scan results for server cookbook versions. Server cookbook versions
 -- are immutable, so re-scanning is skipped when a result already exists for
@@ -282,7 +260,7 @@ CREATE INDEX idx_sc_cookstyle_results_target_chef_version ON server_cookbook_coo
 CREATE INDEX idx_sc_cookstyle_results_passed ON server_cookbook_cookstyle_results (passed);
 
 -- ---------------------------------------------------------------------------
--- 10. git_repo_cookstyle_results
+-- 8. git_repo_cookstyle_results
 -- ---------------------------------------------------------------------------
 -- Cookstyle scan results for git repos. Git repo content changes with each
 -- commit, so re-scanning is skipped only when HEAD commit has not changed.
@@ -315,10 +293,12 @@ CREATE INDEX idx_gr_cookstyle_results_commit_sha ON git_repo_cookstyle_results (
     WHERE commit_sha IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
--- 11. git_repo_test_kitchen_results
+-- 9. git_repo_test_kitchen_results
 -- ---------------------------------------------------------------------------
 -- Test Kitchen is only run against git repos (which have a .kitchen.yml).
--- Server cookbooks do not have test suites.
+-- Server cookbooks do not have test suites. Entity semantics: one row per
+-- (git_repo_id, target_chef_version). commit_sha records which commit was
+-- tested but is not part of the uniqueness key.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE git_repo_test_kitchen_results (
@@ -343,7 +323,7 @@ CREATE TABLE git_repo_test_kitchen_results (
     completed_at         TIMESTAMPTZ,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT uq_git_repo_test_kitchen_results UNIQUE (git_repo_id, target_chef_version, commit_sha)
+    CONSTRAINT uq_git_repo_test_kitchen_results UNIQUE (git_repo_id, target_chef_version)
 );
 
 CREATE INDEX idx_gr_test_kitchen_results_git_repo_id ON git_repo_test_kitchen_results (git_repo_id);
@@ -353,7 +333,7 @@ CREATE INDEX idx_gr_test_kitchen_results_compatible ON git_repo_test_kitchen_res
 CREATE INDEX idx_gr_test_kitchen_results_repo_target ON git_repo_test_kitchen_results (git_repo_id, target_chef_version);
 
 -- ---------------------------------------------------------------------------
--- 12. server_cookbook_autocorrect_previews
+-- 10. server_cookbook_autocorrect_previews
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE server_cookbook_autocorrect_previews (
@@ -375,7 +355,7 @@ CREATE INDEX idx_sc_autocorrect_previews_server_cookbook_id ON server_cookbook_a
 CREATE INDEX idx_sc_autocorrect_previews_cookstyle_result_id ON server_cookbook_autocorrect_previews (cookstyle_result_id);
 
 -- ---------------------------------------------------------------------------
--- 13. git_repo_autocorrect_previews
+-- 11. git_repo_autocorrect_previews
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE git_repo_autocorrect_previews (
@@ -397,7 +377,7 @@ CREATE INDEX idx_gr_autocorrect_previews_git_repo_id ON git_repo_autocorrect_pre
 CREATE INDEX idx_gr_autocorrect_previews_cookstyle_result_id ON git_repo_autocorrect_previews (cookstyle_result_id);
 
 -- ---------------------------------------------------------------------------
--- 14. server_cookbook_complexity
+-- 12. server_cookbook_complexity
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE server_cookbook_complexity (
@@ -432,7 +412,7 @@ CREATE INDEX idx_sc_complexity_label ON server_cookbook_complexity (complexity_l
 CREATE INDEX idx_sc_complexity_affected_node_count ON server_cookbook_complexity (affected_node_count);
 
 -- ---------------------------------------------------------------------------
--- 15. git_repo_complexity
+-- 13. git_repo_complexity
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE git_repo_complexity (
@@ -467,7 +447,7 @@ CREATE INDEX idx_gr_complexity_label ON git_repo_complexity (complexity_label);
 CREATE INDEX idx_gr_complexity_affected_node_count ON git_repo_complexity (affected_node_count);
 
 -- ---------------------------------------------------------------------------
--- 16. node_readiness
+-- 14. node_readiness
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE node_readiness (
@@ -496,17 +476,15 @@ CREATE INDEX idx_node_readiness_target_chef_version ON node_readiness (target_ch
 CREATE INDEX idx_node_readiness_is_ready ON node_readiness (is_ready);
 CREATE INDEX idx_node_readiness_stale_data ON node_readiness (stale_data);
 CREATE INDEX idx_node_readiness_node_name ON node_readiness (node_name);
--- Performance: composite index for latestReadinessPerNode (from 0010)
 CREATE INDEX idx_node_readiness_latest
     ON node_readiness (organisation_id, node_name, target_chef_version, evaluated_at DESC)
     INCLUDE (id);
--- Performance: support owner-related queries without organisation_id (from 0011)
 CREATE INDEX idx_node_readiness_target_name_eval
     ON node_readiness (target_chef_version, node_name, evaluated_at DESC)
     INCLUDE (id, is_ready, stale_data, blocking_cookbooks);
 
 -- ---------------------------------------------------------------------------
--- 17. role_dependencies
+-- 15. role_dependencies
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE role_dependencies (
@@ -528,7 +506,11 @@ CREATE INDEX idx_role_dependencies_dependency_type ON role_dependencies (depende
 CREATE INDEX idx_role_dependencies_dependency_name ON role_dependencies (dependency_name);
 
 -- ---------------------------------------------------------------------------
--- 18. metric_snapshots
+-- 16. metric_snapshots
+-- ---------------------------------------------------------------------------
+-- The only intentionally append-only (timeseries) table. Pre-aggregated
+-- data for dashboard trend charts. Retention: 90 days, purged by the
+-- collector at the end of each run.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE metric_snapshots (
@@ -552,7 +534,7 @@ CREATE INDEX idx_metric_snapshots_snapshot_at ON metric_snapshots (snapshot_at);
 CREATE INDEX idx_metric_snapshots_target_chef_version ON metric_snapshots (target_chef_version);
 
 -- ---------------------------------------------------------------------------
--- 19. log_entries
+-- 17. log_entries
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE log_entries (
@@ -587,46 +569,7 @@ CREATE INDEX idx_log_entries_collection_run_id ON log_entries (collection_run_id
 CREATE INDEX idx_log_entries_retention ON log_entries (timestamp);
 
 -- ---------------------------------------------------------------------------
--- 20. notification_history
--- ---------------------------------------------------------------------------
-
-CREATE TABLE notification_history (
-    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    channel_name   TEXT        NOT NULL,
-    channel_type   TEXT        NOT NULL,
-    event_type     TEXT        NOT NULL,
-    summary        TEXT        NOT NULL,
-    payload        JSONB       NOT NULL,
-    status         TEXT        NOT NULL,
-    error_message  TEXT,
-    retry_count    INTEGER     NOT NULL DEFAULT 0,
-    sent_at        TIMESTAMPTZ NOT NULL,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT chk_notification_history_channel_type CHECK (
-        channel_type IN ('webhook', 'email')
-    ),
-    CONSTRAINT chk_notification_history_event_type CHECK (
-        event_type IN (
-            'cookbook_status_change',
-            'readiness_milestone',
-            'new_incompatible_cookbook',
-            'collection_failure',
-            'stale_node_threshold_exceeded'
-        )
-    ),
-    CONSTRAINT chk_notification_history_status CHECK (
-        status IN ('sent', 'failed', 'retrying')
-    )
-);
-
-CREATE INDEX idx_notification_history_event_type ON notification_history (event_type);
-CREATE INDEX idx_notification_history_channel_name ON notification_history (channel_name);
-CREATE INDEX idx_notification_history_status ON notification_history (status);
-CREATE INDEX idx_notification_history_sent_at ON notification_history (sent_at);
-
--- ---------------------------------------------------------------------------
--- 21. export_jobs
+-- 18. export_jobs
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE export_jobs (
@@ -652,7 +595,7 @@ CREATE TABLE export_jobs (
         format IN ('csv', 'json', 'chef_search_query')
     ),
     CONSTRAINT chk_export_jobs_status CHECK (
-        status IN ('pending', 'processing', 'completed', 'failed')
+        status IN ('pending', 'processing', 'completed', 'failed', 'expired')
     )
 );
 
@@ -662,7 +605,7 @@ CREATE INDEX idx_export_jobs_requested_by ON export_jobs (requested_by);
 CREATE INDEX idx_export_jobs_expires_at ON export_jobs (expires_at);
 
 -- ---------------------------------------------------------------------------
--- 22. users
+-- 19. users
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE users (
@@ -688,7 +631,7 @@ CREATE INDEX idx_users_username ON users (username);
 CREATE INDEX idx_users_auth_provider ON users (auth_provider);
 
 -- ---------------------------------------------------------------------------
--- 23. sessions
+-- 20. sessions
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE sessions (
@@ -708,10 +651,10 @@ CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX idx_sessions_expires_at ON sessions (expires_at);
 
 -- ---------------------------------------------------------------------------
--- 24. cookbook_usage_analysis
+-- 21. cookbook_usage_analysis
 -- ---------------------------------------------------------------------------
--- Stores per-organisation, per-collection-run analysis snapshots. Each row
--- represents one analysis run and acts as a parent for the detail rows.
+-- Current-state: one row per organisation. Upserted on each analysis run.
+-- Acts as a parent for the detail rows (cascade delete).
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE cookbook_usage_analysis (
@@ -723,7 +666,9 @@ CREATE TABLE cookbook_usage_analysis (
     unused_cookbooks  INTEGER     NOT NULL DEFAULT 0,
     total_nodes       INTEGER     NOT NULL DEFAULT 0,
     analysed_at       TIMESTAMPTZ NOT NULL,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_cookbook_usage_analysis_org UNIQUE (organisation_id)
 );
 
 CREATE INDEX idx_cookbook_usage_analysis_organisation_id ON cookbook_usage_analysis (organisation_id);
@@ -731,10 +676,13 @@ CREATE INDEX idx_cookbook_usage_analysis_collection_run_id ON cookbook_usage_ana
 CREATE INDEX idx_cookbook_usage_analysis_analysed_at ON cookbook_usage_analysis (analysed_at);
 
 -- ---------------------------------------------------------------------------
--- 25. cookbook_usage_detail
+-- 22. cookbook_usage_detail
 -- ---------------------------------------------------------------------------
 -- Per-cookbook-version usage statistics within a single analysis run.
 -- References cookbooks by name (strings), not by FK to server_cookbooks.
+-- The node_names JSONB column was removed — node_count (integer) captures
+-- the aggregate, and the full node list is derivable from
+-- node_snapshots.cookbooks if ever needed.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE cookbook_usage_detail (
@@ -745,7 +693,6 @@ CREATE TABLE cookbook_usage_detail (
     cookbook_version        TEXT        NOT NULL,
     node_count             INTEGER     NOT NULL DEFAULT 0,
     is_active              BOOLEAN     NOT NULL DEFAULT FALSE,
-    node_names             JSONB,
     roles                  JSONB,
     policy_names           JSONB,
     policy_groups          JSONB,
@@ -762,7 +709,7 @@ CREATE INDEX idx_cookbook_usage_detail_is_active ON cookbook_usage_detail (is_ac
 CREATE INDEX idx_cookbook_usage_detail_node_count ON cookbook_usage_detail (node_count);
 
 -- ---------------------------------------------------------------------------
--- 26. owners
+-- 23. owners
 -- ---------------------------------------------------------------------------
 -- Named owners representing teams, individuals, or cost centres.
 -- ---------------------------------------------------------------------------
@@ -785,7 +732,7 @@ CREATE TABLE owners (
 CREATE INDEX idx_owners_owner_type ON owners (owner_type);
 
 -- ---------------------------------------------------------------------------
--- 27. ownership_assignments
+-- 24. ownership_assignments
 -- ---------------------------------------------------------------------------
 -- Many-to-many links between owners and entities (nodes, cookbooks, git
 -- repos, roles, policies).
@@ -805,7 +752,6 @@ CREATE TABLE ownership_assignments (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Unique constraint that handles nullable organisation_id correctly.
 CREATE UNIQUE INDEX idx_ownership_assignments_unique
     ON ownership_assignments (owner_id, entity_type, entity_key, COALESCE(organisation_id, '00000000-0000-0000-0000-000000000000'));
 
@@ -816,7 +762,7 @@ CREATE INDEX idx_ownership_assignments_source       ON ownership_assignments (as
 CREATE INDEX idx_ownership_assignments_auto_rule    ON ownership_assignments (auto_rule_name) WHERE auto_rule_name IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
--- 28. git_repo_committers
+-- 25. git_repo_committers
 -- ---------------------------------------------------------------------------
 -- Committer history extracted from git repositories.
 -- ---------------------------------------------------------------------------
@@ -837,9 +783,10 @@ CREATE TABLE git_repo_committers (
 CREATE INDEX idx_git_repo_committers_repo ON git_repo_committers (git_repo_url);
 
 -- ---------------------------------------------------------------------------
--- 29. ownership_audit_log
+-- 26. ownership_audit_log
 -- ---------------------------------------------------------------------------
--- Append-only log of all ownership mutations.
+-- Append-only log of all ownership mutations. Retention: configurable,
+-- default 365 days.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE ownership_audit_log (

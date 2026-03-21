@@ -645,6 +645,36 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 		}
 	}
 
+	// Purge old collection runs (keep only the latest terminal run per org).
+	purgedRuns, purgeRunsErr := c.db.PurgeOldCollectionRuns(ctx)
+	if purgeRunsErr != nil {
+		log.Warn(fmt.Sprintf("collection run purge failed: %v", purgeRunsErr))
+	} else if purgedRuns > 0 {
+		log.Info(fmt.Sprintf("purged %d old collection run(s)", purgedRuns))
+	}
+
+	// Purge metric snapshots older than 90 days. These are small rows used
+	// for dashboard trend charts; 90 days gives ample historical context.
+	metricCutoff := time.Now().Add(-90 * 24 * time.Hour)
+	purgedMetrics, purgeMetricsErr := c.db.PurgeMetricSnapshotsOlderThan(ctx, metricCutoff)
+	if purgeMetricsErr != nil {
+		log.Warn(fmt.Sprintf("metric snapshot purge failed: %v", purgeMetricsErr))
+	} else if purgedMetrics > 0 {
+		log.Info(fmt.Sprintf("purged %d metric snapshot(s) older than 90 days", purgedMetrics))
+	}
+
+	// Purge expired export job rows. The export cleanup ticker marks rows
+	// as 'expired' after deleting files from disk; this removes the DB
+	// rows after the log retention period so they don't accumulate
+	// indefinitely.
+	exportCutoff := time.Now().Add(-time.Duration(c.cfg.Logging.RetentionDays) * 24 * time.Hour)
+	purgedExports, purgeExportsErr := c.db.DeleteExpiredExportJobRows(ctx, exportCutoff)
+	if purgeExportsErr != nil {
+		log.Warn(fmt.Sprintf("export job row purge failed: %v", purgeExportsErr))
+	} else if purgedExports > 0 {
+		log.Info(fmt.Sprintf("purged %d expired export job row(s) older than %d days", purgedExports, c.cfg.Logging.RetentionDays))
+	}
+
 	return result, nil
 }
 
@@ -738,7 +768,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// which can be very expensive when there are many stale nodes.
 	allCookbookNames := make(map[string]bool)
 	activeCookbookNames := make(map[string]bool)
-	nodeCookbookVersions := make(map[string]map[string]string, len(searchRows)) // node name → cookbook name → version
 
 	// Build NodeRecord slice for usage analysis (populated alongside snapshot params).
 	nodeRecords := make([]analysis.NodeRecord, 0, len(searchRows))
@@ -766,9 +795,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			if !nodeIsStale {
 				activeCookbookNames[cbName] = true
 			}
-		}
-		if len(cbVersions) > 0 {
-			nodeCookbookVersions[nd.Name()] = cbVersions
 		}
 
 		// Build a NodeRecord for usage analysis from the in-memory data,
@@ -839,9 +865,8 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		len(allCookbookNames), len(activeCookbookNames), staleOnlyCount),
 		logging.WithCollectionRunID(run.ID))
 
-	// Persist node snapshots in bulk, returning generated IDs so we can
-	// build cookbook-node usage records without a separate lookup.
-	snapshotIDMap, inserted, err := c.db.BulkInsertNodeSnapshotsReturningIDs(ctx, snapshotParams)
+	// Persist node snapshots in bulk.
+	inserted, err := c.db.BulkUpsertNodeSnapshots(ctx, snapshotParams)
 	if err != nil {
 		return 0, 0, fmt.Errorf("persisting node snapshots: %w", err)
 	}
@@ -855,6 +880,25 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	}); err != nil {
 		log.Warn(fmt.Sprintf("failed to update collection run progress: %v", err),
 			logging.WithCollectionRunID(run.ID))
+	}
+
+	// Step 4a: Remove snapshots for nodes no longer on the Chef Server.
+	// Nodes that were decommissioned won't appear in searchRows, so their
+	// snapshot rows become orphaned. This reconciliation step keeps the
+	// table proportional to the current fleet size.
+	if len(snapshotParams) > 0 {
+		activeNames := make([]string, len(snapshotParams))
+		for i, p := range snapshotParams {
+			activeNames[i] = p.NodeName
+		}
+		orphaned, orphanErr := c.db.DeleteOrphanedNodeSnapshots(ctx, org.ID, activeNames)
+		if orphanErr != nil {
+			log.Warn(fmt.Sprintf("failed to clean up orphaned node snapshots: %v", orphanErr),
+				logging.WithCollectionRunID(run.ID))
+		} else if orphaned > 0 {
+			log.Info(fmt.Sprintf("removed %d orphaned node snapshot(s) (decommissioned nodes)", orphaned),
+				logging.WithCollectionRunID(run.ID))
+		}
 	}
 
 	// Step 4b: Complete the collection run early so the UI can show fresh
@@ -875,6 +919,12 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			run.ID, inserted),
 			logging.WithCollectionRunID(run.ID))
 	}
+
+	// Step 4c: Record metric snapshots for trend charts. These
+	// pre-aggregated snapshots allow the dashboard to show historical
+	// trends without scanning the (now current-state-only) node_snapshots
+	// table.
+	c.recordMetricSnapshots(ctx, log, run.ID, org.ID, snapshotParams)
 
 	// Step 5: Fetch cookbook inventory from the Chef server.
 	log.Info("fetching cookbook inventory",
@@ -959,17 +1009,19 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			logging.WithCollectionRunID(run.ID))
 	}
 
-	// Step 7b: Server cookbook download, CookStyle scan, and cleanup.
+	// Step 7b: Server cookbook download, CookStyle scan, and optional cleanup.
 	//
 	// Uses a streaming pipeline that processes one cookbook at a time:
-	// download → CookStyle scan → autocorrect preview → delete from disk.
+	// download → CookStyle scan → autocorrect preview, then optional
+	// deletion from disk.
 	// This keeps disk usage to a single cookbook version at a time instead
 	// of downloading thousands of versions that accumulate on disk.
 	//
 	// Server cookbooks already scanned are skipped automatically (the
 	// scanner's immutability cache detects existing results). Autocorrect
-	// previews are generated inline so the cookbook files can be deleted
-	// immediately after processing.
+	// previews are generated inline while cookbook files are still on disk.
+	// Files are deleted immediately after processing when
+	// collection.delete_server_cookbooks_after_scan is enabled (default).
 	//
 	// When collection.skip_server_cookbook_download is true, the pipeline
 	// is skipped entirely — only git-sourced cookbooks will be scanned.
@@ -985,8 +1037,14 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		log.Info("skipping Chef server cookbook download (collection.skip_server_cookbook_download is enabled)",
 			logging.WithCollectionRunID(run.ID))
 	} else {
-		log.Info("running server cookbook pipeline (download → scan → delete)",
-			logging.WithCollectionRunID(run.ID))
+		deleteAfterScan := c.cfg.Collection.DeleteServerCookbooksAfterScanEnabled()
+		if deleteAfterScan {
+			log.Info("running server cookbook pipeline (download → scan → delete)",
+				logging.WithCollectionRunID(run.ID))
+		} else {
+			log.Info("running server cookbook pipeline (download → scan; retaining files on disk)",
+				logging.WithCollectionRunID(run.ID))
+		}
 
 		pipelineResult := runServerCookbookPipeline(
 			ctx, client, c.db, log, org,
@@ -994,18 +1052,28 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			c.cfg.TargetChefVersions,
 			c.cookstyleScanner,
 			c.autocorrectGen,
+			deleteAfterScan,
 		)
 
 		if pipelineResult.Total == 0 {
 			log.Info("no server cookbook versions need processing",
 				logging.WithCollectionRunID(run.ID))
 		} else {
-			log.Info(fmt.Sprintf(
-				"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed, %d legacy cached cleaned in %s",
-				pipelineResult.Total, pipelineResult.Downloaded, pipelineResult.Scanned,
-				pipelineResult.Skipped, pipelineResult.Failed, pipelineResult.Cleaned,
-				pipelineResult.Duration.Round(time.Millisecond)),
-				logging.WithCollectionRunID(run.ID))
+			if deleteAfterScan {
+				log.Info(fmt.Sprintf(
+					"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed, %d legacy cached cleaned in %s",
+					pipelineResult.Total, pipelineResult.Downloaded, pipelineResult.Scanned,
+					pipelineResult.Skipped, pipelineResult.Failed, pipelineResult.Cleaned,
+					pipelineResult.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			} else {
+				log.Info(fmt.Sprintf(
+					"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed in %s",
+					pipelineResult.Total, pipelineResult.Downloaded, pipelineResult.Scanned,
+					pipelineResult.Skipped, pipelineResult.Failed,
+					pipelineResult.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			}
 		}
 
 		for _, fe := range pipelineResult.Errors {
@@ -1044,68 +1112,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				gitResult.Unchanged, gitResult.Failed,
 				gitResult.Duration.Round(time.Millisecond)),
 				logging.WithCollectionRunID(run.ID))
-		}
-	}
-
-	// Step 8: Build cookbook-node usage records. For each node's resolved
-	// cookbook set, record the cookbook_id ↔ node_snapshot_id linkage.
-	log.Info("building cookbook-node usage records",
-		logging.WithCollectionRunID(run.ID))
-
-	cookbookIDMap, err := c.db.GetServerCookbookIDMap(ctx, org.ID)
-	if err != nil {
-		log.Warn(fmt.Sprintf("failed to load cookbook ID map: %v", err),
-			logging.WithCollectionRunID(run.ID))
-		// Non-fatal — we still collected the data, just can't build linkage
-		// this run. The JSON columns on node_snapshots still have the data.
-	} else {
-		var usageParams []datastore.InsertCookbookNodeUsageParams
-		var missingCookbooks int
-
-		for nodeName, cbVersions := range nodeCookbookVersions {
-			snapshotID, ok := snapshotIDMap[nodeName]
-			if !ok {
-				// Node was in the search results but didn't get a snapshot ID.
-				// This shouldn't happen, but guard against it.
-				continue
-			}
-
-			for cbName, cbVersion := range cbVersions {
-				versions, nameFound := cookbookIDMap[cbName]
-				if !nameFound {
-					missingCookbooks++
-					continue
-				}
-				cookbookID, versionFound := versions[cbVersion]
-				if !versionFound {
-					missingCookbooks++
-					continue
-				}
-
-				usageParams = append(usageParams, datastore.InsertCookbookNodeUsageParams{
-					ServerCookbookID: cookbookID,
-					NodeSnapshotID:   snapshotID,
-					CookbookVersion:  cbVersion,
-				})
-			}
-		}
-
-		if missingCookbooks > 0 {
-			log.Warn(fmt.Sprintf(
-				"%d cookbook-node usage record(s) skipped — cookbook not found in ID map (may be resolved on next run)",
-				missingCookbooks),
-				logging.WithCollectionRunID(run.ID))
-		}
-
-		if len(usageParams) > 0 {
-			usageInserted, usageErr := c.db.BulkInsertCookbookNodeUsage(ctx, usageParams)
-			if usageErr != nil {
-				log.Warn(fmt.Sprintf("failed to insert cookbook-node usage records: %v", usageErr),
-					logging.WithCollectionRunID(run.ID))
-			} else {
-				log.Info(fmt.Sprintf("inserted %d cookbook-node usage record(s)", usageInserted),
-					logging.WithCollectionRunID(run.ID))
-			}
 		}
 	}
 
@@ -1178,8 +1184,8 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	}
 
 	// Step 11: CookStyle scanning for git-sourced cookbooks only.
-	// Server cookbooks are now scanned inline during the Step 7b pipeline
-	// (download → scan → delete) so their files don't persist on disk.
+	// Server cookbooks are scanned inline during the Step 7b pipeline
+	// (download → scan, then optional delete).
 	// Git cookbooks live in persistent clones and are rescanned when the
 	// HEAD commit changes. Skipped if the scanner is not configured or no
 	// cookbook directory resolver is set. Non-fatal.
@@ -1448,4 +1454,59 @@ func (c *Collector) defaultClientFactory(ctx context.Context, org datastore.Orga
 	}
 
 	return client, nil
+}
+
+// recordMetricSnapshots persists pre-aggregated metric snapshots for the
+// organisation so that dashboard trend charts can display historical data
+// without scanning the (now current-state-only) node_snapshots table.
+func (c *Collector) recordMetricSnapshots(
+	ctx context.Context,
+	log *logging.ScopedLogger,
+	collectionRunID string,
+	organisationID string,
+	snapshotParams []datastore.InsertNodeSnapshotParams,
+) {
+	now := time.Now().UTC()
+
+	// Build version distribution and stale/fresh counts from the in-memory
+	// snapshot params (avoids a re-read from the database).
+	versionDist := make(map[string]int, 16)
+	var totalStale, totalFresh int
+	for _, p := range snapshotParams {
+		ver := p.ChefVersion
+		if ver == "" {
+			ver = "unknown"
+		}
+		versionDist[ver]++
+		if p.IsStale {
+			totalStale++
+		} else {
+			totalFresh++
+		}
+	}
+
+	// chef_version_distribution metric snapshot — used by the version
+	// distribution trend chart.
+	distJSON, err := json.Marshal(map[string]interface{}{
+		"distribution": versionDist,
+		"total_nodes":  len(snapshotParams),
+		"stale_nodes":  totalStale,
+		"fresh_nodes":  totalFresh,
+	})
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to marshal chef_version_distribution metric: %v", err),
+			logging.WithCollectionRunID(collectionRunID))
+		return
+	}
+
+	if _, msErr := c.db.InsertMetricSnapshot(ctx, datastore.InsertMetricSnapshotParams{
+		CollectionRunID: collectionRunID,
+		OrganisationID:  organisationID,
+		SnapshotType:    "chef_version_distribution",
+		Data:            distJSON,
+		SnapshotAt:      now,
+	}); msErr != nil {
+		log.Warn(fmt.Sprintf("failed to record chef_version_distribution metric: %v", msErr),
+			logging.WithCollectionRunID(collectionRunID))
+	}
 }
