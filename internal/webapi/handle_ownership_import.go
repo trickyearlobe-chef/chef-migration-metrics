@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -327,15 +328,39 @@ func (r *Router) handleCookbookCommitters(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
+	// Look up which committer emails are already registered as owners of
+	// this git repo, so the frontend can pre-select them.
+	ownerEmails, ownerErr := r.db.GetOwnerEmailsForGitRepo(ctx, repoURL)
+	if ownerErr != nil {
+		// Non-fatal: log but don't fail the request. Worst case is that
+		// the checkboxes are not pre-checked.
+		r.logf("WARN", "cookbook-committers: looking up owner emails for %s: %v", cookbookName, ownerErr)
+		ownerEmails = map[string]bool{}
+	}
+
+	// Build response items with the is_owner annotation.
+	type committerWithOwner struct {
+		datastore.GitRepoCommitter
+		IsOwner bool `json:"is_owner"`
+	}
+
+	items := make([]committerWithOwner, len(committers))
+	for i, c := range committers {
+		items[i] = committerWithOwner{
+			GitRepoCommitter: c,
+			IsOwner:          ownerEmails[strings.ToLower(c.AuthorEmail)],
+		}
+	}
+
 	// Ensure data is always a JSON array, not null.
-	if committers == nil {
-		committers = []datastore.GitRepoCommitter{}
+	if items == nil {
+		items = []committerWithOwner{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"cookbook_name": cookbookName,
 		"git_repo_url":  repoURL,
-		"data":          committers,
+		"data":          items,
 		"pagination":    NewPaginationResponse(pg, total),
 	})
 }
