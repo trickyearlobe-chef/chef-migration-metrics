@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
   fetchVersionDistribution,
@@ -7,6 +7,7 @@ import {
   fetchReadiness,
   fetchCookbookCompatibility,
   fetchGitRepoCompatibility,
+  fetchTestKitchenCompatibility,
   fetchVersionDistributionTrend,
   fetchReadinessTrend,
   fetchComplexityTrend,
@@ -18,6 +19,7 @@ import type {
   ReadinessResponse,
   CookbookCompatibilityResponse,
   GitRepoCompatibilityResponse,
+  TestKitchenCompatibilityResponse,
   VersionDistributionTrendResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
@@ -31,38 +33,92 @@ import {
 import type { TrendSeries } from "../components/TrendChart";
 
 // ---------------------------------------------------------------------------
-// Dashboard page — summary panels + historical trend charts:
-//   1. Chef Client Version Distribution (bar chart + trend)
-//   2. OS Platform Distribution (bar chart)
-//   3. Node Upgrade Readiness (ready / blocked / stale counts + trend)
-//   4. Server Cookbook CookStyle Compatibility (compatible / incompatible / untested)
-//   5. Git Repo CookStyle Compatibility (compatible / incompatible / untested)
+// Dashboard page — two tabs:
+//   "Current Status" — point-in-time summary cards
+//   "Trends"         — historical trend charts
+//
+// The active tab is persisted in the URL via ?tab=status|trends so that
+// bookmarks and shared links preserve the view.
 // ---------------------------------------------------------------------------
+
+type DashboardTab = "status" | "trends";
+
+const TABS: { key: DashboardTab; label: string }[] = [
+  { key: "status", label: "Current Status" },
+  { key: "trends", label: "Trends" },
+];
+
+function isValidTab(value: string | null): value is DashboardTab {
+  return value === "status" || value === "trends";
+}
 
 export function DashboardPage() {
   const { selectedOrg } = useOrg();
   const org = selectedOrg || undefined;
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get("tab");
+  const activeTab: DashboardTab = isValidTab(rawTab) ? rawTab : "status";
+
+  const switchTab = (tab: DashboardTab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === "status") {
+        next.delete("tab");
+      } else {
+        next.set("tab", tab);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
-
-      {/* ---- Point-in-time summary cards ---- */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <VersionDistributionCard organisation={org} />
-        <PlatformDistributionCard organisation={org} />
-        <ReadinessCard organisation={org} />
-        <CookbookCompatibilityCard organisation={org} />
-        <GitRepoCompatibilityCard organisation={org} />
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
       </div>
 
-      {/* ---- Historical trend charts ---- */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <VersionDistributionTrendCard organisation={org} />
-        <ReadinessTrendCard organisation={org} />
-        <ComplexityTrendCard organisation={org} />
-        <StaleTrendCard organisation={org} />
+      {/* ---- Tab bar ---- */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-6" aria-label="Dashboard tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => switchTab(t.key)}
+              className={
+                "whitespace-nowrap border-b-2 px-1 pb-3 text-sm font-medium transition-colors " +
+                (activeTab === t.key
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700")
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </div>
+
+      {/* ---- Current Status tab ---- */}
+      {activeTab === "status" && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <VersionDistributionCard organisation={org} />
+          <PlatformDistributionCard organisation={org} />
+          <ReadinessCard organisation={org} />
+          <CookbookCompatibilityCard organisation={org} />
+          <GitRepoCompatibilityCard organisation={org} />
+          <TestKitchenCompatibilityCard organisation={org} />
+        </div>
+      )}
+
+      {/* ---- Trends tab ---- */}
+      {activeTab === "trends" && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <VersionDistributionTrendCard organisation={org} />
+          <ReadinessTrendCard organisation={org} />
+          <ComplexityTrendCard organisation={org} />
+          <StaleTrendCard organisation={org} />
+        </div>
+      )}
     </div>
   );
 }
@@ -424,6 +480,108 @@ function GitRepoCompatibilityCard({ organisation }: { organisation?: string }) {
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
                       Untested: {c.untested_repos}
                     </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Test Kitchen Compatibility Card
+// ---------------------------------------------------------------------------
+
+function TestKitchenCompatibilityCard({ organisation }: { organisation?: string }) {
+  const [data, setData] = useState<TestKitchenCompatibilityResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchTestKitchenCompatibility(organisation)
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [organisation]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="card">
+      <h3 className="card-header">Test Kitchen Compatibility</h3>
+      {loading && <LoadingSpinner message="Loading Test Kitchen results…" />}
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {!loading && !error && data && (
+        <>
+          {data.data.length === 0 ? (
+            <EmptyState title="No Test Kitchen data" description="Configure target Chef versions and run Test Kitchen to see results." />
+          ) : (
+            <div className="space-y-4">
+              {data.data.map((tk) => (
+                <div key={tk.target_chef_version} className="rounded-lg border border-gray-100 p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Target: {tk.target_chef_version}</span>
+                    <span className="text-xs text-gray-400">{tk.total_repos} git repos</span>
+                  </div>
+                  {/* Stacked progress bar */}
+                  {tk.total_repos > 0 && (
+                    <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
+                      <Link
+                        to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="bg-green-500 transition-all duration-500 hover:bg-green-600"
+                        style={{ width: `${(tk.passed_repos / tk.total_repos) * 100}%` }}
+                        title={`Passed: ${tk.passed_repos}`}
+                      />
+                      <Link
+                        to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="bg-red-400 transition-all duration-500 hover:bg-red-500"
+                        style={{ width: `${(tk.failed_repos / tk.total_repos) * 100}%` }}
+                        title={`Failed: ${tk.failed_repos}`}
+                      />
+                      <div
+                        className="bg-amber-400 transition-all duration-500"
+                        style={{ width: `${(tk.timed_out_repos / tk.total_repos) * 100}%` }}
+                        title={`Timed out: ${tk.timed_out_repos}`}
+                      />
+                      <Link
+                        to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
+                        style={{ width: `${(tk.untested_repos / tk.total_repos) * 100}%` }}
+                        title={`Untested: ${tk.untested_repos}`}
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    <Link
+                      to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+                      Passed: {tk.passed_repos}
+                    </Link>
+                    <Link
+                      to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
+                      Failed: {tk.failed_repos}
+                    </Link>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+                      Timed out: {tk.timed_out_repos}
+                    </span>
+                    <Link
+                      to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
+                      Untested: {tk.untested_repos}
+                    </Link>
                   </div>
                 </div>
               ))}

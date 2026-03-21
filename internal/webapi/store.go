@@ -245,6 +245,10 @@ type DataStore interface {
 	// started_at desc.
 	ListGitRepoTestKitchenResults(ctx context.Context, gitRepoID string) ([]datastore.GitRepoTestKitchenResult, error)
 
+	// ListAllGitRepoTestKitchenResults returns all test kitchen results,
+	// ordered by target_chef_version.
+	ListAllGitRepoTestKitchenResults(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error)
+
 	// DeleteGitRepoCookstyleResultsByRepo removes all cookstyle results for
 	// the given git repo ID.
 	DeleteGitRepoCookstyleResultsByRepo(ctx context.Context, gitRepoID string) error
