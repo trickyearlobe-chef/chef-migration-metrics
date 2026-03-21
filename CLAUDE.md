@@ -46,6 +46,7 @@ This file contains the rules and conventions that must be followed at all times 
 - All database schema changes must be managed through migration files. Migrations must be sequential, numbered, and checked into source control.
 - The application must run pending migrations automatically on startup.
 - Migrations must never be edited after they have been committed. Instead, create a new migration to make further changes.
+- Keep in mind this dashboard runs at scale with 100000 nodes when writing specs or code.
 
 ## Language and Concurrency
 

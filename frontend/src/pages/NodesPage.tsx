@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
   fetchNodes,
@@ -78,16 +78,22 @@ export function NodesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // URL search params — read before filter state so initial values can be
+  // seeded from query strings (e.g. links from the dashboard).
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // Filter state
   const [nodeName, setNodeName] = useState("");
   const [environment, setEnvironment] = useState("");
-  const [platform, setPlatform] = useState("");
-  const [chefVersion, setChefVersion] = useState("");
+  const [platform, setPlatform] = useState(searchParams.get("platform") || "");
+  const [chefVersion, setChefVersion] = useState(searchParams.get("chef_version") || "");
   const [role, setRole] = useState("");
   const [policyName, setPolicyName] = useState("");
   const [policyGroup, setPolicyGroup] = useState("");
   const [stale, setStale] = useState("");
-  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>("");
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>(
+    (searchParams.get("readiness") as ReadinessFilter) || "",
+  );
   const [page, setPage] = useState(1);
   const perPage = 50;
 
@@ -102,18 +108,30 @@ export function NodesPage() {
   const [environmentOptions, setEnvironmentOptions] = useState<string[]>([]);
   const [platformOptions, setPlatformOptions] = useState<string[]>([]);
 
-  // Load target Chef versions once on mount.
+  // Load target Chef versions once on mount. If a target_version query param
+  // is present (e.g. from a dashboard link), use it as the initial selection.
+  const initialTargetVersion = searchParams.get("target_version") || "";
   useEffect(() => {
     fetchFilterTargetChefVersions()
       .then((res) => {
         const versions = res.data ?? [];
         setTargetVersions(versions);
-        if (versions.length > 0 && !selectedTargetVersion) {
+        if (initialTargetVersion && versions.includes(initialTargetVersion)) {
+          setSelectedTargetVersion(initialTargetVersion);
+        } else if (versions.length > 0 && !selectedTargetVersion) {
           setSelectedTargetVersion(versions[0]);
         }
       })
       .catch(() => setTargetVersions([]));
   }, []); // intentionally run only on mount
+
+  // Clear the search params after they have been consumed so the URL stays
+  // clean and subsequent filter changes don't conflict with the initial params.
+  useEffect(() => {
+    if (searchParams.has("readiness") || searchParams.has("target_version") || searchParams.has("chef_version") || searchParams.has("platform")) {
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // run once on mount
 
   // Load filter option values whenever the selected org changes.
   useEffect(() => {
