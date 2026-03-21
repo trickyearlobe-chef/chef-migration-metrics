@@ -480,6 +480,36 @@ func (db *DB) DeleteNodeSnapshotsByCollectionRun(ctx context.Context, collection
 	return int(n), nil
 }
 
+// DeleteOrphanedNodeSnapshots removes node_snapshots rows for the given
+// organisation whose node_name is not in the provided set of active names.
+// This cleans up rows for nodes that have been decommissioned from the Chef
+// Server and no longer appear in collection results. Dependent rows in
+// node_readiness are removed automatically via ON DELETE CASCADE.
+//
+// Returns the count of deleted rows. If activeNodeNames is empty, no rows
+// are deleted (safety guard against accidental purge during transient
+// collection failures).
+func (db *DB) DeleteOrphanedNodeSnapshots(ctx context.Context, organisationID string, activeNodeNames []string) (int, error) {
+	if len(activeNodeNames) == 0 {
+		return 0, nil
+	}
+
+	const query = `
+		DELETE FROM node_snapshots
+		WHERE organisation_id = $1
+		  AND node_name != ALL($2::text[])
+	`
+	res, err := db.pool.ExecContext(ctx, query, organisationID, pq.Array(activeNodeNames))
+	if err != nil {
+		return 0, fmt.Errorf("datastore: deleting orphaned node snapshots for org %s: %w", organisationID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("datastore: checking rows affected: %w", err)
+	}
+	return int(n), nil
+}
+
 // CountChefVersionsByCollectionRun returns a map of chef_version -> count
 // for all node snapshots in the given collection run. This is dramatically
 // more efficient than loading full node snapshot rows when only version
