@@ -154,11 +154,7 @@ export function NodesPage() {
       .catch(() => setEnvironmentOptions([]));
 
     fetchFilterPlatforms(org)
-      .then((res) => {
-        // Flatten platform objects to just the platform name strings.
-        const names = (res.data ?? []).map((p) => p.platform);
-        setPlatformOptions(names);
-      })
+      .then((res) => setPlatformOptions(res.data ?? []))
       .catch(() => setPlatformOptions([]));
   }, [selectedOrg]);
 
