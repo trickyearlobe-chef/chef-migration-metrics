@@ -152,9 +152,11 @@ All dashboard views must support filtering by the following dimensions. Filters 
 
 ## Drill-Downs
 
-- From the version distribution view → list of nodes running a specific Chef Client version
+- From the version distribution view → clicking a version bar navigates to the nodes list filtered by that Chef Client version
+- From the platform distribution view → clicking a platform bar navigates to the nodes list filtered by that platform (matches platform + version precisely)
 - From the cookbook compatibility view → detail view for a specific cookbook showing test history, CookStyle results, remediation guidance, auto-correct preview, and which nodes use it
-- From the node readiness summary → per-node detail view showing run-list, blocking cookbooks (with complexity scores), disk space status, stale data flag, and Chef Client version
+- From the node readiness summary → clicking the ready/blocked count or progress bar segment navigates to the nodes list with the readiness filter and target version pre-set
+- From the node detail → "View Filesystem Details" link navigates to the disk detail sub-page showing all mounted filesystems
 - From the dependency graph → cookbook detail or role node list
 - From the remediation guidance view → cookbook detail view with full deprecation documentation and auto-correct diff
 - From a blocking cookbook in the node detail → remediation guidance for that specific cookbook
@@ -182,6 +184,22 @@ The node detail page's **Upgrade Readiness** section must display per-source com
 - When **all sources are incompatible**, show: *"All sources report incompatibility — remediation required."*
 - When **no sources have been tested**, show: *"No CookStyle or Test Kitchen results — run analysis to determine compatibility."*
 - Complexity score and label should be shown from the highest-confidence source that has data (Test Kitchen > CookStyle).
+
+### Node Disk Detail Sub-Page
+
+Accessible from the node detail page via "View Filesystem Details" links in both the info grid and the disk space panel. Route: `/nodes/:org/:name/disks`.
+
+**Display requirements:**
+
+- Breadcrumb: Nodes → {node_name} → Disk Detail
+- Header showing node name and platform
+- Toggle checkbox to show/hide virtual/pseudo filesystems (proc, sysfs, tmpfs, squashfs, cgroup, etc.)
+- Filesystem table with columns: Mount Point, Device, FS Type, Size, Used, Available, % Used (with colour-coded bar: green < 75%, amber 75–90%, red ≥ 90%)
+- Windows nodes show additional columns: Drive Type, Encryption Status (auto-detected from data)
+- Expandable rows for inode details (click to toggle inline inode usage)
+- Warning icon (⚠) on mount points where free inodes are below 70%
+- Human-readable size formatting (KB → MB → GB → TB)
+- All columns left-aligned for consistency
 
 ---
 
