@@ -116,7 +116,7 @@ collection:
   schedule: "0 * * * *"   # cron expression — default: every hour
   stale_node_threshold_days: 7    # nodes with ohai_time older than this are flagged as stale
   stale_cookbook_threshold_days: 365  # cookbooks not updated in this many days are flagged as stale
-  delete_server_cookbooks_after_scan: true  # delete downloaded server cookbook files after scanning
+  delete_server_cookbooks_after_scan: false  # delete downloaded server cookbook files after scanning
 ```
 
 | Setting | Default | Description |
@@ -124,7 +124,7 @@ collection:
 | `schedule` | `0 * * * *` | Cron expression controlling collection frequency |
 | `stale_node_threshold_days` | `7` | Nodes whose `ohai_time` is older than this many days are flagged as stale. Stale nodes are still collected and analysed but are visually distinguished in the dashboard and their disk space data is treated as potentially outdated. |
 | `stale_cookbook_threshold_days` | `365` | Cookbooks whose most recent version was first observed longer than this many days ago are flagged as stale in the dashboard. This helps teams identify unmaintained cookbooks that may need attention beyond compatibility fixes. |
-| `delete_server_cookbooks_after_scan` | `true` | Controls whether downloaded Chef Server cookbook files are deleted after the scan pipeline runs. Keep this enabled to minimise disk usage. Set to `false` when you need to inspect downloaded cookbook files for troubleshooting. |
+| `delete_server_cookbooks_after_scan` | `false` | Controls whether downloaded Chef Server cookbook files are deleted after the scan pipeline runs. Enable this to minimise disk usage. The default of `false` retains files on disk so they can be inspected for troubleshooting. |
 
 ---
 

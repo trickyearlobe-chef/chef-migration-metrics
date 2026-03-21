@@ -1021,7 +1021,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// scanner's immutability cache detects existing results). Autocorrect
 	// previews are generated inline while cookbook files are still on disk.
 	// Files are deleted immediately after processing when
-	// collection.delete_server_cookbooks_after_scan is enabled (default).
+	// collection.delete_server_cookbooks_after_scan is enabled (disabled by default).
 	//
 	// When collection.skip_server_cookbook_download is true, the pipeline
 	// is skipped entirely — only git-sourced cookbooks will be scanned.
