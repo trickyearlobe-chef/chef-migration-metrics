@@ -84,9 +84,9 @@ collection:
   schedule: "0 * * * *"
   stale_node_threshold_days: 7
   stale_cookbook_threshold_days: 365
-  # delete_server_cookbooks_after_scan: true  # Set to false to keep downloaded
-                                              # server cookbook files on disk
-                                              # after scanning. Default true.
+  # delete_server_cookbooks_after_scan: false  # Set to true to delete downloaded
+                                               # server cookbook files from disk
+                                               # after scanning. Default false.
   # skip_server_cookbook_download: false  # Set to true to skip downloading
                                           # cookbook content from the Chef server.
                                           # Cookbook inventory and metadata are
