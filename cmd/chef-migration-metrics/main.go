@@ -278,12 +278,9 @@ func run() int {
 		startup.Debug("admin user already exists — skipping seed")
 	}
 
-	// Clean up any expired sessions left over from a previous process.
-	if n, cleanErr := sessionMgr.CleanupExpired(ctx); cleanErr != nil {
-		startup.Warn(fmt.Sprintf("failed to clean up expired sessions at startup: %v", cleanErr))
-	} else if n > 0 {
-		startup.Info(fmt.Sprintf("cleaned up %d expired session(s) at startup", n))
-	}
+	// Start periodic expired session cleanup (runs immediately, then hourly).
+	auth.StartSessionCleanup(ctx, sessionMgr)
+	startup.Info("session cleanup started (interval: 1h)")
 
 	// -------------------------------------------------------------------
 	// Mark interrupted collection runs from previous process
