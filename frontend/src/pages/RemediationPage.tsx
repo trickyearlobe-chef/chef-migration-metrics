@@ -482,9 +482,11 @@ function PriorityRow({ item }: { item: RemediationPriorityItem }) {
         <div className="flex items-center gap-2">
           <Link
             to={
-              item.cookbook_version
-                ? `/cookbooks/${encodeURIComponent(item.cookbook_name)}/${encodeURIComponent(item.cookbook_version)}/remediation`
-                : `/cookbooks/${encodeURIComponent(item.cookbook_name)}`
+              item.version_count > 1
+                ? `/cookbooks/${encodeURIComponent(item.cookbook_name)}`
+                : item.cookbook_version
+                  ? `/cookbooks/${encodeURIComponent(item.cookbook_name)}/${encodeURIComponent(item.cookbook_version)}/remediation`
+                  : `/cookbooks/${encodeURIComponent(item.cookbook_name)}`
             }
             className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
           >
@@ -504,9 +506,19 @@ function PriorityRow({ item }: { item: RemediationPriorityItem }) {
       {/* Version */}
       <td>
         {item.cookbook_version ? (
-          <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">
-            {item.cookbook_version}
-          </code>
+          <div className="flex items-center gap-1.5">
+            <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">
+              {item.cookbook_version}
+            </code>
+            {item.version_count > 1 && (
+              <span
+                className="inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 ring-1 ring-inset ring-gray-500/20"
+                title={`${item.version_count} versions on server — showing highest complexity`}
+              >
+                +{item.version_count - 1} more
+              </span>
+            )}
+          </div>
         ) : (
           <span className="text-gray-400">—</span>
         )}
