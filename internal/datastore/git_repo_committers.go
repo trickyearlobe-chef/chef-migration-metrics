@@ -64,6 +64,10 @@ func (db *DB) listCommittersByRepo(ctx context.Context, q queryable, f Committer
 		sortCol = "commit_count"
 	case "author_name":
 		sortCol = "author_name"
+	case "author_email":
+		sortCol = "author_email"
+	case "first_commit_at":
+		sortCol = "first_commit_at"
 	case "last_commit_at":
 		sortCol = "last_commit_at"
 	}

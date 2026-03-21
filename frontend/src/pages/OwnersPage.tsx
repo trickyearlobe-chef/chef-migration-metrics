@@ -68,7 +68,6 @@ type SortField =
   | "name"
   | "owner_type"
   | "nodes"
-  | "cookbooks"
   | "git_repos"
   | "ready"
   | "blocked"
@@ -206,7 +205,7 @@ export function OwnersPage() {
       } else {
         setSortField(field);
         // Numeric columns default to descending (biggest first), text to ascending.
-        const numericFields: SortField[] = ["nodes", "cookbooks", "git_repos", "ready", "blocked"];
+        const numericFields: SortField[] = ["nodes", "git_repos", "ready", "blocked"];
         setSortDir(numericFields.includes(field) ? "desc" : "asc");
       }
     },
@@ -422,7 +421,6 @@ export function OwnersPage() {
                     <th>Display Name</th>
                     <SortHeader label="Type" field="owner_type" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                     <SortHeader label="Nodes" field="nodes" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Cookbooks" field="cookbooks" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                     <SortHeader label="Git Repos" field="git_repos" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                     {showReadiness && (
                       <>
@@ -455,9 +453,6 @@ export function OwnersPage() {
                       </td>
                       <td className="text-sm text-gray-600 tabular-nums">
                         {owner.assignment_counts?.node ?? 0}
-                      </td>
-                      <td className="text-sm text-gray-600 tabular-nums">
-                        {owner.assignment_counts?.cookbook ?? 0}
                       </td>
                       <td className="text-sm text-gray-600 tabular-nums">
                         {owner.assignment_counts?.git_repo ?? 0}

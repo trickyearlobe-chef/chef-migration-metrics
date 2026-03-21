@@ -134,8 +134,8 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	// Compute compatibility per cookbook name from complexity records.
 	targetChefVersion := queryString(req, "target_chef_version", "")
-	if targetChefVersion == "" && len(r.cfg.TargetChefVersions) > 0 {
-		targetChefVersion = r.cfg.TargetChefVersions[0]
+	if targetChefVersion == "" {
+		targetChefVersion = r.defaultTargetVersion()
 	}
 
 	compatByName := make(map[string]string)

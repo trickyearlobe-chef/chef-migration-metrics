@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	// datastore is used for NodeSnapshotFilter and aggregate queries.
 )
 
 // ---------------------------------------------------------------------------
@@ -32,29 +33,6 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 		return
 	}
 
-	// Resolve owned node keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
-	if ownerFilterActive {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned node keys for version distribution: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving owned node keys for version distribution: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
-	}
-
 	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for version distribution: %v", err)
@@ -62,55 +40,123 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 		return
 	}
 
-	counts := make(map[string]int)
-	totalNodes := 0
+	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
-		if err != nil {
-			r.logf("WARN", "listing nodes for org %s in version distribution: %v", org.Name, err)
-			continue
-		}
-		for _, n := range nodes {
-			if ownerFilterActive && ownedKeys != nil {
-				if of.Unowned {
-					if ownedKeys[n.NodeName] {
-						continue
-					}
-				} else {
-					if !ownedKeys[n.NodeName] {
-						continue
-					}
-				}
-			}
-			v := n.ChefVersion
-			if v == "" {
-				v = "unknown"
-			}
-			counts[v]++
-			totalNodes++
-		}
+		orgIDs = append(orgIDs, org.ID)
 	}
 
-	type versionCount struct {
-		Version string  `json:"version"`
-		Count   int     `json:"count"`
-		Percent float64 `json:"percent"`
+	// When ownership filtering is active, fall back to in-memory path
+	// because ownership assignments can't be joined in the aggregate SQL.
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		r.handleDashboardVersionDistributionWithOwnerFilter(w, req, orgs, of)
+		return
 	}
 
-	result := make([]versionCount, 0, len(counts))
-	for v, c := range counts {
-		pct := 0.0
-		if totalNodes > 0 {
-			pct = float64(c) / float64(totalNodes) * 100
-		}
-		result = append(result, versionCount{
-			Version: v,
-			Count:   c,
-			Percent: pct,
-		})
+	// --- SQL aggregate push-down path ---
+	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}
+	counts, totalNodes, err := r.db.CountNodeVersionDistribution(ctx, f)
+	if err != nil {
+		r.logf("ERROR", "counting version distribution: %v", err)
+		WriteInternalError(w, "Failed to compute version distribution.")
+		return
 	}
+
+	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) versionDistEntry {
+		return versionDistEntry{Version: label, Count: count, Percent: pct}
+	})
 
 	// Sort by count descending, then version ascending for stability.
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count != result[j].Count {
+			return result[i].Count > result[j].Count
+		}
+		return result[i].Version < result[j].Version
+	})
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"total_nodes":  totalNodes,
+		"distribution": result,
+	})
+}
+
+// versionDistEntry is a single row in the version distribution response.
+type versionDistEntry struct {
+	Version string  `json:"version"`
+	Count   int     `json:"count"`
+	Percent float64 `json:"percent"`
+}
+
+// handleDashboardVersionDistributionWithOwnerFilter is the fallback path
+// when ownership filtering is active. It uses SQL push-down for node-level
+// filters but applies ownership filtering in memory.
+func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
+	w http.ResponseWriter,
+	req *http.Request,
+	orgs []datastore.Organisation,
+	of ownerFilter,
+) {
+	ctx := req.Context()
+
+	var ownedKeys map[string]bool
+	if of.Unowned {
+		keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+		if err != nil {
+			r.logf("ERROR", "resolving all owned node keys for version distribution: %v", err)
+			WriteInternalError(w, "Failed to resolve ownership filter.")
+			return
+		}
+		ownedKeys = keys
+	} else if len(of.OwnerNames) > 0 {
+		keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+		if err != nil {
+			r.logf("ERROR", "resolving owned node keys for version distribution: %v", err)
+			WriteInternalError(w, "Failed to resolve ownership filter.")
+			return
+		}
+		ownedKeys = keys
+	}
+
+	orgIDs := make([]string, 0, len(orgs))
+	for _, org := range orgs {
+		orgIDs = append(orgIDs, org.ID)
+	}
+
+	// Use SQL push-down for node-level filters, no pagination.
+	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}
+	nodes, _, err := r.db.ListNodeSnapshotsFiltered(ctx, f)
+	if err != nil {
+		r.logf("ERROR", "listing nodes for version distribution owner filter: %v", err)
+		WriteInternalError(w, "Failed to compute version distribution.")
+		return
+	}
+
+	counts := make(map[string]int)
+	totalNodes := 0
+	for _, n := range nodes {
+		if ownedKeys != nil {
+			if of.Unowned {
+				if ownedKeys[n.NodeName] {
+					continue
+				}
+			} else {
+				if !ownedKeys[n.NodeName] {
+					continue
+				}
+			}
+		}
+		v := n.ChefVersion
+		if v == "" {
+			v = "unknown"
+		}
+		counts[v]++
+		totalNodes++
+	}
+
+	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) versionDistEntry {
+		return versionDistEntry{Version: label, Count: count, Percent: pct}
+	})
+
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Count != result[j].Count {
 			return result[i].Count > result[j].Count
@@ -1046,6 +1092,9 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 // GET /api/v1/dashboard/platform-distribution.
 // Returns a count of nodes grouped by their OS platform (combining platform
 // and platform_version) across all organisations.
+//
+// Uses SQL aggregate push-down via CountNodePlatformDistribution when no
+// ownership filtering is active.
 func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -1059,29 +1108,6 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		return
 	}
 
-	// Resolve owned node keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
-	if ownerFilterActive {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned node keys for platform distribution: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving owned node keys for platform distribution: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
-	}
-
 	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for platform distribution: %v", err)
@@ -1089,36 +1115,25 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		return
 	}
 
-	counts := make(map[string]int)
-	totalNodes := 0
+	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
-		if err != nil {
-			r.logf("WARN", "listing nodes for org %s in platform distribution: %v", org.Name, err)
-			continue
-		}
-		for _, n := range nodes {
-			if ownerFilterActive && ownedKeys != nil {
-				if of.Unowned {
-					if ownedKeys[n.NodeName] {
-						continue
-					}
-				} else {
-					if !ownedKeys[n.NodeName] {
-						continue
-					}
-				}
-			}
-			p := n.Platform
-			if p == "" {
-				p = "unknown"
-			}
-			if n.PlatformVersion != "" {
-				p = p + " " + n.PlatformVersion
-			}
-			counts[p]++
-			totalNodes++
-		}
+		orgIDs = append(orgIDs, org.ID)
+	}
+
+	// When ownership filtering is active, fall back to in-memory path.
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		r.handleDashboardPlatformDistributionWithOwnerFilter(w, req, orgs, of)
+		return
+	}
+
+	// --- SQL aggregate push-down path ---
+	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}
+	counts, totalNodes, err := r.db.CountNodePlatformDistribution(ctx, f)
+	if err != nil {
+		r.logf("ERROR", "counting platform distribution: %v", err)
+		WriteInternalError(w, "Failed to compute platform distribution.")
+		return
 	}
 
 	type platformCount struct {
@@ -1127,18 +1142,9 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		Percent  float64 `json:"percent"`
 	}
 
-	result := make([]platformCount, 0, len(counts))
-	for p, c := range counts {
-		pct := 0.0
-		if totalNodes > 0 {
-			pct = float64(c) / float64(totalNodes) * 100
-		}
-		result = append(result, platformCount{
-			Platform: p,
-			Count:    c,
-			Percent:  pct,
-		})
-	}
+	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) platformCount {
+		return platformCount{Platform: label, Count: count, Percent: pct}
+	})
 
 	// Sort by count descending, then platform ascending for stability.
 	sort.Slice(result, func(i, j int) bool {
@@ -1152,6 +1158,110 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		"total_nodes":  totalNodes,
 		"distribution": result,
 	})
+}
+
+// handleDashboardPlatformDistributionWithOwnerFilter is the fallback path
+// when ownership filtering is active.
+func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
+	w http.ResponseWriter,
+	req *http.Request,
+	orgs []datastore.Organisation,
+	of ownerFilter,
+) {
+	ctx := req.Context()
+
+	var ownedKeys map[string]bool
+	if of.Unowned {
+		keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
+		if err != nil {
+			r.logf("ERROR", "resolving all owned node keys for platform distribution: %v", err)
+			WriteInternalError(w, "Failed to resolve ownership filter.")
+			return
+		}
+		ownedKeys = keys
+	} else if len(of.OwnerNames) > 0 {
+		keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
+		if err != nil {
+			r.logf("ERROR", "resolving owned node keys for platform distribution: %v", err)
+			WriteInternalError(w, "Failed to resolve ownership filter.")
+			return
+		}
+		ownedKeys = keys
+	}
+
+	orgIDs := make([]string, 0, len(orgs))
+	for _, org := range orgs {
+		orgIDs = append(orgIDs, org.ID)
+	}
+
+	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}
+	nodes, _, err := r.db.ListNodeSnapshotsFiltered(ctx, f)
+	if err != nil {
+		r.logf("ERROR", "listing nodes for platform distribution owner filter: %v", err)
+		WriteInternalError(w, "Failed to compute platform distribution.")
+		return
+	}
+
+	counts := make(map[string]int)
+	totalNodes := 0
+	for _, n := range nodes {
+		if ownedKeys != nil {
+			if of.Unowned {
+				if ownedKeys[n.NodeName] {
+					continue
+				}
+			} else {
+				if !ownedKeys[n.NodeName] {
+					continue
+				}
+			}
+		}
+		p := n.Platform
+		if p == "" {
+			p = "unknown"
+		}
+		if n.PlatformVersion != "" {
+			p = p + " " + n.PlatformVersion
+		}
+		counts[p]++
+		totalNodes++
+	}
+
+	type platformCount struct {
+		Platform string  `json:"platform"`
+		Count    int     `json:"count"`
+		Percent  float64 `json:"percent"`
+	}
+
+	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) platformCount {
+		return platformCount{Platform: label, Count: count, Percent: pct}
+	})
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count != result[j].Count {
+			return result[i].Count > result[j].Count
+		}
+		return result[i].Platform < result[j].Platform
+	})
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"total_nodes":  totalNodes,
+		"distribution": result,
+	})
+}
+
+// buildDistributionResponse is a generic helper that converts a map of
+// label → count into a slice of response structs with percentage calculated.
+func buildDistributionResponse[T any](counts map[string]int, total int, makeFn func(label string, count int, pct float64) T) []T {
+	result := make([]T, 0, len(counts))
+	for label, count := range counts {
+		pct := 0.0
+		if total > 0 {
+			pct = float64(count) / float64(total) * 100
+		}
+		result = append(result, makeFn(label, count, pct))
+	}
+	return result
 }
 
 // handleDashboardCookbookDownloadStatus handles

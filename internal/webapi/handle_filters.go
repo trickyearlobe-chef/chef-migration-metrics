@@ -4,15 +4,20 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
 // ---------------------------------------------------------------------------
 // Filter endpoints — each returns a sorted list of distinct values drawn
 // from the latest node snapshots across all organisations. The response
 // shape is always {"data": ["value1", "value2", ...]}.
+//
+// These endpoints use SQL DISTINCT queries pushed down to Postgres for
+// scalability at 100k+ nodes, replacing the previous in-memory approach
+// that loaded all node snapshots.
 // ---------------------------------------------------------------------------
 
 // handleFilterEnvironments handles GET /api/v1/filters/environments.
@@ -20,13 +25,20 @@ func (r *Router) handleFilterEnvironments(w http.ResponseWriter, req *http.Reque
 	if !requireGET(w, req) {
 		return
 	}
-	values, err := r.collectDistinctNodeValues(req, func(n nodeFilterRecord) string {
-		return n.chefEnvironment
-	})
+	f, err := r.filterOrgIDs(req)
 	if err != nil {
-		r.logf("ERROR", "collecting filter environments: %v", err)
+		r.logf("ERROR", "resolving orgs for filter environments: %v", err)
 		WriteInternalError(w, "Failed to list environments.")
 		return
+	}
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.chef_environment")
+	if err != nil {
+		r.logf("ERROR", "listing distinct environments: %v", err)
+		WriteInternalError(w, "Failed to list environments.")
+		return
+	}
+	if values == nil {
+		values = []string{}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
 }
@@ -36,13 +48,20 @@ func (r *Router) handleFilterRoles(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
 	}
-	values, err := r.collectDistinctNodeJSONArrayValues(req, func(n nodeFilterRecord) []byte {
-		return n.roles
-	})
+	f, err := r.filterOrgIDs(req)
 	if err != nil {
-		r.logf("ERROR", "collecting filter roles: %v", err)
+		r.logf("ERROR", "resolving orgs for filter roles: %v", err)
 		WriteInternalError(w, "Failed to list roles.")
 		return
+	}
+	values, err := r.db.ListDistinctNodeRoles(req.Context(), f)
+	if err != nil {
+		r.logf("ERROR", "listing distinct roles: %v", err)
+		WriteInternalError(w, "Failed to list roles.")
+		return
+	}
+	if values == nil {
+		values = []string{}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
 }
@@ -52,13 +71,20 @@ func (r *Router) handleFilterPolicyNames(w http.ResponseWriter, req *http.Reques
 	if !requireGET(w, req) {
 		return
 	}
-	values, err := r.collectDistinctNodeValues(req, func(n nodeFilterRecord) string {
-		return n.policyName
-	})
+	f, err := r.filterOrgIDs(req)
 	if err != nil {
-		r.logf("ERROR", "collecting filter policy names: %v", err)
+		r.logf("ERROR", "resolving orgs for filter policy names: %v", err)
 		WriteInternalError(w, "Failed to list policy names.")
 		return
+	}
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.policy_name")
+	if err != nil {
+		r.logf("ERROR", "listing distinct policy names: %v", err)
+		WriteInternalError(w, "Failed to list policy names.")
+		return
+	}
+	if values == nil {
+		values = []string{}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
 }
@@ -68,29 +94,49 @@ func (r *Router) handleFilterPolicyGroups(w http.ResponseWriter, req *http.Reque
 	if !requireGET(w, req) {
 		return
 	}
-	values, err := r.collectDistinctNodeValues(req, func(n nodeFilterRecord) string {
-		return n.policyGroup
-	})
+	f, err := r.filterOrgIDs(req)
 	if err != nil {
-		r.logf("ERROR", "collecting filter policy groups: %v", err)
+		r.logf("ERROR", "resolving orgs for filter policy groups: %v", err)
 		WriteInternalError(w, "Failed to list policy groups.")
 		return
+	}
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.policy_group")
+	if err != nil {
+		r.logf("ERROR", "listing distinct policy groups: %v", err)
+		WriteInternalError(w, "Failed to list policy groups.")
+		return
+	}
+	if values == nil {
+		values = []string{}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
 }
 
 // handleFilterPlatforms handles GET /api/v1/filters/platforms.
+// Returns combined "platform platform_version" strings.
 func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
 	}
-	values, err := r.collectDistinctNodeValues(req, func(n nodeFilterRecord) string {
-		return n.platform
-	})
+	f, err := r.filterOrgIDs(req)
 	if err != nil {
-		r.logf("ERROR", "collecting filter platforms: %v", err)
+		r.logf("ERROR", "resolving orgs for filter platforms: %v", err)
 		WriteInternalError(w, "Failed to list platforms.")
 		return
+	}
+	// Use the same combined expression as the platform distribution query.
+	expr := `CASE WHEN cn.platform IS NULL OR cn.platform = '' THEN NULL
+	              WHEN cn.platform_version IS NOT NULL AND cn.platform_version != '' THEN cn.platform || ' ' || cn.platform_version
+	              ELSE cn.platform
+	         END`
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, expr)
+	if err != nil {
+		r.logf("ERROR", "listing distinct platforms: %v", err)
+		WriteInternalError(w, "Failed to list platforms.")
+		return
+	}
+	if values == nil {
+		values = []string{}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
 }
@@ -130,100 +176,17 @@ func (r *Router) handleFilterComplexityLabels(w http.ResponseWriter, req *http.R
 // Shared helpers for filter collection
 // ---------------------------------------------------------------------------
 
-// nodeFilterRecord is a lightweight projection of NodeSnapshot fields used
-// by the filter collection helpers.
-type nodeFilterRecord struct {
-	chefEnvironment string
-	platform        string
-	policyName      string
-	policyGroup     string
-	roles           []byte // JSON array
-}
-
-// collectDistinctNodeValues iterates over all node snapshots across all
-// organisations, extracts a string value from each using extractFn, and
-// returns a sorted slice of distinct non-empty values.
-func (r *Router) collectDistinctNodeValues(req *http.Request, extractFn func(nodeFilterRecord) string) ([]string, error) {
+// filterOrgIDs resolves the organisation filter from the request and returns
+// a NodeSnapshotFilter populated with the matching organisation IDs. This is
+// used by filter endpoints that only need org scoping.
+func (r *Router) filterOrgIDs(req *http.Request) (datastore.NodeSnapshotFilter, error) {
 	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
-		return nil, err
+		return datastore.NodeSnapshotFilter{}, err
 	}
-
-	seen := make(map[string]bool)
+	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		nodes, err := r.db.ListNodeSnapshotsByOrganisation(req.Context(), org.ID)
-		if err != nil {
-			r.logf("WARN", "listing nodes for org %s in filter: %v", org.Name, err)
-			continue
-		}
-		for _, n := range nodes {
-			rec := nodeFilterRecord{
-				chefEnvironment: n.ChefEnvironment,
-				platform:        n.Platform,
-				policyName:      n.PolicyName,
-				policyGroup:     n.PolicyGroup,
-				roles:           n.Roles,
-			}
-			v := extractFn(rec)
-			if v != "" {
-				seen[v] = true
-			}
-		}
+		orgIDs = append(orgIDs, org.ID)
 	}
-
-	result := make([]string, 0, len(seen))
-	for v := range seen {
-		result = append(result, v)
-	}
-	sort.Strings(result)
-	return result, nil
-}
-
-// collectDistinctNodeJSONArrayValues is like collectDistinctNodeValues but
-// for fields that are stored as JSON arrays of strings (e.g. roles). It
-// unmarshals each array and collects all distinct non-empty elements.
-func (r *Router) collectDistinctNodeJSONArrayValues(req *http.Request, extractFn func(nodeFilterRecord) []byte) ([]string, error) {
-	orgs, err := r.resolveOrganisationFilter(req)
-	if err != nil {
-		return nil, err
-	}
-
-	seen := make(map[string]bool)
-	for _, org := range orgs {
-		nodes, err := r.db.ListNodeSnapshotsByOrganisation(req.Context(), org.ID)
-		if err != nil {
-			r.logf("WARN", "listing nodes for org %s in filter: %v", org.Name, err)
-			continue
-		}
-		for _, n := range nodes {
-			rec := nodeFilterRecord{
-				chefEnvironment: n.ChefEnvironment,
-				platform:        n.Platform,
-				policyName:      n.PolicyName,
-				policyGroup:     n.PolicyGroup,
-				roles:           n.Roles,
-			}
-			raw := extractFn(rec)
-			if len(raw) == 0 {
-				continue
-			}
-			var items []string
-			if err := json.Unmarshal(raw, &items); err != nil {
-				// Not a string array — skip silently.
-				continue
-			}
-			for _, item := range items {
-				if item != "" {
-					seen[item] = true
-				}
-			}
-		}
-	}
-
-	result := make([]string, 0, len(seen))
-	for v := range seen {
-		result = append(result, v)
-	}
-	sort.Strings(result)
-	return result, nil
+	return datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}, nil
 }

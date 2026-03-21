@@ -332,11 +332,15 @@ export function OwnerDetailPage() {
             />
             <InfoCard
               label="Ready Nodes"
-              value={String(owner.readiness_summary.ready_nodes)}
+              value={String(owner.readiness_summary.ready)}
             />
             <InfoCard
               label="Blocked Nodes"
-              value={String(owner.readiness_summary.blocked_nodes)}
+              value={String(owner.readiness_summary.blocked)}
+            />
+            <InfoCard
+              label="Stale Nodes"
+              value={String(owner.readiness_summary.stale)}
             />
           </div>
           {owner.readiness_summary.blocking_cookbooks.length > 0 && (
@@ -347,11 +351,12 @@ export function OwnerDetailPage() {
               <div className="mt-1 flex flex-wrap gap-1">
                 {owner.readiness_summary.blocking_cookbooks.map((cb) => (
                   <Link
-                    key={cb}
-                    to={`/cookbooks/${encodeURIComponent(cb)}`}
+                    key={cb.cookbook_name}
+                    to={`/cookbooks/${encodeURIComponent(cb.cookbook_name)}`}
                     className="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-700 hover:bg-red-100"
+                    title={`${cb.affected_node_count} node(s), complexity: ${cb.complexity_label || "unknown"}`}
                   >
-                    {cb}
+                    {cb.cookbook_name}
                   </Link>
                 ))}
               </div>
@@ -366,7 +371,7 @@ export function OwnerDetailPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <InfoCard
               label="Total Cookbooks"
-              value={String(owner.cookbook_summary.total_cookbooks)}
+              value={String(owner.cookbook_summary.total)}
             />
             <InfoCard
               label="Compatible"
@@ -390,7 +395,7 @@ export function OwnerDetailPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <InfoCard
               label="Total Repos"
-              value={String(owner.git_repo_summary.total_repos)}
+              value={String(owner.git_repo_summary.total)}
             />
             <InfoCard
               label="Compatible"

@@ -84,8 +84,8 @@ func (r *Router) handleExports(w http.ResponseWriter, req *http.Request) {
 	// Node exports require a target_chef_version.
 	if body.TargetChefVersion == "" && (body.ExportType == datastore.ExportTypeReadyNodes || body.ExportType == datastore.ExportTypeBlockedNodes) {
 		// Default to the first configured target version.
-		if len(r.cfg.TargetChefVersions) > 0 {
-			body.TargetChefVersion = r.cfg.TargetChefVersions[0]
+		if v := r.defaultTargetVersion(); v != "" {
+			body.TargetChefVersion = v
 		} else {
 			WriteBadRequest(w, "target_chef_version is required for node exports and none is configured.")
 			return

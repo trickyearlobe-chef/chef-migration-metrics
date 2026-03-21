@@ -14,6 +14,9 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
+// Ensure unused imports don't cause errors.
+var _ = datastore.NodeSnapshotFilter{}
+
 // ---------------------------------------------------------------------------
 // Target Chef Versions filter (config-driven, no DB needed)
 // ---------------------------------------------------------------------------
@@ -179,92 +182,57 @@ func TestHandleFilterComplexityLabels_MethodNotAllowed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// nodeFilterRecord extraction tests (unit tests for the helper structs)
+// filterOrgIDs helper tests
 // ---------------------------------------------------------------------------
 
-func TestNodeFilterRecord_StringExtractors(t *testing.T) {
-	rec := nodeFilterRecord{
-		chefEnvironment: "production",
-		platform:        "ubuntu",
-		policyName:      "webserver",
-		policyGroup:     "prod-us-east",
-		roles:           []byte(`["base","web"]`),
+func TestFilterOrgIDs_NoOrgs(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, nil
+		},
 	}
-
-	tests := []struct {
-		name string
-		fn   func(nodeFilterRecord) string
-		want string
-	}{
-		{"chefEnvironment", func(r nodeFilterRecord) string { return r.chefEnvironment }, "production"},
-		{"platform", func(r nodeFilterRecord) string { return r.platform }, "ubuntu"},
-		{"policyName", func(r nodeFilterRecord) string { return r.policyName }, "webserver"},
-		{"policyGroup", func(r nodeFilterRecord) string { return r.policyGroup }, "prod-us-east"},
+	r := newTestRouterWithMock(store)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/environments", nil)
+	f, err := r.filterOrgIDs(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.fn(rec)
-			if got != tt.want {
-				t.Errorf("%s = %q, want %q", tt.name, got, tt.want)
-			}
-		})
+	if len(f.OrganisationIDs) != 0 {
+		t.Errorf("expected 0 org IDs, got %d", len(f.OrganisationIDs))
 	}
 }
 
-func TestNodeFilterRecord_RolesJSONExtractor(t *testing.T) {
-	rec := nodeFilterRecord{
-		roles: []byte(`["base","web","monitoring"]`),
+func TestFilterOrgIDs_WithOrgs(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod"},
+				{ID: "org-2", Name: "staging"},
+			}, nil
+		},
 	}
-
-	raw := rec.roles
-	var items []string
-	if err := json.Unmarshal(raw, &items); err != nil {
-		t.Fatalf("unmarshal roles: %v", err)
+	r := newTestRouterWithMock(store)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/environments", nil)
+	f, err := r.filterOrgIDs(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(items) != 3 {
-		t.Fatalf("expected 3 roles, got %d", len(items))
-	}
-	want := []string{"base", "web", "monitoring"}
-	for i, v := range want {
-		if items[i] != v {
-			t.Errorf("role[%d] = %q, want %q", i, items[i], v)
-		}
-	}
-}
-
-func TestNodeFilterRecord_EmptyRoles(t *testing.T) {
-	rec := nodeFilterRecord{}
-	if len(rec.roles) != 0 {
-		t.Errorf("expected empty roles, got %q", string(rec.roles))
+	if len(f.OrganisationIDs) != 2 {
+		t.Errorf("expected 2 org IDs, got %d", len(f.OrganisationIDs))
 	}
 }
 
-func TestNodeFilterRecord_NullRoles(t *testing.T) {
-	rec := nodeFilterRecord{
-		roles: []byte(`null`),
+func TestFilterOrgIDs_DBError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, errors.New("connection refused")
+		},
 	}
-	var items []string
-	if err := json.Unmarshal(rec.roles, &items); err != nil {
-		t.Fatalf("unmarshal null roles: %v", err)
-	}
-	if items != nil {
-		t.Errorf("expected nil items for null JSON, got %v", items)
-	}
-}
-
-func TestNodeFilterRecord_EmptyStringFields(t *testing.T) {
-	rec := nodeFilterRecord{}
-	if rec.chefEnvironment != "" {
-		t.Error("expected empty chefEnvironment")
-	}
-	if rec.platform != "" {
-		t.Error("expected empty platform")
-	}
-	if rec.policyName != "" {
-		t.Error("expected empty policyName")
-	}
-	if rec.policyGroup != "" {
-		t.Error("expected empty policyGroup")
+	r := newTestRouterWithMock(store)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/environments", nil)
+	_, err := r.filterOrgIDs(req)
+	if err == nil {
+		t.Error("expected error, got nil")
 	}
 }
 
@@ -368,12 +336,8 @@ func TestHandleFilterEnvironments_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{ChefEnvironment: "production"},
-				{ChefEnvironment: "staging"},
-				{ChefEnvironment: "production"},
-			}, nil
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+			return []string{"production", "staging"}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -393,14 +357,21 @@ func TestHandleFilterEnvironments_HappyPath(t *testing.T) {
 	if len(body.Data) != 2 {
 		t.Fatalf("len(data) = %d, want 2 (distinct)", len(body.Data))
 	}
-	// Should be sorted.
+	// Should be sorted (returned by SQL ORDER BY).
 	if body.Data[0] != "production" || body.Data[1] != "staging" {
 		t.Errorf("data = %v, want [production staging]", body.Data)
 	}
 }
 
 func TestHandleFilterEnvironments_HappyPath_Empty(t *testing.T) {
-	store := &mockStore{}
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+			return nil, nil
+		},
+	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/environments", nil)
@@ -425,11 +396,8 @@ func TestHandleFilterRoles_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{Roles: json.RawMessage(`["base","web"]`)},
-				{Roles: json.RawMessage(`["base","db"]`)},
-			}, nil
+		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error) {
+			return []string{"base", "db", "web"}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -449,7 +417,7 @@ func TestHandleFilterRoles_HappyPath(t *testing.T) {
 	if len(body.Data) != 3 {
 		t.Fatalf("len(data) = %d, want 3 (base, db, web)", len(body.Data))
 	}
-	// Sorted: base, db, web.
+	// Sorted: base, db, web (returned by SQL ORDER BY).
 	if body.Data[0] != "base" || body.Data[1] != "db" || body.Data[2] != "web" {
 		t.Errorf("data = %v, want [base db web]", body.Data)
 	}
@@ -460,12 +428,8 @@ func TestHandleFilterPlatforms_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{Platform: "ubuntu"},
-				{Platform: "centos"},
-				{Platform: "ubuntu"},
-			}, nil
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+			return []string{"centos", "ubuntu"}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -492,12 +456,9 @@ func TestHandleFilterPolicyNames_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{PolicyName: "webserver"},
-				{PolicyName: "database"},
-				{PolicyName: ""},
-			}, nil
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+			// SQL DISTINCT already excludes empty strings.
+			return []string{"database", "webserver"}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -514,9 +475,8 @@ func TestHandleFilterPolicyNames_HappyPath(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	// Empty strings should be excluded.
 	if len(body.Data) != 2 {
-		t.Errorf("len(data) = %d, want 2 (empty policy_name excluded)", len(body.Data))
+		t.Errorf("len(data) = %d, want 2", len(body.Data))
 	}
 }
 
@@ -525,11 +485,8 @@ func TestHandleFilterPolicyGroups_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
-			return []datastore.NodeSnapshot{
-				{PolicyGroup: "prod-us-east"},
-				{PolicyGroup: "prod-eu-west"},
-			}, nil
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+			return []string{"prod-eu-west", "prod-us-east"}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -636,15 +593,15 @@ func TestHandleFilterPolicyGroups_DBError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Filter endpoints — node listing errors are non-fatal (WARN, skip org)
+// Filter endpoints — ListDistinctNodeValues DB error is fatal (500)
 // ---------------------------------------------------------------------------
 
-func TestHandleFilterEnvironments_NodeListError_NonFatal(t *testing.T) {
+func TestHandleFilterEnvironments_DistinctDBError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
 		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.NodeSnapshot, error) {
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
 			return nil, errors.New("partial failure")
 		},
 	}
@@ -653,8 +610,26 @@ func TestHandleFilterEnvironments_NodeListError_NonFatal(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/environments", nil)
 	r.ServeHTTP(w, req)
 
-	// Should still be 200 — the handler logs WARN but returns empty results.
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d (non-fatal node list error)", w.Code, http.StatusOK)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleFilterRoles_DistinctDBError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error) {
+			return nil, errors.New("partial failure")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/roles", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 }

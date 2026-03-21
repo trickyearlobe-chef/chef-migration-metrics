@@ -10,6 +10,7 @@ import type { CookbookListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
+import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Cookbooks list page — paginated table from GET /api/v1/cookbooks showing
@@ -46,7 +47,7 @@ export function CookbooksPage() {
         const versions = res.data ?? [];
         setTargetVersions(versions);
         if (versions.length > 0 && !selectedTargetVersion) {
-          setSelectedTargetVersion(versions[0]);
+          setSelectedTargetVersion(highestSemver(versions) ?? versions[0]);
         }
       })
       .catch(() => setTargetVersions([]));

@@ -19,6 +19,7 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { ComplexityBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
+import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Remediation Priority page
@@ -71,7 +72,7 @@ export function RemediationPage() {
         const versions = res.data ?? [];
         setTargetVersions(versions);
         if (versions.length > 0 && !selectedVersion) {
-          setSelectedVersion(versions[0]);
+          setSelectedVersion(highestSemver(versions) ?? versions[0]);
         }
       })
       .catch(() => {
