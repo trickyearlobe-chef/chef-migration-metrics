@@ -24,6 +24,7 @@ import type {
   CookbookRemediationResponse,
   NodeListResponse,
   NodeDetailResponse,
+  NodeDiskDetailResponse,
   NodesByVersionResponse,
   NodesByCookbookResponse,
   CookbookListResponse,
@@ -282,6 +283,18 @@ export function fetchNodeDetail(
 ): Promise<NodeDetailResponse> {
   return apiFetch<NodeDetailResponse>(
     buildUrl(`/nodes/${encodeURIComponent(organisation)}/${encodeURIComponent(name)}`),
+  );
+}
+
+export function fetchNodeDisks(
+  organisation: string,
+  name: string,
+  showAll?: boolean,
+): Promise<NodeDiskDetailResponse> {
+  return apiFetch<NodeDiskDetailResponse>(
+    buildUrl(`/nodes/disks/${encodeURIComponent(organisation)}/${encodeURIComponent(name)}`, {
+      show_all: showAll ? "true" : undefined,
+    }),
   );
 }
 

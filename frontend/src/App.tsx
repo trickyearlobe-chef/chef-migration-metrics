@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { NodesPage } from "./pages/NodesPage";
 import { NodeDetailPage } from "./pages/NodeDetailPage";
+import { NodeDiskDetailPage } from "./pages/NodeDiskDetailPage";
 import { CookbooksPage } from "./pages/CookbooksPage";
 import { CookbookDetailPage } from "./pages/CookbookDetailPage";
 import { CookbookCommittersPage } from "./pages/CookbookCommittersPage";
@@ -107,6 +108,7 @@ export function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/nodes" element={<NodesPage />} />
             <Route path="/nodes/:org/:name" element={<NodeDetailPage />} />
+            <Route path="/nodes/:org/:name/disks" element={<NodeDiskDetailPage />} />
             <Route path="/cookbooks" element={<CookbooksPage />} />
             <Route path="/cookbooks/:name" element={<CookbookDetailPage />} />
             <Route path="/cookbooks/:name/committers" element={<CookbookCommittersPage />} />
