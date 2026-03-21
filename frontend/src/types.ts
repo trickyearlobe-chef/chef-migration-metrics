@@ -518,13 +518,8 @@ export interface FilterStringResponse {
   data: string[];
 }
 
-export interface PlatformFilter {
-  platform: string;
-  versions: string[];
-}
-
 export interface FilterPlatformsResponse {
-  data: PlatformFilter[];
+  data: string[];
 }
 
 // ---------------------------------------------------------------------------
