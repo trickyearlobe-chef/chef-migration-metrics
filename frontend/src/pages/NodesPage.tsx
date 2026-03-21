@@ -16,6 +16,7 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StaleBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
+import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Readiness filter values
@@ -119,7 +120,7 @@ export function NodesPage() {
         if (initialTargetVersion && versions.includes(initialTargetVersion)) {
           setSelectedTargetVersion(initialTargetVersion);
         } else if (versions.length > 0 && !selectedTargetVersion) {
-          setSelectedTargetVersion(versions[0]);
+          setSelectedTargetVersion(highestSemver(versions) ?? versions[0]);
         }
       })
       .catch(() => setTargetVersions([]));

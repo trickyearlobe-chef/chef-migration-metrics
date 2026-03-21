@@ -10,6 +10,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { ComplexityBadge, StatusBadge } from "../components/StatusBadge";
+import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Git Repo Remediation Detail Page
@@ -48,7 +49,7 @@ export function GitRepoRemediationPage() {
         const versions = res.data ?? [];
         setTargetVersions(versions);
         if (versions.length > 0 && !selectedVersion) {
-          setSelectedVersion(versions[0]);
+          setSelectedVersion(highestSemver(versions) ?? versions[0]);
         }
       })
       .catch(() => {
