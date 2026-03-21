@@ -631,9 +631,9 @@ func (s *ComplexityScorer) loadBlastRadii(ctx context.Context, organisationID st
 	// 1. Get node and policy counts from the latest usage analysis.
 	latestAnalysis, err := s.db.GetLatestCookbookUsageAnalysis(ctx, organisationID)
 	if err == nil && latestAnalysis.ID != "" {
-		details, detailErr := s.db.ListCookbookUsageDetails(ctx, latestAnalysis.ID)
-		if detailErr == nil {
-			for _, d := range details {
+		summaries, sumErr := s.db.ListCookbookUsageSummaries(ctx, latestAnalysis.ID)
+		if sumErr == nil {
+			for _, d := range summaries {
 				r := radii[d.CookbookName]
 				// Accumulate across versions — blast radius is per-cookbook-name,
 				// not per-version.

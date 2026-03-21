@@ -36,7 +36,7 @@ type GitRepoTestKitchenResult struct {
 
 // UpsertGitRepoTestKitchenResultParams contains the fields needed to insert or
 // update a git_repo_test_kitchen_results row. The unique constraint is
-// (git_repo_id, target_chef_version, commit_sha).
+// (git_repo_id, target_chef_version).
 type UpsertGitRepoTestKitchenResultParams struct {
 	GitRepoID         string
 	TargetChefVersion string
@@ -182,8 +182,9 @@ func (db *DB) ListGitRepoTestKitchenResultsByName(ctx context.Context, name stri
 // ---------------------------------------------------------------------------
 
 // UpsertGitRepoTestKitchenResult inserts a new test kitchen result or updates
-// the existing one for the same (git_repo_id, target_chef_version, commit_sha)
-// combination. Returns the resulting row.
+// the existing one for the same (git_repo_id, target_chef_version)
+// combination. The commit_sha is updated on conflict to reflect the latest
+// tested commit. Returns the resulting row.
 func (db *DB) UpsertGitRepoTestKitchenResult(ctx context.Context, p UpsertGitRepoTestKitchenResultParams) (*GitRepoTestKitchenResult, error) {
 	return db.upsertGitRepoTestKitchenResult(ctx, db.q(), p)
 }
@@ -208,8 +209,9 @@ func (db *DB) upsertGitRepoTestKitchenResult(ctx context.Context, q queryable, p
 			driver_used, platform_tested, overrides_applied,
 			duration_seconds, started_at, completed_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-		ON CONFLICT (git_repo_id, target_chef_version, commit_sha)
+		ON CONFLICT (git_repo_id, target_chef_version)
 		DO UPDATE SET
+			commit_sha         = EXCLUDED.commit_sha,
 			converge_passed    = EXCLUDED.converge_passed,
 			tests_passed       = EXCLUDED.tests_passed,
 			compatible         = EXCLUDED.compatible,

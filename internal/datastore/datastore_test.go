@@ -594,53 +594,6 @@ func TestServerCookbook_DownloadHelpers(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Validation helper tests (for cookbook_node_usage)
-// ---------------------------------------------------------------------------
-
-func TestValidateUsageParams(t *testing.T) {
-	t.Run("valid params", func(t *testing.T) {
-		p := InsertCookbookNodeUsageParams{
-			ServerCookbookID: "cb-1",
-			NodeSnapshotID:   "ns-1",
-			CookbookVersion:  "1.0.0",
-		}
-		if err := validateUsageParams(p); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("missing cookbook ID", func(t *testing.T) {
-		p := InsertCookbookNodeUsageParams{
-			NodeSnapshotID:  "ns-1",
-			CookbookVersion: "1.0.0",
-		}
-		if err := validateUsageParams(p); err == nil {
-			t.Error("expected error for missing cookbook ID")
-		}
-	})
-
-	t.Run("missing node snapshot ID", func(t *testing.T) {
-		p := InsertCookbookNodeUsageParams{
-			ServerCookbookID: "cb-1",
-			CookbookVersion:  "1.0.0",
-		}
-		if err := validateUsageParams(p); err == nil {
-			t.Error("expected error for missing node snapshot ID")
-		}
-	})
-
-	t.Run("missing cookbook version", func(t *testing.T) {
-		p := InsertCookbookNodeUsageParams{
-			ServerCookbookID: "cb-1",
-			NodeSnapshotID:   "ns-1",
-		}
-		if err := validateUsageParams(p); err == nil {
-			t.Error("expected error for missing cookbook version")
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
 // MarshalJSON smoke tests — ensure no panic and valid output
 // ---------------------------------------------------------------------------
 
@@ -725,23 +678,6 @@ func TestGitRepo_MarshalJSON(t *testing.T) {
 		GitRepoURL: "https://github.com/example/apache2",
 	}
 	data, err := gr.MarshalJSON()
-	if err != nil {
-		t.Fatalf("MarshalJSON() error: %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("expected non-empty JSON output")
-	}
-}
-
-func TestCookbookNodeUsage_MarshalJSON(t *testing.T) {
-	u := CookbookNodeUsage{
-		ID:               "usage-id",
-		ServerCookbookID: "cb-id",
-		NodeSnapshotID:   "snap-id",
-		CookbookVersion:  "2.1.0",
-		CreatedAt:        time.Now(),
-	}
-	data, err := u.MarshalJSON()
 	if err != nil {
 		t.Fatalf("MarshalJSON() error: %v", err)
 	}
@@ -1272,72 +1208,43 @@ func TestBulkInsertLogEntries_EmptySlice(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// BulkInsertNodeSnapshots — empty slice edge cases
+// BulkUpsertNodeSnapshots — empty slice edge cases
 // ---------------------------------------------------------------------------
 
-func TestBulkInsertNodeSnapshots_EmptySlice(t *testing.T) {
+func TestBulkUpsertNodeSnapshots_EmptySlice(t *testing.T) {
 	db := &DB{pool: nil}
-	count, err := db.BulkInsertNodeSnapshots(context.Background(), nil)
+	count, err := db.BulkUpsertNodeSnapshots(context.Background(), nil)
 	if err != nil {
-		t.Fatalf("BulkInsertNodeSnapshots(nil) returned error: %v", err)
+		t.Fatalf("BulkUpsertNodeSnapshots(nil) returned error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("BulkInsertNodeSnapshots(nil) returned count %d, want 0", count)
+		t.Errorf("BulkUpsertNodeSnapshots(nil) returned count %d, want 0", count)
 	}
 
-	count, err = db.BulkInsertNodeSnapshots(context.Background(), []InsertNodeSnapshotParams{})
+	count, err = db.BulkUpsertNodeSnapshots(context.Background(), []InsertNodeSnapshotParams{})
 	if err != nil {
-		t.Fatalf("BulkInsertNodeSnapshots([]) returned error: %v", err)
+		t.Fatalf("BulkUpsertNodeSnapshots([]) returned error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("BulkInsertNodeSnapshots([]) returned count %d, want 0", count)
+		t.Errorf("BulkUpsertNodeSnapshots([]) returned count %d, want 0", count)
 	}
 }
 
-func TestBulkInsertNodeSnapshotsReturningIDs_EmptySlice(t *testing.T) {
+func TestDeleteOrphanedNodeSnapshots_EmptySlice(t *testing.T) {
 	db := &DB{pool: nil}
-	idMap, count, err := db.BulkInsertNodeSnapshotsReturningIDs(context.Background(), nil)
+	count, err := db.DeleteOrphanedNodeSnapshots(context.Background(), "org-1", nil)
 	if err != nil {
-		t.Fatalf("BulkInsertNodeSnapshotsReturningIDs(nil) returned error: %v", err)
+		t.Fatalf("DeleteOrphanedNodeSnapshots(nil) returned error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("BulkInsertNodeSnapshotsReturningIDs(nil) returned count %d, want 0", count)
-	}
-	if idMap != nil {
-		t.Errorf("BulkInsertNodeSnapshotsReturningIDs(nil) returned non-nil map: %v", idMap)
+		t.Errorf("DeleteOrphanedNodeSnapshots(nil) returned count %d, want 0", count)
 	}
 
-	idMap, count, err = db.BulkInsertNodeSnapshotsReturningIDs(context.Background(), []InsertNodeSnapshotParams{})
+	count, err = db.DeleteOrphanedNodeSnapshots(context.Background(), "org-1", []string{})
 	if err != nil {
-		t.Fatalf("BulkInsertNodeSnapshotsReturningIDs([]) returned error: %v", err)
+		t.Fatalf("DeleteOrphanedNodeSnapshots([]) returned error: %v", err)
 	}
 	if count != 0 {
-		t.Errorf("BulkInsertNodeSnapshotsReturningIDs([]) returned count %d, want 0", count)
-	}
-	if idMap != nil {
-		t.Errorf("BulkInsertNodeSnapshotsReturningIDs([]) returned non-nil map: %v", idMap)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// BulkInsertCookbookNodeUsage — empty slice edge case
-// ---------------------------------------------------------------------------
-
-func TestBulkInsertCookbookNodeUsage_EmptySlice(t *testing.T) {
-	db := &DB{pool: nil}
-	count, err := db.BulkInsertCookbookNodeUsage(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("BulkInsertCookbookNodeUsage(nil) returned error: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("BulkInsertCookbookNodeUsage(nil) returned count %d, want 0", count)
-	}
-
-	count, err = db.BulkInsertCookbookNodeUsage(context.Background(), []InsertCookbookNodeUsageParams{})
-	if err != nil {
-		t.Fatalf("BulkInsertCookbookNodeUsage([]) returned error: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("BulkInsertCookbookNodeUsage([]) returned count %d, want 0", count)
+		t.Errorf("DeleteOrphanedNodeSnapshots([]) returned count %d, want 0", count)
 	}
 }

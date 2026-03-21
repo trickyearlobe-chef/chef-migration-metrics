@@ -78,13 +78,13 @@ type InsertNodeSnapshotParams struct {
 	CollectedAt      time.Time
 }
 
-// InsertNodeSnapshot inserts a single node snapshot and returns the created
-// row.
-func (db *DB) InsertNodeSnapshot(ctx context.Context, p InsertNodeSnapshotParams) (NodeSnapshot, error) {
-	return db.insertNodeSnapshot(ctx, db.q(), p)
+// UpsertNodeSnapshot inserts a node snapshot or updates the existing row for
+// the same (organisation_id, node_name) combination. Returns the resulting row.
+func (db *DB) UpsertNodeSnapshot(ctx context.Context, p InsertNodeSnapshotParams) (NodeSnapshot, error) {
+	return db.upsertNodeSnapshot(ctx, db.q(), p)
 }
 
-func (db *DB) insertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeSnapshotParams) (NodeSnapshot, error) {
+func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeSnapshotParams) (NodeSnapshot, error) {
 	if p.CollectionRunID == "" {
 		return NodeSnapshot{}, fmt.Errorf("datastore: collection run ID is required to insert a node snapshot")
 	}
@@ -109,6 +109,23 @@ func (db *DB) insertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16, $17, $18
 		)
+		ON CONFLICT (organisation_id, node_name) DO UPDATE SET
+			collection_run_id  = EXCLUDED.collection_run_id,
+			chef_environment   = EXCLUDED.chef_environment,
+			chef_version       = EXCLUDED.chef_version,
+			platform           = EXCLUDED.platform,
+			platform_version   = EXCLUDED.platform_version,
+			platform_family    = EXCLUDED.platform_family,
+			filesystem         = EXCLUDED.filesystem,
+			cookbooks          = EXCLUDED.cookbooks,
+			run_list           = EXCLUDED.run_list,
+			roles              = EXCLUDED.roles,
+			policy_name        = EXCLUDED.policy_name,
+			policy_group       = EXCLUDED.policy_group,
+			ohai_time          = EXCLUDED.ohai_time,
+			custom_attributes  = EXCLUDED.custom_attributes,
+			is_stale           = EXCLUDED.is_stale,
+			collected_at       = EXCLUDED.collected_at
 		RETURNING id, collection_run_id, organisation_id, node_name,
 		          chef_environment, chef_version, platform, platform_version,
 		          platform_family, filesystem, cookbooks, run_list, roles,
@@ -142,31 +159,20 @@ func (db *DB) insertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 // Bulk insert
 // ---------------------------------------------------------------------------
 
-// BulkInsertNodeSnapshots inserts multiple node snapshots within a single
-// transaction for efficiency. It returns the count of rows inserted. If any
-// insert fails, the entire batch is rolled back.
-func (db *DB) BulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams) (int, error) {
-	_, count, err := db.bulkInsertNodeSnapshots(ctx, params, false)
+// BulkUpsertNodeSnapshots upserts multiple node snapshots within a single
+// transaction. Existing rows for the same (organisation_id, node_name) are
+// updated in place, preserving their primary key. Returns the count of rows
+// affected (inserted or updated). If any upsert fails, the entire batch is
+// rolled back.
+func (db *DB) BulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams) (int, error) {
+	_, count, err := db.bulkUpsertNodeSnapshots(ctx, params, false)
 	return count, err
 }
 
-// BulkInsertNodeSnapshotsReturningIDs inserts multiple node snapshots within
-// a single transaction and returns a map of node name → generated snapshot
-// UUID alongside the inserted count. This is used by the collector to
-// correlate node snapshots with their cookbook usage records without a
-// separate lookup query.
-//
-// If a node name appears more than once in params, the map will contain the
-// ID of the last inserted row for that name.
-func (db *DB) BulkInsertNodeSnapshotsReturningIDs(ctx context.Context, params []InsertNodeSnapshotParams) (map[string]string, int, error) {
-	return db.bulkInsertNodeSnapshots(ctx, params, true)
-}
-
-// bulkInsertNodeSnapshots is the shared implementation for both
-// BulkInsertNodeSnapshots and BulkInsertNodeSnapshotsReturningIDs.
-// When returnIDs is true, the INSERT uses RETURNING id and populates
-// the returned map. When false, the map is nil.
-func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams, returnIDs bool) (map[string]string, int, error) {
+// bulkUpsertNodeSnapshots is the implementation for BulkUpsertNodeSnapshots.
+// The returnIDs parameter controls whether the query uses RETURNING id to
+// populate the returned map. When false (the normal path), the map is nil.
+func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams, returnIDs bool) (map[string]string, int, error) {
 	if len(params) == 0 {
 		return nil, 0, nil
 	}
@@ -213,6 +219,8 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					is_stale, collected_at
 				) VALUES `)
 
+			// ON CONFLICT clause will be appended after the VALUES rows.
+
 			args := make([]interface{}, 0, len(batch)*numCols)
 			for i, p := range batch {
 				if i > 0 {
@@ -252,11 +260,32 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 				)
 			}
 
+			// Append the ON CONFLICT ... DO UPDATE clause.
+			sb.WriteString(`
+				ON CONFLICT (organisation_id, node_name) DO UPDATE SET
+					collection_run_id  = EXCLUDED.collection_run_id,
+					chef_environment   = EXCLUDED.chef_environment,
+					chef_version       = EXCLUDED.chef_version,
+					platform           = EXCLUDED.platform,
+					platform_version   = EXCLUDED.platform_version,
+					platform_family    = EXCLUDED.platform_family,
+					filesystem         = EXCLUDED.filesystem,
+					cookbooks          = EXCLUDED.cookbooks,
+					run_list           = EXCLUDED.run_list,
+					roles              = EXCLUDED.roles,
+					policy_name        = EXCLUDED.policy_name,
+					policy_group       = EXCLUDED.policy_group,
+					ohai_time          = EXCLUDED.ohai_time,
+					custom_attributes  = EXCLUDED.custom_attributes,
+					is_stale           = EXCLUDED.is_stale,
+					collected_at       = EXCLUDED.collected_at
+			`)
+
 			if returnIDs {
 				sb.WriteString(" RETURNING id")
 				rows, err := tx.QueryContext(ctx, sb.String(), args...)
 				if err != nil {
-					return fmt.Errorf("datastore: batch inserting node snapshots (rows %d-%d): %w", start, end-1, err)
+					return fmt.Errorf("datastore: batch upserting node snapshots (rows %d-%d): %w", start, end-1, err)
 				}
 				i := 0
 				for rows.Next() {
@@ -276,7 +305,7 @@ func (db *DB) bulkInsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 			} else {
 				result, err := tx.ExecContext(ctx, sb.String(), args...)
 				if err != nil {
-					return fmt.Errorf("datastore: batch inserting node snapshots (rows %d-%d): %w", start, end-1, err)
+					return fmt.Errorf("datastore: batch upserting node snapshots (rows %d-%d): %w", start, end-1, err)
 				}
 				n, _ := result.RowsAffected()
 				inserted += int(n)
@@ -430,6 +459,36 @@ func (db *DB) DeleteNodeSnapshotsByCollectionRun(ctx context.Context, collection
 	)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: deleting node snapshots: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("datastore: checking rows affected: %w", err)
+	}
+	return int(n), nil
+}
+
+// DeleteOrphanedNodeSnapshots removes node_snapshots rows for the given
+// organisation whose node_name is not in the provided set of active names.
+// This cleans up rows for nodes that have been decommissioned from the Chef
+// Server and no longer appear in collection results. Dependent rows in
+// node_readiness are removed automatically via ON DELETE CASCADE.
+//
+// Returns the count of deleted rows. If activeNodeNames is empty, no rows
+// are deleted (safety guard against accidental purge during transient
+// collection failures).
+func (db *DB) DeleteOrphanedNodeSnapshots(ctx context.Context, organisationID string, activeNodeNames []string) (int, error) {
+	if len(activeNodeNames) == 0 {
+		return 0, nil
+	}
+
+	const query = `
+		DELETE FROM node_snapshots
+		WHERE organisation_id = $1
+		  AND node_name != ALL($2::text[])
+	`
+	res, err := db.pool.ExecContext(ctx, query, organisationID, pq.Array(activeNodeNames))
+	if err != nil {
+		return 0, fmt.Errorf("datastore: deleting orphaned node snapshots for org %s: %w", organisationID, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

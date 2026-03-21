@@ -43,7 +43,6 @@ type CookbookUsageDetail struct {
 	CookbookVersion      string          `json:"cookbook_version"`
 	NodeCount            int             `json:"node_count"`
 	IsActive             bool            `json:"is_active"`
-	NodeNames            json.RawMessage `json:"node_names,omitempty"`
 	Roles                json.RawMessage `json:"roles,omitempty"`
 	PolicyNames          json.RawMessage `json:"policy_names,omitempty"`
 	PolicyGroups         json.RawMessage `json:"policy_groups,omitempty"`
@@ -124,7 +123,6 @@ type InsertCookbookUsageDetailParams struct {
 	CookbookVersion      string
 	NodeCount            int
 	IsActive             bool
-	NodeNames            json.RawMessage
 	Roles                json.RawMessage
 	PolicyNames          json.RawMessage
 	PolicyGroups         json.RawMessage
@@ -146,11 +144,11 @@ func (db *DB) insertCookbookUsageDetail(ctx context.Context, q queryable, p Inse
 	const query = `
 		INSERT INTO cookbook_usage_detail
 			(analysis_id, organisation_id, cookbook_name, cookbook_version,
-			 node_count, is_active, node_names, roles, policy_names,
+			 node_count, is_active, roles, policy_names,
 			 policy_groups, platform_counts, platform_family_counts)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, analysis_id, organisation_id, cookbook_name, cookbook_version,
-				  node_count, is_active, node_names, roles, policy_names,
+				  node_count, is_active, roles, policy_names,
 				  policy_groups, platform_counts, platform_family_counts, created_at
 	`
 
@@ -161,7 +159,6 @@ func (db *DB) insertCookbookUsageDetail(ctx context.Context, q queryable, p Inse
 		p.CookbookVersion,
 		p.NodeCount,
 		p.IsActive,
-		nullableJSON(p.NodeNames),
 		nullableJSON(p.Roles),
 		nullableJSON(p.PolicyNames),
 		nullableJSON(p.PolicyGroups),
@@ -189,9 +186,9 @@ func (db *DB) BulkInsertCookbookUsageDetails(ctx context.Context, params []Inser
 		const query = `
 			INSERT INTO cookbook_usage_detail
 				(analysis_id, organisation_id, cookbook_name, cookbook_version,
-				 node_count, is_active, node_names, roles, policy_names,
+				 node_count, is_active, roles, policy_names,
 				 policy_groups, platform_counts, platform_family_counts)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		`
 
 		stmt, err := tx.PrepareContext(ctx, query)
@@ -212,7 +209,6 @@ func (db *DB) BulkInsertCookbookUsageDetails(ctx context.Context, params []Inser
 				p.CookbookVersion,
 				p.NodeCount,
 				p.IsActive,
-				nullableJSON(p.NodeNames),
 				nullableJSON(p.Roles),
 				nullableJSON(p.PolicyNames),
 				nullableJSON(p.PolicyGroups),
@@ -243,9 +239,9 @@ func (db *DB) BulkInsertCookbookUsageDetailsTx(ctx context.Context, tx *sql.Tx, 
 	const query = `
 		INSERT INTO cookbook_usage_detail
 			(analysis_id, organisation_id, cookbook_name, cookbook_version,
-			 node_count, is_active, node_names, roles, policy_names,
+			 node_count, is_active, roles, policy_names,
 			 policy_groups, platform_counts, platform_family_counts)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	stmt, err := tx.PrepareContext(ctx, query)
@@ -267,7 +263,6 @@ func (db *DB) BulkInsertCookbookUsageDetailsTx(ctx context.Context, tx *sql.Tx, 
 			p.CookbookVersion,
 			p.NodeCount,
 			p.IsActive,
-			nullableJSON(p.NodeNames),
 			nullableJSON(p.Roles),
 			nullableJSON(p.PolicyNames),
 			nullableJSON(p.PolicyGroups),
@@ -346,7 +341,7 @@ func (db *DB) GetCookbookUsageAnalysisByCollectionRun(ctx context.Context, colle
 func (db *DB) ListCookbookUsageDetails(ctx context.Context, analysisID string) ([]CookbookUsageDetail, error) {
 	const query = `
 		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
-			   node_count, is_active, node_names, roles, policy_names,
+			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
 		WHERE analysis_id = $1
@@ -360,7 +355,7 @@ func (db *DB) ListCookbookUsageDetails(ctx context.Context, analysisID string) (
 func (db *DB) ListCookbookUsageDetailsByCookbook(ctx context.Context, analysisID, cookbookName string) ([]CookbookUsageDetail, error) {
 	const query = `
 		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
-			   node_count, is_active, node_names, roles, policy_names,
+			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
 		WHERE analysis_id = $1 AND cookbook_name = $2
@@ -374,7 +369,7 @@ func (db *DB) ListCookbookUsageDetailsByCookbook(ctx context.Context, analysisID
 func (db *DB) ListActiveCookbookUsageDetails(ctx context.Context, analysisID string) ([]CookbookUsageDetail, error) {
 	const query = `
 		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
-			   node_count, is_active, node_names, roles, policy_names,
+			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
 		WHERE analysis_id = $1 AND is_active = TRUE
@@ -389,13 +384,65 @@ func (db *DB) ListActiveCookbookUsageDetails(ctx context.Context, analysisID str
 func (db *DB) ListUnusedCookbookUsageDetails(ctx context.Context, analysisID string) ([]CookbookUsageDetail, error) {
 	const query = `
 		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
-			   node_count, is_active, node_names, roles, policy_names,
+			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
 		WHERE analysis_id = $1 AND is_active = FALSE
 		ORDER BY cookbook_name, cookbook_version
 	`
 	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, analysisID))
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight summary query (for blast radius / internal use)
+// ---------------------------------------------------------------------------
+
+// CookbookUsageSummary is a lightweight projection of cookbook_usage_detail
+// containing only the fields needed for blast radius computation. This avoids
+// fetching the large JSONB columns (roles, policy_groups, platform_counts,
+// platform_family_counts) that are not needed by the caller.
+type CookbookUsageSummary struct {
+	CookbookName    string          `json:"cookbook_name"`
+	CookbookVersion string          `json:"cookbook_version"`
+	NodeCount       int             `json:"node_count"`
+	PolicyNames     json.RawMessage `json:"policy_names,omitempty"`
+}
+
+// ListCookbookUsageSummaries returns a lightweight summary of each
+// cookbook_usage_detail row for the given analysis ID. Only cookbook_name,
+// cookbook_version, node_count, and policy_names are fetched — the other
+// JSONB columns are skipped entirely at the SQL level.
+func (db *DB) ListCookbookUsageSummaries(ctx context.Context, analysisID string) ([]CookbookUsageSummary, error) {
+	const query = `
+		SELECT cookbook_name, cookbook_version, node_count, policy_names
+		FROM cookbook_usage_detail
+		WHERE analysis_id = $1
+		ORDER BY node_count DESC, cookbook_name, cookbook_version
+	`
+
+	rows, err := db.pool.QueryContext(ctx, query, analysisID)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: querying cookbook usage summaries: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []CookbookUsageSummary
+	for rows.Next() {
+		var s CookbookUsageSummary
+		var policyNames sql.NullString
+
+		if err := rows.Scan(&s.CookbookName, &s.CookbookVersion, &s.NodeCount, &policyNames); err != nil {
+			return nil, fmt.Errorf("datastore: scanning cookbook usage summary row: %w", err)
+		}
+		if policyNames.Valid {
+			s.PolicyNames = json.RawMessage(policyNames.String)
+		}
+		summaries = append(summaries, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating cookbook usage summary rows: %w", err)
+	}
+	return summaries, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -537,7 +584,7 @@ func scanCookbookUsageAnalyses(rows *sql.Rows, err error) ([]CookbookUsageAnalys
 
 func scanCookbookUsageDetail(row *sql.Row) (CookbookUsageDetail, error) {
 	var d CookbookUsageDetail
-	var nodeNames, roles, policyNames, policyGroups, platformCounts, platformFamilyCounts sql.NullString
+	var roles, policyNames, policyGroups, platformCounts, platformFamilyCounts sql.NullString
 
 	err := row.Scan(
 		&d.ID,
@@ -547,7 +594,6 @@ func scanCookbookUsageDetail(row *sql.Row) (CookbookUsageDetail, error) {
 		&d.CookbookVersion,
 		&d.NodeCount,
 		&d.IsActive,
-		&nodeNames,
 		&roles,
 		&policyNames,
 		&policyGroups,
@@ -562,9 +608,6 @@ func scanCookbookUsageDetail(row *sql.Row) (CookbookUsageDetail, error) {
 		return CookbookUsageDetail{}, fmt.Errorf("datastore: scanning cookbook usage detail: %w", err)
 	}
 
-	if nodeNames.Valid {
-		d.NodeNames = json.RawMessage(nodeNames.String)
-	}
 	if roles.Valid {
 		d.Roles = json.RawMessage(roles.String)
 	}
@@ -593,7 +636,7 @@ func scanCookbookUsageDetails(rows *sql.Rows, err error) ([]CookbookUsageDetail,
 	var details []CookbookUsageDetail
 	for rows.Next() {
 		var d CookbookUsageDetail
-		var nodeNames, roles, policyNames, policyGroups, platformCounts, platformFamilyCounts sql.NullString
+		var roles, policyNames, policyGroups, platformCounts, platformFamilyCounts sql.NullString
 
 		if err := rows.Scan(
 			&d.ID,
@@ -603,7 +646,6 @@ func scanCookbookUsageDetails(rows *sql.Rows, err error) ([]CookbookUsageDetail,
 			&d.CookbookVersion,
 			&d.NodeCount,
 			&d.IsActive,
-			&nodeNames,
 			&roles,
 			&policyNames,
 			&policyGroups,
@@ -614,9 +656,6 @@ func scanCookbookUsageDetails(rows *sql.Rows, err error) ([]CookbookUsageDetail,
 			return nil, fmt.Errorf("datastore: scanning cookbook usage detail row: %w", err)
 		}
 
-		if nodeNames.Valid {
-			d.NodeNames = json.RawMessage(nodeNames.String)
-		}
 		if roles.Valid {
 			d.Roles = json.RawMessage(roles.String)
 		}

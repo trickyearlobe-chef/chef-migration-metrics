@@ -349,6 +349,28 @@ func (db *DB) scanExportJobRows(ctx context.Context, query string, args ...any) 
 }
 
 // ---------------------------------------------------------------------------
+// Purge
+// ---------------------------------------------------------------------------
+
+// DeleteExpiredExportJobRows removes export_jobs rows that have been marked
+// as 'expired' (files already cleaned up from disk) and whose expires_at
+// timestamp is older than the given cutoff. This prevents indefinite row
+// accumulation while retaining recent expired rows for audit visibility.
+// Returns the count of deleted rows.
+func (db *DB) DeleteExpiredExportJobRows(ctx context.Context, olderThan time.Time) (int, error) {
+	const query = `DELETE FROM export_jobs WHERE status = 'expired' AND expires_at < $1`
+	res, err := db.pool.ExecContext(ctx, query, olderThan)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: deleting expired export job rows: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("datastore: checking rows affected: %w", err)
+	}
+	return int(n), nil
+}
+
+// ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
 
