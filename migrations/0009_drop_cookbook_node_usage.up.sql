@@ -1,0 +1,31 @@
+-- ---------------------------------------------------------------------------
+-- 0009_drop_cookbook_node_usage
+-- ---------------------------------------------------------------------------
+-- Drop the cookbook_node_usage junction table. This table linked
+-- server_cookbooks to node_snapshots but was never read by any application
+-- code — all five query functions (ListCookbookNodeUsageByServerCookbook,
+-- ListCookbookNodeUsageByNodeSnapshot, ListCookbookNodeUsageByCollectionRun,
+-- CountNodesByCookbook, CountNodesByCookbookName) had zero callers.
+--
+-- The same cookbook-to-node relationship is already captured in two other
+-- places that ARE actively consumed:
+--
+--   1. node_snapshots.cookbooks (JSONB) — per-node list of cookbook versions,
+--      read by readiness.go and usage.go during analysis.
+--
+--   2. cookbook_usage_detail — per-cookbook-version aggregated stats (node
+--      counts, roles, policies, platforms), written by the analysis pipeline
+--      and read by the complexity scorer for blast radius computation.
+--
+-- In addition to being dead code, the table had structural problems:
+--
+--   • No UNIQUE constraint — duplicate rows were possible.
+--   • The delete-then-insert refresh was not wrapped in a single
+--     transaction, creating a window of data loss between the two
+--     operations.
+--
+-- Dropping it eliminates ~30,000 rows per 1,000-node org that were written
+-- and deleted every collection run for no purpose.
+-- ---------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS cookbook_node_usage;
