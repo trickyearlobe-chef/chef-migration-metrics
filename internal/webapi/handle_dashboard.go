@@ -940,6 +940,195 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
 }
 
+// handleDashboardTestKitchenCompatibility handles
+// GET /api/v1/dashboard/test-kitchen-compatibility.
+// Returns per-target-version counts of git repos whose latest Test Kitchen
+// run passed, failed, timed out, or has not been tested yet. The response
+// shape mirrors the cookbook/git-repo compatibility cards so the frontend
+// can render an identical stacked-bar summary.
+func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	ctx := req.Context()
+
+	// Parse and validate owner filter.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
+	// Resolve owned cookbook keys when ownership filtering is active.
+	var ownedKeys map[string]bool
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		if of.Unowned {
+			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving all owned cookbook keys for TK compatibility: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		} else if len(of.OwnerNames) > 0 {
+			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
+			if err != nil {
+				r.logf("ERROR", "resolving owned cookbook keys for TK compatibility: %v", err)
+				WriteInternalError(w, "Failed to resolve ownership filter.")
+				return
+			}
+			ownedKeys = keys
+		}
+	}
+
+	targetVersions := r.cfg.TargetChefVersions
+
+	type tkSummary struct {
+		TargetChefVersion string  `json:"target_chef_version"`
+		TotalRepos        int     `json:"total_repos"`
+		PassedRepos       int     `json:"passed_repos"`
+		FailedRepos       int     `json:"failed_repos"`
+		TimedOutRepos     int     `json:"timed_out_repos"`
+		UntestedRepos     int     `json:"untested_repos"`
+		PassedPercent     float64 `json:"passed_percent"`
+	}
+
+	// Build an allowed-names set for ownership filtering (nil = no filter).
+	var allowedNames map[string]bool
+	if ownerFilterActive && ownedKeys != nil {
+		gitRepos, err := r.db.ListGitRepos(ctx)
+		if err != nil {
+			r.logf("ERROR", "listing git repos for TK compatibility ownership filter: %v", err)
+			WriteInternalError(w, "Failed to compute Test Kitchen compatibility.")
+			return
+		}
+		if of.Unowned {
+			allNames := make(map[string]bool, len(gitRepos))
+			for _, gr := range gitRepos {
+				allNames[gr.Name] = true
+			}
+			allowedNames = make(map[string]bool)
+			for name := range allNames {
+				if !ownedKeys[name] {
+					allowedNames[name] = true
+				}
+			}
+		} else {
+			allowedNames = ownedKeys
+		}
+	}
+
+	// Tally per-target-version counts.
+	type perVersion struct {
+		total    int
+		passed   int
+		failed   int
+		timedOut int
+		untested int
+	}
+	byTV := make(map[string]*perVersion)
+	for _, tv := range targetVersions {
+		byTV[tv] = &perVersion{}
+	}
+
+	type tvName struct {
+		tv   string
+		name string
+	}
+	seen := make(map[tvName]bool)
+
+	// Load all git repos and build a name-by-ID lookup.
+	gitRepos, err := r.db.ListGitRepos(ctx)
+	if err != nil {
+		r.logf("ERROR", "listing git repos for TK compatibility: %v", err)
+		WriteInternalError(w, "Failed to compute Test Kitchen compatibility.")
+		return
+	}
+	repoNameByID := make(map[string]string, len(gitRepos))
+	for _, gr := range gitRepos {
+		repoNameByID[gr.ID] = gr.Name
+	}
+
+	// Load all test kitchen results.
+	tkResults, err := r.db.ListAllGitRepoTestKitchenResults(ctx)
+	if err != nil {
+		r.logf("ERROR", "listing TK results for compatibility: %v", err)
+		WriteInternalError(w, "Failed to compute Test Kitchen compatibility.")
+		return
+	}
+
+	for _, tk := range tkResults {
+		repoName := repoNameByID[tk.GitRepoID]
+		if repoName == "" {
+			continue
+		}
+		if allowedNames != nil && !allowedNames[repoName] {
+			continue
+		}
+		pv, ok := byTV[tk.TargetChefVersion]
+		if !ok {
+			continue
+		}
+		key := tvName{tv: tk.TargetChefVersion, name: repoName}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		pv.total++
+		switch {
+		case tk.TimedOut:
+			pv.timedOut++
+		case tk.Compatible:
+			pv.passed++
+		default:
+			pv.failed++
+		}
+	}
+
+	// Count untested: git repos with no TK result for a given target
+	// version.
+	for _, gr := range gitRepos {
+		if allowedNames != nil && !allowedNames[gr.Name] {
+			continue
+		}
+		for _, tv := range targetVersions {
+			key := tvName{tv: tv, name: gr.Name}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			pv := byTV[tv]
+			pv.total++
+			pv.untested++
+		}
+	}
+
+	var summaries []tkSummary
+	for _, tv := range targetVersions {
+		pv := byTV[tv]
+		pct := 0.0
+		if pv.total > 0 {
+			pct = float64(pv.passed) / float64(pv.total) * 100
+		}
+		summaries = append(summaries, tkSummary{
+			TargetChefVersion: tv,
+			TotalRepos:        pv.total,
+			PassedRepos:       pv.passed,
+			FailedRepos:       pv.failed,
+			TimedOutRepos:     pv.timedOut,
+			UntestedRepos:     pv.untested,
+			PassedPercent:     pct,
+		})
+	}
+
+	if summaries == nil {
+		summaries = []tkSummary{}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
+}
+
 // handleDashboardComplexityTrend handles
 // GET /api/v1/dashboard/complexity/trend.
 // Returns aggregate cookbook complexity scores over time by examining

@@ -215,6 +215,22 @@ export interface GitRepoCompatibilityResponse {
   data: GitRepoCompatibilitySummary[];
 }
 
+// Test Kitchen compatibility
+
+export interface TestKitchenCompatibilitySummary {
+  target_chef_version: string;
+  total_repos: number;
+  passed_repos: number;
+  failed_repos: number;
+  timed_out_repos: number;
+  untested_repos: number;
+  passed_percent: number;
+}
+
+export interface TestKitchenCompatibilityResponse {
+  data: TestKitchenCompatibilitySummary[];
+}
+
 // ---------------------------------------------------------------------------
 // Nodes
 // ---------------------------------------------------------------------------

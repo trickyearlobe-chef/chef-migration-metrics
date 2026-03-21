@@ -21,6 +21,7 @@ import type {
   StaleTrendResponse,
   CookbookCompatibilityResponse,
   GitRepoCompatibilityResponse,
+  TestKitchenCompatibilityResponse,
   CookbookRemediationResponse,
   NodeListResponse,
   NodeDetailResponse,
@@ -262,6 +263,14 @@ export function fetchGitRepoCompatibility(
 ): Promise<GitRepoCompatibilityResponse> {
   return apiFetch<GitRepoCompatibilityResponse>(
     buildUrl("/dashboard/git-repo-compatibility", { organisation }),
+  );
+}
+
+export function fetchTestKitchenCompatibility(
+  organisation?: string,
+): Promise<TestKitchenCompatibilityResponse> {
+  return apiFetch<TestKitchenCompatibilityResponse>(
+    buildUrl("/dashboard/test-kitchen-compatibility", { organisation }),
   );
 }
 

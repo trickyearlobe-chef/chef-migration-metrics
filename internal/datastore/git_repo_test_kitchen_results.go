@@ -177,6 +177,17 @@ func (db *DB) ListGitRepoTestKitchenResultsByName(ctx context.Context, name stri
 	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query, name))
 }
 
+// ListAllGitRepoTestKitchenResults returns all git repo test kitchen results,
+// ordered by target_chef_version.
+func (db *DB) ListAllGitRepoTestKitchenResults(ctx context.Context) ([]GitRepoTestKitchenResult, error) {
+	query := `
+		SELECT ` + grtkrColumns + `
+		  FROM git_repo_test_kitchen_results
+		 ORDER BY target_chef_version
+	`
+	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query))
+}
+
 // ---------------------------------------------------------------------------
 // Upsert
 // ---------------------------------------------------------------------------

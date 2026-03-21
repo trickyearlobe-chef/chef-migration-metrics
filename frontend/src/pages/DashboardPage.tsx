@@ -7,6 +7,7 @@ import {
   fetchReadiness,
   fetchCookbookCompatibility,
   fetchGitRepoCompatibility,
+  fetchTestKitchenCompatibility,
   fetchVersionDistributionTrend,
   fetchReadinessTrend,
   fetchComplexityTrend,
@@ -18,6 +19,7 @@ import type {
   ReadinessResponse,
   CookbookCompatibilityResponse,
   GitRepoCompatibilityResponse,
+  TestKitchenCompatibilityResponse,
   VersionDistributionTrendResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
@@ -37,6 +39,7 @@ import type { TrendSeries } from "../components/TrendChart";
 //   3. Node Upgrade Readiness (ready / blocked / stale counts + trend)
 //   4. Server Cookbook CookStyle Compatibility (compatible / incompatible / untested)
 //   5. Git Repo CookStyle Compatibility (compatible / incompatible / untested)
+//   6. Test Kitchen Compatibility (passed / failed / timed out / untested)
 // ---------------------------------------------------------------------------
 
 export function DashboardPage() {
@@ -54,6 +57,7 @@ export function DashboardPage() {
         <ReadinessCard organisation={org} />
         <CookbookCompatibilityCard organisation={org} />
         <GitRepoCompatibilityCard organisation={org} />
+        <TestKitchenCompatibilityCard organisation={org} />
       </div>
 
       {/* ---- Historical trend charts ---- */}
@@ -424,6 +428,108 @@ function GitRepoCompatibilityCard({ organisation }: { organisation?: string }) {
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
                       Untested: {c.untested_repos}
                     </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Test Kitchen Compatibility Card
+// ---------------------------------------------------------------------------
+
+function TestKitchenCompatibilityCard({ organisation }: { organisation?: string }) {
+  const [data, setData] = useState<TestKitchenCompatibilityResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchTestKitchenCompatibility(organisation)
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [organisation]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="card">
+      <h3 className="card-header">Test Kitchen Compatibility</h3>
+      {loading && <LoadingSpinner message="Loading Test Kitchen results…" />}
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {!loading && !error && data && (
+        <>
+          {data.data.length === 0 ? (
+            <EmptyState title="No Test Kitchen data" description="Configure target Chef versions and run Test Kitchen to see results." />
+          ) : (
+            <div className="space-y-4">
+              {data.data.map((tk) => (
+                <div key={tk.target_chef_version} className="rounded-lg border border-gray-100 p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Target: {tk.target_chef_version}</span>
+                    <span className="text-xs text-gray-400">{tk.total_repos} git repos</span>
+                  </div>
+                  {/* Stacked progress bar */}
+                  {tk.total_repos > 0 && (
+                    <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
+                      <Link
+                        to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="bg-green-500 transition-all duration-500 hover:bg-green-600"
+                        style={{ width: `${(tk.passed_repos / tk.total_repos) * 100}%` }}
+                        title={`Passed: ${tk.passed_repos}`}
+                      />
+                      <Link
+                        to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="bg-red-400 transition-all duration-500 hover:bg-red-500"
+                        style={{ width: `${(tk.failed_repos / tk.total_repos) * 100}%` }}
+                        title={`Failed: ${tk.failed_repos}`}
+                      />
+                      <div
+                        className="bg-amber-400 transition-all duration-500"
+                        style={{ width: `${(tk.timed_out_repos / tk.total_repos) * 100}%` }}
+                        title={`Timed out: ${tk.timed_out_repos}`}
+                      />
+                      <Link
+                        to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
+                        style={{ width: `${(tk.untested_repos / tk.total_repos) * 100}%` }}
+                        title={`Untested: ${tk.untested_repos}`}
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    <Link
+                      to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+                      Passed: {tk.passed_repos}
+                    </Link>
+                    <Link
+                      to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
+                      Failed: {tk.failed_repos}
+                    </Link>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+                      Timed out: {tk.timed_out_repos}
+                    </span>
+                    <Link
+                      to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
+                      Untested: {tk.untested_repos}
+                    </Link>
                   </div>
                 </div>
               ))}
