@@ -51,7 +51,7 @@ type CreateCollectionRunParams struct {
 
 // CreateCollectionRun upserts a collection run for the given organisation,
 // resetting it to "running" status with the current time as started_at.
-// With the UNIQUE constraint on organisation_id (migration 0006), each
+// With the UNIQUE constraint on organisation_id, each
 // organisation has at most one collection_runs row. Subsequent calls for
 // the same organisation update the existing row in place — the row ID is
 // stable across runs, which keeps foreign-key references (node_snapshots,
@@ -440,7 +440,7 @@ func (db *DB) GetRunningCollectionRuns(ctx context.Context) ([]CollectionRun, er
 }
 
 // PurgeOldCollectionRuns is a no-op retained for backward compatibility.
-// With the upsert model (migration 0006), each organisation has at most one
+// With the upsert model, each organisation has at most one
 // collection_runs row, so there are never stale rows to purge.
 func (db *DB) PurgeOldCollectionRuns(ctx context.Context) (int, error) {
 	return 0, nil
