@@ -146,6 +146,16 @@ func TestDefaults_StaleCookbookThresholdDays(t *testing.T) {
 	}
 }
 
+func TestDefaults_DeleteServerCookbooksAfterScan(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if !cfg.Collection.DeleteServerCookbooksAfterScanEnabled() {
+		t.Error("expected delete_server_cookbooks_after_scan to default to true")
+	}
+	if cfg.Collection.DeleteServerCookbooksAfterScan == nil {
+		t.Error("expected DeleteServerCookbooksAfterScan pointer to be set after defaults are applied")
+	}
+}
+
 func TestDefaults_Concurrency(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	checks := []struct {
@@ -419,6 +429,7 @@ collection:
   schedule: "*/5 * * * *"
   stale_node_threshold_days: 14
   stale_cookbook_threshold_days: 180
+  delete_server_cookbooks_after_scan: false
 
 concurrency:
   organisation_collection: 2
@@ -442,6 +453,9 @@ logging:
 	if cfg.Collection.StaleCookbookThresholdDays != 180 {
 		t.Errorf("stale_cookbook_threshold_days not overridden: %d", cfg.Collection.StaleCookbookThresholdDays)
 	}
+	if cfg.Collection.DeleteServerCookbooksAfterScanEnabled() {
+		t.Error("delete_server_cookbooks_after_scan not overridden: expected false")
+	}
 	if cfg.Concurrency.OrganisationCollection != 2 {
 		t.Errorf("concurrency not overridden: %d", cfg.Concurrency.OrganisationCollection)
 	}
@@ -453,6 +467,13 @@ logging:
 	}
 	if cfg.Logging.Level != "DEBUG" {
 		t.Errorf("logging level not overridden: %q", cfg.Logging.Level)
+	}
+}
+
+func TestDeleteServerCookbooksAfterScanEnabled_NilPointer(t *testing.T) {
+	c := CollectionConfig{}
+	if !c.DeleteServerCookbooksAfterScanEnabled() {
+		t.Error("expected DeleteServerCookbooksAfterScanEnabled() to return true when field is nil")
 	}
 }
 

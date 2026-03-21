@@ -33,16 +33,18 @@ type ServerCookbookPipelineResult struct {
 }
 
 // runServerCookbookPipeline processes server cookbooks one at a time:
-// download → CookStyle scan → autocorrect preview → delete from disk.
+// download → CookStyle scan → autocorrect preview, then optionally delete
+// from disk.
 // This keeps disk usage to a single cookbook at a time, instead of
 // downloading all cookbooks and leaving them on disk permanently.
 //
 // Cookbooks that already have CookStyle results are not re-downloaded
 // (the scan skip check inside scanOne handles immutability caching).
 // Cookbooks that are already downloaded (status = 'ok') but lack scan
-// results ARE re-downloaded to a temp location, scanned, and deleted.
+// results ARE re-downloaded to a temp location, scanned, and optionally
+// deleted.
 //
-// After the pipeline finishes processing pending cookbooks, it runs a
+// After the pipeline finishes processing pending cookbooks, it may run a
 // cleanup pass that removes any server cookbook files left on disk in the
 // cache directory from previous runs (before the streaming pipeline was
 // deployed). This ensures the disk is not permanently consumed by
@@ -60,6 +62,7 @@ func runServerCookbookPipeline(
 	targetChefVersions []string,
 	cookstyleScanner *analysis.CookstyleScanner,
 	autocorrectGen *remediation.AutocorrectGenerator,
+	deleteAfterScan bool,
 ) ServerCookbookPipelineResult {
 	start := time.Now()
 	result := ServerCookbookPipelineResult{}
@@ -154,10 +157,10 @@ func runServerCookbookPipeline(
 				}
 			}
 
-			// Step 4: Delete the downloaded files. Because we used
-			// os.MkdirTemp, this removes the entire temp directory —
-			// no empty parent directories are left behind.
-			if tmpDir != "" {
+			// Step 4: Optionally delete the downloaded files. Because we used
+			// os.MkdirTemp, this removes the entire temp directory — no empty
+			// parent directories are left behind.
+			if deleteAfterScan && tmpDir != "" {
 				if removeErr := os.RemoveAll(tmpDir); removeErr != nil {
 					log.Warn(fmt.Sprintf("[%d/%d] failed to clean up cookbook files %s/%s at %s: %v",
 						i+1, len(cookbooks), cb.Name, cb.Version, tmpDir, removeErr))
@@ -185,18 +188,18 @@ func runServerCookbookPipeline(
 		log.Info("no server cookbook versions need processing")
 	}
 
-	// Step 5: Clean up legacy cached cookbook files. Before the streaming
-	// pipeline was introduced, fetchCookbooks downloaded every cookbook to
-	// the persistent cache directory and never removed them. Cookbooks
-	// that were already processed (download_status = 'ok') are never
-	// returned by ListActiveCookbooksNeedingDownload, so the loop above
-	// never sees them and their files remain on disk indefinitely.
+	// Step 5: Optionally clean up legacy cached cookbook files. Before the
+	// streaming pipeline was introduced, fetchCookbooks downloaded every
+	// cookbook to the persistent cache directory and never removed them.
+	// Cookbooks that were already processed (download_status = 'ok') are
+	// never returned by ListActiveCookbooksNeedingDownload, so the loop
+	// above never sees them and their files remain on disk indefinitely.
 	//
 	// Walk the cache directory for this organisation and remove any server
 	// cookbook version directories that still exist. The streaming pipeline
 	// no longer writes to the cache directory (it uses os.MkdirTemp), so
 	// anything present is a leftover from the old code path.
-	if cookbookCacheDir != "" {
+	if deleteAfterScan && cookbookCacheDir != "" {
 		cleaned := cleanLegacyCookbookCache(log, cookbookCacheDir, org.ID)
 		result.Cleaned = cleaned
 		if cleaned > 0 {

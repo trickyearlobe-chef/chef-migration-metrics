@@ -978,17 +978,19 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			logging.WithCollectionRunID(run.ID))
 	}
 
-	// Step 7b: Server cookbook download, CookStyle scan, and cleanup.
+	// Step 7b: Server cookbook download, CookStyle scan, and optional cleanup.
 	//
 	// Uses a streaming pipeline that processes one cookbook at a time:
-	// download → CookStyle scan → autocorrect preview → delete from disk.
+	// download → CookStyle scan → autocorrect preview, then optional
+	// deletion from disk.
 	// This keeps disk usage to a single cookbook version at a time instead
 	// of downloading thousands of versions that accumulate on disk.
 	//
 	// Server cookbooks already scanned are skipped automatically (the
 	// scanner's immutability cache detects existing results). Autocorrect
-	// previews are generated inline so the cookbook files can be deleted
-	// immediately after processing.
+	// previews are generated inline while cookbook files are still on disk.
+	// Files are deleted immediately after processing when
+	// collection.delete_server_cookbooks_after_scan is enabled (default).
 	//
 	// When collection.skip_server_cookbook_download is true, the pipeline
 	// is skipped entirely — only git-sourced cookbooks will be scanned.
@@ -1004,8 +1006,14 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		log.Info("skipping Chef server cookbook download (collection.skip_server_cookbook_download is enabled)",
 			logging.WithCollectionRunID(run.ID))
 	} else {
-		log.Info("running server cookbook pipeline (download → scan → delete)",
-			logging.WithCollectionRunID(run.ID))
+		deleteAfterScan := c.cfg.Collection.DeleteServerCookbooksAfterScanEnabled()
+		if deleteAfterScan {
+			log.Info("running server cookbook pipeline (download → scan → delete)",
+				logging.WithCollectionRunID(run.ID))
+		} else {
+			log.Info("running server cookbook pipeline (download → scan; retaining files on disk)",
+				logging.WithCollectionRunID(run.ID))
+		}
 
 		pipelineResult := runServerCookbookPipeline(
 			ctx, client, c.db, log, org,
@@ -1013,18 +1021,28 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			c.cfg.TargetChefVersions,
 			c.cookstyleScanner,
 			c.autocorrectGen,
+			deleteAfterScan,
 		)
 
 		if pipelineResult.Total == 0 {
 			log.Info("no server cookbook versions need processing",
 				logging.WithCollectionRunID(run.ID))
 		} else {
-			log.Info(fmt.Sprintf(
-				"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed, %d legacy cached cleaned in %s",
-				pipelineResult.Total, pipelineResult.Downloaded, pipelineResult.Scanned,
-				pipelineResult.Skipped, pipelineResult.Failed, pipelineResult.Cleaned,
-				pipelineResult.Duration.Round(time.Millisecond)),
-				logging.WithCollectionRunID(run.ID))
+			if deleteAfterScan {
+				log.Info(fmt.Sprintf(
+					"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed, %d legacy cached cleaned in %s",
+					pipelineResult.Total, pipelineResult.Downloaded, pipelineResult.Scanned,
+					pipelineResult.Skipped, pipelineResult.Failed, pipelineResult.Cleaned,
+					pipelineResult.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			} else {
+				log.Info(fmt.Sprintf(
+					"server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed in %s",
+					pipelineResult.Total, pipelineResult.Downloaded, pipelineResult.Scanned,
+					pipelineResult.Skipped, pipelineResult.Failed,
+					pipelineResult.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			}
 		}
 
 		for _, fe := range pipelineResult.Errors {
@@ -1135,8 +1153,8 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	}
 
 	// Step 11: CookStyle scanning for git-sourced cookbooks only.
-	// Server cookbooks are now scanned inline during the Step 7b pipeline
-	// (download → scan → delete) so their files don't persist on disk.
+	// Server cookbooks are scanned inline during the Step 7b pipeline
+	// (download → scan, then optional delete).
 	// Git cookbooks live in persistent clones and are rescanned when the
 	// HEAD commit changes. Skipped if the scanner is not configured or no
 	// cookbook directory resolver is set. Non-fatal.
