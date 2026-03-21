@@ -210,6 +210,9 @@ func TestBuildNodeSnapshotFilterQuery_Role(t *testing.T) {
 		Role: "webserver",
 	})
 
+	if !strings.Contains(q, "jsonb_typeof(cn.roles) = 'array'") {
+		t.Errorf("query missing jsonb_typeof guard for roles")
+	}
 	if !strings.Contains(q, "EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles)") {
 		t.Errorf("query missing role EXISTS subquery")
 	}
@@ -365,6 +368,7 @@ func TestBuildNodeSnapshotFilterQuery_AllFilters(t *testing.T) {
 		"LOWER(cn.chef_version) LIKE",
 		"LOWER(cn.policy_name) LIKE",
 		"LOWER(cn.policy_group) LIKE",
+		"jsonb_typeof(cn.roles) = 'array'",
 		"jsonb_array_elements_text(cn.roles)",
 		"cn.is_stale =",
 		"LIMIT",
