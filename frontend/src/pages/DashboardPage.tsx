@@ -87,7 +87,7 @@ function VersionDistributionCard({ organisation }: { organisation?: string }) {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card xl:col-span-2">
+    <div className="card">
       <h3 className="card-header">Chef Client Version Distribution</h3>
       {loading && <LoadingSpinner message="Loading version data…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
