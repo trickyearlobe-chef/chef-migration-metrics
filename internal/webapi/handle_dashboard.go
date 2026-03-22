@@ -811,12 +811,14 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	targetVersions := r.cfg.TargetChefVersions
 
 	type compatSummary struct {
-		TargetChefVersion string  `json:"target_chef_version"`
-		TotalRepos        int     `json:"total_repos"`
-		CompatibleRepos   int     `json:"compatible_repos"`
-		IncompatibleRepos int     `json:"incompatible_repos"`
-		UntestedRepos     int     `json:"untested_repos"`
-		CompatiblePercent float64 `json:"compatible_percent"`
+		TargetChefVersion        string  `json:"target_chef_version"`
+		TotalRepos               int     `json:"total_repos"`
+		CompatibleRepos          int     `json:"compatible_repos"`
+		IncompatibleRepos        int     `json:"incompatible_repos"`
+		UntestedRepos            int     `json:"untested_repos"`
+		UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
+		UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
+		CompatiblePercent        float64 `json:"compatible_percent"`
 	}
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
@@ -846,10 +848,12 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 
 	// Compute compatibility from git repo complexity records.
 	type perVersion struct {
-		total        int
-		compatible   int
-		incompatible int
-		untested     int
+		total               int
+		compatible          int
+		incompatible        int
+		untested            int
+		untestedCloneFailed int
+		untestedPendingScan int
 	}
 	byTV := make(map[string]*perVersion)
 	for _, tv := range targetVersions {
@@ -862,7 +866,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 	seen := make(map[tvName]bool)
 
-	// Load all git repos and build a name-by-ID lookup.
+	// Load all git repos and build a name-by-ID lookup plus clone status map.
 	gitRepos, err := r.db.ListGitRepos(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing git repos for compatibility: %v", err)
@@ -870,8 +874,10 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		return
 	}
 	repoNameByID := make(map[string]string, len(gitRepos))
+	repoCloneStatus := make(map[string]string, len(gitRepos))
 	for _, gr := range gitRepos {
 		repoNameByID[gr.ID] = gr.Name
+		repoCloneStatus[gr.Name] = gr.CloneStatus
 	}
 
 	// Load all git repo complexities.
@@ -908,7 +914,8 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 
 	// Count untested: git repos with no complexity record for a given
-	// target version.
+	// target version. Split into clone-failed vs pending-scan so the
+	// dashboard can explain *why* a repo is untested.
 	for _, gr := range gitRepos {
 		if allowedNames != nil && !allowedNames[gr.Name] {
 			continue
@@ -922,6 +929,11 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 			pv := byTV[tv]
 			pv.total++
 			pv.untested++
+			if gr.CloneStatus == "failed" {
+				pv.untestedCloneFailed++
+			} else {
+				pv.untestedPendingScan++
+			}
 		}
 	}
 
@@ -933,12 +945,14 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 			pct = float64(pv.compatible) / float64(pv.total) * 100
 		}
 		summaries = append(summaries, compatSummary{
-			TargetChefVersion: tv,
-			TotalRepos:        pv.total,
-			CompatibleRepos:   pv.compatible,
-			IncompatibleRepos: pv.incompatible,
-			UntestedRepos:     pv.untested,
-			CompatiblePercent: pct,
+			TargetChefVersion:        tv,
+			TotalRepos:               pv.total,
+			CompatibleRepos:          pv.compatible,
+			IncompatibleRepos:        pv.incompatible,
+			UntestedRepos:            pv.untested,
+			UntestedCloneFailedRepos: pv.untestedCloneFailed,
+			UntestedPendingScanRepos: pv.untestedPendingScan,
+			CompatiblePercent:        pct,
 		})
 	}
 
@@ -994,13 +1008,15 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	targetVersions := r.cfg.TargetChefVersions
 
 	type tkSummary struct {
-		TargetChefVersion string  `json:"target_chef_version"`
-		TotalRepos        int     `json:"total_repos"`
-		PassedRepos       int     `json:"passed_repos"`
-		FailedRepos       int     `json:"failed_repos"`
-		TimedOutRepos     int     `json:"timed_out_repos"`
-		UntestedRepos     int     `json:"untested_repos"`
-		PassedPercent     float64 `json:"passed_percent"`
+		TargetChefVersion        string  `json:"target_chef_version"`
+		TotalRepos               int     `json:"total_repos"`
+		PassedRepos              int     `json:"passed_repos"`
+		FailedRepos              int     `json:"failed_repos"`
+		TimedOutRepos            int     `json:"timed_out_repos"`
+		UntestedRepos            int     `json:"untested_repos"`
+		UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
+		UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
+		PassedPercent            float64 `json:"passed_percent"`
 	}
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
@@ -1030,11 +1046,13 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 
 	// Tally per-target-version counts.
 	type perVersion struct {
-		total    int
-		passed   int
-		failed   int
-		timedOut int
-		untested int
+		total               int
+		passed              int
+		failed              int
+		timedOut            int
+		untested            int
+		untestedCloneFailed int
+		untestedPendingScan int
 	}
 	byTV := make(map[string]*perVersion)
 	for _, tv := range targetVersions {
@@ -1096,7 +1114,8 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 
 	// Count untested: git repos with no TK result for a given target
-	// version.
+	// version. Split into clone-failed vs pending-scan so the dashboard
+	// can explain *why* a repo is untested.
 	for _, gr := range gitRepos {
 		if allowedNames != nil && !allowedNames[gr.Name] {
 			continue
@@ -1110,6 +1129,11 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 			pv := byTV[tv]
 			pv.total++
 			pv.untested++
+			if gr.CloneStatus == "failed" {
+				pv.untestedCloneFailed++
+			} else {
+				pv.untestedPendingScan++
+			}
 		}
 	}
 
@@ -1121,13 +1145,15 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 			pct = float64(pv.passed) / float64(pv.total) * 100
 		}
 		summaries = append(summaries, tkSummary{
-			TargetChefVersion: tv,
-			TotalRepos:        pv.total,
-			PassedRepos:       pv.passed,
-			FailedRepos:       pv.failed,
-			TimedOutRepos:     pv.timedOut,
-			UntestedRepos:     pv.untested,
-			PassedPercent:     pct,
+			TargetChefVersion:        tv,
+			TotalRepos:               pv.total,
+			PassedRepos:              pv.passed,
+			FailedRepos:              pv.failed,
+			TimedOutRepos:            pv.timedOut,
+			UntestedRepos:            pv.untested,
+			UntestedCloneFailedRepos: pv.untestedCloneFailed,
+			UntestedPendingScanRepos: pv.untestedPendingScan,
+			PassedPercent:            pct,
 		})
 	}
 
