@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { fetchNodeDisks } from "../api";
 import type { NodeDiskDetailResponse, DiskEntry } from "../types";
@@ -50,6 +50,82 @@ function hasInodeData(disks: DiskEntry[]): boolean {
 function inodePressure(disk: DiskEntry): boolean {
   if (disk.inodes_percent_used == null) return false;
   return disk.inodes_percent_used > 30;
+}
+
+// ---------------------------------------------------------------------------
+// Sort types and helpers
+// ---------------------------------------------------------------------------
+
+type SortField =
+  | "mount"
+  | "device"
+  | "fs_type"
+  | "kb_size"
+  | "kb_used"
+  | "kb_available"
+  | "percent_used"
+  | "drive_type"
+  | "encryption_status";
+
+type SortOrder = "asc" | "desc";
+
+function compareDiskEntries(a: DiskEntry, b: DiskEntry, field: SortField): number {
+  switch (field) {
+    case "mount":
+      return a.mount.localeCompare(b.mount);
+    case "device":
+      return a.device.localeCompare(b.device);
+    case "fs_type":
+      return a.fs_type.localeCompare(b.fs_type);
+    case "kb_size":
+      return a.kb_size - b.kb_size;
+    case "kb_used":
+      return a.kb_used - b.kb_used;
+    case "kb_available":
+      return a.kb_available - b.kb_available;
+    case "percent_used":
+      return a.percent_used - b.percent_used;
+    case "drive_type":
+      return (a.drive_type ?? "").localeCompare(b.drive_type ?? "");
+    case "encryption_status":
+      return (a.encryption_status ?? "").localeCompare(b.encryption_status ?? "");
+    default:
+      return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sortable column header
+// ---------------------------------------------------------------------------
+
+function SortableColHeader({
+  label,
+  field,
+  currentField,
+  currentOrder,
+  onSort,
+  className,
+}: {
+  label: string;
+  field: SortField;
+  currentField: SortField;
+  currentOrder: SortOrder;
+  onSort: (field: SortField) => void;
+  className?: string;
+}) {
+  const isActive = field === currentField;
+  const arrow = !isActive ? " ↕" : currentOrder === "asc" ? " ↑" : " ↓";
+  return (
+    <th
+      className={
+        "cursor-pointer select-none hover:text-gray-700 " + (className ?? "")
+      }
+      onClick={() => onSort(field)}
+    >
+      {label}
+      <span className="text-xs text-blue-500">{arrow}</span>
+    </th>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +246,8 @@ export function NodeDiskDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [sortField, setSortField] = useState<SortField>("mount");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
 
   const load = useCallback(() => {
     if (!org || !name) return;
@@ -185,13 +263,30 @@ export function NodeDiskDetailPage() {
     load();
   }, [load]);
 
+  const handleSort = useCallback(
+    (field: SortField) => {
+      if (field === sortField) {
+        setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+      } else {
+        setSortField(field);
+        setSortOrder("asc");
+      }
+    },
+    [sortField],
+  );
+
+  const disks = useMemo(() => {
+    if (!data) return [];
+    const sorted = [...data.disks].sort((a, b) => {
+      const cmp = compareDiskEntries(a, b, sortField);
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [data, sortField, sortOrder]);
+
   if (loading && !data) return <LoadingSpinner message="Loading filesystem data…" />;
   if (error && !data) return <ErrorAlert message={error} onRetry={load} />;
   if (!data) return null;
-
-  const disks = [...data.disks].sort((a, b) =>
-    a.mount.localeCompare(b.mount),
-  );
 
   const showWindows = hasWindowsFields(disks);
   const showInodes = hasInodeData(disks);
@@ -276,17 +371,17 @@ export function NodeDiskDetailPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Mount Point</th>
-                    <th>Device</th>
-                    <th>FS Type</th>
-                    <th>Size</th>
-                    <th>Used</th>
-                    <th>Available</th>
-                    <th>% Used</th>
+                    <SortableColHeader label="Mount Point" field="mount" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                    <SortableColHeader label="Device" field="device" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                    <SortableColHeader label="FS Type" field="fs_type" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                    <SortableColHeader label="Size" field="kb_size" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                    <SortableColHeader label="Used" field="kb_used" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                    <SortableColHeader label="Available" field="kb_available" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                    <SortableColHeader label="% Used" field="percent_used" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
                     {showWindows && (
                       <>
-                        <th>Drive Type</th>
-                        <th>Encryption</th>
+                        <SortableColHeader label="Drive Type" field="drive_type" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                        <SortableColHeader label="Encryption" field="encryption_status" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
                       </>
                     )}
                   </tr>

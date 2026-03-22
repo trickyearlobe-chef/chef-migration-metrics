@@ -561,6 +561,10 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string) datastore
 		Role:            q.Get("role"),
 	}
 
+	// Sort parameters.
+	f.Sort = q.Get("sort")
+	f.SortOrder = q.Get("order")
+
 	// Map the string "true"/"false" stale parameter to *bool.
 	switch q.Get("stale") {
 	case "true":

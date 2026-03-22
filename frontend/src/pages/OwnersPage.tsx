@@ -252,6 +252,14 @@ export function OwnersPage() {
     }
   };
 
+  // Count active filters for the clear button.
+  const activeFilterCount = [search, ownerType].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setSearch("");
+    setOwnerType("");
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -393,6 +401,15 @@ export function OwnersPage() {
             <option value="custom">Custom</option>
           </select>
         </div>
+        {activeFilterCount > 0 && (
+          <button
+            onClick={clearFilters}
+            className="mb-0.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900"
+            title="Clear all filters"
+          >
+            Clear ({activeFilterCount})
+          </button>
+        )}
       </div>
 
       {/* Legend for readiness bar */}
