@@ -166,6 +166,7 @@ export interface CookbookFilterQuery extends PaginationQuery {
   active?: string; // "true" | "false" | ""
   name?: string;
   compatibility?: string; // "compatible" | "incompatible" | "untested" | ""
+  download_status?: string; // "ok" | "pending" | "failed" | ""
   target_chef_version?: string;
   sort?: string;
   order?: "asc" | "desc";
