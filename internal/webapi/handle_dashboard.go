@@ -674,9 +674,9 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 	seen := make(map[tvName]bool)
 
 	for _, org := range orgs {
-		cookstyleResults, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		cookstyleResults, err := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.ID)
 		if err != nil {
-			r.logf("WARN", "listing server cookbook complexities for org %s: %v", org.Name, err)
+			r.logf("WARN", "listing server cookbook cookstyle results for org %s: %v", org.Name, err)
 			continue
 		}
 
@@ -691,37 +691,35 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 			cookbookNameByID[sc.ID] = sc.Name
 		}
 
-		// Derive compatibility from complexity records: a cookbook with no
-		// errors and no deprecations is considered compatible.
-		for _, cc := range cookstyleResults {
-			cbName := cookbookNameByID[cc.ServerCookbookID]
+		// Derive compatibility directly from CookStyle scan results.
+		// A cookbook that passed CookStyle (no error/fatal offenses) is
+		// compatible; one that failed is incompatible.
+		for _, cs := range cookstyleResults {
+			cbName := cookbookNameByID[cs.ServerCookbookID]
 			if cbName == "" {
 				continue
 			}
 			if allowedNames != nil && !allowedNames[cbName] {
 				continue
 			}
-			pv, ok := byTV[cc.TargetChefVersion]
+			pv, ok := byTV[cs.TargetChefVersion]
 			if !ok {
 				continue
 			}
-			key := tvName{tv: cc.TargetChefVersion, name: cbName}
+			key := tvName{tv: cs.TargetChefVersion, name: cbName}
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
 			pv.total++
-			// A cookbook with no error/fatal offenses is compatible.
-			// Deprecation warnings alone do not make a cookbook incompatible,
-			// matching the CookStyle passed logic (isErrorOrFatal only).
-			if cc.ErrorCount == 0 {
+			if cs.Passed {
 				pv.compatible++
 			} else {
 				pv.incompatible++
 			}
 		}
 
-		// Count untested: server cookbooks with no complexity record for a
+		// Count untested: server cookbooks with no cookstyle result for a
 		// given target version.
 		for _, sc := range serverCookbooks {
 			if allowedNames != nil && !allowedNames[sc.Name] {
