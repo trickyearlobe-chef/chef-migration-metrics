@@ -460,6 +460,7 @@ export interface GitRepoListItem {
   last_fetched_at?: string;
   compatibility?: CompatibilityStatus;
   target_chef_version?: string;
+  tk_status?: string;
 }
 
 export type GitRepoListResponse = PaginatedResponse<GitRepoListItem>;

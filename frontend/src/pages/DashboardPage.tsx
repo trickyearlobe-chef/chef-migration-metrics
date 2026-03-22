@@ -573,24 +573,25 @@ function TestKitchenCompatibilityCard({ organisation }: { organisation?: string 
                   {tk.total_repos > 0 && (
                     <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
                       <Link
-                        to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        to={`/git-repos?tk_status=passed&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                         className="bg-green-500 transition-all duration-500 hover:bg-green-600"
                         style={{ width: `${(tk.passed_repos / tk.total_repos) * 100}%` }}
                         title={`Passed: ${tk.passed_repos}`}
                       />
                       <Link
-                        to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        to={`/git-repos?tk_status=failed&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                         className="bg-red-400 transition-all duration-500 hover:bg-red-500"
                         style={{ width: `${(tk.failed_repos / tk.total_repos) * 100}%` }}
                         title={`Failed: ${tk.failed_repos}`}
                       />
-                      <div
-                        className="bg-amber-400 transition-all duration-500"
+                      <Link
+                        to={`/git-repos?tk_status=timed_out&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="bg-amber-400 transition-all duration-500 hover:bg-amber-500"
                         style={{ width: `${(tk.timed_out_repos / tk.total_repos) * 100}%` }}
                         title={`Timed out: ${tk.timed_out_repos}`}
                       />
                       <Link
-                        to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        to={`/git-repos?tk_status=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                         className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
                         style={{ width: `${(tk.untested_repos / tk.total_repos) * 100}%` }}
                         title={`Untested: ${tk.untested_repos}`}
@@ -599,25 +600,28 @@ function TestKitchenCompatibilityCard({ organisation }: { organisation?: string 
                   )}
                   <div className="flex flex-wrap gap-3 text-xs">
                     <Link
-                      to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      to={`/git-repos?tk_status=passed&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
                       Passed: {tk.passed_repos}
                     </Link>
                     <Link
-                      to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      to={`/git-repos?tk_status=failed&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
                       Failed: {tk.failed_repos}
                     </Link>
-                    <span className="flex items-center gap-1">
+                    <Link
+                      to={`/git-repos?tk_status=timed_out&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
                       Timed out: {tk.timed_out_repos}
-                    </span>
+                    </Link>
                     <Link
-                      to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                      to={`/git-repos?tk_status=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />

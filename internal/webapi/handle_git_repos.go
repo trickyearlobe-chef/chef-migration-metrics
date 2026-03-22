@@ -18,10 +18,12 @@ import (
 //
 // GET /api/v1/git-repos
 //
-// Returns all git repos, optionally filtered by name (substring match)
-// and/or compatibility status. Each repo includes a compatibility field
-// ("compatible", "incompatible", or "untested") computed from git repo
-// complexity records for the specified target Chef version.
+// Returns all git repos, optionally filtered by name (substring match),
+// compatibility status, and/or Test Kitchen status. Each repo includes a
+// compatibility field ("compatible", "incompatible", or "untested") computed
+// from git repo complexity records and a tk_status field ("passed",
+// "failed", "timed_out", or "untested") computed from Test Kitchen results,
+// both for the specified target Chef version.
 //
 // Supports pagination via page/per_page query parameters.
 //
@@ -31,6 +33,8 @@ import (
 //     (defaults to the first configured target version)
 //   - compatibility: filter by status — "compatible", "incompatible",
 //     "untested", or "" (no filter)
+//   - tk_status: filter by Test Kitchen status — "passed", "failed",
+//     "timed_out", "untested", or "" (no filter)
 //   - page: page number (default 1)
 //   - per_page: items per page (default 25)
 //
@@ -64,13 +68,15 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		targetChefVersion = r.defaultTargetVersion()
 	}
 
+	// Build repo-name-by-ID lookup used by both compatibility and TK maps.
+	repoNameByID := make(map[string]string, len(repos))
+	for _, gr := range repos {
+		repoNameByID[gr.ID] = gr.Name
+	}
+
 	// Build compatibility map from git repo complexity records.
 	compatByName := make(map[string]string)
 	if targetChefVersion != "" {
-		repoNameByID := make(map[string]string, len(repos))
-		for _, gr := range repos {
-			repoNameByID[gr.ID] = gr.Name
-		}
 		allComplexities, cxErr := r.db.ListAllGitRepoComplexities(ctx)
 		if cxErr != nil {
 			r.logf("WARN", "listing git repo complexities for compatibility: %v", cxErr)
@@ -90,6 +96,36 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 					compatByName[name] = "compatible"
 				} else {
 					compatByName[name] = "incompatible"
+				}
+			}
+		}
+	}
+
+	// Build Test Kitchen status map from TK results.
+	tkStatusByName := make(map[string]string)
+	if targetChefVersion != "" {
+		allTKResults, tkErr := r.db.ListAllGitRepoTestKitchenResults(ctx)
+		if tkErr != nil {
+			r.logf("WARN", "listing git repo TK results for tk_status: %v", tkErr)
+		} else {
+			for _, tk := range allTKResults {
+				if tk.TargetChefVersion != targetChefVersion {
+					continue
+				}
+				name := repoNameByID[tk.GitRepoID]
+				if name == "" {
+					continue
+				}
+				if _, seen := tkStatusByName[name]; seen {
+					continue
+				}
+				switch {
+				case tk.TimedOut:
+					tkStatusByName[name] = "timed_out"
+				case tk.Compatible:
+					tkStatusByName[name] = "passed"
+				default:
+					tkStatusByName[name] = "failed"
 				}
 			}
 		}
@@ -123,6 +159,22 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		repos = filtered
 	}
 
+	// Apply optional Test Kitchen status filter.
+	tkFilter := queryString(req, "tk_status", "")
+	if tkFilter != "" {
+		filtered := repos[:0]
+		for _, gr := range repos {
+			t := tkStatusByName[gr.Name]
+			if t == "" {
+				t = "untested"
+			}
+			if t == tkFilter {
+				filtered = append(filtered, gr)
+			}
+		}
+		repos = filtered
+	}
+
 	// Paginate.
 	pg := ParsePagination(req)
 	total := len(repos)
@@ -144,6 +196,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		HasTestSuite      bool   `json:"has_test_suite"`
 		LastFetchedAt     string `json:"last_fetched_at,omitempty"`
 		Compatibility     string `json:"compatibility"`
+		TKStatus          string `json:"tk_status"`
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
@@ -153,6 +206,10 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		if c == "" {
 			c = "untested"
 		}
+		tkSt := tkStatusByName[gr.Name]
+		if tkSt == "" {
+			tkSt = "untested"
+		}
 		resp := gitRepoResp{
 			ID:                gr.ID,
 			Name:              gr.Name,
@@ -161,6 +218,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			DefaultBranch:     gr.DefaultBranch,
 			HasTestSuite:      gr.HasTestSuite,
 			Compatibility:     c,
+			TKStatus:          tkSt,
 			TargetChefVersion: targetChefVersion,
 		}
 		if !gr.LastFetchedAt.IsZero() {
