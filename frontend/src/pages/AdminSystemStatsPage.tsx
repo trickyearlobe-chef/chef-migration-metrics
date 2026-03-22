@@ -189,8 +189,17 @@ export function AdminSystemStatsPage() {
             </div>
           </div>
 
-          {/* ---- Go runtime ---- */}
-          <div className="grid gap-6 lg:grid-cols-3">
+          {/* ---- Database & runtime ---- */}
+          <div className="grid gap-6 lg:grid-cols-4">
+            <div className="card">
+              <h3 className="card-header text-sm">Database Size</h3>
+              <span className="text-2xl font-bold text-gray-700">
+                {data.database_size_bytes > 0 ? formatBytes(data.database_size_bytes) : "N/A"}
+              </span>
+              {data.database_size_bytes > 0 && (
+                <p className="mt-1 text-xs text-gray-400">PostgreSQL</p>
+              )}
+            </div>
             <div className="card">
               <h3 className="card-header text-sm">Go Heap</h3>
               <span className="text-2xl font-bold text-gray-700">{formatBytes(data.go_heap_bytes)}</span>

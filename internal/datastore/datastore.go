@@ -461,3 +461,21 @@ func normaliseJSON(b []byte) json.RawMessage {
 	}
 	return json.RawMessage(b)
 }
+
+// ---------------------------------------------------------------------------
+// Database size
+// ---------------------------------------------------------------------------
+
+// DatabaseSize returns the size of the current database in bytes using
+// PostgreSQL's pg_database_size() function. This is useful for monitoring
+// database growth on the admin System Stats page.
+func (db *DB) DatabaseSize(ctx context.Context) (int64, error) {
+	var size int64
+	err := db.pool.QueryRowContext(ctx,
+		`SELECT pg_database_size(current_database())`,
+	).Scan(&size)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: querying database size: %w", err)
+	}
+	return size, nil
+}

@@ -272,6 +272,8 @@ export interface SystemHealthResponse {
   go_heap_bytes: number;
   go_goroutines: number;
 
+  database_size_bytes: number;
+
   alerts: SystemHealthAlert[];
   collection_paused: boolean;
   thresholds: SystemHealthThresholds;

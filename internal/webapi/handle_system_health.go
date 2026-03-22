@@ -4,7 +4,9 @@
 package webapi
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/syshealth"
 )
@@ -30,6 +32,17 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 	}
 
 	stats := syshealth.Snapshot(sh.DiskPaths, th)
+
+	// Query database size (best-effort — don't fail the whole endpoint).
+	var dbSizeBytes int64
+	if r.db != nil {
+		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+		defer cancel()
+		size, err := r.db.DatabaseSize(ctx)
+		if err == nil {
+			dbSizeBytes = size
+		}
+	}
 
 	// Determine whether the collection circuit breaker would trip.
 	collectionPaused := sh.IsPauseCollectionOnCritical() && syshealth.ShouldPauseCollection(stats)
@@ -69,6 +82,8 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 
 		"go_heap_bytes": stats.GoHeapBytes,
 		"go_goroutines": stats.GoGoroutines,
+
+		"database_size_bytes": dbSizeBytes,
 
 		"alerts":            alerts,
 		"collection_paused": collectionPaused,

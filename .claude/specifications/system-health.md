@@ -32,6 +32,7 @@ data collection when the host is under resource pressure.
 | Memory total        | `/proc/meminfo` or `syscall`   | bytes      |
 | Memory available    | `/proc/meminfo` or `syscall`   | bytes      |
 | Memory used percent | computed                       | float64 %  |
+| Database size       | `pg_database_size(current_database())` | bytes |
 | Go heap in-use      | `runtime.ReadMemStats`         | bytes      |
 | Go goroutine count  | `runtime.NumGoroutine()`       | int        |
 | Uptime              | `time.Since(startTime)`        | duration   |
@@ -269,6 +270,8 @@ Admin-only endpoint. Returns the current system health snapshot.
   "go_heap_bytes": 52428800,
   "go_goroutines": 42,
 
+  "database_size_bytes": 536870912,
+
   "alerts": [
     {
       "level": "warning",
@@ -291,8 +294,18 @@ Admin-only endpoint. Returns the current system health snapshot.
 
 The handler calls `syshealth.Snapshot()`, adds `collection_paused` and
 `thresholds` from config, and returns the combined response. The `disks`
-and `alerts` arrays are guaranteed to be `[]` (never `null`) in JSON. No
-database access is required.
+and `alerts` arrays are guaranteed to be `[]` (never `null`) in JSON.
+
+### Database size
+
+The handler also queries `pg_database_size(current_database())` via the
+`DataStore.DatabaseSize()` method and includes the result as
+`database_size_bytes`. This works for both local and remote PostgreSQL
+instances since it queries through the existing database connection.
+
+The query is best-effort: if the database is unreachable or the query
+fails, `database_size_bytes` falls back to `0` and the endpoint still
+returns 200. If no `DataStore` is configured (nil), the field is `0`.
 
 ## Collection Circuit Breaker
 
@@ -345,7 +358,15 @@ The page auto-refreshes every 10 seconds via `setInterval`.
    - Grid adapts: 1 column for single disk, 2 columns for two, 3 for
      three or more
 
-2. **CPU Load**
+2. **CPU Load** and **Memory** — two cards side by side
+
+**Database & runtime section** — four cards in a row:
+- Database size (from `pg_database_size`, shows "N/A" when unavailable)
+- Go heap usage
+- Goroutine count
+- Uptime
+
+3. **CPU Load**
    - Load average (1 min) displayed prominently
    - "X.XX per CPU" subtitle
    - CPU count shown below
@@ -356,10 +377,7 @@ The page auto-refreshes every 10 seconds via `setInterval`.
    - "X.X GB available of Y.Y GB" subtitle
    - Colour shifts based on thresholds
 
-**Runtime section** — smaller cards below:
-- Go heap usage
-- Goroutine count
-- Uptime
+
 
 **Thresholds section** — collapsible panel showing the configured
 warning/critical thresholds for each metric.
@@ -396,6 +414,8 @@ interface SystemHealthResponse {
 
   go_heap_bytes: number;
   go_goroutines: number;
+
+  database_size_bytes: number;
 
   alerts: SystemHealthAlert[];
   collection_paused: boolean;
