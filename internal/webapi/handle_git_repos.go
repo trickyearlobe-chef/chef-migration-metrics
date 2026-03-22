@@ -21,9 +21,9 @@ import (
 // GET /api/v1/git-repos
 //
 // Returns all git repos, optionally filtered by name (substring match),
-// compatibility status, and/or Test Kitchen status. Each repo includes a
-// compatibility field ("compatible", "incompatible", or "untested") computed
-// from git repo complexity records and a tk_status field ("passed",
+// compatibility status, Test Kitchen status, and/or clone status. Each repo
+// includes a compatibility field ("compatible", "incompatible", or "untested")
+// computed from git repo complexity records and a tk_status field ("passed",
 // "failed", "timed_out", or "untested") computed from Test Kitchen results,
 // both for the specified target Chef version.
 //
@@ -37,6 +37,8 @@ import (
 //     "untested", or "" (no filter)
 //   - tk_status: filter by Test Kitchen status — "passed", "failed",
 //     "timed_out", "untested", or "" (no filter)
+//   - clone_status: filter by clone/fetch status — "ok", "failed",
+//     "pending", or "" (no filter)
 //   - page: page number (default 1)
 //   - per_page: items per page (default 25)
 //
@@ -171,6 +173,18 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 				t = "untested"
 			}
 			if t == tkFilter {
+				filtered = append(filtered, gr)
+			}
+		}
+		repos = filtered
+	}
+
+	// Apply optional clone status filter (ok, failed, pending).
+	cloneStatusFilter := queryString(req, "clone_status", "")
+	if cloneStatusFilter != "" {
+		filtered := repos[:0]
+		for _, gr := range repos {
+			if gr.CloneStatus == cloneStatusFilter {
 				filtered = append(filtered, gr)
 			}
 		}
