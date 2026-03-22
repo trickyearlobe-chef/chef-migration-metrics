@@ -201,6 +201,8 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		HeadCommitSHA     string `json:"head_commit_sha,omitempty"`
 		DefaultBranch     string `json:"default_branch,omitempty"`
 		HasTestSuite      bool   `json:"has_test_suite"`
+		CloneStatus       string `json:"clone_status"`
+		CloneError        string `json:"clone_error,omitempty"`
 		LastFetchedAt     string `json:"last_fetched_at,omitempty"`
 		Compatibility     string `json:"compatibility"`
 		TKStatus          string `json:"tk_status"`
@@ -224,6 +226,8 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			HeadCommitSHA:     gr.HeadCommitSHA,
 			DefaultBranch:     gr.DefaultBranch,
 			HasTestSuite:      gr.HasTestSuite,
+			CloneStatus:       gr.CloneStatus,
+			CloneError:        gr.CloneError,
 			Compatibility:     c,
 			TKStatus:          tkSt,
 			TargetChefVersion: targetChefVersion,

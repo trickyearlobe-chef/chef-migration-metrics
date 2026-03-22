@@ -571,16 +571,25 @@ func fetchGitCookbooks(
 				break
 			}
 
-			// If all base URLs failed, count a single failure for the cookbook.
+			// If all base URLs failed, count a single failure for the cookbook
+			// and persist the failure in the database so it appears in the UI.
 			if lastErr != nil {
+				failedURL := trimmedURLs[len(trimmedURLs)-1] + "/" + cbName
 				mu.Lock()
 				result.Failed++
 				result.Errors = append(result.Errors, GitFetchError{
 					CookbookName: cbName,
-					RepoURL:      trimmedURLs[len(trimmedURLs)-1] + "/" + cbName,
+					RepoURL:      failedURL,
 					Err:          lastErr,
 				})
 				mu.Unlock()
+
+				// Upsert a failed row so the repo is visible in the UI
+				// with clone_status='failed' and the error message.
+				_, upsertErr := db.UpsertGitRepoFailed(ctx, cbName, failedURL, lastErr.Error())
+				if upsertErr != nil {
+					log.Warn(fmt.Sprintf("git cookbook failed-upsert for %s: %v", cbName, upsertErr))
+				}
 			}
 		}(cbName)
 	}

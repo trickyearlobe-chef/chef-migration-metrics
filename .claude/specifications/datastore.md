@@ -273,6 +273,8 @@ Stores metadata about each known git-sourced repository. A git repo is uniquely 
 | `head_commit_sha` | TEXT | Yes | Latest HEAD commit SHA of the default branch |
 | `default_branch` | TEXT | Yes | Detected default branch name, e.g. `main` or `master` |
 | `has_test_suite` | BOOLEAN | No | Whether the repository contains a Test Kitchen configuration |
+| `clone_status` | TEXT | No | Clone status: `ok` (cloned/pulled successfully), `failed` (clone attempted but failed from all configured base URLs), or `pending` (not yet attempted). Default: `pending`. Repos with `failed` status are excluded from CookStyle and compatibility analysis but still appear in the UI with a failure indicator. Repos with `failed` or `pending` status are reattempted on the next collection run. |
+| `clone_error` | TEXT | Yes | Human-readable error detail when `clone_status = 'failed'`. Includes the error message from the last attempted base URL. Null when status is `ok` or `pending`. |
 | `last_fetched_at` | TIMESTAMPTZ | Yes | When the repository was last fetched or pulled |
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
 | `updated_at` | TIMESTAMPTZ | No | Last update time |
@@ -280,9 +282,13 @@ Stores metadata about each known git-sourced repository. A git repo is uniquely 
 **Unique constraints:**
 - `(name, git_repo_url)`
 
+**Check constraints:**
+- `chk_gr_clone_status CHECK (clone_status IN ('ok', 'failed', 'pending'))`
+
 **Indexes:**
 - `idx_git_repos_name` on `name`
 - `idx_git_repos_git_repo_url` on `git_repo_url`
+- `idx_git_repos_clone_status` on `clone_status`
 
 ---
 
