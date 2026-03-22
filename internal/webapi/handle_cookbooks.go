@@ -13,16 +13,13 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
-// cookbookSummary is a unified view used for the cookbook list endpoint.
-// It can represent either a ServerCookbook or a GitRepo so the API can
-// present a single collapsed-by-name list.
+// cookbookSummary represents a server cookbook entry on the cookbook list page.
+// Git repos have their own dedicated page and are not included here.
 type cookbookSummary struct {
 	ID              string
 	OrganisationID  string
 	Name            string
 	Version         string
-	Source          string // "chef_server" or "git"
-	HasTestSuite    bool
 	IsActive        bool
 	IsStaleCookbook bool
 	DownloadStatus  string
@@ -36,8 +33,6 @@ func serverCookbookToSummary(sc datastore.ServerCookbook) cookbookSummary {
 		OrganisationID:  sc.OrganisationID,
 		Name:            sc.Name,
 		Version:         sc.Version,
-		Source:          "chef_server",
-		HasTestSuite:    false,
 		IsActive:        sc.IsActive,
 		IsStaleCookbook: sc.IsStaleCookbook,
 		DownloadStatus:  sc.DownloadStatus,
@@ -45,21 +40,10 @@ func serverCookbookToSummary(sc datastore.ServerCookbook) cookbookSummary {
 	}
 }
 
-func gitRepoToSummary(gr datastore.GitRepo) cookbookSummary {
-	return cookbookSummary{
-		ID:             gr.ID,
-		Name:           gr.Name,
-		Source:         "git",
-		HasTestSuite:   gr.HasTestSuite,
-		IsActive:       true,
-		DownloadStatus: "ok",
-	}
-}
-
-// handleCookbooks handles GET /api/v1/cookbooks — lists all cookbooks across
-// all organisations, optionally filtered by query parameters. Cookbooks are
-// collapsed by name so each unique cookbook name appears once with a total
-// version count across all sources (git and chef_server).
+// handleCookbooks handles GET /api/v1/cookbooks — lists all server cookbooks
+// across all organisations, optionally filtered by query parameters. Cookbooks
+// are collapsed by name so each unique cookbook name appears once with a total
+// version count. Git repos have their own dedicated list page.
 func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -102,18 +86,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Collect git-sourced cookbooks first so they become the preferred
-	// representative entry when collapsing by name.
 	var allCookbooks []cookbookSummary
-	gitRepos, err := r.db.ListGitRepos(ctx)
-	if err != nil {
-		r.logf("WARN", "listing git repos: %v", err)
-	} else {
-		for _, gr := range gitRepos {
-			allCookbooks = append(allCookbooks, gitRepoToSummary(gr))
-		}
-	}
-
 	for _, org := range orgs {
 		cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
 		if err != nil {
@@ -140,7 +113,6 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	compatByName := make(map[string]string)
 	if targetChefVersion != "" {
-		// Server cookbook compatibility from cookstyle results.
 		for _, org := range orgs {
 			csResults, cErr := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.ID)
 			if cErr != nil {
@@ -173,34 +145,6 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 					compatByName[cbName] = "incompatible"
 				}
 			}
-		}
-
-		// Git repo compatibility from complexity records.
-		allComplexities, cxErr := r.db.ListAllGitRepoComplexities(ctx)
-		if cxErr == nil {
-			repoNameByID := make(map[string]string)
-			for _, gr := range gitRepos {
-				repoNameByID[gr.ID] = gr.Name
-			}
-			for _, cc := range allComplexities {
-				if cc.TargetChefVersion != targetChefVersion {
-					continue
-				}
-				name := repoNameByID[cc.GitRepoID]
-				if name == "" {
-					continue
-				}
-				if _, seen := compatByName[name]; seen {
-					continue
-				}
-				if cc.ErrorCount == 0 {
-					compatByName[name] = "compatible"
-				} else {
-					compatByName[name] = "incompatible"
-				}
-			}
-		} else {
-			r.logf("WARN", "listing git repo complexities: %v", cxErr)
 		}
 	}
 
@@ -427,27 +371,16 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 // Helpers
 // ---------------------------------------------------------------------------
 
-// collapseCookbookSummaries groups all cookbook summaries by name regardless of
-// source, keeping only the first occurrence of each name as the representative
-// entry while counting every version. Because git-sourced entries are
-// appended to the slice before chef_server ones, the git entry is
-// naturally preferred as the representative when both exist.
+// collapseCookbookSummaries groups server cookbook summaries by name, keeping
+// only the first occurrence of each name as the representative entry while
+// counting every version.
 func collapseCookbookSummaries(cookbooks []cookbookSummary) ([]cookbookSummary, map[string]int) {
 	versionCounts := make(map[string]int)
 	seen := make(map[string]bool)
 	collapsed := make([]cookbookSummary, 0, len(cookbooks))
 
-	// First pass: count server cookbook versions per cookbook name.
-	// Git repos are not versioned artifacts, so they are excluded from the
-	// version count to avoid inflating numbers on the list page.
 	for _, cb := range cookbooks {
-		if cb.Source == "chef_server" {
-			versionCounts[cb.Name]++
-		}
-	}
-
-	// Second pass: keep only the first occurrence of each name.
-	for _, cb := range cookbooks {
+		versionCounts[cb.Name]++
 		if seen[cb.Name] {
 			continue
 		}

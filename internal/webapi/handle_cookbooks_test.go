@@ -20,8 +20,8 @@ import (
 
 func TestFilterCookbooks_NoFilters(t *testing.T) {
 	cookbooks := []cookbookSummary{
-		{Name: "apt", Source: "chef_server", IsActive: true},
-		{Name: "nginx", Source: "git", IsActive: false},
+		{Name: "apt", IsActive: true},
+		{Name: "nginx", IsActive: false},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks", nil)
 	result := filterCookbookSummaries(req, cookbooks)
@@ -65,9 +65,9 @@ func TestFilterCookbooks_ByActiveFalse(t *testing.T) {
 
 func TestFilterCookbooks_ByName(t *testing.T) {
 	cookbooks := []cookbookSummary{
-		{Name: "apt", Source: "chef_server"},
-		{Name: "nginx", Source: "git"},
-		{Name: "apt", Source: "git"},
+		{Name: "apt", Version: "1.0.0"},
+		{Name: "nginx", Version: "1.0.0"},
+		{Name: "apt", Version: "2.0.0"},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks?name=apt", nil)
 	result := filterCookbookSummaries(req, cookbooks)
@@ -153,10 +153,10 @@ func TestFilterCookbooks_NoMatch(t *testing.T) {
 
 func TestCollapseCookbooks_MultipleVersions(t *testing.T) {
 	cookbooks := []cookbookSummary{
-		{ID: "cb-1", Name: "apt", Version: "1.0.0", Source: "chef_server"},
-		{ID: "cb-2", Name: "apt", Version: "2.0.0", Source: "chef_server"},
-		{ID: "cb-3", Name: "apt", Version: "3.0.0", Source: "chef_server"},
-		{ID: "cb-4", Name: "nginx", Version: "1.0.0", Source: "chef_server"},
+		{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+		{ID: "cb-2", Name: "apt", Version: "2.0.0"},
+		{ID: "cb-3", Name: "apt", Version: "3.0.0"},
+		{ID: "cb-4", Name: "nginx", Version: "1.0.0"},
 	}
 	collapsed, counts := collapseCookbookSummaries(cookbooks)
 	if len(collapsed) != 2 {
@@ -176,24 +176,21 @@ func TestCollapseCookbooks_MultipleVersions(t *testing.T) {
 	}
 }
 
-func TestCollapseCookbooks_GitAndChefServerMerged(t *testing.T) {
-	// Git entry comes first so it becomes the representative.
+func TestCollapseCookbooks_MultipleNames(t *testing.T) {
 	cookbooks := []cookbookSummary{
-		{ID: "cb-1", Name: "myapp", Version: "1.0.0", Source: "git"},
-		{ID: "cb-2", Name: "myapp", Version: "2.0.0", Source: "chef_server"},
-		{ID: "cb-3", Name: "myapp", Version: "3.0.0", Source: "chef_server"},
+		{ID: "cb-1", Name: "myapp", Version: "1.0.0"},
+		{ID: "cb-2", Name: "myapp", Version: "2.0.0"},
+		{ID: "cb-3", Name: "myapp", Version: "3.0.0"},
 	}
 	collapsed, counts := collapseCookbookSummaries(cookbooks)
-	// All three entries of myapp collapse into one row.
 	if len(collapsed) != 1 {
 		t.Fatalf("expected 1 collapsed cookbook, got %d", len(collapsed))
 	}
-	if collapsed[0].Source != "git" || collapsed[0].ID != "cb-1" {
-		t.Errorf("representative: source=%q id=%q, want git/cb-1", collapsed[0].Source, collapsed[0].ID)
+	if collapsed[0].ID != "cb-1" {
+		t.Errorf("representative: id=%q, want cb-1", collapsed[0].ID)
 	}
-	// Version count only includes chef_server entries (2), not the git entry.
-	if counts["myapp"] != 2 {
-		t.Errorf("myapp version count = %d, want 2", counts["myapp"])
+	if counts["myapp"] != 3 {
+		t.Errorf("myapp version count = %d, want 3", counts["myapp"])
 	}
 }
 
@@ -207,21 +204,20 @@ func TestCollapseCookbooks_Empty(t *testing.T) {
 	}
 }
 
-func TestCollapseCookbooks_AllGit(t *testing.T) {
+func TestCollapseCookbooks_SingleEntries(t *testing.T) {
 	cookbooks := []cookbookSummary{
-		{ID: "cb-1", Name: "app1", Source: "git"},
-		{ID: "cb-2", Name: "app2", Source: "git"},
+		{ID: "cb-1", Name: "app1", Version: "1.0.0"},
+		{ID: "cb-2", Name: "app2", Version: "2.0.0"},
 	}
 	collapsed, counts := collapseCookbookSummaries(cookbooks)
 	if len(collapsed) != 2 {
 		t.Errorf("expected 2 cookbooks, got %d", len(collapsed))
 	}
-	// Git-only repos have no server cookbook versions, so count is 0.
-	if counts["app1"] != 0 {
-		t.Errorf("app1 version count = %d, want 0", counts["app1"])
+	if counts["app1"] != 1 {
+		t.Errorf("app1 version count = %d, want 1", counts["app1"])
 	}
-	if counts["app2"] != 0 {
-		t.Errorf("app2 version count = %d, want 0", counts["app2"])
+	if counts["app2"] != 1 {
+		t.Errorf("app2 version count = %d, want 1", counts["app2"])
 	}
 }
 
@@ -300,11 +296,7 @@ func TestHandleCookbooks_HappyPath_WithCookbooks(t *testing.T) {
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
 				{ID: "cb-1", Name: "apt", IsActive: true, DownloadStatus: "ok"},
-			}, nil
-		},
-		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return []datastore.GitRepo{
-				{ID: "cb-2", Name: "nginx", HasTestSuite: false},
+				{ID: "cb-2", Name: "nginx", IsActive: true, DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -338,11 +330,6 @@ func TestHandleCookbooks_HappyPath_VersionCountCollapsed(t *testing.T) {
 				{ID: "cb-4", Name: "nginx", Version: "1.0.0", IsActive: true},
 			}, nil
 		},
-		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return []datastore.GitRepo{
-				{ID: "cb-5", Name: "myapp"},
-			}, nil
-		},
 	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()
@@ -367,12 +354,12 @@ func TestHandleCookbooks_HappyPath_VersionCountCollapsed(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// 3 chef_server versions of apt + 1 nginx + 1 git myapp = 3 unique names.
-	if body.Pagination.TotalItems != 3 {
-		t.Fatalf("total_items = %d, want 3", body.Pagination.TotalItems)
+	// 3 versions of apt + 1 nginx = 2 unique names.
+	if body.Pagination.TotalItems != 2 {
+		t.Fatalf("total_items = %d, want 2", body.Pagination.TotalItems)
 	}
-	if len(body.Data) != 3 {
-		t.Fatalf("len(data) = %d, want 3", len(body.Data))
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
 	}
 
 	// Check version counts by name.
@@ -386,26 +373,25 @@ func TestHandleCookbooks_HappyPath_VersionCountCollapsed(t *testing.T) {
 	if counts["nginx"] != 1 {
 		t.Errorf("nginx version_count = %d, want 1", counts["nginx"])
 	}
-	// myapp is git-only, so server cookbook version count is 0.
-	if counts["myapp"] != 0 {
-		t.Errorf("myapp version_count = %d, want 0", counts["myapp"])
-	}
 }
 
-func TestHandleCookbooks_HappyPath_GitAndChefServerMerged(t *testing.T) {
+func TestHandleCookbooks_HappyPath_MultiOrgCollapsed(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
-		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
-				{ID: "cb-2", Name: "myapp", Version: "1.0.0", IsActive: true},
-				{ID: "cb-3", Name: "myapp", Version: "2.0.0", IsActive: true},
+			return []datastore.Organisation{
+				{ID: "org-1", Name: "prod"},
+				{ID: "org-2", Name: "staging"},
 			}, nil
 		},
-		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return []datastore.GitRepo{
-				{ID: "cb-1", Name: "myapp"},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
+			if orgID == "org-1" {
+				return []datastore.ServerCookbook{
+					{ID: "cb-1", Name: "myapp", Version: "1.0.0", IsActive: true},
+					{ID: "cb-2", Name: "myapp", Version: "2.0.0", IsActive: true},
+				}, nil
+			}
+			return []datastore.ServerCookbook{
+				{ID: "cb-3", Name: "myapp", Version: "1.0.0", IsActive: true},
 			}, nil
 		},
 	}
@@ -432,20 +418,20 @@ func TestHandleCookbooks_HappyPath_GitAndChefServerMerged(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// All entries (1 git + 2 chef_server) of myapp collapse to 1 row.
+	// All 3 server cookbook entries of myapp collapse to 1 row.
 	if body.Pagination.TotalItems != 1 {
 		t.Fatalf("total_items = %d, want 1", body.Pagination.TotalItems)
 	}
 	if len(body.Data) != 1 {
 		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
-	// The git entry (cb-1) should be the representative since it's first.
+	// The first entry (cb-1) should be the representative.
 	if body.Data[0].ID != "cb-1" {
-		t.Errorf("representative id = %q, want cb-1 (git preferred)", body.Data[0].ID)
+		t.Errorf("representative id = %q, want cb-1", body.Data[0].ID)
 	}
-	// Version count only includes chef_server entries (2), not the git entry.
-	if body.Data[0].VersionCount != 2 {
-		t.Errorf("myapp version_count = %d, want 2", body.Data[0].VersionCount)
+	// Version count includes all 3 server cookbook entries.
+	if body.Data[0].VersionCount != 3 {
+		t.Errorf("myapp version_count = %d, want 3", body.Data[0].VersionCount)
 	}
 }
 
@@ -588,7 +574,7 @@ func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
-	// When a cookbook has no complexity record (i.e. CookStyle has never run),
+	// When a cookbook has no cookstyle result (i.e. CookStyle has never run),
 	// it must show as "untested" — not "compatible". This prevents false
 	// positives where unscanned cookbooks appear green on the dashboard.
 	store := &mockStore{
@@ -600,14 +586,6 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
 				{ID: "cb-2", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
 			}, nil
-		},
-		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return nil, nil
-		},
-		// Return NO complexity records — simulates cookbooks that have never
-		// been CookStyle-scanned.
-		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
-			return nil, nil
 		},
 	}
 
@@ -654,9 +632,6 @@ func TestHandleCookbooks_ScannedCookbooks_ShowCompatibleOrIncompatible(t *testin
 				{ID: "cb-2", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
 				{ID: "cb-3", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
 			}, nil
-		},
-		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return nil, nil
 		},
 		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return []datastore.ServerCookbookCookstyleResult{
