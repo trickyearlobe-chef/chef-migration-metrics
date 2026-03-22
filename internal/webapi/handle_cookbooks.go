@@ -246,6 +246,11 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		allCookbooks = filtered
 	}
 
+	// Sort the results.
+	sortField := queryString(req, "sort", "name")
+	sortOrder := queryString(req, "order", "asc")
+	sortCookbookSummaries(allCookbooks, sortField, sortOrder)
+
 	// Paginate the results.
 	pg := ParsePagination(req)
 	total := len(allCookbooks)
@@ -482,5 +487,24 @@ func filterCookbookSummaries(req *http.Request, cookbooks []cookbookSummary) []c
 // Ensure datastore.ErrNotFound is used (compile-time check).
 var _ = errors.Is(nil, datastore.ErrNotFound)
 
-// Ensure sort is used.
-var _ = sort.Slice
+// sortCookbookSummaries sorts the collapsed cookbook list in-place by the
+// given field and order ("asc" or "desc"). Supported fields: "name"
+// (default), "compatibility", "active".
+func sortCookbookSummaries(items []cookbookSummary, field, order string) {
+	sort.Slice(items, func(i, j int) bool {
+		var less bool
+		switch field {
+		case "compatibility":
+			less = items[i].Compatibility < items[j].Compatibility
+		case "active":
+			// false < true so inactive sorts first in ascending
+			less = !items[i].IsActive && items[j].IsActive
+		default: // "name"
+			less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		}
+		if strings.EqualFold(order, "desc") {
+			return !less
+		}
+		return less
+	})
+}
