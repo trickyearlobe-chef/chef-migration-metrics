@@ -1,7 +1,32 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { fetchSystemHealth } from "../api";
 import type { SystemHealthResponse } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
+import type { TableSize } from "../types";
+
+// ---------------------------------------------------------------------------
+// DB table sort types & helpers
+// ---------------------------------------------------------------------------
+
+type TableSortField = "table_name" | "total_bytes" | "table_bytes" | "index_bytes" | "row_estimate";
+type SortOrder = "asc" | "desc";
+
+function compareTableSizes(a: TableSize, b: TableSize, field: TableSortField): number {
+  switch (field) {
+    case "table_name":
+      return a.table_name.localeCompare(b.table_name);
+    case "total_bytes":
+      return a.total_bytes - b.total_bytes;
+    case "table_bytes":
+      return a.table_bytes - b.table_bytes;
+    case "index_bytes":
+      return a.index_bytes - b.index_bytes;
+    case "row_estimate":
+      return a.row_estimate - b.row_estimate;
+    default:
+      return 0;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Admin System Stats Page
@@ -65,6 +90,8 @@ export function AdminSystemStatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [tableSortField, setTableSortField] = useState<TableSortField>("total_bytes");
+  const [tableSortOrder, setTableSortOrder] = useState<SortOrder>("desc");
 
   const load = useCallback(() => {
     fetchSystemHealth()
@@ -80,6 +107,41 @@ export function AdminSystemStatsPage() {
   }, [load]);
 
   const th = data?.thresholds;
+
+  const handleTableSort = useCallback(
+    (field: TableSortField) => {
+      if (field === tableSortField) {
+        setTableSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+      } else {
+        setTableSortField(field);
+        setTableSortOrder(field === "table_name" ? "asc" : "desc");
+      }
+    },
+    [tableSortField],
+  );
+
+  const tableSortIndicator = useCallback(
+    (field: TableSortField) => {
+      if (tableSortField !== field) return " ↕";
+      return tableSortOrder === "asc" ? " ↑" : " ↓";
+    },
+    [tableSortField, tableSortOrder],
+  );
+
+  const sortedTableSizes = useMemo(() => {
+    if (!data) return [];
+    const sorted = [...data.table_sizes].sort((a, b) => {
+      const cmp = compareTableSizes(a, b, tableSortField);
+      return tableSortOrder === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [data, tableSortField, tableSortOrder]);
+
+  // Find the max total_bytes across all tables for bar chart scaling
+  const maxTableBytes = useMemo(() => {
+    if (sortedTableSizes.length === 0) return 1;
+    return Math.max(...sortedTableSizes.map((t) => t.total_bytes), 1);
+  }, [sortedTableSizes]);
 
   return (
     <div className="space-y-6">
@@ -226,18 +288,42 @@ export function AdminSystemStatsPage() {
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 text-xs text-gray-500">
-                      <th className="pb-2 pr-4 font-medium">Table</th>
-                      <th className="pb-2 pr-4 font-medium text-right">Total</th>
-                      <th className="pb-2 pr-4 font-medium text-right">Data</th>
-                      <th className="pb-2 pr-4 font-medium text-right">Indexes</th>
-                      <th className="pb-2 pr-4 font-medium text-right">Rows (est.)</th>
+                      <th
+                        className="cursor-pointer select-none pb-2 pr-4 font-medium hover:text-gray-700"
+                        onClick={() => handleTableSort("table_name")}
+                      >
+                        Table<span className="text-blue-500">{tableSortIndicator("table_name")}</span>
+                      </th>
+                      <th
+                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
+                        onClick={() => handleTableSort("total_bytes")}
+                      >
+                        Total<span className="text-blue-500">{tableSortIndicator("total_bytes")}</span>
+                      </th>
+                      <th
+                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
+                        onClick={() => handleTableSort("table_bytes")}
+                      >
+                        Data<span className="text-blue-500">{tableSortIndicator("table_bytes")}</span>
+                      </th>
+                      <th
+                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
+                        onClick={() => handleTableSort("index_bytes")}
+                      >
+                        Indexes<span className="text-blue-500">{tableSortIndicator("index_bytes")}</span>
+                      </th>
+                      <th
+                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
+                        onClick={() => handleTableSort("row_estimate")}
+                      >
+                        Rows (est.)<span className="text-blue-500">{tableSortIndicator("row_estimate")}</span>
+                      </th>
                       <th className="pb-2 font-medium" style={{ minWidth: "120px" }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.table_sizes.map((t) => {
-                      const maxBytes = data.table_sizes[0]?.total_bytes || 1;
-                      const pct = Math.max((t.total_bytes / maxBytes) * 100, 0.5);
+                    {sortedTableSizes.map((t) => {
+                      const pct = Math.max((t.total_bytes / maxTableBytes) * 100, 0.5);
                       return (
                         <tr key={t.table_name} className="border-b border-gray-100 last:border-0">
                           <td className="py-2 pr-4 font-mono text-xs text-gray-700">{t.table_name}</td>

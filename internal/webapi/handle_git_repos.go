@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
@@ -174,6 +176,11 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		}
 		repos = filtered
 	}
+
+	// Sort the results.
+	sortField := queryString(req, "sort", "name")
+	sortOrder := queryString(req, "order", "asc")
+	sortGitRepos(repos, sortField, sortOrder)
 
 	// Paginate.
 	pg := ParsePagination(req)
@@ -577,6 +584,26 @@ func toLowerASCII(s string) string {
 		b[i] = c
 	}
 	return string(b)
+}
+
+func sortGitRepos(items []datastore.GitRepo, field, order string) {
+	sort.Slice(items, func(i, j int) bool {
+		var less bool
+		switch field {
+		case "compatibility":
+			// Note: can't sort by compatibility here since it's computed per-name
+			// and not on the GitRepo struct. Fall through to name.
+			less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		case "has_test_suite":
+			less = !items[i].HasTestSuite && items[j].HasTestSuite
+		default: // "name"
+			less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		}
+		if strings.EqualFold(order, "desc") {
+			return !less
+		}
+		return less
+	})
 }
 
 // removeLocalGitClone removes the local git clone directory for a cookbook

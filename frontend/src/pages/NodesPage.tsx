@@ -98,6 +98,10 @@ export function NodesPage() {
   const [page, setPage] = useState(1);
   const perPage = 50;
 
+  // Sort state — default to node_name ascending (backend default).
+  const [sortField, setSortField] = useState("node_name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
   // Target Chef version for readiness filter and exports (loaded from backend config)
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
   const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>("");
@@ -176,6 +180,8 @@ export function NodesPage() {
     if (policyName) filters.policy_name = policyName;
     if (policyGroup) filters.policy_group = policyGroup;
     if (stale) filters.stale = stale;
+    if (sortField) filters.sort = sortField;
+    if (sortOrder) filters.order = sortOrder;
 
     fetchNodes(filters)
       .then((res) => {
@@ -184,12 +190,12 @@ export function NodesPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, page]);
+  }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, page, sortField, sortOrder]);
 
   useEffect(() => { load(); }, [load]);
 
   // Reset to page 1 when filters change.
-  useEffect(() => { setPage(1); }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale]);
+  useEffect(() => { setPage(1); }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, sortField, sortOrder]);
 
   // Count active filters for the clear button.
   // Readiness filter is counted only when set (target version selector is not counted as a filter).
@@ -205,6 +211,21 @@ export function NodesPage() {
     setPolicyGroup("");
     setStale("");
     setReadinessFilter("");
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      // Node name sorts ascending by default, everything else descending
+      setSortOrder(field === "node_name" ? "asc" : "desc");
+    }
+  };
+
+  const sortIndicator = (field: string) => {
+    if (sortField !== field) return " ↕";
+    return sortOrder === "asc" ? " ↑" : " ↓";
   };
 
   // Apply client-side readiness filter. The backend doesn't support readiness
@@ -349,13 +370,23 @@ export function NodesPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Node Name</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("node_name")}>
+                      Node Name<span className="text-xs text-blue-500">{sortIndicator("node_name")}</span>
+                    </th>
                     <th>Organisation</th>
-                    <th>Environment</th>
-                    <th>Chef Version</th>
-                    <th>Platform</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("chef_environment")}>
+                      Environment<span className="text-xs text-blue-500">{sortIndicator("chef_environment")}</span>
+                    </th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("chef_version")}>
+                      Chef Version<span className="text-xs text-blue-500">{sortIndicator("chef_version")}</span>
+                    </th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("platform")}>
+                      Platform<span className="text-xs text-blue-500">{sortIndicator("platform")}</span>
+                    </th>
                     <th>Status</th>
-                    <th>Ohai Time</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("ohai_time")}>
+                      Ohai Time<span className="text-xs text-blue-500">{sortIndicator("ohai_time")}</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

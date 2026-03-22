@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
+import { Pagination } from "../components/Pagination";
 import { useAuth } from "../context/AuthContext";
 import {
   fetchOwnerDetail,
@@ -247,7 +248,7 @@ export function OwnerDetailPage() {
 
   // -- Derived values -------------------------------------------------------
 
-  const totalPages = assignmentsPagination?.total_pages ?? 1;
+
 
   // -- Render ---------------------------------------------------------------
 
@@ -565,39 +566,9 @@ export function OwnerDetailPage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  Page {assignmentsPagination?.page ?? 1} of {totalPages}
-                  {assignmentsPagination?.total_items != null && (
-                    <> — {assignmentsPagination.total_items} total</>
-                  )}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    disabled={assignmentsPage <= 1}
-                    onClick={() =>
-                      setAssignmentsPage((p) => Math.max(1, p - 1))
-                    }
-                    className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-100 disabled:opacity-40"
-                  >
-                    ← Prev
-                  </button>
-                  <button
-                    type="button"
-                    disabled={assignmentsPage >= totalPages}
-                    onClick={() =>
-                      setAssignmentsPage((p) =>
-                        Math.min(totalPages, p + 1),
-                      )
-                    }
-                    className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-100 disabled:opacity-40"
-                  >
-                    Next →
-                  </button>
-                </div>
+            {assignmentsPagination && (
+              <div className="mt-4">
+                <Pagination pagination={assignmentsPagination} onPageChange={setAssignmentsPage} />
               </div>
             )}
           </>
