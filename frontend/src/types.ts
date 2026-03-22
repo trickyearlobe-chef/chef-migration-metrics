@@ -210,6 +210,8 @@ export interface GitRepoCompatibilitySummary {
   compatible_repos: number;
   incompatible_repos: number;
   untested_repos: number;
+  untested_clone_failed_repos: number;
+  untested_pending_scan_repos: number;
   compatible_percent: number;
 }
 
@@ -226,6 +228,8 @@ export interface TestKitchenCompatibilitySummary {
   failed_repos: number;
   timed_out_repos: number;
   untested_repos: number;
+  untested_clone_failed_repos: number;
+  untested_pending_scan_repos: number;
   passed_percent: number;
 }
 

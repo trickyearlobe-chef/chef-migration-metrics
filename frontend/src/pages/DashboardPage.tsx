@@ -487,12 +487,22 @@ function GitRepoCompatibilityCard({ organisation }: { organisation?: string }) {
                         style={{ width: `${(c.incompatible_repos / c.total_repos) * 100}%` }}
                         title={`Incompatible: ${c.incompatible_repos}`}
                       />
-                      <Link
-                        to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
-                        style={{ width: `${(c.untested_repos / c.total_repos) * 100}%` }}
-                        title={`Untested: ${c.untested_repos}`}
-                      />
+                      {c.untested_clone_failed_repos > 0 && (
+                        <Link
+                          to={`/git-repos?compatibility=untested&clone_status=failed&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                          className="bg-red-200 transition-all duration-500 hover:bg-red-300"
+                          style={{ width: `${(c.untested_clone_failed_repos / c.total_repos) * 100}%`, backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(255,255,255,0.4) 3px, rgba(255,255,255,0.4) 6px)' }}
+                          title={`Clone failed — cannot scan: ${c.untested_clone_failed_repos}`}
+                        />
+                      )}
+                      {c.untested_pending_scan_repos > 0 && (
+                        <Link
+                          to={`/git-repos?compatibility=untested&clone_status=ok&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                          className="bg-amber-200 transition-all duration-500 hover:bg-amber-300"
+                          style={{ width: `${(c.untested_pending_scan_repos / c.total_repos) * 100}%` }}
+                          title={`Cloned but not yet scanned: ${c.untested_pending_scan_repos}`}
+                        />
+                      )}
                     </div>
                   )}
                   <div className="flex flex-wrap gap-3 text-xs">
@@ -510,13 +520,24 @@ function GitRepoCompatibilityCard({ organisation }: { organisation?: string }) {
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
                       Incompatible: {c.incompatible_repos.toLocaleString()}
                     </Link>
-                    <Link
-                      to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                      className="flex items-center gap-1 hover:underline"
-                    >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
-                      Untested: {c.untested_repos.toLocaleString()}
-                    </Link>
+                    {c.untested_clone_failed_repos > 0 && (
+                      <Link
+                        to={`/git-repos?compatibility=untested&clone_status=failed&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-200 ring-1 ring-red-300" />
+                        Clone failed: {c.untested_clone_failed_repos.toLocaleString()}
+                      </Link>
+                    )}
+                    {c.untested_pending_scan_repos > 0 && (
+                      <Link
+                        to={`/git-repos?compatibility=untested&clone_status=ok&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-200 ring-1 ring-amber-300" />
+                        Pending scan: {c.untested_pending_scan_repos.toLocaleString()}
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}
@@ -586,12 +607,22 @@ function TestKitchenCompatibilityCard({ organisation }: { organisation?: string 
                         style={{ width: `${(tk.timed_out_repos / tk.total_repos) * 100}%` }}
                         title={`Timed out: ${tk.timed_out_repos}`}
                       />
-                      <Link
-                        to={`/git-repos?tk_status=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
-                        className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
-                        style={{ width: `${(tk.untested_repos / tk.total_repos) * 100}%` }}
-                        title={`Untested: ${tk.untested_repos}`}
-                      />
+                      {tk.untested_clone_failed_repos > 0 && (
+                        <Link
+                          to={`/git-repos?tk_status=untested&clone_status=failed&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                          className="bg-red-200 transition-all duration-500 hover:bg-red-300"
+                          style={{ width: `${(tk.untested_clone_failed_repos / tk.total_repos) * 100}%`, backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(255,255,255,0.4) 3px, rgba(255,255,255,0.4) 6px)' }}
+                          title={`Clone failed — cannot test: ${tk.untested_clone_failed_repos}`}
+                        />
+                      )}
+                      {tk.untested_pending_scan_repos > 0 && (
+                        <Link
+                          to={`/git-repos?tk_status=untested&clone_status=ok&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                          className="bg-amber-200 transition-all duration-500 hover:bg-amber-300"
+                          style={{ width: `${(tk.untested_pending_scan_repos / tk.total_repos) * 100}%` }}
+                          title={`Cloned but not yet tested: ${tk.untested_pending_scan_repos}`}
+                        />
+                      )}
                     </div>
                   )}
                   <div className="flex flex-wrap gap-3 text-xs">
@@ -616,13 +647,24 @@ function TestKitchenCompatibilityCard({ organisation }: { organisation?: string 
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />
                       Timed out: {tk.timed_out_repos.toLocaleString()}
                     </Link>
-                    <Link
-                      to={`/git-repos?tk_status=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
-                      className="flex items-center gap-1 hover:underline"
-                    >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
-                      Untested: {tk.untested_repos.toLocaleString()}
-                    </Link>
+                    {tk.untested_clone_failed_repos > 0 && (
+                      <Link
+                        to={`/git-repos?tk_status=untested&clone_status=failed&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-200 ring-1 ring-red-300" />
+                        Clone failed: {tk.untested_clone_failed_repos.toLocaleString()}
+                      </Link>
+                    )}
+                    {tk.untested_pending_scan_repos > 0 && (
+                      <Link
+                        to={`/git-repos?tk_status=untested&clone_status=ok&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-200 ring-1 ring-amber-300" />
+                        Pending test: {tk.untested_pending_scan_repos.toLocaleString()}
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}
