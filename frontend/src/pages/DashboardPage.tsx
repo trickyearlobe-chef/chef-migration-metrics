@@ -228,7 +228,7 @@ function PlatformDistributionCard({ organisation }: { organisation?: string }) {
                     to={`/nodes?platform=${encodeURIComponent(v.platform)}`}
                     className="bar-chart-row hover:bg-gray-50 rounded transition-colors"
                   >
-                    <span className="w-44 shrink-0 truncate text-right text-sm text-gray-600" title={v.platform}>{v.platform}</span>
+                    <span className="bar-chart-label" title={v.platform}>{v.platform}</span>
                     <div className="bar-chart-track">
                       <div
                         className="bar-chart-fill bg-purple-500"
@@ -316,7 +316,7 @@ function ReadinessCard({ organisation }: { organisation?: string }) {
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
-                      Blocked: {r.blocked_nodes.toLocaleString()}
+                      Blocked: {r.blocked_nodes.toLocaleString()} ({(r.total_nodes > 0 ? (100 - r.ready_percent) : 0).toFixed(1)}%)
                     </Link>
                   </div>
                 </div>
@@ -401,33 +401,29 @@ function CookbookCompatibilityCard({ organisation }: { organisation?: string }) 
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                      Compatible: {c.compatible_cookbooks}
+                      Compatible: {c.compatible_cookbooks.toLocaleString()}
                     </Link>
                     <Link
                       to={`/cookbooks?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
-                      Incompatible: {c.incompatible_cookbooks}
+                      Incompatible: {c.incompatible_cookbooks.toLocaleString()}
                     </Link>
-                    {(c.untested_inactive_cookbooks || 0) > 0 && (
-                      <Link
-                        to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="flex items-center gap-1 hover:underline"
-                      >
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
-                        Inactive: {c.untested_inactive_cookbooks}
-                      </Link>
-                    )}
-                    {(c.untested_unscanned_cookbooks || 0) > 0 && (
-                      <Link
-                        to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="flex items-center gap-1 hover:underline"
-                      >
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-300" />
-                        Unscanned: {c.untested_unscanned_cookbooks}
-                      </Link>
-                    )}
+                    <Link
+                      to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
+                      Inactive: {(c.untested_inactive_cookbooks || 0).toLocaleString()}
+                    </Link>
+                    <Link
+                      to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-300" />
+                      Unscanned: {(c.untested_unscanned_cookbooks || 0).toLocaleString()}
+                    </Link>
                   </div>
                 </div>
               ))}
@@ -505,21 +501,21 @@ function GitRepoCompatibilityCard({ organisation }: { organisation?: string }) {
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                      Compatible: {c.compatible_repos}
+                      Compatible: {c.compatible_repos.toLocaleString()}
                     </Link>
                     <Link
                       to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
-                      Incompatible: {c.incompatible_repos}
+                      Incompatible: {c.incompatible_repos.toLocaleString()}
                     </Link>
                     <Link
                       to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
-                      Untested: {c.untested_repos}
+                      Untested: {c.untested_repos.toLocaleString()}
                     </Link>
                   </div>
                 </div>
@@ -586,7 +582,7 @@ function TestKitchenCompatibilityCard({ organisation }: { organisation?: string 
                       />
                       <Link
                         to={`/git-repos?tk_status=timed_out&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
-                        className="bg-amber-400 transition-all duration-500 hover:bg-amber-500"
+                        className="bg-orange-400 transition-all duration-500 hover:bg-orange-500"
                         style={{ width: `${(tk.timed_out_repos / tk.total_repos) * 100}%` }}
                         title={`Timed out: ${tk.timed_out_repos}`}
                       />
@@ -604,28 +600,28 @@ function TestKitchenCompatibilityCard({ organisation }: { organisation?: string 
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                      Passed: {tk.passed_repos}
+                      Passed: {tk.passed_repos.toLocaleString()}
                     </Link>
                     <Link
                       to={`/git-repos?tk_status=failed&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
-                      Failed: {tk.failed_repos}
+                      Failed: {tk.failed_repos.toLocaleString()}
                     </Link>
                     <Link
                       to={`/git-repos?tk_status=timed_out&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
-                      Timed out: {tk.timed_out_repos}
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />
+                      Timed out: {tk.timed_out_repos.toLocaleString()}
                     </Link>
                     <Link
                       to={`/git-repos?tk_status=untested&target_chef_version=${encodeURIComponent(tk.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
-                      Untested: {tk.untested_repos}
+                      Untested: {tk.untested_repos.toLocaleString()}
                     </Link>
                   </div>
                 </div>
