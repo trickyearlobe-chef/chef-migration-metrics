@@ -139,6 +139,14 @@ func run() int {
 	startup.Info("database connection established")
 
 	// -------------------------------------------------------------------
+	// EventHub — create early so the DBWriter broadcast callback can
+	// capture it. The run loop starts immediately in a background
+	// goroutine; it will be stopped during graceful shutdown.
+	// -------------------------------------------------------------------
+	hub := webapi.NewEventHub()
+	go hub.Run()
+
+	// -------------------------------------------------------------------
 	// Attach DBWriter — from this point, log entries are also persisted
 	// to the log_entries table for the web UI log viewer.
 	// -------------------------------------------------------------------
@@ -173,6 +181,28 @@ func run() int {
 			// We cannot use the logger here (infinite loop), so use
 			// the stdlib log package for this one edge case.
 			log.Printf("WARN: failed to persist log entry to database: %v", dbErr)
+		}),
+		logging.WithOnBroadcast(func(entry logging.Entry) {
+			// Broadcast the log entry to subscribed WebSocket clients.
+			// hub.Broadcast is non-blocking by design, so this is safe
+			// to call synchronously from WriteEntry.
+			hub.Broadcast(webapi.NewEvent(webapi.EventLogEntry, map[string]any{
+				"severity":             entry.Severity.String(),
+				"scope":                string(entry.Scope),
+				"message":              entry.Message,
+				"timestamp":            entry.Timestamp.Format(time.RFC3339Nano),
+				"organisation":         entry.Organisation,
+				"cookbook_name":        entry.CookbookName,
+				"cookbook_version":     entry.CookbookVersion,
+				"commit_sha":           entry.CommitSHA,
+				"chef_client_version":  entry.ChefClientVersion,
+				"collection_run_id":    entry.CollectionRunID,
+				"notification_channel": entry.NotificationChannel,
+				"export_job_id":        entry.ExportJobID,
+				"tls_domain":           entry.TLSDomain,
+				// process_output intentionally omitted — too large for
+				// WebSocket frames. Clients fetch full detail via REST.
+			}))
 		}),
 	)
 
@@ -709,8 +739,8 @@ func run() int {
 	// HTTP server — wire up the webapi.Router which owns all API routes,
 	// WebSocket endpoint, health/version endpoints, and SPA fallback.
 	// -------------------------------------------------------------------
-	hub := webapi.NewEventHub()
-	go hub.Run()
+	// EventHub was created earlier (before DBWriter) so the broadcast
+	// callback could capture it. It is already running.
 
 	// Attempt to load the built React frontend assets from disk.
 	// The Vite build outputs to frontend/dist/. In Docker this is at
