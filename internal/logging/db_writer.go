@@ -53,6 +53,10 @@ type DBInserter interface {
 // that a database outage does not prevent the application from logging to
 // stdout. An optional OnError callback can be set to capture these failures
 // (e.g. for metrics or stderr fallback).
+//
+// An optional OnBroadcast callback can be set to broadcast entries to
+// WebSocket clients after successful database inserts. The callback is
+// invoked synchronously and must not block.
 type DBWriter struct {
 	inserter DBInserter
 
@@ -63,8 +67,13 @@ type DBWriter struct {
 	// onError is called whenever a database insert fails. It may be nil.
 	onError func(entry Entry, err error)
 
-	// mu protects onError from concurrent read/write if SetOnError is
-	// called after construction (unlikely but safe).
+	// onBroadcast is called after a successful database insert. It is
+	// intended for broadcasting the entry to WebSocket clients via the
+	// EventHub. It must not block. It may be nil.
+	onBroadcast func(entry Entry)
+
+	// mu protects onError and onBroadcast from concurrent read/write if
+	// SetOnError or SetOnBroadcast is called after construction.
 	mu sync.RWMutex
 }
 
@@ -81,6 +90,17 @@ func WithContext(ctx context.Context) DBWriterOption {
 // fails. The callback receives the entry that failed and the error.
 func WithOnError(fn func(entry Entry, err error)) DBWriterOption {
 	return func(dw *DBWriter) { dw.onError = fn }
+}
+
+// WithOnBroadcast sets a callback invoked after each successful database
+// insert. The callback receives the original Entry. It is intended for
+// broadcasting the entry to WebSocket clients via the EventHub.
+//
+// The callback is invoked synchronously in WriteEntry. It must not block.
+// EventHub.Broadcast() is non-blocking by design, making it safe to use
+// directly as the callback target.
+func WithOnBroadcast(fn func(entry Entry)) DBWriterOption {
+	return func(dw *DBWriter) { dw.onBroadcast = fn }
 }
 
 // NewDBWriter creates a new DBWriter that persists log entries via the given
@@ -132,6 +152,15 @@ func (dw *DBWriter) WriteEntry(entry Entry) error {
 		// prevent other writers (e.g. stdout) from receiving the entry.
 		return nil
 	}
+
+	// Broadcast to WebSocket clients after successful insert.
+	dw.mu.RLock()
+	onBcast := dw.onBroadcast
+	dw.mu.RUnlock()
+	if onBcast != nil {
+		onBcast(entry)
+	}
+
 	return nil
 }
 
@@ -140,6 +169,14 @@ func (dw *DBWriter) WriteEntry(entry Entry) error {
 func (dw *DBWriter) SetOnError(fn func(entry Entry, err error)) {
 	dw.mu.Lock()
 	dw.onError = fn
+	dw.mu.Unlock()
+}
+
+// SetOnBroadcast replaces the broadcast callback. It is safe to call
+// concurrently with WriteEntry.
+func (dw *DBWriter) SetOnBroadcast(fn func(entry Entry)) {
+	dw.mu.Lock()
+	dw.onBroadcast = fn
 	dw.mu.Unlock()
 }
 

@@ -12,6 +12,7 @@ package webapi
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -89,14 +90,143 @@ func NewEvent(eventType string, data any) Event {
 }
 
 // ---------------------------------------------------------------------------
+// Subscription-gated event types
+// ---------------------------------------------------------------------------
+
+// subscriptionGatedEvents is the set of event types that require an explicit
+// client subscription before delivery. Events not in this set are broadcast
+// unconditionally to all connected clients (preserving existing behaviour).
+var subscriptionGatedEvents = map[string]bool{
+	EventLogEntry: true,
+}
+
+// IsSubscriptionGated reports whether the given event type requires a client
+// subscription before delivery.
+func IsSubscriptionGated(eventType string) bool {
+	return subscriptionGatedEvents[eventType]
+}
+
+// ---------------------------------------------------------------------------
+// Subscription — per-client, per-event-type filter.
+// ---------------------------------------------------------------------------
+
+// Subscription holds per-event-type filter criteria. Currently only
+// MinSeverity is supported (for log_entry events).
+type Subscription struct {
+	// MinSeverity is the minimum severity level for log_entry events.
+	// Empty string means no filter (deliver all severities).
+	MinSeverity string
+}
+
+// severityValue maps a severity string to a numeric value for comparison.
+// Unknown values default to 0 (DEBUG) so that unknown severities are never
+// filtered out.
+func severityValue(s string) int {
+	switch strings.ToUpper(s) {
+	case "DEBUG":
+		return 0
+	case "INFO":
+		return 1
+	case "WARN":
+		return 2
+	case "ERROR":
+		return 3
+	default:
+		return 0
+	}
+}
+
+// IsValidSeverity reports whether s is a recognised severity string.
+func IsValidSeverity(s string) bool {
+	switch strings.ToUpper(s) {
+	case "DEBUG", "INFO", "WARN", "ERROR":
+		return true
+	default:
+		return false
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Client — represents a single connected WebSocket client.
 // ---------------------------------------------------------------------------
 
 // client represents a single WebSocket connection registered with the hub.
 // Each client has a buffered send channel; the WebSocket write goroutine
 // drains this channel and writes JSON frames to the connection.
+//
+// Clients may subscribe to specific event types (e.g. log_entry) with
+// optional filters. Subscription-gated events are only delivered to clients
+// that have an active subscription for that event type.
 type client struct {
 	send chan Event
+
+	// subscriptions tracks which event types this client has opted in to.
+	// Only relevant for subscription-gated event types.
+	subscriptions map[string]Subscription
+	mu            sync.RWMutex
+}
+
+// Subscribe adds or updates a subscription for the given event type.
+func (c *client) Subscribe(eventType string, sub Subscription) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.subscriptions == nil {
+		c.subscriptions = make(map[string]Subscription)
+	}
+	c.subscriptions[eventType] = sub
+}
+
+// Unsubscribe removes the subscription for the given event type.
+func (c *client) Unsubscribe(eventType string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.subscriptions, eventType)
+}
+
+// IsSubscribed reports whether the client has a subscription for the given
+// event type.
+func (c *client) IsSubscribed(eventType string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.subscriptions[eventType]
+	return ok
+}
+
+// GetSubscription returns the subscription for the given event type and a
+// boolean indicating whether one exists.
+func (c *client) GetSubscription(eventType string) (Subscription, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	sub, ok := c.subscriptions[eventType]
+	return sub, ok
+}
+
+// shouldReceive reports whether this client should receive the given event.
+// For non-subscription-gated events, it always returns true. For gated
+// events, it checks subscriptions and applies filters.
+func (c *client) shouldReceive(evt Event) bool {
+	if !IsSubscriptionGated(evt.Type) {
+		return true
+	}
+
+	sub, ok := c.GetSubscription(evt.Type)
+	if !ok {
+		return false
+	}
+
+	// Apply severity filter for log_entry events.
+	if evt.Type == EventLogEntry && sub.MinSeverity != "" {
+		data, ok := evt.Data.(map[string]any)
+		if ok {
+			if sev, ok := data["severity"].(string); ok {
+				if severityValue(sev) < severityValue(sub.MinSeverity) {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +242,10 @@ type client struct {
 //   - If a client's send channel is full (slow consumer), that client is
 //     removed and its channel is closed. The WebSocket write goroutine
 //     detects the closed channel and terminates the connection.
+//
+// For subscription-gated event types (e.g. log_entry), events are only
+// delivered to clients that have explicitly subscribed with matching filters.
+// Non-gated events are broadcast unconditionally to all clients.
 //
 // Broadcast() is safe to call from any goroutine. Client registration and
 // deregistration are serialised through the hub's internal channels.
@@ -221,6 +355,11 @@ func (h *EventHub) Run() {
 
 		case evt := <-h.broadcast:
 			for c := range h.clients {
+				// For subscription-gated events, check whether this
+				// client should receive the event before queuing.
+				if !c.shouldReceive(evt) {
+					continue
+				}
 				select {
 				case c.send <- evt:
 					// Delivered.
@@ -247,6 +386,10 @@ func (h *EventHub) Stop() {
 // any goroutine. If the hub's internal broadcast buffer is full the call
 // drops the event silently (non-blocking) — this protects producers from
 // being slowed by WebSocket delivery.
+//
+// For subscription-gated event types (e.g. log_entry), the run loop will
+// check each client's subscriptions and filters before delivering the event.
+// Non-gated events are delivered unconditionally.
 func (h *EventHub) Broadcast(evt Event) {
 	select {
 	case h.broadcast <- evt:
@@ -265,7 +408,8 @@ func (h *EventHub) Broadcast(evt Event) {
 // channel will be closed immediately.
 func (h *EventHub) Register() *client {
 	c := &client{
-		send: make(chan Event, h.sendBufferSize),
+		send:          make(chan Event, h.sendBufferSize),
+		subscriptions: make(map[string]Subscription),
 	}
 	select {
 	case h.register <- c:
