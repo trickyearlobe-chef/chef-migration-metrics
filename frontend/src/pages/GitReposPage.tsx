@@ -41,6 +41,7 @@ export function GitReposPage() {
   // Filters
   const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
   const [compatibility, setCompatibility] = useState(searchParams.get("compatibility") || "");
+  const [tkStatus, setTkStatus] = useState(searchParams.get("tk_status") || "");
   const [page, setPage] = useState(1);
   const perPage = 50;
 
@@ -50,7 +51,7 @@ export function GitReposPage() {
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
-    if (searchParams.has("compatibility") || searchParams.has("target_chef_version") || searchParams.has("name")) {
+    if (searchParams.has("compatibility") || searchParams.has("target_chef_version") || searchParams.has("name") || searchParams.has("tk_status")) {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
@@ -75,6 +76,7 @@ export function GitReposPage() {
     const filters: {
       name?: string;
       compatibility?: string;
+      tk_status?: string;
       target_chef_version?: string;
       page?: number;
       per_page?: number;
@@ -84,6 +86,7 @@ export function GitReposPage() {
     };
     if (nameFilter) filters.name = nameFilter;
     if (compatibility) filters.compatibility = compatibility;
+    if (tkStatus) filters.tk_status = tkStatus;
     if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
 
     fetchGitRepos(filters)
@@ -93,10 +96,10 @@ export function GitReposPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [nameFilter, compatibility, selectedTargetVersion, page]);
+  }, [nameFilter, compatibility, tkStatus, selectedTargetVersion, page]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [nameFilter, compatibility, selectedTargetVersion]);
+  useEffect(() => { setPage(1); }, [nameFilter, compatibility, tkStatus, selectedTargetVersion]);
 
   return (
     <div className="space-y-4">
@@ -124,6 +127,20 @@ export function GitReposPage() {
             <option value="">All</option>
             <option value="compatible">Compatible</option>
             <option value="incompatible">Incompatible</option>
+            <option value="untested">Untested</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">TK Status</label>
+          <select
+            value={tkStatus}
+            onChange={(e) => setTkStatus(e.target.value)}
+            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">All</option>
+            <option value="passed">Passed</option>
+            <option value="failed">Failed</option>
+            <option value="timed_out">Timed Out</option>
             <option value="untested">Untested</option>
           </select>
         </div>
@@ -159,6 +176,7 @@ export function GitReposPage() {
                     <th>Git URL</th>
                     <th>Test Suite</th>
                     <th>Compatibility</th>
+                    <th>TK Status</th>
                     <th>Head Commit</th>
                     <th>Default Branch</th>
                     <th>Last Fetched</th>
@@ -193,6 +211,13 @@ export function GitReposPage() {
                       <td>
                         <CompatibilityBadge
                           status={repo.compatibility ?? "untested"}
+                          size="sm"
+                        />
+                      </td>
+                      <td>
+                        <StatusBadge
+                          variant={repo.tk_status === "passed" ? "compatible" : repo.tk_status === "failed" ? "incompatible" : repo.tk_status === "timed_out" ? "incompatible" : "untested"}
+                          label={repo.tk_status === "timed_out" ? "Timed Out" : (repo.tk_status ?? "untested")}
                           size="sm"
                         />
                       </td>
