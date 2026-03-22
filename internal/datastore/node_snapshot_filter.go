@@ -62,6 +62,15 @@ type NodeSnapshotFilter struct {
 
 	// Offset is the number of rows to skip (for pagination).
 	Offset int
+
+	// Sort specifies the column to sort by. Valid values: "node_name",
+	// "chef_environment", "chef_version", "platform", "ohai_time".
+	// Empty string defaults to "node_name".
+	Sort string
+
+	// SortOrder specifies the sort direction: "asc" or "desc".
+	// Empty string defaults to "asc".
+	SortOrder string
 }
 
 // buildNodeSnapshotFilterQuery constructs the SQL query and args for
@@ -201,7 +210,25 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	sb.WriteString(cols)
 	sb.WriteString(", COUNT(*) OVER () AS total_count\n  FROM completed_nodes cn")
 	sb.WriteString(where)
-	sb.WriteString("\n ORDER BY cn.node_name")
+	// Dynamic sort column with whitelist validation.
+	sortCol := "cn.node_name"
+	switch f.Sort {
+	case "node_name":
+		sortCol = "cn.node_name"
+	case "chef_environment":
+		sortCol = "cn.chef_environment"
+	case "chef_version":
+		sortCol = "cn.chef_version"
+	case "platform":
+		sortCol = "cn.platform"
+	case "ohai_time":
+		sortCol = "cn.ohai_time"
+	}
+	sortDir := "ASC"
+	if strings.EqualFold(f.SortOrder, "desc") {
+		sortDir = "DESC"
+	}
+	sb.WriteString("\n ORDER BY " + sortCol + " " + sortDir)
 
 	// Pagination.
 	if f.Limit > 0 {
