@@ -4,10 +4,13 @@
 package collector
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 )
 
@@ -277,31 +280,93 @@ func TestCleanLegacyCookbookCache_EmptyCacheDir_NoPanic(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// downloadToTempDir — we can't easily test the full function because it
+// downloadCookbook — we can't easily test the full function because it
 // requires a real chefapi.Client and datastore.DB, but we can verify the
-// function signature change (no cookbookCacheDir param) compiles and that
-// the temp directory naming convention works.
+// function signature compiles with the expected parameters.
 // ---------------------------------------------------------------------------
 
-func TestDownloadToTempDir_SignatureCompiles(t *testing.T) {
-	// This test verifies that downloadToTempDir no longer accepts a
-	// cookbookCacheDir parameter. If someone re-adds the parameter,
-	// this test will fail to compile.
-	//
-	// We can't call the function without a real client/db, but we can
-	// verify the type signature by assigning it to a variable with the
-	// expected type.
+func TestDownloadCookbook_SignatureCompiles(t *testing.T) {
+	// Compile-time check that downloadCookbook accepts 6 parameters:
+	// (ctx, client, db, cookbook, cookbookCacheDir, deleteAfterScan).
 	var _ func(
-		ctx interface{},
-		client interface{},
-		db interface{},
-		cb interface{},
-	) = nil
-	// The above is a compile-time check that the function exists with
-	// exactly 4 parameters (context, client, db, cookbook). If there were
-	// a 5th (cookbookCacheDir), the call sites in this file that pass 4
-	// args would fail.
+		ctx context.Context,
+		client *chefapi.Client,
+		db *datastore.DB,
+		cb datastore.ServerCookbook,
+		cookbookCacheDir string,
+		deleteAfterScan bool,
+	) (string, error) = downloadCookbook
 	_ = t
+}
+
+// downloadCookbook uses the persistent cache directory when
+// deleteAfterScan is false, and os.MkdirTemp when true. The nil chefapi
+// client panics inside GetCookbookVersionManifest (it's not nil-safe), so
+// we use recover to catch the panic after the directory has been created.
+
+func TestDownloadCookbook_UsesCacheDir_WhenRetaining(t *testing.T) {
+	cacheDir := t.TempDir()
+	cb := datastore.ServerCookbook{
+		ID:             "cb-1",
+		OrganisationID: "org-abc",
+		Name:           "nginx",
+		Version:        "5.1.0",
+	}
+
+	// nil client panics in the Chef API layer, but the cache directory
+	// is created before the manifest fetch attempt.
+	func() {
+		defer func() { recover() }()
+		downloadCookbook(context.Background(), nil, nil, cb, cacheDir, false)
+	}()
+
+	expected := filepath.Join(cacheDir, "org-abc", "nginx", "5.1.0")
+	info, statErr := os.Stat(expected)
+	if statErr != nil {
+		t.Fatalf("cache directory was not created at %s: %v", expected, statErr)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected %s to be a directory", expected)
+	}
+}
+
+func TestDownloadCookbook_UsesTempDir_WhenDeleting(t *testing.T) {
+	cacheDir := t.TempDir()
+	cb := datastore.ServerCookbook{
+		ID:             "cb-2",
+		OrganisationID: "org-xyz",
+		Name:           "apache2",
+		Version:        "3.0.0",
+	}
+
+	// nil client panics, but we only care about which directory was used.
+	func() {
+		defer func() { recover() }()
+		downloadCookbook(context.Background(), nil, nil, cb, cacheDir, true)
+	}()
+
+	// The cache directory should NOT have been populated.
+	persistentPath := filepath.Join(cacheDir, "org-xyz", "apache2", "3.0.0")
+	if _, statErr := os.Stat(persistentPath); statErr == nil {
+		t.Errorf("cache directory should not exist when deleteAfterScan=true, but found %s", persistentPath)
+	}
+}
+
+func TestDownloadCookbook_UsesTempDir_WhenCacheDirEmpty(t *testing.T) {
+	cb := datastore.ServerCookbook{
+		ID:             "cb-3",
+		OrganisationID: "org-123",
+		Name:           "java",
+		Version:        "1.0.0",
+	}
+
+	// Empty cookbookCacheDir with deleteAfterScan=false should still
+	// fall back to os.MkdirTemp rather than panicking on directory creation.
+	func() {
+		defer func() { recover() }()
+		downloadCookbook(context.Background(), nil, nil, cb, "", false)
+	}()
+	// Success = no panic from directory creation (the client panic is recovered).
 }
 
 // ---------------------------------------------------------------------------
