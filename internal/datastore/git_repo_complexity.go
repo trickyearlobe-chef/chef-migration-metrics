@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -141,6 +142,29 @@ func (db *DB) ListGitRepoComplexitiesByName(ctx context.Context, name string) ([
 		 ORDER BY grc.target_chef_version
 	`
 	return db.scanGitRepoComplexities(ctx, query, name)
+}
+
+// ListGitRepoComplexities returns all complexity records whose
+// target_chef_version is in the provided list. Returns (nil, nil) if
+// targetChefVersions is empty.
+func (db *DB) ListGitRepoComplexities(ctx context.Context, targetChefVersions []string) ([]GitRepoComplexity, error) {
+	if len(targetChefVersions) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(targetChefVersions))
+	args := make([]any, len(targetChefVersions))
+	for i, v := range targetChefVersions {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = v
+	}
+
+	query := `
+		SELECT ` + grcColumns + `
+		  FROM git_repo_complexity
+		 WHERE target_chef_version IN (` + strings.Join(placeholders, ", ") + `)
+	`
+	return db.scanGitRepoComplexities(ctx, query, args...)
 }
 
 // ListAllGitRepoComplexities returns all git repo complexity records,

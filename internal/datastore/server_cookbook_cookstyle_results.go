@@ -7,6 +7,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -228,6 +230,44 @@ func (db *DB) listServerCookbookCookstyleResults(ctx context.Context, q queryabl
 		 ORDER BY target_chef_version NULLS FIRST
 	`
 	return scanServerCookbookCookstyleResults(q.QueryContext(ctx, query, serverCookbookID))
+}
+
+// ListServerCookbookCookstyleResultsByOrganisationAndVersions returns all
+// cookstyle results for server cookbooks belonging to the given organisation,
+// filtered by the specified target Chef versions. Rows where
+// target_chef_version IS NULL are always included (some cookbooks are scanned
+// without a target version profile). If targetChefVersions is empty, only
+// NULL-version rows are returned.
+func (db *DB) ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, organisationID string, targetChefVersions []string) ([]ServerCookbookCookstyleResult, error) {
+	return db.listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx, db.q(), organisationID, targetChefVersions)
+}
+
+func (db *DB) listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, q queryable, organisationID string, targetChefVersions []string) ([]ServerCookbookCookstyleResult, error) {
+	args := []any{organisationID}
+
+	var versionClause string
+	if len(targetChefVersions) > 0 {
+		placeholders := make([]string, len(targetChefVersions))
+		for i, v := range targetChefVersions {
+			args = append(args, v)
+			placeholders[i] = "$" + strconv.Itoa(i+2)
+		}
+		versionClause = "AND (target_chef_version IN (" + strings.Join(placeholders, ", ") + ") OR target_chef_version IS NULL)"
+	} else {
+		versionClause = "AND target_chef_version IS NULL"
+	}
+
+	query := `
+		SELECT id, server_cookbook_id, target_chef_version, passed,
+		       offence_count, deprecation_count, correctness_count,
+		       deprecation_warnings, offences,
+		       process_stdout, process_stderr, duration_seconds,
+		       scanned_at, created_at
+		  FROM server_cookbook_cookstyle_results
+		 WHERE server_cookbook_id IN (SELECT id FROM server_cookbooks WHERE organisation_id = $1)
+		   ` + versionClause + `
+	`
+	return scanServerCookbookCookstyleResults(q.QueryContext(ctx, query, args...))
 }
 
 // ListServerCookbookCookstyleResultsByOrganisation returns all cookstyle
