@@ -271,12 +271,17 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 
 			result := e.evaluateOne(ctx, wi.snapshot, wi.targetChefVersion, cookbookIDMap)
 
-			// Persist.
-			if persistErr := e.persistResult(ctx, result); persistErr != nil {
+			// Persist with a background context so that a cancelled parent
+			// context does not prevent saving results we have already
+			// computed. Each node's readiness is independent — partial
+			// progress is better than losing everything.
+			persistCtx, persistCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if persistErr := e.persistResult(persistCtx, result); persistErr != nil {
 				e.logError(orgName,
 					fmt.Sprintf("failed to persist readiness for node %s target %s: %v",
 						wi.snapshot.NodeName, wi.targetChefVersion, persistErr))
 			}
+			persistCancel()
 
 			mu.Lock()
 			results = append(results, result)
