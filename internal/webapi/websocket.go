@@ -36,6 +36,23 @@ func defaultWebSocketConfig() WebSocketConfig {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Client-to-server message types for subscribe/unsubscribe.
+// ---------------------------------------------------------------------------
+
+// wsClientMessage is the JSON schema for messages sent from the client to
+// the server over the WebSocket connection.
+type wsClientMessage struct {
+	Action  string           `json:"action"`  // "subscribe" or "unsubscribe"
+	Event   string           `json:"event"`   // event type constant (e.g. "log_entry")
+	Filters *wsClientFilters `json:"filters"` // optional, action-specific
+}
+
+// wsClientFilters holds optional filter criteria sent with a subscribe action.
+type wsClientFilters struct {
+	MinSeverity string `json:"min_severity"` // for log_entry subscriptions
+}
+
 // WebSocketHandler handles the /api/v1/ws endpoint. It upgrades the HTTP
 // connection to a WebSocket, registers with the EventHub, and streams events
 // to the client until the connection closes or the context is cancelled.
@@ -136,14 +153,14 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start the read pump in a goroutine. The read pump discards all
-	// incoming messages (the channel is server-to-client only) but must
-	// run to process WebSocket control frames (close, pong). When the
-	// client disconnects, the read pump returns and we cancel the context.
+	// Start the read pump in a goroutine. The read pump processes incoming
+	// client messages (subscribe/unsubscribe) and WebSocket control frames
+	// (close, pong). When the client disconnects, the read pump returns and
+	// we cancel the context.
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	go h.readPump(ctx, cancel, conn, r.RemoteAddr)
+	go h.readPump(ctx, cancel, conn, c, r.RemoteAddr)
 
 	// Start the ping ticker.
 	pingTicker := time.NewTicker(h.cfg.PingInterval)
@@ -193,19 +210,21 @@ func (h *WebSocketHandler) writeEvent(ctx context.Context, conn *websocket.Conn,
 	return conn.Write(writeCtx, websocket.MessageText, data)
 }
 
-// readPump reads and discards all messages from the client. Its primary
-// purpose is to process WebSocket control frames (close, pong). When the
-// read fails (client disconnect, protocol error), it cancels the context
-// to signal the write pump to stop.
-func (h *WebSocketHandler) readPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, remoteAddr string) {
+// readPump reads messages from the client and processes them. It handles:
+//
+//   - subscribe/unsubscribe messages to manage client subscriptions
+//   - WebSocket control frames (close, pong)
+//
+// When the read fails (client disconnect, protocol error), it cancels the
+// context to signal the write pump to stop.
+func (h *WebSocketHandler) readPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, c *client, remoteAddr string) {
 	defer cancel()
 
-	// Set the read limit to a small value — we don't expect meaningful
-	// messages from the client.
+	// Set the read limit — subscribe/unsubscribe messages are small JSON.
 	conn.SetReadLimit(4096)
 
 	for {
-		_, _, err := conn.Read(ctx)
+		_, data, err := conn.Read(ctx)
 		if err != nil {
 			// Normal closure or context cancellation — not worth logging at WARN.
 			if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
@@ -218,8 +237,59 @@ func (h *WebSocketHandler) readPump(ctx context.Context, cancel context.CancelFu
 			}
 			return
 		}
-		// Discard the message — the channel is server-to-client only.
+
+		// Parse the client message.
+		h.handleClientMessage(data, c, remoteAddr)
 	}
+}
+
+// handleClientMessage parses and processes a single message from the client.
+// Invalid messages are logged at DEBUG level and silently ignored.
+func (h *WebSocketHandler) handleClientMessage(data []byte, c *client, remoteAddr string) {
+	var msg wsClientMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		h.logf("DEBUG", "ignoring unparseable message from %s: %v", remoteAddr, err)
+		return
+	}
+
+	switch msg.Action {
+	case "subscribe":
+		h.handleSubscribe(msg, c, remoteAddr)
+	case "unsubscribe":
+		h.handleUnsubscribe(msg, c, remoteAddr)
+	default:
+		h.logf("DEBUG", "ignoring unknown action %q from %s", msg.Action, remoteAddr)
+	}
+}
+
+// handleSubscribe processes a subscribe message from the client.
+func (h *WebSocketHandler) handleSubscribe(msg wsClientMessage, c *client, remoteAddr string) {
+	// Validate that the event type is subscription-gated.
+	if !IsSubscriptionGated(msg.Event) {
+		h.logf("DEBUG", "ignoring subscribe for non-gated event %q from %s", msg.Event, remoteAddr)
+		return
+	}
+
+	sub := Subscription{}
+
+	// Extract filters if provided.
+	if msg.Filters != nil && msg.Filters.MinSeverity != "" {
+		if !IsValidSeverity(msg.Filters.MinSeverity) {
+			h.logf("DEBUG", "ignoring subscribe with invalid min_severity %q from %s",
+				msg.Filters.MinSeverity, remoteAddr)
+			return
+		}
+		sub.MinSeverity = msg.Filters.MinSeverity
+	}
+
+	c.Subscribe(msg.Event, sub)
+	h.logf("DEBUG", "client %s subscribed to %s (min_severity=%s)", remoteAddr, msg.Event, sub.MinSeverity)
+}
+
+// handleUnsubscribe processes an unsubscribe message from the client.
+func (h *WebSocketHandler) handleUnsubscribe(msg wsClientMessage, c *client, remoteAddr string) {
+	c.Unsubscribe(msg.Event)
+	h.logf("DEBUG", "client %s unsubscribed from %s", remoteAddr, msg.Event)
 }
 
 // logf logs a formatted message if a logger is configured.
