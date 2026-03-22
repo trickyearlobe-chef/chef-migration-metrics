@@ -231,6 +231,63 @@ export interface TestKitchenCompatibilityResponse {
   data: TestKitchenCompatibilitySummary[];
 }
 
+// System health
+
+export interface SystemHealthAlert {
+  level: "warning" | "critical";
+  metric: "disk" | "cpu" | "memory";
+  message: string;
+}
+
+export interface SystemHealthThresholds {
+  disk_used_warning_percent: number;
+  disk_used_critical_percent: number;
+  cpu_load_warning_per_cpu: number;
+  cpu_load_critical_per_cpu: number;
+  mem_used_warning_percent: number;
+  mem_used_critical_percent: number;
+}
+
+export interface TableSize {
+  table_name: string;
+  total_bytes: number;
+  table_bytes: number;
+  index_bytes: number;
+  row_estimate: number;
+}
+
+export interface DiskStats {
+  path: string;
+  total_bytes: number;
+  free_bytes: number;
+  used_percent: number;
+}
+
+export interface SystemHealthResponse {
+  timestamp: string;
+  uptime: string;
+
+  disks: DiskStats[];
+
+  cpu_count: number;
+  load_avg_1: number;
+  load_per_cpu: number;
+
+  mem_total_bytes: number;
+  mem_avail_bytes: number;
+  mem_used_percent: number;
+
+  go_heap_bytes: number;
+  go_goroutines: number;
+
+  database_size_bytes: number;
+  table_sizes: TableSize[];
+
+  alerts: SystemHealthAlert[];
+  collection_paused: boolean;
+  thresholds: SystemHealthThresholds;
+}
+
 // ---------------------------------------------------------------------------
 // Nodes
 // ---------------------------------------------------------------------------

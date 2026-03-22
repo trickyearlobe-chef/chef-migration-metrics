@@ -42,6 +42,7 @@ type Config struct {
 	Logging                    LoggingConfig       `yaml:"logging"`
 	Auth                       AuthConfig          `yaml:"auth"`
 	Ownership                  OwnershipConfig     `yaml:"ownership"`
+	SystemHealth               SystemHealthConfig  `yaml:"system_health"`
 
 	// explicitExportsDir tracks whether the user explicitly set exports.output_directory.
 	explicitExportsDir bool
@@ -259,6 +260,28 @@ func (tk *TestKitchenConfig) IsEnabled() bool {
 // ReadinessConfig controls the upgrade readiness evaluation parameters.
 type ReadinessConfig struct {
 	MinFreeDiskMB int `yaml:"min_free_disk_mb"`
+}
+
+// SystemHealthConfig controls host-level resource monitoring and the
+// collection circuit breaker.
+type SystemHealthConfig struct {
+	DiskPaths                 []string `yaml:"disk_paths"`
+	DiskUsedWarningPercent    float64  `yaml:"disk_used_warning_percent"`
+	DiskUsedCriticalPercent   float64  `yaml:"disk_used_critical_percent"`
+	CPULoadWarningPerCPU      float64  `yaml:"cpu_load_warning_per_cpu"`
+	CPULoadCriticalPerCPU     float64  `yaml:"cpu_load_critical_per_cpu"`
+	MemUsedWarningPercent     float64  `yaml:"mem_used_warning_percent"`
+	MemUsedCriticalPercent    float64  `yaml:"mem_used_critical_percent"`
+	PauseCollectionOnCritical *bool    `yaml:"pause_collection_on_critical"`
+}
+
+// IsPauseCollectionOnCritical returns whether collection should be paused
+// when a critical system health alert is detected. Defaults to true.
+func (sh SystemHealthConfig) IsPauseCollectionOnCritical() bool {
+	if sh.PauseCollectionOnCritical == nil {
+		return true
+	}
+	return *sh.PauseCollectionOnCritical
 }
 
 // ---------------------------------------------------------------------------
@@ -717,6 +740,38 @@ func (c *Config) setDefaults() {
 		if c.Ownership.AutoRules[i].Type == "cmdb_attribute" && c.Ownership.AutoRules[i].OwnerAttribute == "" {
 			c.Ownership.AutoRules[i].OwnerAttribute = "owner"
 		}
+	}
+
+	// System health
+	if len(c.SystemHealth.DiskPaths) == 0 {
+		c.SystemHealth.DiskPaths = []string{
+			c.Storage.DataDir,
+			c.Storage.CookbookCacheDir,
+			c.Storage.GitCookbookDir,
+			c.Exports.OutputDirectory,
+		}
+	}
+	if c.SystemHealth.DiskUsedWarningPercent == 0 {
+		c.SystemHealth.DiskUsedWarningPercent = 80
+	}
+	if c.SystemHealth.DiskUsedCriticalPercent == 0 {
+		c.SystemHealth.DiskUsedCriticalPercent = 90
+	}
+	if c.SystemHealth.CPULoadWarningPerCPU == 0 {
+		c.SystemHealth.CPULoadWarningPerCPU = 2.0
+	}
+	if c.SystemHealth.CPULoadCriticalPerCPU == 0 {
+		c.SystemHealth.CPULoadCriticalPerCPU = 4.0
+	}
+	if c.SystemHealth.MemUsedWarningPercent == 0 {
+		c.SystemHealth.MemUsedWarningPercent = 80
+	}
+	if c.SystemHealth.MemUsedCriticalPercent == 0 {
+		c.SystemHealth.MemUsedCriticalPercent = 90
+	}
+	if c.SystemHealth.PauseCollectionOnCritical == nil {
+		t := true
+		c.SystemHealth.PauseCollectionOnCritical = &t
 	}
 }
 
