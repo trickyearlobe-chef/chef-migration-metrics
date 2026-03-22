@@ -6,6 +6,15 @@ export default {
   ],
   theme: {
     extend: {
+      keyframes: {
+        highlight: {
+          '0%': { backgroundColor: 'rgb(220 252 231)' },   // green-100
+          '100%': { backgroundColor: 'transparent' },
+        },
+      },
+      animation: {
+        highlight: 'highlight 2s ease-out',
+      },
       colors: {
         // Status colours matching the spec confidence indicators
         'status-compatible': '#16a34a',    // green-600

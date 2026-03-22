@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useOrg } from "../context/OrgContext";
 import {
   fetchLogs,
@@ -11,18 +11,24 @@ import type {
   LogEntry,
   CollectionRunWithOrg,
   Pagination as PaginationType,
+  WSLogEntryData,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
+import { useWebSocket } from "../hooks/useWebSocket";
 
 // ---------------------------------------------------------------------------
 // Log viewer page — two tabs:
 //   1. Logs: paginated table of log entries with severity/scope/org filters
+//      Live log entries are streamed via WebSocket when the tab is active.
 //   2. Collection Runs: paginated table of collection run history
 //
 // Clicking a log row opens an inline detail panel showing full metadata
 // and process output.
 // ---------------------------------------------------------------------------
+
+/** Maximum number of live entries to prepend before they push older items off. */
+const MAX_LIVE_ENTRIES = 100;
 
 type Tab = "logs" | "runs";
 
@@ -151,6 +157,69 @@ function LogsTab() {
   const [page, setPage] = useState(1);
   const perPage = 50;
 
+  // Track live (WebSocket-streamed) entries separately so they can be
+  // discarded on page change without affecting the REST-fetched data.
+  const [liveEntries, setLiveEntries] = useState<LogEntry[]>([]);
+  const liveIdCounter = useRef(0);
+
+  // WebSocket connection for real-time log streaming.
+  const { status: wsStatus, subscribe, unsubscribe, onEvent } = useWebSocket();
+
+  // Subscribe to log_entry events with the current severity filter.
+  // Re-subscribe when minSeverity changes.
+  useEffect(() => {
+    const filters: Record<string, string> = {};
+    if (minSeverity) filters.min_severity = minSeverity;
+    subscribe("log_entry", filters);
+    return () => {
+      unsubscribe("log_entry");
+    };
+  }, [subscribe, unsubscribe, minSeverity]);
+
+  // Listen for incoming log_entry events and prepend to the live list.
+  // Only prepend when on page 1 to avoid confusing pagination UX.
+  useEffect(() => {
+    const cleanup = onEvent("log_entry", (raw: unknown) => {
+      const data = raw as WSLogEntryData;
+
+      // Client-side scope filter — server only filters by severity.
+      if (scope && data.scope !== scope) return;
+
+      // Client-side org filter.
+      if (selectedOrg && data.organisation !== selectedOrg) return;
+
+      // Build a synthetic LogEntry from the WebSocket payload.
+      liveIdCounter.current += 1;
+      const entry: LogEntry = {
+        id: `live-${liveIdCounter.current}-${Date.now()}`,
+        timestamp: data.timestamp,
+        severity: data.severity,
+        scope: data.scope,
+        message: data.message,
+        organisation: data.organisation,
+        cookbook_name: data.cookbook_name,
+        cookbook_version: data.cookbook_version,
+        commit_sha: data.commit_sha,
+        chef_client_version: data.chef_client_version,
+        collection_run_id: data.collection_run_id,
+        notification_channel: data.notification_channel,
+        export_job_id: data.export_job_id,
+        tls_domain: data.tls_domain,
+        created_at: data.timestamp,
+      };
+
+      if (page === 1) {
+        setLiveEntries((prev) => [entry, ...prev].slice(0, MAX_LIVE_ENTRIES));
+      }
+    });
+    return cleanup;
+  }, [onEvent, scope, selectedOrg, page]);
+
+  // Clear live entries when filters or page change (REST fetch will refresh).
+  useEffect(() => {
+    setLiveEntries([]);
+  }, [selectedOrg, minSeverity, scope, page]);
+
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
@@ -173,6 +242,9 @@ function LogsTab() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [selectedOrg, minSeverity, scope]);
 
+  // Combine live entries (newest first) with REST-fetched entries.
+  const displayedLogs = page === 1 ? [...liveEntries, ...logs] : logs;
+
   const toggleDetail = useCallback((id: string) => {
     if (expandedId === id) {
       setExpandedId(null);
@@ -189,7 +261,7 @@ function LogsTab() {
         setDetailEntry(fallback);
       })
       .finally(() => setDetailLoading(false));
-  }, [expandedId, logs]);
+  }, [expandedId, displayedLogs]);
 
   const activeFilterCount = [minSeverity !== "INFO" ? minSeverity : "", scope].filter(Boolean).length;
 
@@ -231,6 +303,33 @@ function LogsTab() {
             Clear ({activeFilterCount})
           </button>
         )}
+        {/* WebSocket connection status */}
+        <div className="ml-auto flex items-center gap-1.5 text-xs text-gray-400">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${wsStatus === "connected"
+                ? "bg-green-400"
+                : wsStatus === "connecting"
+                  ? "bg-amber-400 animate-pulse"
+                  : wsStatus === "error"
+                    ? "bg-red-400"
+                    : "bg-gray-300"
+              }`}
+          />
+          <span>
+            {wsStatus === "connected"
+              ? "Live"
+              : wsStatus === "connecting"
+                ? "Connecting\u2026"
+                : wsStatus === "error"
+                  ? "Disconnected"
+                  : "Offline"}
+          </span>
+          {liveEntries.length > 0 && (
+            <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+              +{liveEntries.length} new
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Log table */}
@@ -238,7 +337,7 @@ function LogsTab() {
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
         <>
-          {logs.length === 0 ? (
+          {displayedLogs.length === 0 ? (
             <EmptyState title="No log entries found" description="Adjust filters or wait for application activity." />
           ) : (
             <div className="table-container">
@@ -253,7 +352,7 @@ function LogsTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map((entry) => (
+                  {displayedLogs.map((entry) => (
                     <LogRow
                       key={entry.id}
                       entry={entry}
@@ -261,6 +360,7 @@ function LogsTab() {
                       onToggle={() => toggleDetail(entry.id)}
                       detailEntry={expandedId === entry.id ? detailEntry : null}
                       detailLoading={expandedId === entry.id ? detailLoading : false}
+                      isLive={entry.id.startsWith("live-")}
                     />
                   ))}
                 </tbody>
@@ -284,17 +384,24 @@ function LogRow({
   onToggle,
   detailEntry,
   detailLoading,
+  isLive = false,
 }: {
   entry: LogEntry;
   expanded: boolean;
   onToggle: () => void;
   detailEntry: LogEntry | null;
   detailLoading: boolean;
+  isLive?: boolean;
 }) {
   return (
     <>
       <tr
-        className={`cursor-pointer transition-colors hover:bg-gray-50 ${expanded ? "bg-blue-50/50" : ""}`}
+        className={`cursor-pointer transition-colors hover:bg-gray-50 ${expanded
+            ? "bg-blue-50/50"
+            : isLive
+              ? "animate-[highlight_2s_ease-out] border-l-2 border-l-green-400"
+              : ""
+          }`}
         onClick={onToggle}
       >
         <td className="text-xs text-gray-500 tabular-nums">
