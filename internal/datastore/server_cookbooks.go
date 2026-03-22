@@ -491,6 +491,35 @@ func (db *DB) listActiveServerCookbooksNeedingDownload(ctx context.Context, q qu
 	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
 }
 
+// ListActiveServerCookbooksForPipeline returns active server cookbooks for
+// the given organisation that need processing by the streaming pipeline.
+// This includes cookbooks needing download (pending/failed) AND cookbooks
+// that are already downloaded (ok) but may still need CookStyle scanning.
+// The pipeline's internal skip logic handles the "already scanned"
+// optimisation, so this query intentionally returns all active cookbooks
+// regardless of scan state.
+func (db *DB) ListActiveServerCookbooksForPipeline(ctx context.Context, organisationID string) ([]ServerCookbook, error) {
+	return db.listActiveServerCookbooksForPipeline(ctx, db.q(), organisationID)
+}
+
+func (db *DB) listActiveServerCookbooksForPipeline(ctx context.Context, q queryable, organisationID string) ([]ServerCookbook, error) {
+	// Return all active cookbooks, ordered so that cookbooks needing
+	// download come first (pending/failed before ok). Within each status
+	// group, sort by name and version for predictable ordering.
+	query := `SELECT ` + serverCookbookColumns + `
+		FROM server_cookbooks
+		WHERE organisation_id = $1
+		  AND is_active = TRUE
+		ORDER BY
+		  CASE download_status
+		    WHEN 'pending' THEN 0
+		    WHEN 'failed'  THEN 1
+		    WHEN 'ok'      THEN 2
+		  END,
+		  name, version`
+	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
+}
+
 // ResetServerCookbookDownloadStatus resets the download_status to 'pending'
 // and clears the download_error for a specific server cookbook. This is the
 // "manual rescan" operation that forces a fresh download on the next run.
