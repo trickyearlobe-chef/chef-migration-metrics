@@ -195,6 +195,8 @@ export interface CookbookCompatibilitySummary {
   compatible_cookbooks: number;
   incompatible_cookbooks: number;
   untested_cookbooks: number;
+  untested_inactive_cookbooks: number;
+  untested_unscanned_cookbooks: number;
   compatible_percent: number;
 }
 
