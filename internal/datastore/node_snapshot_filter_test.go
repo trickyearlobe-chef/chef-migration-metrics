@@ -144,6 +144,25 @@ func TestBuildNodeSnapshotFilterQuery_ChefVersion(t *testing.T) {
 	}
 }
 
+func TestBuildNodeSnapshotFilterQuery_ChefVersionUnknown(t *testing.T) {
+	// When chef_version filter is "unknown", the query should match nodes
+	// with empty or NULL chef_version — not nodes whose chef_version
+	// literally starts with "unknown". The dashboard version distribution
+	// uses COALESCE(NULLIF(chef_version, ''), 'unknown') to label these
+	// nodes, so the filter must reverse that mapping.
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ChefVersion: "unknown",
+	})
+
+	if !strings.Contains(q, "chef_version IS NULL OR cn.chef_version = ''") {
+		t.Errorf("query should match NULL/empty chef_version for 'unknown' filter, got:\n%s", q)
+	}
+	// Should NOT add a positional parameter for "unknown".
+	if len(args) != 0 {
+		t.Errorf("args = %v, want [] (no positional params for unknown filter)", args)
+	}
+}
+
 func TestBuildNodeSnapshotFilterQuery_ChefVersionExact(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
 		ChefVersionExact: "18.0.92",
