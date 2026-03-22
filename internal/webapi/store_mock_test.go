@@ -101,6 +101,7 @@ type mockStore struct {
 	InsertAuditEntryFn                                  func(ctx context.Context, p datastore.InsertAuditEntryParams) error
 	ListAuditLogFn                                      func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 	DatabaseSizeFn                                      func(ctx context.Context) (int64, error)
+	DatabaseTableSizesFn                                func(ctx context.Context) ([]datastore.TableSize, error)
 }
 
 // compile-time check
@@ -758,6 +759,13 @@ func (m *mockStore) DatabaseSize(ctx context.Context) (int64, error) {
 		return m.DatabaseSizeFn(ctx)
 	}
 	return 0, nil
+}
+
+func (m *mockStore) DatabaseTableSizes(ctx context.Context) ([]datastore.TableSize, error) {
+	if m.DatabaseTableSizesFn != nil {
+		return m.DatabaseTableSizesFn(ctx)
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------

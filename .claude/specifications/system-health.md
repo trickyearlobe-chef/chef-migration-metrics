@@ -272,6 +272,30 @@ Admin-only endpoint. Returns the current system health snapshot.
 
   "database_size_bytes": 536870912,
 
+  "table_sizes": [
+    {
+      "table_name": "node_snapshots",
+      "total_bytes": 52428800,
+      "table_bytes": 41943040,
+      "index_bytes": 10485760,
+      "row_estimate": 15000
+    },
+    {
+      "table_name": "server_cookbooks",
+      "total_bytes": 20971520,
+      "table_bytes": 16777216,
+      "index_bytes": 4194304,
+      "row_estimate": 800
+    },
+    {
+      "table_name": "schema_migrations",
+      "total_bytes": 16384,
+      "table_bytes": 8192,
+      "index_bytes": 8192,
+      "row_estimate": 12
+    }
+  ],
+
   "alerts": [
     {
       "level": "warning",
@@ -293,19 +317,53 @@ Admin-only endpoint. Returns the current system health snapshot.
 ```
 
 The handler calls `syshealth.Snapshot()`, adds `collection_paused` and
-`thresholds` from config, and returns the combined response. The `disks`
-and `alerts` arrays are guaranteed to be `[]` (never `null`) in JSON.
+`thresholds` from config, and returns the combined response. The `disks`,
+`alerts`, and `table_sizes` arrays are guaranteed to be `[]` (never
+`null`) in JSON.
 
-### Database size
+### Database size and per-table breakdown
 
-The handler also queries `pg_database_size(current_database())` via the
-`DataStore.DatabaseSize()` method and includes the result as
-`database_size_bytes`. This works for both local and remote PostgreSQL
-instances since it queries through the existing database connection.
+The handler queries two pieces of database storage information:
 
-The query is best-effort: if the database is unreachable or the query
-fails, `database_size_bytes` falls back to `0` and the endpoint still
-returns 200. If no `DataStore` is configured (nil), the field is `0`.
+1. **`database_size_bytes`** — total database size via
+   `pg_database_size(current_database())`, returned as a single integer.
+2. **`table_sizes`** — per-table disk usage for all user tables in the
+   `public` schema, ordered by total size descending. Each entry
+   includes:
+
+   | Field          | Source                              | Description                        |
+   |----------------|-------------------------------------|------------------------------------|
+   | `table_name`   | `pg_class.relname`                  | Table name                         |
+   | `total_bytes`  | `pg_total_relation_size(oid)`       | Table + indexes + TOAST            |
+   | `table_bytes`  | `pg_table_size(oid)`                | Table + TOAST (no indexes)         |
+   | `index_bytes`  | `pg_indexes_size(oid)`              | All indexes on the table           |
+   | `row_estimate` | `pg_stat_user_tables.n_live_tup`    | Estimated live row count           |
+
+Both queries use the `DataStore` interface:
+
+```go
+DatabaseSize(ctx context.Context) (int64, error)
+DatabaseTableSizes(ctx context.Context) ([]TableSize, error)
+```
+
+```go
+type TableSize struct {
+    TableName   string `json:"table_name"`
+    TotalBytes  int64  `json:"total_bytes"`
+    TableBytes  int64  `json:"table_bytes"`
+    IndexBytes  int64  `json:"index_bytes"`
+    RowEstimate int64  `json:"row_estimate"`
+}
+```
+
+Both queries are best-effort: if the database is unreachable or a query
+fails, `database_size_bytes` falls back to `0` and `table_sizes` falls
+back to `[]`. The endpoint still returns 200. If no `DataStore` is
+configured (nil), both fields return their zero values.
+
+This works for both local and remote PostgreSQL instances since it
+queries through the existing database connection — no filesystem access
+is required.
 
 ## Collection Circuit Breaker
 
@@ -361,10 +419,17 @@ The page auto-refreshes every 10 seconds via `setInterval`.
 2. **CPU Load** and **Memory** — two cards side by side
 
 **Database & runtime section** — four cards in a row:
-- Database size (from `pg_database_size`, shows "N/A" when unavailable)
+- Database size (from `pg_database_size`, shows "N/A" when unavailable;
+  subtitle shows table count)
 - Go heap usage
 - Goroutine count
 - Uptime
+
+**Database tables panel** — collapsible `<details>` panel showing a
+sorted table of all user tables with columns: Table, Total, Data,
+Indexes, Rows (est.), and a relative size bar. Tables are ordered by
+total size descending. The bar width is proportional to the largest
+table. Only shown when `table_sizes` is non-empty.
 
 3. **CPU Load**
    - Load average (1 min) displayed prominently
@@ -398,6 +463,14 @@ interface DiskStats {
   used_percent: number;
 }
 
+interface TableSize {
+  table_name: string;
+  total_bytes: number;
+  table_bytes: number;
+  index_bytes: number;
+  row_estimate: number;
+}
+
 interface SystemHealthResponse {
   timestamp: string;
   uptime: string;
@@ -416,6 +489,7 @@ interface SystemHealthResponse {
   go_goroutines: number;
 
   database_size_bytes: number;
+  table_sizes: TableSize[];
 
   alerts: SystemHealthAlert[];
   collection_paused: boolean;

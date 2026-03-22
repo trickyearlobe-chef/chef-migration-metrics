@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/syshealth"
 )
 
@@ -33,8 +34,10 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 
 	stats := syshealth.Snapshot(sh.DiskPaths, th)
 
-	// Query database size (best-effort — don't fail the whole endpoint).
+	// Query database size and per-table breakdown (best-effort — don't
+	// fail the whole endpoint if the DB is unreachable).
 	var dbSizeBytes int64
+	var tableSizes []datastore.TableSize
 	if r.db != nil {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
@@ -42,6 +45,13 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 		if err == nil {
 			dbSizeBytes = size
 		}
+		ts, err := r.db.DatabaseTableSizes(ctx)
+		if err == nil {
+			tableSizes = ts
+		}
+	}
+	if tableSizes == nil {
+		tableSizes = []datastore.TableSize{}
 	}
 
 	// Determine whether the collection circuit breaker would trip.
@@ -84,6 +94,7 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 		"go_goroutines": stats.GoGoroutines,
 
 		"database_size_bytes": dbSizeBytes,
+		"table_sizes":         tableSizes,
 
 		"alerts":            alerts,
 		"collection_paused": collectionPaused,

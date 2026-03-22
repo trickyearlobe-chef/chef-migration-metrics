@@ -248,6 +248,14 @@ export interface SystemHealthThresholds {
   mem_used_critical_percent: number;
 }
 
+export interface TableSize {
+  table_name: string;
+  total_bytes: number;
+  table_bytes: number;
+  index_bytes: number;
+  row_estimate: number;
+}
+
 export interface DiskStats {
   path: string;
   total_bytes: number;
@@ -273,6 +281,7 @@ export interface SystemHealthResponse {
   go_goroutines: number;
 
   database_size_bytes: number;
+  table_sizes: TableSize[];
 
   alerts: SystemHealthAlert[];
   collection_paused: boolean;

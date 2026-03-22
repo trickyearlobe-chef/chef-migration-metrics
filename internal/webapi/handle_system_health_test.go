@@ -8,8 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+
 	"net/http/httptest"
 	"testing"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 )
@@ -298,5 +301,159 @@ func TestHandleAdminSystemHealth_LargeDatabaseSize(t *testing.T) {
 	}
 	if int64(dbSize) != fiftyGB {
 		t.Errorf("database_size_bytes = %v, want %d", dbSize, fiftyGB)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleAdminSystemHealth — table sizes
+// ---------------------------------------------------------------------------
+
+func TestHandleAdminSystemHealth_TableSizes_HappyPath(t *testing.T) {
+	store := &mockStore{
+		DatabaseSizeFn: func(ctx context.Context) (int64, error) {
+			return 104857600, nil
+		},
+		DatabaseTableSizesFn: func(ctx context.Context) ([]datastore.TableSize, error) {
+			return []datastore.TableSize{
+				{TableName: "node_snapshots", TotalBytes: 52428800, TableBytes: 41943040, IndexBytes: 10485760, RowEstimate: 15000},
+				{TableName: "server_cookbooks", TotalBytes: 20971520, TableBytes: 16777216, IndexBytes: 4194304, RowEstimate: 800},
+				{TableName: "schema_migrations", TotalBytes: 16384, TableBytes: 8192, IndexBytes: 8192, RowEstimate: 12},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-health", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /admin/system-health status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	tables, ok := body["table_sizes"].([]any)
+	if !ok {
+		t.Fatalf("table_sizes should be an array, got %T", body["table_sizes"])
+	}
+	if len(tables) != 3 {
+		t.Fatalf("table_sizes length = %d, want 3", len(tables))
+	}
+
+	// First table should be the largest (node_snapshots).
+	first, ok := tables[0].(map[string]any)
+	if !ok {
+		t.Fatalf("table_sizes[0] should be an object, got %T", tables[0])
+	}
+	if first["table_name"] != "node_snapshots" {
+		t.Errorf("table_sizes[0].table_name = %q, want %q", first["table_name"], "node_snapshots")
+	}
+	if int64(first["total_bytes"].(float64)) != 52428800 {
+		t.Errorf("table_sizes[0].total_bytes = %v, want 52428800", first["total_bytes"])
+	}
+	if int64(first["table_bytes"].(float64)) != 41943040 {
+		t.Errorf("table_sizes[0].table_bytes = %v, want 41943040", first["table_bytes"])
+	}
+	if int64(first["index_bytes"].(float64)) != 10485760 {
+		t.Errorf("table_sizes[0].index_bytes = %v, want 10485760", first["index_bytes"])
+	}
+	if int64(first["row_estimate"].(float64)) != 15000 {
+		t.Errorf("table_sizes[0].row_estimate = %v, want 15000", first["row_estimate"])
+	}
+
+	// Last table should be the smallest (schema_migrations).
+	last, ok := tables[2].(map[string]any)
+	if !ok {
+		t.Fatalf("table_sizes[2] should be an object, got %T", tables[2])
+	}
+	if last["table_name"] != "schema_migrations" {
+		t.Errorf("table_sizes[2].table_name = %q, want %q", last["table_name"], "schema_migrations")
+	}
+}
+
+func TestHandleAdminSystemHealth_TableSizes_Empty(t *testing.T) {
+	store := &mockStore{
+		DatabaseTableSizesFn: func(ctx context.Context) ([]datastore.TableSize, error) {
+			return []datastore.TableSize{}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-health", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /admin/system-health status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	tables, ok := body["table_sizes"].([]any)
+	if !ok {
+		t.Fatalf("table_sizes should be an array, got %T", body["table_sizes"])
+	}
+	if len(tables) != 0 {
+		t.Errorf("table_sizes length = %d, want 0", len(tables))
+	}
+}
+
+func TestHandleAdminSystemHealth_TableSizes_DBError_ReturnsEmptyArray(t *testing.T) {
+	store := &mockStore{
+		DatabaseTableSizesFn: func(ctx context.Context) ([]datastore.TableSize, error) {
+			return nil, errors.New("permission denied")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-health", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /admin/system-health status = %d, want %d (table sizes error should not fail endpoint)", w.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	// table_sizes should gracefully fall back to empty array on error.
+	tables, ok := body["table_sizes"].([]any)
+	if !ok {
+		t.Fatalf("table_sizes should be an array (never null), got %T", body["table_sizes"])
+	}
+	if len(tables) != 0 {
+		t.Errorf("table_sizes length = %d, want 0 on DB error", len(tables))
+	}
+}
+
+func TestHandleAdminSystemHealth_TableSizes_NilDB_ReturnsEmptyArray(t *testing.T) {
+	// testRouter() passes nil for the DataStore.
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-health", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /admin/system-health status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	tables, ok := body["table_sizes"].([]any)
+	if !ok {
+		t.Fatalf("table_sizes should be an array (never null) when DB is nil, got %T", body["table_sizes"])
+	}
+	if len(tables) != 0 {
+		t.Errorf("table_sizes length = %d, want 0 when DB is nil", len(tables))
 	}
 }

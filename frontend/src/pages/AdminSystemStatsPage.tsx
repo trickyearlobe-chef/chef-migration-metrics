@@ -197,7 +197,9 @@ export function AdminSystemStatsPage() {
                 {data.database_size_bytes > 0 ? formatBytes(data.database_size_bytes) : "N/A"}
               </span>
               {data.database_size_bytes > 0 && (
-                <p className="mt-1 text-xs text-gray-400">PostgreSQL</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  PostgreSQL &middot; {data.table_sizes.length} table{data.table_sizes.length !== 1 ? "s" : ""}
+                </p>
               )}
             </div>
             <div className="card">
@@ -213,6 +215,52 @@ export function AdminSystemStatsPage() {
               <span className="text-2xl font-bold text-gray-700">{data.uptime}</span>
             </div>
           </div>
+
+          {/* ---- Database table sizes ---- */}
+          {data.table_sizes.length > 0 && (
+            <details className="card">
+              <summary className="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-800">
+                Database Tables ({data.table_sizes.length})
+              </summary>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-xs text-gray-500">
+                      <th className="pb-2 pr-4 font-medium">Table</th>
+                      <th className="pb-2 pr-4 font-medium text-right">Total</th>
+                      <th className="pb-2 pr-4 font-medium text-right">Data</th>
+                      <th className="pb-2 pr-4 font-medium text-right">Indexes</th>
+                      <th className="pb-2 pr-4 font-medium text-right">Rows (est.)</th>
+                      <th className="pb-2 font-medium" style={{ minWidth: "120px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.table_sizes.map((t) => {
+                      const maxBytes = data.table_sizes[0]?.total_bytes || 1;
+                      const pct = Math.max((t.total_bytes / maxBytes) * 100, 0.5);
+                      return (
+                        <tr key={t.table_name} className="border-b border-gray-100 last:border-0">
+                          <td className="py-2 pr-4 font-mono text-xs text-gray-700">{t.table_name}</td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-700">{formatBytes(t.total_bytes)}</td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-500">{formatBytes(t.table_bytes)}</td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-500">{formatBytes(t.index_bytes)}</td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-500">{t.row_estimate.toLocaleString()}</td>
+                          <td className="py-2">
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                              <div
+                                className="h-full rounded-full bg-blue-400 transition-all duration-700"
+                                style={{ width: pct + "%" }}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
 
           {/* ---- Thresholds ---- */}
           <details className="card">
