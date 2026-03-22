@@ -17,6 +17,14 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
+// CollectionTriggerFunc is a function that triggers an immediate collection
+// run in the background. The Router calls this after invalidating cached
+// results so the rescan starts immediately instead of waiting for the next
+// scheduled collection cycle. The function should be non-blocking (i.e.
+// launch the run in a goroutine) and return a non-nil error only if the
+// run cannot be started (e.g. one is already in progress).
+type CollectionTriggerFunc func(ctx context.Context) error
+
 // Router is the top-level HTTP handler for the Chef Migration Metrics API.
 // It assembles the ServeMux with all API routes, the WebSocket endpoint,
 // health/version endpoints, and the frontend static asset fallback.
@@ -56,6 +64,11 @@ type Router struct {
 	// authStore provides direct user CRUD for the admin user-management
 	// endpoints. Nil when authentication is not configured.
 	authStore AuthStore
+
+	// triggerCollection triggers an immediate collection run when a rescan
+	// is requested. Nil when not wired up — rescan handlers fall back to
+	// the "will run on next collection cycle" behaviour.
+	triggerCollection CollectionTriggerFunc
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -120,6 +133,16 @@ func WithAuth(
 		r.sessions = sessions
 		r.authMiddleware = mw
 		r.authStore = store
+	}
+}
+
+// WithCollectionTrigger sets the function used by rescan handlers to kick
+// off an immediate collection run after invalidating cached results. When
+// nil, rescan handlers only invalidate and wait for the next scheduled
+// collection cycle.
+func WithCollectionTrigger(fn CollectionTriggerFunc) RouterOption {
+	return func(r *Router) {
+		r.triggerCollection = fn
 	}
 }
 
