@@ -35,20 +35,20 @@ type ServerCookbookPipelineResult struct {
 // runServerCookbookPipeline processes server cookbooks one at a time:
 // download → CookStyle scan → autocorrect preview, then optionally delete
 // from disk.
-// This keeps disk usage to a single cookbook at a time, instead of
-// downloading all cookbooks and leaving them on disk permanently.
+//
+// When deleteAfterScan is false (the default), cookbooks are downloaded to
+// the persistent cache directory (<cookbookCacheDir>/<org_id>/<name>/<version>/)
+// so they remain available for re-scanning when CookStyle is upgraded.
+// When deleteAfterScan is true, cookbooks are downloaded to os.MkdirTemp
+// and removed after scanning to minimise disk usage.
 //
 // Cookbooks that already have CookStyle results are not re-downloaded
 // (the scan skip check inside scanOne handles immutability caching).
 // Cookbooks that are already downloaded (status = 'ok') but lack scan
-// results ARE re-downloaded to a temp location, scanned, and optionally
-// deleted.
+// results ARE re-downloaded, scanned, and optionally deleted.
 //
-// After the pipeline finishes processing pending cookbooks, it may run a
-// cleanup pass that removes any server cookbook files left on disk in the
-// cache directory from previous runs (before the streaming pipeline was
-// deployed). This ensures the disk is not permanently consumed by
-// thousands of cookbook versions that will never be read again.
+// If deleteAfterScan is true, a cleanup pass removes any server cookbook
+// files left in the cache directory from previous runs.
 //
 // If cookstyleScanner is nil, the function falls back to download-only
 // behaviour (equivalent to the old fetchCookbooks, without deletion).
@@ -95,12 +95,11 @@ func runServerCookbookPipeline(
 
 			cbStart := time.Now()
 
-			// Step 1: Download to a temporary directory. Always uses
-			// os.MkdirTemp so the files live in a true temp location that
-			// is fully removed (including the directory itself) after
-			// scanning. This avoids accumulating files in the persistent
-			// cache directory.
-			tmpDir, downloadErr := downloadToTempDir(ctx, client, db, cb)
+			// Step 1: Download the cookbook. When retaining files
+			// (deleteAfterScan=false), writes to the persistent cache
+			// directory so files survive for re-scanning on CookStyle
+			// upgrade. When deleting, uses os.MkdirTemp.
+			destDir, downloadErr := downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
 			if downloadErr != nil {
 				result.Failed++
 				result.Errors = append(result.Errors, CookbookFetchError{
@@ -124,7 +123,7 @@ func runServerCookbookPipeline(
 						break
 					}
 
-					sr := cookstyleScanner.ScanSingleServerCookbook(ctx, cb, tv, tmpDir)
+					sr := cookstyleScanner.ScanSingleServerCookbook(ctx, cb, tv, destDir)
 					if sr.Skipped {
 						result.Skipped++
 						skipCount++
@@ -150,20 +149,18 @@ func runServerCookbookPipeline(
 									Passed:            sr.Passed,
 									Source:            remediation.SourceServerCookbook,
 								}
-								autocorrectGen.GenerateSinglePreview(ctx, csInfo, tmpDir)
+								autocorrectGen.GenerateSinglePreview(ctx, csInfo, destDir)
 							}
 						}
 					}
 				}
 			}
 
-			// Step 4: Optionally delete the downloaded files. Because we used
-			// os.MkdirTemp, this removes the entire temp directory — no empty
-			// parent directories are left behind.
-			if deleteAfterScan && tmpDir != "" {
-				if removeErr := os.RemoveAll(tmpDir); removeErr != nil {
+			// Step 4: Optionally delete the downloaded files.
+			if deleteAfterScan && destDir != "" {
+				if removeErr := os.RemoveAll(destDir); removeErr != nil {
 					log.Warn(fmt.Sprintf("[%d/%d] failed to clean up cookbook files %s/%s at %s: %v",
-						i+1, len(cookbooks), cb.Name, cb.Version, tmpDir, removeErr))
+						i+1, len(cookbooks), cb.Name, cb.Version, destDir, removeErr))
 				}
 			}
 
@@ -211,29 +208,47 @@ func runServerCookbookPipeline(
 	return result
 }
 
-// downloadToTempDir downloads a single cookbook version to a temporary
-// directory and returns the path. The caller is responsible for removing
-// the directory after use (os.RemoveAll).
+// downloadCookbook downloads a single cookbook version to disk and returns
+// the directory path. The caller is responsible for removing the directory
+// when deleteAfterScan is true.
 //
-// The function always uses os.MkdirTemp to create a fresh temporary
-// directory. This ensures the files are completely removed after scanning —
-// no empty parent directories or stale cache entries are left behind.
+// When deleteAfterScan is false and cookbookCacheDir is non-empty, files
+// are written to the persistent cache layout:
+//
+//	<cookbookCacheDir>/<org_id>/<name>/<version>/
+//
+// This keeps cookbooks on disk so they can be re-scanned when CookStyle is
+// upgraded without re-downloading from the Chef Server.
+//
+// When deleteAfterScan is true, os.MkdirTemp is used so files live in a
+// true temp location that is fully removed after scanning.
 //
 // On success, marks the cookbook as download_status = 'ok' in the database.
-func downloadToTempDir(
+func downloadCookbook(
 	ctx context.Context,
 	client *chefapi.Client,
 	db *datastore.DB,
 	cb datastore.ServerCookbook,
+	cookbookCacheDir string,
+	deleteAfterScan bool,
 ) (string, error) {
-	// Always use a true temp directory. The streaming pipeline deletes
-	// these files immediately after scanning, so there is no benefit to
-	// using the persistent cache layout — and doing so would leave empty
-	// parent directories on disk.
-	destDir, err := os.MkdirTemp("", fmt.Sprintf("cmm-cb-%s-%s-*", cb.Name, cb.Version))
-	if err != nil {
-		markDownloadFailed(ctx, db, cb.ID, err)
-		return "", fmt.Errorf("creating temp directory: %w", err)
+	var destDir string
+	var err error
+
+	if !deleteAfterScan && cookbookCacheDir != "" {
+		// Persistent cache: <cookbookCacheDir>/<org_id>/<name>/<version>/
+		destDir = filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
+		if err = os.MkdirAll(destDir, 0o750); err != nil {
+			markDownloadFailed(ctx, db, cb.ID, err)
+			return "", fmt.Errorf("creating cache directory %s: %w", destDir, err)
+		}
+	} else {
+		// Ephemeral temp directory — removed by caller after scanning.
+		destDir, err = os.MkdirTemp("", fmt.Sprintf("cmm-cb-%s-%s-*", cb.Name, cb.Version))
+		if err != nil {
+			markDownloadFailed(ctx, db, cb.ID, err)
+			return "", fmt.Errorf("creating temp directory: %w", err)
+		}
 	}
 
 	// Fetch manifest.
@@ -282,11 +297,9 @@ func downloadToTempDir(
 	return destDir, nil
 }
 
-// cleanLegacyCookbookCache removes server cookbook files that were
-// downloaded to the persistent cache directory by the old fetchCookbooks
-// code path (before the streaming pipeline was introduced). The streaming
-// pipeline now uses os.MkdirTemp exclusively, so any files under
-// <cookbookCacheDir>/<orgID>/ are leftovers that will never be read again.
+// cleanLegacyCookbookCache removes server cookbook files from the persistent
+// cache directory. This is only called when deleteAfterScan is true —
+// the operator has explicitly opted to discard cookbook files after scanning.
 //
 // The function walks the org-specific subdirectory and removes cookbook
 // version directories (the leaf level: <name>/<version>/), then prunes

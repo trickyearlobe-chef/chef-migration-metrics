@@ -573,22 +573,37 @@ func run() int {
 		startup.Info("ownership evaluator enabled")
 	}
 
+	// Ensure storage directories exist. These are the persistent locations
+	// for cookbook files, git clones, and other application data. Creating
+	// them at startup avoids scattered MkdirAll calls throughout the code.
+	for _, dir := range []struct{ name, path string }{
+		{"data_dir", cfg.Storage.DataDir},
+		{"cookbook_cache_dir", cfg.Storage.CookbookCacheDir},
+		{"git_cookbook_dir", cfg.Storage.GitCookbookDir},
+	} {
+		if err := os.MkdirAll(dir.path, 0o750); err != nil {
+			startup.Error(fmt.Sprintf("creating %s %s: %v", dir.name, dir.path, err))
+			return 1
+		}
+	}
+
 	// Cookbook directory resolver. Git cookbooks are cloned under the git
 	// cookbook directory and persist on disk for rescanning when HEAD changes.
-	// Server cookbooks are handled by the streaming pipeline (download →
-	// scan → delete to temp dir) so they are never present in the cache
-	// directory at query time — cookbookDirFn only resolves git cookbooks.
-	// The cookbookCacheDir is still passed to the collector so the pipeline
-	// can clean up legacy cached files from pre-pipeline runs.
+	// Server cookbooks are retained in the cache directory by default
+	// (delete_server_cookbooks_after_scan: false) so they can be re-scanned
+	// when CookStyle is upgraded without re-downloading from the Chef Server.
 	gitCookbookDir := cfg.Storage.GitCookbookDir
 	cookbookCacheDir := cfg.Storage.CookbookCacheDir
+	deleteAfterScan := cfg.Collection.DeleteServerCookbooksAfterScanEnabled()
 	collOpts = append(collOpts, collector.WithCookbookCacheDir(cookbookCacheDir))
 	collOpts = append(collOpts, collector.WithGitCookbookDir(gitCookbookDir))
 	collOpts = append(collOpts, collector.WithServerCookbookDirFn(func(sc datastore.ServerCookbook) string {
-		// Server cookbooks are no longer on disk after scanning — the
-		// streaming pipeline downloads to a temp dir, scans, and deletes
-		// immediately. Returning "" signals that the files are unavailable.
-		return ""
+		if deleteAfterScan {
+			// Files are removed after scanning — not available on disk.
+			return ""
+		}
+		// Files are retained in the persistent cache directory.
+		return filepath.Join(cookbookCacheDir, sc.OrganisationID, sc.Name, sc.Version)
 	}))
 	collOpts = append(collOpts, collector.WithGitRepoDirFn(func(repo datastore.GitRepo) string {
 		return filepath.Join(gitCookbookDir, repo.Name)
@@ -596,6 +611,11 @@ func run() int {
 
 	startup.Info(fmt.Sprintf("storage paths: data_dir=%s, cookbook_cache=%s, git_cookbooks=%s",
 		cfg.Storage.DataDir, cookbookCacheDir, gitCookbookDir))
+	if deleteAfterScan {
+		startup.Info("server cookbook files will be deleted after scanning (delete_server_cookbooks_after_scan: true)")
+	} else {
+		startup.Info(fmt.Sprintf("server cookbook files will be retained in %s for re-scanning", cookbookCacheDir))
+	}
 	startup.Info("analysis pipeline configured: complexity scorer and readiness evaluator always enabled")
 
 	// -------------------------------------------------------------------
