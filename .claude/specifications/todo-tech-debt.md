@@ -28,10 +28,32 @@ progress can be tracked over time.
 
 ### Backend
 
+- [ ] **B0 — Replace UUIDs with natural keys** — Every table uses synthetic
+  UUIDs as primary keys and foreign keys, but every entity has a stable natural
+  key: organisations have `name`, nodes have `(organisation_name, node_name)`,
+  server cookbooks have `(organisation_name, name, version)`, git repos have
+  `name`, readiness records have `(organisation_name, node_name, target_chef_version)`,
+  CookStyle results have `(entity_name, target_chef_version)`. The UUIDs add a
+  fragile layer of indirection — when a UUID changes (snapshot re-collection,
+  git repo URL change, DISTINCT ON picking a different row), all joins break
+  silently: readiness records become invisible, CookStyle results don't match,
+  compatibility shows "untested" for scanned repos. Three bugs in this session
+  traced directly to UUID drift: (1) git repo compatibility using complexity
+  records keyed by stale git_repo_id, (2) node readiness invisible on detail
+  page because node_snapshot_id changed between collection and evaluation,
+  (3) dashboard/list discrepancy because dashboard queries by name but detail
+  queries by UUID. Migrate to natural composite keys as primary keys and
+  foreign keys. This is a large schema change touching every table, every
+  query, every handler, and every API response — but it eliminates an entire
+  class of bugs. Start with a specification, then execute as a series of
+  migrations. Affected: all tables in `migrations/`, all files in
+  `internal/datastore/`, all handlers in `internal/webapi/`, readiness
+  evaluator in `internal/analysis/`, collector in `internal/collector/`.
+
 - [ ] **B1 — Fix N+1 readiness queries** — `handleNodes` fires an individual
-  `ListNodeReadinessForSnapshot` query per node on the page (50 queries per
+  `ListNodeReadinessByNodeName` query per node on the page (50 queries per
   request). `handleDashboardReadiness` does the same for all owned nodes.
-  Replace with a bulk query that loads readiness for all snapshot IDs at once.
+  Replace with a bulk query that loads readiness for all node names at once.
   Files: `handle_nodes.go` L89–100, `handle_dashboard.go` L438–461.
 
 - [ ] **B2 — Push cookbook-by-node filtering into SQL** —
