@@ -254,6 +254,26 @@ func (db *DB) listGitRepoCookstyleResultsByName(ctx context.Context, q queryable
 	return scanGitRepoCookstyleResults(q.QueryContext(ctx, query, name))
 }
 
+// ListAllGitRepoCookstyleResults returns all git repo cookstyle results,
+// ordered by target_chef_version. This is used by dashboard and list
+// handlers to determine compatibility status directly from scan results.
+func (db *DB) ListAllGitRepoCookstyleResults(ctx context.Context) ([]GitRepoCookstyleResult, error) {
+	return db.listAllGitRepoCookstyleResults(ctx, db.q())
+}
+
+func (db *DB) listAllGitRepoCookstyleResults(ctx context.Context, q queryable) ([]GitRepoCookstyleResult, error) {
+	const query = `
+		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		       offence_count, deprecation_count, correctness_count,
+		       deprecation_warnings, offences,
+		       process_stdout, process_stderr, duration_seconds,
+		       scanned_at, created_at
+		  FROM git_repo_cookstyle_results
+		 ORDER BY target_chef_version
+	`
+	return scanGitRepoCookstyleResults(q.QueryContext(ctx, query))
+}
+
 // ---------------------------------------------------------------------------
 // Delete
 // ---------------------------------------------------------------------------

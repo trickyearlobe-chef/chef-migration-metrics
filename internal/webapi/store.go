@@ -222,6 +222,10 @@ type DataStore interface {
 	// given git repo ID, ordered by target_chef_version.
 	ListGitRepoCookstyleResults(ctx context.Context, gitRepoID string) ([]datastore.GitRepoCookstyleResult, error)
 
+	// ListAllGitRepoCookstyleResults returns all git repo cookstyle results,
+	// ordered by target_chef_version.
+	ListAllGitRepoCookstyleResults(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error)
+
 	// GetGitRepoCookstyleResult returns the cookstyle result for the given
 	// git repo ID and target Chef version. Returns (nil, nil) if no result
 	// exists.

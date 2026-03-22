@@ -69,6 +69,7 @@ export function GitReposPage() {
   const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
   const [compatibility, setCompatibility] = useState(searchParams.get("compatibility") || "");
   const [tkStatus, setTkStatus] = useState(searchParams.get("tk_status") || "");
+  const [cloneStatus, setCloneStatus] = useState(searchParams.get("clone_status") || "");
   const [page, setPage] = useState(1);
   const perPage = 50;
 
@@ -82,7 +83,7 @@ export function GitReposPage() {
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
-    if (searchParams.has("compatibility") || searchParams.has("target_chef_version") || searchParams.has("name") || searchParams.has("tk_status")) {
+    if (searchParams.has("compatibility") || searchParams.has("target_chef_version") || searchParams.has("name") || searchParams.has("tk_status") || searchParams.has("clone_status")) {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
@@ -108,6 +109,7 @@ export function GitReposPage() {
       name?: string;
       compatibility?: string;
       tk_status?: string;
+      clone_status?: string;
       target_chef_version?: string;
       sort?: string;
       order?: string;
@@ -120,6 +122,7 @@ export function GitReposPage() {
     if (nameFilter) filters.name = nameFilter;
     if (compatibility) filters.compatibility = compatibility;
     if (tkStatus) filters.tk_status = tkStatus;
+    if (cloneStatus) filters.clone_status = cloneStatus;
     if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
     if (sortOrder) filters.order = sortOrder;
@@ -131,13 +134,13 @@ export function GitReposPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [nameFilter, compatibility, tkStatus, selectedTargetVersion, page, sortField, sortOrder]);
+  }, [nameFilter, compatibility, tkStatus, cloneStatus, selectedTargetVersion, page, sortField, sortOrder]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [nameFilter, compatibility, tkStatus, selectedTargetVersion, sortField, sortOrder]);
+  useEffect(() => { setPage(1); }, [nameFilter, compatibility, tkStatus, cloneStatus, selectedTargetVersion, sortField, sortOrder]);
 
   // Count active filters for the clear button.
-  const activeFilterCount = [nameFilter, compatibility, tkStatus].filter(Boolean).length;
+  const activeFilterCount = [nameFilter, compatibility, tkStatus, cloneStatus].filter(Boolean).length;
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -157,6 +160,7 @@ export function GitReposPage() {
     setNameFilter("");
     setCompatibility("");
     setTkStatus("");
+    setCloneStatus("");
   };
 
   return (
@@ -200,6 +204,19 @@ export function GitReposPage() {
             <option value="failed">Failed</option>
             <option value="timed_out">Timed Out</option>
             <option value="untested">Untested</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Clone Status</label>
+          <select
+            value={cloneStatus}
+            onChange={(e) => setCloneStatus(e.target.value)}
+            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">All</option>
+            <option value="ok">Cloned</option>
+            <option value="failed">Failed</option>
+            <option value="pending">Pending</option>
           </select>
         </div>
         {targetVersions.length > 1 && (

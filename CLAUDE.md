@@ -2,6 +2,13 @@
 
 This file contains the rules and conventions that must be followed at all times when working on this project. Read this file before doing anything else.
 
+## Development process
+* Features need a specification
+* Specifications don't contain code
+* Don't write code or tests until the problem or goal is clear
+* Start by writing tests
+* Make sure tests are passing before committing code
+
 ## Git Branching
 
 - All tasks must be performed on a branch, never on `main`
@@ -23,8 +30,6 @@ This file contains the rules and conventions that must be followed at all times 
   - First line `<type>(<scope>): <summary>`
   - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
 - Commit early and often, but ask the user first.
-
-
 
 ## Ignore Files
 
