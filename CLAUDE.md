@@ -34,6 +34,16 @@ This file contains the rules and conventions that must be followed at all times 
 
 ---
 
+## Tech Debt
+
+- Technical debt is tracked in `.claude/specifications/todo-tech-debt.md`. This file must be kept up to date.
+- When a **tactical decision** is made where a different **strategic decision** would be better long-term (e.g. duplicating code instead of extracting a shared component, using an in-memory workaround instead of a proper SQL query), add an entry to the tech debt list explaining what was done, why, and what the strategic fix would be.
+- When a **problem is fixed in an ugly or expedient way** that needs future refactoring (e.g. a quick hack to unblock progress, a workaround for a library limitation, a hardcoded value that should be configurable), add it to the tech debt list with enough context for someone to come back and do it properly.
+- When a tech debt item is **resolved**, check its box and note the commit or branch where the fix landed.
+- Do not let tech debt accumulate silently — if you notice something that smells wrong but fixing it properly is out of scope for the current task, the trade-off is acceptable **only if it gets recorded** in the tech debt list.
+
+---
+
 ## Specifications
 
 - Specs live under `.claude/specifications/<component>.md` (flat layout, no subdirectories).
