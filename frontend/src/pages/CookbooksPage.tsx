@@ -40,6 +40,10 @@ export function CookbooksPage() {
   const [page, setPage] = useState(1);
   const perPage = 50;
 
+  // Sort state — default to name ascending.
+  const [sortField, setSortField] = useState("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
   // Target Chef versions loaded from backend config.
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
   const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(searchParams.get("target_chef_version") || "");
@@ -77,6 +81,8 @@ export function CookbooksPage() {
     if (nameFilter) filters.name = nameFilter;
     if (compatibility) filters.compatibility = compatibility;
     if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
+    if (sortField) filters.sort = sortField;
+    if (sortOrder) filters.order = sortOrder;
 
     fetchCookbooks(filters)
       .then((res) => {
@@ -85,13 +91,27 @@ export function CookbooksPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion, page]);
+  }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion, page, sortField, sortOrder]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion]);
+  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion, sortField, sortOrder]);
 
   // Count active filters for the clear button.
   const activeFilterCount = [nameFilter, active, compatibility].filter(Boolean).length;
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder(field === "name" ? "asc" : "desc");
+    }
+  };
+
+  const sortIndicator = (field: string) => {
+    if (sortField !== field) return " ↕";
+    return sortOrder === "asc" ? " ↑" : " ↓";
+  };
 
   const clearFilters = () => {
     setNameFilter("");
@@ -177,10 +197,16 @@ export function CookbooksPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("name")}>
+                      Name<span className="text-xs text-blue-500">{sortIndicator("name")}</span>
+                    </th>
                     <th>Versions</th>
-                    <th>Compatibility</th>
-                    <th>Status</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("compatibility")}>
+                      Compatibility<span className="text-xs text-blue-500">{sortIndicator("compatibility")}</span>
+                    </th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("active")}>
+                      Status<span className="text-xs text-blue-500">{sortIndicator("active")}</span>
+                    </th>
                     <th>Download</th>
                   </tr>
                 </thead>

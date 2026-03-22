@@ -45,6 +45,10 @@ export function GitReposPage() {
   const [page, setPage] = useState(1);
   const perPage = 50;
 
+  // Sort state — default to name ascending.
+  const [sortField, setSortField] = useState("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
   // Target Chef versions loaded from backend config.
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
   const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(searchParams.get("target_chef_version") || "");
@@ -78,6 +82,8 @@ export function GitReposPage() {
       compatibility?: string;
       tk_status?: string;
       target_chef_version?: string;
+      sort?: string;
+      order?: string;
       page?: number;
       per_page?: number;
     } = {
@@ -88,6 +94,8 @@ export function GitReposPage() {
     if (compatibility) filters.compatibility = compatibility;
     if (tkStatus) filters.tk_status = tkStatus;
     if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
+    if (sortField) filters.sort = sortField;
+    if (sortOrder) filters.order = sortOrder;
 
     fetchGitRepos(filters)
       .then((res) => {
@@ -96,13 +104,27 @@ export function GitReposPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [nameFilter, compatibility, tkStatus, selectedTargetVersion, page]);
+  }, [nameFilter, compatibility, tkStatus, selectedTargetVersion, page, sortField, sortOrder]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [nameFilter, compatibility, tkStatus, selectedTargetVersion]);
+  useEffect(() => { setPage(1); }, [nameFilter, compatibility, tkStatus, selectedTargetVersion, sortField, sortOrder]);
 
   // Count active filters for the clear button.
   const activeFilterCount = [nameFilter, compatibility, tkStatus].filter(Boolean).length;
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder(field === "name" ? "asc" : "desc");
+    }
+  };
+
+  const sortIndicator = (field: string) => {
+    if (sortField !== field) return " ↕";
+    return sortOrder === "asc" ? " ↑" : " ↓";
+  };
 
   const clearFilters = () => {
     setNameFilter("");
@@ -190,9 +212,13 @@ export function GitReposPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("name")}>
+                      Name<span className="text-xs text-blue-500">{sortIndicator("name")}</span>
+                    </th>
                     <th>Git URL</th>
-                    <th>Test Suite</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("has_test_suite")}>
+                      Test Suite<span className="text-xs text-blue-500">{sortIndicator("has_test_suite")}</span>
+                    </th>
                     <th>Compatibility</th>
                     <th>TK Status</th>
                     <th>Head Commit</th>
