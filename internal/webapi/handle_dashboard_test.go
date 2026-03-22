@@ -735,10 +735,10 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 				{ID: "cb-2", Name: "nginx", Version: "1.0.0"},
 			}, nil
 		},
-		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
-			return []datastore.ServerCookbookComplexity{
-				{ID: "cc-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ErrorCount: 0, DeprecationCount: 0},
-				{ID: "cc-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ErrorCount: 1, DeprecationCount: 0},
+		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return []datastore.ServerCookbookCookstyleResult{
+				{ID: "cs-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", Passed: true, OffenceCount: 0},
+				{ID: "cs-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 3},
 			}, nil
 		},
 	}

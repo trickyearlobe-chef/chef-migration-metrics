@@ -176,6 +176,10 @@ type DataStore interface {
 	// the given server cookbook ID, ordered by target_chef_version.
 	ListServerCookbookCookstyleResults(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookCookstyleResult, error)
 
+	// ListServerCookbookCookstyleResultsByOrganisation returns all cookstyle
+	// results for server cookbooks belonging to the given organisation.
+	ListServerCookbookCookstyleResultsByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error)
+
 	// GetServerCookbookCookstyleResult returns the cookstyle result for the
 	// given server cookbook ID and target Chef version. Returns (nil, nil)
 	// if no result exists.

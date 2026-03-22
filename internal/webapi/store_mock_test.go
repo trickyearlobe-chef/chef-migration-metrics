@@ -45,6 +45,7 @@ type mockStore struct {
 	ListServerCookbookComplexitiesByCookbookFn          func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error)
 	ListServerCookbookComplexitiesByOrganisationFn      func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error)
 	ListServerCookbookCookstyleResultsFn                func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookCookstyleResult, error)
+	ListServerCookbookCookstyleResultsByOrganisationFn  func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error)
 	GetServerCookbookCookstyleResultFn                  func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
 	GetServerCookbookAutocorrectPreviewFn               func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error)
 	DeleteServerCookbookCookstyleResultsByCookbookFn    func(ctx context.Context, serverCookbookID string) error
@@ -325,6 +326,13 @@ func (m *mockStore) ListServerCookbookComplexitiesByOrganisation(ctx context.Con
 func (m *mockStore) ListServerCookbookCookstyleResults(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookCookstyleResult, error) {
 	if m.ListServerCookbookCookstyleResultsFn != nil {
 		return m.ListServerCookbookCookstyleResultsFn(ctx, serverCookbookID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListServerCookbookCookstyleResultsByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error) {
+	if m.ListServerCookbookCookstyleResultsByOrganisationFn != nil {
+		return m.ListServerCookbookCookstyleResultsByOrganisationFn(ctx, organisationID)
 	}
 	return nil, nil
 }
