@@ -9,6 +9,7 @@ package syshealth
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"time"
 )
 
@@ -19,16 +20,24 @@ var startTime = time.Now()
 // Types
 // ---------------------------------------------------------------------------
 
+// DiskStats holds usage information for a single filesystem / mount point.
+type DiskStats struct {
+	Path        string  `json:"path"`
+	Device      uint64  `json:"-"` // device ID for de-duplication (not serialised)
+	TotalBytes  uint64  `json:"total_bytes"`
+	FreeBytes   uint64  `json:"free_bytes"`
+	UsedPercent float64 `json:"used_percent"`
+}
+
 // Stats holds a point-in-time snapshot of host-level and Go runtime metrics.
 type Stats struct {
 	Timestamp time.Time `json:"timestamp"`
 	Uptime    string    `json:"uptime"`
 
-	// Disk
-	DiskPath        string  `json:"disk_path"`
-	DiskTotalBytes  uint64  `json:"disk_total_bytes"`
-	DiskFreeBytes   uint64  `json:"disk_free_bytes"`
-	DiskUsedPercent float64 `json:"disk_used_percent"`
+	// Disk — one entry per unique filesystem detected from the
+	// configured paths. Multiple paths on the same device are
+	// de-duplicated; the first path encountered is kept as the label.
+	Disks []DiskStats `json:"disks"`
 
 	// CPU / Load
 	CPUCount   int     `json:"cpu_count"`
@@ -85,11 +94,14 @@ func DefaultThresholds() Thresholds {
 // against the provided thresholds, and returns a Stats value. The function
 // is stateless and safe to call concurrently.
 //
-// diskPath is the filesystem path whose mount point is checked for free
-// space (e.g. the data directory). If empty, "/" is used.
-func Snapshot(diskPath string, th Thresholds) Stats {
-	if diskPath == "" {
-		diskPath = "/"
+// diskPaths lists filesystem paths whose mount points are checked for free
+// space (e.g. the data directory, export directory, database volume).
+// Multiple paths that resolve to the same underlying device are
+// de-duplicated — only the first path per device is kept. If no paths
+// are provided, "/" is used as a fallback.
+func Snapshot(diskPaths []string, th Thresholds) Stats {
+	if len(diskPaths) == 0 {
+		diskPaths = []string{"/"}
 	}
 
 	now := time.Now()
@@ -97,19 +109,11 @@ func Snapshot(diskPath string, th Thresholds) Stats {
 	s := Stats{
 		Timestamp: now,
 		Uptime:    formatDuration(now.Sub(startTime)),
-		DiskPath:  diskPath,
 		CPUCount:  runtime.NumCPU(),
 	}
 
 	// Disk -----------------------------------------------------------
-	total, free, err := diskUsage(diskPath)
-	if err == nil {
-		s.DiskTotalBytes = total
-		s.DiskFreeBytes = free
-		if total > 0 {
-			s.DiskUsedPercent = float64(total-free) / float64(total) * 100
-		}
-	}
+	s.Disks = collectDisks(diskPaths)
 
 	// CPU load -------------------------------------------------------
 	load, err := loadAvg1()
@@ -142,6 +146,42 @@ func Snapshot(diskPath string, th Thresholds) Stats {
 	return s
 }
 
+// collectDisks probes each path for disk usage and de-duplicates by
+// underlying device ID. Paths that fail to stat are silently skipped.
+// The returned slice preserves the order of first-seen devices.
+func collectDisks(paths []string) []DiskStats {
+	seen := make(map[uint64]bool)
+	var disks []DiskStats
+
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		total, free, devID, err := diskUsageWithDevice(p)
+		if err != nil {
+			continue
+		}
+		if seen[devID] {
+			continue
+		}
+		seen[devID] = true
+
+		usedPct := 0.0
+		if total > 0 {
+			usedPct = float64(total-free) / float64(total) * 100
+		}
+		disks = append(disks, DiskStats{
+			Path:        p,
+			Device:      devID,
+			TotalBytes:  total,
+			FreeBytes:   free,
+			UsedPercent: usedPct,
+		})
+	}
+
+	return disks
+}
+
 // ShouldPauseCollection returns true if any alert is at the "critical" level.
 func ShouldPauseCollection(s Stats) bool {
 	for _, a := range s.Alerts {
@@ -159,26 +199,37 @@ func ShouldPauseCollection(s Stats) bool {
 func evaluateAlerts(s Stats, th Thresholds) []Alert {
 	var alerts []Alert
 
-	// Disk alerts (check critical first so both can fire).
-	if s.DiskTotalBytes > 0 {
-		freeGB := float64(s.DiskFreeBytes) / (1 << 30)
-		totalGB := float64(s.DiskTotalBytes) / (1 << 30)
-		if th.DiskUsedCriticalPercent > 0 && s.DiskUsedPercent >= th.DiskUsedCriticalPercent {
+	// Disk alerts — evaluated per filesystem.
+	for _, d := range s.Disks {
+		if d.TotalBytes == 0 {
+			continue
+		}
+		freeGB := float64(d.FreeBytes) / (1 << 30)
+		totalGB := float64(d.TotalBytes) / (1 << 30)
+		if th.DiskUsedCriticalPercent > 0 && d.UsedPercent >= th.DiskUsedCriticalPercent {
 			alerts = append(alerts, Alert{
 				Level:  "critical",
 				Metric: "disk",
 				Message: fmt.Sprintf("Disk usage at %.1f%% on %s (%.1f GB free of %.1f GB)",
-					s.DiskUsedPercent, s.DiskPath, freeGB, totalGB),
+					d.UsedPercent, d.Path, freeGB, totalGB),
 			})
-		} else if th.DiskUsedWarningPercent > 0 && s.DiskUsedPercent >= th.DiskUsedWarningPercent {
+		} else if th.DiskUsedWarningPercent > 0 && d.UsedPercent >= th.DiskUsedWarningPercent {
 			alerts = append(alerts, Alert{
 				Level:  "warning",
 				Metric: "disk",
 				Message: fmt.Sprintf("Disk usage at %.1f%% on %s (%.1f GB free of %.1f GB)",
-					s.DiskUsedPercent, s.DiskPath, freeGB, totalGB),
+					d.UsedPercent, d.Path, freeGB, totalGB),
 			})
 		}
 	}
+
+	// Sort disk alerts so critical comes before warning for deterministic output.
+	sort.SliceStable(alerts, func(i, j int) bool {
+		if alerts[i].Level == alerts[j].Level {
+			return false
+		}
+		return alerts[i].Level == "critical"
+	})
 
 	// CPU load alerts.
 	if s.CPUCount > 0 && s.LoadAvg1 > 0 {

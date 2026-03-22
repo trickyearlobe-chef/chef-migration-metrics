@@ -136,23 +136,29 @@ export function AdminSystemStatsPage() {
             </div>
           )}
 
-          {/* ---- Metric cards ---- */}
-          <div className="grid gap-6 lg:grid-cols-3">
-            {/* Disk */}
-            <div className="card">
-              <h3 className="card-header">Disk Usage</h3>
-              <UsageBar
-                percent={data.disk_used_percent}
-                warning={th.disk_used_warning_percent}
-                critical={th.disk_used_critical_percent}
-                label="Used"
-              />
-              <p className="mt-3 text-sm text-gray-600">
-                {formatBytes(data.disk_free_bytes)} free of {formatBytes(data.disk_total_bytes)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">Path: {data.disk_path}</p>
+          {/* ---- Disk cards (one per unique filesystem) ---- */}
+          {data.disks.length > 0 && (
+            <div className={"grid gap-6 " + (data.disks.length === 1 ? "lg:grid-cols-1 max-w-md" : data.disks.length === 2 ? "lg:grid-cols-2" : "lg:grid-cols-3")}>
+              {data.disks.map((disk, i) => (
+                <div key={disk.path} className="card">
+                  <h3 className="card-header">Disk Usage{data.disks.length > 1 ? ` (${i + 1})` : ""}</h3>
+                  <UsageBar
+                    percent={disk.used_percent}
+                    warning={th.disk_used_warning_percent}
+                    critical={th.disk_used_critical_percent}
+                    label="Used"
+                  />
+                  <p className="mt-3 text-sm text-gray-600">
+                    {formatBytes(disk.free_bytes)} free of {formatBytes(disk.total_bytes)}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">Path: {disk.path}</p>
+                </div>
+              ))}
             </div>
+          )}
 
+          {/* ---- Metric cards ---- */}
+          <div className="grid gap-6 lg:grid-cols-2">
             {/* CPU Load */}
             <div className="card">
               <h3 className="card-header">CPU Load</h3>

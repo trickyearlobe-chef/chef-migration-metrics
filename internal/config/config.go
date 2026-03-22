@@ -265,14 +265,14 @@ type ReadinessConfig struct {
 // SystemHealthConfig controls host-level resource monitoring and the
 // collection circuit breaker.
 type SystemHealthConfig struct {
-	DiskPath                  string  `yaml:"disk_path"`
-	DiskUsedWarningPercent    float64 `yaml:"disk_used_warning_percent"`
-	DiskUsedCriticalPercent   float64 `yaml:"disk_used_critical_percent"`
-	CPULoadWarningPerCPU      float64 `yaml:"cpu_load_warning_per_cpu"`
-	CPULoadCriticalPerCPU     float64 `yaml:"cpu_load_critical_per_cpu"`
-	MemUsedWarningPercent     float64 `yaml:"mem_used_warning_percent"`
-	MemUsedCriticalPercent    float64 `yaml:"mem_used_critical_percent"`
-	PauseCollectionOnCritical *bool   `yaml:"pause_collection_on_critical"`
+	DiskPaths                 []string `yaml:"disk_paths"`
+	DiskUsedWarningPercent    float64  `yaml:"disk_used_warning_percent"`
+	DiskUsedCriticalPercent   float64  `yaml:"disk_used_critical_percent"`
+	CPULoadWarningPerCPU      float64  `yaml:"cpu_load_warning_per_cpu"`
+	CPULoadCriticalPerCPU     float64  `yaml:"cpu_load_critical_per_cpu"`
+	MemUsedWarningPercent     float64  `yaml:"mem_used_warning_percent"`
+	MemUsedCriticalPercent    float64  `yaml:"mem_used_critical_percent"`
+	PauseCollectionOnCritical *bool    `yaml:"pause_collection_on_critical"`
 }
 
 // IsPauseCollectionOnCritical returns whether collection should be paused
@@ -743,8 +743,13 @@ func (c *Config) setDefaults() {
 	}
 
 	// System health
-	if c.SystemHealth.DiskPath == "" {
-		c.SystemHealth.DiskPath = c.Storage.DataDir
+	if len(c.SystemHealth.DiskPaths) == 0 {
+		c.SystemHealth.DiskPaths = []string{
+			c.Storage.DataDir,
+			c.Storage.CookbookCacheDir,
+			c.Storage.GitCookbookDir,
+			c.Exports.OutputDirectory,
+		}
 	}
 	if c.SystemHealth.DiskUsedWarningPercent == 0 {
 		c.SystemHealth.DiskUsedWarningPercent = 80
