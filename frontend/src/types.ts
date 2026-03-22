@@ -424,11 +424,9 @@ export interface NodesByCookbookResponse {
 export interface CookbookListItem {
   id: string;
   organisation_id?: string;
+  organisation_name?: string;
   name: string;
-  version?: string;
-  version_count?: number;
-  source?: string;
-  has_test_suite: boolean;
+  version: string;
   is_active: boolean;
   is_stale_cookbook: boolean;
   is_frozen?: boolean;

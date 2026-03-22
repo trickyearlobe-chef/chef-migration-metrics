@@ -13,37 +13,36 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
-// cookbookSummary represents a server cookbook entry on the cookbook list page.
-// Git repos have their own dedicated page and are not included here.
-type cookbookSummary struct {
-	ID              string
-	OrganisationID  string
-	Name            string
-	Version         string
-	IsActive        bool
-	IsStaleCookbook bool
-	DownloadStatus  string
-	DownloadError   string
-	Compatibility   string // "compatible", "incompatible", "untested"
-}
-
-func serverCookbookToSummary(sc datastore.ServerCookbook) cookbookSummary {
-	return cookbookSummary{
-		ID:              sc.ID,
-		OrganisationID:  sc.OrganisationID,
-		Name:            sc.Name,
-		Version:         sc.Version,
-		IsActive:        sc.IsActive,
-		IsStaleCookbook: sc.IsStaleCookbook,
-		DownloadStatus:  sc.DownloadStatus,
-		DownloadError:   sc.DownloadError,
-	}
+// cookbookRow represents a single server cookbook version in the list.
+// Each row is a specific version from a specific organisation — no collapsing.
+type cookbookRow struct {
+	ID               string
+	OrganisationID   string
+	OrganisationName string
+	Name             string
+	Version          string
+	IsActive         bool
+	IsStaleCookbook  bool
+	DownloadStatus   string
+	DownloadError    string
+	Compatibility    string // "compatible", "incompatible", "untested"
 }
 
 // handleCookbooks handles GET /api/v1/cookbooks — lists all server cookbooks
-// across all organisations, optionally filtered by query parameters. Cookbooks
-// are collapsed by name so each unique cookbook name appears once with a total
-// version count. Git repos have their own dedicated list page.
+// across all organisations. Each row is a specific cookbook version in a
+// specific organisation. Git repos have their own dedicated list page.
+//
+// Supported query-parameter filters:
+//
+//	active           — "true" or "false"
+//	name             — case-insensitive substring match
+//	compatibility    — "compatible", "incompatible", or "untested"
+//	download_status  — "ok", "pending", or "failed"
+//	organisation     — filter by organisation name(s), comma-separated
+//	target_chef_version — which target version to evaluate compatibility against
+//	sort             — "name" (default), "version", "compatibility", "active", "download_status"
+//	order            — "asc" (default) or "desc"
+//	page / per_page  — pagination
 func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -86,7 +85,13 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var allCookbooks []cookbookSummary
+	// Build org name lookup and collect all cookbook rows.
+	orgNameByID := make(map[string]string, len(orgs))
+	for _, org := range orgs {
+		orgNameByID[org.ID] = org.Name
+	}
+
+	var rows []cookbookRow
 	for _, org := range orgs {
 		cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
 		if err != nil {
@@ -94,24 +99,30 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 		for _, sc := range cbs {
-			allCookbooks = append(allCookbooks, serverCookbookToSummary(sc))
+			rows = append(rows, cookbookRow{
+				ID:               sc.ID,
+				OrganisationID:   sc.OrganisationID,
+				OrganisationName: org.Name,
+				Name:             sc.Name,
+				Version:          sc.Version,
+				IsActive:         sc.IsActive,
+				IsStaleCookbook:  sc.IsStaleCookbook,
+				DownloadStatus:   sc.DownloadStatus,
+				DownloadError:    sc.DownloadError,
+			})
 		}
 	}
 
-	// Apply optional query-parameter filters.
-	allCookbooks = filterCookbookSummaries(req, allCookbooks)
+	// Apply query-parameter filters.
+	rows = filterCookbookRows(req, rows)
 
-	// Collapse all cookbooks by name so the summary page shows one row per
-	// cookbook with a total version count across all sources.
-	allCookbooks, versionCounts := collapseCookbookSummaries(allCookbooks)
-
-	// Compute compatibility per cookbook name from cookstyle results.
+	// Compute compatibility per cookbook ID from cookstyle results.
 	targetChefVersion := queryString(req, "target_chef_version", "")
 	if targetChefVersion == "" {
 		targetChefVersion = r.defaultTargetVersion()
 	}
 
-	compatByName := make(map[string]string)
+	compatByID := make(map[string]string)
 	if targetChefVersion != "" {
 		for _, org := range orgs {
 			csResults, cErr := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.ID)
@@ -119,85 +130,82 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 				r.logf("WARN", "listing cookstyle results for org %s: %v", org.Name, cErr)
 				continue
 			}
-			serverCBs, scErr := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
-			if scErr != nil {
-				r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, scErr)
-				continue
-			}
-			nameByID := make(map[string]string, len(serverCBs))
-			for _, sc := range serverCBs {
-				nameByID[sc.ID] = sc.Name
-			}
 			for _, cs := range csResults {
 				if cs.TargetChefVersion != targetChefVersion {
 					continue
 				}
-				cbName := nameByID[cs.ServerCookbookID]
-				if cbName == "" {
-					continue
-				}
-				if _, seen := compatByName[cbName]; seen {
-					continue // first version wins
-				}
+				// One result per (server_cookbook_id, target_chef_version).
 				if cs.Passed {
-					compatByName[cbName] = "compatible"
+					compatByID[cs.ServerCookbookID] = "compatible"
 				} else {
-					compatByName[cbName] = "incompatible"
+					compatByID[cs.ServerCookbookID] = "incompatible"
 				}
 			}
 		}
 	}
 
-	// Assign compatibility to each collapsed cookbook.
-	for i := range allCookbooks {
-		if c, ok := compatByName[allCookbooks[i].Name]; ok {
-			allCookbooks[i].Compatibility = c
+	// Assign compatibility to each row.
+	for i := range rows {
+		if c, ok := compatByID[rows[i].ID]; ok {
+			rows[i].Compatibility = c
 		} else {
-			allCookbooks[i].Compatibility = "untested"
+			rows[i].Compatibility = "untested"
 		}
 	}
 
 	// Apply owner filter if active and ownership is enabled.
 	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
 		if of.Unowned {
-			filtered := allCookbooks[:0]
-			for _, cb := range allCookbooks {
+			filtered := rows[:0]
+			for _, cb := range rows {
 				if !ownedKeys[cb.Name] {
 					filtered = append(filtered, cb)
 				}
 			}
-			allCookbooks = filtered
+			rows = filtered
 		} else {
-			filtered := allCookbooks[:0]
-			for _, cb := range allCookbooks {
+			filtered := rows[:0]
+			for _, cb := range rows {
 				if ownedKeys[cb.Name] {
 					filtered = append(filtered, cb)
 				}
 			}
-			allCookbooks = filtered
+			rows = filtered
 		}
 	}
 
 	// Apply compatibility filter if specified.
 	compatFilter := req.URL.Query().Get("compatibility")
 	if compatFilter != "" {
-		filtered := allCookbooks[:0]
-		for _, cb := range allCookbooks {
+		filtered := rows[:0]
+		for _, cb := range rows {
 			if cb.Compatibility == compatFilter {
 				filtered = append(filtered, cb)
 			}
 		}
-		allCookbooks = filtered
+		rows = filtered
+	}
+
+	// Apply download_status filter if specified.
+	dlFilter := req.URL.Query().Get("download_status")
+	if dlFilter != "" {
+		filtered := rows[:0]
+		for _, cb := range rows {
+			if cb.DownloadStatus == dlFilter {
+				filtered = append(filtered, cb)
+			}
+		}
+		rows = filtered
 	}
 
 	// Sort the results.
 	sortField := queryString(req, "sort", "name")
 	sortOrder := queryString(req, "order", "asc")
-	sortCookbookSummaries(allCookbooks, sortField, sortOrder)
+	sortCookbookRows(rows, sortField, sortOrder)
 
 	// Paginate the results.
 	pg := ParsePagination(req)
-	total := len(allCookbooks)
+	total := len(rows)
 	start := pg.Offset()
 	if start > total {
 		start = total
@@ -210,8 +218,9 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	type cookbookResp struct {
 		ID                string `json:"id"`
 		OrganisationID    string `json:"organisation_id,omitempty"`
+		OrganisationName  string `json:"organisation_name,omitempty"`
 		Name              string `json:"name"`
-		VersionCount      int    `json:"version_count"`
+		Version           string `json:"version"`
 		IsActive          bool   `json:"is_active"`
 		IsStaleCookbook   bool   `json:"is_stale_cookbook"`
 		DownloadStatus    string `json:"download_status"`
@@ -221,16 +230,17 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	}
 
 	result := make([]cookbookResp, 0, end-start)
-	for _, cb := range allCookbooks[start:end] {
+	for _, cb := range rows[start:end] {
 		resp := cookbookResp{
 			ID:                cb.ID,
 			OrganisationID:    cb.OrganisationID,
+			OrganisationName:  cb.OrganisationName,
 			Name:              cb.Name,
+			Version:           cb.Version,
 			IsActive:          cb.IsActive,
 			IsStaleCookbook:   cb.IsStaleCookbook,
 			DownloadStatus:    cb.DownloadStatus,
 			DownloadError:     cb.DownloadError,
-			VersionCount:      versionCounts[cb.Name],
 			Compatibility:     cb.Compatibility,
 			TargetChefVersion: targetChefVersion,
 		}
@@ -371,40 +381,23 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 // Helpers
 // ---------------------------------------------------------------------------
 
-// collapseCookbookSummaries groups server cookbook summaries by name, keeping
-// only the first occurrence of each name as the representative entry while
-// counting every version.
-func collapseCookbookSummaries(cookbooks []cookbookSummary) ([]cookbookSummary, map[string]int) {
-	versionCounts := make(map[string]int)
-	seen := make(map[string]bool)
-	collapsed := make([]cookbookSummary, 0, len(cookbooks))
-
-	for _, cb := range cookbooks {
-		versionCounts[cb.Name]++
-		if seen[cb.Name] {
-			continue
-		}
-		seen[cb.Name] = true
-		collapsed = append(collapsed, cb)
-	}
-
-	return collapsed, versionCounts
-}
-
-// filterCookbookSummaries applies optional query-parameter filters (active,
-// name) to the given slice, returning only matching entries. The name filter
-// uses case-insensitive partial (substring) matching.
-func filterCookbookSummaries(req *http.Request, cookbooks []cookbookSummary) []cookbookSummary {
+// filterCookbookRows applies optional query-parameter filters (active, name,
+// download_status) to the given slice, returning only matching entries. The
+// name filter uses case-insensitive partial (substring) matching.
+//
+// The compatibility and download_status filters are applied separately in the
+// handler after compatibility has been computed and assigned.
+func filterCookbookRows(req *http.Request, rows []cookbookRow) []cookbookRow {
 	q := req.URL.Query()
 	active := q.Get("active")
 	nameFilter := q.Get("name")
 
 	if active == "" && nameFilter == "" {
-		return cookbooks
+		return rows
 	}
 
-	filtered := make([]cookbookSummary, 0, len(cookbooks))
-	for _, cb := range cookbooks {
+	filtered := make([]cookbookRow, 0, len(rows))
+	for _, cb := range rows {
 		if active == "true" && !cb.IsActive {
 			continue
 		}
@@ -422,20 +415,32 @@ func filterCookbookSummaries(req *http.Request, cookbooks []cookbookSummary) []c
 // Ensure datastore.ErrNotFound is used (compile-time check).
 var _ = errors.Is(nil, datastore.ErrNotFound)
 
-// sortCookbookSummaries sorts the collapsed cookbook list in-place by the
-// given field and order ("asc" or "desc"). Supported fields: "name"
-// (default), "compatibility", "active".
-func sortCookbookSummaries(items []cookbookSummary, field, order string) {
+// sortCookbookRows sorts the cookbook list in-place by the given field and
+// order ("asc" or "desc"). Supported fields: "name" (default), "version",
+// "compatibility", "active", "download_status".
+func sortCookbookRows(items []cookbookRow, field, order string) {
 	sort.Slice(items, func(i, j int) bool {
 		var less bool
 		switch field {
+		case "version":
+			if items[i].Name == items[j].Name {
+				less = items[i].Version < items[j].Version
+			} else {
+				less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
 		case "compatibility":
 			less = items[i].Compatibility < items[j].Compatibility
 		case "active":
 			// false < true so inactive sorts first in ascending
 			less = !items[i].IsActive && items[j].IsActive
+		case "download_status":
+			less = items[i].DownloadStatus < items[j].DownloadStatus
 		default: // "name"
-			less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			if strings.ToLower(items[i].Name) == strings.ToLower(items[j].Name) {
+				less = items[i].Version < items[j].Version
+			} else {
+				less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
 		}
 		if strings.EqualFold(order, "desc") {
 			return !less

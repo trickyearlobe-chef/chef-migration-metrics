@@ -41,8 +41,8 @@ function DownloadStatusBadge({ status, error }: { status: string; error?: string
 
 // ---------------------------------------------------------------------------
 // Cookbooks list page — paginated table from GET /api/v1/cookbooks showing
-// name, version count, active/stale indicators, compatibility, and download
-// status.
+// each server cookbook version as its own row with name, version, org,
+// active/stale indicators, compatibility, and download status.
 //
 // Server cookbooks are downloaded from the Chef Infra Server and do not
 // have test suites (Test Kitchen is only applicable to git repos, which
@@ -64,6 +64,7 @@ export function CookbooksPage() {
   const [active, setActive] = useState(searchParams.get("active") || "");
   const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
   const [compatibility, setCompatibility] = useState(searchParams.get("compatibility") || "");
+  const [downloadStatus, setDownloadStatus] = useState(searchParams.get("download_status") || "");
   const [page, setPage] = useState(1);
   const perPage = 50;
 
@@ -77,7 +78,7 @@ export function CookbooksPage() {
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
-    if (searchParams.has("compatibility") || searchParams.has("active") || searchParams.has("name") || searchParams.has("target_chef_version")) {
+    if (searchParams.has("compatibility") || searchParams.has("active") || searchParams.has("name") || searchParams.has("target_chef_version") || searchParams.has("download_status")) {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
@@ -107,6 +108,7 @@ export function CookbooksPage() {
     if (active) filters.active = active;
     if (nameFilter) filters.name = nameFilter;
     if (compatibility) filters.compatibility = compatibility;
+    if (downloadStatus) filters.download_status = downloadStatus;
     if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
     if (sortOrder) filters.order = sortOrder;
@@ -118,13 +120,13 @@ export function CookbooksPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion, page, sortField, sortOrder]);
+  }, [selectedOrg, active, nameFilter, compatibility, downloadStatus, selectedTargetVersion, page, sortField, sortOrder]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion, sortField, sortOrder]);
+  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter, compatibility, downloadStatus, selectedTargetVersion, sortField, sortOrder]);
 
   // Count active filters for the clear button.
-  const activeFilterCount = [nameFilter, active, compatibility].filter(Boolean).length;
+  const activeFilterCount = [nameFilter, active, compatibility, downloadStatus].filter(Boolean).length;
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -144,11 +146,12 @@ export function CookbooksPage() {
     setNameFilter("");
     setActive("");
     setCompatibility("");
+    setDownloadStatus("");
   };
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800">Cookbooks</h2>
+      <h2 className="text-xl font-bold text-gray-800">Server Cookbooks</h2>
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
@@ -185,6 +188,19 @@ export function CookbooksPage() {
             <option value="compatible">Compatible</option>
             <option value="incompatible">Incompatible</option>
             <option value="untested">Untested</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Download</label>
+          <select
+            value={downloadStatus}
+            onChange={(e) => setDownloadStatus(e.target.value)}
+            className="block w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">All</option>
+            <option value="ok">OK</option>
+            <option value="pending">Pending</option>
+            <option value="failed">Failed</option>
           </select>
         </div>
         {targetVersions.length > 1 && (
@@ -227,14 +243,19 @@ export function CookbooksPage() {
                     <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("name")}>
                       Name<span className="text-xs text-blue-500">{sortIndicator("name")}</span>
                     </th>
-                    <th>Versions</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("version")}>
+                      Version<span className="text-xs text-blue-500">{sortIndicator("version")}</span>
+                    </th>
+                    {!selectedOrg && <th>Organisation</th>}
                     <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("compatibility")}>
                       Compatibility<span className="text-xs text-blue-500">{sortIndicator("compatibility")}</span>
                     </th>
                     <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("active")}>
                       Status<span className="text-xs text-blue-500">{sortIndicator("active")}</span>
                     </th>
-                    <th>Download</th>
+                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("download_status")}>
+                      Download<span className="text-xs text-blue-500">{sortIndicator("download_status")}</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -253,9 +274,14 @@ export function CookbooksPage() {
                       </td>
                       <td>
                         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
-                          {cb.version_count === 1 ? "1 version" : `${cb.version_count} versions`}
+                          {cb.version}
                         </span>
                       </td>
+                      {!selectedOrg && (
+                        <td>
+                          <span className="text-sm text-gray-600">{cb.organisation_name ?? "—"}</span>
+                        </td>
+                      )}
                       <td>
                         <CompatibilityBadge
                           status={cb.compatibility ?? "untested"}
