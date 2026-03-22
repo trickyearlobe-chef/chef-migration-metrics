@@ -90,6 +90,15 @@ export function CookbooksPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter, compatibility, selectedTargetVersion]);
 
+  // Count active filters for the clear button.
+  const activeFilterCount = [nameFilter, active, compatibility].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setNameFilter("");
+    setActive("");
+    setCompatibility("");
+  };
+
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold text-gray-800">Cookbooks</h2>
@@ -144,6 +153,15 @@ export function CookbooksPage() {
               ))}
             </select>
           </div>
+        )}
+        {activeFilterCount > 0 && (
+          <button
+            onClick={clearFilters}
+            className="mb-0.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900"
+            title="Clear all filters"
+          >
+            Clear ({activeFilterCount})
+          </button>
         )}
       </div>
 

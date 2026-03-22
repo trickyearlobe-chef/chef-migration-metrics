@@ -290,6 +290,16 @@ export function CookbookCommittersPage() {
           </select>
         </div>
 
+        {sinceMonths !== null && (
+          <button
+            onClick={() => setSinceMonths(null)}
+            className="mb-0.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900"
+            title="Clear filter"
+          >
+            Clear (1)
+          </button>
+        )}
+
         <button
           onClick={handleAssign}
           disabled={selected.size === 0 || assigning}

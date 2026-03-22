@@ -1,4 +1,5 @@
 import { useState, useRef, type ChangeEvent, type DragEvent } from "react";
+import { Link } from "react-router-dom";
 import { importOwnership, ApiError } from "../api";
 import type { ImportResponse } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
@@ -30,7 +31,7 @@ export function OwnershipImportPage() {
     return (
       <div className="space-y-6">
         <nav className="text-sm text-gray-500">
-          <span>Ownership</span>
+          <Link to="/ownership" className="hover:text-blue-600 hover:underline">Ownership</Link>
           <span className="mx-1">/</span>
           <span className="text-gray-800">Import</span>
         </nav>
@@ -129,7 +130,7 @@ export function OwnershipImportPage() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="text-sm text-gray-500">
-        <span>Ownership</span>
+        <Link to="/ownership" className="hover:text-blue-600 hover:underline">Ownership</Link>
         <span className="mx-1">/</span>
         <span className="text-gray-800">Import</span>
       </nav>
