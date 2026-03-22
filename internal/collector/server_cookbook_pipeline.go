@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
@@ -18,7 +20,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 )
 
-// ServerCookbookPipelineResult summarises the streaming download-scan-delete
+// ServerCookbookPipelineResult summarises the concurrent download+scan
 // pipeline for server cookbooks.
 type ServerCookbookPipelineResult struct {
 	Total      int           // Cookbook versions considered
@@ -32,26 +34,41 @@ type ServerCookbookPipelineResult struct {
 	Errors []CookbookFetchError // Per-cookbook errors
 }
 
-// runServerCookbookPipeline processes server cookbooks one at a time:
-// download → CookStyle scan → autocorrect preview, then optionally delete
-// from disk.
+// scanWorkItem is sent from a download worker to a scan worker via a channel.
+// It carries everything a scan worker needs to run CookStyle, generate
+// autocorrect previews, and optionally delete the cookbook files from disk.
+type scanWorkItem struct {
+	cookbook        datastore.ServerCookbook
+	destDir         string
+	index           int // 1-based position in the total list (for logging)
+	deleteAfterScan bool
+}
+
+// defaultDownloadWorkers is the number of concurrent cookbook downloads when
+// no explicit configuration is provided. Downloads are network-bound
+// (Chef Server API), so a moderate default is appropriate.
+const defaultDownloadWorkers = 4
+
+// runServerCookbookPipeline processes server cookbooks using two concurrent
+// worker pools connected by a channel:
 //
-// When deleteAfterScan is false (the default), cookbooks are downloaded to
-// the persistent cache directory (<cookbookCacheDir>/<org_id>/<name>/<version>/)
-// so they remain available for re-scanning when CookStyle is upgraded.
-// When deleteAfterScan is true, cookbooks are downloaded to os.MkdirTemp
-// and removed after scanning to minimise disk usage.
+//  1. Download workers fetch cookbook files from the Chef Server (or resolve
+//     already-downloaded files from the cache). Each completed download is
+//     sent to the scan channel immediately.
+//  2. Scan workers receive downloaded cookbooks and run CookStyle analysis,
+//     autocorrect preview generation, and optional file cleanup.
 //
-// Cookbooks that already have CookStyle results are not re-downloaded
-// (the scan skip check inside scanOne handles immutability caching).
-// Cookbooks that are already downloaded (status = 'ok') but lack scan
-// results ARE re-downloaded, scanned, and optionally deleted.
+// This means scanning starts as soon as the first cookbook is downloaded,
+// rather than waiting for all downloads to complete. Both pools are bounded:
+// downloads by defaultDownloadWorkers, scans by the concurrency.cookstyle_scan
+// configuration value.
 //
-// If deleteAfterScan is true, a cleanup pass removes any server cookbook
-// files left in the cache directory from previous runs.
+// Cookbooks that already have CookStyle results are handled efficiently —
+// scanOneServerCookbook detects existing results and returns Skipped=true,
+// so no redundant work is performed.
 //
-// If cookstyleScanner is nil, the function falls back to download-only
-// behaviour (equivalent to the old fetchCookbooks, without deletion).
+// When cookstyleScanner is nil, the function falls back to download-only
+// behaviour (scan workers just handle cleanup).
 func runServerCookbookPipeline(
 	ctx context.Context,
 	client *chefapi.Client,
@@ -63,6 +80,7 @@ func runServerCookbookPipeline(
 	cookstyleScanner *analysis.CookstyleScanner,
 	autocorrectGen *remediation.AutocorrectGenerator,
 	deleteAfterScan bool,
+	scanWorkers int,
 ) ServerCookbookPipelineResult {
 	start := time.Now()
 	result := ServerCookbookPipelineResult{}
@@ -83,155 +101,146 @@ func runServerCookbookPipeline(
 
 	result.Total = len(cookbooks)
 
-	if len(cookbooks) > 0 {
-		log.Info(fmt.Sprintf("streaming server cookbook pipeline: %d version(s) to process", len(cookbooks)))
-
-		// Log progress every 25 cookbooks so operators can monitor long runs.
-		const progressInterval = 25
-
-		for i, cb := range cookbooks {
-			if ctx.Err() != nil {
-				break
-			}
-
-			cbStart := time.Now()
-
-			// Step 1: Download the cookbook if it hasn't been downloaded
-			// yet. Cookbooks with download_status='ok' are already on
-			// disk (or were previously downloaded and deleted after scan)
-			// — skip the download and proceed directly to scanning.
-			var destDir string
-			if cb.IsDownloaded() {
-				// Already downloaded — resolve the cache directory path.
-				// If deleteAfterScan is enabled the files won't exist on
-				// disk (they were cleaned up), so we still need to
-				// re-download. Check if the directory actually exists.
-				if !deleteAfterScan && cookbookCacheDir != "" {
-					candidateDir := filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
-					if info, statErr := os.Stat(candidateDir); statErr == nil && info.IsDir() {
-						destDir = candidateDir
-					}
-				}
-				// If files aren't on disk (deleteAfterScan mode or cache
-				// miss), re-download to a temp directory for scanning.
-				if destDir == "" {
-					var downloadErr error
-					destDir, downloadErr = downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
-					if downloadErr != nil {
-						result.Failed++
-						result.Errors = append(result.Errors, CookbookFetchError{
-							CookbookID: cb.ID,
-							Name:       cb.Name,
-							Version:    cb.Version,
-							Err:        downloadErr,
-						})
-						log.Warn(fmt.Sprintf("[%d/%d] cookbook re-download failed: %s/%s: %v",
-							i+1, len(cookbooks), cb.Name, cb.Version, downloadErr))
-						continue
-					}
-					result.Downloaded++
-				}
-			} else {
-				// Needs download (pending or failed status).
-				var downloadErr error
-				destDir, downloadErr = downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
-				if downloadErr != nil {
-					result.Failed++
-					result.Errors = append(result.Errors, CookbookFetchError{
-						CookbookID: cb.ID,
-						Name:       cb.Name,
-						Version:    cb.Version,
-						Err:        downloadErr,
-					})
-					log.Warn(fmt.Sprintf("[%d/%d] cookbook download failed: %s/%s: %v",
-						i+1, len(cookbooks), cb.Name, cb.Version, downloadErr))
-					continue
-				}
-				result.Downloaded++
-			}
-
-			// Step 2: CookStyle scan for each target version.
-			scanCount := 0
-			skipCount := 0
-			if cookstyleScanner != nil && len(targetChefVersions) > 0 {
-				for _, tv := range targetChefVersions {
-					if ctx.Err() != nil {
-						break
-					}
-
-					sr := cookstyleScanner.ScanSingleServerCookbook(ctx, cb, tv, destDir)
-					if sr.Skipped {
-						result.Skipped++
-						skipCount++
-					} else if sr.Error != nil {
-						log.Warn(fmt.Sprintf("[%d/%d] CookStyle scan failed: %s/%s target %s: %v",
-							i+1, len(cookbooks), cb.Name, cb.Version, tv, sr.Error))
-					} else {
-						result.Scanned++
-						scanCount++
-
-						// Step 3: Autocorrect preview (only if scan produced offenses).
-						if autocorrectGen != nil && sr.OffenseCount > 0 {
-							// Look up the persisted cookstyle result ID (scanOne persists it).
-							dbResult, dbErr := db.GetServerCookbookCookstyleResult(ctx, cb.ID, tv)
-							if dbErr == nil && dbResult != nil {
-								csInfo := remediation.CookstyleResultInfo{
-									ResultID:          dbResult.ID,
-									CookbookID:        cb.ID,
-									CookbookName:      cb.Name,
-									CookbookVersion:   cb.Version,
-									TargetChefVersion: tv,
-									OffenseCount:      sr.OffenseCount,
-									Passed:            sr.Passed,
-									Source:            remediation.SourceServerCookbook,
-								}
-								autocorrectGen.GenerateSinglePreview(ctx, csInfo, destDir)
-							}
-						}
-					}
-				}
-			}
-
-			// Step 4: Optionally delete the downloaded files.
-			if deleteAfterScan && destDir != "" {
-				if removeErr := os.RemoveAll(destDir); removeErr != nil {
-					log.Warn(fmt.Sprintf("[%d/%d] failed to clean up cookbook files %s/%s at %s: %v",
-						i+1, len(cookbooks), cb.Name, cb.Version, destDir, removeErr))
-				}
-			}
-
-			// Per-cookbook completion log.
-			elapsed := time.Since(cbStart).Round(time.Millisecond)
-			if skipCount > 0 && scanCount == 0 {
-				log.Debug(fmt.Sprintf("[%d/%d] %s/%s — skipped (already scanned) in %s",
-					i+1, len(cookbooks), cb.Name, cb.Version, elapsed))
-			} else {
-				log.Info(fmt.Sprintf("[%d/%d] %s/%s — downloaded, %d scanned, %d skipped in %s",
-					i+1, len(cookbooks), cb.Name, cb.Version, scanCount, skipCount, elapsed))
-			}
-
-			// Periodic progress summary.
-			if (i+1)%progressInterval == 0 {
-				totalElapsed := time.Since(start).Round(time.Second)
-				log.Info(fmt.Sprintf("pipeline progress: %d/%d processed (%d downloaded, %d scanned, %d skipped, %d failed) in %s",
-					i+1, len(cookbooks), result.Downloaded, result.Scanned, result.Skipped, result.Failed, totalElapsed))
-			}
-		}
-	} else {
+	if len(cookbooks) == 0 {
 		log.Info("no server cookbook versions need processing")
+		result.Duration = time.Since(start)
+		return result
 	}
 
-	// Step 5: Optionally clean up legacy cached cookbook files. Before the
-	// streaming pipeline was introduced, fetchCookbooks downloaded every
-	// cookbook to the persistent cache directory and never removed them.
-	// Cookbooks that were already processed (download_status = 'ok') are
-	// never returned by ListActiveCookbooksNeedingDownload, so the loop
-	// above never sees them and their files remain on disk indefinitely.
-	//
-	// Walk the cache directory for this organisation and remove any server
-	// cookbook version directories that still exist. The streaming pipeline
-	// no longer writes to the cache directory (it uses os.MkdirTemp), so
-	// anything present is a leftover from the old code path.
+	log.Info(fmt.Sprintf("concurrent server cookbook pipeline: %d version(s) to process (%d download workers, %d scan workers)",
+		len(cookbooks), defaultDownloadWorkers, scanWorkers))
+
+	// -----------------------------------------------------------------------
+	// Shared mutable state — protected by mu.
+	// -----------------------------------------------------------------------
+	var mu sync.Mutex
+	var downloaded, scanned, skipped, failed int
+	var errors []CookbookFetchError
+
+	// Atomic counters for progress logging from any goroutine.
+	var completedCount atomic.Int64
+
+	// -----------------------------------------------------------------------
+	// Scan channel — download workers produce, scan workers consume.
+	// Buffered to avoid blocking download workers when scan workers are busy.
+	// -----------------------------------------------------------------------
+	scanCh := make(chan scanWorkItem, scanWorkers*2)
+
+	// -----------------------------------------------------------------------
+	// Scan worker pool — consumes from scanCh.
+	// -----------------------------------------------------------------------
+	var scanWG sync.WaitGroup
+	for w := 0; w < scanWorkers; w++ {
+		scanWG.Add(1)
+		go func() {
+			defer scanWG.Done()
+			for item := range scanCh {
+				if ctx.Err() != nil {
+					// Context cancelled — still clean up if needed.
+					if item.deleteAfterScan && item.destDir != "" {
+						_ = os.RemoveAll(item.destDir)
+					}
+					continue // drain channel
+				}
+
+				scanCount, skipCount := scanAndPreview(
+					ctx, db, log, item,
+					targetChefVersions, cookstyleScanner, autocorrectGen,
+					len(cookbooks),
+				)
+
+				// Optionally delete the downloaded files after scanning.
+				if item.deleteAfterScan && item.destDir != "" {
+					if removeErr := os.RemoveAll(item.destDir); removeErr != nil {
+						log.Warn(fmt.Sprintf("[%d/%d] failed to clean up cookbook files %s/%s at %s: %v",
+							item.index, len(cookbooks), item.cookbook.Name, item.cookbook.Version, item.destDir, removeErr))
+					}
+				}
+
+				mu.Lock()
+				scanned += scanCount
+				skipped += skipCount
+				mu.Unlock()
+
+				done := completedCount.Add(1)
+				// Periodic progress summary every 25 completed cookbooks.
+				if done%25 == 0 {
+					mu.Lock()
+					totalElapsed := time.Since(start).Round(time.Second)
+					log.Info(fmt.Sprintf("pipeline progress: %d/%d completed (%d downloaded, %d scanned, %d skipped, %d failed) in %s",
+						done, len(cookbooks), downloaded, scanned, skipped, failed, totalElapsed))
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+
+	// -----------------------------------------------------------------------
+	// Download worker pool — produces into scanCh.
+	// -----------------------------------------------------------------------
+	var downloadWG sync.WaitGroup
+	downloadSem := make(chan struct{}, defaultDownloadWorkers)
+
+	for i, cb := range cookbooks {
+		if ctx.Err() != nil {
+			break
+		}
+
+		downloadSem <- struct{}{} // acquire slot
+		downloadWG.Add(1)
+
+		go func(idx int, cb datastore.ServerCookbook) {
+			defer func() {
+				<-downloadSem // release slot
+				downloadWG.Done()
+			}()
+
+			if ctx.Err() != nil {
+				return
+			}
+
+			destDir, ok := resolveCookbookDir(ctx, client, db, log, cb, cookbookCacheDir, deleteAfterScan, idx+1, len(cookbooks))
+			if !ok {
+				mu.Lock()
+				failed++
+				errors = append(errors, CookbookFetchError{
+					CookbookID: cb.ID,
+					Name:       cb.Name,
+					Version:    cb.Version,
+					Err:        fmt.Errorf("download failed"),
+				})
+				mu.Unlock()
+				completedCount.Add(1)
+				return
+			}
+
+			if !cb.IsDownloaded() {
+				mu.Lock()
+				downloaded++
+				mu.Unlock()
+			}
+
+			// Send to scan workers immediately.
+			scanCh <- scanWorkItem{
+				cookbook:        cb,
+				destDir:         destDir,
+				index:           idx + 1,
+				deleteAfterScan: deleteAfterScan,
+			}
+		}(i, cb)
+	}
+
+	// Wait for all downloads to finish, then close the scan channel so
+	// scan workers know there's no more work coming.
+	downloadWG.Wait()
+	close(scanCh)
+
+	// Wait for all scan workers to finish.
+	scanWG.Wait()
+
+	// -----------------------------------------------------------------------
+	// Legacy cache cleanup (runs after all workers are done).
+	// -----------------------------------------------------------------------
 	if deleteAfterScan && cookbookCacheDir != "" {
 		cleaned := cleanLegacyCookbookCache(log, cookbookCacheDir, org.ID)
 		result.Cleaned = cleaned
@@ -240,8 +249,130 @@ func runServerCookbookPipeline(
 		}
 	}
 
+	// -----------------------------------------------------------------------
+	// Assemble final result.
+	// -----------------------------------------------------------------------
+	mu.Lock()
+	result.Downloaded = downloaded
+	result.Scanned = scanned
+	result.Skipped = skipped
+	result.Failed = failed
+	result.Errors = errors
+	mu.Unlock()
 	result.Duration = time.Since(start)
+
+	log.Info(fmt.Sprintf("server cookbook pipeline complete: %d total, %d downloaded, %d scanned, %d skipped, %d failed in %s",
+		result.Total, result.Downloaded, result.Scanned, result.Skipped, result.Failed,
+		result.Duration.Round(time.Millisecond)))
+
 	return result
+}
+
+// resolveCookbookDir determines the filesystem directory for a cookbook,
+// downloading it if necessary. Returns the directory path and true on
+// success, or ("", false) on failure (already logged and marked in DB).
+func resolveCookbookDir(
+	ctx context.Context,
+	client *chefapi.Client,
+	db *datastore.DB,
+	log *logging.ScopedLogger,
+	cb datastore.ServerCookbook,
+	cookbookCacheDir string,
+	deleteAfterScan bool,
+	index, total int,
+) (string, bool) {
+	if cb.IsDownloaded() {
+		// Already downloaded — try to find it in the cache.
+		if !deleteAfterScan && cookbookCacheDir != "" {
+			candidateDir := filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
+			if info, statErr := os.Stat(candidateDir); statErr == nil && info.IsDir() {
+				return candidateDir, true
+			}
+		}
+		// Cache miss (deleteAfterScan cleaned it up, or cache moved) —
+		// re-download to a temp directory for scanning.
+		destDir, downloadErr := downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
+		if downloadErr != nil {
+			log.Warn(fmt.Sprintf("[%d/%d] cookbook re-download failed: %s/%s: %v",
+				index, total, cb.Name, cb.Version, downloadErr))
+			return "", false
+		}
+		return destDir, true
+	}
+
+	// Needs download (pending or failed status).
+	destDir, downloadErr := downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
+	if downloadErr != nil {
+		log.Warn(fmt.Sprintf("[%d/%d] cookbook download failed: %s/%s: %v",
+			index, total, cb.Name, cb.Version, downloadErr))
+		return "", false
+	}
+	return destDir, true
+}
+
+// scanAndPreview runs CookStyle scanning and autocorrect preview generation
+// for a single cookbook against all target Chef versions. Returns the number
+// of successful scans and skipped scans.
+func scanAndPreview(
+	ctx context.Context,
+	db *datastore.DB,
+	log *logging.ScopedLogger,
+	item scanWorkItem,
+	targetChefVersions []string,
+	cookstyleScanner *analysis.CookstyleScanner,
+	autocorrectGen *remediation.AutocorrectGenerator,
+	total int,
+) (scanCount, skipCount int) {
+	if cookstyleScanner == nil || len(targetChefVersions) == 0 {
+		return 0, 0
+	}
+
+	cb := item.cookbook
+
+	for _, tv := range targetChefVersions {
+		if ctx.Err() != nil {
+			break
+		}
+
+		sr := cookstyleScanner.ScanSingleServerCookbook(ctx, cb, tv, item.destDir)
+		if sr.Skipped {
+			skipCount++
+		} else if sr.Error != nil {
+			log.Warn(fmt.Sprintf("[%d/%d] CookStyle scan failed: %s/%s target %s: %v",
+				item.index, total, cb.Name, cb.Version, tv, sr.Error))
+		} else {
+			scanCount++
+
+			// Autocorrect preview (only if scan produced offenses).
+			if autocorrectGen != nil && sr.OffenseCount > 0 {
+				dbResult, dbErr := db.GetServerCookbookCookstyleResult(ctx, cb.ID, tv)
+				if dbErr == nil && dbResult != nil {
+					csInfo := remediation.CookstyleResultInfo{
+						ResultID:          dbResult.ID,
+						CookbookID:        cb.ID,
+						CookbookName:      cb.Name,
+						CookbookVersion:   cb.Version,
+						TargetChefVersion: tv,
+						OffenseCount:      sr.OffenseCount,
+						Passed:            sr.Passed,
+						Source:            remediation.SourceServerCookbook,
+					}
+					autocorrectGen.GenerateSinglePreview(ctx, csInfo, item.destDir)
+				}
+			}
+		}
+	}
+
+	// Per-cookbook completion log.
+	if skipCount > 0 && scanCount == 0 {
+		log.Debug(fmt.Sprintf("[%d/%d] %s/%s — skipped (already scanned)",
+			item.index, total, cb.Name, cb.Version))
+	} else if scanCount > 0 {
+		log.Info(fmt.Sprintf("[%d/%d] %s/%s — %d scanned, %d skipped",
+			item.index, total, cb.Name, cb.Version, scanCount, skipCount))
+	}
+
+	return scanCount, skipCount
 }
 
 // downloadCookbook downloads a single cookbook version to disk and returns
