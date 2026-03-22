@@ -139,6 +139,22 @@ func (db *DB) ListNodeReadinessForSnapshot(ctx context.Context, nodeSnapshotID s
 	return db.scanNodeReadinessRows(ctx, query, nodeSnapshotID)
 }
 
+// ListNodeReadinessByNodeName returns the latest readiness records for the
+// given node within the specified organisation. This queries by
+// (organisation_id, node_name) rather than by node_snapshot_id, making it
+// resilient to snapshot ID changes across collection runs.
+func (db *DB) ListNodeReadinessByNodeName(ctx context.Context, organisationID, nodeName string) ([]NodeReadiness, error) {
+	query := `
+		SELECT ` + nrColumns + `
+		  FROM node_readiness
+		 WHERE organisation_id = $1
+		   AND node_name = $2
+		   AND ` + latestReadinessForOrg("$1") + `
+		 ORDER BY target_chef_version
+	`
+	return db.scanNodeReadinessRows(ctx, query, organisationID, nodeName)
+}
+
 // ListNodeReadinessForOrganisation returns all readiness records for the
 // given organisation from the latest completed collection run, ordered by
 // node_name then target_chef_version.

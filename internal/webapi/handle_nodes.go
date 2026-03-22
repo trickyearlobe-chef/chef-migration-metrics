@@ -80,10 +80,12 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 
 	// Pre-load readiness data for the page's nodes so we can attach a
 	// summary to each row without N+1 queries. Index by node_snapshot_id
-	// for O(1) lookup.
+	// for O(1) lookup. We query by (organisation_id, node_name) rather
+	// than by snapshot ID because the readiness record's snapshot ID may
+	// be stale if the evaluator ran against an earlier snapshot.
 	readinessBySnapshotID := make(map[string][]nodeReadinessSummaryEntry)
 	for _, n := range nodes {
-		recs, err := r.db.ListNodeReadinessForSnapshot(req.Context(), n.ID)
+		recs, err := r.db.ListNodeReadinessByNodeName(req.Context(), n.OrganisationID, n.NodeName)
 		if err != nil {
 			continue // non-fatal — readiness just won't be shown
 		}
@@ -225,10 +227,11 @@ func (r *Router) handleNodesWithOwnerFilter(
 
 	pageNodes := allNodes[start:end]
 
-	// Pre-load readiness data for the page.
+	// Pre-load readiness data for the page. Query by (organisation_id,
+	// node_name) rather than snapshot ID — see comment in handleNodes.
 	readinessBySnapshotID := make(map[string][]nodeReadinessSummaryEntry)
 	for _, n := range pageNodes {
-		recs, err := r.db.ListNodeReadinessForSnapshot(ctx, n.ID)
+		recs, err := r.db.ListNodeReadinessByNodeName(ctx, n.OrganisationID, n.NodeName)
 		if err != nil {
 			continue
 		}
@@ -354,8 +357,13 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Fetch readiness records for this snapshot.
-	readiness, err := r.db.ListNodeReadinessForSnapshot(req.Context(), snapshot.ID)
+	// Fetch readiness records by (organisation_id, node_name) rather than
+	// by node_snapshot_id. The snapshot ID in node_readiness may be stale
+	// if the readiness evaluator ran against an earlier snapshot that has
+	// since been replaced by a newer collection run. Querying by name
+	// matches the same path the dashboard uses and is resilient to
+	// snapshot ID drift.
+	readiness, err := r.db.ListNodeReadinessByNodeName(req.Context(), org.ID, nodeName)
 	if err != nil {
 		r.logf("WARN", "listing readiness for node %s/%s: %v", orgName, nodeName, err)
 		// Non-fatal — we still return the snapshot.
