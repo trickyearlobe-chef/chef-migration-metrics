@@ -62,6 +62,7 @@ This file contains the rules and conventions that must be followed at all times 
 - The application must run pending migrations automatically on startup.
 - Migrations must never be edited after they have been committed. Instead, create a new migration to make further changes.
 - Keep in mind this dashboard runs at scale with 100000 nodes when writing specs or code.
+- **Always use natural keys** (e.g. `organisation_name`, `node_name`, `cookbook_name + version`, `git_repo_name`) as primary keys and foreign keys. Do not introduce synthetic UUIDs unless there is a compelling reason (e.g. the entity genuinely has no stable natural identifier). UUIDs add a fragile layer of indirection — when they drift between tables (re-collection, upsert, deduplication) joins break silently and data becomes invisible.
 
 ## Language and Concurrency
 
