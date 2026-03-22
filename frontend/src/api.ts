@@ -22,6 +22,7 @@ import type {
   CookbookCompatibilityResponse,
   GitRepoCompatibilityResponse,
   TestKitchenCompatibilityResponse,
+  SystemHealthResponse,
   CookbookRemediationResponse,
   NodeListResponse,
   NodeDetailResponse,
@@ -272,6 +273,14 @@ export function fetchTestKitchenCompatibility(
   return apiFetch<TestKitchenCompatibilityResponse>(
     buildUrl("/dashboard/test-kitchen-compatibility", { organisation }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// System health (admin)
+// ---------------------------------------------------------------------------
+
+export function fetchSystemHealth(): Promise<SystemHealthResponse> {
+  return apiFetch<SystemHealthResponse>(buildUrl("/admin/system-health"));
 }
 
 // ---------------------------------------------------------------------------
