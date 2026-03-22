@@ -67,10 +67,11 @@ func runServerCookbookPipeline(
 	start := time.Now()
 	result := ServerCookbookPipelineResult{}
 
-	// Get all active server cookbooks for this organisation — not just
-	// those needing download. We want to scan any that haven't been
-	// scanned yet, even if they were previously downloaded.
-	cookbooks, err := db.ListActiveServerCookbooksNeedingDownload(ctx, org.ID)
+	// Get all active server cookbooks for this organisation — both those
+	// needing download (pending/failed) AND those already downloaded (ok)
+	// that may still need CookStyle scanning. The scan-skip logic inside
+	// scanOneServerCookbook handles the immutability optimisation.
+	cookbooks, err := db.ListActiveServerCookbooksForPipeline(ctx, org.ID)
 	if err != nil {
 		log.Error(fmt.Sprintf("failed to list cookbooks for pipeline: %v", err))
 		result.Duration = time.Since(start)
@@ -95,24 +96,59 @@ func runServerCookbookPipeline(
 
 			cbStart := time.Now()
 
-			// Step 1: Download the cookbook. When retaining files
-			// (deleteAfterScan=false), writes to the persistent cache
-			// directory so files survive for re-scanning on CookStyle
-			// upgrade. When deleting, uses os.MkdirTemp.
-			destDir, downloadErr := downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
-			if downloadErr != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, CookbookFetchError{
-					CookbookID: cb.ID,
-					Name:       cb.Name,
-					Version:    cb.Version,
-					Err:        downloadErr,
-				})
-				log.Warn(fmt.Sprintf("[%d/%d] cookbook download failed: %s/%s: %v",
-					i+1, len(cookbooks), cb.Name, cb.Version, downloadErr))
-				continue
+			// Step 1: Download the cookbook if it hasn't been downloaded
+			// yet. Cookbooks with download_status='ok' are already on
+			// disk (or were previously downloaded and deleted after scan)
+			// — skip the download and proceed directly to scanning.
+			var destDir string
+			if cb.IsDownloaded() {
+				// Already downloaded — resolve the cache directory path.
+				// If deleteAfterScan is enabled the files won't exist on
+				// disk (they were cleaned up), so we still need to
+				// re-download. Check if the directory actually exists.
+				if !deleteAfterScan && cookbookCacheDir != "" {
+					candidateDir := filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
+					if info, statErr := os.Stat(candidateDir); statErr == nil && info.IsDir() {
+						destDir = candidateDir
+					}
+				}
+				// If files aren't on disk (deleteAfterScan mode or cache
+				// miss), re-download to a temp directory for scanning.
+				if destDir == "" {
+					var downloadErr error
+					destDir, downloadErr = downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
+					if downloadErr != nil {
+						result.Failed++
+						result.Errors = append(result.Errors, CookbookFetchError{
+							CookbookID: cb.ID,
+							Name:       cb.Name,
+							Version:    cb.Version,
+							Err:        downloadErr,
+						})
+						log.Warn(fmt.Sprintf("[%d/%d] cookbook re-download failed: %s/%s: %v",
+							i+1, len(cookbooks), cb.Name, cb.Version, downloadErr))
+						continue
+					}
+					result.Downloaded++
+				}
+			} else {
+				// Needs download (pending or failed status).
+				var downloadErr error
+				destDir, downloadErr = downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
+				if downloadErr != nil {
+					result.Failed++
+					result.Errors = append(result.Errors, CookbookFetchError{
+						CookbookID: cb.ID,
+						Name:       cb.Name,
+						Version:    cb.Version,
+						Err:        downloadErr,
+					})
+					log.Warn(fmt.Sprintf("[%d/%d] cookbook download failed: %s/%s: %v",
+						i+1, len(cookbooks), cb.Name, cb.Version, downloadErr))
+					continue
+				}
+				result.Downloaded++
 			}
-			result.Downloaded++
 
 			// Step 2: CookStyle scan for each target version.
 			scanCount := 0
