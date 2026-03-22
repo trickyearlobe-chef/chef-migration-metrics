@@ -29,7 +29,7 @@ export function AdminActionsPage() {
             <h3 className="text-base font-semibold text-gray-800">Rescan All CookStyle</h3>
             <p className="mt-1 text-sm text-gray-500">
               Invalidate all cached CookStyle results, complexity scores, and autocorrect previews
-              across every cookbook. All cookbooks will be rescanned on the next collection cycle.
+              across every cookbook. A collection run will be triggered immediately to rescan all cookbooks.
             </p>
             <p className="mt-1 text-xs text-gray-400">
               This is useful after upgrading CookStyle, changing target Chef versions, or when
@@ -50,7 +50,7 @@ export function AdminActionsPage() {
             <p className="font-medium">Are you sure?</p>
             <p className="mt-1 text-amber-600">
               This will delete all cached CookStyle results, complexity scores, and autocorrect
-              previews. All cookbooks will be rescanned on the next collection cycle, which may
+              previews, then trigger an immediate collection run to rescan everything. This may
               take a significant amount of time depending on the number of cookbooks.
             </p>
             <div className="mt-3 flex gap-2">
@@ -72,8 +72,8 @@ export function AdminActionsPage() {
 
         {rescanAllMsg && (
           <div className={`mt-4 rounded-md border px-4 py-3 text-sm ${rescanAllMsg.startsWith("Rescan all failed")
-              ? "border-red-200 bg-red-50 text-red-800"
-              : "border-green-200 bg-green-50 text-green-800"
+            ? "border-red-200 bg-red-50 text-red-800"
+            : "border-green-200 bg-green-50 text-green-800"
             }`}>
             {rescanAllMsg}
           </div>
