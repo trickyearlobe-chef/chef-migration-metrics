@@ -50,7 +50,7 @@ export function CookbooksPage() {
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
-    if (searchParams.has("compatibility") || searchParams.has("active")) {
+    if (searchParams.has("compatibility") || searchParams.has("active") || searchParams.has("name") || searchParams.has("target_chef_version")) {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
