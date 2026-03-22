@@ -89,7 +89,7 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 		}
 
 		// Reset download_status to 'pending' so the streaming pipeline
-		// re-downloads the files (they were deleted after the previous scan).
+		// re-downloads and re-scans the files on the next collection cycle.
 		if _, dlErr := r.db.ResetServerCookbookDownloadStatus(ctx, sc.ID); dlErr != nil {
 			r.logf("WARN", "resetting download status for server cookbook %s (%s): %v", sc.ID, sc.Name, dlErr)
 			lastErr = dlErr
