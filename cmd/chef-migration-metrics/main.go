@@ -731,6 +731,19 @@ func run() int {
 			}
 		}),
 		webapi.WithAuth(localAuth, sessionMgr, authMiddleware, db),
+		webapi.WithCollectionTrigger(func(ctx context.Context) error {
+			if coll.IsRunning() {
+				return fmt.Errorf("a collection run is already in progress")
+			}
+			go func() {
+				triggerLog := logger.WithScope(logging.ScopeCollectionRun)
+				triggerLog.Info("manually triggered collection run (via rescan)")
+				if _, err := sched.TriggerNow(ctx); err != nil {
+					triggerLog.Error(fmt.Sprintf("triggered collection run failed: %v", err))
+				}
+			}()
+			return nil
+		}),
 	}
 
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
