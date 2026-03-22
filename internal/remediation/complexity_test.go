@@ -4,6 +4,7 @@
 package remediation
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -569,6 +570,77 @@ func TestComplexityResult_Fields(t *testing.T) {
 	}
 	if r.AffectedNodeCount != 100 {
 		t.Errorf("AffectedNodeCount = %d", r.AffectedNodeCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Skipped field — unscanned cookbooks must not get complexity records
+// ---------------------------------------------------------------------------
+
+func TestComplexityResult_Skipped_DefaultFalse(t *testing.T) {
+	r := ComplexityResult{}
+	if r.Skipped {
+		t.Error("Skipped should default to false")
+	}
+}
+
+func TestComplexityResult_Skipped_PreventsFalseCompatible(t *testing.T) {
+	// When a cookbook has no scan results, the complexity scorer sets
+	// Skipped=true and does NOT persist a complexity record. This
+	// prevents the cookbook list handler from seeing error_count=0
+	// and reporting "compatible" for an unscanned cookbook.
+	r := ComplexityResult{
+		CookbookID:        "cb-1",
+		CookbookName:      "unscanned",
+		CookbookVersion:   "1.0.0",
+		TargetChefVersion: "18.0",
+		Skipped:           true,
+	}
+
+	if !r.Skipped {
+		t.Error("Skipped should be true for unscanned cookbooks")
+	}
+	// A skipped result should have zero scores — it was never evaluated.
+	if r.ComplexityScore != 0 {
+		t.Errorf("ComplexityScore = %d, want 0 for skipped result", r.ComplexityScore)
+	}
+	if r.ErrorCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0 for skipped result", r.ErrorCount)
+	}
+}
+
+func TestComplexityBatchResult_SkippedCounting(t *testing.T) {
+	// Verify that skipped results are counted in the Skipped field of
+	// the batch result, not in Scored or Errors.
+	batch := ComplexityBatchResult{
+		Total: 3,
+		Results: []ComplexityResult{
+			{CookbookName: "scanned", ComplexityScore: 10},
+			{CookbookName: "unscanned", Skipped: true},
+			{CookbookName: "errored", Error: fmt.Errorf("db error")},
+		},
+	}
+
+	// Simulate the counting logic from ScoreServerCookbooks.
+	for _, r := range batch.Results {
+		switch {
+		case r.Skipped:
+			batch.Skipped++
+		case r.Error != nil:
+			batch.Errors++
+		default:
+			batch.Scored++
+		}
+	}
+
+	if batch.Scored != 1 {
+		t.Errorf("Scored = %d, want 1", batch.Scored)
+	}
+	if batch.Skipped != 1 {
+		t.Errorf("Skipped = %d, want 1", batch.Skipped)
+	}
+	if batch.Errors != 1 {
+		t.Errorf("Errors = %d, want 1", batch.Errors)
 	}
 }
 

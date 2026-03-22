@@ -583,6 +583,131 @@ func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Compatibility status for unscanned cookbooks
+// ---------------------------------------------------------------------------
+
+func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
+	// When a cookbook has no complexity record (i.e. CookStyle has never run),
+	// it must show as "untested" — not "compatible". This prevents false
+	// positives where unscanned cookbooks appear green on the dashboard.
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{ID: "cb-2", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
+			}, nil
+		},
+		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
+			return nil, nil
+		},
+		// Return NO complexity records — simulates cookbooks that have never
+		// been CookStyle-scanned.
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
+			return nil, nil
+		},
+	}
+
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		Data []struct {
+			Name          string `json:"name"`
+			Compatibility string `json:"compatibility"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	for _, cb := range body.Data {
+		if cb.Compatibility != "untested" {
+			t.Errorf("cookbook %q compatibility = %q, want %q (no scan results exist)",
+				cb.Name, cb.Compatibility, "untested")
+		}
+	}
+}
+
+func TestHandleCookbooks_ScannedCookbooks_ShowCompatibleOrIncompatible(t *testing.T) {
+	// When complexity records exist, cookbooks with error_count=0 should
+	// show as "compatible" and those with error_count>0 as "incompatible".
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{
+				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{ID: "cb-2", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{ID: "cb-3", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
+			}, nil
+		},
+		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
+			return nil, nil
+		},
+		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
+			return []datastore.ServerCookbookComplexity{
+				// apt: scanned, no errors → compatible
+				{ServerCookbookID: "cb-1", TargetChefVersion: "18.0", ErrorCount: 0},
+				// nginx: scanned, has errors → incompatible
+				{ServerCookbookID: "cb-2", TargetChefVersion: "18.0", ErrorCount: 3},
+				// mysql: no complexity record → untested (not in this slice)
+			}, nil
+		},
+	}
+
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		Data []struct {
+			Name          string `json:"name"`
+			Compatibility string `json:"compatibility"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	want := map[string]string{
+		"apt":   "compatible",
+		"nginx": "incompatible",
+		"mysql": "untested",
+	}
+	for _, cb := range body.Data {
+		expected, ok := want[cb.Name]
+		if !ok {
+			continue
+		}
+		if cb.Compatibility != expected {
+			t.Errorf("cookbook %q compatibility = %q, want %q",
+				cb.Name, cb.Compatibility, expected)
+		}
+	}
+}
+
 func TestHandleCookbookDetail_DBError(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
