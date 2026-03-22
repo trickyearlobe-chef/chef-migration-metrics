@@ -20,8 +20,8 @@ const (
 )
 
 // GitRepo represents a row in the git_repos table. Each row is a unique
-// cookbook name + git URL combination. Git repos are not org-scoped — they
-// are matched by name across organisations.
+// cookbook name. The git_repo_url records which URL the repo was cloned from.
+// Git repos are not org-scoped — they are matched by name across organisations.
 type GitRepo struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
@@ -66,7 +66,7 @@ const gitRepoColumns = `
 // ---------------------------------------------------------------------------
 
 // UpsertGitRepoParams holds the fields required to upsert a git repo.
-// The upsert key is (name, git_repo_url).
+// The upsert key is (name).
 type UpsertGitRepoParams struct {
 	Name          string
 	GitRepoURL    string
@@ -76,7 +76,9 @@ type UpsertGitRepoParams struct {
 	LastFetchedAt time.Time
 }
 
-// UpsertGitRepo inserts or updates a git repo row.
+// UpsertGitRepo inserts or updates a git repo row. If a row for this
+// cookbook name already exists, its URL, HEAD, branch, test suite flag,
+// and clone status are updated.
 func (db *DB) UpsertGitRepo(ctx context.Context, p UpsertGitRepoParams) (GitRepo, error) {
 	return db.upsertGitRepo(ctx, db.q(), p)
 }
@@ -99,8 +101,9 @@ func (db *DB) upsertGitRepo(ctx context.Context, q queryable, p UpsertGitRepoPar
 		) VALUES (
 			$1, $2, $3, $4, $5, 'ok', NULL, $6
 		)
-		ON CONFLICT (name, git_repo_url)
+		ON CONFLICT (name)
 		DO UPDATE SET
+			git_repo_url    = EXCLUDED.git_repo_url,
 			head_commit_sha = EXCLUDED.head_commit_sha,
 			default_branch  = EXCLUDED.default_branch,
 			has_test_suite  = EXCLUDED.has_test_suite,
@@ -135,24 +138,8 @@ func (db *DB) getGitRepo(ctx context.Context, q queryable, id string) (GitRepo, 
 	return scanGitRepo(q.QueryRowContext(ctx, query, id))
 }
 
-// GetGitRepoByKey returns a git repo by its natural key (name, git_repo_url).
+// GetGitRepoByName returns the git repo with the given cookbook name.
 // Returns ErrNotFound if no match exists.
-func (db *DB) GetGitRepoByKey(ctx context.Context, name, gitRepoURL string) (GitRepo, error) {
-	return db.getGitRepoByKey(ctx, db.q(), name, gitRepoURL)
-}
-
-func (db *DB) getGitRepoByKey(ctx context.Context, q queryable, name, gitRepoURL string) (GitRepo, error) {
-	query := `SELECT ` + gitRepoColumns + `
-		FROM git_repos
-		WHERE name = $1 AND git_repo_url = $2`
-	return scanGitRepo(q.QueryRowContext(ctx, query, name, gitRepoURL))
-}
-
-// GetGitRepoByName returns the most recently fetched git repo with the
-// given name. When multiple git_repo_url entries exist for the same name,
-// the one with the latest last_fetched_at wins (matching the previous
-// DISTINCT ON behaviour for the old cookbooks table). Returns ErrNotFound
-// if no match exists.
 func (db *DB) GetGitRepoByName(ctx context.Context, name string) (GitRepo, error) {
 	return db.getGitRepoByName(ctx, db.q(), name)
 }
@@ -160,43 +147,26 @@ func (db *DB) GetGitRepoByName(ctx context.Context, name string) (GitRepo, error
 func (db *DB) getGitRepoByName(ctx context.Context, q queryable, name string) (GitRepo, error) {
 	query := `SELECT ` + gitRepoColumns + `
 		FROM git_repos
-		WHERE name = $1
-		ORDER BY last_fetched_at DESC NULLS LAST
-		LIMIT 1`
+		WHERE name = $1`
 	return scanGitRepo(q.QueryRowContext(ctx, query, name))
 }
 
-// ListGitRepos returns all git repos, ordered by name. When multiple rows
-// exist for the same cookbook name (different git_repo_url values), only the
-// most recently fetched row per name is returned (DISTINCT ON).
+// ListGitRepos returns all git repos, ordered by name.
+// There is exactly one row per cookbook name.
 func (db *DB) ListGitRepos(ctx context.Context) ([]GitRepo, error) {
 	return db.listGitRepos(ctx, db.q())
 }
 
 func (db *DB) listGitRepos(ctx context.Context, q queryable) ([]GitRepo, error) {
-	query := `SELECT DISTINCT ON (name) ` + gitRepoColumns + `
-		FROM git_repos
-		ORDER BY name, last_fetched_at DESC NULLS LAST`
-	return scanGitRepos(q.QueryContext(ctx, query))
-}
-
-// ListAllGitRepos returns every git repo row without deduplication, ordered
-// by name then git_repo_url. This is useful for operations that need to
-// process all URLs (e.g. git clone/pull, committer extraction).
-func (db *DB) ListAllGitRepos(ctx context.Context) ([]GitRepo, error) {
-	return db.listAllGitRepos(ctx, db.q())
-}
-
-func (db *DB) listAllGitRepos(ctx context.Context, q queryable) ([]GitRepo, error) {
 	query := `SELECT ` + gitRepoColumns + `
 		FROM git_repos
-		ORDER BY name, git_repo_url`
+		ORDER BY name`
 	return scanGitRepos(q.QueryContext(ctx, query))
 }
 
-// ListGitReposByName returns all git repo rows with the given cookbook name,
-// ordered by last_fetched_at DESC. There may be multiple rows if the same
-// cookbook is available at different git URLs.
+// ListGitReposByName returns the git repo row for the given cookbook name.
+// The result is returned as a slice for API compatibility, but will contain
+// at most one element since name is unique.
 func (db *DB) ListGitReposByName(ctx context.Context, name string) ([]GitRepo, error) {
 	return db.listGitReposByName(ctx, db.q(), name)
 }
@@ -204,8 +174,7 @@ func (db *DB) ListGitReposByName(ctx context.Context, name string) ([]GitRepo, e
 func (db *DB) listGitReposByName(ctx context.Context, q queryable, name string) ([]GitRepo, error) {
 	query := `SELECT ` + gitRepoColumns + `
 		FROM git_repos
-		WHERE name = $1
-		ORDER BY last_fetched_at DESC NULLS LAST`
+		WHERE name = $1`
 	return scanGitRepos(q.QueryContext(ctx, query, name))
 }
 
@@ -215,18 +184,15 @@ func (db *DB) listGitReposByName(ctx context.Context, q queryable, name string) 
 
 // DeleteGitRepoResult holds the outcome of a DeleteGitReposByName
 // operation, including how many repo and committer rows were removed and
-// which git repo URLs were cleaned up.
+// which git repo URL was cleaned up.
 type DeleteGitRepoResult struct {
 	ReposDeleted      int
 	CommittersDeleted int
 	RepoURLs          []string
 }
 
-// DeleteGitReposByName removes all git repo rows for the given cookbook name
-// and deletes associated committer data from git_repo_committers. There may
-// be multiple rows for the same cookbook name with different git_repo_url
-// values (stale data from URL changes); this method cleans up all of them
-// in a single transaction.
+// DeleteGitReposByName removes the git repo row for the given cookbook name
+// and deletes associated committer data from git_repo_committers.
 //
 // Cascading foreign-key deletes handle cookstyle results, test kitchen
 // results, autocorrect previews, and complexity records automatically.
@@ -236,8 +202,7 @@ func (db *DB) DeleteGitReposByName(ctx context.Context, name string) (DeleteGitR
 	var result DeleteGitRepoResult
 
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		// Collect all git_repo_url values for this name so we can clean up
-		// committer data after deleting the repo rows.
+		// Collect the git_repo_url so we can clean up committer data.
 		rows, err := tx.QueryContext(ctx,
 			`SELECT git_repo_url FROM git_repos WHERE name = $1`,
 			name,
@@ -258,9 +223,9 @@ func (db *DB) DeleteGitReposByName(ctx context.Context, name string) (DeleteGitR
 			return fmt.Errorf("datastore: iterating git repo URLs: %w", err)
 		}
 
-		// Delete all git repo rows for this name. Cascading FK deletes
-		// remove cookstyle results, test kitchen results, autocorrect
-		// previews, and complexity records.
+		// Delete the git repo row. Cascading FK deletes remove cookstyle
+		// results, test kitchen results, autocorrect previews, and
+		// complexity records.
 		res, err := tx.ExecContext(ctx,
 			`DELETE FROM git_repos WHERE name = $1`,
 			name,
@@ -277,7 +242,7 @@ func (db *DB) DeleteGitReposByName(ctx context.Context, name string) (DeleteGitR
 		}
 		result.ReposDeleted = int(n)
 
-		// Delete committer data for all collected repo URLs.
+		// Delete committer data for the repo URL.
 		if len(result.RepoURLs) > 0 {
 			res, err := tx.ExecContext(ctx,
 				`DELETE FROM git_repo_committers WHERE git_repo_url = ANY($1)`,
@@ -356,8 +321,9 @@ func (db *DB) UpsertGitRepoFailed(ctx context.Context, name, gitRepoURL, cloneEr
 		) VALUES (
 			$1, $2, 'failed', $3
 		)
-		ON CONFLICT (name, git_repo_url)
+		ON CONFLICT (name)
 		DO UPDATE SET
+			git_repo_url = EXCLUDED.git_repo_url,
 			clone_status = 'failed',
 			clone_error  = EXCLUDED.clone_error,
 			updated_at   = now()
