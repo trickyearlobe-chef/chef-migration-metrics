@@ -466,6 +466,16 @@ func normaliseJSON(b []byte) json.RawMessage {
 // Database size
 // ---------------------------------------------------------------------------
 
+// TableSize holds disk usage information for a single database table,
+// including its TOAST data, indexes, and estimated row count.
+type TableSize struct {
+	TableName   string `json:"table_name"`
+	TotalBytes  int64  `json:"total_bytes"`  // table + indexes + TOAST
+	TableBytes  int64  `json:"table_bytes"`  // table + TOAST (no indexes)
+	IndexBytes  int64  `json:"index_bytes"`  // all indexes on the table
+	RowEstimate int64  `json:"row_estimate"` // from pg_stat_user_tables
+}
+
 // DatabaseSize returns the size of the current database in bytes using
 // PostgreSQL's pg_database_size() function. This is useful for monitoring
 // database growth on the admin System Stats page.
@@ -478,4 +488,44 @@ func (db *DB) DatabaseSize(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("datastore: querying database size: %w", err)
 	}
 	return size, nil
+}
+
+// DatabaseTableSizes returns per-table disk usage for all user tables in the
+// public schema, ordered by total size descending. It uses PostgreSQL's
+// pg_total_relation_size(), pg_table_size(), and pg_indexes_size() functions,
+// and joins pg_stat_user_tables for the estimated row count (n_live_tup).
+func (db *DB) DatabaseTableSizes(ctx context.Context) ([]TableSize, error) {
+	rows, err := db.pool.QueryContext(ctx, `
+		SELECT
+			c.relname                          AS table_name,
+			pg_total_relation_size(c.oid)       AS total_bytes,
+			pg_table_size(c.oid)                AS table_bytes,
+			pg_indexes_size(c.oid)              AS index_bytes,
+			COALESCE(s.n_live_tup, 0)           AS row_estimate
+		FROM pg_class c
+		LEFT JOIN pg_stat_user_tables s
+			ON s.relid = c.oid
+		WHERE c.relkind = 'r'
+		  AND c.relnamespace = (
+				SELECT oid FROM pg_namespace WHERE nspname = 'public'
+			)
+		ORDER BY pg_total_relation_size(c.oid) DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: querying table sizes: %w", err)
+	}
+	defer rows.Close()
+
+	var tables []TableSize
+	for rows.Next() {
+		var t TableSize
+		if err := rows.Scan(&t.TableName, &t.TotalBytes, &t.TableBytes, &t.IndexBytes, &t.RowEstimate); err != nil {
+			return nil, fmt.Errorf("datastore: scanning table size row: %w", err)
+		}
+		tables = append(tables, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating table sizes: %w", err)
+	}
+	return tables, nil
 }
