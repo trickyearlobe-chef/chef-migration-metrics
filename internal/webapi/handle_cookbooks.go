@@ -132,7 +132,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	// cookbook with a total version count across all sources.
 	allCookbooks, versionCounts := collapseCookbookSummaries(allCookbooks)
 
-	// Compute compatibility per cookbook name from complexity records.
+	// Compute compatibility per cookbook name from cookstyle results.
 	targetChefVersion := queryString(req, "target_chef_version", "")
 	if targetChefVersion == "" {
 		targetChefVersion = r.defaultTargetVersion()
@@ -140,11 +140,11 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	compatByName := make(map[string]string)
 	if targetChefVersion != "" {
-		// Server cookbook compatibility from complexity records.
+		// Server cookbook compatibility from cookstyle results.
 		for _, org := range orgs {
-			complexities, cErr := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+			csResults, cErr := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.ID)
 			if cErr != nil {
-				r.logf("WARN", "listing complexities for org %s: %v", org.Name, cErr)
+				r.logf("WARN", "listing cookstyle results for org %s: %v", org.Name, cErr)
 				continue
 			}
 			serverCBs, scErr := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
@@ -156,18 +156,18 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			for _, sc := range serverCBs {
 				nameByID[sc.ID] = sc.Name
 			}
-			for _, cc := range complexities {
-				if cc.TargetChefVersion != targetChefVersion {
+			for _, cs := range csResults {
+				if cs.TargetChefVersion != targetChefVersion {
 					continue
 				}
-				cbName := nameByID[cc.ServerCookbookID]
+				cbName := nameByID[cs.ServerCookbookID]
 				if cbName == "" {
 					continue
 				}
 				if _, seen := compatByName[cbName]; seen {
 					continue // first version wins
 				}
-				if cc.ErrorCount == 0 {
+				if cs.Passed {
 					compatByName[cbName] = "compatible"
 				} else {
 					compatByName[cbName] = "incompatible"

@@ -642,8 +642,8 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 }
 
 func TestHandleCookbooks_ScannedCookbooks_ShowCompatibleOrIncompatible(t *testing.T) {
-	// When complexity records exist, cookbooks with error_count=0 should
-	// show as "compatible" and those with error_count>0 as "incompatible".
+	// When cookstyle results exist, cookbooks that passed should show as
+	// "compatible" and those that failed as "incompatible".
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
@@ -658,13 +658,13 @@ func TestHandleCookbooks_ScannedCookbooks_ShowCompatibleOrIncompatible(t *testin
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return nil, nil
 		},
-		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
-			return []datastore.ServerCookbookComplexity{
-				// apt: scanned, no errors → compatible
-				{ServerCookbookID: "cb-1", TargetChefVersion: "18.0", ErrorCount: 0},
-				// nginx: scanned, has errors → incompatible
-				{ServerCookbookID: "cb-2", TargetChefVersion: "18.0", ErrorCount: 3},
-				// mysql: no complexity record → untested (not in this slice)
+		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return []datastore.ServerCookbookCookstyleResult{
+				// apt: scanned, passed → compatible
+				{ID: "cs-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0", Passed: true, OffenceCount: 0},
+				// nginx: scanned, failed → incompatible
+				{ID: "cs-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0", Passed: false, OffenceCount: 3},
+				// mysql: no cookstyle result → untested (not in this slice)
 			}, nil
 		},
 	}
