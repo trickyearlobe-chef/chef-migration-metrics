@@ -271,6 +271,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		IsActive          bool   `json:"is_active"`
 		IsStaleCookbook   bool   `json:"is_stale_cookbook"`
 		DownloadStatus    string `json:"download_status"`
+		DownloadError     string `json:"download_error,omitempty"`
 		Compatibility     string `json:"compatibility"`
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
@@ -284,6 +285,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			IsActive:          cb.IsActive,
 			IsStaleCookbook:   cb.IsStaleCookbook,
 			DownloadStatus:    cb.DownloadStatus,
+			DownloadError:     cb.DownloadError,
 			VersionCount:      versionCounts[cb.Name],
 			Compatibility:     cb.Compatibility,
 			TargetChefVersion: targetChefVersion,

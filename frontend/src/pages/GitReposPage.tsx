@@ -18,6 +18,33 @@ function truncate(value: string, max: number): string {
   return value.length > max ? value.slice(0, max) + "…" : value;
 }
 
+/** Render a coloured clone-status pill with optional error tooltip. */
+function CloneStatusBadge({ status, error }: { status: string; error?: string }) {
+  const styles: Record<string, string> = {
+    ok: "bg-green-100 text-green-800 ring-green-600/20",
+    failed: "bg-red-100 text-red-800 ring-red-600/20",
+    pending: "bg-gray-100 text-gray-600 ring-gray-500/20",
+  };
+  const labels: Record<string, string> = {
+    ok: "Cloned",
+    failed: "Missing",
+    pending: "Pending",
+  };
+  const cls = styles[status] ?? styles.pending;
+  const label = labels[status] ?? status;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${cls}`}
+      title={status === "failed" && error ? error : undefined}
+    >
+      {label}
+      {status === "failed" && error && (
+        <span className="ml-1 text-red-400">ⓘ</span>
+      )}
+    </span>
+  );
+}
+
 /** Format an ISO date string into a human-friendly local representation. */
 function formatDate(iso?: string): string {
   if (!iso) return "—";
@@ -216,6 +243,7 @@ export function GitReposPage() {
                       Name<span className="text-xs text-blue-500">{sortIndicator("name")}</span>
                     </th>
                     <th>Git URL</th>
+                    <th>Clone</th>
                     <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("has_test_suite")}>
                       Test Suite<span className="text-xs text-blue-500">{sortIndicator("has_test_suite")}</span>
                     </th>
@@ -244,6 +272,9 @@ export function GitReposPage() {
                         >
                           {truncate(repo.git_repo_url, 48)}
                         </span>
+                      </td>
+                      <td>
+                        <CloneStatusBadge status={repo.clone_status} error={repo.clone_error} />
                       </td>
                       <td>
                         {repo.has_test_suite ? (

@@ -12,6 +12,33 @@ import { Pagination } from "../components/Pagination";
 import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
 import { highestSemver } from "../semver";
 
+/** Render a coloured download-status pill with optional error tooltip. */
+function DownloadStatusBadge({ status, error }: { status: string; error?: string }) {
+  const styles: Record<string, string> = {
+    ok: "bg-green-100 text-green-800 ring-green-600/20",
+    failed: "bg-red-100 text-red-800 ring-red-600/20",
+    pending: "bg-gray-100 text-gray-600 ring-gray-500/20",
+  };
+  const labels: Record<string, string> = {
+    ok: "OK",
+    failed: "Failed",
+    pending: "Pending",
+  };
+  const cls = styles[status] ?? styles.pending;
+  const label = labels[status] ?? status;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${cls}`}
+      title={status === "failed" && error ? error : undefined}
+    >
+      {label}
+      {status === "failed" && error && (
+        <span className="ml-1 text-red-400">ⓘ</span>
+      )}
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Cookbooks list page — paginated table from GET /api/v1/cookbooks showing
 // name, version count, active/stale indicators, compatibility, and download
@@ -246,8 +273,8 @@ export function CookbooksPage() {
                           )}
                         </div>
                       </td>
-                      <td className="text-xs text-gray-400">
-                        {cb.download_status || "—"}
+                      <td>
+                        <DownloadStatusBadge status={cb.download_status} error={cb.download_error} />
                       </td>
                     </tr>
                   ))}
