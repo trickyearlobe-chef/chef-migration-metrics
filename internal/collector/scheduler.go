@@ -6,10 +6,12 @@ package collector
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/syshealth"
 )
 
 // CronParser is the interface for parsing and evaluating cron schedule
@@ -182,6 +184,30 @@ func (s *Scheduler) loop(ctx context.Context) {
 			if s.collector.IsRunning() {
 				log.Warn("scheduled collection tick skipped — a run is already in progress")
 				continue
+			}
+
+			// Circuit breaker — check host health before starting a run.
+			if s.collector.cfg != nil && s.collector.cfg.SystemHealth.IsPauseCollectionOnCritical() {
+				sh := s.collector.cfg.SystemHealth
+				th := syshealth.Thresholds{
+					DiskUsedWarningPercent:  sh.DiskUsedWarningPercent,
+					DiskUsedCriticalPercent: sh.DiskUsedCriticalPercent,
+					CPULoadWarningPerCPU:    sh.CPULoadWarningPerCPU,
+					CPULoadCriticalPerCPU:   sh.CPULoadCriticalPerCPU,
+					MemUsedWarningPercent:   sh.MemUsedWarningPercent,
+					MemUsedCriticalPercent:  sh.MemUsedCriticalPercent,
+				}
+				snap := syshealth.Snapshot(sh.DiskPath, th)
+				if syshealth.ShouldPauseCollection(snap) {
+					msgs := make([]string, 0, len(snap.Alerts))
+					for _, a := range snap.Alerts {
+						if a.Level == "critical" {
+							msgs = append(msgs, a.Message)
+						}
+					}
+					log.Warn(fmt.Sprintf("collection paused — critical system health alert: %s", strings.Join(msgs, "; ")))
+					continue
+				}
 			}
 
 			s.runWithRecovery(ctx, log)
