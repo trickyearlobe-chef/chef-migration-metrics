@@ -248,14 +248,18 @@ export interface SystemHealthThresholds {
   mem_used_critical_percent: number;
 }
 
+export interface DiskStats {
+  path: string;
+  total_bytes: number;
+  free_bytes: number;
+  used_percent: number;
+}
+
 export interface SystemHealthResponse {
   timestamp: string;
   uptime: string;
 
-  disk_path: string;
-  disk_total_bytes: number;
-  disk_free_bytes: number;
-  disk_used_percent: number;
+  disks: DiskStats[];
 
   cpu_count: number;
   load_avg_1: number;

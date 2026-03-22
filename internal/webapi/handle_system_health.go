@@ -29,7 +29,7 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 		MemUsedCriticalPercent:  sh.MemUsedCriticalPercent,
 	}
 
-	stats := syshealth.Snapshot(sh.DiskPath, th)
+	stats := syshealth.Snapshot(sh.DiskPaths, th)
 
 	// Determine whether the collection circuit breaker would trip.
 	collectionPaused := sh.IsPauseCollectionOnCritical() && syshealth.ShouldPauseCollection(stats)
@@ -43,20 +43,21 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 		MemUsedCriticalPercent  float64 `json:"mem_used_critical_percent"`
 	}
 
-	// Ensure alerts is never null in JSON.
+	// Ensure alerts and disks are never null in JSON.
 	alerts := stats.Alerts
 	if alerts == nil {
 		alerts = []syshealth.Alert{}
+	}
+	disks := stats.Disks
+	if disks == nil {
+		disks = []syshealth.DiskStats{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"timestamp": stats.Timestamp,
 		"uptime":    stats.Uptime,
 
-		"disk_path":         stats.DiskPath,
-		"disk_total_bytes":  stats.DiskTotalBytes,
-		"disk_free_bytes":   stats.DiskFreeBytes,
-		"disk_used_percent": stats.DiskUsedPercent,
+		"disks": disks,
 
 		"cpu_count":    stats.CPUCount,
 		"load_avg_1":   stats.LoadAvg1,

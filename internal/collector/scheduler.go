@@ -197,7 +197,7 @@ func (s *Scheduler) loop(ctx context.Context) {
 					MemUsedWarningPercent:   sh.MemUsedWarningPercent,
 					MemUsedCriticalPercent:  sh.MemUsedCriticalPercent,
 				}
-				snap := syshealth.Snapshot(sh.DiskPath, th)
+				snap := syshealth.Snapshot(sh.DiskPaths, th)
 				if syshealth.ShouldPauseCollection(snap) {
 					msgs := make([]string, 0, len(snap.Alerts))
 					for _, a := range snap.Alerts {

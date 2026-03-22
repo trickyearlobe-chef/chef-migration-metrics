@@ -14,7 +14,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestSnapshot_ReturnsValidStats(t *testing.T) {
-	s := Snapshot("/", DefaultThresholds())
+	s := Snapshot([]string{"/"}, DefaultThresholds())
 
 	if s.Timestamp.IsZero() {
 		t.Error("Timestamp should not be zero")
@@ -22,8 +22,11 @@ func TestSnapshot_ReturnsValidStats(t *testing.T) {
 	if s.Uptime == "" {
 		t.Error("Uptime should not be empty")
 	}
-	if s.DiskPath != "/" {
-		t.Errorf("DiskPath = %q, want /", s.DiskPath)
+	if len(s.Disks) == 0 {
+		t.Fatal("Disks slice should not be empty")
+	}
+	if s.Disks[0].Path != "/" {
+		t.Errorf("Disks[0].Path = %q, want /", s.Disks[0].Path)
 	}
 	if s.CPUCount != runtime.NumCPU() {
 		t.Errorf("CPUCount = %d, want %d", s.CPUCount, runtime.NumCPU())
@@ -37,22 +40,26 @@ func TestSnapshot_ReturnsValidStats(t *testing.T) {
 }
 
 func TestSnapshot_DiskMetrics_Populated(t *testing.T) {
-	s := Snapshot("/", DefaultThresholds())
+	s := Snapshot([]string{"/"}, DefaultThresholds())
+
+	if len(s.Disks) == 0 {
+		t.Fatal("Disks slice should not be empty")
+	}
 
 	// On any real system the root filesystem should have some capacity.
-	if s.DiskTotalBytes == 0 {
-		t.Skip("DiskTotalBytes is zero — disk metrics may not be supported on this platform")
+	if s.Disks[0].TotalBytes == 0 {
+		t.Skip("Disks[0].TotalBytes is zero — disk metrics may not be supported on this platform")
 	}
-	if s.DiskFreeBytes == 0 {
-		t.Error("DiskFreeBytes should not be zero on a healthy system")
+	if s.Disks[0].FreeBytes == 0 {
+		t.Error("Disks[0].FreeBytes should not be zero on a healthy system")
 	}
-	if s.DiskUsedPercent <= 0 || s.DiskUsedPercent > 100 {
-		t.Errorf("DiskUsedPercent = %.2f, want between 0 and 100", s.DiskUsedPercent)
+	if s.Disks[0].UsedPercent <= 0 || s.Disks[0].UsedPercent > 100 {
+		t.Errorf("Disks[0].UsedPercent = %.2f, want between 0 and 100", s.Disks[0].UsedPercent)
 	}
 }
 
 func TestSnapshot_CPUMetrics_Populated(t *testing.T) {
-	s := Snapshot("/", DefaultThresholds())
+	s := Snapshot([]string{"/"}, DefaultThresholds())
 
 	if s.CPUCount <= 0 {
 		t.Errorf("CPUCount = %d, want > 0", s.CPUCount)
@@ -67,7 +74,7 @@ func TestSnapshot_CPUMetrics_Populated(t *testing.T) {
 }
 
 func TestSnapshot_MemoryMetrics_Populated(t *testing.T) {
-	s := Snapshot("/", DefaultThresholds())
+	s := Snapshot([]string{"/"}, DefaultThresholds())
 
 	if s.MemTotalBytes == 0 {
 		t.Skip("MemTotalBytes is zero — memory metrics may not be supported on this platform")
@@ -81,9 +88,12 @@ func TestSnapshot_MemoryMetrics_Populated(t *testing.T) {
 }
 
 func TestSnapshot_DefaultDiskPath(t *testing.T) {
-	s := Snapshot("", DefaultThresholds())
-	if s.DiskPath != "/" {
-		t.Errorf("DiskPath = %q, want / when empty string is passed", s.DiskPath)
+	s := Snapshot(nil, DefaultThresholds())
+	if len(s.Disks) == 0 {
+		t.Fatal("Disks slice should not be empty when nil is passed")
+	}
+	if s.Disks[0].Path != "/" {
+		t.Errorf("Disks[0].Path = %q, want / when nil is passed", s.Disks[0].Path)
 	}
 }
 
@@ -93,10 +103,12 @@ func TestSnapshot_DefaultDiskPath(t *testing.T) {
 
 func TestEvaluateAlerts_DiskWarning(t *testing.T) {
 	s := Stats{
-		DiskTotalBytes:  100,
-		DiskFreeBytes:   15,
-		DiskUsedPercent: 85.0,
-		DiskPath:        "/data",
+		Disks: []DiskStats{{
+			Path:        "/data",
+			TotalBytes:  100,
+			FreeBytes:   15,
+			UsedPercent: 85.0,
+		}},
 	}
 	th := Thresholds{
 		DiskUsedWarningPercent:  80,
@@ -118,10 +130,12 @@ func TestEvaluateAlerts_DiskWarning(t *testing.T) {
 
 func TestEvaluateAlerts_DiskCritical(t *testing.T) {
 	s := Stats{
-		DiskTotalBytes:  100,
-		DiskFreeBytes:   5,
-		DiskUsedPercent: 95.0,
-		DiskPath:        "/data",
+		Disks: []DiskStats{{
+			Path:        "/data",
+			TotalBytes:  100,
+			FreeBytes:   5,
+			UsedPercent: 95.0,
+		}},
 	}
 	th := Thresholds{
 		DiskUsedWarningPercent:  80,
@@ -233,16 +247,18 @@ func TestEvaluateAlerts_MemoryCritical(t *testing.T) {
 
 func TestEvaluateAlerts_NoAlerts_BelowThresholds(t *testing.T) {
 	s := Stats{
-		DiskTotalBytes:  100,
-		DiskFreeBytes:   50,
-		DiskUsedPercent: 50.0,
-		DiskPath:        "/",
-		CPUCount:        4,
-		LoadAvg1:        2.0,
-		LoadPerCPU:      0.5,
-		MemTotalBytes:   1000,
-		MemAvailBytes:   500,
-		MemUsedPercent:  50.0,
+		Disks: []DiskStats{{
+			Path:        "/",
+			TotalBytes:  100,
+			FreeBytes:   50,
+			UsedPercent: 50.0,
+		}},
+		CPUCount:       4,
+		LoadAvg1:       2.0,
+		LoadPerCPU:     0.5,
+		MemTotalBytes:  1000,
+		MemAvailBytes:  500,
+		MemUsedPercent: 50.0,
 	}
 	th := DefaultThresholds()
 
@@ -267,16 +283,18 @@ func TestEvaluateAlerts_NoAlerts_ZeroValues(t *testing.T) {
 
 func TestEvaluateAlerts_MultipleAlerts(t *testing.T) {
 	s := Stats{
-		DiskTotalBytes:  100,
-		DiskFreeBytes:   2,
-		DiskUsedPercent: 98.0,
-		DiskPath:        "/data",
-		CPUCount:        2,
-		LoadAvg1:        10.0,
-		LoadPerCPU:      5.0,
-		MemTotalBytes:   1000,
-		MemAvailBytes:   50,
-		MemUsedPercent:  95.0,
+		Disks: []DiskStats{{
+			Path:        "/data",
+			TotalBytes:  100,
+			FreeBytes:   2,
+			UsedPercent: 98.0,
+		}},
+		CPUCount:       2,
+		LoadAvg1:       10.0,
+		LoadPerCPU:     5.0,
+		MemTotalBytes:  1000,
+		MemAvailBytes:  50,
+		MemUsedPercent: 95.0,
 	}
 	th := DefaultThresholds()
 
@@ -300,10 +318,12 @@ func TestEvaluateAlerts_MultipleAlerts(t *testing.T) {
 
 func TestEvaluateAlerts_ExactlyAtWarningThreshold(t *testing.T) {
 	s := Stats{
-		DiskTotalBytes:  100,
-		DiskFreeBytes:   20,
-		DiskUsedPercent: 80.0,
-		DiskPath:        "/",
+		Disks: []DiskStats{{
+			Path:        "/",
+			TotalBytes:  100,
+			FreeBytes:   20,
+			UsedPercent: 80.0,
+		}},
 	}
 	th := Thresholds{
 		DiskUsedWarningPercent:  80,
@@ -322,10 +342,12 @@ func TestEvaluateAlerts_ExactlyAtWarningThreshold(t *testing.T) {
 
 func TestEvaluateAlerts_ExactlyAtCriticalThreshold(t *testing.T) {
 	s := Stats{
-		DiskTotalBytes:  100,
-		DiskFreeBytes:   10,
-		DiskUsedPercent: 90.0,
-		DiskPath:        "/",
+		Disks: []DiskStats{{
+			Path:        "/",
+			TotalBytes:  100,
+			FreeBytes:   10,
+			UsedPercent: 90.0,
+		}},
 	}
 	th := Thresholds{
 		DiskUsedWarningPercent:  80,
@@ -344,16 +366,18 @@ func TestEvaluateAlerts_ExactlyAtCriticalThreshold(t *testing.T) {
 
 func TestEvaluateAlerts_ZeroThresholdsDisableAlerts(t *testing.T) {
 	s := Stats{
-		DiskTotalBytes:  100,
-		DiskFreeBytes:   1,
-		DiskUsedPercent: 99.0,
-		DiskPath:        "/",
-		CPUCount:        1,
-		LoadAvg1:        100.0,
-		LoadPerCPU:      100.0,
-		MemTotalBytes:   100,
-		MemAvailBytes:   1,
-		MemUsedPercent:  99.0,
+		Disks: []DiskStats{{
+			Path:        "/",
+			TotalBytes:  100,
+			FreeBytes:   1,
+			UsedPercent: 99.0,
+		}},
+		CPUCount:       1,
+		LoadAvg1:       100.0,
+		LoadPerCPU:     100.0,
+		MemTotalBytes:  100,
+		MemAvailBytes:  1,
+		MemUsedPercent: 99.0,
 	}
 	th := Thresholds{} // all zeros
 
