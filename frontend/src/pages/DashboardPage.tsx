@@ -382,10 +382,16 @@ function CookbookCompatibilityCard({ organisation }: { organisation?: string }) 
                         title={`Incompatible: ${c.incompatible_cookbooks}`}
                       />
                       <Link
-                        to={`/cookbooks?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                         className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
-                        style={{ width: `${(c.untested_cookbooks / c.total_cookbooks) * 100}%` }}
-                        title={`Untested: ${c.untested_cookbooks}`}
+                        style={{ width: `${((c.untested_inactive_cookbooks || 0) / c.total_cookbooks) * 100}%` }}
+                        title={`Inactive (unused): ${c.untested_inactive_cookbooks || 0}`}
+                      />
+                      <Link
+                        to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-amber-300 transition-all duration-500 hover:bg-amber-400"
+                        style={{ width: `${((c.untested_unscanned_cookbooks || 0) / c.total_cookbooks) * 100}%` }}
+                        title={`Not yet scanned: ${c.untested_unscanned_cookbooks || 0}`}
                       />
                     </div>
                   )}
@@ -404,35 +410,25 @@ function CookbookCompatibilityCard({ organisation }: { organisation?: string }) 
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
                       Incompatible: {c.incompatible_cookbooks}
                     </Link>
-                    <Link
-                      to={`/cookbooks?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                      className="flex items-center gap-1 hover:underline"
-                    >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
-                      Untested: {c.untested_cookbooks}
-                    </Link>
+                    {(c.untested_inactive_cookbooks || 0) > 0 && (
+                      <Link
+                        to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
+                        Inactive: {c.untested_inactive_cookbooks}
+                      </Link>
+                    )}
+                    {(c.untested_unscanned_cookbooks || 0) > 0 && (
+                      <Link
+                        to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-300" />
+                        Unscanned: {c.untested_unscanned_cookbooks}
+                      </Link>
+                    )}
                   </div>
-                  {/* Untested breakdown */}
-                  {c.untested_cookbooks > 0 && (c.untested_inactive_cookbooks > 0 || c.untested_unscanned_cookbooks > 0) && (
-                    <div className="mt-1.5 flex flex-wrap gap-3 pl-4 text-xs text-gray-400">
-                      {c.untested_inactive_cookbooks > 0 && (
-                        <Link
-                          to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                          className="hover:underline"
-                        >
-                          ↳ Inactive: {c.untested_inactive_cookbooks}
-                        </Link>
-                      )}
-                      {c.untested_unscanned_cookbooks > 0 && (
-                        <Link
-                          to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                          className="hover:underline"
-                        >
-                          ↳ Not scanned: {c.untested_unscanned_cookbooks}
-                        </Link>
-                      )}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
