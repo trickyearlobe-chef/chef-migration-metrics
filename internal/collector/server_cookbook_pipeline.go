@@ -44,11 +44,6 @@ type scanWorkItem struct {
 	deleteAfterScan bool
 }
 
-// defaultDownloadWorkers is the number of concurrent cookbook downloads when
-// no explicit configuration is provided. Downloads are network-bound
-// (Chef Server API), so a moderate default is appropriate.
-const defaultDownloadWorkers = 4
-
 // runServerCookbookPipeline processes server cookbooks using two concurrent
 // worker pools connected by a channel:
 //
@@ -80,6 +75,7 @@ func runServerCookbookPipeline(
 	cookstyleScanner *analysis.CookstyleScanner,
 	autocorrectGen *remediation.AutocorrectGenerator,
 	deleteAfterScan bool,
+	downloadWorkers int,
 	scanWorkers int,
 ) ServerCookbookPipelineResult {
 	start := time.Now()
@@ -107,8 +103,12 @@ func runServerCookbookPipeline(
 		return result
 	}
 
+	if downloadWorkers <= 0 {
+		downloadWorkers = 4
+	}
+
 	log.Info(fmt.Sprintf("concurrent server cookbook pipeline: %d version(s) to process (%d download workers, %d scan workers)",
-		len(cookbooks), defaultDownloadWorkers, scanWorkers))
+		len(cookbooks), downloadWorkers, scanWorkers))
 
 	// -----------------------------------------------------------------------
 	// Shared mutable state — protected by mu.
@@ -179,7 +179,7 @@ func runServerCookbookPipeline(
 	// Download worker pool — produces into scanCh.
 	// -----------------------------------------------------------------------
 	var downloadWG sync.WaitGroup
-	downloadSem := make(chan struct{}, defaultDownloadWorkers)
+	downloadSem := make(chan struct{}, downloadWorkers)
 
 	for i, cb := range cookbooks {
 		if ctx.Err() != nil {

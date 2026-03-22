@@ -865,6 +865,19 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		len(allCookbookNames), len(activeCookbookNames), staleOnlyCount),
 		logging.WithCollectionRunID(run.ID))
 
+	// Deduplicate snapshot params before persisting. The Chef Server's
+	// partial search can return the same node name more than once when
+	// pagination boundaries shift between pages (a node is updated
+	// mid-collection) or when a node is re-registered. PostgreSQL's
+	// INSERT ... ON CONFLICT DO UPDATE rejects two rows with the same
+	// conflict key in a single statement (error 21000), so we collapse
+	// duplicates here — last occurrence wins (freshest data).
+	snapshotParams, dupCount := deduplicateSnapshotParams(snapshotParams)
+	if dupCount > 0 {
+		log.Warn(fmt.Sprintf("deduplicated %d duplicate node snapshot(s) from Chef Server search results", dupCount),
+			logging.WithCollectionRunID(run.ID))
+	}
+
 	// Persist node snapshots in bulk.
 	inserted, err := c.db.BulkUpsertNodeSnapshots(ctx, snapshotParams)
 	if err != nil {
@@ -1061,6 +1074,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			c.cookstyleScanner,
 			c.autocorrectGen,
 			deleteAfterScan,
+			c.cfg.Concurrency.CookbookDownload,
 			c.cfg.Concurrency.CookstyleScan,
 		)
 
