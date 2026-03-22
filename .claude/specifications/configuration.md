@@ -137,6 +137,7 @@ concurrency:
   organisation_collection: 5   # Number of Chef server organisations to collect from in parallel
   node_page_fetching: 10       # Number of concurrent pagination requests within a single organisation
   git_pull: 10                 # Number of cookbook git repositories to pull in parallel
+  cookbook_download: 4          # Number of concurrent cookbook downloads from the Chef Server API
   cookstyle_scan: 8            # Number of concurrent CookStyle scans
   test_kitchen_run: 4          # Number of concurrent Test Kitchen runs (CPU/disk intensive — keep lower)
   readiness_evaluation: 20     # Number of nodes to evaluate for upgrade readiness in parallel
@@ -147,6 +148,7 @@ concurrency:
 | `organisation_collection` | `5` | Bounded by Chef server capacity and network. One goroutine per org. |
 | `node_page_fetching` | `10` | Concurrent pagination requests within one org. Bounded by Chef server rate limits. |
 | `git_pull` | `10` | Network-bound. Can be set higher on fast networks. |
+| `cookbook_download` | `4` | Network-bound (Chef Server API). Each download fetches a manifest then individual files. Can be increased for large fleets with many pending cookbooks. |
 | `cookstyle_scan` | `8` | CPU-bound but lightweight. Can typically match available CPU cores. |
 | `test_kitchen_run` | `4` | CPU and disk intensive — set conservatively to avoid resource exhaustion. |
 | `readiness_evaluation` | `20` | Pure computation against in-memory/datastore data — can be set high. |
@@ -718,6 +720,7 @@ concurrency:
   organisation_collection: 5
   node_page_fetching: 10
   git_pull: 10
+  cookbook_download: 4
   cookstyle_scan: 8
   test_kitchen_run: 4
   readiness_evaluation: 20

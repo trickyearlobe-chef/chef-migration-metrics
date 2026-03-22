@@ -72,6 +72,7 @@ concurrency:
   organisation_collection: 5
   node_page_fetching: 10
   git_pull: 10
+  cookbook_download: 4
   cookstyle_scan: 8
   test_kitchen_run: 4
   readiness_evaluation: 20
