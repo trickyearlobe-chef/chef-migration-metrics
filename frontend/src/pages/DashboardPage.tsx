@@ -369,37 +369,70 @@ function CookbookCompatibilityCard({ organisation }: { organisation?: string }) 
                   {/* Stacked progress bar */}
                   {c.total_cookbooks > 0 && (
                     <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className="bg-green-500 transition-all duration-500"
+                      <Link
+                        to={`/cookbooks?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-green-500 transition-all duration-500 hover:bg-green-600"
                         style={{ width: `${(c.compatible_cookbooks / c.total_cookbooks) * 100}%` }}
                         title={`Compatible: ${c.compatible_cookbooks}`}
                       />
-                      <div
-                        className="bg-red-400 transition-all duration-500"
+                      <Link
+                        to={`/cookbooks?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-red-400 transition-all duration-500 hover:bg-red-500"
                         style={{ width: `${(c.incompatible_cookbooks / c.total_cookbooks) * 100}%` }}
                         title={`Incompatible: ${c.incompatible_cookbooks}`}
                       />
-                      <div
-                        className="bg-gray-300 transition-all duration-500"
+                      <Link
+                        to={`/cookbooks?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
                         style={{ width: `${(c.untested_cookbooks / c.total_cookbooks) * 100}%` }}
                         title={`Untested: ${c.untested_cookbooks}`}
                       />
                     </div>
                   )}
                   <div className="flex flex-wrap gap-3 text-xs">
-                    <span className="flex items-center gap-1">
+                    <Link
+                      to={`/cookbooks?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
                       Compatible: {c.compatible_cookbooks}
-                    </span>
-                    <span className="flex items-center gap-1">
+                    </Link>
+                    <Link
+                      to={`/cookbooks?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
                       Incompatible: {c.incompatible_cookbooks}
-                    </span>
-                    <span className="flex items-center gap-1">
+                    </Link>
+                    <Link
+                      to={`/cookbooks?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
                       Untested: {c.untested_cookbooks}
-                    </span>
+                    </Link>
                   </div>
+                  {/* Untested breakdown */}
+                  {c.untested_cookbooks > 0 && (c.untested_inactive_cookbooks > 0 || c.untested_unscanned_cookbooks > 0) && (
+                    <div className="mt-1.5 flex flex-wrap gap-3 pl-4 text-xs text-gray-400">
+                      {c.untested_inactive_cookbooks > 0 && (
+                        <Link
+                          to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                          className="hover:underline"
+                        >
+                          ↳ Inactive: {c.untested_inactive_cookbooks}
+                        </Link>
+                      )}
+                      {c.untested_unscanned_cookbooks > 0 && (
+                        <Link
+                          to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                          className="hover:underline"
+                        >
+                          ↳ Not scanned: {c.untested_unscanned_cookbooks}
+                        </Link>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -450,36 +483,48 @@ function GitRepoCompatibilityCard({ organisation }: { organisation?: string }) {
                   {/* Stacked progress bar */}
                   {c.total_repos > 0 && (
                     <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className="bg-green-500 transition-all duration-500"
+                      <Link
+                        to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-green-500 transition-all duration-500 hover:bg-green-600"
                         style={{ width: `${(c.compatible_repos / c.total_repos) * 100}%` }}
                         title={`Compatible: ${c.compatible_repos}`}
                       />
-                      <div
-                        className="bg-red-400 transition-all duration-500"
+                      <Link
+                        to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-red-400 transition-all duration-500 hover:bg-red-500"
                         style={{ width: `${(c.incompatible_repos / c.total_repos) * 100}%` }}
                         title={`Incompatible: ${c.incompatible_repos}`}
                       />
-                      <div
-                        className="bg-gray-300 transition-all duration-500"
+                      <Link
+                        to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
                         style={{ width: `${(c.untested_repos / c.total_repos) * 100}%` }}
                         title={`Untested: ${c.untested_repos}`}
                       />
                     </div>
                   )}
                   <div className="flex flex-wrap gap-3 text-xs">
-                    <span className="flex items-center gap-1">
+                    <Link
+                      to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
                       Compatible: {c.compatible_repos}
-                    </span>
-                    <span className="flex items-center gap-1">
+                    </Link>
+                    <Link
+                      to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
                       Incompatible: {c.incompatible_repos}
-                    </span>
-                    <span className="flex items-center gap-1">
+                    </Link>
+                    <Link
+                      to={`/git-repos?compatibility=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
                       Untested: {c.untested_repos}
-                    </span>
+                    </Link>
                   </div>
                 </div>
               ))}
