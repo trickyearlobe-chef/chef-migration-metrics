@@ -143,8 +143,13 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		args = append(args, f.Environment)
 	}
 
-	// Platform filter (case-insensitive substring on combined platform + version).
-	if f.Platform != "" {
+	// Platform filter — special case: "unknown" matches nodes with NULL or
+	// empty platform, mirroring the CASE WHEN cn.platform IS NULL OR
+	// cn.platform = '' THEN 'unknown' used in the dashboard platform
+	// distribution aggregation.
+	if strings.EqualFold(f.Platform, "unknown") {
+		where += " AND (cn.platform IS NULL OR cn.platform = '')"
+	} else if f.Platform != "" {
 		where += " AND LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, '')) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.Platform)
 	}
@@ -509,7 +514,9 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 		args = append(args, f.Environment)
 	}
 
-	if f.Platform != "" {
+	if strings.EqualFold(f.Platform, "unknown") {
+		where += " AND (cn.platform IS NULL OR cn.platform = '')"
+	} else if f.Platform != "" {
 		where += " AND LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, '')) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.Platform)
 	}
