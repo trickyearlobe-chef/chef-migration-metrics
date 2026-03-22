@@ -135,6 +135,7 @@ type ConcurrencyConfig struct {
 	OrganisationCollection int `yaml:"organisation_collection"`
 	NodePageFetching       int `yaml:"node_page_fetching"`
 	GitPull                int `yaml:"git_pull"`
+	CookbookDownload       int `yaml:"cookbook_download"`
 	CookstyleScan          int `yaml:"cookstyle_scan"`
 	TestKitchenRun         int `yaml:"test_kitchen_run"`
 	ReadinessEvaluation    int `yaml:"readiness_evaluation"`
@@ -583,6 +584,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.Concurrency.GitPull == 0 {
 		c.Concurrency.GitPull = 10
+	}
+	if c.Concurrency.CookbookDownload == 0 {
+		c.Concurrency.CookbookDownload = 4
 	}
 	if c.Concurrency.CookstyleScan == 0 {
 		c.Concurrency.CookstyleScan = 8
@@ -1046,6 +1050,7 @@ func (c *Config) validateConcurrency(ve *ValidationError) {
 	check("organisation_collection", c.Concurrency.OrganisationCollection)
 	check("node_page_fetching", c.Concurrency.NodePageFetching)
 	check("git_pull", c.Concurrency.GitPull)
+	check("cookbook_download", c.Concurrency.CookbookDownload)
 	check("cookstyle_scan", c.Concurrency.CookstyleScan)
 	check("test_kitchen_run", c.Concurrency.TestKitchenRun)
 	check("readiness_evaluation", c.Concurrency.ReadinessEvaluation)
