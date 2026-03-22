@@ -1009,34 +1009,42 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			logging.WithCollectionRunID(run.ID))
 	}
 
-	// Step 7b: Server cookbook download, CookStyle scan, and optional cleanup.
+	// -----------------------------------------------------------------------
+	// Concurrent processing groups
 	//
-	// Uses a streaming pipeline that processes one cookbook at a time:
-	// download → CookStyle scan → autocorrect preview, then optional
-	// deletion from disk.
-	// This keeps disk usage to a single cookbook version at a time instead
-	// of downloading thousands of versions that accumulate on disk.
+	// Three independent groups of work run in parallel after node data is
+	// committed (Step 4b). This maximises throughput by overlapping network
+	// I/O (Chef Server downloads, git clones) with CPU work (CookStyle
+	// scans) and lightweight DB operations (role deps, usage analysis).
 	//
-	// Server cookbooks already scanned are skipped automatically (the
-	// scanner's immutability cache detects existing results). Autocorrect
-	// previews are generated inline while cookbook files are still on disk.
-	// Files are deleted immediately after processing when
-	// collection.delete_server_cookbooks_after_scan is enabled (disabled by default).
+	// Group A: Server cookbook pipeline — download + scan + autocorrect
+	// Group B: Git repo pipeline — clone/pull → CookStyle → TK → autocorrect
+	// Group C: Role dependency graph + cookbook usage analysis
 	//
-	// When collection.skip_server_cookbook_download is true, the pipeline
-	// is skipped entirely — only git-sourced cookbooks will be scanned.
-	// The cookbook inventory and metadata (Steps 5–7) are still collected
-	// so the UI can display which server cookbooks exist and which nodes
-	// use them, but no content is downloaded for analysis.
+	// Step 14 (readiness evaluation) runs after all groups complete because
+	// it depends on CookStyle + TK results from groups A and B.
+	// -----------------------------------------------------------------------
+
 	fetchConcurrency := c.cfg.Concurrency.GitPull
 	if fetchConcurrency <= 0 {
 		fetchConcurrency = 1
 	}
 
-	if c.cfg.Collection.SkipServerCookbookDownload {
-		log.Info("skipping Chef server cookbook download (collection.skip_server_cookbook_download is enabled)",
-			logging.WithCollectionRunID(run.ID))
-	} else {
+	var parallelWG sync.WaitGroup
+
+	// -------------------------------------------------------------------
+	// Group A: Server cookbook pipeline (download → scan → cleanup)
+	// -------------------------------------------------------------------
+	parallelWG.Add(1)
+	go func() {
+		defer parallelWG.Done()
+
+		if c.cfg.Collection.SkipServerCookbookDownload {
+			log.Info("skipping Chef server cookbook download (collection.skip_server_cookbook_download is enabled)",
+				logging.WithCollectionRunID(run.ID))
+			return
+		}
+
 		deleteAfterScan := c.cfg.Collection.DeleteServerCookbooksAfterScanEnabled()
 		if deleteAfterScan {
 			log.Info("running server cookbook pipeline (download → scan → delete)",
@@ -1081,254 +1089,287 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			log.Warn(fmt.Sprintf("server cookbook pipeline error: %s/%s: %v", fe.Name, fe.Version, fe.Err),
 				logging.WithCollectionRunID(run.ID))
 		}
-	}
 
-	// Step 7c: Fetch cookbooks from git repositories. For each active
-	// cookbook name, attempt to clone or pull from the configured git base
-	// URLs. Git-sourced cookbooks include test suites and are eligible for
-	// full compatibility testing. Operations run in parallel bounded by
-	// the concurrency.git_pull worker pool setting. Failures are non-fatal.
-	if len(c.cfg.GitBaseURLs) > 0 {
-		gitLog := c.logger.WithScope(logging.ScopeGitOperation, logging.WithOrganisation(org.Name))
-
-		gitLog.Info(fmt.Sprintf("fetching git cookbooks across %d base URL(s) for %d active cookbook(s)",
-			len(c.cfg.GitBaseURLs), len(activeCookbookNames)),
-			logging.WithCollectionRunID(run.ID))
-
-		gitDir := c.gitCookbookDir
-		if gitDir == "" {
-			gitDir = filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
-		}
-		gitMgr := NewGitCookbookManager(gitDir, nil)
-
-		gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency, c.cfg.Ownership.Enabled)
-
-		if gitResult.Total == 0 {
-			gitLog.Info("no git cookbook candidates to fetch",
-				logging.WithCollectionRunID(run.ID))
-		} else {
-			gitLog.Info(fmt.Sprintf(
-				"git cookbook fetch complete: %d total, %d cloned, %d pulled, %d unchanged, %d failed in %s",
-				gitResult.Total, gitResult.Cloned, gitResult.Pulled,
-				gitResult.Unchanged, gitResult.Failed,
-				gitResult.Duration.Round(time.Millisecond)),
-				logging.WithCollectionRunID(run.ID))
-		}
-	}
-
-	// Step 9: Build role dependency graph. Fetch each role's detail to
-	// extract run_list entries (recipe[cookbook] and role[other_role]),
-	// then persist the directed graph to the role_dependencies table.
-	log.Info("building role dependency graph",
-		logging.WithCollectionRunID(run.ID))
-
-	roleNames, roleListErr := client.GetRoles(ctx)
-	if roleListErr != nil {
-		log.Warn(fmt.Sprintf("failed to list roles: %v", roleListErr),
-			logging.WithCollectionRunID(run.ID))
-		// Non-fatal — role graph is supplementary data.
-	} else if len(roleNames) > 0 {
-		roleDetails := make([]*chefapi.RoleDetail, 0, len(roleNames))
-		for _, rn := range roleNames {
-			rd, rdErr := client.GetRole(ctx, rn)
-			if rdErr != nil {
-				log.Warn(fmt.Sprintf("failed to fetch role %q: %v", rn, rdErr),
+		// Complexity scoring for server cookbooks runs after the pipeline
+		// completes so CookStyle results are available.
+		if c.complexityScorer != nil && len(c.cfg.TargetChefVersions) > 0 {
+			orgCBs, cxListErr := c.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+			if cxListErr != nil {
+				log.Warn(fmt.Sprintf("failed to list server cookbooks for complexity scoring: %v", cxListErr),
 					logging.WithCollectionRunID(run.ID))
-				continue
+			} else {
+				cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.ID)
+				log.Info(fmt.Sprintf(
+					"server cookbook complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
+					cxBatch.Total, cxBatch.Scored, cxBatch.Skipped, cxBatch.Errors,
+					cxBatch.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
 			}
-			roleDetails = append(roleDetails, rd)
+		}
+	}()
+
+	// -------------------------------------------------------------------
+	// Group B: Git repo pipeline
+	//   1. Clone/pull repos
+	//   2. CookStyle scan (starts immediately for already-cloned repos,
+	//      and for newly cloned repos as soon as clone completes)
+	//   3. Test Kitchen
+	//   4. Autocorrect previews + complexity scoring
+	// -------------------------------------------------------------------
+	parallelWG.Add(1)
+	go func() {
+		defer parallelWG.Done()
+
+		// B.1: Scan already-cloned git repos immediately (before new
+		// clones finish). Repos whose HEAD hasn't changed since the last
+		// scan are skipped automatically by scanOneGitRepo.
+		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+			existingRepos, listErr := c.db.ListGitRepos(ctx)
+			if listErr != nil {
+				log.Warn(fmt.Sprintf("failed to list existing git repos for immediate CookStyle scanning: %v", listErr),
+					logging.WithCollectionRunID(run.ID))
+			} else if len(existingRepos) > 0 {
+				log.Info(fmt.Sprintf("scanning %d existing git repo(s) for CookStyle (before clone/pull)", len(existingRepos)),
+					logging.WithCollectionRunID(run.ID))
+
+				csBatch := c.cookstyleScanner.ScanGitRepos(ctx, existingRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+				log.Info(fmt.Sprintf(
+					"CookStyle pre-scan complete (existing git repos): %d total, %d scanned, %d skipped, %d passed, %d failed, %d errors in %s",
+					csBatch.Total, csBatch.Scanned, csBatch.Skipped,
+					csBatch.Passed, csBatch.Failed, csBatch.Errors,
+					csBatch.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			}
 		}
 
-		depParams := BuildRoleDependencies(org.ID, roleDetails)
+		// B.2: Clone/pull git repos.
+		if len(c.cfg.GitBaseURLs) > 0 {
+			gitLog := c.logger.WithScope(logging.ScopeGitOperation, logging.WithOrganisation(org.Name))
 
-		replaced, replaceErr := c.db.ReplaceRoleDependenciesForOrg(ctx, org.ID, depParams)
-		if replaceErr != nil {
-			log.Warn(fmt.Sprintf("failed to persist role dependency graph: %v", replaceErr),
+			gitLog.Info(fmt.Sprintf("fetching git cookbooks across %d base URL(s) for %d active cookbook(s)",
+				len(c.cfg.GitBaseURLs), len(activeCookbookNames)),
 				logging.WithCollectionRunID(run.ID))
-		} else {
-			log.Info(fmt.Sprintf("persisted role dependency graph: %d edge(s) from %d role(s)",
-				replaced, len(roleDetails)),
+
+			gitDir := c.gitCookbookDir
+			if gitDir == "" {
+				gitDir = filepath.Join(os.TempDir(), "chef-migration-metrics", "git-cookbooks")
+			}
+			gitMgr := NewGitCookbookManager(gitDir, nil)
+
+			gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency, c.cfg.Ownership.Enabled)
+
+			if gitResult.Total == 0 {
+				gitLog.Info("no git cookbook candidates to fetch",
+					logging.WithCollectionRunID(run.ID))
+			} else {
+				gitLog.Info(fmt.Sprintf(
+					"git cookbook fetch complete: %d total, %d cloned, %d pulled, %d unchanged, %d failed in %s",
+					gitResult.Total, gitResult.Cloned, gitResult.Pulled,
+					gitResult.Unchanged, gitResult.Failed,
+					gitResult.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			}
+		}
+
+		// B.3: CookStyle scan for newly cloned/pulled repos. The scanner's
+		// skip logic detects repos already scanned in B.1 (same commit SHA)
+		// and skips them, so only repos with new commits are re-scanned.
+		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+			gitRepos, gitListErr := c.db.ListGitRepos(ctx)
+			if gitListErr != nil {
+				log.Warn(fmt.Sprintf("failed to list git repos for post-clone CookStyle scanning: %v", gitListErr),
+					logging.WithCollectionRunID(run.ID))
+			} else if len(gitRepos) > 0 {
+				log.Info(fmt.Sprintf("scanning %d git repo(s) for CookStyle (post clone/pull)", len(gitRepos)),
+					logging.WithCollectionRunID(run.ID))
+
+				csBatch := c.cookstyleScanner.ScanGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+				log.Info(fmt.Sprintf(
+					"CookStyle post-scan complete (git repos): %d total, %d scanned, %d skipped, %d passed, %d failed, %d errors in %s",
+					csBatch.Total, csBatch.Scanned, csBatch.Skipped,
+					csBatch.Passed, csBatch.Failed, csBatch.Errors,
+					csBatch.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			}
+		} else if c.cookstyleScanner != nil && c.gitRepoDirFn == nil {
+			log.Debug("skipping CookStyle scanning — no git repo directory resolver configured",
 				logging.WithCollectionRunID(run.ID))
 		}
-	} else {
-		log.Info("no roles found — skipping dependency graph",
-			logging.WithCollectionRunID(run.ID))
-	}
 
-	// Step 10: Cookbook usage analysis. Build the inventory entry list from
-	// the serverCookbooks map already in scope, then run the three-phase
-	// analysis and persist results. Non-fatal — failures are logged as WARN.
-	log.Info("running cookbook usage analysis",
-		logging.WithCollectionRunID(run.ID))
-
-	inventoryEntries := make([]analysis.CookbookInventoryEntry, 0)
-	for cbName, entry := range serverCookbooks {
-		for _, ver := range entry.Versions {
-			inventoryEntries = append(inventoryEntries, analysis.CookbookInventoryEntry{
-				Name:    cbName,
-				Version: ver.Version,
-			})
-		}
-	}
-
-	usageResult, usageErr := c.analyser.RunUsageAnalysis(ctx, org.ID, run.ID, nodeRecords, inventoryEntries)
-	if usageErr != nil {
-		log.Warn(fmt.Sprintf("cookbook usage analysis failed: %v", usageErr),
-			logging.WithCollectionRunID(run.ID))
-	} else {
-		log.Info(fmt.Sprintf(
-			"cookbook usage analysis complete: %d total, %d active, %d unused (%d detail rows) in %s",
-			usageResult.TotalCookbooks, usageResult.ActiveCookbooks,
-			usageResult.UnusedCookbooks, usageResult.DetailCount,
-			usageResult.Duration.Round(time.Millisecond)),
-			logging.WithCollectionRunID(run.ID))
-	}
-
-	// Step 11: CookStyle scanning for git-sourced cookbooks only.
-	// Server cookbooks are scanned inline during the Step 7b pipeline
-	// (download → scan, then optional delete).
-	// Git cookbooks live in persistent clones and are rescanned when the
-	// HEAD commit changes. Skipped if the scanner is not configured or no
-	// cookbook directory resolver is set. Non-fatal.
-	if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
-		gitRepos, gitListErr := c.db.ListGitRepos(ctx)
-		if gitListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list git repos for CookStyle scanning: %v", gitListErr),
-				logging.WithCollectionRunID(run.ID))
-		} else if len(gitRepos) > 0 {
-			log.Info(fmt.Sprintf("running CookStyle scanning on %d git repo(s)", len(gitRepos)),
+		// B.4: Test Kitchen for git repos with test suites.
+		if c.kitchenScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+			log.Info("running Test Kitchen",
 				logging.WithCollectionRunID(run.ID))
 
-			csBatch := c.cookstyleScanner.ScanGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
-			log.Info(fmt.Sprintf(
-				"CookStyle batch complete (git repos): %d total, %d scanned, %d skipped, %d passed, %d failed, %d errors in %s",
-				csBatch.Total, csBatch.Scanned, csBatch.Skipped,
-				csBatch.Passed, csBatch.Failed, csBatch.Errors,
-				csBatch.Duration.Round(time.Millisecond)),
+			gitRepos, tkListErr := c.db.ListGitRepos(ctx)
+			if tkListErr != nil {
+				log.Warn(fmt.Sprintf("failed to list git repos for Test Kitchen: %v", tkListErr),
+					logging.WithCollectionRunID(run.ID))
+			} else {
+				tkBatch := c.kitchenScanner.TestGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+				log.Info(fmt.Sprintf(
+					"Test Kitchen batch complete (git repos): %d total, %d tested, %d skipped, %d passed, %d failed, %d errors in %s",
+					tkBatch.Total, tkBatch.Tested, tkBatch.Skipped,
+					tkBatch.Passed, tkBatch.Failed, tkBatch.Errors,
+					tkBatch.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			}
+		} else if c.kitchenScanner != nil && c.gitRepoDirFn == nil {
+			log.Debug("skipping Test Kitchen — no git repo directory resolver configured",
 				logging.WithCollectionRunID(run.ID))
 		}
-	} else if c.cookstyleScanner != nil && c.gitRepoDirFn == nil {
-		log.Debug("skipping CookStyle scanning — no git repo directory resolver configured",
-			logging.WithCollectionRunID(run.ID))
-	}
 
-	// Step 12: Test Kitchen. Run Test Kitchen on git-sourced cookbooks
-	// that have test suites. Skipped if the scanner is not configured.
-	// Non-fatal — failures are logged as WARN.
-	if c.kitchenScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
-		log.Info("running Test Kitchen",
-			logging.WithCollectionRunID(run.ID))
+		// B.5: Autocorrect previews for git repos.
+		if c.autocorrectGen != nil && c.gitRepoDirFn != nil {
+			gitReposForAC, gitRepoListErr := c.db.ListGitRepos(ctx)
+			if gitRepoListErr != nil {
+				log.Warn(fmt.Sprintf("failed to list git repos for autocorrect previews: %v", gitRepoListErr),
+					logging.WithCollectionRunID(run.ID))
+			} else if len(gitReposForAC) > 0 {
+				var csResults []datastore.GitRepoCookstyleResult
+				for _, repo := range gitReposForAC {
+					repoResults, err := c.db.ListGitRepoCookstyleResults(ctx, repo.ID)
+					if err != nil {
+						log.Warn(fmt.Sprintf("failed to list CookStyle results for git repo %s: %v", repo.Name, err),
+							logging.WithCollectionRunID(run.ID))
+						continue
+					}
+					csResults = append(csResults, repoResults...)
+				}
 
-		gitRepos, tkListErr := c.db.ListGitRepos(ctx)
-		if tkListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list git repos for Test Kitchen: %v", tkListErr),
-				logging.WithCollectionRunID(run.ID))
-		} else {
-			tkBatch := c.kitchenScanner.TestGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
-			log.Info(fmt.Sprintf(
-				"Test Kitchen batch complete (git repos): %d total, %d tested, %d skipped, %d passed, %d failed, %d errors in %s",
-				tkBatch.Total, tkBatch.Tested, tkBatch.Skipped,
-				tkBatch.Passed, tkBatch.Failed, tkBatch.Errors,
-				tkBatch.Duration.Round(time.Millisecond)),
-				logging.WithCollectionRunID(run.ID))
+				if len(csResults) > 0 {
+					log.Info(fmt.Sprintf("generating autocorrect previews for %d git CookStyle result(s)", len(csResults)),
+						logging.WithCollectionRunID(run.ID))
+
+					csInfos := make([]remediation.CookstyleResultInfo, 0, len(csResults))
+					for _, csr := range csResults {
+						csInfos = append(csInfos, remediation.CookstyleResultInfo{
+							ResultID:          csr.ID,
+							CookbookID:        csr.GitRepoID,
+							TargetChefVersion: csr.TargetChefVersion,
+							OffenseCount:      csr.OffenceCount,
+							Passed:            csr.Passed,
+							Source:            remediation.SourceGitRepo,
+						})
+					}
+
+					repoByID := make(map[string]datastore.GitRepo, len(gitReposForAC))
+					for _, repo := range gitReposForAC {
+						repoByID[repo.ID] = repo
+					}
+					dirFn := func(cookbookID string) string {
+						repo, ok := repoByID[cookbookID]
+						if !ok {
+							return ""
+						}
+						return c.gitRepoDirFn(repo)
+					}
+
+					acBatch := c.autocorrectGen.GeneratePreviews(ctx, csInfos, dirFn)
+					log.Info(fmt.Sprintf(
+						"autocorrect previews complete: %d total, %d generated, %d skipped, %d errors in %s",
+						acBatch.Total, acBatch.Generated, acBatch.Skipped, acBatch.Errors,
+						acBatch.Duration.Round(time.Millisecond)),
+						logging.WithCollectionRunID(run.ID))
+				}
+			}
 		}
-	} else if c.kitchenScanner != nil && c.gitRepoDirFn == nil {
-		log.Debug("skipping Test Kitchen — no git repo directory resolver configured",
-			logging.WithCollectionRunID(run.ID))
-	}
 
-	// Step 13: Autocorrect previews and complexity scoring. These depend
-	// on CookStyle results already existing in the database. Skipped if
-	// the respective components are not configured. Non-fatal.
-	// Step 13: Autocorrect previews for git-sourced cookbooks only.
-	// Server cookbook previews are now generated inline during the Step 7b
-	// pipeline (before files are deleted from disk). Git cookbook previews
-	// are generated here because git clones persist on disk.
-	if c.autocorrectGen != nil && c.gitRepoDirFn != nil {
-		gitReposForAC, gitRepoListErr := c.db.ListGitRepos(ctx)
-		if gitRepoListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list git repos for autocorrect previews: %v", gitRepoListErr),
+		// B.6: Complexity scoring for git repos.
+		if c.complexityScorer != nil && len(c.cfg.TargetChefVersions) > 0 {
+			gitReposForCX, grCXListErr := c.db.ListGitRepos(ctx)
+			if grCXListErr != nil {
+				log.Warn(fmt.Sprintf("failed to list git repos for complexity scoring: %v", grCXListErr),
+					logging.WithCollectionRunID(run.ID))
+			} else if len(gitReposForCX) > 0 {
+				grCXBatch := c.complexityScorer.ScoreGitRepos(ctx, gitReposForCX, c.cfg.TargetChefVersions, org.ID)
+				log.Info(fmt.Sprintf(
+					"git repo complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
+					grCXBatch.Total, grCXBatch.Scored, grCXBatch.Skipped, grCXBatch.Errors,
+					grCXBatch.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.ID))
+			}
+		}
+	}()
+
+	// -------------------------------------------------------------------
+	// Group C: Independent operations (role deps + usage analysis)
+	// These only need the Chef API client and data from Steps 1–6 which
+	// are already complete.
+	// -------------------------------------------------------------------
+	parallelWG.Add(1)
+	go func() {
+		defer parallelWG.Done()
+
+		// C.1: Build role dependency graph.
+		log.Info("building role dependency graph",
+			logging.WithCollectionRunID(run.ID))
+
+		roleNames, roleListErr := client.GetRoles(ctx)
+		if roleListErr != nil {
+			log.Warn(fmt.Sprintf("failed to list roles: %v", roleListErr),
 				logging.WithCollectionRunID(run.ID))
-		} else if len(gitReposForAC) > 0 {
-			var csResults []datastore.GitRepoCookstyleResult
-			for _, repo := range gitReposForAC {
-				repoResults, err := c.db.ListGitRepoCookstyleResults(ctx, repo.ID)
-				if err != nil {
-					log.Warn(fmt.Sprintf("failed to list CookStyle results for git repo %s: %v", repo.Name, err),
+		} else if len(roleNames) > 0 {
+			roleDetails := make([]*chefapi.RoleDetail, 0, len(roleNames))
+			for _, rn := range roleNames {
+				rd, rdErr := client.GetRole(ctx, rn)
+				if rdErr != nil {
+					log.Warn(fmt.Sprintf("failed to fetch role %q: %v", rn, rdErr),
 						logging.WithCollectionRunID(run.ID))
 					continue
 				}
-				csResults = append(csResults, repoResults...)
+				roleDetails = append(roleDetails, rd)
 			}
 
-			if len(csResults) > 0 {
-				log.Info(fmt.Sprintf("generating autocorrect previews for %d git CookStyle result(s)", len(csResults)),
+			depParams := BuildRoleDependencies(org.ID, roleDetails)
+
+			replaced, replaceErr := c.db.ReplaceRoleDependenciesForOrg(ctx, org.ID, depParams)
+			if replaceErr != nil {
+				log.Warn(fmt.Sprintf("failed to persist role dependency graph: %v", replaceErr),
 					logging.WithCollectionRunID(run.ID))
-
-				csInfos := make([]remediation.CookstyleResultInfo, 0, len(csResults))
-				for _, csr := range csResults {
-					csInfos = append(csInfos, remediation.CookstyleResultInfo{
-						ResultID:          csr.ID,
-						CookbookID:        csr.GitRepoID,
-						TargetChefVersion: csr.TargetChefVersion,
-						OffenseCount:      csr.OffenceCount,
-						Passed:            csr.Passed,
-						Source:            remediation.SourceGitRepo,
-					})
-				}
-
-				repoByID := make(map[string]datastore.GitRepo, len(gitReposForAC))
-				for _, repo := range gitReposForAC {
-					repoByID[repo.ID] = repo
-				}
-				dirFn := func(cookbookID string) string {
-					repo, ok := repoByID[cookbookID]
-					if !ok {
-						return ""
-					}
-					return c.gitRepoDirFn(repo)
-				}
-
-				acBatch := c.autocorrectGen.GeneratePreviews(ctx, csInfos, dirFn)
-				log.Info(fmt.Sprintf(
-					"autocorrect previews complete: %d total, %d generated, %d skipped, %d errors in %s",
-					acBatch.Total, acBatch.Generated, acBatch.Skipped, acBatch.Errors,
-					acBatch.Duration.Round(time.Millisecond)),
+			} else {
+				log.Info(fmt.Sprintf("persisted role dependency graph: %d edge(s) from %d role(s)",
+					replaced, len(roleDetails)),
 					logging.WithCollectionRunID(run.ID))
 			}
+		} else {
+			log.Info("no roles found — skipping dependency graph",
+				logging.WithCollectionRunID(run.ID))
 		}
-	}
 
-	if c.complexityScorer != nil && len(c.cfg.TargetChefVersions) > 0 {
-		log.Info("running complexity scoring",
+		// C.2: Cookbook usage analysis.
+		log.Info("running cookbook usage analysis",
 			logging.WithCollectionRunID(run.ID))
 
-		orgCBs, cxListErr := c.db.ListServerCookbooksByOrganisation(ctx, org.ID)
-		if cxListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list server cookbooks for complexity scoring: %v", cxListErr),
-				logging.WithCollectionRunID(run.ID))
-		} else {
-			cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.ID)
-			log.Info(fmt.Sprintf(
-				"server cookbook complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
-				cxBatch.Total, cxBatch.Scored, cxBatch.Skipped, cxBatch.Errors,
-				cxBatch.Duration.Round(time.Millisecond)),
-				logging.WithCollectionRunID(run.ID))
+		inventoryEntries := make([]analysis.CookbookInventoryEntry, 0)
+		for cbName, entry := range serverCookbooks {
+			for _, ver := range entry.Versions {
+				inventoryEntries = append(inventoryEntries, analysis.CookbookInventoryEntry{
+					Name:    cbName,
+					Version: ver.Version,
+				})
+			}
 		}
 
-		gitReposForCX, grCXListErr := c.db.ListGitRepos(ctx)
-		if grCXListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list git repos for complexity scoring: %v", grCXListErr),
+		usageResult, usageErr := c.analyser.RunUsageAnalysis(ctx, org.ID, run.ID, nodeRecords, inventoryEntries)
+		if usageErr != nil {
+			log.Warn(fmt.Sprintf("cookbook usage analysis failed: %v", usageErr),
 				logging.WithCollectionRunID(run.ID))
-		} else if len(gitReposForCX) > 0 {
-			grCXBatch := c.complexityScorer.ScoreGitRepos(ctx, gitReposForCX, c.cfg.TargetChefVersions, org.ID)
+		} else {
 			log.Info(fmt.Sprintf(
-				"git repo complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
-				grCXBatch.Total, grCXBatch.Scored, grCXBatch.Skipped, grCXBatch.Errors,
-				grCXBatch.Duration.Round(time.Millisecond)),
+				"cookbook usage analysis complete: %d total, %d active, %d unused (%d detail rows) in %s",
+				usageResult.TotalCookbooks, usageResult.ActiveCookbooks,
+				usageResult.UnusedCookbooks, usageResult.DetailCount,
+				usageResult.Duration.Round(time.Millisecond)),
 				logging.WithCollectionRunID(run.ID))
 		}
-	}
+	}()
+
+	// -------------------------------------------------------------------
+	// Wait for all three groups to finish before proceeding to readiness
+	// evaluation, which depends on CookStyle and TK results.
+	// -------------------------------------------------------------------
+	parallelWG.Wait()
 
 	// Step 14: Node readiness evaluation. Combines cookbook compatibility
 	// data (from CookStyle + Test Kitchen) with disk space evaluation to
