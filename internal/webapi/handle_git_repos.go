@@ -389,10 +389,22 @@ func (r *Router) handleGitRepoRescan(w http.ResponseWriter, req *http.Request) {
 
 	r.logf("INFO", "git repo rescan requested for %s — %d repo(s) invalidated", repoName, invalidated)
 
+	// Trigger an immediate collection run in the background so the rescan
+	// starts right away instead of waiting for the next scheduled cycle.
+	triggered := r.triggerCollectionInBackground()
+
+	msg := "Analysis results invalidated"
+	if triggered {
+		msg += " — collection run triggered."
+	} else {
+		msg += " — rescan will run on the next collection cycle."
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"git_repo_name":     repoName,
-		"repos_invalidated": invalidated,
-		"message":           "Analysis results invalidated — rescan will run on the next collection cycle.",
+		"git_repo_name":        repoName,
+		"repos_invalidated":    invalidated,
+		"collection_triggered": triggered,
+		"message":              msg,
 	})
 }
 

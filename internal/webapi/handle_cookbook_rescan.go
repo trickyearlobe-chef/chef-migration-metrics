@@ -14,9 +14,9 @@ import (
 // POST /api/v1/cookbooks/:name/rescan
 //
 // Invalidates all cached CookStyle results, complexity scores, and
-// autocorrect previews for every version of the named cookbook. The next
-// collection cycle will re-run CookStyle (with whatever cops the currently
-// installed version provides) and recompute derived data.
+// autocorrect previews for every version of the named cookbook, then
+// triggers an immediate collection run so the rescan starts right away
+// instead of waiting for the next scheduled cycle.
 //
 // This is useful after upgrading CookStyle to a version with new or changed
 // cops, or after making changes to a git-sourced cookbook outside the normal
@@ -27,7 +27,8 @@ import (
 //	{
 //	  "cookbook_name": "apt",
 //	  "versions_invalidated": 3,
-//	  "message": "CookStyle results invalidated — rescan will run on the next collection cycle."
+//	  "collection_triggered": true,
+//	  "message": "CookStyle results invalidated — collection run triggered."
 //	}
 //
 // ---------------------------------------------------------------------------
@@ -150,9 +151,21 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 
 	r.logf("INFO", "cookstyle rescan requested for %s — %d version(s) invalidated", cookbookName, invalidated)
 
+	// Trigger an immediate collection run in the background so the rescan
+	// starts right away instead of waiting for the next scheduled cycle.
+	triggered := r.triggerCollectionInBackground()
+
+	msg := "CookStyle results invalidated"
+	if triggered {
+		msg += " — collection run triggered."
+	} else {
+		msg += " — rescan will run on the next collection cycle."
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"cookbook_name":        cookbookName,
 		"versions_invalidated": invalidated,
-		"message":              "CookStyle results invalidated — rescan will run on the next collection cycle.",
+		"collection_triggered": triggered,
+		"message":              msg,
 	})
 }
