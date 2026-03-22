@@ -137,6 +137,23 @@ All git commands must be invoked with the flags listed below to ensure output is
 | Check if path exists | `git ls-tree --name-only HEAD -- <PATH>` | Exit code 0 and non-empty output means the path exists at HEAD. |
 | Verify repository health | `git status --porcelain` | `--porcelain` produces stable, machine-parseable output. Empty output means a clean working tree. |
 
+### 2.2.1 Git Clone Failure Handling
+
+Individual git repository clones can fail for reasons including but not limited to:
+
+- **Missing repository** — None of the configured base URLs have a repository matching the cookbook name.
+- **Authentication errors** — The git client lacks credentials or the credentials are rejected.
+- **Network errors** — Transient connectivity failures, DNS resolution failures, or TLS errors.
+- **Corrupted local state** — A previous partial clone left an invalid directory (handled automatically by removing the stale directory and re-cloning).
+
+These failures must be handled as follows:
+
+1. **Non-fatal** — A clone failure for one repository must **not** cause the collection run to fail. Collection must continue for all remaining repositories.
+2. **Flagged** — Each failed repository must be flagged in `git_repos` with `clone_status = 'failed'` and `clone_error` recording the error message from the last attempted base URL.
+3. **Logged** — Each failure must be logged at `WARN` severity with the `collection_run` scope, including the cookbook name, attempted URLs, and error detail.
+4. **Excluded from analysis** — Repos with a `failed` clone status must be excluded from CookStyle scanning, Test Kitchen testing, and compatibility analysis. They must still appear in the UI with a visual indicator showing the clone failure.
+5. **Retried on next run** — Repos with a `failed` or `pending` clone status must be reattempted on the next collection run. If the retry succeeds, the status is updated to `ok` and the error is cleared.
+
 ### 2.3 Chef Infra Server
 
 - Cookbook versions not available via git are downloaded directly from the Chef server using `GET /organizations/<ORG>/cookbooks/<NAME>/<VERSION>`. Data for these cookbooks is stored in the `server_cookbooks` table.
@@ -159,7 +176,7 @@ Individual cookbook version downloads can fail for reasons including but not lim
 These failures must be handled as follows:
 
 1. **Non-fatal** — A download failure for one cookbook version must **not** cause the collection run to fail. Collection must continue for all remaining cookbooks and organisations.
-2. **Flagged** — Each failed cookbook version must be flagged in `server_cookbooks` with a `download_status` indicating the failure. Valid statuses are `ok`, `failed`, and `pending`. The failure reason (error message, HTTP status code if applicable) must be recorded alongside the flag. (Git repos in `git_repos` do not have a `download_status` field.)
+2. **Flagged** — Each failed cookbook version must be flagged in `server_cookbooks` with a `download_status` indicating the failure. Valid statuses are `ok`, `failed`, and `pending`. The failure reason (error message, HTTP status code if applicable) must be recorded alongside the flag. (Git repos use `clone_status` / `clone_error` fields with the same semantics — see § 2.2.1.)
 3. **Logged** — Each failure must be logged at `WARN` severity with the `collection_run` scope, including the organisation name, cookbook name, cookbook version, and error detail.
 4. **Excluded from analysis** — Cookbook versions with a `failed` download status must be excluded from CookStyle scanning and compatibility analysis. They must still appear in the dashboard with a visual indicator showing the download failure, so operators can investigate.
 5. **Retried on next run** — Cookbook versions with a `failed` or `pending` download status must be retried on the next collection run (they are not treated as "already present" by the immutability optimisation). If the retry succeeds, the status is updated to `ok` and the cookbook becomes eligible for analysis.
