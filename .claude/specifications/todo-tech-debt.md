@@ -98,9 +98,7 @@ progress can be tracked over time.
   `"No frontend tests yet"`. CI always passes, which is deceptive. Add at
   least unit tests for shared hooks and utility functions.
 
-- [ ] **F8 — Clean up empty `hooks/` directory** — `frontend/src/hooks/`
-  exists but contains no files. Either populate it (see F1, F5) or remove it
-  until needed.
+
 
 ### Backend
 
