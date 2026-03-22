@@ -1053,6 +1053,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			c.cookstyleScanner,
 			c.autocorrectGen,
 			deleteAfterScan,
+			c.cfg.Concurrency.CookstyleScan,
 		)
 
 		if pipelineResult.Total == 0 {
