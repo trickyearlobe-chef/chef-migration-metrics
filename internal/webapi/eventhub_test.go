@@ -321,6 +321,7 @@ func TestEventTypeConstants(t *testing.T) {
 		EventExportStarted, EventExportComplete, EventExportFailed,
 		EventLogEntry,
 		EventNotificationSent, EventNotificationFailed,
+		EventGitRepoStatusChanged,
 	}
 	seen := make(map[string]bool, len(types))
 	for _, typ := range types {
@@ -517,5 +518,296 @@ func TestSecondsToDuration(t *testing.T) {
 	}
 	if d := secondsToDuration(-1); d != 10*time.Second {
 		t.Errorf("secondsToDuration(-1) = %v, want 10s (default)", d)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Client subscription tests
+// ---------------------------------------------------------------------------
+
+func TestClient_Subscribe(t *testing.T) {
+	c := &client{send: make(chan Event, 4)}
+
+	c.Subscribe(EventLogEntry, Subscription{MinSeverity: "WARN"})
+
+	if !c.IsSubscribed(EventLogEntry) {
+		t.Error("expected IsSubscribed(log_entry) = true after Subscribe")
+	}
+
+	sub, ok := c.GetSubscription(EventLogEntry)
+	if !ok {
+		t.Fatal("expected GetSubscription to return ok=true")
+	}
+	if sub.MinSeverity != "WARN" {
+		t.Errorf("MinSeverity = %q, want %q", sub.MinSeverity, "WARN")
+	}
+}
+
+func TestClient_Unsubscribe(t *testing.T) {
+	c := &client{send: make(chan Event, 4)}
+
+	c.Subscribe(EventLogEntry, Subscription{})
+	c.Unsubscribe(EventLogEntry)
+
+	if c.IsSubscribed(EventLogEntry) {
+		t.Error("expected IsSubscribed(log_entry) = false after Unsubscribe")
+	}
+}
+
+func TestClient_Subscribe_UpdatesExisting(t *testing.T) {
+	c := &client{send: make(chan Event, 4)}
+
+	c.Subscribe(EventLogEntry, Subscription{MinSeverity: "DEBUG"})
+	c.Subscribe(EventLogEntry, Subscription{MinSeverity: "ERROR"})
+
+	sub, ok := c.GetSubscription(EventLogEntry)
+	if !ok {
+		t.Fatal("expected GetSubscription to return ok=true")
+	}
+	if sub.MinSeverity != "ERROR" {
+		t.Errorf("MinSeverity = %q, want %q (second subscribe should win)", sub.MinSeverity, "ERROR")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Client shouldReceive tests
+// ---------------------------------------------------------------------------
+
+func TestClient_ShouldReceive_NonGatedEvent(t *testing.T) {
+	c := &client{send: make(chan Event, 4)}
+	// No subscriptions at all — non-gated events should still be received.
+	evt := NewEvent(EventCollectionComplete, nil)
+	if !c.shouldReceive(evt) {
+		t.Error("expected shouldReceive = true for non-gated event without subscriptions")
+	}
+}
+
+func TestClient_ShouldReceive_GatedEvent_NotSubscribed(t *testing.T) {
+	c := &client{send: make(chan Event, 4)}
+	evt := NewEvent(EventLogEntry, map[string]any{"severity": "INFO", "message": "test"})
+	if c.shouldReceive(evt) {
+		t.Error("expected shouldReceive = false for log_entry when not subscribed")
+	}
+}
+
+func TestClient_ShouldReceive_GatedEvent_Subscribed(t *testing.T) {
+	c := &client{send: make(chan Event, 4)}
+	c.Subscribe(EventLogEntry, Subscription{}) // no severity filter
+
+	evt := NewEvent(EventLogEntry, map[string]any{"severity": "INFO", "message": "test"})
+	if !c.shouldReceive(evt) {
+		t.Error("expected shouldReceive = true for log_entry when subscribed with no filter")
+	}
+}
+
+func TestClient_ShouldReceive_SeverityFilter(t *testing.T) {
+	c := &client{send: make(chan Event, 4)}
+	c.Subscribe(EventLogEntry, Subscription{MinSeverity: "WARN"})
+
+	tests := []struct {
+		severity string
+		want     bool
+	}{
+		{"DEBUG", false},
+		{"INFO", false},
+		{"WARN", true},
+		{"ERROR", true},
+	}
+	for _, tt := range tests {
+		evt := NewEvent(EventLogEntry, map[string]any{"severity": tt.severity, "message": "test"})
+		got := c.shouldReceive(evt)
+		if got != tt.want {
+			t.Errorf("shouldReceive(severity=%q) = %v, want %v", tt.severity, got, tt.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EventHub subscription-gated broadcast tests
+// ---------------------------------------------------------------------------
+
+func TestEventHub_BroadcastGatedEvent_OnlySubscribedClients(t *testing.T) {
+	hub := NewEventHub(WithMaxConnections(10), WithSendBufferSize(8))
+	go hub.Run()
+	defer hub.Stop()
+
+	c1 := hub.Register()
+	c2 := hub.Register()
+	time.Sleep(20 * time.Millisecond)
+
+	// Only c1 subscribes to log_entry.
+	c1.Subscribe(EventLogEntry, Subscription{})
+
+	evt := NewEvent(EventLogEntry, map[string]any{"severity": "INFO", "message": "hello"})
+	hub.Broadcast(evt)
+
+	// c1 should receive the event.
+	select {
+	case received, ok := <-c1.send:
+		if !ok {
+			t.Fatal("c1: send channel closed unexpectedly")
+		}
+		if received.Type != EventLogEntry {
+			t.Errorf("c1: Type = %q, want %q", received.Type, EventLogEntry)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("c1: timed out waiting for event")
+	}
+
+	// c2 should NOT receive the event.
+	select {
+	case evt := <-c2.send:
+		t.Errorf("c2: unexpected event received: %q", evt.Type)
+	case <-time.After(100 * time.Millisecond):
+		// Expected — no event.
+	}
+}
+
+func TestEventHub_BroadcastGatedEvent_SeverityFilter(t *testing.T) {
+	hub := NewEventHub(WithMaxConnections(10), WithSendBufferSize(8))
+	go hub.Run()
+	defer hub.Stop()
+
+	c := hub.Register()
+	time.Sleep(20 * time.Millisecond)
+
+	c.Subscribe(EventLogEntry, Subscription{MinSeverity: "ERROR"})
+
+	// Broadcast an INFO event — should be filtered out.
+	hub.Broadcast(NewEvent(EventLogEntry, map[string]any{"severity": "INFO", "message": "info msg"}))
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case evt := <-c.send:
+		t.Errorf("expected no event for INFO, got %q", evt.Type)
+	case <-time.After(100 * time.Millisecond):
+		// Expected — filtered out.
+	}
+
+	// Broadcast an ERROR event — should be delivered.
+	hub.Broadcast(NewEvent(EventLogEntry, map[string]any{"severity": "ERROR", "message": "error msg"}))
+
+	select {
+	case received, ok := <-c.send:
+		if !ok {
+			t.Fatal("send channel closed unexpectedly")
+		}
+		if received.Type != EventLogEntry {
+			t.Errorf("Type = %q, want %q", received.Type, EventLogEntry)
+		}
+		data, ok := received.Data.(map[string]any)
+		if !ok {
+			t.Fatal("expected Data to be map[string]any")
+		}
+		if data["severity"] != "ERROR" {
+			t.Errorf("severity = %q, want %q", data["severity"], "ERROR")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ERROR event")
+	}
+}
+
+func TestEventHub_BroadcastNonGatedEvent_AllClients(t *testing.T) {
+	hub := NewEventHub(WithMaxConnections(10), WithSendBufferSize(8))
+	go hub.Run()
+	defer hub.Stop()
+
+	c1 := hub.Register()
+	c2 := hub.Register()
+	time.Sleep(20 * time.Millisecond)
+
+	// Neither client subscribes to anything — non-gated events
+	// should still be delivered to all clients.
+	evt := NewEvent(EventCollectionComplete, map[string]string{"org": "test"})
+	hub.Broadcast(evt)
+
+	for i, c := range []*client{c1, c2} {
+		select {
+		case received, ok := <-c.send:
+			if !ok {
+				t.Fatalf("client %d: send channel closed unexpectedly", i)
+			}
+			if received.Type != EventCollectionComplete {
+				t.Errorf("client %d: Type = %q, want %q", i, received.Type, EventCollectionComplete)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("client %d: timed out waiting for event", i)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Severity and gating helper tests
+// ---------------------------------------------------------------------------
+
+func TestSeverityValue(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"DEBUG", 0},
+		{"INFO", 1},
+		{"WARN", 2},
+		{"ERROR", 3},
+		{"debug", 0},
+		{"info", 1},
+		{"warn", 2},
+		{"error", 3},
+		{"unknown", 0},
+		{"", 0},
+	}
+	for _, tt := range tests {
+		got := severityValue(tt.input)
+		if got != tt.want {
+			t.Errorf("severityValue(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestIsValidSeverity(t *testing.T) {
+	valid := []string{"DEBUG", "INFO", "WARN", "ERROR", "debug", "info", "warn", "error"}
+	for _, s := range valid {
+		if !IsValidSeverity(s) {
+			t.Errorf("IsValidSeverity(%q) = false, want true", s)
+		}
+	}
+
+	invalid := []string{"", "TRACE", "FATAL", "WARNING", "unknown", "123"}
+	for _, s := range invalid {
+		if IsValidSeverity(s) {
+			t.Errorf("IsValidSeverity(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestIsSubscriptionGated(t *testing.T) {
+	// log_entry is gated.
+	if !IsSubscriptionGated(EventLogEntry) {
+		t.Errorf("IsSubscriptionGated(%q) = false, want true", EventLogEntry)
+	}
+
+	// Non-gated event types.
+	nonGated := []string{
+		EventCollectionComplete,
+		EventCollectionStarted,
+		EventCollectionProgress,
+		EventCollectionFailed,
+		EventCookbookStatusChanged,
+		EventReadinessUpdated,
+		EventComplexityUpdated,
+		EventRescanStarted,
+		EventRescanComplete,
+		EventExportStarted,
+		EventExportComplete,
+		EventExportFailed,
+		EventNotificationSent,
+		EventNotificationFailed,
+		EventConnected,
+		EventGitRepoStatusChanged,
+	}
+	for _, typ := range nonGated {
+		if IsSubscriptionGated(typ) {
+			t.Errorf("IsSubscriptionGated(%q) = true, want false", typ)
+		}
 	}
 }
