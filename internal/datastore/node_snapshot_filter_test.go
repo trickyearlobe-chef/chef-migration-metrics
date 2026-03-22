@@ -127,6 +127,39 @@ func TestBuildNodeSnapshotFilterQuery_Platform(t *testing.T) {
 	}
 }
 
+func TestBuildNodeSnapshotFilterQuery_PlatformUnknown(t *testing.T) {
+	// When platform filter is "unknown", the query should match nodes
+	// with empty or NULL platform — not nodes whose platform literally
+	// contains "unknown". The dashboard platform distribution uses
+	// CASE WHEN cn.platform IS NULL OR cn.platform = '' THEN 'unknown'
+	// to label these nodes, so the filter must reverse that mapping.
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Platform: "unknown",
+	})
+
+	if !strings.Contains(q, "platform IS NULL OR cn.platform = ''") {
+		t.Errorf("query should match NULL/empty platform for 'unknown' filter, got:\n%s", q)
+	}
+	// Should NOT add a positional parameter for "unknown".
+	if len(args) != 0 {
+		t.Errorf("args = %v, want [] (no positional params for unknown filter)", args)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_PlatformUnknown_CaseInsensitive(t *testing.T) {
+	// "Unknown" (mixed case) should also trigger the NULL/empty match.
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Platform: "Unknown",
+	})
+
+	if !strings.Contains(q, "platform IS NULL OR cn.platform = ''") {
+		t.Errorf("query should match NULL/empty platform for 'Unknown' filter, got:\n%s", q)
+	}
+	if len(args) != 0 {
+		t.Errorf("args = %v, want [] (no positional params for Unknown filter)", args)
+	}
+}
+
 func TestBuildNodeSnapshotFilterQuery_ChefVersion(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
 		ChefVersion: "18.0",
