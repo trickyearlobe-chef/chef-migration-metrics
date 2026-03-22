@@ -433,6 +433,17 @@ type DataStore interface {
 	// ListAuditLog returns audit log entries matching the given filter,
 	// in reverse chronological order.
 	ListAuditLog(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
+
+	// -----------------------------------------------------------------
+	// System health
+	// -----------------------------------------------------------------
+
+	// DatabaseSize returns the size of the current database in bytes.
+	DatabaseSize(ctx context.Context) (int64, error)
+
+	// DatabaseTableSizes returns per-table disk usage for all user tables
+	// in the public schema, ordered by total size descending.
+	DatabaseTableSizes(ctx context.Context) ([]datastore.TableSize, error)
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

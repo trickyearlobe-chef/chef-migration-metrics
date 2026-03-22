@@ -23,6 +23,7 @@ import { OwnershipAuditLogPage } from "./pages/OwnershipAuditLogPage";
 import { OwnershipImportPage } from "./pages/OwnershipImportPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminActionsPage } from "./pages/AdminActionsPage";
+import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -145,6 +146,14 @@ export function App() {
               element={
                 <RequireAdmin>
                   <AdminActionsPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/admin/system-stats"
+              element={
+                <RequireAdmin>
+                  <AdminSystemStatsPage />
                 </RequireAdmin>
               }
             />

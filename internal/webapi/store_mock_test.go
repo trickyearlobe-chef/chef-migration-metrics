@@ -100,6 +100,8 @@ type mockStore struct {
 	GetOwnerEmailsForGitRepoFn                          func(ctx context.Context, gitRepoURL string) (map[string]bool, error)
 	InsertAuditEntryFn                                  func(ctx context.Context, p datastore.InsertAuditEntryParams) error
 	ListAuditLogFn                                      func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
+	DatabaseSizeFn                                      func(ctx context.Context) (int64, error)
+	DatabaseTableSizesFn                                func(ctx context.Context) ([]datastore.TableSize, error)
 }
 
 // compile-time check
@@ -746,6 +748,24 @@ func (m *mockStore) ListAuditLog(ctx context.Context, f datastore.AuditLogFilter
 		return m.ListAuditLogFn(ctx, f)
 	}
 	return nil, 0, nil
+}
+
+// -----------------------------------------------------------------
+// System health
+// -----------------------------------------------------------------
+
+func (m *mockStore) DatabaseSize(ctx context.Context) (int64, error) {
+	if m.DatabaseSizeFn != nil {
+		return m.DatabaseSizeFn(ctx)
+	}
+	return 0, nil
+}
+
+func (m *mockStore) DatabaseTableSizes(ctx context.Context) ([]datastore.TableSize, error) {
+	if m.DatabaseTableSizesFn != nil {
+		return m.DatabaseTableSizesFn(ctx)
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------
