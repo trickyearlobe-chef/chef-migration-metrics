@@ -405,7 +405,7 @@ export function fetchCookbookRemediation(
 // ---------------------------------------------------------------------------
 
 export function fetchGitRepos(
-  filters?: { name?: string; compatibility?: string; tk_status?: string; target_chef_version?: string; page?: number; per_page?: number },
+  filters?: { name?: string; compatibility?: string; tk_status?: string; clone_status?: string; target_chef_version?: string; page?: number; per_page?: number },
 ): Promise<GitRepoListResponse> {
   return apiFetch<GitRepoListResponse>(
     buildUrl("/git-repos", filters as Record<string, string | number | undefined>),
