@@ -210,6 +210,12 @@ type ComplexityResult struct {
 
 	EvaluatedAt time.Time
 
+	// Skipped is true when scoring was skipped because no scan results
+	// (CookStyle, Test Kitchen) exist yet. A complexity record is NOT
+	// persisted for skipped items, so the cookbook remains "untested"
+	// rather than appearing "compatible" with zero offenses.
+	Skipped bool
+
 	// Error is non-nil when scoring failed (e.g. data retrieval error).
 	Error error
 }
@@ -306,6 +312,8 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 		batch.Results = append(batch.Results, result)
 
 		switch {
+		case result.Skipped:
+			batch.Skipped++
 		case result.Error != nil:
 			batch.Errors++
 			log.Error(fmt.Sprintf("complexity scoring error: %s/%s target %s: %v",
@@ -377,6 +385,8 @@ func (s *ComplexityScorer) ScoreGitRepos(
 		batch.Results = append(batch.Results, result)
 
 		switch {
+		case result.Skipped:
+			batch.Skipped++
 		case result.Error != nil:
 			batch.Errors++
 			log.Error(fmt.Sprintf("complexity scoring error: %s target %s: %v",
@@ -420,18 +430,21 @@ func (s *ComplexityScorer) scoreOneServerCookbook(
 		return result
 	}
 
-	var offenseSummary CookstyleOffenseSummary
-	if csResult != nil {
-		offenseSummary = classifyOffenses(csResult.Offences, csResult.DeprecationCount, csResult.CorrectnessCount)
+	// If no CookStyle result exists, this cookbook has not been scanned yet.
+	// Skip scoring so the cookbook remains "untested" rather than appearing
+	// "compatible" with zero offenses.
+	if csResult == nil {
+		result.Skipped = true
+		return result
 	}
 
+	offenseSummary := classifyOffenses(csResult.Offences, csResult.DeprecationCount, csResult.CorrectnessCount)
+
 	// Step 2: Load auto-correct preview for manual fix count.
-	if csResult != nil {
-		preview, previewErr := s.db.GetServerCookbookAutocorrectPreview(ctx, csResult.ID)
-		if previewErr == nil && preview != nil {
-			offenseSummary.AutoCorrectableCount = preview.CorrectableOffenses
-			offenseSummary.ManualFixCount = preview.RemainingOffenses
-		}
+	preview, previewErr := s.db.GetServerCookbookAutocorrectPreview(ctx, csResult.ID)
+	if previewErr == nil && preview != nil {
+		offenseSummary.AutoCorrectableCount = preview.CorrectableOffenses
+		offenseSummary.ManualFixCount = preview.RemainingOffenses
 	}
 
 	// Step 3: Look up blast radius. Server cookbooks do not have Test
@@ -491,12 +504,23 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		return result
 	}
 
+	// Step 2: Load Test Kitchen result (git repos only).
+	tkResult, tkErr := s.db.GetLatestGitRepoTestKitchenResult(ctx, repo.ID, targetChefVersion)
+
+	// If neither CookStyle nor Test Kitchen results exist, this repo has
+	// not been scanned yet. Skip scoring so the cookbook remains "untested"
+	// rather than appearing "compatible" with zero offenses.
+	if csResult == nil && (tkErr != nil || tkResult == nil) {
+		result.Skipped = true
+		return result
+	}
+
 	var offenseSummary CookstyleOffenseSummary
 	if csResult != nil {
 		offenseSummary = classifyOffenses(csResult.Offences, csResult.DeprecationCount, csResult.CorrectnessCount)
 	}
 
-	// Step 2: Load auto-correct preview for manual fix count.
+	// Step 3: Load auto-correct preview for manual fix count.
 	if csResult != nil {
 		preview, previewErr := s.db.GetGitRepoAutocorrectPreview(ctx, csResult.ID)
 		if previewErr == nil && preview != nil {
@@ -505,19 +529,18 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		}
 	}
 
-	// Step 3: Load Test Kitchen result (git repos only).
+	// Step 4: Build Test Kitchen summary from the result loaded earlier.
 	var tkSummary TestKitchenSummary
-	tkResult, tkErr := s.db.GetLatestGitRepoTestKitchenResult(ctx, repo.ID, targetChefVersion)
 	if tkErr == nil && tkResult != nil {
 		tkSummary.HasResult = true
 		tkSummary.ConvergePassed = tkResult.ConvergePassed
 		tkSummary.TestsPassed = tkResult.TestsPassed
 	}
 
-	// Step 4: Look up blast radius.
+	// Step 5: Look up blast radius.
 	blast := blastRadii[repo.Name]
 
-	// Step 5: Compute score.
+	// Step 6: Compute score.
 	input := ComplexityInput{
 		CookbookID:        repo.ID,
 		CookbookName:      repo.Name,
@@ -543,7 +566,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 	result.AffectedPolicyCount = blast.AffectedPolicyCount
 	result.EvaluatedAt = time.Now().UTC()
 
-	// Step 6: Persist.
+	// Step 7: Persist.
 	s.persistGitRepoComplexity(ctx, result)
 
 	return result

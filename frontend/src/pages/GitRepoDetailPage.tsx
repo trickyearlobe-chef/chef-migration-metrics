@@ -77,7 +77,7 @@ export function GitRepoDetailPage() {
           onClick={handleRescan}
           disabled={rescanning}
           className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Invalidate cached CookStyle results and rescan on the next collection cycle"
+          title="Invalidate cached CookStyle results and trigger an immediate rescan"
         >
           {rescanning ? "Requesting…" : "Rescan CookStyle"}
         </button>

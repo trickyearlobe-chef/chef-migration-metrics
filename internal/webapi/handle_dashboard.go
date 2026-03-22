@@ -617,6 +617,8 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		CompatibleCookbooks   int     `json:"compatible_cookbooks"`
 		IncompatibleCookbooks int     `json:"incompatible_cookbooks"`
 		UntestedCookbooks     int     `json:"untested_cookbooks"`
+		UntestedInactive      int     `json:"untested_inactive_cookbooks"`
+		UntestedUnscanned     int     `json:"untested_unscanned_cookbooks"`
 		CompatiblePercent     float64 `json:"compatible_percent"`
 	}
 
@@ -651,10 +653,12 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 	// "incompatible" when it did not, and "untested" when no result exists.
 	// We deduplicate by cookbook name so each name counts once per target version.
 	type perVersion struct {
-		total        int
-		compatible   int
-		incompatible int
-		untested     int
+		total             int
+		compatible        int
+		incompatible      int
+		untested          int
+		untestedInactive  int
+		untestedUnscanned int
 	}
 	byTV := make(map[string]*perVersion)
 	for _, tv := range targetVersions {
@@ -732,6 +736,11 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 				pv := byTV[tv]
 				pv.total++
 				pv.untested++
+				if sc.IsActive {
+					pv.untestedUnscanned++
+				} else {
+					pv.untestedInactive++
+				}
 			}
 		}
 	}
@@ -749,6 +758,8 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 			CompatibleCookbooks:   pv.compatible,
 			IncompatibleCookbooks: pv.incompatible,
 			UntestedCookbooks:     pv.untested,
+			UntestedInactive:      pv.untestedInactive,
+			UntestedUnscanned:     pv.untestedUnscanned,
 			CompatiblePercent:     pct,
 		})
 	}

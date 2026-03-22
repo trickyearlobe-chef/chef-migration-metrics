@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
   fetchCookbooks,
@@ -29,16 +29,27 @@ export function CookbooksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // URL search params — read before filter state so initial values can be
+  // seeded from query strings (e.g. links from the dashboard).
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // Filters
-  const [active, setActive] = useState("");
-  const [nameFilter, setNameFilter] = useState("");
-  const [compatibility, setCompatibility] = useState("");
+  const [active, setActive] = useState(searchParams.get("active") || "");
+  const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
+  const [compatibility, setCompatibility] = useState(searchParams.get("compatibility") || "");
   const [page, setPage] = useState(1);
   const perPage = 50;
 
   // Target Chef versions loaded from backend config.
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>("");
+  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(searchParams.get("target_chef_version") || "");
+
+  // Clear search params on mount so they don't persist on manual navigation.
+  useEffect(() => {
+    if (searchParams.has("compatibility") || searchParams.has("active")) {
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // run once on mount
 
   // Load target Chef versions once on mount.
   useEffect(() => {
