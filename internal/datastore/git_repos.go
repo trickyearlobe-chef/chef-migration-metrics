@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+// Clone status constants mirror the download status constants used by
+// server_cookbooks, providing a three-state lifecycle for git repos.
+const (
+	CloneStatusOK      = "ok"      // Successfully cloned or pulled
+	CloneStatusFailed  = "failed"  // Clone/pull attempted but failed
+	CloneStatusPending = "pending" // Not yet attempted
+)
+
 // GitRepo represents a row in the git_repos table. Each row is a unique
 // cookbook name + git URL combination. Git repos are not org-scoped — they
 // are matched by name across organisations.
@@ -21,9 +29,22 @@ type GitRepo struct {
 	HeadCommitSHA string    `json:"head_commit_sha,omitempty"`
 	DefaultBranch string    `json:"default_branch,omitempty"`
 	HasTestSuite  bool      `json:"has_test_suite"`
+	CloneStatus   string    `json:"clone_status"`
+	CloneError    string    `json:"clone_error,omitempty"`
 	LastFetchedAt time.Time `json:"last_fetched_at,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// IsCloned returns true when the git repo has been successfully cloned.
+func (gr GitRepo) IsCloned() bool {
+	return gr.CloneStatus == CloneStatusOK
+}
+
+// NeedsClone returns true when the git repo needs a clone attempt
+// (either never attempted or previously failed).
+func (gr GitRepo) NeedsClone() bool {
+	return gr.CloneStatus == CloneStatusPending || gr.CloneStatus == CloneStatusFailed
 }
 
 // MarshalJSON implements json.Marshaler for GitRepo.
@@ -36,7 +57,8 @@ func (gr GitRepo) MarshalJSON() ([]byte, error) {
 // git_repos, kept in one place for consistency.
 const gitRepoColumns = `
 	id, name, git_repo_url, head_commit_sha, default_branch,
-	has_test_suite, last_fetched_at, created_at, updated_at
+	has_test_suite, clone_status, clone_error,
+	last_fetched_at, created_at, updated_at
 `
 
 // ---------------------------------------------------------------------------
@@ -73,15 +95,17 @@ func (db *DB) upsertGitRepo(ctx context.Context, q queryable, p UpsertGitRepoPar
 	const query = `
 		INSERT INTO git_repos (
 			name, git_repo_url, head_commit_sha, default_branch,
-			has_test_suite, last_fetched_at
+			has_test_suite, clone_status, clone_error, last_fetched_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6
+			$1, $2, $3, $4, $5, 'ok', NULL, $6
 		)
 		ON CONFLICT (name, git_repo_url)
 		DO UPDATE SET
 			head_commit_sha = EXCLUDED.head_commit_sha,
 			default_branch  = EXCLUDED.default_branch,
 			has_test_suite  = EXCLUDED.has_test_suite,
+			clone_status    = 'ok',
+			clone_error     = NULL,
 			last_fetched_at = EXCLUDED.last_fetched_at,
 			updated_at      = now()
 		RETURNING ` + gitRepoColumns
@@ -277,6 +301,84 @@ func (db *DB) DeleteGitReposByName(ctx context.Context, name string) (DeleteGitR
 	return result, nil
 }
 
+// ---------------------------------------------------------------------------
+// Clone status management
+// ---------------------------------------------------------------------------
+
+// MarkGitRepoCloneOK marks a git repo as successfully cloned/pulled and
+// clears any previous clone error.
+func (db *DB) MarkGitRepoCloneOK(ctx context.Context, id string) (GitRepo, error) {
+	const query = `
+		UPDATE git_repos
+		   SET clone_status = 'ok',
+		       clone_error  = NULL,
+		       updated_at   = now()
+		 WHERE id = $1
+		RETURNING ` + gitRepoColumns
+	return scanGitRepo(db.pool.QueryRowContext(ctx, query, id))
+}
+
+// MarkGitRepoCloneFailed marks a git repo clone as failed with the given
+// error detail.
+func (db *DB) MarkGitRepoCloneFailed(ctx context.Context, id, cloneError string) (GitRepo, error) {
+	var ce sql.NullString
+	if cloneError != "" {
+		ce = sql.NullString{String: cloneError, Valid: true}
+	}
+	const query = `
+		UPDATE git_repos
+		   SET clone_status = 'failed',
+		       clone_error  = $2,
+		       updated_at   = now()
+		 WHERE id = $1
+		RETURNING ` + gitRepoColumns
+	return scanGitRepo(db.pool.QueryRowContext(ctx, query, id, ce))
+}
+
+// UpsertGitRepoFailed inserts or updates a git repo row in the 'failed'
+// state. This is used when a clone fails from all configured base URLs —
+// the repo row is created (or updated) so it appears in the UI as missing,
+// rather than being silently absent.
+func (db *DB) UpsertGitRepoFailed(ctx context.Context, name, gitRepoURL, cloneError string) (GitRepo, error) {
+	if name == "" {
+		return GitRepo{}, fmt.Errorf("datastore: git repo name is required")
+	}
+	if gitRepoURL == "" {
+		return GitRepo{}, fmt.Errorf("datastore: git repo URL is required")
+	}
+	var ce sql.NullString
+	if cloneError != "" {
+		ce = sql.NullString{String: cloneError, Valid: true}
+	}
+	const query = `
+		INSERT INTO git_repos (
+			name, git_repo_url, clone_status, clone_error
+		) VALUES (
+			$1, $2, 'failed', $3
+		)
+		ON CONFLICT (name, git_repo_url)
+		DO UPDATE SET
+			clone_status = 'failed',
+			clone_error  = EXCLUDED.clone_error,
+			updated_at   = now()
+		RETURNING ` + gitRepoColumns
+
+	return scanGitRepo(db.pool.QueryRowContext(ctx, query, name, gitRepoURL, ce))
+}
+
+// ResetGitRepoCloneStatus resets the clone_status to 'pending' and clears
+// the clone_error. This forces a fresh clone attempt on the next run.
+func (db *DB) ResetGitRepoCloneStatus(ctx context.Context, id string) (GitRepo, error) {
+	const query = `
+		UPDATE git_repos
+		   SET clone_status = 'pending',
+		       clone_error  = NULL,
+		       updated_at   = now()
+		 WHERE id = $1
+		RETURNING ` + gitRepoColumns
+	return scanGitRepo(db.pool.QueryRowContext(ctx, query, id))
+}
+
 // DeleteGitRepo removes a single git repo by UUID. Returns ErrNotFound if
 // no such git repo exists. Cascading deletes handle dependent rows.
 func (db *DB) DeleteGitRepo(ctx context.Context, id string) error {
@@ -302,7 +404,7 @@ func (db *DB) DeleteGitRepo(ctx context.Context, id string) error {
 
 func scanGitRepo(row *sql.Row) (GitRepo, error) {
 	var gr GitRepo
-	var commitSHA, branch sql.NullString
+	var commitSHA, branch, cloneErr sql.NullString
 	var lastFetched sql.NullTime
 
 	err := row.Scan(
@@ -312,6 +414,8 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 		&commitSHA,
 		&branch,
 		&gr.HasTestSuite,
+		&gr.CloneStatus,
+		&cloneErr,
 		&lastFetched,
 		&gr.CreatedAt,
 		&gr.UpdatedAt,
@@ -325,6 +429,7 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 
 	gr.HeadCommitSHA = stringFromNull(commitSHA)
 	gr.DefaultBranch = stringFromNull(branch)
+	gr.CloneError = stringFromNull(cloneErr)
 	gr.LastFetchedAt = timeFromNull(lastFetched)
 	return gr, nil
 }
@@ -338,7 +443,7 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 	var repos []GitRepo
 	for rows.Next() {
 		var gr GitRepo
-		var commitSHA, branch sql.NullString
+		var commitSHA, branch, cloneErr sql.NullString
 		var lastFetched sql.NullTime
 
 		if err := rows.Scan(
@@ -348,6 +453,8 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 			&commitSHA,
 			&branch,
 			&gr.HasTestSuite,
+			&gr.CloneStatus,
+			&cloneErr,
 			&lastFetched,
 			&gr.CreatedAt,
 			&gr.UpdatedAt,
@@ -357,6 +464,7 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 
 		gr.HeadCommitSHA = stringFromNull(commitSHA)
 		gr.DefaultBranch = stringFromNull(branch)
+		gr.CloneError = stringFromNull(cloneErr)
 		gr.LastFetchedAt = timeFromNull(lastFetched)
 		repos = append(repos, gr)
 	}

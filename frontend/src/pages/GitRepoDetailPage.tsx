@@ -161,17 +161,42 @@ export function GitRepoDetailPage() {
                     {gr.name}
                   </h3>
                   <span className="badge badge-compatible">Git</span>
-                  {gr.has_test_suite ? (
+                  {gr.clone_status === "failed" ? (
+                    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800 ring-1 ring-inset ring-red-600/20">
+                      Missing
+                    </span>
+                  ) : gr.clone_status === "pending" ? (
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 ring-1 ring-inset ring-gray-500/20">
+                      Pending
+                    </span>
+                  ) : null}
+                  {gr.clone_status === "ok" && gr.has_test_suite ? (
                     <StatusBadge variant="compatible" label="Has Test Suite" size="sm" />
-                  ) : (
+                  ) : gr.clone_status === "ok" ? (
                     <StatusBadge variant="untested" label="No Test Suite" size="sm" />
-                  )}
+                  ) : null}
                   {gr.git_repo_url && (
                     <span className="text-xs text-gray-400 truncate max-w-md" title={gr.git_repo_url}>
                       {gr.git_repo_url}
                     </span>
                   )}
                 </div>
+
+                {/* Clone failure alert */}
+                {gr.clone_status === "failed" && (
+                  <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                    <span className="mt-0.5 shrink-0 text-red-500">⚠</span>
+                    <div className="text-sm text-red-700">
+                      <p className="font-medium">Repository could not be cloned</p>
+                      {gr.clone_error && (
+                        <p className="mt-1 text-xs text-red-600">{gr.clone_error}</p>
+                      )}
+                      <p className="mt-1 text-xs text-red-500">
+                        Clone will be reattempted on the next collection run.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Metadata */}
                 <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-gray-500">

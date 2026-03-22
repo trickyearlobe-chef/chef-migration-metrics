@@ -457,6 +457,8 @@ export interface GitRepoListItem {
   head_commit_sha?: string;
   default_branch?: string;
   has_test_suite: boolean;
+  clone_status: string;
+  clone_error?: string;
   last_fetched_at?: string;
   compatibility?: CompatibilityStatus;
   target_chef_version?: string;
