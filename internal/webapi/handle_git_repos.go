@@ -72,31 +72,33 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		targetChefVersion = r.defaultTargetVersion()
 	}
 
-	// Build repo-name-by-ID lookup used by both compatibility and TK maps.
+	// Build repo-name-by-ID lookup. One git repo per cookbook name.
 	repoNameByID := make(map[string]string, len(repos))
 	for _, gr := range repos {
 		repoNameByID[gr.ID] = gr.Name
 	}
 
-	// Build compatibility map from git repo complexity records.
+	// Build compatibility map from CookStyle results directly.
+	// Passed == true → compatible, Passed == false → incompatible,
+	// no result → untested.
 	compatByName := make(map[string]string)
 	if targetChefVersion != "" {
-		allComplexities, cxErr := r.db.ListAllGitRepoComplexities(ctx)
-		if cxErr != nil {
-			r.logf("WARN", "listing git repo complexities for compatibility: %v", cxErr)
+		allCookstyle, csErr := r.db.ListAllGitRepoCookstyleResults(ctx)
+		if csErr != nil {
+			r.logf("WARN", "listing git repo cookstyle results for compatibility: %v", csErr)
 		} else {
-			for _, cc := range allComplexities {
-				if cc.TargetChefVersion != targetChefVersion {
+			for _, cs := range allCookstyle {
+				if cs.TargetChefVersion != targetChefVersion {
 					continue
 				}
-				name := repoNameByID[cc.GitRepoID]
+				name := repoNameByID[cs.GitRepoID]
 				if name == "" {
 					continue
 				}
 				if _, seen := compatByName[name]; seen {
 					continue
 				}
-				if cc.ErrorCount == 0 {
+				if cs.Passed {
 					compatByName[name] = "compatible"
 				} else {
 					compatByName[name] = "incompatible"

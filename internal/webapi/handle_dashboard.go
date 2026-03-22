@@ -866,7 +866,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 	seen := make(map[tvName]bool)
 
-	// Load all git repos and build a name-by-ID lookup plus clone status map.
+	// Load git repos — one per cookbook name.
 	gitRepos, err := r.db.ListGitRepos(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing git repos for compatibility: %v", err)
@@ -880,33 +880,35 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		repoCloneStatus[gr.Name] = gr.CloneStatus
 	}
 
-	// Load all git repo complexities.
-	complexities, err := r.db.ListAllGitRepoComplexities(ctx)
+	// Determine compatibility directly from CookStyle results.
+	// Passed == true → compatible, Passed == false → incompatible,
+	// no result for the target version → untested.
+	allCookstyle, err := r.db.ListAllGitRepoCookstyleResults(ctx)
 	if err != nil {
-		r.logf("ERROR", "listing git repo complexities for compatibility: %v", err)
+		r.logf("ERROR", "listing git repo cookstyle results for compatibility: %v", err)
 		WriteInternalError(w, "Failed to compute git repo compatibility.")
 		return
 	}
 
-	for _, cc := range complexities {
-		repoName := repoNameByID[cc.GitRepoID]
+	for _, cs := range allCookstyle {
+		repoName := repoNameByID[cs.GitRepoID]
 		if repoName == "" {
 			continue
 		}
 		if allowedNames != nil && !allowedNames[repoName] {
 			continue
 		}
-		pv, ok := byTV[cc.TargetChefVersion]
+		pv, ok := byTV[cs.TargetChefVersion]
 		if !ok {
 			continue
 		}
-		key := tvName{tv: cc.TargetChefVersion, name: repoName}
+		key := tvName{tv: cs.TargetChefVersion, name: repoName}
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 		pv.total++
-		if cc.ErrorCount == 0 {
+		if cs.Passed {
 			pv.compatible++
 		} else {
 			pv.incompatible++
@@ -1065,7 +1067,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 	seen := make(map[tvName]bool)
 
-	// Load all git repos and build a name-by-ID lookup.
+	// Load git repos — one per cookbook name.
 	gitRepos, err := r.db.ListGitRepos(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing git repos for TK compatibility: %v", err)

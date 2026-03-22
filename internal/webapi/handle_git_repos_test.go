@@ -94,11 +94,12 @@ func sampleTKResults() []datastore.GitRepoTestKitchenResult {
 	}
 }
 
-func sampleComplexities() []datastore.GitRepoComplexity {
-	return []datastore.GitRepoComplexity{
-		{ID: "cx-1", GitRepoID: "repo-1", TargetChefVersion: "18.0.0", ErrorCount: 0},
-		{ID: "cx-2", GitRepoID: "repo-2", TargetChefVersion: "18.0.0", ErrorCount: 5},
-		// repo-3 and repo-4 have no complexity → "untested"
+func sampleCookstyleResults() []datastore.GitRepoCookstyleResult {
+	now := time.Now()
+	return []datastore.GitRepoCookstyleResult{
+		{ID: "cs-1", GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Passed: true, ScannedAt: now},
+		{ID: "cs-2", GitRepoID: "repo-2", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 5, ScannedAt: now},
+		// repo-3 and repo-4 have no cookstyle result → "untested"
 	}
 }
 
@@ -107,8 +108,8 @@ func defaultGitRepoMockStore() *mockStore {
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return sampleGitRepos(), nil
 		},
-		ListAllGitRepoComplexitiesFn: func(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
-			return sampleComplexities(), nil
+		ListAllGitRepoCookstyleResultsFn: func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error) {
+			return sampleCookstyleResults(), nil
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return sampleTKResults(), nil
