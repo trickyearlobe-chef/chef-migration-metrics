@@ -7,6 +7,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -143,6 +145,32 @@ func (db *DB) ListServerCookbookComplexitiesByOrganisation(ctx context.Context, 
 		 ORDER BY sc.name, sc.version, scc.target_chef_version
 	`
 	return db.scanServerCookbookComplexities(ctx, query, organisationID)
+}
+
+// ListServerCookbookComplexities returns all complexity records for server
+// cookbooks belonging to the given organisation, filtered by the specified
+// target Chef versions.
+func (db *DB) ListServerCookbookComplexities(ctx context.Context, organisationID string, targetChefVersions []string) ([]ServerCookbookComplexity, error) {
+	if len(targetChefVersions) == 0 {
+		return nil, nil
+	}
+
+	// $1 is organisationID; $2, $3, ... are the target versions.
+	placeholders := make([]string, len(targetChefVersions))
+	args := make([]any, 0, 1+len(targetChefVersions))
+	args = append(args, organisationID)
+	for i, v := range targetChefVersions {
+		args = append(args, v)
+		placeholders[i] = "$" + strconv.Itoa(i+2)
+	}
+
+	query := `
+		SELECT ` + sccColumns + `
+		  FROM server_cookbook_complexity
+		 WHERE server_cookbook_id IN (SELECT id FROM server_cookbooks WHERE organisation_id = $1)
+		   AND target_chef_version IN (` + strings.Join(placeholders, ", ") + `)
+	`
+	return db.scanServerCookbookComplexities(ctx, query, args...)
 }
 
 // ---------------------------------------------------------------------------

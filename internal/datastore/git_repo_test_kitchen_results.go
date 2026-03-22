@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -186,6 +187,32 @@ func (db *DB) ListAllGitRepoTestKitchenResults(ctx context.Context) ([]GitRepoTe
 		 ORDER BY target_chef_version
 	`
 	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query))
+}
+
+// ListLatestGitRepoTestKitchenResults returns the latest test kitchen result
+// per (git_repo_id, target_chef_version) combination, filtered by the given
+// target chef versions. Used by the readiness evaluator for bulk-loading.
+func (db *DB) ListLatestGitRepoTestKitchenResults(ctx context.Context, targetChefVersions []string) ([]GitRepoTestKitchenResult, error) {
+	if len(targetChefVersions) == 0 {
+		return nil, nil
+	}
+
+	// Build IN clause placeholders: $1, $2, ...
+	placeholders := make([]string, len(targetChefVersions))
+	args := make([]any, len(targetChefVersions))
+	for i, v := range targetChefVersions {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = v
+	}
+
+	query := `
+		SELECT DISTINCT ON (git_repo_id, target_chef_version)
+		       ` + grtkrColumns + `
+		  FROM git_repo_test_kitchen_results
+		 WHERE target_chef_version IN (` + strings.Join(placeholders, ", ") + `)
+		 ORDER BY git_repo_id, target_chef_version, started_at DESC
+	`
+	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query, args...))
 }
 
 // ---------------------------------------------------------------------------
