@@ -1232,10 +1232,93 @@ func TestScanOneNoDB_NonZeroExitInvalidJSON(t *testing.T) {
 	sr := s.scanOneNoDB(context.Background(), "crash-cb", "1.0.0", "", "/cookbooks/crash")
 
 	if sr.Error == nil {
-		t.Error("expected error for non-zero exit with invalid JSON")
+		t.Error("expected error for exit code 2")
 	}
 	if !strings.Contains(sr.Error.Error(), "exit") {
 		t.Errorf("error should mention exit code, got: %v", sr.Error)
+	}
+	// Exit code 2 should set ErrorMessage (not just Error).
+	if sr.ErrorMessage == "" {
+		t.Error("expected ErrorMessage to be set for exit code 2")
+	}
+	if !strings.Contains(sr.ErrorMessage, "FATAL: something broke") {
+		t.Errorf("ErrorMessage should contain stderr, got: %q", sr.ErrorMessage)
+	}
+	// Passed should remain false (zero value).
+	if sr.Passed {
+		t.Error("expected Passed=false for errored scan")
+	}
+}
+
+func TestScanOneNoDB_ExitCode2_NoJsonParsing(t *testing.T) {
+	// Exit code 2 with valid JSON on stdout — the JSON should NOT be parsed
+	// because the exit code indicates CookStyle errored. The result should
+	// be recorded as an error, not as "passed with 0 offences".
+	fe := &fakeCookstyleExecutor{
+		stdout:   makeCleanJSON(), // valid JSON that would parse as "passed"
+		stderr:   "Error: Invalid configuration in .rubocop.yml",
+		exitCode: 2,
+	}
+	s := NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 1, 10,
+		WithCookstyleExecutor(fe))
+
+	sr := s.scanOneNoDB(context.Background(), "bad-config-cb", "1.0.0", "", "/cookbooks/bad-config")
+
+	if sr.ErrorMessage == "" {
+		t.Error("expected ErrorMessage for exit code 2")
+	}
+	if sr.Passed {
+		t.Error("expected Passed=false — exit code 2 should not parse JSON as clean")
+	}
+	if sr.OffenseCount != 0 {
+		t.Errorf("expected 0 offenses (no JSON parsing), got %d", sr.OffenseCount)
+	}
+}
+
+func TestScanOneNoDB_ExitCode1_NoErrorMessage(t *testing.T) {
+	// Exit code 1 = offences found — should NOT set ErrorMessage.
+	fe := &fakeCookstyleExecutor{
+		stdout: makeOffenseJSON(
+			"Chef/Deprecations/NodeSet",
+			"error",
+			"Use node.normal instead",
+			false,
+		),
+		exitCode: 1,
+	}
+	s := NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 1, 10,
+		WithCookstyleExecutor(fe))
+
+	sr := s.scanOneNoDB(context.Background(), "offences-cb", "1.0.0", "", "/cookbooks/offences")
+
+	if sr.ErrorMessage != "" {
+		t.Errorf("expected empty ErrorMessage for exit code 1, got: %q", sr.ErrorMessage)
+	}
+	if sr.Error != nil {
+		t.Errorf("expected nil Error for exit code 1 with valid JSON, got: %v", sr.Error)
+	}
+	if sr.Passed {
+		t.Error("expected Passed=false (error-severity offense)")
+	}
+}
+
+func TestScanOneNoDB_ExitCode2_StderrEmpty_UsesStdout(t *testing.T) {
+	// When stderr is empty, ErrorMessage should fall back to stdout content.
+	fe := &fakeCookstyleExecutor{
+		stdout:   "Error: unrecognized cop Chef/BadCop found in .rubocop.yml",
+		stderr:   "",
+		exitCode: 2,
+	}
+	s := NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 1, 10,
+		WithCookstyleExecutor(fe))
+
+	sr := s.scanOneNoDB(context.Background(), "fallback-cb", "1.0.0", "", "/cookbooks/fallback")
+
+	if sr.ErrorMessage == "" {
+		t.Error("expected ErrorMessage for exit code 2")
+	}
+	if !strings.Contains(sr.ErrorMessage, "unrecognized cop") {
+		t.Errorf("ErrorMessage should contain stdout (stderr was empty), got: %q", sr.ErrorMessage)
 	}
 }
 
@@ -1394,6 +1477,18 @@ func (s *CookstyleScanner) scanOneNoDB(
 			return sr
 		}
 		// Fall through — non-zero exit with stdout present.
+	}
+
+	// Exit code >= 2 means CookStyle itself errored (bad .rubocop.yaml,
+	// Ruby exception, gem load failure). Not a compatibility verdict.
+	if exitCode >= 2 {
+		errMsg := strings.TrimSpace(stderr)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(stdout)
+		}
+		sr.ErrorMessage = fmt.Sprintf("CookStyle error (exit %d): %s", exitCode, errMsg)
+		sr.Error = fmt.Errorf("cookstyle error (exit %d): %s", exitCode, errMsg)
+		return sr
 	}
 
 	var output CookstyleOutput

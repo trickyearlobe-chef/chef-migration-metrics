@@ -1289,6 +1289,77 @@ func TestCheckCookbookCompatibility_MultiSource_NoGitRepo(t *testing.T) {
 	}
 }
 
+func TestCheckCookbookCompatibility_ErrorResultTreatedAsUntested(t *testing.T) {
+	// A CookStyle result with ErrorMessage set (exit code >= 2) should be
+	// skipped — not treated as compatible or incompatible. The cookbook
+	// should appear as "untested".
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	// Server CS result with an error message (CookStyle crashed).
+	ds.csResults[csKey("id-apt", "18.0")] = &datastore.ServerCookbookCookstyleResult{
+		ServerCookbookID:  "id-apt",
+		TargetChefVersion: "18.0",
+		Passed:            false,
+		ErrorMessage:      "CookStyle error (exit 2): Invalid .rubocop.yml",
+	}
+
+	cache := ds.buildFakeCache()
+	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusUntested {
+		t.Errorf("expected %s (error result should be skipped), got %s", StatusUntested, status)
+	}
+	if source != SourceNone {
+		t.Errorf("expected %s, got %s", SourceNone, source)
+	}
+	if len(verdicts) != 0 {
+		t.Errorf("expected 0 verdicts (error result skipped), got %d", len(verdicts))
+	}
+}
+
+func TestCheckCookbookCompatibility_GitCSErrorResultSkipped(t *testing.T) {
+	// Git CookStyle result with ErrorMessage should also be skipped.
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
+	// Git CS result with error.
+	ds.gitCSResults[gitCSKey("gitrepo-apt", "18.0")] = &datastore.GitRepoCookstyleResult{
+		GitRepoID:         "gitrepo-apt",
+		TargetChefVersion: "18.0",
+		Passed:            false,
+		ErrorMessage:      "CookStyle error (exit 2): bad config",
+	}
+	// No server CS result, no TK result.
+
+	cache := ds.buildFakeCache()
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusUntested {
+		t.Errorf("expected %s (git CS error result skipped), got %s", StatusUntested, status)
+	}
+}
+
+func TestCheckCookbookCompatibility_ErrorResultDoesNotOverrideGoodResult(t *testing.T) {
+	// Server CS errored, but git CS passed → should be compatible.
+	// The error result is skipped, the good result counts.
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	// Server CS errored.
+	ds.csResults[csKey("id-apt", "18.0")] = &datastore.ServerCookbookCookstyleResult{
+		ServerCookbookID:  "id-apt",
+		TargetChefVersion: "18.0",
+		Passed:            false,
+		ErrorMessage:      "CookStyle error (exit 2): crash",
+	}
+	// Git CS passed.
+	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
+	ds.addGitCSResult("gitrepo-apt", "18.0", true)
+
+	cache := ds.buildFakeCache()
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusCompatibleCookstyleOnly {
+		t.Errorf("expected %s (git CS passed despite server CS error), got %s", StatusCompatibleCookstyleOnly, status)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // evaluateOne — integration tests
 // ---------------------------------------------------------------------------
