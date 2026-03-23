@@ -170,6 +170,12 @@ type CookstyleScanResult struct {
 	// result was found in the datastore (immutability optimisation).
 	Skipped bool
 
+	// ErrorMessage is a human-readable error description set when CookStyle
+	// itself crashes (exit code >= 2) rather than finding offenses (exit
+	// code 1). When non-empty, this result should not be treated as a
+	// compatibility verdict — the cookbook is effectively untested.
+	ErrorMessage string
+
 	// Error is non-nil when the scan itself failed (crash, timeout,
 	// invalid JSON). A non-zero exit code with valid JSON is NOT an
 	// error — CookStyle exits non-zero whenever offenses are found.
@@ -437,9 +443,11 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	}
 
 	// Step 1: skip check.
-	// Server cookbook versions are immutable — an existing result is always valid.
+	// Server cookbook versions are immutable — an existing result is always
+	// valid. However, if the previous result was an error (exit code >= 2),
+	// re-scan in case the issue has been resolved (e.g. CookStyle update).
 	existing, err := s.db.GetServerCookbookCookstyleResult(ctx, sc.ID, targetChefVersion)
-	if err == nil && existing != nil {
+	if err == nil && existing != nil && existing.ErrorMessage == "" {
 		log.Debug(fmt.Sprintf("skipping — already scanned at %s",
 			existing.ScannedAt.Format(time.RFC3339)))
 		sr.Skipped = true
@@ -476,6 +484,22 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 			return sr
 		}
 		// Non-zero exit with stdout present — fall through to parse JSON.
+	}
+
+	// Step 4b: handle CookStyle errors (exit code >= 2).
+	// RuboCop/CookStyle exit codes: 0 = success, 1 = offences found,
+	// 2 = error (bad .rubocop.yaml, Ruby exception, gem load failure).
+	// Exit code 2 is NOT a compatibility verdict — do not parse as JSON.
+	if exitCode >= 2 {
+		errMsg := strings.TrimSpace(stderr)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(stdout)
+		}
+		sr.ErrorMessage = fmt.Sprintf("CookStyle error (exit %d): %s", exitCode, errMsg)
+		sr.Error = fmt.Errorf("cookstyle error (exit %d): %s", exitCode, errMsg)
+		log.Warn(fmt.Sprintf("cookstyle error (exit %d), result recorded as error: %s", exitCode, errMsg))
+		s.persistServerCookbookResult(ctx, sr)
+		return sr
 	}
 
 	// Step 5: parse JSON output.
@@ -601,6 +625,22 @@ func (s *CookstyleScanner) scanOneGitRepo(
 			return sr
 		}
 		// Non-zero exit with stdout present — fall through to parse JSON.
+	}
+
+	// Step 4b: handle CookStyle errors (exit code >= 2).
+	// RuboCop/CookStyle exit codes: 0 = success, 1 = offences found,
+	// 2 = error (bad .rubocop.yaml, Ruby exception, gem load failure).
+	// Exit code 2 is NOT a compatibility verdict — do not parse as JSON.
+	if exitCode >= 2 {
+		errMsg := strings.TrimSpace(stderr)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(stdout)
+		}
+		sr.ErrorMessage = fmt.Sprintf("CookStyle error (exit %d): %s", exitCode, errMsg)
+		sr.Error = fmt.Errorf("cookstyle error (exit %d): %s", exitCode, errMsg)
+		log.Warn(fmt.Sprintf("cookstyle error (exit %d), result recorded as error: %s", exitCode, errMsg))
+		s.persistGitRepoResult(ctx, sr)
+		return sr
 	}
 
 	// Step 5: parse JSON output.
@@ -822,6 +862,7 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 		ProcessStderr:       sr.RawStderr,
 		DurationSeconds:     int(sr.Duration.Seconds()),
 		ScannedAt:           sr.ScannedAt,
+		ErrorMessage:        sr.ErrorMessage,
 	}
 
 	if _, persistErr := s.db.UpsertServerCookbookCookstyleResult(ctx, params); persistErr != nil {
@@ -862,6 +903,7 @@ func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr Cookstyl
 		ProcessStderr:       sr.RawStderr,
 		DurationSeconds:     int(sr.Duration.Seconds()),
 		ScannedAt:           sr.ScannedAt,
+		ErrorMessage:        sr.ErrorMessage,
 	}
 
 	if _, persistErr := s.db.UpsertGitRepoCookstyleResult(ctx, params); persistErr != nil {
