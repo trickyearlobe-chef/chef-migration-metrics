@@ -134,6 +134,117 @@ type ReadinessDataStore interface {
 
 	// Persistence
 	UpsertNodeReadiness(ctx context.Context, p datastore.UpsertNodeReadinessParams) (*datastore.NodeReadiness, error)
+
+	// Bulk-load methods — used by EvaluateOrganisation to replace N+1 queries
+	// with a small number of bulk queries + in-memory lookups.
+	ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
+	ListLatestGitRepoTestKitchenResults(ctx context.Context, targetChefVersions []string) ([]datastore.GitRepoTestKitchenResult, error)
+	ListGitRepoCookstyleResultsByTargetVersions(ctx context.Context, targetChefVersions []string) ([]datastore.GitRepoCookstyleResult, error)
+	ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, organisationID string, targetChefVersions []string) ([]datastore.ServerCookbookCookstyleResult, error)
+	ListServerCookbookComplexities(ctx context.Context, organisationID string, targetChefVersions []string) ([]datastore.ServerCookbookComplexity, error)
+	ListGitRepoComplexities(ctx context.Context, targetChefVersions []string) ([]datastore.GitRepoComplexity, error)
+}
+
+// ---------------------------------------------------------------------------
+// readinessCache — pre-loaded lookup data for in-memory evaluation
+// ---------------------------------------------------------------------------
+
+// readinessCache holds all test/scan/complexity data needed to evaluate
+// cookbook compatibility, loaded in bulk at the start of EvaluateOrganisation.
+// All maps are built once and shared read-only across goroutines (maps are
+// safe for concurrent reads).
+type readinessCache struct {
+	gitRepos         map[string]datastore.GitRepo                        // name → repo
+	tkResults        map[string]*datastore.GitRepoTestKitchenResult      // gitRepoID|target → result
+	gitCSResults     map[string]*datastore.GitRepoCookstyleResult        // gitRepoID|target → result
+	serverCSResults  map[string]*datastore.ServerCookbookCookstyleResult // cookbookID|target → result
+	serverComplexity map[string]*datastore.ServerCookbookComplexity      // cookbookID|target → complexity
+	gitComplexity    map[string]*datastore.GitRepoComplexity             // gitRepoID|target → complexity
+}
+
+// cacheKey builds a lookup key from two components (e.g. ID + target version).
+func cacheKey(a, b string) string {
+	return a + "|" + b
+}
+
+// buildReadinessCache loads all lookup data needed for readiness evaluation
+// in bulk. Returns an error if any bulk query fails — partial caches are not
+// used because they would produce incorrect compatibility verdicts.
+func buildReadinessCache(
+	ctx context.Context,
+	db ReadinessDataStore,
+	organisationID string,
+	targetChefVersions []string,
+) (*readinessCache, error) {
+	cache := &readinessCache{
+		gitRepos:         make(map[string]datastore.GitRepo),
+		tkResults:        make(map[string]*datastore.GitRepoTestKitchenResult),
+		gitCSResults:     make(map[string]*datastore.GitRepoCookstyleResult),
+		serverCSResults:  make(map[string]*datastore.ServerCookbookCookstyleResult),
+		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
+		gitComplexity:    make(map[string]*datastore.GitRepoComplexity),
+	}
+
+	// 1. Git repos (all — small table)
+	gitRepos, err := db.ListGitRepos(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading git repos: %w", err)
+	}
+	for _, gr := range gitRepos {
+		cache.gitRepos[gr.Name] = gr
+	}
+
+	// 2. Git repo Test Kitchen results (latest per combo)
+	tkResults, err := db.ListLatestGitRepoTestKitchenResults(ctx, targetChefVersions)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading TK results: %w", err)
+	}
+	for i := range tkResults {
+		r := &tkResults[i]
+		cache.tkResults[cacheKey(r.GitRepoID, r.TargetChefVersion)] = r
+	}
+
+	// 3. Git repo CookStyle results
+	gitCSResults, err := db.ListGitRepoCookstyleResultsByTargetVersions(ctx, targetChefVersions)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading git CookStyle results: %w", err)
+	}
+	for i := range gitCSResults {
+		r := &gitCSResults[i]
+		cache.gitCSResults[cacheKey(r.GitRepoID, r.TargetChefVersion)] = r
+	}
+
+	// 4. Server cookbook CookStyle results (org-scoped, includes NULL target versions)
+	serverCSResults, err := db.ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx, organisationID, targetChefVersions)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading server CookStyle results: %w", err)
+	}
+	for i := range serverCSResults {
+		r := &serverCSResults[i]
+		cache.serverCSResults[cacheKey(r.ServerCookbookID, r.TargetChefVersion)] = r
+	}
+
+	// 5. Server cookbook complexity (org-scoped)
+	serverComplexities, err := db.ListServerCookbookComplexities(ctx, organisationID, targetChefVersions)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading server complexities: %w", err)
+	}
+	for i := range serverComplexities {
+		c := &serverComplexities[i]
+		cache.serverComplexity[cacheKey(c.ServerCookbookID, c.TargetChefVersion)] = c
+	}
+
+	// 6. Git repo complexity
+	gitComplexities, err := db.ListGitRepoComplexities(ctx, targetChefVersions)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading git complexities: %w", err)
+	}
+	for i := range gitComplexities {
+		c := &gitComplexities[i]
+		cache.gitComplexity[cacheKey(c.GitRepoID, c.TargetChefVersion)] = c
+	}
+
+	return cache, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +349,14 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 		return nil, fmt.Errorf("readiness: loading cookbook ID map: %w", err)
 	}
 
-	// Step 3: Build work items.
+	// Step 3: Bulk-load all lookup data into an in-memory cache.
+	// This replaces ~12M individual DB queries with ~5 bulk queries.
+	cache, err := buildReadinessCache(ctx, e.db, organisationID, targetChefVersions)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: building cache: %w", err)
+	}
+
+	// Step 4: Build work items.
 	items := make([]workItem, 0, len(snapshots)*len(targetChefVersions))
 	for _, snap := range snapshots {
 		for _, tv := range targetChefVersions {
@@ -252,7 +370,8 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 	e.logInfo(orgName, fmt.Sprintf("evaluating %d nodes × %d target versions = %d work items",
 		len(snapshots), len(targetChefVersions), len(items)))
 
-	// Step 4: Fan out.
+	// Step 5: Fan out. evaluateOne uses only in-memory lookups (no DB calls),
+	// so context cancellation cannot corrupt evaluations.
 	sem := make(chan struct{}, e.concurrency)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -269,7 +388,7 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 			defer wg.Done()
 			defer func() { <-sem }() // release
 
-			result := e.evaluateOne(ctx, wi.snapshot, wi.targetChefVersion, cookbookIDMap)
+			result := e.evaluateOne(wi.snapshot, wi.targetChefVersion, cookbookIDMap, cache)
 
 			// Persist with a background context so that a cancelled parent
 			// context does not prevent saving results we have already
@@ -300,11 +419,12 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 // ---------------------------------------------------------------------------
 
 // evaluateOne computes readiness for one node × target version.
+// All lookups use the pre-loaded cache — no database calls are made.
 func (e *ReadinessEvaluator) evaluateOne(
-	ctx context.Context,
 	snapshot datastore.NodeSnapshot,
 	targetChefVersion string,
 	cookbookIDMap map[string]map[string]string,
+	cache *readinessCache,
 ) ReadinessResult {
 	now := time.Now().UTC()
 
@@ -319,7 +439,7 @@ func (e *ReadinessEvaluator) evaluateOne(
 	}
 
 	// --- Cookbook compatibility ---
-	blockingCookbooks := e.evaluateCookbooks(ctx, snapshot, targetChefVersion, cookbookIDMap)
+	blockingCookbooks := e.evaluateCookbooks(snapshot, targetChefVersion, cookbookIDMap, cache)
 	result.BlockingCookbooks = blockingCookbooks
 	result.AllCookbooksCompatible = len(blockingCookbooks) == 0
 
@@ -361,10 +481,10 @@ type nodeCookbookEntry struct {
 // evaluateCookbooks checks all cookbooks on the node against the target
 // Chef Client version. Returns the list of blocking cookbooks.
 func (e *ReadinessEvaluator) evaluateCookbooks(
-	ctx context.Context,
 	snapshot datastore.NodeSnapshot,
 	targetChefVersion string,
 	cookbookIDMap map[string]map[string]string,
+	cache *readinessCache,
 ) []BlockingCookbook {
 	if len(snapshot.Cookbooks) == 0 {
 		return nil
@@ -379,7 +499,7 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 	var blocking []BlockingCookbook
 
 	for cbName, cbVersion := range cookbooks {
-		status, source, verdicts := e.checkCookbookCompatibility(ctx, cbName, cbVersion, targetChefVersion, cookbookIDMap)
+		status, source, verdicts := checkCookbookCompatibility(cbName, cbVersion, targetChefVersion, cookbookIDMap, cache)
 
 		switch status {
 		case StatusCompatible, StatusCompatibleCookstyleOnly:
@@ -397,7 +517,7 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 			// Try to enrich with server cookbook complexity data.
 			cookbookID := lookupCookbookID(cookbookIDMap, cbName, cbVersion)
 			if cookbookID != "" {
-				if cc, err := e.db.GetServerCookbookComplexity(ctx, cookbookID, targetChefVersion); err == nil && cc != nil {
+				if cc := cache.serverComplexity[cacheKey(cookbookID, targetChefVersion)]; cc != nil {
 					bc.ComplexityScore = cc.ComplexityScore
 					bc.ComplexityLabel = cc.ComplexityLabel
 				}
@@ -408,15 +528,14 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 				switch bc.Verdicts[i].Source {
 				case SourceServerCookstyle:
 					if cookbookID != "" {
-						if cc, err := e.db.GetServerCookbookComplexity(ctx, cookbookID, targetChefVersion); err == nil && cc != nil {
+						if cc := cache.serverComplexity[cacheKey(cookbookID, targetChefVersion)]; cc != nil {
 							bc.Verdicts[i].ComplexityScore = cc.ComplexityScore
 							bc.Verdicts[i].ComplexityLabel = cc.ComplexityLabel
 						}
 					}
 				case SourceGitCookstyle, SourceGitTestKitchen:
-					gitRepo, grErr := e.db.GetGitRepoByName(ctx, cbName)
-					if grErr == nil && gitRepo.ID != "" {
-						if gc, gcErr := e.db.GetGitRepoComplexity(ctx, gitRepo.ID, targetChefVersion); gcErr == nil && gc != nil {
+					if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.ID != "" {
+						if gc := cache.gitComplexity[cacheKey(gitRepo.ID, targetChefVersion)]; gc != nil {
 							bc.Verdicts[i].ComplexityScore = gc.ComplexityScore
 							bc.Verdicts[i].ComplexityLabel = gc.ComplexityLabel
 						}
@@ -464,7 +583,7 @@ func parseCookbooksAttribute(raw json.RawMessage) map[string]string {
 
 // checkCookbookCompatibility determines the compatibility status of a single
 // cookbook × version against the target Chef Client version using multi-source
-// evaluation.
+// evaluation and the pre-loaded cache.
 //
 // Algorithm:
 //  1. Check Git repo Test Kitchen result → verdict
@@ -473,14 +592,14 @@ func parseCookbooksAttribute(raw json.RawMessage) map[string]string {
 //  4. Aggregate: any compatible → compatible; all tested incompatible →
 //     incompatible; no results → untested
 //
-// Returns the overall status, primary source (for backward compat), and
-// per-source verdicts.
-func (e *ReadinessEvaluator) checkCookbookCompatibility(
-	ctx context.Context,
+// This is a package-level function (not a method) because it uses only
+// in-memory cache lookups — no database calls.
+func checkCookbookCompatibility(
 	cookbookName string,
 	cookbookVersion string,
 	targetChefVersion string,
 	cookbookIDMap map[string]map[string]string,
+	cache *readinessCache,
 ) (status, source string, verdicts []CookbookSourceVerdict) {
 	cookbookID := lookupCookbookID(cookbookIDMap, cookbookName, cookbookVersion)
 
@@ -488,10 +607,10 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 	var anyTested bool
 
 	// --- Source 1: Git repo Test Kitchen ---
-	gitRepo, grErr := e.db.GetGitRepoByName(ctx, cookbookName)
-	if grErr == nil && gitRepo.ID != "" {
-		tkResult, tkErr := e.db.GetLatestGitRepoTestKitchenResult(ctx, gitRepo.ID, targetChefVersion)
-		if tkErr == nil && tkResult != nil {
+	gitRepo, hasGitRepo := cache.gitRepos[cookbookName]
+	if hasGitRepo && gitRepo.ID != "" {
+		tkResult := cache.tkResults[cacheKey(gitRepo.ID, targetChefVersion)]
+		if tkResult != nil {
 			anyTested = true
 			v := CookbookSourceVerdict{
 				Source:    SourceGitTestKitchen,
@@ -508,8 +627,8 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 		}
 
 		// --- Source 2: Git repo CookStyle ---
-		gitCSResult, gitCSErr := e.db.GetGitRepoCookstyleResult(ctx, gitRepo.ID, targetChefVersion)
-		if gitCSErr == nil && gitCSResult != nil {
+		gitCSResult := cache.gitCSResults[cacheKey(gitRepo.ID, targetChefVersion)]
+		if gitCSResult != nil {
 			anyTested = true
 			v := CookbookSourceVerdict{
 				Source:    SourceGitCookstyle,
@@ -528,8 +647,8 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 
 	// --- Source 3: Server cookbook CookStyle ---
 	if cookbookID != "" {
-		csResult, err := e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, targetChefVersion)
-		if err == nil && csResult != nil {
+		csResult := cache.serverCSResults[cacheKey(cookbookID, targetChefVersion)]
+		if csResult != nil {
 			anyTested = true
 			v := CookbookSourceVerdict{
 				Source:  SourceServerCookstyle,
@@ -545,8 +664,8 @@ func (e *ReadinessEvaluator) checkCookbookCompatibility(
 		} else {
 			// Also check CookStyle without a target version — server-sourced
 			// cookbooks may have been scanned without a target version profile.
-			csResult, err = e.db.GetServerCookbookCookstyleResult(ctx, cookbookID, "")
-			if err == nil && csResult != nil {
+			csResult = cache.serverCSResults[cacheKey(cookbookID, "")]
+			if csResult != nil {
 				anyTested = true
 				v := CookbookSourceVerdict{
 					Source:  SourceServerCookstyle,
