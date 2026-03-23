@@ -628,7 +628,7 @@ func checkCookbookCompatibility(
 
 		// --- Source 2: Git repo CookStyle ---
 		gitCSResult := cache.gitCSResults[cacheKey(gitRepo.ID, targetChefVersion)]
-		if gitCSResult != nil {
+		if gitCSResult != nil && gitCSResult.ErrorMessage == "" {
 			anyTested = true
 			v := CookbookSourceVerdict{
 				Source:    SourceGitCookstyle,
@@ -648,7 +648,7 @@ func checkCookbookCompatibility(
 	// --- Source 3: Server cookbook CookStyle ---
 	if cookbookID != "" {
 		csResult := cache.serverCSResults[cacheKey(cookbookID, targetChefVersion)]
-		if csResult != nil {
+		if csResult != nil && csResult.ErrorMessage == "" {
 			anyTested = true
 			v := CookbookSourceVerdict{
 				Source:  SourceServerCookstyle,
@@ -665,7 +665,7 @@ func checkCookbookCompatibility(
 			// Also check CookStyle without a target version — server-sourced
 			// cookbooks may have been scanned without a target version profile.
 			csResult = cache.serverCSResults[cacheKey(cookbookID, "")]
-			if csResult != nil {
+			if csResult != nil && csResult.ErrorMessage == "" {
 				anyTested = true
 				v := CookbookSourceVerdict{
 					Source:  SourceServerCookstyle,
