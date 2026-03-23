@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -272,6 +273,33 @@ func (db *DB) listAllGitRepoCookstyleResults(ctx context.Context, q queryable) (
 		 ORDER BY target_chef_version
 	`
 	return scanGitRepoCookstyleResults(q.QueryContext(ctx, query))
+}
+
+// ListGitRepoCookstyleResultsByTargetVersions returns all git repo cookstyle
+// results filtered by the given target chef versions. Used by the readiness
+// evaluator for bulk-loading.
+func (db *DB) ListGitRepoCookstyleResultsByTargetVersions(ctx context.Context, targetChefVersions []string) ([]GitRepoCookstyleResult, error) {
+	if len(targetChefVersions) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(targetChefVersions))
+	args := make([]any, len(targetChefVersions))
+	for i, v := range targetChefVersions {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = v
+	}
+
+	query := `
+		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		       offence_count, deprecation_count, correctness_count,
+		       deprecation_warnings, offences,
+		       process_stdout, process_stderr, duration_seconds,
+		       scanned_at, created_at
+		  FROM git_repo_cookstyle_results
+		 WHERE target_chef_version IN (` + strings.Join(placeholders, ", ") + `)
+	`
+	return scanGitRepoCookstyleResults(db.q().QueryContext(ctx, query, args...))
 }
 
 // ---------------------------------------------------------------------------

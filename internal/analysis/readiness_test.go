@@ -16,6 +16,10 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Bulk-load interface methods on fakeReadinessDS
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Fake datastore for testing
 // ---------------------------------------------------------------------------
 
@@ -161,6 +165,139 @@ func (f *fakeReadinessDS) UpsertNodeReadiness(_ context.Context, p datastore.Ups
 		IsReady:           p.IsReady,
 	}, nil
 }
+
+// --- Bulk-load methods (ReadinessDataStore interface) ---
+
+func (f *fakeReadinessDS) ListGitRepos(_ context.Context) ([]datastore.GitRepo, error) {
+	if f.gitRepoErr != nil {
+		return nil, f.gitRepoErr
+	}
+	repos := make([]datastore.GitRepo, 0, len(f.gitRepos))
+	for _, gr := range f.gitRepos {
+		repos = append(repos, gr)
+	}
+	return repos, nil
+}
+
+func (f *fakeReadinessDS) ListLatestGitRepoTestKitchenResults(_ context.Context, targetChefVersions []string) ([]datastore.GitRepoTestKitchenResult, error) {
+	if f.tkErr != nil {
+		return nil, f.tkErr
+	}
+	tvSet := make(map[string]bool, len(targetChefVersions))
+	for _, tv := range targetChefVersions {
+		tvSet[tv] = true
+	}
+	var results []datastore.GitRepoTestKitchenResult
+	for _, r := range f.tkResults {
+		if r != nil && tvSet[r.TargetChefVersion] {
+			results = append(results, *r)
+		}
+	}
+	return results, nil
+}
+
+func (f *fakeReadinessDS) ListGitRepoCookstyleResultsByTargetVersions(_ context.Context, targetChefVersions []string) ([]datastore.GitRepoCookstyleResult, error) {
+	if f.gitCSErr != nil {
+		return nil, f.gitCSErr
+	}
+	tvSet := make(map[string]bool, len(targetChefVersions))
+	for _, tv := range targetChefVersions {
+		tvSet[tv] = true
+	}
+	var results []datastore.GitRepoCookstyleResult
+	for _, r := range f.gitCSResults {
+		if r != nil && tvSet[r.TargetChefVersion] {
+			results = append(results, *r)
+		}
+	}
+	return results, nil
+}
+
+func (f *fakeReadinessDS) ListServerCookbookCookstyleResultsByOrganisationAndVersions(_ context.Context, _ string, targetChefVersions []string) ([]datastore.ServerCookbookCookstyleResult, error) {
+	if f.csErr != nil {
+		return nil, f.csErr
+	}
+	tvSet := make(map[string]bool, len(targetChefVersions))
+	for _, tv := range targetChefVersions {
+		tvSet[tv] = true
+	}
+	var results []datastore.ServerCookbookCookstyleResult
+	for _, r := range f.csResults {
+		if r != nil && (tvSet[r.TargetChefVersion] || r.TargetChefVersion == "") {
+			results = append(results, *r)
+		}
+	}
+	return results, nil
+}
+
+func (f *fakeReadinessDS) ListServerCookbookComplexities(_ context.Context, _ string, targetChefVersions []string) ([]datastore.ServerCookbookComplexity, error) {
+	if f.complexityErr != nil {
+		return nil, f.complexityErr
+	}
+	tvSet := make(map[string]bool, len(targetChefVersions))
+	for _, tv := range targetChefVersions {
+		tvSet[tv] = true
+	}
+	var results []datastore.ServerCookbookComplexity
+	for _, r := range f.complexities {
+		if r != nil && tvSet[r.TargetChefVersion] {
+			results = append(results, *r)
+		}
+	}
+	return results, nil
+}
+
+func (f *fakeReadinessDS) ListGitRepoComplexities(_ context.Context, targetChefVersions []string) ([]datastore.GitRepoComplexity, error) {
+	if f.gitComplexityErr != nil {
+		return nil, f.gitComplexityErr
+	}
+	tvSet := make(map[string]bool, len(targetChefVersions))
+	for _, tv := range targetChefVersions {
+		tvSet[tv] = true
+	}
+	var results []datastore.GitRepoComplexity
+	for _, r := range f.gitComplexities {
+		if r != nil && tvSet[r.TargetChefVersion] {
+			results = append(results, *r)
+		}
+	}
+	return results, nil
+}
+
+// buildFakeCache constructs a readinessCache directly from the fake's in-memory
+// maps without going through the bulk-load DB path. This lets unit tests for
+// checkCookbookCompatibility and evaluateOne work with the cache directly.
+func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
+	cache := &readinessCache{
+		gitRepos:         make(map[string]datastore.GitRepo),
+		tkResults:        make(map[string]*datastore.GitRepoTestKitchenResult),
+		gitCSResults:     make(map[string]*datastore.GitRepoCookstyleResult),
+		serverCSResults:  make(map[string]*datastore.ServerCookbookCookstyleResult),
+		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
+		gitComplexity:    make(map[string]*datastore.GitRepoComplexity),
+	}
+	for name, gr := range f.gitRepos {
+		cache.gitRepos[name] = gr
+	}
+	for k, v := range f.tkResults {
+		cache.tkResults[k] = v
+	}
+	for k, v := range f.gitCSResults {
+		cache.gitCSResults[k] = v
+	}
+	for k, v := range f.csResults {
+		cache.serverCSResults[k] = v
+	}
+	for k, v := range f.complexities {
+		cache.serverComplexity[k] = v
+	}
+	for k, v := range f.gitComplexities {
+		cache.gitComplexity[k] = v
+	}
+	return cache
+}
+
+// --- Add helpers ---
 
 func (f *fakeReadinessDS) addCookbookID(name, version, id string) {
 	if f.cookbookIDs[name] == nil {
@@ -878,8 +1015,8 @@ func TestCheckCookbookCompatibility_TKOnlyIsCompatible(t *testing.T) {
 	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
 	ds.addTKResult("gitrepo-apt", "18.0", true, true)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusCompatible {
 		t.Errorf("expected %s (TK passes via git repo), got %s", StatusCompatible, status)
 	}
@@ -896,8 +1033,8 @@ func TestCheckCookbookCompatibility_TKConvergeFailIsIncompatible(t *testing.T) {
 	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
 	ds.addTKResult("gitrepo-apt", "18.0", false, false)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusIncompatible {
 		t.Errorf("expected %s (TK converge fail via git repo), got %s", StatusIncompatible, status)
 	}
@@ -914,8 +1051,8 @@ func TestCheckCookbookCompatibility_TKTestFailIsIncompatible(t *testing.T) {
 	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
 	ds.addTKResult("gitrepo-apt", "18.0", true, false)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusIncompatible {
 		t.Errorf("expected %s (TK test fail via git repo), got %s", StatusIncompatible, status)
 	}
@@ -929,8 +1066,8 @@ func TestCheckCookbookCompatibility_CSPass_NoTK(t *testing.T) {
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", true)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusCompatibleCookstyleOnly {
 		t.Errorf("expected %s, got %s", StatusCompatibleCookstyleOnly, status)
 	}
@@ -944,8 +1081,8 @@ func TestCheckCookbookCompatibility_CSFail_NoTK(t *testing.T) {
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", false)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusIncompatible {
 		t.Errorf("expected %s, got %s", StatusIncompatible, status)
 	}
@@ -960,8 +1097,8 @@ func TestCheckCookbookCompatibility_CSPassNoTargetVersion(t *testing.T) {
 	// CookStyle result with empty target version (server-sourced scan).
 	ds.addCSResult("id-apt", "", true)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusCompatibleCookstyleOnly {
 		t.Errorf("expected %s, got %s", StatusCompatibleCookstyleOnly, status)
 	}
@@ -975,8 +1112,8 @@ func TestCheckCookbookCompatibility_Untested(t *testing.T) {
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	// No TK or CS results.
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusUntested {
 		t.Errorf("expected %s, got %s", StatusUntested, status)
 	}
@@ -989,8 +1126,8 @@ func TestCheckCookbookCompatibility_CookbookNotInInventory(t *testing.T) {
 	ds := newFakeReadinessDS()
 	// Cookbook "unknown" not in the ID map.
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "unknown", "1.0.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("unknown", "1.0.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusUntested {
 		t.Errorf("expected %s, got %s", StatusUntested, status)
 	}
@@ -1008,8 +1145,8 @@ func TestCheckCookbookCompatibility_CSCheckedWhenTKPresent(t *testing.T) {
 	ds.addTKResult("gitrepo-apt", "18.0", true, true) // TK passes
 	ds.addCSResult("id-apt", "18.0", false)           // server CS fails
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, verdicts := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusCompatible {
 		t.Errorf("expected %s (TK passes overrides CS fail), got %s", StatusCompatible, status)
 	}
@@ -1038,8 +1175,8 @@ func TestCheckCookbookCompatibility_MultiSource_ServerIncompatibleGitCompatible(
 	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
 	ds.addGitCSResult("gitrepo-apt", "18.0", true) // git CS passes
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, _, verdicts := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, _, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusCompatibleCookstyleOnly {
 		t.Errorf("expected compatible (git CS passes), got %s", status)
 	}
@@ -1057,8 +1194,8 @@ func TestCheckCookbookCompatibility_MultiSource_AllIncompatible(t *testing.T) {
 	ds.addGitCSResult("gitrepo-apt", "18.0", false)
 	ds.addTKResult("gitrepo-apt", "18.0", false, false)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, verdicts := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusIncompatible {
 		t.Errorf("expected incompatible, got %s", status)
 	}
@@ -1078,8 +1215,8 @@ func TestCheckCookbookCompatibility_MultiSource_VerdictFields(t *testing.T) {
 	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
 	ds.addGitCSResult("gitrepo-apt", "18.0", true)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, _, verdicts := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	_, _, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 
 	// Find git cookstyle verdict
 	var gitV *CookbookSourceVerdict
@@ -1120,8 +1257,8 @@ func TestCheckCookbookCompatibility_MultiSource_TKCompatibleOverridesCSFail(t *t
 	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
 	ds.addTKResult("gitrepo-apt", "18.0", true, true) // TK passes
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, _ := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusCompatible {
 		t.Errorf("expected compatible (TK passes), got %s", status)
 	}
@@ -1136,8 +1273,8 @@ func TestCheckCookbookCompatibility_MultiSource_NoGitRepo(t *testing.T) {
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", true)
 
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	status, source, verdicts := e.checkCookbookCompatibility(context.Background(), "apt", "7.4.0", "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusCompatibleCookstyleOnly {
 		t.Errorf("expected compatible_cookstyle_only, got %s", status)
 	}
@@ -1170,7 +1307,8 @@ func TestEvaluateOne_AllCompatibleSufficientDisk(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if !result.IsReady {
 		t.Error("expected node to be ready")
@@ -1200,7 +1338,8 @@ func TestEvaluateOne_IncompatibleCookbook(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.IsReady {
 		t.Error("expected node NOT ready")
@@ -1241,7 +1380,8 @@ func TestEvaluateOne_UntestedCookbook(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.IsReady {
 		t.Error("expected NOT ready (untested cookbook)")
@@ -1266,7 +1406,8 @@ func TestEvaluateOne_InsufficientDisk(t *testing.T) {
 			"/dev/sda1": {KBSize: "2097152", KBUsed: "1048576", KBAvailable: "1048576", PercentUsed: "50%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.IsReady {
 		t.Error("expected NOT ready (insufficient disk)")
@@ -1292,7 +1433,8 @@ func TestEvaluateOne_UnknownDiskSpace(t *testing.T) {
 		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 		nil) // no filesystem data
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.IsReady {
 		t.Error("expected NOT ready (unknown disk space)")
@@ -1320,7 +1462,8 @@ func TestEvaluateOne_StaleNode(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if !result.StaleData {
 		t.Error("expected stale_data = true")
@@ -1348,7 +1491,8 @@ func TestEvaluateOne_NoCookbooks(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if !result.AllCookbooksCompatible {
 		t.Error("expected all_cookbooks_compatible = true for node with no cookbooks")
@@ -1374,7 +1518,8 @@ func TestEvaluateOne_ComplexityEnrichment(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if len(result.BlockingCookbooks) != 1 {
 		t.Fatalf("expected 1 blocking, got %d", len(result.BlockingCookbooks))
@@ -1403,7 +1548,8 @@ func TestEvaluateOne_MultipleBlockingCookbooks(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.IsReady {
 		t.Error("expected NOT ready")
@@ -1431,7 +1577,8 @@ func TestEvaluateOne_CookstyleOnlyPassIsNotBlocking(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if !result.AllCookbooksCompatible {
 		t.Error("expected cookstyle-only pass to not block")
@@ -1653,6 +1800,251 @@ func TestEvaluateOrganisation_ConcurrencyBounded(t *testing.T) {
 	for _, r := range results {
 		if !r.IsReady {
 			t.Errorf("expected node %s to be ready", r.NodeName)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildReadinessCache tests
+// ---------------------------------------------------------------------------
+
+func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
+	ds.addTKResult("gitrepo-apt", "18.0", true, true)
+	ds.addGitCSResult("gitrepo-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCSResult("id-apt", "18.0", false)
+	ds.addComplexity("id-apt", "18.0", 42, "medium")
+	ds.gitComplexities[gcKey("gitrepo-apt", "18.0")] = &datastore.GitRepoComplexity{
+		GitRepoID:         "gitrepo-apt",
+		TargetChefVersion: "18.0",
+		ComplexityScore:   10,
+		ComplexityLabel:   "low",
+	}
+
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Git repos
+	if gr, ok := cache.gitRepos["apt"]; !ok {
+		t.Error("expected git repo 'apt' in cache")
+	} else if gr.HeadCommitSHA != "sha-abc" {
+		t.Errorf("expected HeadCommitSHA 'sha-abc', got %q", gr.HeadCommitSHA)
+	}
+
+	// TK results
+	if tk := cache.tkResults[cacheKey("gitrepo-apt", "18.0")]; tk == nil {
+		t.Error("expected TK result in cache")
+	} else if !tk.Compatible {
+		t.Error("expected TK result to be compatible")
+	}
+
+	// Git CS results
+	if gcs := cache.gitCSResults[cacheKey("gitrepo-apt", "18.0")]; gcs == nil {
+		t.Error("expected git CS result in cache")
+	} else if !gcs.Passed {
+		t.Error("expected git CS result to have passed")
+	}
+
+	// Server CS results
+	if scs := cache.serverCSResults[cacheKey("id-apt", "18.0")]; scs == nil {
+		t.Error("expected server CS result in cache")
+	} else if scs.Passed {
+		t.Error("expected server CS result to have failed")
+	}
+
+	// Server complexity
+	if sc := cache.serverComplexity[cacheKey("id-apt", "18.0")]; sc == nil {
+		t.Error("expected server complexity in cache")
+	} else if sc.ComplexityScore != 42 {
+		t.Errorf("expected complexity score 42, got %d", sc.ComplexityScore)
+	}
+
+	// Git complexity
+	if gc := cache.gitComplexity[cacheKey("gitrepo-apt", "18.0")]; gc == nil {
+		t.Error("expected git complexity in cache")
+	} else if gc.ComplexityScore != 10 {
+		t.Errorf("expected complexity score 10, got %d", gc.ComplexityScore)
+	}
+}
+
+func TestBuildReadinessCache_FiltersTargetVersions(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCSResult("id-apt", "17.0", false)
+
+	// Build cache for only 18.0
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if scs := cache.serverCSResults[cacheKey("id-apt", "18.0")]; scs == nil {
+		t.Error("expected server CS result for 18.0")
+	}
+	if scs := cache.serverCSResults[cacheKey("id-apt", "17.0")]; scs != nil {
+		t.Error("did not expect server CS result for 17.0 (not in target versions)")
+	}
+}
+
+func TestBuildReadinessCache_IncludesNullTargetVersionCSResults(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	// Server CS result with empty target version (scanned without profile)
+	ds.addCSResult("id-apt", "", true)
+
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The empty-target-version result should be in the cache
+	if scs := cache.serverCSResults[cacheKey("id-apt", "")]; scs == nil {
+		t.Error("expected server CS result with empty target version in cache")
+	}
+}
+
+func TestEvaluateOrganisation_BulkLoadError_GitRepos(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+	}
+	ds.gitRepoErr = fmt.Errorf("connection refused")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err == nil {
+		t.Fatal("expected error from bulk-load failure")
+	}
+	if !contains(err.Error(), "bulk-loading git repos") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluateOrganisation_BulkLoadError_TKResults(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+	}
+	ds.tkErr = fmt.Errorf("connection refused")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err == nil {
+		t.Fatal("expected error from bulk-load failure")
+	}
+	if !contains(err.Error(), "bulk-loading TK results") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluateOrganisation_BulkLoadError_ServerCSResults(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+	}
+	ds.csErr = fmt.Errorf("connection refused")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err == nil {
+		t.Fatal("expected error from bulk-load failure")
+	}
+	if !contains(err.Error(), "bulk-loading server CookStyle results") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluateOrganisation_BulkLoadError_GitCSResults(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+	}
+	ds.gitCSErr = fmt.Errorf("connection refused")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err == nil {
+		t.Fatal("expected error from bulk-load failure")
+	}
+	if !contains(err.Error(), "bulk-loading git CookStyle results") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluateOrganisation_BulkLoadError_ServerComplexities(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+	}
+	ds.complexityErr = fmt.Errorf("connection refused")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err == nil {
+		t.Fatal("expected error from bulk-load failure")
+	}
+	if !contains(err.Error(), "bulk-loading server complexities") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluateOrganisation_BulkLoadError_GitComplexities(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+	}
+	ds.gitComplexityErr = fmt.Errorf("connection refused")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err == nil {
+		t.Fatal("expected error from bulk-load failure")
+	}
+	if !contains(err.Error(), "bulk-loading git complexities") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluateOrganisation_EmptyCache(t *testing.T) {
+	// No CookStyle/TK/complexity data at all — all cookbooks should show as untested
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("snap-1", "org-1", "node-1", false,
+			cookbooksJSON(map[string]string{"apt": "7.4.0", "nginx": "2.0.0"}),
+			linuxFilesystemJSON(map[string]linuxMount{
+				"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
+			})),
+	}
+	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("nginx", "2.0.0", "id-nginx")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	r := results[0]
+	if r.IsReady {
+		t.Error("node should not be ready (all cookbooks untested)")
+	}
+	if r.AllCookbooksCompatible {
+		t.Error("expected AllCookbooksCompatible=false (untested)")
+	}
+	if len(r.BlockingCookbooks) != 2 {
+		t.Errorf("expected 2 blocking cookbooks, got %d", len(r.BlockingCookbooks))
+	}
+	for _, bc := range r.BlockingCookbooks {
+		if bc.Reason != StatusUntested {
+			t.Errorf("expected blocking reason %q, got %q for %s", StatusUntested, bc.Reason, bc.Name)
 		}
 	}
 }
@@ -2061,7 +2453,8 @@ func TestEvaluateOne_Ohai14_ReadyWithSufficientDisk(t *testing.T) {
 			},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if !result.IsReady {
 		t.Error("expected node to be ready with Ohai 14+ filesystem")
@@ -2090,7 +2483,8 @@ func TestEvaluateOne_Ohai14_BlockedByDisk(t *testing.T) {
 			},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.IsReady {
 		t.Error("expected node NOT ready (insufficient disk)")
@@ -2159,7 +2553,8 @@ func TestEvaluateOne_ExactDiskSpaceBoundary(t *testing.T) {
 			"/dev/sda1": {KBSize: "4194304", KBUsed: "2097152", KBAvailable: "2097152", PercentUsed: "50%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.SufficientDiskSpace == nil {
 		t.Fatal("expected disk space known")
@@ -2180,7 +2575,8 @@ func TestEvaluateOne_OneBelowDiskSpaceBoundary(t *testing.T) {
 			"/dev/sda1": {KBSize: "4194304", KBUsed: "2098176", KBAvailable: "2096128", PercentUsed: "50%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 
 	if result.SufficientDiskSpace == nil {
 		t.Fatal("expected disk space known")
@@ -2203,7 +2599,8 @@ func TestReadinessResult_RequiredDiskMBDefaultsToMinFreeDisk(t *testing.T) {
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
 
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 	if result.RequiredDiskMB != 4096 {
 		t.Errorf("expected requiredDiskMB 4096, got %d", result.RequiredDiskMB)
 	}
@@ -2215,7 +2612,8 @@ func TestReadinessResult_EvaluatedAtSet(t *testing.T) {
 
 	before := time.Now().UTC().Add(-time.Second)
 	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil)
-	result := e.evaluateOne(context.Background(), snap, "18.0", ds.cookbookIDs)
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 	after := time.Now().UTC().Add(time.Second)
 
 	if result.EvaluatedAt.Before(before) || result.EvaluatedAt.After(after) {

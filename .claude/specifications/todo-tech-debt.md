@@ -50,11 +50,16 @@ progress can be tracked over time.
   `internal/datastore/`, all handlers in `internal/webapi/`, readiness
   evaluator in `internal/analysis/`, collector in `internal/collector/`.
 
-- [ ] **B1 — Fix N+1 readiness queries** — `handleNodes` fires an individual
-  `ListNodeReadinessByNodeName` query per node on the page (50 queries per
-  request). `handleDashboardReadiness` does the same for all owned nodes.
-  Replace with a bulk query that loads readiness for all node names at once.
+- [ ] **B1 — Fix N+1 readiness queries in web handlers** — `handleNodes`
+  fires an individual `ListNodeReadinessByNodeName` query per node on the
+  page (50 queries per request). `handleDashboardReadiness` does the same
+  for all owned nodes. Replace with a bulk query that loads readiness for
+  all node names at once.
   Files: `handle_nodes.go` L89–100, `handle_dashboard.go` L438–461.
+  **Note:** The far worse N+1 in the readiness *evaluator* (~12M queries
+  per run at 60K nodes) was resolved in `refactor/readiness-bulk-load` —
+  all lookup data is now bulk-loaded into an in-memory cache before the
+  fan-out loop. This B1 item covers only the remaining web handler N+1.
 
 - [ ] **B2 — Push cookbook-by-node filtering into SQL** —
   `handleNodesByCookbook` loads every node's full JSON (`IncludeHeavyJSON:
