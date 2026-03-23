@@ -98,7 +98,9 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 				if _, seen := compatByName[name]; seen {
 					continue
 				}
-				if cs.Passed {
+				if cs.ErrorMessage != "" {
+					compatByName[name] = "error"
+				} else if cs.Passed {
 					compatByName[name] = "compatible"
 				} else {
 					compatByName[name] = "incompatible"

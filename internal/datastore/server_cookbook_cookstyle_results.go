@@ -28,6 +28,7 @@ type ServerCookbookCookstyleResult struct {
 	ProcessStdout       string    `json:"process_stdout,omitempty"`
 	ProcessStderr       string    `json:"process_stderr,omitempty"`
 	DurationSeconds     int       `json:"duration_seconds"`
+	ErrorMessage        string    `json:"error_message,omitempty"`
 	ScannedAt           time.Time `json:"scanned_at"`
 	CreatedAt           time.Time `json:"created_at"`
 }
@@ -47,6 +48,7 @@ type UpsertServerCookbookCookstyleResultParams struct {
 	ProcessStdout       string
 	ProcessStderr       string
 	DurationSeconds     int
+	ErrorMessage        string
 	ScannedAt           time.Time
 }
 
@@ -68,8 +70,8 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 			offence_count, deprecation_count, correctness_count,
 			deprecation_warnings, offences,
 			process_stdout, process_stderr, duration_seconds,
-			scanned_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			error_message, scanned_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (server_cookbook_id, target_chef_version)
 		DO UPDATE SET
 			passed              = EXCLUDED.passed,
@@ -81,12 +83,13 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 			process_stdout      = EXCLUDED.process_stdout,
 			process_stderr      = EXCLUDED.process_stderr,
 			duration_seconds    = EXCLUDED.duration_seconds,
+			error_message       = EXCLUDED.error_message,
 			scanned_at          = EXCLUDED.scanned_at
 		RETURNING id, server_cookbook_id, target_chef_version, passed,
 		          offence_count, deprecation_count, correctness_count,
 		          deprecation_warnings, offences,
 		          process_stdout, process_stderr, duration_seconds,
-		          scanned_at, created_at
+		          error_message, scanned_at, created_at
 	`
 
 	var targetVersion sql.NullString
@@ -99,6 +102,7 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 	var deprecationWarnings, offences []byte
 	var stdout, stderr sql.NullString
 	var duration sql.NullInt64
+	var errorMessage sql.NullString
 
 	err := q.QueryRowContext(ctx, query,
 		p.ServerCookbookID,
@@ -112,6 +116,7 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 		nullString(p.ProcessStdout),
 		nullString(p.ProcessStderr),
 		nullInt(p.DurationSeconds),
+		nullString(p.ErrorMessage),
 		p.ScannedAt,
 	).Scan(
 		&r.ID,
@@ -126,6 +131,7 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 		&stdout,
 		&stderr,
 		&duration,
+		&errorMessage,
 		&r.ScannedAt,
 		&r.CreatedAt,
 	)
@@ -139,6 +145,7 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 	r.ProcessStdout = stringFromNull(stdout)
 	r.ProcessStderr = stringFromNull(stderr)
 	r.DurationSeconds = intFromNull(duration)
+	r.ErrorMessage = stringFromNull(errorMessage)
 
 	return r, nil
 }
@@ -160,7 +167,7 @@ func (db *DB) getServerCookbookCookstyleResult(ctx context.Context, q queryable,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       scanned_at, created_at
+		       error_message, scanned_at, created_at
 		  FROM server_cookbook_cookstyle_results
 		 WHERE server_cookbook_id = $1
 		   AND (target_chef_version = $2 OR ($2 = '' AND target_chef_version IS NULL))
@@ -193,7 +200,7 @@ func (db *DB) getServerCookbookCookstyleResultByID(ctx context.Context, q querya
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       scanned_at, created_at
+		       error_message, scanned_at, created_at
 		  FROM server_cookbook_cookstyle_results
 		 WHERE id = $1
 	`
@@ -224,7 +231,7 @@ func (db *DB) listServerCookbookCookstyleResults(ctx context.Context, q queryabl
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       scanned_at, created_at
+		       error_message, scanned_at, created_at
 		  FROM server_cookbook_cookstyle_results
 		 WHERE server_cookbook_id = $1
 		 ORDER BY target_chef_version NULLS FIRST
@@ -262,7 +269,7 @@ func (db *DB) listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx co
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       scanned_at, created_at
+		       error_message, scanned_at, created_at
 		  FROM server_cookbook_cookstyle_results
 		 WHERE server_cookbook_id IN (SELECT id FROM server_cookbooks WHERE organisation_id = $1)
 		   ` + versionClause + `
@@ -282,7 +289,7 @@ func (db *DB) listServerCookbookCookstyleResultsByOrganisation(ctx context.Conte
 		       r.offence_count, r.deprecation_count, r.correctness_count,
 		       r.deprecation_warnings, r.offences,
 		       r.process_stdout, r.process_stderr, r.duration_seconds,
-		       r.scanned_at, r.created_at
+		       r.error_message, r.scanned_at, r.created_at
 		  FROM server_cookbook_cookstyle_results r
 		  JOIN server_cookbooks sc ON sc.id = r.server_cookbook_id
 		 WHERE sc.organisation_id = $1
@@ -355,6 +362,7 @@ func scanServerCookbookCookstyleResult(row *sql.Row) (ServerCookbookCookstyleRes
 	var deprecationWarnings, offences []byte
 	var stdout, stderr sql.NullString
 	var duration sql.NullInt64
+	var errorMessage sql.NullString
 
 	err := row.Scan(
 		&r.ID,
@@ -369,6 +377,7 @@ func scanServerCookbookCookstyleResult(row *sql.Row) (ServerCookbookCookstyleRes
 		&stdout,
 		&stderr,
 		&duration,
+		&errorMessage,
 		&r.ScannedAt,
 		&r.CreatedAt,
 	)
@@ -382,6 +391,7 @@ func scanServerCookbookCookstyleResult(row *sql.Row) (ServerCookbookCookstyleRes
 	r.ProcessStdout = stringFromNull(stdout)
 	r.ProcessStderr = stringFromNull(stderr)
 	r.DurationSeconds = intFromNull(duration)
+	r.ErrorMessage = stringFromNull(errorMessage)
 
 	return r, nil
 }
@@ -399,6 +409,7 @@ func scanServerCookbookCookstyleResults(rows *sql.Rows, err error) ([]ServerCook
 		var deprecationWarnings, offences []byte
 		var stdout, stderr sql.NullString
 		var duration sql.NullInt64
+		var errorMessage sql.NullString
 
 		if err := rows.Scan(
 			&r.ID,
@@ -413,6 +424,7 @@ func scanServerCookbookCookstyleResults(rows *sql.Rows, err error) ([]ServerCook
 			&stdout,
 			&stderr,
 			&duration,
+			&errorMessage,
 			&r.ScannedAt,
 			&r.CreatedAt,
 		); err != nil {
@@ -425,6 +437,7 @@ func scanServerCookbookCookstyleResults(rows *sql.Rows, err error) ([]ServerCook
 		r.ProcessStdout = stringFromNull(stdout)
 		r.ProcessStderr = stringFromNull(stderr)
 		r.DurationSeconds = intFromNull(duration)
+		r.ErrorMessage = stringFromNull(errorMessage)
 
 		results = append(results, r)
 	}
