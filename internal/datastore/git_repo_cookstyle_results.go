@@ -18,6 +18,7 @@ type GitRepoCookstyleResult struct {
 	TargetChefVersion   string    `json:"target_chef_version"`
 	CommitSHA           string    `json:"commit_sha,omitempty"`
 	Passed              bool      `json:"passed"`
+	ErrorMessage        string    `json:"error_message,omitempty"`
 	OffenceCount        int       `json:"offence_count"`
 	DeprecationCount    int       `json:"deprecation_count"`
 	CorrectnessCount    int       `json:"correctness_count"`
@@ -37,6 +38,7 @@ type UpsertGitRepoCookstyleResultParams struct {
 	TargetChefVersion   string
 	CommitSHA           string
 	Passed              bool
+	ErrorMessage        string
 	OffenceCount        int
 	DeprecationCount    int
 	CorrectnessCount    int
@@ -63,15 +65,17 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 	const query = `
 		INSERT INTO git_repo_cookstyle_results (
 			git_repo_id, target_chef_version, commit_sha, passed,
+			error_message,
 			offence_count, deprecation_count, correctness_count,
 			deprecation_warnings, offences,
 			process_stdout, process_stderr, duration_seconds,
 			scanned_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (git_repo_id, target_chef_version)
 		DO UPDATE SET
 			commit_sha          = EXCLUDED.commit_sha,
 			passed              = EXCLUDED.passed,
+			error_message       = EXCLUDED.error_message,
 			offence_count       = EXCLUDED.offence_count,
 			deprecation_count   = EXCLUDED.deprecation_count,
 			correctness_count   = EXCLUDED.correctness_count,
@@ -82,6 +86,7 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 			duration_seconds    = EXCLUDED.duration_seconds,
 			scanned_at          = EXCLUDED.scanned_at
 		RETURNING id, git_repo_id, target_chef_version, commit_sha, passed,
+		          error_message,
 		          offence_count, deprecation_count, correctness_count,
 		          deprecation_warnings, offences,
 		          process_stdout, process_stderr, duration_seconds,
@@ -95,6 +100,7 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 
 	r := &GitRepoCookstyleResult{}
 	var tvOut, commitSHAOut sql.NullString
+	var errorMessageOut sql.NullString
 	var deprecationWarnings, offences []byte
 	var stdout, stderr sql.NullString
 	var duration sql.NullInt64
@@ -104,6 +110,7 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 		targetVersion,
 		nullString(p.CommitSHA),
 		p.Passed,
+		nullString(p.ErrorMessage),
 		p.OffenceCount,
 		p.DeprecationCount,
 		p.CorrectnessCount,
@@ -119,6 +126,7 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 		&tvOut,
 		&commitSHAOut,
 		&r.Passed,
+		&errorMessageOut,
 		&r.OffenceCount,
 		&r.DeprecationCount,
 		&r.CorrectnessCount,
@@ -136,6 +144,7 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 
 	r.TargetChefVersion = stringFromNull(tvOut)
 	r.CommitSHA = stringFromNull(commitSHAOut)
+	r.ErrorMessage = stringFromNull(errorMessageOut)
 	r.DeprecationWarnings = deprecationWarnings
 	r.Offences = offences
 	r.ProcessStdout = stringFromNull(stdout)
@@ -158,6 +167,7 @@ func (db *DB) GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, targetCh
 func (db *DB) getGitRepoCookstyleResult(ctx context.Context, q queryable, gitRepoID, targetChefVersion string) (*GitRepoCookstyleResult, error) {
 	const query = `
 		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -191,6 +201,7 @@ func (db *DB) GetGitRepoCookstyleResultByID(ctx context.Context, id string) (*Gi
 func (db *DB) getGitRepoCookstyleResultByID(ctx context.Context, q queryable, id string) (*GitRepoCookstyleResult, error) {
 	const query = `
 		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -222,6 +233,7 @@ func (db *DB) ListGitRepoCookstyleResults(ctx context.Context, gitRepoID string)
 func (db *DB) listGitRepoCookstyleResults(ctx context.Context, q queryable, gitRepoID string) ([]GitRepoCookstyleResult, error) {
 	const query = `
 		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -243,6 +255,7 @@ func (db *DB) ListGitRepoCookstyleResultsByName(ctx context.Context, name string
 func (db *DB) listGitRepoCookstyleResultsByName(ctx context.Context, q queryable, name string) ([]GitRepoCookstyleResult, error) {
 	const query = `
 		SELECT r.id, r.git_repo_id, r.target_chef_version, r.commit_sha, r.passed,
+		       r.error_message,
 		       r.offence_count, r.deprecation_count, r.correctness_count,
 		       r.deprecation_warnings, r.offences,
 		       r.process_stdout, r.process_stderr, r.duration_seconds,
@@ -265,6 +278,7 @@ func (db *DB) ListAllGitRepoCookstyleResults(ctx context.Context) ([]GitRepoCook
 func (db *DB) listAllGitRepoCookstyleResults(ctx context.Context, q queryable) ([]GitRepoCookstyleResult, error) {
 	const query = `
 		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -292,6 +306,7 @@ func (db *DB) ListGitRepoCookstyleResultsByTargetVersions(ctx context.Context, t
 
 	query := `
 		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
@@ -343,6 +358,7 @@ func (db *DB) deleteAllGitRepoCookstyleResults(ctx context.Context, q queryable)
 func scanGitRepoCookstyleResult(row interface{ Scan(dest ...any) error }) (GitRepoCookstyleResult, error) {
 	var r GitRepoCookstyleResult
 	var tvOut, commitSHA sql.NullString
+	var errorMessageOut sql.NullString
 	var deprecationWarnings, offences []byte
 	var stdout, stderr sql.NullString
 	var duration sql.NullInt64
@@ -353,6 +369,7 @@ func scanGitRepoCookstyleResult(row interface{ Scan(dest ...any) error }) (GitRe
 		&tvOut,
 		&commitSHA,
 		&r.Passed,
+		&errorMessageOut,
 		&r.OffenceCount,
 		&r.DeprecationCount,
 		&r.CorrectnessCount,
@@ -370,6 +387,7 @@ func scanGitRepoCookstyleResult(row interface{ Scan(dest ...any) error }) (GitRe
 
 	r.TargetChefVersion = stringFromNull(tvOut)
 	r.CommitSHA = stringFromNull(commitSHA)
+	r.ErrorMessage = stringFromNull(errorMessageOut)
 	r.DeprecationWarnings = deprecationWarnings
 	r.Offences = offences
 	r.ProcessStdout = stringFromNull(stdout)
