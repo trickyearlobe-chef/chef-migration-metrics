@@ -135,7 +135,9 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 					continue
 				}
 				// One result per (server_cookbook_id, target_chef_version).
-				if cs.Passed {
+				if cs.ErrorMessage != "" {
+					compatByID[cs.ServerCookbookID] = "error"
+				} else if cs.Passed {
 					compatByID[cs.ServerCookbookID] = "compatible"
 				} else {
 					compatByID[cs.ServerCookbookID] = "incompatible"

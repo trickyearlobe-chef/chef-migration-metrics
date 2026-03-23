@@ -616,6 +616,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		TotalCookbooks        int     `json:"total_cookbooks"`
 		CompatibleCookbooks   int     `json:"compatible_cookbooks"`
 		IncompatibleCookbooks int     `json:"incompatible_cookbooks"`
+		ErroredCookbooks      int     `json:"errored_cookbooks"`
 		UntestedCookbooks     int     `json:"untested_cookbooks"`
 		UntestedInactive      int     `json:"untested_inactive_cookbooks"`
 		UntestedUnscanned     int     `json:"untested_unscanned_cookbooks"`
@@ -656,6 +657,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		total             int
 		compatible        int
 		incompatible      int
+		errored           int
 		untested          int
 		untestedInactive  int
 		untestedUnscanned int
@@ -712,7 +714,9 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 			}
 			seen[key] = true
 			pv.total++
-			if cs.Passed {
+			if cs.ErrorMessage != "" {
+				pv.errored++
+			} else if cs.Passed {
 				pv.compatible++
 			} else {
 				pv.incompatible++
@@ -755,6 +759,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 			TotalCookbooks:        pv.total,
 			CompatibleCookbooks:   pv.compatible,
 			IncompatibleCookbooks: pv.incompatible,
+			ErroredCookbooks:      pv.errored,
 			UntestedCookbooks:     pv.untested,
 			UntestedInactive:      pv.untestedInactive,
 			UntestedUnscanned:     pv.untestedUnscanned,
@@ -815,6 +820,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		TotalRepos               int     `json:"total_repos"`
 		CompatibleRepos          int     `json:"compatible_repos"`
 		IncompatibleRepos        int     `json:"incompatible_repos"`
+		ErroredRepos             int     `json:"errored_repos"`
 		UntestedRepos            int     `json:"untested_repos"`
 		UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
 		UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
@@ -851,6 +857,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		total               int
 		compatible          int
 		incompatible        int
+		errored             int
 		untested            int
 		untestedCloneFailed int
 		untestedPendingScan int
@@ -908,7 +915,9 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		}
 		seen[key] = true
 		pv.total++
-		if cs.Passed {
+		if cs.ErrorMessage != "" {
+			pv.errored++
+		} else if cs.Passed {
 			pv.compatible++
 		} else {
 			pv.incompatible++
@@ -951,6 +960,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 			TotalRepos:               pv.total,
 			CompatibleRepos:          pv.compatible,
 			IncompatibleRepos:        pv.incompatible,
+			ErroredRepos:             pv.errored,
 			UntestedRepos:            pv.untested,
 			UntestedCloneFailedRepos: pv.untestedCloneFailed,
 			UntestedPendingScanRepos: pv.untestedPendingScan,
