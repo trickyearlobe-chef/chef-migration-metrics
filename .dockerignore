@@ -18,6 +18,8 @@
 # AI Assistant Context (not shipped in the image)
 # =============================================================================
 .claude/
+CLAUDE.md
+plans/
 
 # =============================================================================
 # Build Output (the Dockerfile builds from source; stale artifacts cause confusion)
