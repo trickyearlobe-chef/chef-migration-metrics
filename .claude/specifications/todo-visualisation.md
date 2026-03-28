@@ -6,26 +6,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Dashboard
 
-- [x] Make version distribution bars clickable — navigates to nodes page filtered by Chef version
-- [x] Make platform distribution bars clickable — navigates to nodes page filtered by platform (including version)
-- [x] Make readiness ready/blocked counts and progress bar segments clickable — navigates to nodes page with readiness filter and target version pre-set
 - [ ] Ensure dashboard performs acceptably with many thousands of nodes
-
-## Node Detail
-
-- [x] Add filesystem/disk detail sub-page (`/nodes/:org/:name/disks`) with full Ohai filesystem data
-- [x] Add "View Filesystem Details" links from node detail info grid and disk space panel
-- [x] Parse Ohai filesystem JSONB (by_mountpoint format) with cross-platform value handling
-- [x] Filter virtual/pseudo filesystems by default with show_all toggle
-- [x] Show Windows-specific columns (drive type, encryption) when applicable
-- [x] Show inode data in expandable rows with warning icon when free inodes < 70%
-- [x] Handle percent_used values with trailing % suffix from Linux Ohai data
-
-## Node Filtering
-
-- [x] Nodes page reads readiness, target_version, chef_version, and platform from URL search params to support dashboard click-through
-- [x] Platform filter matches against combined platform + platform_version string for precise filtering
-- [x] Push node filters (environment, platform, chef_version, role, policy, stale) down to SQL WHERE clauses instead of in-memory filtering — implemented via NodeSnapshotFilter + ListNodeSnapshotsFiltered with dynamic WHERE builder, COUNT(*) OVER() for pagination, lightweight projection excluding heavy JSONB, aggregate helpers for dashboard distributions, and SQL DISTINCT queries for filter dropdowns
 
 ## Dependency Graph View
 
