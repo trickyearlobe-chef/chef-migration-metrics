@@ -431,6 +431,51 @@ func TestInjectCredentialEnvVars_NilCreds(t *testing.T) {
 	}
 }
 
+func TestInjectCredentialEnvVars_NilCreds_StripsStaleCMMTK(t *testing.T) {
+	base := []string{
+		"HOME=/home/user",
+		"CMM_TK_OLD=stale",
+		"CMM_TK_SECRET_LEAKED=old-secret",
+		"PATH=/usr/bin",
+	}
+	result := InjectCredentialEnvVars(base, nil)
+
+	for _, kv := range result {
+		if idx := strings.IndexByte(kv, '='); idx > 0 {
+			key := kv[:idx]
+			if strings.HasPrefix(strings.ToUpper(key), "CMM_TK_") {
+				t.Errorf("stale env var %q should have been stripped even with nil creds", key)
+			}
+		}
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 env vars (HOME, PATH), got %d: %v", len(result), result)
+	}
+}
+
+func TestInjectCredentialEnvVars_EmptyCreds_StripsStaleCMMTK(t *testing.T) {
+	base := []string{
+		"HOME=/home/user",
+		"CMM_TK_OLD=stale",
+		"PATH=/usr/bin",
+	}
+	creds := &KitchenCredentials{EnvVars: map[string]string{}}
+
+	result := InjectCredentialEnvVars(base, creds)
+
+	for _, kv := range result {
+		if idx := strings.IndexByte(kv, '='); idx > 0 {
+			key := kv[:idx]
+			if strings.HasPrefix(strings.ToUpper(key), "CMM_TK_") {
+				t.Errorf("stale env var %q should have been stripped even with empty creds", key)
+			}
+		}
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 env vars (HOME, PATH), got %d: %v", len(result), result)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ValidateDriverCredentials tests
 // ---------------------------------------------------------------------------
@@ -470,6 +515,47 @@ func TestValidateDriverCredentials_AllValid(t *testing.T) {
 	}
 }
 
+func TestValidateDriverCredentials_ZeroesResolvedPlaintext(t *testing.T) {
+	// The mock store returns a copy each time, so we use a custom store
+	// that lets us inspect the returned plaintext after validation.
+	plaintexts := make([][]byte, 0)
+	store := &trackingCredentialStore{
+		inner:      &mockCredentialStore{creds: map[string][]byte{"drv": []byte("secret"), "pwd": []byte("pass"), "key": []byte("sshkey")}},
+		plaintexts: &plaintexts,
+	}
+	resolver := secrets.NewCredentialResolver(store)
+
+	tkConfig := config.TestKitchenConfig{
+		DriverSecrets: map[string]string{
+			"password": "drv",
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{
+				KitchenName: "centos-7",
+				Transport: &config.PlatformMapTransport{
+					Username:           "root",
+					PasswordCredential: "pwd",
+					SSHKeyCredential:   "key",
+				},
+			},
+		},
+	}
+
+	errs := ValidateDriverCredentials(context.Background(), resolver, tkConfig)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	if len(plaintexts) != 3 {
+		t.Fatalf("expected 3 resolved plaintexts, got %d", len(plaintexts))
+	}
+	for i, p := range plaintexts {
+		if !secrets.IsZeroed(p) {
+			t.Errorf("plaintext[%d] was not zeroed after ValidateDriverCredentials", i)
+		}
+	}
+}
+
 func TestValidateDriverCredentials_MissingCredential(t *testing.T) {
 	resolver := newMockResolver(map[string][]byte{
 		"existing": []byte("value"),
@@ -495,6 +581,56 @@ func TestValidateDriverCredentials_MissingCredential(t *testing.T) {
 	if !found {
 		t.Errorf("error list should mention 'nonexistent', got: %v", errs)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// trackingCredentialStore wraps a store and records returned Plaintext slices
+// so tests can verify they were zeroed after use.
+// ---------------------------------------------------------------------------
+
+type trackingCredentialStore struct {
+	inner      secrets.CredentialStore
+	plaintexts *[][]byte
+}
+
+func (t *trackingCredentialStore) Get(ctx context.Context, name string) (*secrets.Credential, error) {
+	cred, err := t.inner.Get(ctx, name)
+	if err == nil && cred != nil {
+		*t.plaintexts = append(*t.plaintexts, cred.Plaintext)
+	}
+	return cred, err
+}
+
+func (t *trackingCredentialStore) Create(ctx context.Context, in secrets.CreateCredentialInput) (*secrets.CredentialMetadata, error) {
+	return t.inner.Create(ctx, in)
+}
+
+func (t *trackingCredentialStore) GetMetadata(ctx context.Context, name string) (*secrets.CredentialMetadata, error) {
+	return t.inner.GetMetadata(ctx, name)
+}
+
+func (t *trackingCredentialStore) Update(ctx context.Context, in secrets.UpdateCredentialInput) (*secrets.CredentialMetadata, error) {
+	return t.inner.Update(ctx, in)
+}
+
+func (t *trackingCredentialStore) Delete(ctx context.Context, name string) error {
+	return t.inner.Delete(ctx, name)
+}
+
+func (t *trackingCredentialStore) List(ctx context.Context) ([]secrets.CredentialMetadata, error) {
+	return t.inner.List(ctx)
+}
+
+func (t *trackingCredentialStore) ListByType(ctx context.Context, credType string) ([]secrets.CredentialMetadata, error) {
+	return t.inner.ListByType(ctx, credType)
+}
+
+func (t *trackingCredentialStore) Test(ctx context.Context, name string) (*secrets.ValidationResult, error) {
+	return t.inner.Test(ctx, name)
+}
+
+func (t *trackingCredentialStore) ReferencedBy(ctx context.Context, name string) ([]secrets.CredentialReference, error) {
+	return t.inner.ReferencedBy(ctx, name)
 }
 
 // ---------------------------------------------------------------------------

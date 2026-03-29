@@ -153,7 +153,9 @@ func scanCookbookPlatformCoverage(row interface{ Scan(dest ...any) error }) (Coo
 
 	r.GitRepoID = stringFromNull(gitRepoID)
 	if len(coverageJSON) > 0 {
-		_ = json.Unmarshal(coverageJSON, &r.CoverageData)
+		if err := json.Unmarshal(coverageJSON, &r.CoverageData); err != nil {
+			return CookbookPlatformCoverage{}, fmt.Errorf("corrupt coverage_data JSON for %s: %w", r.CookbookName, err)
+		}
 	}
 	return r, nil
 }
@@ -176,7 +178,9 @@ func scanCookbookPlatformCoverages(rows *sql.Rows, err error) ([]CookbookPlatfor
 
 		r.GitRepoID = stringFromNull(gitRepoID)
 		if len(coverageJSON) > 0 {
-			_ = json.Unmarshal(coverageJSON, &r.CoverageData)
+			if err := json.Unmarshal(coverageJSON, &r.CoverageData); err != nil {
+				return nil, fmt.Errorf("corrupt coverage_data JSON for %s: %w", r.CookbookName, err)
+			}
 		}
 
 		results = append(results, r)
