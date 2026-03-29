@@ -107,6 +107,24 @@ progress can be tracked over time.
   `node_snapshot_filter_test.go` currently exist.
   Directory: `internal/datastore/`.
 
+- [ ] **B16 — Credential string copies cannot be zeroed in Go** —
+  `kitchen_credentials.go` converts `[]byte` plaintext to `string` for env var
+  values via `string(resolved.Plaintext)`. Go strings are immutable so the
+  copies in `KitchenCredentials.EnvVars` persist in heap until GC, even after
+  `Cleanup()` zeros the original `[]byte` slices. Strategic fix: store
+  `[]byte` values in `EnvVars` instead of `string` and build `key=value`
+  strings only at injection time, or accept the risk and document it.
+  File: `internal/analysis/kitchen_credentials.go` L72, L84, L95.
+
+- [ ] **B17 — Raw datastore struct leaked to coverage API response** —
+  `handle_cookbook_coverage.go` serialises the full
+  `datastore.CookbookPlatformCoverage` struct including internal fields (`id`,
+  `created_at`, `updated_at`). The `coverage_data` JSONB field deserialises
+  integers as `float64` via `json.Unmarshal` into `any`, so `node_count: 12`
+  becomes `12.0` in the JSON response. Add an API-specific response type that
+  flattens or curates the coverage payload.
+  File: `internal/webapi/handle_cookbook_coverage.go` L48.
+
 ### Project
 
 - [ ] **P1 — Create CHANGELOG.md** — 36 releases (v0.0.1 → v2.0.1) have
