@@ -359,6 +359,8 @@ Stores Test Kitchen test results for git-sourced repositories tested against tar
 | `duration_seconds` | INTEGER | Yes | Wall-clock time for the Test Kitchen run |
 | `started_at` | TIMESTAMPTZ | No | When the test run started |
 | `completed_at` | TIMESTAMPTZ | Yes | When the test run finished |
+| `driver` | TEXT | Yes | Driver used for the test run (e.g. `dokken`, `vcenter`, `ec2`). NULL for pre-existing rows (implies `dokken`). |
+| `platform_name` | TEXT | Yes | Kitchen platform name for this result. Enables per-platform result tracking when non-dokken drivers test specific mapped platforms. |
 | `created_at` | TIMESTAMPTZ | No | Row creation time |
 
 **Foreign keys:**
@@ -972,6 +974,29 @@ Append-only log of all ownership changes. Every mutation to the `owners` and `ow
 
 ---
 
+### 23. `cookbook_platform_coverage`
+
+Stores the platform coverage analysis for each cookbook — comparing kitchen-tested platforms against production node platforms. Refreshed after each collection + analysis cycle. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) § Platform Coverage Analysis.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | No | Primary key |
+| `git_repo_id` | UUID | Yes | FK → `git_repos.id` (NULL for server-only cookbooks) |
+| `cookbook_name` | TEXT | No | Cookbook name |
+| `coverage_data` | JSONB | No | Coverage report: kitchen platforms, production platforms, coverage categories (tested_and_in_production, tested_not_in_production, in_production_not_tested), gap_count, coverage_percentage |
+| `evaluated_at` | TIMESTAMPTZ | No | When coverage was last evaluated |
+| `created_at` | TIMESTAMPTZ | No | Row creation time |
+| `updated_at` | TIMESTAMPTZ | No | Last update time |
+
+**Foreign keys:** `git_repo_id` → `git_repos(id)` ON DELETE CASCADE
+
+**Unique constraints:** `(cookbook_name)` — one coverage record per cookbook
+
+**Indexes:**
+- `idx_cookbook_platform_coverage_cookbook_name` on `cookbook_name`
+
+---
+
 ## Entity Relationship Summary
 
 ```
@@ -1007,6 +1032,8 @@ git_repos
     │              │
     │              └── 1:1 ──► git_repo_autocorrect_previews
     ├── 1:N ──► git_repo_complexity (per target version)
+
+cookbook_platform_coverage.git_repo_id ──► git_repos.id
 
 organisations ── 1:N ── role_dependencies
 
@@ -1107,6 +1134,11 @@ Deleting an organisation cascades to all `ownership_assignments` scoped to that 
 
 Committer data is fully refreshed on each collection run. No time-based retention — rows are replaced in bulk.
 
+### Cookbook Platform Coverage Retention
+
+- Coverage records are overwritten (upserted) on each analysis cycle. No historical retention needed — only the latest coverage per cookbook is stored.
+- When a `git_repo` is deleted, coverage records are cascade-deleted.
+
 ---
 
 ### Credential Retention
@@ -1140,3 +1172,4 @@ Committer data is fully refreshed on each collection run. No time-based retentio
 - [Authentication Specification](../auth/Specification.md)
 - [Configuration Specification](../configuration/Specification.md)
 - [Ownership Specification](../ownership/Specification.md)
+- [test-kitchen-drivers.md](test-kitchen-drivers.md) — Test Kitchen driver abstraction, platform coverage JSONB structure
