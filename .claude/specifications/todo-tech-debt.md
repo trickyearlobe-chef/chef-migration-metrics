@@ -19,24 +19,17 @@ progress can be tracked over time.
   migration plan. Affected: all tables, all queries, all handlers, all API
   responses.
 
-- [ ] **B4a — Enrich readiness trend with metric snapshots** —
-  `handleDashboardReadinessTrend` still queries live `CountNodeReadiness`
-  instead of reading from `metric_snapshots`. It doesn't suffer from the
-  sawtooth bug (no `collection_run_id` dependency) but is inconsistent with
-  the version-distribution trend which now reads from snapshots. Requires
-  recording a `readiness_summary` metric snapshot type in
-  `recordMetricSnapshots`.
-  Files: `handle_dashboard_readiness.go`, `collector.go`.
+- [x] **B4a — Enrich readiness trend with metric snapshots** — Added
+  `buildReadinessSnapshotPayload` and `recordReadinessSnapshots` to collector
+  (called after Step 14). Rewrote `handleDashboardReadinessTrend` to read from
+  `ListMetricSnapshotsByOrganisationAndVersion` with fallback to live
+  `CountNodeReadiness`. Supports ownership filtering.
 
-- [ ] **B5 — Add datastore tests** — 15 of 20 datastore source files have no
-  corresponding `*_test.go`. This is the most critical layer for correctness.
-  Existing tests: `datastore_test.go` (unit, pure functions),
-  `functional_test.go` (integration, requires Postgres via
-  `CMM_TEST_DATABASE_URL`), `export_jobs_test.go`,
-  `node_snapshot_filter_test.go`, `log_entries_test.go`,
-  `collection_runs_test.go`, `pg_stats_test.go`,
-  `cookbook_production_platforms_test.go`.
-  Directory: `internal/datastore/`.
+- [x] **B5 — Add datastore tests** — Added 68 validation and pure-function
+  tests across 7 new test files (metric_snapshots, node_readiness,
+  node_snapshots, organisations, owners, role_dependencies,
+  cookbook_usage_analysis). Integration tests requiring live Postgres remain
+  a separate effort.
 
 ### Project
 
@@ -53,11 +46,10 @@ progress can be tracked over time.
   `FilterSelect`, and `FilterCombobox` moved from `NodesPage.tsx` to
   `frontend/src/components/FilterInputs.tsx`. Updated 6 consuming pages.
 
-- [ ] **F6 — Split large monolithic page files** —
-  `DependencyGraphPage.tsx` (1,646 lines, 7 components) and
-  `DashboardPage.tsx` (1,061 lines, 11 card components) should be split into
-  sub-files under `pages/dependency-graph/` and `pages/dashboard/`
-  respectively. Deferred from batch 6 — moderate risk, low urgency.
+- [x] **F6 — Split large monolithic page files** — DashboardPage (1,061
+  lines) split into `dashboard/index.tsx` (shell), `StatusCards.tsx` (6
+  cards), `TrendCards.tsx` (4 cards). DependencyGraphPage moved to
+  `dependency-graph/` directory with index re-export.
 
 - [x] **F7 — Add frontend tests** — Vitest + Testing Library installed.
   `npm test` runs 39 real tests: 13 semver, 8 useSort hook, 18 FilterInputs.
