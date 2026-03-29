@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -419,9 +418,6 @@ func filterCookbookRows(req *http.Request, rows []cookbookRow) []cookbookRow {
 	}
 	return filtered
 }
-
-// Ensure datastore.ErrNotFound is used (compile-time check).
-var _ = errors.Is(nil, datastore.ErrNotFound)
 
 // sortCookbookRows sorts the cookbook list in-place by the given field and
 // order ("asc" or "desc"). Supported fields: "name" (default), "version",
