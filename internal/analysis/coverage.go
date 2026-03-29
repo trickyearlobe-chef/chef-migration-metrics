@@ -171,24 +171,29 @@ func ensureNonNilSlices(r *CoverageReport) {
 	}
 }
 
-// majorVersionMatch returns true if the kitchen version's major component
-// matches the prefix of the production version. For example:
+// majorVersionMatch returns true if the kitchen version matches the
+// production version using prefix semantics. For example:
 // "7" matches "7.9.2009", "22.04" matches "22.04.1", "9" matches "9.3".
+// Dotted kitchen versions like "22.04" do NOT match "22.10".
 func majorVersionMatch(kitchenVersion, productionVersion string) bool {
 	if kitchenVersion == "" || productionVersion == "" {
 		return false
 	}
-	// Kitchen version major = everything before the first "."
-	kitchenMajor := kitchenVersion
-	if idx := strings.Index(kitchenVersion, "."); idx > 0 {
-		kitchenMajor = kitchenVersion[:idx]
+	if strings.Contains(kitchenVersion, ".") {
+		// Dotted kitchen version — use as a prefix match.
+		// "22.04" matches "22.04" and "22.04.1" but not "22.045".
+		if productionVersion == kitchenVersion {
+			return true
+		}
+		return strings.HasPrefix(productionVersion, kitchenVersion) &&
+			productionVersion[len(kitchenVersion)] == '.'
 	}
-	// Production version major = everything before the first "."
+	// Simple major version — extract first component from production.
 	prodMajor := productionVersion
 	if idx := strings.Index(productionVersion, "."); idx > 0 {
 		prodMajor = productionVersion[:idx]
 	}
-	return kitchenMajor == prodMajor
+	return kitchenVersion == prodMajor
 }
 
 // ParseKitchenYMLPlatforms reads a .kitchen.yml file and extracts the
@@ -231,6 +236,9 @@ func ParseKitchenYMLPlatforms(kitchenYMLPath string) []string {
 			if strings.HasPrefix(trimmed, "- name:") {
 				val := strings.TrimPrefix(trimmed, "- name:")
 				val = strings.TrimSpace(val)
+				if idx := strings.Index(val, " #"); idx >= 0 {
+					val = strings.TrimSpace(val[:idx])
+				}
 				val = strings.Trim(val, `"'`)
 				if val != "" {
 					platforms = append(platforms, val)

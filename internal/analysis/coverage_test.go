@@ -94,6 +94,18 @@ func TestMajorVersionMatch_DottedKitchen(t *testing.T) {
 	}
 }
 
+func TestMajorVersionMatch_DottedKitchenNoMatch(t *testing.T) {
+	if majorVersionMatch("22.04", "22.10") {
+		t.Error("expected no match: kitchen=22.04, prod=22.10 (different Ubuntu release)")
+	}
+}
+
+func TestMajorVersionMatch_DottedKitchenExact(t *testing.T) {
+	if !majorVersionMatch("22.04", "22.04") {
+		t.Error("expected match: kitchen=22.04, prod=22.04 (exact)")
+	}
+}
+
 func TestMajorVersionMatch_NoMatch(t *testing.T) {
 	if majorVersionMatch("8", "7.9.2009") {
 		t.Error("expected no match: kitchen=8, prod=7.9.2009")
@@ -376,6 +388,24 @@ func TestParseKitchenYMLPlatforms_FileNotFound(t *testing.T) {
 
 	if platforms != nil {
 		t.Errorf("expected nil, got %v", platforms)
+	}
+}
+
+func TestParseKitchenYMLPlatforms_InlineComments(t *testing.T) {
+	content := "platforms:\n  - name: ubuntu-22.04  # LTS\n  - name: centos-7 # old\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".kitchen.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	got := ParseKitchenYMLPlatforms(path)
+	want := []string{"ubuntu-22.04", "centos-7"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
