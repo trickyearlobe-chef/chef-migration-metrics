@@ -292,9 +292,18 @@ func (sh SystemHealthConfig) IsPauseCollectionOnCritical() bool {
 
 // PerformanceConfig controls the in-app performance diagnostics.
 type PerformanceConfig struct {
-	Enabled       bool `yaml:"enabled"`
-	PprofEnabled  bool `yaml:"pprof_enabled"`
-	WindowSeconds int  `yaml:"window_seconds"`
+	Enabled       *bool `yaml:"enabled"`
+	PprofEnabled  bool  `yaml:"pprof_enabled"`
+	WindowSeconds int   `yaml:"window_seconds"`
+}
+
+// IsEnabled returns true if performance instrumentation is enabled.
+// Defaults to true when the field is omitted from configuration.
+func (pc PerformanceConfig) IsEnabled() bool {
+	if pc.Enabled == nil {
+		return true
+	}
+	return *pc.Enabled
 }
 
 // ---------------------------------------------------------------------------
@@ -722,6 +731,12 @@ func (c *Config) setDefaults() {
 	}
 	if c.Server.TLS.ACME.RenewBeforeDays == 0 {
 		c.Server.TLS.ACME.RenewBeforeDays = 30
+	}
+
+	// Performance defaults — Enabled uses *bool so nil defaults to true
+	// via IsEnabled(). WindowSeconds defaults to 300 (5 minutes).
+	if c.Performance.WindowSeconds == 0 {
+		c.Performance.WindowSeconds = 300
 	}
 
 	// Frontend
