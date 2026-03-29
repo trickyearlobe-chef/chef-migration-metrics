@@ -517,7 +517,14 @@ func nodeUsesCookbook(n datastore.NodeSnapshot, cookbookName string) bool {
 	if len(n.Cookbooks) == 0 {
 		return false
 	}
-	// Quick substring check before full parse — the cookbook name will
-	// appear as a JSON key in the form `"cookbook_name":`.
-	return strings.Contains(string(n.Cookbooks), fmt.Sprintf("%q", cookbookName))
+	// Parse the JSONB and check for an exact top-level key match.
+	// The old substring approach could false-positive when a cookbook name
+	// appeared inside a value or when names were prefixes of other names
+	// in certain JSON layouts.
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(n.Cookbooks, &m); err != nil {
+		return false
+	}
+	_, ok := m[cookbookName]
+	return ok
 }
