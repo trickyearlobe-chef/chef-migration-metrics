@@ -28,28 +28,13 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		return
 	}
 
-	// Resolve owned cookbook keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
-	if ownerFilterActive {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned cookbook keys for compatibility: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving owned cookbook keys for compatibility: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "cookbook")
+	if err != nil {
+		r.logf("ERROR", "resolving cookbook ownership filter for compatibility: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
+	ownerFilterActive := ownedKeys != nil
 
 	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
@@ -74,7 +59,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
 	var allowedNames map[string]bool
-	if ownerFilterActive && ownedKeys != nil {
+	if ownerFilterActive {
 		if of.Unowned {
 			allCookbooks := make(map[string]bool)
 			for _, org := range orgs {
@@ -239,28 +224,13 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		return
 	}
 
-	// Resolve owned cookbook keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
-	if ownerFilterActive {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned cookbook keys for git repo compatibility: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving owned cookbook keys for git repo compatibility: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "cookbook")
+	if err != nil {
+		r.logf("ERROR", "resolving cookbook ownership filter for git repo compatibility: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
+	ownerFilterActive := ownedKeys != nil
 
 	targetVersions := r.cfg.TargetChefVersions
 
@@ -278,7 +248,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
 	var allowedNames map[string]bool
-	if ownerFilterActive && ownedKeys != nil {
+	if ownerFilterActive {
 		gitRepos, err := r.db.ListGitRepos(ctx)
 		if err != nil {
 			r.logf("ERROR", "listing git repos for compatibility ownership filter: %v", err)
@@ -443,28 +413,13 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 		return
 	}
 
-	// Resolve owned cookbook keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
-	if ownerFilterActive {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned cookbook keys for TK compatibility: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving owned cookbook keys for TK compatibility: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "cookbook")
+	if err != nil {
+		r.logf("ERROR", "resolving cookbook ownership filter for TK compatibility: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
+	ownerFilterActive := ownedKeys != nil
 
 	targetVersions := r.cfg.TargetChefVersions
 
@@ -482,7 +437,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
 	var allowedNames map[string]bool
-	if ownerFilterActive && ownedKeys != nil {
+	if ownerFilterActive {
 		gitRepos, err := r.db.ListGitRepos(ctx)
 		if err != nil {
 			r.logf("ERROR", "listing git repos for TK compatibility ownership filter: %v", err)
