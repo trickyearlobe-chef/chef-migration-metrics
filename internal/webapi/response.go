@@ -90,6 +90,26 @@ func NewPaginationResponse(params PaginationParams, totalItems int) PaginationRe
 }
 
 // ---------------------------------------------------------------------------
+// In-memory slice pagination
+// ---------------------------------------------------------------------------
+
+// PaginateSlice returns the sub-slice of items corresponding to the given
+// pagination parameters, along with the total count. It clamps start/end to
+// the slice bounds so callers don't need to do bounds checking.
+func PaginateSlice[T any](items []T, pg PaginationParams) (page []T, total int) {
+	total = len(items)
+	start := pg.Offset()
+	if start > total {
+		start = total
+	}
+	end := start + pg.Limit()
+	if end > total {
+		end = total
+	}
+	return items[start:end], total
+}
+
+// ---------------------------------------------------------------------------
 // Paginated response envelope
 // ---------------------------------------------------------------------------
 

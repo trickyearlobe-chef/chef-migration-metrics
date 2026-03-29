@@ -69,18 +69,8 @@ func (r *Router) handleAdminListUsers(w http.ResponseWriter, req *http.Request) 
 	// Use simple pagination over the full list. The user table is expected
 	// to be small (tens to low hundreds) so in-memory pagination is fine.
 	pg := ParsePagination(req)
-	total := len(data)
-
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
-
-	WritePaginated(w, data[start:end], pg, total)
+	page, total := PaginateSlice(data, pg)
+	WritePaginated(w, page, pg, total)
 }
 
 // ---------------------------------------------------------------------------

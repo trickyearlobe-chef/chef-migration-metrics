@@ -202,15 +202,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 
 	// Paginate.
 	pg := ParsePagination(req)
-	total := len(repos)
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
+	page, total := PaginateSlice(repos, pg)
 
 	type gitRepoResp struct {
 		ID                string `json:"id"`
@@ -227,8 +219,8 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
-	result := make([]gitRepoResp, 0, end-start)
-	for _, gr := range repos[start:end] {
+	result := make([]gitRepoResp, 0, len(page))
+	for _, gr := range page {
 		c := compatByName[gr.Name]
 		if c == "" {
 			c = "untested"

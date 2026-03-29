@@ -206,15 +206,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	// Paginate the results.
 	pg := ParsePagination(req)
-	total := len(rows)
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
+	pageRows, total := PaginateSlice(rows, pg)
 
 	type cookbookResp struct {
 		ID                string `json:"id"`
@@ -230,8 +222,8 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
-	result := make([]cookbookResp, 0, end-start)
-	for _, cb := range rows[start:end] {
+	result := make([]cookbookResp, 0, len(pageRows))
+	for _, cb := range pageRows {
 		resp := cookbookResp{
 			ID:                cb.ID,
 			OrganisationID:    cb.OrganisationID,
