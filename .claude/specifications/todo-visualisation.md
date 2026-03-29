@@ -19,7 +19,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] Include prominent notice that auto-correct is preview only — tool does not modify cookbook source — not yet rendered in `AutocorrectPreviewCard`
 
-## Notifications
+## Notifications *(future — `internal/notify/` not yet implemented)*
 
 - [ ] Implement webhook notification channel (HTTP POST with JSON payload)
 - [ ] Implement email notification channel (SMTP)

@@ -43,8 +43,8 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] Update `internal/chefapi/` to resolve Chef API keys via `CredentialResolver`
 - [ ] Update `internal/auth/` LDAP provider to resolve bind password via `CredentialResolver`
-- [ ] Update `internal/notify/` SMTP sender to resolve password via `CredentialResolver`
-- [ ] Update `internal/notify/` webhook sender to resolve URL via `CredentialResolver`
+- [ ] *(deferred — `internal/notify/` not yet implemented)* Update SMTP sender to resolve password via `CredentialResolver`
+- [ ] *(deferred — `internal/notify/` not yet implemented)* Update webhook sender to resolve URL via `CredentialResolver`
 - [ ] Verify plaintext is zeroed after use in all consumer call sites
 - [ ] Write integration tests for Chef API signing with each credential source
 - [ ] Write integration tests for LDAP bind with each credential source
@@ -56,7 +56,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Add `client_key_env` field to organisation config schema
 - [ ] Add `bind_password_credential` field to LDAP auth config schema
 - [ ] Add `password_credential` field to SMTP config schema
-- [ ] Add `url_credential` field to notification channel config schema
+- [ ] *(deferred — `internal/notify/` not yet implemented)* Add `url_credential` field to notification channel config schema
 - [ ] Add `secrets.credentialEncryptionKey` to Helm `values.yaml`
 - [ ] Add `secrets.smtpPassword` to Helm `values.yaml`
 - [ ] Update Helm `secret.yaml` template to include `CMM_CREDENTIAL_ENCRYPTION_KEY` and `SMTP_PASSWORD`

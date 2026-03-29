@@ -600,7 +600,7 @@ Secrets management logic lives in `internal/secrets/` (new package) with the fol
 - `validation.go` — Per-type credential validation (RSA PEM parsing, URL validation, etc.)
 - `zeroing.go` — Memory zeroing helpers
 
-The `internal/secrets/` package is the only package that performs encryption/decryption operations. Other packages (`internal/chefapi/`, `internal/auth/`, `internal/notify/`) call through the `CredentialStore` interface to obtain plaintext for their operations.
+The `internal/secrets/` package is the only package that performs encryption/decryption operations. Other packages (`internal/chefapi/`, `internal/auth/`) call through the `CredentialStore` interface to obtain plaintext for their operations. `internal/notify/` will also use this interface once the notification subsystem is implemented (currently planned, not yet built).
 
 ### Dependencies
 
