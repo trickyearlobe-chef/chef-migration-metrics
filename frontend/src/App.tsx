@@ -25,6 +25,7 @@ import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminActionsPage } from "./pages/AdminActionsPage";
 import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
 import { AdminPerformancePage } from "./pages/AdminPerformancePage";
+import { AdminCredentialsPage } from "./pages/credentials";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -178,6 +179,14 @@ export function App() {
               element={
                 <RequireAdmin>
                   <AdminSystemStatsPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/admin/credentials"
+              element={
+                <RequireAdmin>
+                  <AdminCredentialsPage />
                 </RequireAdmin>
               }
             />

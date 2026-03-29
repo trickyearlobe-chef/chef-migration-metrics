@@ -65,6 +65,11 @@ import type {
   GitRepoRemediationResponse,
   PerformanceResponse,
   PerformanceDBResponse,
+  Credential,
+  CredentialListResponse,
+  CreateCredentialRequest,
+  UpdateCredentialRequest,
+  TestCredentialResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -423,9 +428,7 @@ export function fetchCookbookDetail(
   );
 }
 
-export function requestCookbookRescan(
-  name: string,
-): Promise<{
+export function requestCookbookRescan(name: string): Promise<{
   cookbook_name: string;
   versions_invalidated: number;
   message: string;
@@ -492,9 +495,7 @@ export function fetchGitRepoDetail(
   );
 }
 
-export function requestGitRepoRescan(
-  name: string,
-): Promise<{
+export function requestGitRepoRescan(name: string): Promise<{
   git_repo_name: string;
   repos_invalidated: number;
   message: string;
@@ -1357,6 +1358,139 @@ export async function assignCookbookCommitters(
   }
 
   return res.json() as Promise<CommitterAssignResponse>;
+}
+
+// ---------------------------------------------------------------------------
+// Credential Management (admin)
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/credentials — list credentials (admin only). */
+export function fetchCredentials(params?: {
+  page?: number;
+  per_page?: number;
+  type?: string;
+}): Promise<CredentialListResponse> {
+  return apiFetch<CredentialListResponse>(
+    buildUrl(
+      "/admin/credentials",
+      params as Record<string, string | number | undefined>,
+    ),
+  );
+}
+
+/** POST /api/v1/admin/credentials — create a new credential (admin only). */
+export async function createCredential(
+  body: CreateCredentialRequest,
+): Promise<Credential> {
+  const url = buildUrl("/admin/credentials");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<Credential>;
+}
+
+/** PUT /api/v1/admin/credentials/:name — rotate a credential's value (admin only). */
+export async function updateCredential(
+  name: string,
+  body: UpdateCredentialRequest,
+): Promise<Credential> {
+  const url = buildUrl(`/admin/credentials/${encodeURIComponent(name)}`);
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<Credential>;
+}
+
+/** DELETE /api/v1/admin/credentials/:name?confirm=true — delete a credential (admin only). */
+export async function deleteCredential(name: string): Promise<void> {
+  const url = buildUrl(`/admin/credentials/${encodeURIComponent(name)}`, {
+    confirm: "true",
+  });
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+}
+
+/** POST /api/v1/admin/credentials/:name/test — test a credential (admin only). */
+export async function testCredential(
+  name: string,
+): Promise<TestCredentialResponse> {
+  const url = buildUrl(`/admin/credentials/${encodeURIComponent(name)}/test`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.error ?? code;
+      message = errBody.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<TestCredentialResponse>;
 }
 
 // ---------------------------------------------------------------------------
