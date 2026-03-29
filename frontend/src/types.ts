@@ -295,6 +295,76 @@ export interface SystemHealthResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Performance diagnostics
+// ---------------------------------------------------------------------------
+
+export interface EndpointStat {
+  method: string;
+  path: string;
+  count: number;
+  error_count: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+  max_ms: number;
+}
+
+export interface PerformanceResponse {
+  window_seconds: number;
+  endpoints: EndpointStat[];
+}
+
+export interface TopQueryStat {
+  query: string;
+  calls: number;
+  total_time_ms: number;
+  mean_time_ms: number;
+  min_time_ms: number;
+  max_time_ms: number;
+  rows: number;
+  shared_blks_hit: number;
+  shared_blks_read: number;
+}
+
+export interface PgTableStat {
+  table_name: string;
+  seq_scan: number;
+  seq_tup_read: number;
+  idx_scan: number;
+  idx_tup_fetch: number;
+  n_live_tup: number;
+  n_dead_tup: number;
+  last_vacuum: string | null;
+  last_analyze: string | null;
+}
+
+export interface PgIndexStat {
+  table_name: string;
+  index_name: string;
+  idx_scan: number;
+  idx_tup_read: number;
+  idx_tup_fetch: number;
+  size_bytes: number;
+}
+
+export interface PgActiveQuery {
+  pid: number;
+  state: string;
+  query: string;
+  duration_ms: number;
+  wait_event_type: string | null;
+  wait_event: string | null;
+}
+
+export interface PerformanceDBResponse {
+  pg_stat_statements_available: boolean;
+  top_queries: TopQueryStat[];
+  table_stats: PgTableStat[];
+  index_stats: PgIndexStat[];
+  active_queries: PgActiveQuery[];
+}
+
+// ---------------------------------------------------------------------------
 // Nodes
 // ---------------------------------------------------------------------------
 
@@ -358,10 +428,10 @@ export interface NodeSnapshot {
 // ---------------------------------------------------------------------------
 
 export interface CookbookSourceVerdict {
-  source: string;           // "server_cookstyle", "git_cookstyle", "git_test_kitchen"
-  status: string;           // "compatible", "incompatible", "untested"
-  version?: string;         // server version or "HEAD" for git
-  commit_sha?: string;      // git HEAD SHA (git sources only)
+  source: string; // "server_cookstyle", "git_cookstyle", "git_test_kitchen"
+  status: string; // "compatible", "incompatible", "untested"
+  version?: string; // server version or "HEAD" for git
+  commit_sha?: string; // git HEAD SHA (git sources only)
   complexity_score?: number;
   complexity_label?: string;
 }
@@ -369,8 +439,8 @@ export interface CookbookSourceVerdict {
 export interface BlockingCookbook {
   name: string;
   version: string;
-  reason: string;           // "incompatible" or "untested"
-  source: string;           // primary source (backward compat)
+  reason: string; // "incompatible" or "untested"
+  source: string; // primary source (backward compat)
   complexity_score: number;
   complexity_label: string;
   verdicts?: CookbookSourceVerdict[];
@@ -785,9 +855,17 @@ export type CollectionRunListResponse = PaginatedResponse<CollectionRunWithOrg>;
 // Data Exports
 // ---------------------------------------------------------------------------
 
-export type ExportType = "ready_nodes" | "blocked_nodes" | "cookbook_remediation";
+export type ExportType =
+  | "ready_nodes"
+  | "blocked_nodes"
+  | "cookbook_remediation";
 export type ExportFormat = "csv" | "json" | "chef_search_query";
-export type ExportJobStatus = "pending" | "processing" | "completed" | "failed" | "expired";
+export type ExportJobStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "expired";
 
 export interface ExportFilters {
   organisation?: string;
@@ -928,7 +1006,12 @@ export interface ResetPasswordRequest {
 // Ownership
 // ---------------------------------------------------------------------------
 
-export type OwnerType = "team" | "individual" | "business_unit" | "cost_centre" | "custom";
+export type OwnerType =
+  | "team"
+  | "individual"
+  | "business_unit"
+  | "cost_centre"
+  | "custom";
 export type EntityType = "node" | "cookbook" | "git_repo" | "role" | "policy";
 export type AssignmentSource = "manual" | "auto_rule" | "import";
 export type OwnershipConfidence = "definitive" | "inferred";
