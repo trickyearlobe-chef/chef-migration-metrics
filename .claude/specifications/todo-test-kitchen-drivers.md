@@ -26,11 +26,11 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [x] Add test: `majorVersionMatch("22.04", "22.10")` → false (exposes version bug)
 - [x] Add test: `InjectCredentialEnvVars` with stale `CMM_TK_*` and nil creds (exposes stripping bug)
-- [ ] Add test: per-platform `DriverSettings` in overlay (code path at kitchen.go L669-671 untested)
-- [ ] Add test: `DriverSecrets` without `DriverSettings` (secrets-only driver block)
-- [ ] Add test: unknown driver + missing `image_field_name`
-- [ ] Add test: `LookupProfile` ignoring `imageFieldNameOverride` for built-in drivers
-- [ ] Add test: `ComputeCoverage([], nonEmptyProduction)` — empty kitchen with production data
+- [x] Add test: per-platform `DriverSettings` in overlay (code path at kitchen.go L669-671 untested)
+- [x] Add test: `DriverSecrets` without `DriverSettings` (secrets-only driver block)
+- [x] Add test: unknown driver + missing `image_field_name`
+- [x] Add test: `LookupProfile` ignoring `imageFieldNameOverride` for built-in drivers
+- [x] Add test: `ComputeCoverage([], nonEmptyProduction)` — empty kitchen with production data
 
 ---
 
