@@ -1385,6 +1385,37 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// -------------------------------------------------------------------
 	parallelWG.Wait()
 
+	// Step 13.5: Platform coverage analysis. For each git repo with a
+	// .kitchen.yml, compute the coverage of kitchen platforms against
+	// production platforms (from node_snapshots). This runs after all
+	// three parallel groups complete because it needs:
+	//   - Git repos cloned/pulled (Group B)
+	//   - Node snapshots persisted (Step 4)
+	// Non-fatal — errors are logged per repo and do not abort the run.
+	if c.gitRepoDirFn != nil {
+		coverageRepos, covListErr := c.db.ListGitRepos(ctx)
+		if covListErr != nil {
+			log.Warn(fmt.Sprintf("failed to list git repos for platform coverage: %v", covListErr),
+				logging.WithCollectionRunID(run.ID))
+		} else if len(coverageRepos) > 0 {
+			log.Info(fmt.Sprintf("computing platform coverage for %d git repo(s)", len(coverageRepos)),
+				logging.WithCollectionRunID(run.ID))
+
+			evaluated, covErrors := analysis.ComputeAllGitRepoCoverage(ctx, c.db, c.logger, coverageRepos, c.gitRepoDirFn)
+			if covErrors > 0 {
+				log.Warn(fmt.Sprintf(
+					"platform coverage complete: %d evaluated, %d error(s)",
+					evaluated, covErrors),
+					logging.WithCollectionRunID(run.ID))
+			} else {
+				log.Info(fmt.Sprintf(
+					"platform coverage complete: %d evaluated, 0 errors",
+					evaluated),
+					logging.WithCollectionRunID(run.ID))
+			}
+		}
+	}
+
 	// Step 14: Node readiness evaluation. Combines cookbook compatibility
 	// data (from CookStyle + Test Kitchen) with disk space evaluation to
 	// produce a per-node per-target-version readiness verdict. Skipped if
