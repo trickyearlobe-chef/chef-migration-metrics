@@ -20,9 +20,6 @@ CREATE TABLE IF NOT EXISTS cookbook_platform_coverage (
         UNIQUE (cookbook_name)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cookbook_platform_coverage_cookbook_name
-    ON cookbook_platform_coverage (cookbook_name);
-
 COMMENT ON TABLE cookbook_platform_coverage IS
     'Platform coverage analysis per cookbook: compares kitchen-tested platforms against production node data.';
 COMMENT ON COLUMN cookbook_platform_coverage.coverage_data IS
