@@ -798,7 +798,9 @@ func TestHandleDashboardCookbookCompatibility_DBError(t *testing.T) {
 // handleDashboardReadinessTrend — happy path with mock DB
 // ---------------------------------------------------------------------------
 
-func TestHandleDashboardReadinessTrend_HappyPath(t *testing.T) {
+func TestHandleDashboardReadinessTrend_Fallback_NoSnapshots(t *testing.T) {
+	// When no readiness_summary snapshots exist, the handler falls back to
+	// live CountNodeReadiness for a single current-state point.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
@@ -832,6 +834,255 @@ func TestHandleDashboardReadinessTrend_HappyPath(t *testing.T) {
 	}
 	if body.Data[0].TotalNodes != 5 {
 		t.Errorf("total_nodes = %d, want 5", body.Data[0].TotalNodes)
+	}
+}
+
+func TestHandleDashboardReadinessTrend_HappyPath_Snapshots(t *testing.T) {
+	// When readiness_summary metric snapshots exist, the handler reads from
+	// them instead of querying live CountNodeReadiness.
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "readiness_summary" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:                "ms-2",
+					CollectionRunID:   "run-2",
+					OrganisationID:    "org-1",
+					SnapshotType:      "readiness_summary",
+					TargetChefVersion: "18.0.0",
+					Data:              []byte(`{"total_nodes":10,"ready":8,"blocked":2,"nodes_omitted":false,"nodes":[{"name":"web01","is_ready":true},{"name":"web02","is_ready":true},{"name":"web03","is_ready":true},{"name":"web04","is_ready":true},{"name":"web05","is_ready":true},{"name":"web06","is_ready":true},{"name":"web07","is_ready":true},{"name":"web08","is_ready":true},{"name":"db01","is_ready":false},{"name":"db02","is_ready":false}]}`),
+					SnapshotAt:        t2,
+				},
+				{
+					ID:                "ms-1",
+					CollectionRunID:   "run-1",
+					OrganisationID:    "org-1",
+					SnapshotType:      "readiness_summary",
+					TargetChefVersion: "18.0.0",
+					Data:              []byte(`{"total_nodes":10,"ready":6,"blocked":4,"nodes_omitted":false,"nodes":[{"name":"web01","is_ready":true},{"name":"web02","is_ready":true},{"name":"web03","is_ready":true},{"name":"web04","is_ready":true},{"name":"web05","is_ready":true},{"name":"web06","is_ready":true},{"name":"db01","is_ready":false},{"name":"db02","is_ready":false},{"name":"db03","is_ready":false},{"name":"db04","is_ready":false}]}`),
+					SnapshotAt:        t1,
+				},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			OrganisationName  string  `json:"organisation_name"`
+			CollectionRunID   string  `json:"collection_run_id"`
+			CompletedAt       string  `json:"completed_at"`
+			TargetChefVersion string  `json:"target_chef_version"`
+			TotalNodes        int     `json:"total_nodes"`
+			ReadyNodes        int     `json:"ready_nodes"`
+			BlockedNodes      int     `json:"blocked_nodes"`
+			ReadyPercent      float64 `json:"ready_percent"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+
+	// First point (most recent snapshot).
+	p0 := body.Data[0]
+	if p0.OrganisationName != "prod" {
+		t.Errorf("data[0].organisation_name = %q, want %q", p0.OrganisationName, "prod")
+	}
+	if p0.CollectionRunID != "run-2" {
+		t.Errorf("data[0].collection_run_id = %q, want %q", p0.CollectionRunID, "run-2")
+	}
+	if p0.CompletedAt != "2025-06-15T12:00:00Z" {
+		t.Errorf("data[0].completed_at = %q, want %q", p0.CompletedAt, "2025-06-15T12:00:00Z")
+	}
+	if p0.TotalNodes != 10 {
+		t.Errorf("data[0].total_nodes = %d, want 10", p0.TotalNodes)
+	}
+	if p0.ReadyNodes != 8 {
+		t.Errorf("data[0].ready_nodes = %d, want 8", p0.ReadyNodes)
+	}
+	if p0.BlockedNodes != 2 {
+		t.Errorf("data[0].blocked_nodes = %d, want 2", p0.BlockedNodes)
+	}
+	if p0.ReadyPercent != 80.0 {
+		t.Errorf("data[0].ready_percent = %f, want 80.0", p0.ReadyPercent)
+	}
+
+	// Second point (older snapshot).
+	p1 := body.Data[1]
+	if p1.TotalNodes != 10 {
+		t.Errorf("data[1].total_nodes = %d, want 10", p1.TotalNodes)
+	}
+	if p1.ReadyNodes != 6 {
+		t.Errorf("data[1].ready_nodes = %d, want 6", p1.ReadyNodes)
+	}
+}
+
+func TestHandleDashboardReadinessTrend_Snapshots_OwnershipFiltered(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
+			return []datastore.OwnershipAssignment{
+				{EntityType: "node", EntityKey: "web01"},
+				{EntityType: "node", EntityKey: "db01"},
+			}, 2, nil
+		},
+		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:                "ms-1",
+					CollectionRunID:   "run-1",
+					OrganisationID:    "org-1",
+					SnapshotType:      "readiness_summary",
+					TargetChefVersion: "18.0.0",
+					Data:              []byte(`{"total_nodes":4,"ready":2,"blocked":2,"nodes_omitted":false,"nodes":[{"name":"web01","is_ready":true},{"name":"web02","is_ready":true},{"name":"db01","is_ready":false},{"name":"db02","is_ready":false}]}`),
+					SnapshotAt:        now,
+				},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.Ownership.Enabled = true
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?owner=team-a", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			TotalNodes   int `json:"total_nodes"`
+			ReadyNodes   int `json:"ready_nodes"`
+			BlockedNodes int `json:"blocked_nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	// Only web01 (ready) and db01 (blocked) match the ownership filter.
+	if body.Data[0].TotalNodes != 2 {
+		t.Errorf("total_nodes = %d, want 2", body.Data[0].TotalNodes)
+	}
+	if body.Data[0].ReadyNodes != 1 {
+		t.Errorf("ready_nodes = %d, want 1", body.Data[0].ReadyNodes)
+	}
+	if body.Data[0].BlockedNodes != 1 {
+		t.Errorf("blocked_nodes = %d, want 1", body.Data[0].BlockedNodes)
+	}
+}
+
+func TestHandleDashboardReadinessTrend_Snapshots_NodesOmitted_SkippedUnderOwnerFilter(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
+			return []datastore.OwnershipAssignment{
+				{EntityType: "node", EntityKey: "web01"},
+			}, 1, nil
+		},
+		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:                "ms-1",
+					CollectionRunID:   "run-1",
+					OrganisationID:    "org-1",
+					SnapshotType:      "readiness_summary",
+					TargetChefVersion: "18.0.0",
+					Data:              []byte(`{"total_nodes":60000,"ready":50000,"blocked":10000,"nodes_omitted":true}`),
+					SnapshotAt:        now,
+				},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.Ownership.Enabled = true
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?owner=team-a", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// Snapshot with nodes_omitted should be skipped when owner filter is active.
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0 (nodes_omitted snapshots skipped under ownership filter)", len(body.Data))
+	}
+}
+
+func TestHandleDashboardReadinessTrend_Snapshots_Empty(t *testing.T) {
+	// Snapshots exist but all have zero total_nodes — empty result.
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:                "ms-1",
+					CollectionRunID:   "run-1",
+					OrganisationID:    "org-1",
+					SnapshotType:      "readiness_summary",
+					TargetChefVersion: "18.0.0",
+					Data:              []byte(`{"total_nodes":0,"ready":0,"blocked":0,"nodes_omitted":false,"nodes":[]}`),
+					SnapshotAt:        time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC),
+				},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0", len(body.Data))
 	}
 }
 

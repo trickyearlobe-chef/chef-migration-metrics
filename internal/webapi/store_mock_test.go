@@ -31,6 +31,7 @@ type mockStore struct {
 	ListNodeSnapshotsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
 	CountStaleFreshByCollectionRunFn                    func(ctx context.Context, collectionRunID string) (int, int, int, error)
 	ListMetricSnapshotsByOrganisationFn                 func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
+	ListMetricSnapshotsByOrganisationAndVersionFn       func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error)
 	GetNodeSnapshotByNameFn                             func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
 	ListNodeReadinessForSnapshotFn                      func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error)
 	ListNodeReadinessByNodeNameFn                       func(ctx context.Context, organisationID, nodeName string) ([]datastore.NodeReadiness, error)
@@ -226,6 +227,13 @@ func (m *mockStore) CountStaleFreshByCollectionRun(ctx context.Context, collecti
 func (m *mockStore) ListMetricSnapshotsByOrganisation(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 	if m.ListMetricSnapshotsByOrganisationFn != nil {
 		return m.ListMetricSnapshotsByOrganisationFn(ctx, organisationID, snapshotType, limit)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListMetricSnapshotsByOrganisationAndVersion(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
+	if m.ListMetricSnapshotsByOrganisationAndVersionFn != nil {
+		return m.ListMetricSnapshotsByOrganisationAndVersionFn(ctx, organisationID, snapshotType, targetChefVersion, limit)
 	}
 	return nil, nil
 }
