@@ -2164,6 +2164,22 @@ analysis_tools:
 	expectParseError(t, yaml, "image_field_name is required when driver is \"custom\"")
 }
 
+func TestValidation_UnknownDriverRequiresImageFieldName(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  test_kitchen:
+    driver: hyperv
+`
+	expectParseError(t, yaml, "image_field_name is required when driver is \"custom\"")
+}
+
 func TestValidation_PlatformMapKitchenNameRequired(t *testing.T) {
 	yaml := `
 organisations:

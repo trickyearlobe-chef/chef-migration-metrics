@@ -1835,3 +1835,89 @@ func TestSanitiseKitchenEnv_NoEqualsSign(t *testing.T) {
 		t.Errorf("expected 2 entries, got %d: %v", len(got), got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Review test gap: per-platform DriverSettings in overlay
+// ---------------------------------------------------------------------------
+
+func TestBuildOverlay_PerPlatformDriverSettings(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "vcenter",
+		DriverSettings: map[string]any{
+			"vcenter_host": "vcenter.example.com",
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{
+				KitchenName: "ubuntu-22.04",
+				Image:       "tmpl-ubuntu-2204",
+				DriverSettings: map[string]any{
+					"datacenter": "DC1",
+					"cluster":    "CLUSTER-A",
+				},
+			},
+			{
+				KitchenName: "centos-8",
+				Image:       "tmpl-centos-8",
+				// No per-platform settings — only top-level should apply.
+			},
+		},
+	})
+	got := s.buildOverlay("", "dokken")
+
+	// Top-level driver settings should appear in the driver block.
+	if !strings.Contains(got, "vcenter_host: vcenter.example.com") {
+		t.Errorf("expected top-level vcenter_host, got:\n%s", got)
+	}
+	// Per-platform settings should appear under each platform's driver block.
+	if !strings.Contains(got, "datacenter: DC1") {
+		t.Errorf("expected per-platform datacenter for ubuntu, got:\n%s", got)
+	}
+	if !strings.Contains(got, "cluster: CLUSTER-A") {
+		t.Errorf("expected per-platform cluster for ubuntu, got:\n%s", got)
+	}
+	// centos-8 should have no per-platform settings (just the image).
+	if !strings.Contains(got, "template: tmpl-centos-8") {
+		t.Errorf("expected centos image via template field, got:\n%s", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Review test gap: DriverSecrets without DriverSettings (secrets-only block)
+// ---------------------------------------------------------------------------
+
+func TestBuildOverlay_SecretsOnlyDriverBlock(t *testing.T) {
+	// A driver block with only ERB-referenced secrets and no plaintext settings.
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "ec2",
+		DriverSecrets: map[string]string{
+			"aws_access_key_id":     "aws-key-cred",
+			"aws_secret_access_key": "aws-secret-cred",
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "ami-12345"},
+		},
+	})
+	got := s.buildOverlay("", "dokken")
+
+	if !strings.Contains(got, "driver:") {
+		t.Error("expected driver section for secrets-only block")
+	}
+	if !strings.Contains(got, "name: ec2") {
+		t.Errorf("expected driver name ec2, got:\n%s", got)
+	}
+	// Both secrets should have ERB env var references.
+	if !strings.Contains(got, "aws_access_key_id: <%= ENV['CMM_TK_SECRET_AWS_ACCESS_KEY_ID'] %>") {
+		t.Errorf("expected ERB ref for aws_access_key_id, got:\n%s", got)
+	}
+	if !strings.Contains(got, "aws_secret_access_key: <%= ENV['CMM_TK_SECRET_AWS_SECRET_ACCESS_KEY'] %>") {
+		t.Errorf("expected ERB ref for aws_secret_access_key, got:\n%s", got)
+	}
+	// Should NOT contain any plaintext driver settings lines (besides name).
+	lines := strings.Split(got, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "instance_type:") || strings.HasPrefix(trimmed, "region:") {
+			t.Errorf("unexpected plaintext driver setting: %s", trimmed)
+		}
+	}
+}
