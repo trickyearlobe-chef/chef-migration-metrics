@@ -96,23 +96,11 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 ) {
 	ctx := req.Context()
 
-	var ownedKeys map[string]bool
-	if of.Unowned {
-		keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-		if err != nil {
-			r.logf("ERROR", "resolving all owned node keys for platform distribution: %v", err)
-			WriteInternalError(w, "Failed to resolve ownership filter.")
-			return
-		}
-		ownedKeys = keys
-	} else if len(of.OwnerNames) > 0 {
-		keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-		if err != nil {
-			r.logf("ERROR", "resolving owned node keys for platform distribution: %v", err)
-			WriteInternalError(w, "Failed to resolve ownership filter.")
-			return
-		}
-		ownedKeys = keys
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "node")
+	if err != nil {
+		r.logf("ERROR", "resolving node ownership filter for platform distribution: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
 
 	orgIDs := make([]string, 0, len(orgs))
@@ -131,16 +119,8 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 	counts := make(map[string]int)
 	totalNodes := 0
 	for _, n := range nodes {
-		if ownedKeys != nil {
-			if of.Unowned {
-				if ownedKeys[n.NodeName] {
-					continue
-				}
-			} else {
-				if !ownedKeys[n.NodeName] {
-					continue
-				}
-			}
+		if !ownershipInclude(n.NodeName, ownedKeys, of) {
+			continue
 		}
 		p := n.Platform
 		if p == "" {
