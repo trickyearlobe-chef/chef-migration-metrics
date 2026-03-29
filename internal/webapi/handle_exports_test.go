@@ -1241,34 +1241,32 @@ func newExportMockStore() *mockStore {
 
 	nodes := []datastore.NodeSnapshot{
 		{
-			ID:              "snap-1",
-			OrganisationID:  "production",
-			NodeName:        "web1",
-			ChefEnvironment: "prod",
-			ChefVersion:     "17.10.0",
-			Platform:        "ubuntu",
-			PlatformVersion: "22.04",
-			PolicyName:      "webserver",
-			PolicyGroup:     "prod",
-			IsStale:         false,
-			Cookbooks:       json.RawMessage(`{"apt":{"version":"7.4.0"}}`),
-			Roles:           json.RawMessage(`["base","webserver"]`),
-			CollectedAt:     time.Now().UTC(),
+			OrganisationName: "production",
+			NodeName:         "web1",
+			ChefEnvironment:  "prod",
+			ChefVersion:      "17.10.0",
+			Platform:         "ubuntu",
+			PlatformVersion:  "22.04",
+			PolicyName:       "webserver",
+			PolicyGroup:      "prod",
+			IsStale:          false,
+			Cookbooks:        json.RawMessage(`{"apt":{"version":"7.4.0"}}`),
+			Roles:            json.RawMessage(`["base","webserver"]`),
+			CollectedAt:      time.Now().UTC(),
 		},
 		{
-			ID:              "snap-2",
-			OrganisationID:  "production",
-			NodeName:        "db1",
-			ChefEnvironment: "prod",
-			ChefVersion:     "16.0.0",
-			Platform:        "centos",
-			PlatformVersion: "7.9",
-			PolicyName:      "",
-			PolicyGroup:     "",
-			IsStale:         false,
-			Cookbooks:       json.RawMessage(`{"mysql":{"version":"8.0.0"}}`),
-			Roles:           json.RawMessage(`["base","database"]`),
-			CollectedAt:     time.Now().UTC(),
+			OrganisationName: "production",
+			NodeName:         "db1",
+			ChefEnvironment:  "prod",
+			ChefVersion:      "16.0.0",
+			Platform:         "centos",
+			PlatformVersion:  "7.9",
+			PolicyName:       "",
+			PolicyGroup:      "",
+			IsStale:          false,
+			Cookbooks:        json.RawMessage(`{"mysql":{"version":"8.0.0"}}`),
+			Roles:            json.RawMessage(`["base","database"]`),
+			CollectedAt:      time.Now().UTC(),
 		},
 	}
 
@@ -1276,7 +1274,6 @@ func newExportMockStore() *mockStore {
 		"snap-1": {
 			{
 				ID:                "nr-1",
-				NodeSnapshotID:    "snap-1",
 				TargetChefVersion: "18.0.0",
 				IsReady:           true,
 			},
@@ -1284,7 +1281,6 @@ func newExportMockStore() *mockStore {
 		"snap-2": {
 			{
 				ID:                "nr-2",
-				NodeSnapshotID:    "snap-2",
 				TargetChefVersion: "18.0.0",
 				IsReady:           false,
 				BlockingCookbooks: json.RawMessage(`["mysql"]`),
@@ -1294,16 +1290,14 @@ func newExportMockStore() *mockStore {
 
 	cookbooks := []datastore.ServerCookbook{
 		{
-			ID:             "cb-1",
-			OrganisationID: "production",
-			Name:           "apt",
-			Version:        "7.4.0",
+			OrganisationName: "production",
+			Name:             "apt",
+			Version:          "7.4.0",
 		},
 		{
-			ID:             "cb-2",
-			OrganisationID: "production",
-			Name:           "mysql",
-			Version:        "8.0.0",
+			OrganisationName: "production",
+			Name:             "mysql",
+			Version:          "8.0.0",
 		},
 	}
 

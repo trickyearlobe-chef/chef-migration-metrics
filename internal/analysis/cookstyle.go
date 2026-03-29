@@ -434,9 +434,10 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	log := s.logger.WithScope(logging.ScopeCookstyleScan,
 		logging.WithCookbook(sc.Name, sc.Version))
 
+	scKey := sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
 	sr := CookstyleScanResult{
-		CookbookID:        sc.ID,
-		OrganisationID:    sc.OrganisationID,
+		CookbookID:        scKey,
+		OrganisationID:    sc.OrganisationName,
 		CookbookName:      sc.Name,
 		CookbookVersion:   sc.Version,
 		TargetChefVersion: targetChefVersion,
@@ -446,7 +447,7 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	// Server cookbook versions are immutable — an existing result is always
 	// valid. However, if the previous result was an error (exit code >= 2),
 	// re-scan in case the issue has been resolved (e.g. CookStyle update).
-	existing, err := s.db.GetServerCookbookCookstyleResult(ctx, sc.ID, targetChefVersion)
+	existing, err := s.db.GetServerCookbookCookstyleResult(ctx, scKey, targetChefVersion)
 	if err == nil && existing != nil && existing.ErrorMessage == "" {
 		log.Debug(fmt.Sprintf("skipping — already scanned at %s",
 			existing.ScannedAt.Format(time.RFC3339)))

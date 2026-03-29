@@ -54,7 +54,7 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 	}
 
 	// --- SQL aggregate push-down path ---
-	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}
+	f := datastore.NodeSnapshotFilter{OrganisationNames: orgIDs}
 	counts, totalNodes, err := r.db.CountNodePlatformDistribution(ctx, f)
 	if err != nil {
 		r.logf("ERROR", "counting platform distribution: %v", err)
@@ -108,7 +108,7 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 		orgIDs = append(orgIDs, org.Name)
 	}
 
-	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}
+	f := datastore.NodeSnapshotFilter{OrganisationNames: orgIDs}
 	nodes, _, err := r.db.ListNodeSnapshotsFiltered(ctx, f)
 	if err != nil {
 		r.logf("ERROR", "listing nodes for platform distribution owner filter: %v", err)

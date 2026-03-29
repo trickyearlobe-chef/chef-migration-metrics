@@ -83,7 +83,7 @@ func GenerateReadyNodeExport(ctx context.Context, db DataStore, params ReadyNode
 	for _, r := range rows {
 		exportRows = append(exportRows, readyNodeRow{
 			NodeName:        r.node.NodeName,
-			Organisation:    orgNameByID[r.node.OrganisationID],
+			Organisation:    orgNameByID[r.node.OrganisationName],
 			Environment:     r.node.ChefEnvironment,
 			Platform:        r.node.Platform,
 			PlatformVersion: r.node.PlatformVersion,
@@ -135,7 +135,7 @@ func collectReadyNodes(ctx context.Context, db DataStore, params ReadyNodeExport
 		nodes = FilterNodes(nodes, params.Filters)
 
 		for _, node := range nodes {
-			readinessRecords, err := db.ListNodeReadinessForSnapshot(ctx, node.ID)
+			readinessRecords, err := db.ListNodeReadinessByNodeName(ctx, node.OrganisationName, node.NodeName)
 			if err != nil {
 				continue
 			}

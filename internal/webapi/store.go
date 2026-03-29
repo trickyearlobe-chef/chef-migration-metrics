@@ -147,7 +147,7 @@ type DataStore interface {
 	// ResetServerCookbookDownloadStatus resets the download_status to
 	// 'pending' for a server cookbook, forcing the streaming pipeline to
 	// re-download and re-scan it on the next collection cycle.
-	ResetServerCookbookDownloadStatus(ctx context.Context, id string) (datastore.ServerCookbook, error)
+	ResetServerCookbookDownloadStatus(ctx context.Context, organisationName, name, version string) (datastore.ServerCookbook, error)
 
 	// ResetAllServerCookbookDownloadStatuses resets download_status to
 	// 'pending' for all server cookbooks with status 'ok', forcing the
@@ -306,7 +306,7 @@ type DataStore interface {
 
 	// GetLogEntry retrieves a single log entry by ID. Returns
 	// datastore.ErrNotFound if no such entry exists.
-	GetLogEntry(ctx context.Context, id string) (datastore.LogEntry, error)
+	GetLogEntry(ctx context.Context, id int64) (datastore.LogEntry, error)
 
 	// -----------------------------------------------------------------
 	// Role dependencies (used by dependency graph handlers)
@@ -396,15 +396,15 @@ type DataStore interface {
 
 	// GetAssignment returns a single assignment by ID. Returns
 	// datastore.ErrNotFound if no such assignment exists.
-	GetAssignment(ctx context.Context, id string) (datastore.OwnershipAssignment, error)
+	GetAssignment(ctx context.Context, id int64) (datastore.OwnershipAssignment, error)
 
 	// DeleteAssignment removes an assignment by ID. Returns
 	// datastore.ErrNotFound if no such assignment exists.
-	DeleteAssignment(ctx context.Context, id string) error
+	DeleteAssignment(ctx context.Context, id int64) error
 
 	// ReassignOwnership moves assignments from one owner to another.
 	// Returns the number reassigned and the number skipped (duplicates).
-	ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (reassigned, skipped int, err error)
+	ReassignOwnership(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (reassigned, skipped int, err error)
 
 	// LookupOwnership returns the owners of a given entity, including
 	// inherited ownership.

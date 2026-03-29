@@ -416,15 +416,16 @@ func (s *ComplexityScorer) scoreOneServerCookbook(
 	targetChefVersion string,
 	blastRadii map[string]BlastRadius,
 ) ComplexityResult {
+	cbKey := cb.OrganisationName + "/" + cb.Name + "/" + cb.Version
 	result := ComplexityResult{
-		CookbookID:        cb.ID,
+		CookbookID:        cbKey,
 		CookbookName:      cb.Name,
 		CookbookVersion:   cb.Version,
 		TargetChefVersion: targetChefVersion,
 	}
 
 	// Step 1: Load CookStyle result.
-	csResult, csErr := s.db.GetServerCookbookCookstyleResult(ctx, cb.ID, targetChefVersion)
+	csResult, csErr := s.db.GetServerCookbookCookstyleResult(ctx, cbKey, targetChefVersion)
 	if csErr != nil {
 		result.Error = fmt.Errorf("loading cookstyle result: %w", csErr)
 		return result
@@ -453,7 +454,7 @@ func (s *ComplexityScorer) scoreOneServerCookbook(
 
 	// Step 4: Compute score.
 	input := ComplexityInput{
-		CookbookID:        cb.ID,
+		CookbookID:        cbKey,
 		CookbookName:      cb.Name,
 		CookbookVersion:   cb.Version,
 		TargetChefVersion: targetChefVersion,
@@ -653,8 +654,8 @@ func (s *ComplexityScorer) loadBlastRadii(ctx context.Context, organisationID st
 
 	// 1. Get node and policy counts from the latest usage analysis.
 	latestAnalysis, err := s.db.GetLatestCookbookUsageAnalysis(ctx, organisationID)
-	if err == nil && latestAnalysis.ID != "" {
-		summaries, sumErr := s.db.ListCookbookUsageSummaries(ctx, latestAnalysis.ID)
+	if err == nil && latestAnalysis.OrganisationName != "" {
+		summaries, sumErr := s.db.ListCookbookUsageSummaries(ctx, latestAnalysis.OrganisationName)
 		if sumErr == nil {
 			for _, d := range summaries {
 				r := radii[d.CookbookName]

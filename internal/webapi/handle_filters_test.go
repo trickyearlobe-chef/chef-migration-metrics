@@ -197,8 +197,8 @@ func TestFilterOrgIDs_NoOrgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(f.OrganisationIDs) != 0 {
-		t.Errorf("expected 0 org IDs, got %d", len(f.OrganisationIDs))
+	if len(f.OrganisationNames) != 0 {
+		t.Errorf("expected 0 org IDs, got %d", len(f.OrganisationNames))
 	}
 }
 
@@ -217,8 +217,8 @@ func TestFilterOrgIDs_WithOrgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(f.OrganisationIDs) != 2 {
-		t.Errorf("expected 2 org IDs, got %d", len(f.OrganisationIDs))
+	if len(f.OrganisationNames) != 2 {
+		t.Errorf("expected 2 org IDs, got %d", len(f.OrganisationNames))
 	}
 }
 

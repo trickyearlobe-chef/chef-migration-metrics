@@ -85,7 +85,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	var serverCookbookID string
 	for _, sc := range serverCookbooks {
 		if sc.Version == cookbookVersion {
-			serverCookbookID = sc.ID
+			serverCookbookID = sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
 			break
 		}
 	}

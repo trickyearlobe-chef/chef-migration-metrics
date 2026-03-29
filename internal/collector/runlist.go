@@ -108,7 +108,7 @@ func ParseRunList(runList []string) []ParsedRunListEntry {
 // The results are deduplicated per role — if the same dependency appears in
 // both the default run_list and an environment run_list, only one record is
 // produced.
-func BuildRoleDependencies(organisationID string, roles []*chefapi.RoleDetail) []datastore.InsertRoleDependencyParams {
+func BuildRoleDependencies(organisationName string, roles []*chefapi.RoleDetail) []datastore.InsertRoleDependencyParams {
 	var params []datastore.InsertRoleDependencyParams
 
 	for _, role := range roles {
@@ -135,10 +135,10 @@ func BuildRoleDependencies(organisationID string, roles []*chefapi.RoleDetail) [
 				seen[key] = true
 
 				params = append(params, datastore.InsertRoleDependencyParams{
-					OrganisationID: organisationID,
-					RoleName:       role.Name,
-					DependencyType: depType,
-					DependencyName: entry.Name,
+					OrganisationName: organisationName,
+					RoleName:         role.Name,
+					DependencyType:   depType,
+					DependencyName:   entry.Name,
 				})
 			}
 		}

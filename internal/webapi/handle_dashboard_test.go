@@ -669,12 +669,12 @@ func TestHandleDashboardVersionDistributionTrend_HappyPath(t *testing.T) {
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-1",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
-					Data:            json.RawMessage(`{"distribution":{"18.0.0":1,"17.0.0":1},"total_nodes":2,"stale_nodes":0,"fresh_nodes":2}`),
-					SnapshotAt:      now,
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
+					Data:             json.RawMessage(`{"distribution":{"18.0.0":1,"17.0.0":1},"total_nodes":2,"stale_nodes":0,"fresh_nodes":2}`),
+					SnapshotAt:       now,
 				},
 			}, nil
 		},
@@ -731,8 +731,8 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
-				{ID: "cb-2", Name: "nginx", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
+				{Name: "nginx", Version: "1.0.0"},
 			}, nil
 		},
 		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error) {
@@ -852,18 +852,18 @@ func TestHandleDashboardReadinessTrend_HappyPath_Snapshots(t *testing.T) {
 			}
 			return []datastore.MetricSnapshot{
 				{
-					ID:                "ms-2",
-					CollectionRunID:   "run-2",
-					OrganisationID:    "org-1",
+					ID:                2,
+					CollectionRunOrg:  "run-2",
+					OrganisationName:  "org-1",
 					SnapshotType:      "readiness_summary",
 					TargetChefVersion: "18.0.0",
 					Data:              []byte(`{"total_nodes":10,"ready":8,"blocked":2,"nodes_omitted":false,"nodes":[{"name":"web01","is_ready":true},{"name":"web02","is_ready":true},{"name":"web03","is_ready":true},{"name":"web04","is_ready":true},{"name":"web05","is_ready":true},{"name":"web06","is_ready":true},{"name":"web07","is_ready":true},{"name":"web08","is_ready":true},{"name":"db01","is_ready":false},{"name":"db02","is_ready":false}]}`),
 					SnapshotAt:        t2,
 				},
 				{
-					ID:                "ms-1",
-					CollectionRunID:   "run-1",
-					OrganisationID:    "org-1",
+					ID:                1,
+					CollectionRunOrg:  "run-1",
+					OrganisationName:  "org-1",
 					SnapshotType:      "readiness_summary",
 					TargetChefVersion: "18.0.0",
 					Data:              []byte(`{"total_nodes":10,"ready":6,"blocked":4,"nodes_omitted":false,"nodes":[{"name":"web01","is_ready":true},{"name":"web02","is_ready":true},{"name":"web03","is_ready":true},{"name":"web04","is_ready":true},{"name":"web05","is_ready":true},{"name":"web06","is_ready":true},{"name":"db01","is_ready":false},{"name":"db02","is_ready":false},{"name":"db03","is_ready":false},{"name":"db04","is_ready":false}]}`),
@@ -885,7 +885,7 @@ func TestHandleDashboardReadinessTrend_HappyPath_Snapshots(t *testing.T) {
 	var body struct {
 		Data []struct {
 			OrganisationName  string  `json:"organisation_name"`
-			CollectionRunID   string  `json:"collection_run_id"`
+			CollectionRunOrg  string  `json:"collection_run_org"`
 			CompletedAt       string  `json:"completed_at"`
 			TargetChefVersion string  `json:"target_chef_version"`
 			TotalNodes        int     `json:"total_nodes"`
@@ -906,8 +906,8 @@ func TestHandleDashboardReadinessTrend_HappyPath_Snapshots(t *testing.T) {
 	if p0.OrganisationName != "prod" {
 		t.Errorf("data[0].organisation_name = %q, want %q", p0.OrganisationName, "prod")
 	}
-	if p0.CollectionRunID != "run-2" {
-		t.Errorf("data[0].collection_run_id = %q, want %q", p0.CollectionRunID, "run-2")
+	if p0.CollectionRunOrg != "run-2" {
+		t.Errorf("data[0].collection_run_id = %q, want %q", p0.CollectionRunOrg, "run-2")
 	}
 	if p0.CompletedAt != "2025-06-15T12:00:00Z" {
 		t.Errorf("data[0].completed_at = %q, want %q", p0.CompletedAt, "2025-06-15T12:00:00Z")
@@ -950,9 +950,9 @@ func TestHandleDashboardReadinessTrend_Snapshots_OwnershipFiltered(t *testing.T)
 		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:                "ms-1",
-					CollectionRunID:   "run-1",
-					OrganisationID:    "org-1",
+					ID:                1,
+					CollectionRunOrg:  "run-1",
+					OrganisationName:  "org-1",
 					SnapshotType:      "readiness_summary",
 					TargetChefVersion: "18.0.0",
 					Data:              []byte(`{"total_nodes":4,"ready":2,"blocked":2,"nodes_omitted":false,"nodes":[{"name":"web01","is_ready":true},{"name":"web02","is_ready":true},{"name":"db01","is_ready":false},{"name":"db02","is_ready":false}]}`),
@@ -1011,9 +1011,9 @@ func TestHandleDashboardReadinessTrend_Snapshots_NodesOmitted_SkippedUnderOwnerF
 		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:                "ms-1",
-					CollectionRunID:   "run-1",
-					OrganisationID:    "org-1",
+					ID:                1,
+					CollectionRunOrg:  "run-1",
+					OrganisationName:  "org-1",
 					SnapshotType:      "readiness_summary",
 					TargetChefVersion: "18.0.0",
 					Data:              []byte(`{"total_nodes":60000,"ready":50000,"blocked":10000,"nodes_omitted":true}`),
@@ -1054,9 +1054,9 @@ func TestHandleDashboardReadinessTrend_Snapshots_Empty(t *testing.T) {
 		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:                "ms-1",
-					CollectionRunID:   "run-1",
-					OrganisationID:    "org-1",
+					ID:                1,
+					CollectionRunOrg:  "run-1",
+					OrganisationName:  "org-1",
 					SnapshotType:      "readiness_summary",
 					TargetChefVersion: "18.0.0",
 					Data:              []byte(`{"total_nodes":0,"ready":0,"blocked":0,"nodes_omitted":false,"nodes":[]}`),
@@ -1355,12 +1355,12 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-1",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
-					Data:            json.RawMessage(`{"distribution":{"18.0.0":3,"17.0.0":2},"total_nodes":5,"stale_nodes":3,"fresh_nodes":2}`),
-					SnapshotAt:      now,
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
+					Data:             json.RawMessage(`{"distribution":{"18.0.0":3,"17.0.0":2},"total_nodes":5,"stale_nodes":3,"fresh_nodes":2}`),
+					SnapshotAt:       now,
 				},
 			}, nil
 		},
@@ -1376,7 +1376,7 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 	var body struct {
 		Data []struct {
 			OrganisationName string `json:"organisation_name"`
-			CollectionRunID  string `json:"collection_run_id"`
+			CollectionRunOrg string `json:"collection_run_org"`
 			CompletedAt      string `json:"completed_at"`
 			TotalNodes       int    `json:"total_nodes"`
 			StaleNodes       int    `json:"stale_nodes"`
@@ -1393,8 +1393,8 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 	if pt.OrganisationName != "prod" {
 		t.Errorf("organisation_name = %q, want %q", pt.OrganisationName, "prod")
 	}
-	if pt.CollectionRunID != "run-1" {
-		t.Errorf("collection_run_id = %q, want %q", pt.CollectionRunID, "run-1")
+	if pt.CollectionRunOrg != "run-1" {
+		t.Errorf("collection_run_id = %q, want %q", pt.CollectionRunOrg, "run-1")
 	}
 	if pt.TotalNodes != 5 {
 		t.Errorf("total_nodes = %d, want 5", pt.TotalNodes)
@@ -1450,12 +1450,12 @@ func TestHandleDashboardStaleTrend_SkipsNonCompletedRuns(t *testing.T) {
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-3",
-					CollectionRunID: "run-3",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
-					Data:            json.RawMessage(`{"distribution":{},"total_nodes":1,"stale_nodes":1,"fresh_nodes":0}`),
-					SnapshotAt:      now,
+					ID:               3,
+					CollectionRunOrg: "run-3",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
+					Data:             json.RawMessage(`{"distribution":{},"total_nodes":1,"stale_nodes":1,"fresh_nodes":0}`),
+					SnapshotAt:       now,
 				},
 			}, nil
 		},
@@ -1470,7 +1470,7 @@ func TestHandleDashboardStaleTrend_SkipsNonCompletedRuns(t *testing.T) {
 	}
 	var body struct {
 		Data []struct {
-			CollectionRunID string `json:"collection_run_id"`
+			CollectionRunOrg string `json:"collection_run_org"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -1480,8 +1480,8 @@ func TestHandleDashboardStaleTrend_SkipsNonCompletedRuns(t *testing.T) {
 	if len(body.Data) != 1 {
 		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
-	if body.Data[0].CollectionRunID != "run-3" {
-		t.Errorf("collection_run_id = %q, want %q", body.Data[0].CollectionRunID, "run-3")
+	if body.Data[0].CollectionRunOrg != "run-3" {
+		t.Errorf("collection_run_id = %q, want %q", body.Data[0].CollectionRunOrg, "run-3")
 	}
 }
 
@@ -1511,20 +1511,20 @@ func TestHandleDashboardStaleTrend_MultipleRuns(t *testing.T) {
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-1",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
-					Data:            json.RawMessage(`{"distribution":{},"total_nodes":2,"stale_nodes":2,"fresh_nodes":0}`),
-					SnapshotAt:      t1,
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
+					Data:             json.RawMessage(`{"distribution":{},"total_nodes":2,"stale_nodes":2,"fresh_nodes":0}`),
+					SnapshotAt:       t1,
 				},
 				{
-					ID:              "ms-2",
-					CollectionRunID: "run-2",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
-					Data:            json.RawMessage(`{"distribution":{},"total_nodes":3,"stale_nodes":1,"fresh_nodes":2}`),
-					SnapshotAt:      t2,
+					ID:               2,
+					CollectionRunOrg: "run-2",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
+					Data:             json.RawMessage(`{"distribution":{},"total_nodes":3,"stale_nodes":1,"fresh_nodes":2}`),
+					SnapshotAt:       t2,
 				},
 			}, nil
 		},
@@ -1539,10 +1539,10 @@ func TestHandleDashboardStaleTrend_MultipleRuns(t *testing.T) {
 	}
 	var body struct {
 		Data []struct {
-			CollectionRunID string `json:"collection_run_id"`
-			TotalNodes      int    `json:"total_nodes"`
-			StaleNodes      int    `json:"stale_nodes"`
-			FreshNodes      int    `json:"fresh_nodes"`
+			CollectionRunOrg string `json:"collection_run_org"`
+			TotalNodes       int    `json:"total_nodes"`
+			StaleNodes       int    `json:"stale_nodes"`
+			FreshNodes       int    `json:"fresh_nodes"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -1697,11 +1697,11 @@ func TestHandleDashboardCookbookDownloadStatus_HappyPath_MixedStatuses(t *testin
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "prod-org", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok", IsActive: true},
-				{ID: "cb-2", OrganisationID: "prod-org", Name: "apache2", Version: "5.1.0", DownloadStatus: "ok", IsActive: true},
-				{ID: "cb-3", OrganisationID: "prod-org", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
-				{ID: "cb-4", OrganisationID: "prod-org", Name: "mysql", Version: "8.0.0", DownloadStatus: "pending", IsActive: false},
-				{ID: "cb-5", OrganisationID: "prod-org", Name: "java", Version: "2.0.0", DownloadStatus: "failed", DownloadError: "connection timeout", IsActive: false},
+				{OrganisationName: "prod-org", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok", IsActive: true},
+				{OrganisationName: "prod-org", Name: "apache2", Version: "5.1.0", DownloadStatus: "ok", IsActive: true},
+				{OrganisationName: "prod-org", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
+				{OrganisationName: "prod-org", Name: "mysql", Version: "8.0.0", DownloadStatus: "pending", IsActive: false},
+				{OrganisationName: "prod-org", Name: "java", Version: "2.0.0", DownloadStatus: "failed", DownloadError: "connection timeout", IsActive: false},
 			}, nil
 		},
 	}
@@ -1720,13 +1720,11 @@ func TestHandleDashboardCookbookDownloadStatus_HappyPath_MixedStatuses(t *testin
 		HasFailures     bool   `json:"has_failures"`
 		FailureMessage  string `json:"failure_message"`
 		FailedCookbooks []struct {
-			ID             string `json:"id"`
-			OrganisationID string `json:"organisation_id"`
-			OrgName        string `json:"organisation_name"`
-			Name           string `json:"name"`
-			Version        string `json:"version"`
-			DownloadError  string `json:"download_error"`
-			IsActive       bool   `json:"is_active"`
+			OrgName       string `json:"organisation_name"`
+			Name          string `json:"name"`
+			Version       string `json:"version"`
+			DownloadError string `json:"download_error"`
+			IsActive      bool   `json:"is_active"`
 		} `json:"failed_cookbooks"`
 		FailedCookbookCount int `json:"failed_cookbook_count"`
 		StatusCounts        struct {
@@ -1821,7 +1819,7 @@ func TestHandleDashboardCookbookDownloadStatus_IgnoresGitCookbooks(t *testing.T)
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+				{OrganisationName: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -1863,9 +1861,9 @@ func TestHandleDashboardCookbookDownloadStatus_AllOK(t *testing.T) {
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", DownloadStatus: "ok"},
-				{ID: "cb-3", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
+				{OrganisationName: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+				{OrganisationName: "org-1", Name: "nginx", Version: "3.0.0", DownloadStatus: "ok"},
+				{OrganisationName: "org-1", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -1935,13 +1933,13 @@ func TestHandleDashboardCookbookDownloadStatus_MultipleOrgs(t *testing.T) {
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			if organisationID == "prod" {
 				return []datastore.ServerCookbook{
-					{ID: "cb-1", OrganisationID: "prod", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
-					{ID: "cb-2", OrganisationID: "prod", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "404 Not Found", IsActive: true},
+					{OrganisationName: "prod", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+					{OrganisationName: "prod", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "404 Not Found", IsActive: true},
 				}, nil
 			}
 			return []datastore.ServerCookbook{
-				{ID: "cb-3", OrganisationID: "staging", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
-				{ID: "cb-4", OrganisationID: "staging", Name: "redis", Version: "1.0.0", DownloadStatus: "pending"},
+				{OrganisationName: "staging", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
+				{OrganisationName: "staging", Name: "redis", Version: "1.0.0", DownloadStatus: "pending"},
 			}, nil
 		},
 	}
@@ -2028,7 +2026,7 @@ func TestHandleDashboardCookbookDownloadStatus_CookbookListError_NonFatal(t *tes
 				return nil, errors.New("timeout")
 			}
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "org2", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+				{OrganisationName: "org2", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -2071,7 +2069,7 @@ func TestHandleDashboardCookbookDownloadStatus_EmptyDownloadStatusTreatedAsPendi
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "legacy", Version: "1.0.0", DownloadStatus: ""},
+				{OrganisationName: "org-1", Name: "legacy", Version: "1.0.0", DownloadStatus: ""},
 			}, nil
 		},
 	}
@@ -2117,10 +2115,10 @@ func TestHandleDashboardCookbookDownloadStatus_FailedSortedActiveFirst(t *testin
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "zebra", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err1", IsActive: false},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "alpha", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err2", IsActive: true},
-				{ID: "cb-3", OrganisationID: "org-1", Name: "beta", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err3", IsActive: true},
-				{ID: "cb-4", OrganisationID: "org-1", Name: "delta", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err4", IsActive: false},
+				{OrganisationName: "org-1", Name: "zebra", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err1", IsActive: false},
+				{OrganisationName: "org-1", Name: "alpha", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err2", IsActive: true},
+				{OrganisationName: "org-1", Name: "beta", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err3", IsActive: true},
+				{OrganisationName: "org-1", Name: "delta", Version: "1.0.0", DownloadStatus: "failed", DownloadError: "err4", IsActive: false},
 			}, nil
 		},
 	}
@@ -2582,22 +2580,22 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_HappyPath(t *
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-1",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
 					Data: json.RawMessage(`{
-						"distribution":{"18.0.0":2,"17.0.0":1},
-						"total_nodes":3,
-						"stale_nodes":0,
-						"fresh_nodes":3,
-						"nodes":[
-							{"name":"web01","version":"18.0.0"},
-							{"name":"web02","version":"18.0.0"},
-							{"name":"db01","version":"17.0.0"}
-						],
-						"nodes_omitted":false
-					}`),
+                        "distribution":{"18.0.0":2,"17.0.0":1},
+                        "total_nodes":3,
+                        "stale_nodes":0,
+                        "fresh_nodes":3,
+                        "nodes":[
+                            {"name":"web01","version":"18.0.0"},
+                            {"name":"web02","version":"18.0.0"},
+                            {"name":"db01","version":"17.0.0"}
+                        ],
+                        "nodes_omitted":false
+                    }`),
 					SnapshotAt: now,
 				},
 			}, nil
@@ -2617,7 +2615,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_HappyPath(t *
 	var body struct {
 		Data []struct {
 			OrganisationName string         `json:"organisation_name"`
-			CollectionRunID  string         `json:"collection_run_id"`
+			CollectionRunOrg string         `json:"collection_run_org"`
 			CompletedAt      string         `json:"completed_at"`
 			TotalNodes       int            `json:"total_nodes"`
 			Distribution     map[string]int `json:"distribution"`
@@ -2642,8 +2640,8 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_HappyPath(t *
 	if pt.OrganisationName != "prod" {
 		t.Errorf("organisation_name = %q, want %q", pt.OrganisationName, "prod")
 	}
-	if pt.CollectionRunID != "run-1" {
-		t.Errorf("collection_run_id = %q, want %q", pt.CollectionRunID, "run-1")
+	if pt.CollectionRunOrg != "run-1" {
+		t.Errorf("collection_run_id = %q, want %q", pt.CollectionRunOrg, "run-1")
 	}
 	if pt.CompletedAt != "2025-06-15T12:00:00Z" {
 		t.Errorf("completed_at = %q, want %q", pt.CompletedAt, "2025-06-15T12:00:00Z")
@@ -2667,22 +2665,22 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_Unowned(t *te
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-1",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
 					Data: json.RawMessage(`{
-						"distribution":{"18.0.0":2,"17.0.0":1},
-						"total_nodes":3,
-						"stale_nodes":0,
-						"fresh_nodes":3,
-						"nodes":[
-							{"name":"web01","version":"18.0.0"},
-							{"name":"web02","version":"18.0.0"},
-							{"name":"db01","version":"17.0.0"}
-						],
-						"nodes_omitted":false
-					}`),
+                        "distribution":{"18.0.0":2,"17.0.0":1},
+                        "total_nodes":3,
+                        "stale_nodes":0,
+                        "fresh_nodes":3,
+                        "nodes":[
+                            {"name":"web01","version":"18.0.0"},
+                            {"name":"web02","version":"18.0.0"},
+                            {"name":"db01","version":"17.0.0"}
+                        ],
+                        "nodes_omitted":false
+                    }`),
 					SnapshotAt: now,
 				},
 			}, nil
@@ -2702,7 +2700,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_Unowned(t *te
 	var body struct {
 		Data []struct {
 			OrganisationName string         `json:"organisation_name"`
-			CollectionRunID  string         `json:"collection_run_id"`
+			CollectionRunOrg string         `json:"collection_run_org"`
 			CompletedAt      string         `json:"completed_at"`
 			TotalNodes       int            `json:"total_nodes"`
 			Distribution     map[string]int `json:"distribution"`
@@ -2744,17 +2742,17 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_NodesOmitted(
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-1",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
 					Data: json.RawMessage(`{
-						"distribution":{"18.0.0":2,"17.0.0":1},
-						"total_nodes":3,
-						"stale_nodes":0,
-						"fresh_nodes":3,
-						"nodes_omitted":true
-					}`),
+                        "distribution":{"18.0.0":2,"17.0.0":1},
+                        "total_nodes":3,
+                        "stale_nodes":0,
+                        "fresh_nodes":3,
+                        "nodes_omitted":true
+                    }`),
 					SnapshotAt: now,
 				},
 			}, nil
@@ -2774,7 +2772,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_NodesOmitted(
 	var body struct {
 		Data []struct {
 			OrganisationName string         `json:"organisation_name"`
-			CollectionRunID  string         `json:"collection_run_id"`
+			CollectionRunOrg string         `json:"collection_run_org"`
 			CompletedAt      string         `json:"completed_at"`
 			TotalNodes       int            `json:"total_nodes"`
 			Distribution     map[string]int `json:"distribution"`
@@ -2803,12 +2801,12 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_BackwardCompa
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-1",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
-					Data:            json.RawMessage(`{"distribution":{"18.0.0":2},"total_nodes":2,"stale_nodes":0,"fresh_nodes":2}`),
-					SnapshotAt:      now,
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
+					Data:             json.RawMessage(`{"distribution":{"18.0.0":2},"total_nodes":2,"stale_nodes":0,"fresh_nodes":2}`),
+					SnapshotAt:       now,
 				},
 			}, nil
 		},
@@ -2827,7 +2825,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_BackwardCompa
 	var body struct {
 		Data []struct {
 			OrganisationName string         `json:"organisation_name"`
-			CollectionRunID  string         `json:"collection_run_id"`
+			CollectionRunOrg string         `json:"collection_run_org"`
 			CompletedAt      string         `json:"completed_at"`
 			TotalNodes       int            `json:"total_nodes"`
 			Distribution     map[string]int `json:"distribution"`
@@ -2853,21 +2851,20 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard(t *testing.T) {
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{
-				ID:             "run-1",
-				OrganisationID: "org-1",
-				Status:         "running",
-				StartedAt:      now,
+				OrganisationName: "org-1",
+				Status:           "running",
+				StartedAt:        now,
 			}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-0",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
-					Data:            json.RawMessage(`{"distribution":{"18.0.0":80,"17.0.0":20},"total_nodes":100,"stale_nodes":5,"fresh_nodes":95}`),
-					SnapshotAt:      now,
+					ID:               1,
+					CollectionRunOrg: "run-0",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
+					Data:             json.RawMessage(`{"distribution":{"18.0.0":80,"17.0.0":20},"total_nodes":100,"stale_nodes":5,"fresh_nodes":95}`),
+					SnapshotAt:       now,
 				},
 			}, nil
 		},
@@ -2928,11 +2925,10 @@ func TestHandleDashboardVersionDistribution_NoRunningCollection_UsesLiveData(t *
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{
-				ID:             "run-1",
-				OrganisationID: "org-1",
-				Status:         "completed",
-				StartedAt:      now,
-				CompletedAt:    now,
+				OrganisationName: "org-1",
+				Status:           "completed",
+				StartedAt:        now,
+				CompletedAt:      now,
 			}, nil
 		},
 		CountNodeVersionDistributionFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
@@ -2980,10 +2976,9 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_NoMetricSnapshot(
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{
-				ID:             "run-1",
-				OrganisationID: "org-1",
-				Status:         "running",
-				StartedAt:      now,
+				OrganisationName: "org-1",
+				Status:           "running",
+				StartedAt:        now,
 			}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
@@ -3034,10 +3029,9 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_WithOwnership(t *
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{
-				ID:             "run-1",
-				OrganisationID: "org-1",
-				Status:         "running",
-				StartedAt:      now,
+				OrganisationName: "org-1",
+				Status:           "running",
+				StartedAt:        now,
 			}, nil
 		},
 		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
@@ -3048,20 +3042,20 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_WithOwnership(t *
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
-					ID:              "ms-1",
-					CollectionRunID: "run-0",
-					OrganisationID:  "org-1",
-					SnapshotType:    "chef_version_distribution",
+					ID:               1,
+					CollectionRunOrg: "run-0",
+					OrganisationName: "org-1",
+					SnapshotType:     "chef_version_distribution",
 					Data: json.RawMessage(`{
-						"distribution":{"18.0.0":2,"17.0.0":1},
-						"total_nodes":3,
-						"nodes":[
-							{"name":"web01","version":"18.0.0"},
-							{"name":"web02","version":"18.0.0"},
-							{"name":"db01","version":"17.0.0"}
-						],
-						"nodes_omitted":false
-					}`),
+                        "distribution":{"18.0.0":2,"17.0.0":1},
+                        "total_nodes":3,
+                        "nodes":[
+                            {"name":"web01","version":"18.0.0"},
+                            {"name":"web02","version":"18.0.0"},
+                            {"name":"db01","version":"17.0.0"}
+                        ],
+                        "nodes_omitted":false
+                    }`),
 					SnapshotAt: now,
 				},
 			}, nil

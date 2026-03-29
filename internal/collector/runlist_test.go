@@ -411,8 +411,8 @@ func TestBuildRoleDependencies_MultipleRoles(t *testing.T) {
 
 	// Check that all org IDs are correct.
 	for _, p := range result {
-		if p.OrganisationID != "org-1" {
-			t.Errorf("expected OrganisationID=org-1, got %q", p.OrganisationID)
+		if p.OrganisationName != "org-1" {
+			t.Errorf("expected OrganisationName=org-1, got %q", p.OrganisationName)
 		}
 	}
 
@@ -624,8 +624,8 @@ func TestBuildRoleDependencies_EmptyOrganisationID(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("expected 1 param, got %d", len(result))
 	}
-	if result[0].OrganisationID != "" {
-		t.Errorf("expected empty OrganisationID, got %q", result[0].OrganisationID)
+	if result[0].OrganisationName != "" {
+		t.Errorf("expected empty OrganisationName, got %q", result[0].OrganisationName)
 	}
 }
 
@@ -635,8 +635,8 @@ func TestBuildRoleDependencies_EmptyOrganisationID(t *testing.T) {
 
 func assertRoleDep(t *testing.T, got datastore.InsertRoleDependencyParams, orgID, roleName, depType, depName string) {
 	t.Helper()
-	if got.OrganisationID != orgID {
-		t.Errorf("expected OrganisationID=%q, got %q", orgID, got.OrganisationID)
+	if got.OrganisationName != orgID {
+		t.Errorf("expected OrganisationName=%q, got %q", orgID, got.OrganisationName)
 	}
 	if got.RoleName != roleName {
 		t.Errorf("expected RoleName=%q, got %q", roleName, got.RoleName)

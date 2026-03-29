@@ -124,7 +124,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		}
 		cookbookNameByID := make(map[string]string, len(serverCookbooks))
 		for _, sc := range serverCookbooks {
-			cookbookNameByID[sc.ID] = sc.Name
+			cookbookNameByID[sc.OrganisationName+"/"+sc.Name+"/"+sc.Version] = sc.Name
 		}
 
 		// Derive compatibility directly from CookStyle scan results.

@@ -111,8 +111,8 @@ type ReadinessDataStore interface {
 	// Node snapshots
 	ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 
-	// Server cookbooks — used to resolve cookbook name+version to server cookbook ID
-	GetServerCookbookIDMap(ctx context.Context, organisationID string) (map[string]map[string]string, error)
+	// Server cookbooks — list all for an org (used to build the cookbook ID map)
+	ListServerCookbooksByOrganisation(ctx context.Context, organisationName string) ([]datastore.ServerCookbook, error)
 
 	// Git repos — used to resolve cookbook name to git repo for TK cross-lookup
 	GetGitRepoByName(ctx context.Context, name string) (datastore.GitRepo, error)
@@ -343,11 +343,14 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 		return nil, nil
 	}
 
-	// Step 2: Pre-load the cookbook ID map.
-	cookbookIDMap, err := e.db.GetServerCookbookIDMap(ctx, organisationID)
+	// Step 2: Build the cookbook ID map from server cookbooks.
+	// The composite natural key (org/name/version) serves as the cookbook ID
+	// for looking up CookStyle results and complexity scores.
+	serverCookbooks, err := e.db.ListServerCookbooksByOrganisation(ctx, organisationID)
 	if err != nil {
-		return nil, fmt.Errorf("readiness: loading cookbook ID map: %w", err)
+		return nil, fmt.Errorf("readiness: listing server cookbooks: %w", err)
 	}
+	cookbookIDMap := buildCookbookIDMap(serverCookbooks)
 
 	// Step 3: Bulk-load all lookup data into an in-memory cache.
 	// This replaces ~12M individual DB queries with ~5 bulk queries.
@@ -429,8 +432,8 @@ func (e *ReadinessEvaluator) evaluateOne(
 	now := time.Now().UTC()
 
 	result := ReadinessResult{
-		NodeSnapshotID:    snapshot.ID,
-		OrganisationID:    snapshot.OrganisationID,
+		NodeSnapshotID:    snapshot.OrganisationName + "/" + snapshot.NodeName,
+		OrganisationID:    snapshot.OrganisationName,
 		NodeName:          snapshot.NodeName,
 		TargetChefVersion: targetChefVersion,
 		StaleData:         snapshot.IsStale,
@@ -737,6 +740,23 @@ func lookupCookbookID(idMap map[string]map[string]string, name, version string) 
 		return ""
 	}
 	return versions[version]
+}
+
+// buildCookbookIDMap constructs a name → version → compositeID lookup map
+// from a slice of ServerCookbook structs. The composite ID is
+// "organisationName/name/version", matching the key format used by CookStyle
+// scanning and complexity scoring after the natural-keys migration.
+func buildCookbookIDMap(cookbooks []datastore.ServerCookbook) map[string]map[string]string {
+	idMap := make(map[string]map[string]string, len(cookbooks))
+	for _, cb := range cookbooks {
+		versions, ok := idMap[cb.Name]
+		if !ok {
+			versions = make(map[string]string)
+			idMap[cb.Name] = versions
+		}
+		versions[cb.Version] = cb.OrganisationName + "/" + cb.Name + "/" + cb.Version
+	}
+	return idMap
 }
 
 // ---------------------------------------------------------------------------

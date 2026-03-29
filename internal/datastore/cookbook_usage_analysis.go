@@ -13,17 +13,16 @@ import (
 
 // CookbookUsageAnalysis represents a row in the cookbook_usage_analysis table.
 // Each row is a snapshot of an analysis run for a single organisation tied to
-// a specific collection run.
+// a specific collection run. PK is (organisation_name).
 type CookbookUsageAnalysis struct {
-	ID              string    `json:"id"`
-	OrganisationID  string    `json:"organisation_id"`
-	CollectionRunID string    `json:"collection_run_id"`
-	TotalCookbooks  int       `json:"total_cookbooks"`
-	ActiveCookbooks int       `json:"active_cookbooks"`
-	UnusedCookbooks int       `json:"unused_cookbooks"`
-	TotalNodes      int       `json:"total_nodes"`
-	AnalysedAt      time.Time `json:"analysed_at"`
-	CreatedAt       time.Time `json:"created_at"`
+	OrganisationName string    `json:"organisation_name"`
+	CollectionRunOrg string    `json:"collection_run_org"`
+	TotalCookbooks   int       `json:"total_cookbooks"`
+	ActiveCookbooks  int       `json:"active_cookbooks"`
+	UnusedCookbooks  int       `json:"unused_cookbooks"`
+	TotalNodes       int       `json:"total_nodes"`
+	AnalysedAt       time.Time `json:"analysed_at"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // MarshalJSON implements json.Marshaler for CookbookUsageAnalysis.
@@ -34,11 +33,9 @@ func (a CookbookUsageAnalysis) MarshalJSON() ([]byte, error) {
 
 // CookbookUsageDetail represents a row in the cookbook_usage_detail table.
 // Each row stores per-cookbook-version usage statistics within a single
-// analysis run.
+// analysis run. PK is (organisation_name, cookbook_name, cookbook_version).
 type CookbookUsageDetail struct {
-	ID                   string          `json:"id"`
-	AnalysisID           string          `json:"analysis_id"`
-	OrganisationID       string          `json:"organisation_id"`
+	OrganisationName     string          `json:"organisation_name"`
 	CookbookName         string          `json:"cookbook_name"`
 	CookbookVersion      string          `json:"cookbook_version"`
 	NodeCount            int             `json:"node_count"`
@@ -64,17 +61,17 @@ func (d CookbookUsageDetail) MarshalJSON() ([]byte, error) {
 // InsertCookbookUsageAnalysisParams holds the fields required to insert a
 // cookbook usage analysis snapshot.
 type InsertCookbookUsageAnalysisParams struct {
-	OrganisationID  string
-	CollectionRunID string
-	TotalCookbooks  int
-	ActiveCookbooks int
-	UnusedCookbooks int
-	TotalNodes      int
-	AnalysedAt      time.Time
+	OrganisationName string
+	CollectionRunOrg string
+	TotalCookbooks   int
+	ActiveCookbooks  int
+	UnusedCookbooks  int
+	TotalNodes       int
+	AnalysedAt       time.Time
 }
 
 // InsertCookbookUsageAnalysis inserts a single analysis header row and
-// returns the created row including the generated ID.
+// returns the created row.
 func (db *DB) InsertCookbookUsageAnalysis(ctx context.Context, p InsertCookbookUsageAnalysisParams) (CookbookUsageAnalysis, error) {
 	return db.insertCookbookUsageAnalysis(ctx, db.q(), p)
 }
@@ -86,16 +83,16 @@ func (db *DB) insertCookbookUsageAnalysis(ctx context.Context, q queryable, p In
 
 	const query = `
 		INSERT INTO cookbook_usage_analysis
-			(organisation_id, collection_run_id, total_cookbooks, active_cookbooks,
+			(organisation_name, collection_run_org, total_cookbooks, active_cookbooks,
 			 unused_cookbooks, total_nodes, analysed_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, organisation_id, collection_run_id, total_cookbooks,
+		RETURNING organisation_name, collection_run_org, total_cookbooks,
 				  active_cookbooks, unused_cookbooks, total_nodes, analysed_at, created_at
 	`
 
 	return scanCookbookUsageAnalysis(q.QueryRowContext(ctx, query,
-		p.OrganisationID,
-		p.CollectionRunID,
+		p.OrganisationName,
+		p.CollectionRunOrg,
 		p.TotalCookbooks,
 		p.ActiveCookbooks,
 		p.UnusedCookbooks,
@@ -117,8 +114,7 @@ func (db *DB) InsertCookbookUsageAnalysisTx(ctx context.Context, tx *sql.Tx, p I
 // InsertCookbookUsageDetailParams holds the fields required to insert a
 // single cookbook usage detail row.
 type InsertCookbookUsageDetailParams struct {
-	AnalysisID           string
-	OrganisationID       string
+	OrganisationName     string
 	CookbookName         string
 	CookbookVersion      string
 	NodeCount            int
@@ -143,18 +139,17 @@ func (db *DB) insertCookbookUsageDetail(ctx context.Context, q queryable, p Inse
 
 	const query = `
 		INSERT INTO cookbook_usage_detail
-			(analysis_id, organisation_id, cookbook_name, cookbook_version,
+			(organisation_name, cookbook_name, cookbook_version,
 			 node_count, is_active, roles, policy_names,
 			 policy_groups, platform_counts, platform_family_counts)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id, analysis_id, organisation_id, cookbook_name, cookbook_version,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING organisation_name, cookbook_name, cookbook_version,
 				  node_count, is_active, roles, policy_names,
 				  policy_groups, platform_counts, platform_family_counts, created_at
 	`
 
 	return scanCookbookUsageDetail(q.QueryRowContext(ctx, query,
-		p.AnalysisID,
-		p.OrganisationID,
+		p.OrganisationName,
 		p.CookbookName,
 		p.CookbookVersion,
 		p.NodeCount,
@@ -185,10 +180,10 @@ func (db *DB) BulkInsertCookbookUsageDetails(ctx context.Context, params []Inser
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
 		const query = `
 			INSERT INTO cookbook_usage_detail
-				(analysis_id, organisation_id, cookbook_name, cookbook_version,
+				(organisation_name, cookbook_name, cookbook_version,
 				 node_count, is_active, roles, policy_names,
 				 policy_groups, platform_counts, platform_family_counts)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		`
 
 		stmt, err := tx.PrepareContext(ctx, query)
@@ -203,8 +198,7 @@ func (db *DB) BulkInsertCookbookUsageDetails(ctx context.Context, params []Inser
 			}
 
 			_, err := stmt.ExecContext(ctx,
-				p.AnalysisID,
-				p.OrganisationID,
+				p.OrganisationName,
 				p.CookbookName,
 				p.CookbookVersion,
 				p.NodeCount,
@@ -238,10 +232,10 @@ func (db *DB) BulkInsertCookbookUsageDetailsTx(ctx context.Context, tx *sql.Tx, 
 
 	const query = `
 		INSERT INTO cookbook_usage_detail
-			(analysis_id, organisation_id, cookbook_name, cookbook_version,
+			(organisation_name, cookbook_name, cookbook_version,
 			 node_count, is_active, roles, policy_names,
 			 policy_groups, platform_counts, platform_family_counts)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	stmt, err := tx.PrepareContext(ctx, query)
@@ -257,8 +251,7 @@ func (db *DB) BulkInsertCookbookUsageDetailsTx(ctx context.Context, tx *sql.Tx, 
 		}
 
 		_, err := stmt.ExecContext(ctx,
-			p.AnalysisID,
-			p.OrganisationID,
+			p.OrganisationName,
 			p.CookbookName,
 			p.CookbookVersion,
 			p.NodeCount,
@@ -282,115 +275,115 @@ func (db *DB) BulkInsertCookbookUsageDetailsTx(ctx context.Context, tx *sql.Tx, 
 // Query — Analysis headers
 // ---------------------------------------------------------------------------
 
-// GetCookbookUsageAnalysis returns a single analysis row by ID.
-func (db *DB) GetCookbookUsageAnalysis(ctx context.Context, id string) (CookbookUsageAnalysis, error) {
+// GetCookbookUsageAnalysis returns a single analysis row by organisation name.
+func (db *DB) GetCookbookUsageAnalysis(ctx context.Context, organisationName string) (CookbookUsageAnalysis, error) {
 	const query = `
-		SELECT id, organisation_id, collection_run_id, total_cookbooks,
+		SELECT organisation_name, collection_run_org, total_cookbooks,
 			   active_cookbooks, unused_cookbooks, total_nodes, analysed_at, created_at
 		FROM cookbook_usage_analysis
-		WHERE id = $1
+		WHERE organisation_name = $1
 	`
-	return scanCookbookUsageAnalysis(db.pool.QueryRowContext(ctx, query, id))
+	return scanCookbookUsageAnalysis(db.pool.QueryRowContext(ctx, query, organisationName))
 }
 
 // GetLatestCookbookUsageAnalysis returns the most recent analysis row for
 // the given organisation, or ErrNotFound if none exists.
-func (db *DB) GetLatestCookbookUsageAnalysis(ctx context.Context, organisationID string) (CookbookUsageAnalysis, error) {
+func (db *DB) GetLatestCookbookUsageAnalysis(ctx context.Context, organisationName string) (CookbookUsageAnalysis, error) {
 	const query = `
-		SELECT id, organisation_id, collection_run_id, total_cookbooks,
+		SELECT organisation_name, collection_run_org, total_cookbooks,
 			   active_cookbooks, unused_cookbooks, total_nodes, analysed_at, created_at
 		FROM cookbook_usage_analysis
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		ORDER BY analysed_at DESC
 		LIMIT 1
 	`
-	return scanCookbookUsageAnalysis(db.pool.QueryRowContext(ctx, query, organisationID))
+	return scanCookbookUsageAnalysis(db.pool.QueryRowContext(ctx, query, organisationName))
 }
 
 // ListCookbookUsageAnalyses returns all analysis snapshots for the given
 // organisation, ordered by analysed_at descending (most recent first).
-func (db *DB) ListCookbookUsageAnalyses(ctx context.Context, organisationID string) ([]CookbookUsageAnalysis, error) {
+func (db *DB) ListCookbookUsageAnalyses(ctx context.Context, organisationName string) ([]CookbookUsageAnalysis, error) {
 	const query = `
-		SELECT id, organisation_id, collection_run_id, total_cookbooks,
+		SELECT organisation_name, collection_run_org, total_cookbooks,
 			   active_cookbooks, unused_cookbooks, total_nodes, analysed_at, created_at
 		FROM cookbook_usage_analysis
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		ORDER BY analysed_at DESC
 	`
-	return scanCookbookUsageAnalyses(db.pool.QueryContext(ctx, query, organisationID))
+	return scanCookbookUsageAnalyses(db.pool.QueryContext(ctx, query, organisationName))
 }
 
 // GetCookbookUsageAnalysisByCollectionRun returns the analysis row for the
-// given collection run, or ErrNotFound if none exists.
-func (db *DB) GetCookbookUsageAnalysisByCollectionRun(ctx context.Context, collectionRunID string) (CookbookUsageAnalysis, error) {
+// given collection run org, or ErrNotFound if none exists.
+func (db *DB) GetCookbookUsageAnalysisByCollectionRun(ctx context.Context, collectionRunOrg string) (CookbookUsageAnalysis, error) {
 	const query = `
-		SELECT id, organisation_id, collection_run_id, total_cookbooks,
+		SELECT organisation_name, collection_run_org, total_cookbooks,
 			   active_cookbooks, unused_cookbooks, total_nodes, analysed_at, created_at
 		FROM cookbook_usage_analysis
-		WHERE collection_run_id = $1
+		WHERE collection_run_org = $1
 	`
-	return scanCookbookUsageAnalysis(db.pool.QueryRowContext(ctx, query, collectionRunID))
+	return scanCookbookUsageAnalysis(db.pool.QueryRowContext(ctx, query, collectionRunOrg))
 }
 
 // ---------------------------------------------------------------------------
 // Query — Detail rows
 // ---------------------------------------------------------------------------
 
-// ListCookbookUsageDetails returns all detail rows for the given analysis
-// run, ordered by node_count descending then cookbook_name, cookbook_version.
-func (db *DB) ListCookbookUsageDetails(ctx context.Context, analysisID string) ([]CookbookUsageDetail, error) {
+// ListCookbookUsageDetails returns all detail rows for the given organisation,
+// ordered by node_count descending then cookbook_name, cookbook_version.
+func (db *DB) ListCookbookUsageDetails(ctx context.Context, organisationName string) ([]CookbookUsageDetail, error) {
 	const query = `
-		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
+		SELECT organisation_name, cookbook_name, cookbook_version,
 			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
-		WHERE analysis_id = $1
+		WHERE organisation_name = $1
 		ORDER BY node_count DESC, cookbook_name, cookbook_version
 	`
-	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, analysisID))
+	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, organisationName))
 }
 
 // ListCookbookUsageDetailsByCookbook returns all detail rows for a specific
-// cookbook name within the given analysis run, ordered by cookbook_version.
-func (db *DB) ListCookbookUsageDetailsByCookbook(ctx context.Context, analysisID, cookbookName string) ([]CookbookUsageDetail, error) {
+// cookbook name within the given organisation, ordered by cookbook_version.
+func (db *DB) ListCookbookUsageDetailsByCookbook(ctx context.Context, organisationName, cookbookName string) ([]CookbookUsageDetail, error) {
 	const query = `
-		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
+		SELECT organisation_name, cookbook_name, cookbook_version,
 			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
-		WHERE analysis_id = $1 AND cookbook_name = $2
+		WHERE organisation_name = $1 AND cookbook_name = $2
 		ORDER BY cookbook_version
 	`
-	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, analysisID, cookbookName))
+	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, organisationName, cookbookName))
 }
 
 // ListActiveCookbookUsageDetails returns all detail rows flagged as active
-// for the given analysis run, ordered by node_count descending.
-func (db *DB) ListActiveCookbookUsageDetails(ctx context.Context, analysisID string) ([]CookbookUsageDetail, error) {
+// for the given organisation, ordered by node_count descending.
+func (db *DB) ListActiveCookbookUsageDetails(ctx context.Context, organisationName string) ([]CookbookUsageDetail, error) {
 	const query = `
-		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
+		SELECT organisation_name, cookbook_name, cookbook_version,
 			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
-		WHERE analysis_id = $1 AND is_active = TRUE
+		WHERE organisation_name = $1 AND is_active = TRUE
 		ORDER BY node_count DESC, cookbook_name, cookbook_version
 	`
-	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, analysisID))
+	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, organisationName))
 }
 
 // ListUnusedCookbookUsageDetails returns all detail rows flagged as inactive
-// (unused) for the given analysis run, ordered by cookbook_name,
+// (unused) for the given organisation, ordered by cookbook_name,
 // cookbook_version.
-func (db *DB) ListUnusedCookbookUsageDetails(ctx context.Context, analysisID string) ([]CookbookUsageDetail, error) {
+func (db *DB) ListUnusedCookbookUsageDetails(ctx context.Context, organisationName string) ([]CookbookUsageDetail, error) {
 	const query = `
-		SELECT id, analysis_id, organisation_id, cookbook_name, cookbook_version,
+		SELECT organisation_name, cookbook_name, cookbook_version,
 			   node_count, is_active, roles, policy_names,
 			   policy_groups, platform_counts, platform_family_counts, created_at
 		FROM cookbook_usage_detail
-		WHERE analysis_id = $1 AND is_active = FALSE
+		WHERE organisation_name = $1 AND is_active = FALSE
 		ORDER BY cookbook_name, cookbook_version
 	`
-	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, analysisID))
+	return scanCookbookUsageDetails(db.pool.QueryContext(ctx, query, organisationName))
 }
 
 // ---------------------------------------------------------------------------
@@ -409,18 +402,18 @@ type CookbookUsageSummary struct {
 }
 
 // ListCookbookUsageSummaries returns a lightweight summary of each
-// cookbook_usage_detail row for the given analysis ID. Only cookbook_name,
-// cookbook_version, node_count, and policy_names are fetched — the other
-// JSONB columns are skipped entirely at the SQL level.
-func (db *DB) ListCookbookUsageSummaries(ctx context.Context, analysisID string) ([]CookbookUsageSummary, error) {
+// cookbook_usage_detail row for the given organisation name. Only
+// cookbook_name, cookbook_version, node_count, and policy_names are fetched —
+// the other JSONB columns are skipped entirely at the SQL level.
+func (db *DB) ListCookbookUsageSummaries(ctx context.Context, organisationName string) ([]CookbookUsageSummary, error) {
 	const query = `
 		SELECT cookbook_name, cookbook_version, node_count, policy_names
 		FROM cookbook_usage_detail
-		WHERE analysis_id = $1
+		WHERE organisation_name = $1
 		ORDER BY node_count DESC, cookbook_name, cookbook_version
 	`
 
-	rows, err := db.pool.QueryContext(ctx, query, analysisID)
+	rows, err := db.pool.QueryContext(ctx, query, organisationName)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: querying cookbook usage summaries: %w", err)
 	}
@@ -450,10 +443,10 @@ func (db *DB) ListCookbookUsageSummaries(ctx context.Context, analysisID string)
 // ---------------------------------------------------------------------------
 
 // DeleteCookbookUsageAnalysis deletes an analysis run and all associated
-// detail rows (via CASCADE). Returns the number of detail rows deleted.
-func (db *DB) DeleteCookbookUsageAnalysis(ctx context.Context, id string) error {
+// detail rows (via CASCADE) for the given organisation name.
+func (db *DB) DeleteCookbookUsageAnalysis(ctx context.Context, organisationName string) error {
 	_, err := db.pool.ExecContext(ctx,
-		`DELETE FROM cookbook_usage_analysis WHERE id = $1`, id,
+		`DELETE FROM cookbook_usage_analysis WHERE organisation_name = $1`, organisationName,
 	)
 	if err != nil {
 		return fmt.Errorf("datastore: deleting cookbook usage analysis: %w", err)
@@ -464,10 +457,10 @@ func (db *DB) DeleteCookbookUsageAnalysis(ctx context.Context, id string) error 
 // DeleteCookbookUsageAnalysesByOrg deletes all analysis runs (and cascaded
 // details) for the given organisation. Returns the number of analysis rows
 // deleted.
-func (db *DB) DeleteCookbookUsageAnalysesByOrg(ctx context.Context, organisationID string) (int, error) {
+func (db *DB) DeleteCookbookUsageAnalysesByOrg(ctx context.Context, organisationName string) (int, error) {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM cookbook_usage_analysis WHERE organisation_id = $1`,
-		organisationID,
+		`DELETE FROM cookbook_usage_analysis WHERE organisation_name = $1`,
+		organisationName,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: deleting cookbook usage analyses by org: %w", err)
@@ -484,11 +477,11 @@ func (db *DB) DeleteCookbookUsageAnalysesByOrg(ctx context.Context, organisation
 // ---------------------------------------------------------------------------
 
 func validateAnalysisParams(p InsertCookbookUsageAnalysisParams) error {
-	if p.OrganisationID == "" {
-		return fmt.Errorf("datastore: organisation ID is required for cookbook usage analysis")
+	if p.OrganisationName == "" {
+		return fmt.Errorf("datastore: organisation name is required for cookbook usage analysis")
 	}
-	if p.CollectionRunID == "" {
-		return fmt.Errorf("datastore: collection run ID is required for cookbook usage analysis")
+	if p.CollectionRunOrg == "" {
+		return fmt.Errorf("datastore: collection run org is required for cookbook usage analysis")
 	}
 	if p.AnalysedAt.IsZero() {
 		return fmt.Errorf("datastore: analysed_at timestamp is required for cookbook usage analysis")
@@ -497,11 +490,8 @@ func validateAnalysisParams(p InsertCookbookUsageAnalysisParams) error {
 }
 
 func validateDetailParams(p InsertCookbookUsageDetailParams) error {
-	if p.AnalysisID == "" {
-		return fmt.Errorf("datastore: analysis ID is required for cookbook usage detail")
-	}
-	if p.OrganisationID == "" {
-		return fmt.Errorf("datastore: organisation ID is required for cookbook usage detail")
+	if p.OrganisationName == "" {
+		return fmt.Errorf("datastore: organisation name is required for cookbook usage detail")
 	}
 	if p.CookbookName == "" {
 		return fmt.Errorf("datastore: cookbook name is required for cookbook usage detail")
@@ -533,9 +523,8 @@ func nullableJSON(data json.RawMessage) sql.NullString {
 func scanCookbookUsageAnalysis(row *sql.Row) (CookbookUsageAnalysis, error) {
 	var a CookbookUsageAnalysis
 	err := row.Scan(
-		&a.ID,
-		&a.OrganisationID,
-		&a.CollectionRunID,
+		&a.OrganisationName,
+		&a.CollectionRunOrg,
 		&a.TotalCookbooks,
 		&a.ActiveCookbooks,
 		&a.UnusedCookbooks,
@@ -562,9 +551,8 @@ func scanCookbookUsageAnalyses(rows *sql.Rows, err error) ([]CookbookUsageAnalys
 	for rows.Next() {
 		var a CookbookUsageAnalysis
 		if err := rows.Scan(
-			&a.ID,
-			&a.OrganisationID,
-			&a.CollectionRunID,
+			&a.OrganisationName,
+			&a.CollectionRunOrg,
 			&a.TotalCookbooks,
 			&a.ActiveCookbooks,
 			&a.UnusedCookbooks,
@@ -587,9 +575,7 @@ func scanCookbookUsageDetail(row *sql.Row) (CookbookUsageDetail, error) {
 	var roles, policyNames, policyGroups, platformCounts, platformFamilyCounts sql.NullString
 
 	err := row.Scan(
-		&d.ID,
-		&d.AnalysisID,
-		&d.OrganisationID,
+		&d.OrganisationName,
 		&d.CookbookName,
 		&d.CookbookVersion,
 		&d.NodeCount,
@@ -639,9 +625,7 @@ func scanCookbookUsageDetails(rows *sql.Rows, err error) ([]CookbookUsageDetail,
 		var roles, policyNames, policyGroups, platformCounts, platformFamilyCounts sql.NullString
 
 		if err := rows.Scan(
-			&d.ID,
-			&d.AnalysisID,
-			&d.OrganisationID,
+			&d.OrganisationName,
 			&d.CookbookName,
 			&d.CookbookVersion,
 			&d.NodeCount,

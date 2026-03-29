@@ -97,15 +97,14 @@ type aggregatedUsage struct {
 // UsageResult is the final result of a usage analysis run. It is returned
 // to the caller after persistence completes.
 type UsageResult struct {
-	AnalysisID      string
-	OrganisationID  string
-	CollectionRunID string
-	TotalCookbooks  int
-	ActiveCookbooks int
-	UnusedCookbooks int
-	TotalNodes      int
-	DetailCount     int
-	Duration        time.Duration
+	OrganisationName string
+	CollectionRunOrg string
+	TotalCookbooks   int
+	ActiveCookbooks  int
+	UnusedCookbooks  int
+	TotalNodes       int
+	DetailCount      int
+	Duration         time.Duration
 }
 
 // ---------------------------------------------------------------------------
@@ -178,16 +177,16 @@ func (a *Analyser) RunUsageAnalysis(
 
 	// Persistence: write header + details in a single transaction.
 	analysisHeader := datastore.InsertCookbookUsageAnalysisParams{
-		OrganisationID:  organisationID,
-		CollectionRunID: collectionRunID,
-		TotalCookbooks:  totalCookbooks,
-		ActiveCookbooks: activeCount,
-		UnusedCookbooks: unusedCount,
-		TotalNodes:      totalNodes,
-		AnalysedAt:      now,
+		OrganisationName: organisationID,
+		CollectionRunOrg: collectionRunID,
+		TotalCookbooks:   totalCookbooks,
+		ActiveCookbooks:  activeCount,
+		UnusedCookbooks:  unusedCount,
+		TotalNodes:       totalNodes,
+		AnalysedAt:       now,
 	}
 
-	var analysisID string
+	var organisationName string
 	var detailCount int
 
 	err := a.db.Tx(ctx, func(tx *sql.Tx) error {
@@ -196,7 +195,7 @@ func (a *Analyser) RunUsageAnalysis(
 		// keeps the table at one row per org rather than accumulating
 		// a new row per collection run.
 		if _, delErr := tx.ExecContext(ctx,
-			`DELETE FROM cookbook_usage_analysis WHERE organisation_id = $1`,
+			`DELETE FROM cookbook_usage_analysis WHERE organisation_name = $1`,
 			organisationID,
 		); delErr != nil {
 			return fmt.Errorf("deleting old usage analysis: %w", delErr)
@@ -206,10 +205,10 @@ func (a *Analyser) RunUsageAnalysis(
 		if err != nil {
 			return fmt.Errorf("inserting analysis header: %w", err)
 		}
-		analysisID = header.ID
+		organisationName = header.OrganisationName
 
 		// Build detail rows — one per cookbook version (both active and unused).
-		detailParams := buildDetailParams(analysisID, organisationID, aggregated, inventorySet, activeSet)
+		detailParams := buildDetailParams(organisationName, aggregated, inventorySet, activeSet)
 		if len(detailParams) > 0 {
 			inserted, err := a.db.BulkInsertCookbookUsageDetailsTx(ctx, tx, detailParams)
 			if err != nil {
@@ -230,15 +229,14 @@ func (a *Analyser) RunUsageAnalysis(
 		duration.Round(time.Millisecond), totalCookbooks, activeCount, unusedCount, detailCount))
 
 	return &UsageResult{
-		AnalysisID:      analysisID,
-		OrganisationID:  organisationID,
-		CollectionRunID: collectionRunID,
-		TotalCookbooks:  totalCookbooks,
-		ActiveCookbooks: activeCount,
-		UnusedCookbooks: unusedCount,
-		TotalNodes:      totalNodes,
-		DetailCount:     detailCount,
-		Duration:        duration,
+		OrganisationName: organisationName,
+		CollectionRunOrg: collectionRunID,
+		TotalCookbooks:   totalCookbooks,
+		ActiveCookbooks:  activeCount,
+		UnusedCookbooks:  unusedCount,
+		TotalNodes:       totalNodes,
+		DetailCount:      detailCount,
+		Duration:         duration,
 	}, nil
 }
 
@@ -414,8 +412,7 @@ func buildActiveSet(aggregated map[cookbookVersionKey]*aggregatedUsage) map[cook
 // buildDetailParams builds the detail row parameters for all cookbook versions
 // — both active (with aggregated stats) and unused (with zero counts).
 func buildDetailParams(
-	analysisID string,
-	organisationID string,
+	organisationName string,
 	aggregated map[cookbookVersionKey]*aggregatedUsage,
 	inventorySet map[cookbookVersionKey]bool,
 	activeSet map[cookbookVersionKey]bool,
@@ -450,11 +447,10 @@ func buildDetailParams(
 		usage := aggregated[key]
 
 		p := datastore.InsertCookbookUsageDetailParams{
-			AnalysisID:      analysisID,
-			OrganisationID:  organisationID,
-			CookbookName:    key.Name,
-			CookbookVersion: key.Version,
-			IsActive:        isActive,
+			OrganisationName: organisationName,
+			CookbookName:     key.Name,
+			CookbookVersion:  key.Version,
+			IsActive:         isActive,
 		}
 
 		if usage != nil {

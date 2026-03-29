@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -24,14 +25,14 @@ func (r *Router) handleLogs(w http.ResponseWriter, req *http.Request) {
 	q := req.URL.Query()
 
 	filter := datastore.LogEntryFilter{
-		Scope:           q.Get("scope"),
-		Severity:        q.Get("severity"),
-		MinSeverity:     q.Get("min_severity"),
-		Organisation:    q.Get("organisation"),
-		CookbookName:    q.Get("cookbook_name"),
-		CollectionRunID: q.Get("collection_run_id"),
-		Limit:           pg.Limit(),
-		Offset:          pg.Offset(),
+		Scope:            q.Get("scope"),
+		Severity:         q.Get("severity"),
+		MinSeverity:      q.Get("min_severity"),
+		Organisation:     q.Get("organisation"),
+		CookbookName:     q.Get("cookbook_name"),
+		CollectionRunOrg: q.Get("collection_run_id"),
+		Limit:            pg.Limit(),
+		Offset:           pg.Offset(),
 	}
 
 	if v := q.Get("since"); v != "" {
@@ -98,7 +99,13 @@ func (r *Router) handleLogDetail(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	entry, err := r.db.GetLogEntry(req.Context(), id)
+	idInt, parseErr := strconv.ParseInt(id, 10, 64)
+	if parseErr != nil {
+		WriteBadRequest(w, fmt.Sprintf("Invalid log entry ID %q.", id))
+		return
+	}
+
+	entry, err := r.db.GetLogEntry(req.Context(), idInt)
 	if errors.Is(err, datastore.ErrNotFound) {
 		WriteNotFound(w, fmt.Sprintf("Log entry %q not found.", id))
 		return

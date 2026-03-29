@@ -13,10 +13,10 @@ import (
 
 func TestValidateRoleDependencyParams_Valid_Cookbook(t *testing.T) {
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		RoleName:       "webserver",
-		DependencyType: "cookbook",
-		DependencyName: "apache2",
+		OrganisationName: "org-1",
+		RoleName:         "webserver",
+		DependencyType:   "cookbook",
+		DependencyName:   "apache2",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -25,35 +25,35 @@ func TestValidateRoleDependencyParams_Valid_Cookbook(t *testing.T) {
 
 func TestValidateRoleDependencyParams_Valid_Role(t *testing.T) {
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		RoleName:       "webserver",
-		DependencyType: "role",
-		DependencyName: "base",
+		OrganisationName: "org-1",
+		RoleName:         "webserver",
+		DependencyType:   "role",
+		DependencyName:   "base",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestValidateRoleDependencyParams_MissingOrganisationID(t *testing.T) {
+func TestValidateRoleDependencyParams_MissingOrganisationName(t *testing.T) {
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{
 		RoleName:       "webserver",
 		DependencyType: "cookbook",
 		DependencyName: "apache2",
 	})
 	if err == nil {
-		t.Fatal("expected error for missing organisation ID")
+		t.Fatal("expected error for missing organisation name")
 	}
-	if got := err.Error(); got != "datastore: organisation ID is required for role dependency" {
+	if got := err.Error(); got != "datastore: organisation name is required for role dependency" {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateRoleDependencyParams_MissingRoleName(t *testing.T) {
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		DependencyType: "cookbook",
-		DependencyName: "apache2",
+		OrganisationName: "org-1",
+		DependencyType:   "cookbook",
+		DependencyName:   "apache2",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing role name")
@@ -65,10 +65,10 @@ func TestValidateRoleDependencyParams_MissingRoleName(t *testing.T) {
 
 func TestValidateRoleDependencyParams_InvalidDependencyType(t *testing.T) {
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		RoleName:       "webserver",
-		DependencyType: "environment",
-		DependencyName: "production",
+		OrganisationName: "org-1",
+		RoleName:         "webserver",
+		DependencyType:   "environment",
+		DependencyName:   "production",
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid dependency type")
@@ -81,9 +81,9 @@ func TestValidateRoleDependencyParams_InvalidDependencyType(t *testing.T) {
 
 func TestValidateRoleDependencyParams_EmptyDependencyType(t *testing.T) {
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		RoleName:       "webserver",
-		DependencyName: "apache2",
+		OrganisationName: "org-1",
+		RoleName:         "webserver",
+		DependencyName:   "apache2",
 	})
 	if err == nil {
 		t.Fatal("expected error for empty dependency type")
@@ -96,9 +96,9 @@ func TestValidateRoleDependencyParams_EmptyDependencyType(t *testing.T) {
 
 func TestValidateRoleDependencyParams_MissingDependencyName(t *testing.T) {
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		RoleName:       "webserver",
-		DependencyType: "cookbook",
+		OrganisationName: "org-1",
+		RoleName:         "webserver",
+		DependencyType:   "cookbook",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing dependency name")
@@ -109,18 +109,18 @@ func TestValidateRoleDependencyParams_MissingDependencyName(t *testing.T) {
 }
 
 func TestValidateRoleDependencyParams_ValidationOrder(t *testing.T) {
-	// All fields missing — should fail on organisation ID first.
+	// All fields missing — should fail on organisation name first.
 	err := validateRoleDependencyParams(InsertRoleDependencyParams{})
 	if err == nil {
 		t.Fatal("expected error for empty params")
 	}
-	if got := err.Error(); got != "datastore: organisation ID is required for role dependency" {
-		t.Errorf("expected organisation ID error first, got: %v", err)
+	if got := err.Error(); got != "datastore: organisation name is required for role dependency" {
+		t.Errorf("expected organisation name error first, got: %v", err)
 	}
 
-	// Organisation ID present — should fail on role name.
+	// Organisation name present — should fail on role name.
 	err = validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
+		OrganisationName: "org-1",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing role name")
@@ -129,10 +129,10 @@ func TestValidateRoleDependencyParams_ValidationOrder(t *testing.T) {
 		t.Errorf("expected role name error, got: %v", err)
 	}
 
-	// Organisation ID + role name — should fail on dependency type.
+	// Organisation name + role name — should fail on dependency type.
 	err = validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		RoleName:       "webserver",
+		OrganisationName: "org-1",
+		RoleName:         "webserver",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing dependency type")
@@ -142,11 +142,11 @@ func TestValidateRoleDependencyParams_ValidationOrder(t *testing.T) {
 		t.Errorf("expected dependency type error, got: %v", err)
 	}
 
-	// Organisation ID + role name + dependency type — should fail on dependency name.
+	// Organisation name + role name + dependency type — should fail on dependency name.
 	err = validateRoleDependencyParams(InsertRoleDependencyParams{
-		OrganisationID: "org-1",
-		RoleName:       "webserver",
-		DependencyType: "role",
+		OrganisationName: "org-1",
+		RoleName:         "webserver",
+		DependencyType:   "role",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing dependency name")
@@ -162,8 +162,8 @@ func TestValidateRoleDependencyParams_ValidationOrder(t *testing.T) {
 
 func TestInsertRoleDependencyParams_Defaults(t *testing.T) {
 	var p InsertRoleDependencyParams
-	if p.OrganisationID != "" {
-		t.Errorf("zero-value OrganisationID should be empty, got %q", p.OrganisationID)
+	if p.OrganisationName != "" {
+		t.Errorf("zero-value OrganisationName should be empty, got %q", p.OrganisationName)
 	}
 	if p.RoleName != "" {
 		t.Errorf("zero-value RoleName should be empty, got %q", p.RoleName)
@@ -182,11 +182,8 @@ func TestInsertRoleDependencyParams_Defaults(t *testing.T) {
 
 func TestRoleDependency_ZeroValue(t *testing.T) {
 	var rd RoleDependency
-	if rd.ID != "" {
-		t.Errorf("zero-value ID should be empty, got %q", rd.ID)
-	}
-	if rd.OrganisationID != "" {
-		t.Errorf("zero-value OrganisationID should be empty, got %q", rd.OrganisationID)
+	if rd.OrganisationName != "" {
+		t.Errorf("zero-value OrganisationName should be empty, got %q", rd.OrganisationName)
 	}
 	if rd.RoleName != "" {
 		t.Errorf("zero-value RoleName should be empty, got %q", rd.RoleName)

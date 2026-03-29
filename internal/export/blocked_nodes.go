@@ -142,14 +142,14 @@ func collectBlockedNodes(ctx context.Context, db DataStore, params BlockedNodeEx
 		}
 		cookbookIDByName := make(map[string]string, len(cookbooks))
 		for _, cb := range cookbooks {
-			// If there are multiple versions of the same cookbook, any ID
+			// If there are multiple versions of the same cookbook, any key
 			// will do — complexity is per-cookbook-version but the blocking
 			// cookbooks list typically uses just the name.
-			cookbookIDByName[cb.Name] = cb.ID
+			cookbookIDByName[cb.Name] = cb.OrganisationName + "/" + cb.Name + "/" + cb.Version
 		}
 
 		for _, node := range nodes {
-			readinessRecords, err := db.ListNodeReadinessForSnapshot(ctx, node.ID)
+			readinessRecords, err := db.ListNodeReadinessByNodeName(ctx, node.OrganisationName, node.NodeName)
 			if err != nil {
 				continue
 			}
@@ -160,7 +160,7 @@ func collectBlockedNodes(ctx context.Context, db DataStore, params BlockedNodeEx
 				}
 				if !nr.IsReady {
 					row := buildBlockedNodeRow(
-						node, nr, orgNameByID[node.OrganisationID],
+						node, nr, orgNameByID[node.OrganisationName],
 						params.TargetChefVersion,
 						complexityByCookbookID, cookbookIDByName,
 					)

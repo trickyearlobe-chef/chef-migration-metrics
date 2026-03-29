@@ -15,8 +15,6 @@ import (
 // cookbookRow represents a single server cookbook version in the list.
 // Each row is a specific version from a specific organisation — no collapsing.
 type cookbookRow struct {
-	ID               string
-	OrganisationID   string
 	OrganisationName string
 	Name             string
 	Version          string
@@ -25,6 +23,11 @@ type cookbookRow struct {
 	DownloadStatus   string
 	DownloadError    string
 	Compatibility    string // "compatible", "incompatible", "untested"
+}
+
+// key returns the composite natural key for this cookbook row.
+func (c cookbookRow) key() string {
+	return c.OrganisationName + "/" + c.Name + "/" + c.Version
 }
 
 // handleCookbooks handles GET /api/v1/cookbooks — lists all server cookbooks
@@ -84,9 +87,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		}
 		for _, sc := range cbs {
 			rows = append(rows, cookbookRow{
-				ID:               sc.ID,
-				OrganisationID:   sc.OrganisationID,
-				OrganisationName: org.Name,
+				OrganisationName: sc.OrganisationName,
 				Name:             sc.Name,
 				Version:          sc.Version,
 				IsActive:         sc.IsActive,
@@ -132,7 +133,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	// Assign compatibility to each row.
 	for i := range rows {
-		if c, ok := compatByID[rows[i].ID]; ok {
+		if c, ok := compatByID[rows[i].key()]; ok {
 			rows[i].Compatibility = c
 		} else {
 			rows[i].Compatibility = "untested"
@@ -191,8 +192,8 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	result := make([]cookbookResp, 0, len(pageRows))
 	for _, cb := range pageRows {
 		resp := cookbookResp{
-			ID:                cb.ID,
-			OrganisationID:    cb.OrganisationID,
+			ID:                cb.OrganisationName + "/" + cb.Name + "/" + cb.Version,
+			OrganisationID:    cb.OrganisationName,
 			OrganisationName:  cb.OrganisationName,
 			Name:              cb.Name,
 			Version:           cb.Version,
@@ -304,9 +305,10 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 	for _, sc := range serverCookbooks {
 		detail := serverVersionDetail{Cookbook: sc}
 
-		cookstyle, csErr := r.db.ListServerCookbookCookstyleResults(ctx, sc.ID)
+		scKey := sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
+		cookstyle, csErr := r.db.ListServerCookbookCookstyleResults(ctx, scKey)
 		if csErr != nil {
-			r.logf("WARN", "listing cookstyle results for server cookbook %s: %v", sc.ID, csErr)
+			r.logf("WARN", "listing cookstyle results for server cookbook %s: %v", scKey, csErr)
 		} else {
 			detail.Cookstyle = cookstyle
 		}

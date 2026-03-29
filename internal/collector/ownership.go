@@ -118,10 +118,10 @@ func (e *OwnershipEvaluator) EvaluateAfterCollection(ctx context.Context, orgID,
 		created := 0
 		for _, m := range matches {
 			_, err := e.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
-				OwnerID:          owner.Name,
+				OwnerName:        owner.Name,
 				EntityType:       m.EntityType,
 				EntityKey:        m.EntityKey,
-				OrganisationID:   orgID,
+				OrganisationName: orgID,
 				AssignmentSource: "auto_rule",
 				AutoRuleName:     rule.Name,
 				Confidence:       "inferred",
@@ -227,10 +227,10 @@ func (e *OwnershipEvaluator) evaluateCMDBRule(ctx context.Context, orgID string,
 		}
 
 		_, insertErr := e.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
-			OwnerID:          ownerID,
+			OwnerName:        ownerID,
 			EntityType:       m.EntityType,
 			EntityKey:        m.EntityKey,
-			OrganisationID:   orgID,
+			OrganisationName: orgID,
 			AssignmentSource: "auto_rule",
 			AutoRuleName:     rule.Name,
 			Confidence:       "inferred",

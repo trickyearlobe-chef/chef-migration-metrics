@@ -12,11 +12,11 @@ import (
 
 // OwnershipAssignment represents a row in the ownership_assignments table.
 type OwnershipAssignment struct {
-	ID               string    `json:"id"`
-	OwnerID          string    `json:"owner_id"`
+	ID               int64     `json:"id"`
+	OwnerName        string    `json:"owner_name"`
 	EntityType       string    `json:"entity_type"`
 	EntityKey        string    `json:"entity_key"`
-	OrganisationID   string    `json:"organisation_id,omitempty"`
+	OrganisationName string    `json:"organisation_name,omitempty"`
 	AssignmentSource string    `json:"assignment_source"`
 	AutoRuleName     string    `json:"auto_rule_name,omitempty"`
 	Confidence       string    `json:"confidence"`
@@ -28,10 +28,10 @@ type OwnershipAssignment struct {
 // InsertAssignmentParams holds the fields required to create a new ownership
 // assignment.
 type InsertAssignmentParams struct {
-	OwnerID          string
+	OwnerName        string
 	EntityType       string
 	EntityKey        string
-	OrganisationID   string // empty = NULL (cross-org)
+	OrganisationName string // empty = NULL (cross-org)
 	AssignmentSource string // "manual", "auto_rule", "import"
 	AutoRuleName     string // only for auto_rule
 	Confidence       string // "definitive" or "inferred"
@@ -57,18 +57,18 @@ func (db *DB) InsertAssignment(ctx context.Context, p InsertAssignmentParams) (O
 func (db *DB) insertAssignment(ctx context.Context, q queryable, p InsertAssignmentParams) (OwnershipAssignment, error) {
 	const query = `
 		INSERT INTO ownership_assignments
-			(owner_id, entity_type, entity_key, organisation_id, assignment_source, auto_rule_name, confidence, notes)
+			(owner_name, entity_type, entity_key, organisation_name, assignment_source, auto_rule_name, confidence, notes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, owner_id, entity_type, entity_key, organisation_id,
+		RETURNING id, owner_name, entity_type, entity_key, organisation_name,
 		          assignment_source, auto_rule_name, confidence, notes,
 		          created_at, updated_at
 	`
 
 	a, err := scanAssignment(q.QueryRowContext(ctx, query,
-		p.OwnerID,
+		p.OwnerName,
 		p.EntityType,
 		p.EntityKey,
-		nullStringPtr(p.OrganisationID),
+		nullStringPtr(p.OrganisationName),
 		p.AssignmentSource,
 		nullString(p.AutoRuleName),
 		p.Confidence,
@@ -90,7 +90,7 @@ func (db *DB) ListAssignmentsByOwner(ctx context.Context, f AssignmentListFilter
 }
 
 func (db *DB) listAssignmentsByOwner(ctx context.Context, q queryable, f AssignmentListFilter) ([]OwnershipAssignment, int, error) {
-	where := "WHERE o.name = $1"
+	where := "WHERE oa.owner_name = $1"
 	args := []any{f.OwnerName}
 	argN := 2
 
@@ -100,7 +100,7 @@ func (db *DB) listAssignmentsByOwner(ctx context.Context, q queryable, f Assignm
 		argN++
 	}
 	if f.OrganisationName != "" {
-		where += fmt.Sprintf(" AND org.name = $%d", argN)
+		where += fmt.Sprintf(" AND oa.organisation_name = $%d", argN)
 		args = append(args, f.OrganisationName)
 		argN++
 	}
@@ -112,8 +112,6 @@ func (db *DB) listAssignmentsByOwner(ctx context.Context, q queryable, f Assignm
 
 	fromClause := `
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
-		LEFT JOIN organisations org ON org.id = oa.organisation_id
 	`
 
 	// Count total.
@@ -134,7 +132,7 @@ func (db *DB) listAssignmentsByOwner(ctx context.Context, q queryable, f Assignm
 	}
 
 	dataQuery := fmt.Sprintf(`
-		SELECT oa.id, oa.owner_id, oa.entity_type, oa.entity_key, oa.organisation_id,
+		SELECT oa.id, oa.owner_name, oa.entity_type, oa.entity_key, oa.organisation_name,
 		       oa.assignment_source, oa.auto_rule_name, oa.confidence, oa.notes,
 		       oa.created_at, oa.updated_at
 		%s
@@ -159,13 +157,13 @@ func (db *DB) listAssignmentsByOwner(ctx context.Context, q queryable, f Assignm
 
 // GetAssignment returns a single assignment by ID. Returns ErrNotFound if
 // not found.
-func (db *DB) GetAssignment(ctx context.Context, id string) (OwnershipAssignment, error) {
+func (db *DB) GetAssignment(ctx context.Context, id int64) (OwnershipAssignment, error) {
 	return db.getAssignment(ctx, db.q(), id)
 }
 
-func (db *DB) getAssignment(ctx context.Context, q queryable, id string) (OwnershipAssignment, error) {
+func (db *DB) getAssignment(ctx context.Context, q queryable, id int64) (OwnershipAssignment, error) {
 	const query = `
-		SELECT id, owner_id, entity_type, entity_key, organisation_id,
+		SELECT id, owner_name, entity_type, entity_key, organisation_name,
 		       assignment_source, auto_rule_name, confidence, notes,
 		       created_at, updated_at
 		FROM ownership_assignments
@@ -176,11 +174,11 @@ func (db *DB) getAssignment(ctx context.Context, q queryable, id string) (Owners
 
 // DeleteAssignment removes an assignment by ID. Returns ErrNotFound if no
 // such assignment exists.
-func (db *DB) DeleteAssignment(ctx context.Context, id string) error {
+func (db *DB) DeleteAssignment(ctx context.Context, id int64) error {
 	return db.deleteAssignment(ctx, db.q(), id)
 }
 
-func (db *DB) deleteAssignment(ctx context.Context, q queryable, id string) error {
+func (db *DB) deleteAssignment(ctx context.Context, q queryable, id int64) error {
 	res, err := q.ExecContext(ctx, `DELETE FROM ownership_assignments WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("datastore: deleting assignment: %w", err)
@@ -198,11 +196,11 @@ func (db *DB) deleteAssignment(ctx context.Context, q queryable, id string) erro
 // ReassignOwnership moves all (or filtered) assignments from one owner to
 // another. Returns the count of reassigned and skipped (duplicate)
 // assignments.
-func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (reassigned, skipped int, err error) {
+func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (reassigned, skipped int, err error) {
 	err = db.Tx(ctx, func(tx *sql.Tx) error {
 		// Build filter clause.
-		where := "WHERE owner_id = $1"
-		args := []any{fromOwnerID}
+		where := "WHERE owner_name = $1"
+		args := []any{fromOwnerName}
 		argN := 2
 
 		if entityType != "" {
@@ -210,14 +208,14 @@ func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID stri
 			args = append(args, entityType)
 			argN++
 		}
-		if organisationID != "" {
-			where += fmt.Sprintf(" AND organisation_id = $%d", argN)
-			args = append(args, organisationID)
+		if organisationName != "" {
+			where += fmt.Sprintf(" AND organisation_name = $%d", argN)
+			args = append(args, organisationName)
 		}
 
 		// Fetch matching assignments from the source owner.
 		selectQuery := fmt.Sprintf(`
-			SELECT id, entity_type, entity_key, organisation_id, notes
+			SELECT id, entity_type, entity_key, organisation_name, notes
 			FROM ownership_assignments
 			%s
 		`, where)
@@ -229,16 +227,16 @@ func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID stri
 		defer rows.Close()
 
 		type assignmentInfo struct {
-			id             string
-			entityType     string
-			entityKey      string
-			organisationID sql.NullString
-			notes          sql.NullString
+			id               int64
+			entityType       string
+			entityKey        string
+			organisationName sql.NullString
+			notes            sql.NullString
 		}
 		var toMove []assignmentInfo
 		for rows.Next() {
 			var a assignmentInfo
-			if err := rows.Scan(&a.id, &a.entityType, &a.entityKey, &a.organisationID, &a.notes); err != nil {
+			if err := rows.Scan(&a.id, &a.entityType, &a.entityKey, &a.organisationName, &a.notes); err != nil {
 				return fmt.Errorf("scanning assignment for reassignment: %w", err)
 			}
 			toMove = append(toMove, a)
@@ -253,11 +251,11 @@ func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID stri
 			err := tx.QueryRowContext(ctx, `
 				SELECT EXISTS(
 					SELECT 1 FROM ownership_assignments
-					WHERE owner_id = $1 AND entity_type = $2 AND entity_key = $3
-					AND COALESCE(organisation_id, '00000000-0000-0000-0000-000000000000') =
-					    COALESCE($4, '00000000-0000-0000-0000-000000000000')
+					WHERE owner_name = $1 AND entity_type = $2 AND entity_key = $3
+					AND COALESCE(organisation_name, '__none__') =
+					    COALESCE($4, '__none__')
 				)
-			`, toOwnerID, a.entityType, a.entityKey, a.organisationID).Scan(&exists)
+			`, toOwnerName, a.entityType, a.entityKey, a.organisationName).Scan(&exists)
 			if err != nil {
 				return fmt.Errorf("checking duplicate assignment: %w", err)
 			}
@@ -272,13 +270,13 @@ func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID stri
 				// Move the assignment to the target owner.
 				_, err := tx.ExecContext(ctx, `
 					UPDATE ownership_assignments
-					SET owner_id = $1,
+					SET owner_name = $1,
 					    assignment_source = 'manual',
 					    confidence = 'definitive',
 					    auto_rule_name = NULL,
 					    updated_at = now()
 					WHERE id = $2
-				`, toOwnerID, a.id)
+				`, toOwnerName, a.id)
 				if err != nil {
 					return fmt.Errorf("reassigning assignment: %w", err)
 				}
@@ -294,8 +292,8 @@ func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID stri
 // LookupOwnership returns all owners for a given entity, using the
 // resolution precedence from the specification: direct assignments first,
 // then inherited (git_repo for cookbooks, policy for nodes).
-func (db *DB) LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]OwnershipLookupResult, error) {
-	return db.lookupOwnership(ctx, db.q(), entityType, entityKey, organisationID)
+func (db *DB) LookupOwnership(ctx context.Context, entityType, entityKey, organisationName string) ([]OwnershipLookupResult, error) {
+	return db.lookupOwnership(ctx, db.q(), entityType, entityKey, organisationName)
 }
 
 // OwnershipLookupResult is a single resolved owner for an entity.
@@ -314,16 +312,16 @@ type InheritedFrom struct {
 	EntityKey  string `json:"entity_key"`
 }
 
-func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, entityKey, organisationID string) ([]OwnershipLookupResult, error) {
+func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, entityKey, organisationName string) ([]OwnershipLookupResult, error) {
 	var results []OwnershipLookupResult
 
 	// 1. Direct assignments.
 	directQuery := `
 		SELECT o.name, o.display_name, oa.assignment_source, oa.confidence
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
+		JOIN owners o ON o.name = oa.owner_name
 		WHERE oa.entity_type = $1 AND oa.entity_key = $2
-		AND (oa.organisation_id IS NULL OR oa.organisation_id = $3 OR $3 = '')
+		AND (oa.organisation_name IS NULL OR oa.organisation_name = $3 OR $3 = '')
 		ORDER BY
 			CASE oa.assignment_source
 				WHEN 'manual' THEN 1
@@ -331,7 +329,7 @@ func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, enti
 				WHEN 'auto_rule' THEN 3
 			END
 	`
-	rows, err := q.QueryContext(ctx, directQuery, entityType, entityKey, nullStringPtr(organisationID))
+	rows, err := q.QueryContext(ctx, directQuery, entityType, entityKey, nullStringPtr(organisationName))
 	if err != nil {
 		return nil, fmt.Errorf("datastore: looking up direct ownership: %w", err)
 	}
@@ -353,7 +351,7 @@ func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, enti
 
 	// 2. Git-repo-inherited (cookbooks only) — if no direct owners found.
 	if entityType == "cookbook" && len(results) == 0 {
-		inherited, err := db.lookupGitRepoInheritedOwnership(ctx, q, entityKey, organisationID)
+		inherited, err := db.lookupGitRepoInheritedOwnership(ctx, q, entityKey, organisationName)
 		if err != nil {
 			return nil, err
 		}
@@ -362,7 +360,7 @@ func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, enti
 
 	// 3. Policy-inherited (nodes only) — if no direct owners found.
 	if entityType == "node" && len(results) == 0 {
-		inherited, err := db.lookupPolicyInheritedOwnership(ctx, q, entityKey, organisationID)
+		inherited, err := db.lookupPolicyInheritedOwnership(ctx, q, entityKey, organisationName)
 		if err != nil {
 			return nil, err
 		}
@@ -372,7 +370,7 @@ func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, enti
 	return results, nil
 }
 
-func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, cookbookName, organisationID string) ([]OwnershipLookupResult, error) {
+func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, cookbookName, organisationName string) ([]OwnershipLookupResult, error) {
 	// Find the git repo URL from the git_repos table.
 	var gitRepoURL sql.NullString
 	err := q.QueryRowContext(ctx, `
@@ -389,9 +387,9 @@ func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, 
 	query := `
 		SELECT o.name, o.display_name, oa.assignment_source, oa.confidence
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
+		JOIN owners o ON o.name = oa.owner_name
 		WHERE oa.entity_type = 'git_repo' AND oa.entity_key = $1
-		AND (oa.organisation_id IS NULL OR oa.organisation_id = $2 OR $2 = '')
+		AND (oa.organisation_name IS NULL OR oa.organisation_name = $2 OR $2 = '')
 		ORDER BY
 			CASE oa.assignment_source
 				WHEN 'manual' THEN 1
@@ -399,7 +397,7 @@ func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, 
 				WHEN 'auto_rule' THEN 3
 			END
 	`
-	rows, err := q.QueryContext(ctx, query, gitRepoURL.String, nullStringPtr(organisationID))
+	rows, err := q.QueryContext(ctx, query, gitRepoURL.String, nullStringPtr(organisationName))
 	if err != nil {
 		return nil, fmt.Errorf("datastore: looking up git_repo inherited ownership: %w", err)
 	}
@@ -423,14 +421,14 @@ func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, 
 	return results, rows.Err()
 }
 
-func (db *DB) lookupPolicyInheritedOwnership(ctx context.Context, q queryable, nodeName, organisationID string) ([]OwnershipLookupResult, error) {
+func (db *DB) lookupPolicyInheritedOwnership(ctx context.Context, q queryable, nodeName, organisationName string) ([]OwnershipLookupResult, error) {
 	// Find the policy name for this node.
 	var policyName sql.NullString
 	query := `SELECT policy_name FROM node_snapshots WHERE node_name = $1`
 	args := []any{nodeName}
-	if organisationID != "" {
-		query += " AND organisation_id = $2"
-		args = append(args, organisationID)
+	if organisationName != "" {
+		query += " AND organisation_name = $2"
+		args = append(args, organisationName)
 	}
 	query += " ORDER BY collected_at DESC LIMIT 1"
 
@@ -443,9 +441,9 @@ func (db *DB) lookupPolicyInheritedOwnership(ctx context.Context, q queryable, n
 	lookupQuery := `
 		SELECT o.name, o.display_name, oa.assignment_source, oa.confidence
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
+		JOIN owners o ON o.name = oa.owner_name
 		WHERE oa.entity_type = 'policy' AND oa.entity_key = $1
-		AND (oa.organisation_id IS NULL OR oa.organisation_id = $2 OR $2 = '')
+		AND (oa.organisation_name IS NULL OR oa.organisation_name = $2 OR $2 = '')
 		ORDER BY
 			CASE oa.assignment_source
 				WHEN 'manual' THEN 1
@@ -453,7 +451,7 @@ func (db *DB) lookupPolicyInheritedOwnership(ctx context.Context, q queryable, n
 				WHEN 'auto_rule' THEN 3
 			END
 	`
-	rows, err := q.QueryContext(ctx, lookupQuery, policyName.String, nullStringPtr(organisationID))
+	rows, err := q.QueryContext(ctx, lookupQuery, policyName.String, nullStringPtr(organisationName))
 	if err != nil {
 		return nil, fmt.Errorf("datastore: looking up policy inherited ownership: %w", err)
 	}
@@ -481,22 +479,22 @@ func (db *DB) lookupPolicyInheritedOwnership(ctx context.Context, q queryable, n
 // given auto_rule_name, optionally scoped to an organisation. This is used
 // by the ownership evaluator to detect stale assignments that should be
 // removed after re-evaluation.
-func (db *DB) ListAutoRuleAssignments(ctx context.Context, autoRuleName, organisationID string) ([]OwnershipAssignment, error) {
-	return db.listAutoRuleAssignments(ctx, db.q(), autoRuleName, organisationID)
+func (db *DB) ListAutoRuleAssignments(ctx context.Context, autoRuleName, organisationName string) ([]OwnershipAssignment, error) {
+	return db.listAutoRuleAssignments(ctx, db.q(), autoRuleName, organisationName)
 }
 
-func (db *DB) listAutoRuleAssignments(ctx context.Context, q queryable, autoRuleName, organisationID string) ([]OwnershipAssignment, error) {
+func (db *DB) listAutoRuleAssignments(ctx context.Context, q queryable, autoRuleName, organisationName string) ([]OwnershipAssignment, error) {
 	where := "WHERE assignment_source = 'auto_rule' AND auto_rule_name = $1"
 	args := []any{autoRuleName}
 	argN := 2
 
-	if organisationID != "" {
-		where += fmt.Sprintf(" AND organisation_id = $%d", argN)
-		args = append(args, organisationID)
+	if organisationName != "" {
+		where += fmt.Sprintf(" AND organisation_name = $%d", argN)
+		args = append(args, organisationName)
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, owner_id, entity_type, entity_key, organisation_id,
+		SELECT id, owner_name, entity_type, entity_key, organisation_name,
 		       assignment_source, auto_rule_name, confidence, notes,
 		       created_at, updated_at
 		FROM ownership_assignments
@@ -516,8 +514,8 @@ func (db *DB) listAutoRuleAssignments(ctx context.Context, q queryable, autoRule
 // rule name (and optional org) that are NOT in the currentMatchKeys set. Each
 // key in currentMatchKeys is "entity_type:entity_key". Returns the number of
 // deleted rows.
-func (db *DB) DeleteStaleAutoRuleAssignments(ctx context.Context, autoRuleName, organisationID string, currentMatchKeys map[string]bool) (int, error) {
-	existing, err := db.ListAutoRuleAssignments(ctx, autoRuleName, organisationID)
+func (db *DB) DeleteStaleAutoRuleAssignments(ctx context.Context, autoRuleName, organisationName string, currentMatchKeys map[string]bool) (int, error) {
+	existing, err := db.ListAutoRuleAssignments(ctx, autoRuleName, organisationName)
 	if err != nil {
 		return 0, err
 	}
@@ -527,7 +525,7 @@ func (db *DB) DeleteStaleAutoRuleAssignments(ctx context.Context, autoRuleName, 
 		key := a.EntityType + ":" + a.EntityKey
 		if !currentMatchKeys[key] {
 			if err := db.DeleteAssignment(ctx, a.ID); err != nil {
-				return deleted, fmt.Errorf("datastore: deleting stale auto-rule assignment %s: %w", a.ID, err)
+				return deleted, fmt.Errorf("datastore: deleting stale auto-rule assignment %d: %w", a.ID, err)
 			}
 			deleted++
 		}
@@ -541,14 +539,14 @@ func (db *DB) DeleteStaleAutoRuleAssignments(ctx context.Context, autoRuleName, 
 
 func scanAssignment(row *sql.Row) (OwnershipAssignment, error) {
 	var a OwnershipAssignment
-	var orgID, autoRuleName, notes sql.NullString
+	var orgName, autoRuleName, notes sql.NullString
 
 	err := row.Scan(
 		&a.ID,
-		&a.OwnerID,
+		&a.OwnerName,
 		&a.EntityType,
 		&a.EntityKey,
-		&orgID,
+		&orgName,
 		&a.AssignmentSource,
 		&autoRuleName,
 		&a.Confidence,
@@ -563,7 +561,7 @@ func scanAssignment(row *sql.Row) (OwnershipAssignment, error) {
 		return OwnershipAssignment{}, fmt.Errorf("datastore: scanning assignment: %w", err)
 	}
 
-	a.OrganisationID = stringFromNull(orgID)
+	a.OrganisationName = stringFromNull(orgName)
 	a.AutoRuleName = stringFromNull(autoRuleName)
 	a.Notes = stringFromNull(notes)
 	return a, nil
@@ -573,14 +571,14 @@ func scanAssignments(rows *sql.Rows) ([]OwnershipAssignment, error) {
 	var assignments []OwnershipAssignment
 	for rows.Next() {
 		var a OwnershipAssignment
-		var orgID, autoRuleName, notes sql.NullString
+		var orgName, autoRuleName, notes sql.NullString
 
 		if err := rows.Scan(
 			&a.ID,
-			&a.OwnerID,
+			&a.OwnerName,
 			&a.EntityType,
 			&a.EntityKey,
-			&orgID,
+			&orgName,
 			&a.AssignmentSource,
 			&autoRuleName,
 			&a.Confidence,
@@ -591,7 +589,7 @@ func scanAssignments(rows *sql.Rows) ([]OwnershipAssignment, error) {
 			return nil, fmt.Errorf("datastore: scanning assignment row: %w", err)
 		}
 
-		a.OrganisationID = stringFromNull(orgID)
+		a.OrganisationName = stringFromNull(orgName)
 		a.AutoRuleName = stringFromNull(autoRuleName)
 		a.Notes = stringFromNull(notes)
 		assignments = append(assignments, a)
@@ -602,7 +600,7 @@ func scanAssignments(rows *sql.Rows) ([]OwnershipAssignment, error) {
 	return assignments, nil
 }
 
-// nullStringPtr returns a *string suitable for passing as a nullable UUID
+// nullStringPtr returns a *string suitable for passing as a nullable text
 // parameter. Empty strings are treated as nil.
 func nullStringPtr(s string) any {
 	if s == "" {

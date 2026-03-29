@@ -97,7 +97,6 @@ func TestRequireAuthValidBearerToken(t *testing.T) {
 			if id == "good-token" {
 				return datastore.Session{
 					ID:           "good-token",
-					UserID:       "user-1",
 					Username:     "alice",
 					AuthProvider: "local",
 					Role:         "admin",
@@ -139,7 +138,6 @@ func TestRequireAuthValidCookie(t *testing.T) {
 			if id == "cookie-token" {
 				return datastore.Session{
 					ID:           "cookie-token",
-					UserID:       "user-2",
 					Username:     "bob",
 					AuthProvider: "local",
 					Role:         "viewer",
@@ -473,7 +471,6 @@ func TestAuthenticatedCombinedValid(t *testing.T) {
 		getValidSessionFn: func(ctx context.Context, id string) (datastore.Session, error) {
 			return datastore.Session{
 				ID:       id,
-				UserID:   "u1",
 				Username: "combined-user",
 				Role:     "viewer",
 			}, nil
@@ -522,7 +519,6 @@ func TestAdminOnlyCombinedAdminSuccess(t *testing.T) {
 		getValidSessionFn: func(ctx context.Context, id string) (datastore.Session, error) {
 			return datastore.Session{
 				ID:       id,
-				UserID:   "u-admin",
 				Username: "superadmin",
 				Role:     "admin",
 			}, nil
@@ -547,7 +543,6 @@ func TestAdminOnlyCombinedViewerForbidden(t *testing.T) {
 		getValidSessionFn: func(ctx context.Context, id string) (datastore.Session, error) {
 			return datastore.Session{
 				ID:       id,
-				UserID:   "u-viewer",
 				Username: "regular-user",
 				Role:     "viewer",
 			}, nil
@@ -687,7 +682,6 @@ func TestChainedRequireAuthThenRequireAdmin(t *testing.T) {
 		getValidSessionFn: func(ctx context.Context, id string) (datastore.Session, error) {
 			return datastore.Session{
 				ID:       id,
-				UserID:   "u",
 				Username: "chained-admin",
 				Role:     "admin",
 			}, nil
@@ -719,7 +713,6 @@ func TestChainedRequireAuthThenRequireAdminViewerBlocked(t *testing.T) {
 		getValidSessionFn: func(ctx context.Context, id string) (datastore.Session, error) {
 			return datastore.Session{
 				ID:       id,
-				UserID:   "u",
 				Username: "chained-viewer",
 				Role:     "viewer",
 			}, nil
