@@ -27,6 +27,7 @@ import { AdminActionsPage } from "./pages/AdminActionsPage";
 import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
 import { AdminPerformancePage } from "./pages/AdminPerformancePage";
 import { AdminCredentialsPage } from "./pages/credentials";
+import { AdminTestKitchenPage } from "./pages/AdminTestKitchenPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -192,6 +193,14 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminCredentialsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/test-kitchen"
+                element={
+                  <RequireAdmin>
+                    <AdminTestKitchenPage />
                   </RequireAdmin>
                 }
               />
