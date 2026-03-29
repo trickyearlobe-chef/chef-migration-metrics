@@ -62,7 +62,6 @@ func TestHandleCookbookPlatformCoverage_Found(t *testing.T) {
 				t.Errorf("unexpected cookbook name: %q", cookbookName)
 			}
 			return &datastore.CookbookPlatformCoverage{
-				ID:           "cov-1",
 				CookbookName: "my-cookbook",
 				CoverageData: coverageData,
 				EvaluatedAt:  now,
@@ -155,8 +154,6 @@ func TestHandleCookbookPlatformCoverage_NoInternalFields(t *testing.T) {
 	mock := &mockStore{
 		GetCookbookPlatformCoverageFn: func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error) {
 			return &datastore.CookbookPlatformCoverage{
-				ID:           "cov-internal-1",
-				GitRepoID:    "git-repo-123",
 				CookbookName: cookbookName,
 				CoverageData: map[string]any{
 					"kitchen_platforms":        []string{},
@@ -242,7 +239,6 @@ func TestHandleCookbookPlatformCoverage_IntegerRoundTrip(t *testing.T) {
 	mock := &mockStore{
 		GetCookbookPlatformCoverageFn: func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error) {
 			return &datastore.CookbookPlatformCoverage{
-				ID:           "cov-rt",
 				CookbookName: cookbookName,
 				CoverageData: coverageData,
 				EvaluatedAt:  now,
@@ -339,7 +335,6 @@ func TestHandleCookbookPlatformCoverage_EmptyCoverage(t *testing.T) {
 	mock := &mockStore{
 		GetCookbookPlatformCoverageFn: func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error) {
 			return &datastore.CookbookPlatformCoverage{
-				ID:           "cov-2",
 				CookbookName: cookbookName,
 				CoverageData: map[string]any{
 					"kitchen_platforms":        []string{},

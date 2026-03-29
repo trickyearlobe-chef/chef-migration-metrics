@@ -14,8 +14,9 @@ import (
 
 // ServerCookbookComplexity represents a row in the server_cookbook_complexity table.
 type ServerCookbookComplexity struct {
-	ID                   string
-	ServerCookbookID     string
+	OrganisationName     string
+	CookbookName         string
+	CookbookVersion      string
 	TargetChefVersion    string
 	ComplexityScore      int
 	ComplexityLabel      string
@@ -35,9 +36,11 @@ type ServerCookbookComplexity struct {
 
 // UpsertServerCookbookComplexityParams contains the fields needed to insert or
 // update a server_cookbook_complexity row. The unique constraint is
-// (server_cookbook_id, target_chef_version).
+// (organisation_name, cookbook_name, cookbook_version, target_chef_version).
 type UpsertServerCookbookComplexityParams struct {
-	ServerCookbookID     string
+	OrganisationName     string
+	CookbookName         string
+	CookbookVersion      string
 	TargetChefVersion    string
 	ComplexityScore      int
 	ComplexityLabel      string
@@ -57,7 +60,8 @@ type UpsertServerCookbookComplexityParams struct {
 // Column list — shared across all queries
 // ---------------------------------------------------------------------------
 
-const sccColumns = `id, server_cookbook_id, target_chef_version,
+const sccColumns = `organisation_name, cookbook_name, cookbook_version,
+       target_chef_version,
        complexity_score, complexity_label,
        error_count, deprecation_count, correctness_count, modernize_count,
        auto_correctable_count, manual_fix_count,
@@ -69,21 +73,23 @@ const sccColumns = `id, server_cookbook_id, target_chef_version,
 // ---------------------------------------------------------------------------
 
 // GetServerCookbookComplexity returns the complexity record for the given
-// server cookbook ID and target Chef version. Returns (nil, nil) if no record
-// exists.
-func (db *DB) GetServerCookbookComplexity(ctx context.Context, serverCookbookID, targetChefVersion string) (*ServerCookbookComplexity, error) {
-	return db.getServerCookbookComplexity(ctx, db.q(), serverCookbookID, targetChefVersion)
+// organisation, cookbook, and target Chef version. Returns (nil, nil) if no
+// record exists.
+func (db *DB) GetServerCookbookComplexity(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*ServerCookbookComplexity, error) {
+	return db.getServerCookbookComplexity(ctx, db.q(), orgName, cookbookName, cookbookVersion, targetChefVersion)
 }
 
-func (db *DB) getServerCookbookComplexity(ctx context.Context, q queryable, serverCookbookID, targetChefVersion string) (*ServerCookbookComplexity, error) {
+func (db *DB) getServerCookbookComplexity(ctx context.Context, q queryable, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*ServerCookbookComplexity, error) {
 	query := `
 		SELECT ` + sccColumns + `
 		  FROM server_cookbook_complexity
-		 WHERE server_cookbook_id = $1
-		   AND target_chef_version = $2
+		 WHERE organisation_name = $1
+		   AND cookbook_name = $2
+		   AND cookbook_version = $3
+		   AND target_chef_version = $4
 	`
 
-	r, err := scanServerCookbookComplexity(q.QueryRowContext(ctx, query, serverCookbookID, targetChefVersion))
+	r, err := scanServerCookbookComplexity(q.QueryRowContext(ctx, query, orgName, cookbookName, cookbookVersion, targetChefVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -93,72 +99,50 @@ func (db *DB) getServerCookbookComplexity(ctx context.Context, q queryable, serv
 	return &r, nil
 }
 
-// GetServerCookbookComplexityByID returns a single complexity record by its
-// primary key. Returns ErrNotFound if no record exists.
-func (db *DB) GetServerCookbookComplexityByID(ctx context.Context, id string) (*ServerCookbookComplexity, error) {
-	query := `
-		SELECT ` + sccColumns + `
-		  FROM server_cookbook_complexity
-		 WHERE id = $1
-	`
-
-	r, err := scanServerCookbookComplexity(db.q().QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting server cookbook complexity by id: %w", err)
-	}
-	return &r, nil
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
 // ListServerCookbookComplexitiesByCookbook returns all complexity records for
-// the given server cookbook ID, ordered by target_chef_version.
-func (db *DB) ListServerCookbookComplexitiesByCookbook(ctx context.Context, serverCookbookID string) ([]ServerCookbookComplexity, error) {
+// the given organisation, cookbook name, and cookbook version, ordered by
+// target_chef_version.
+func (db *DB) ListServerCookbookComplexitiesByCookbook(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]ServerCookbookComplexity, error) {
 	query := `
 		SELECT ` + sccColumns + `
 		  FROM server_cookbook_complexity
-		 WHERE server_cookbook_id = $1
+		 WHERE organisation_name = $1
+		   AND cookbook_name = $2
+		   AND cookbook_version = $3
 		 ORDER BY target_chef_version
 	`
-	return db.scanServerCookbookComplexities(ctx, query, serverCookbookID)
+	return db.scanServerCookbookComplexities(ctx, query, orgName, cookbookName, cookbookVersion)
 }
 
 // ListServerCookbookComplexitiesByOrganisation returns all complexity records
 // for server cookbooks belonging to the given organisation, ordered by
 // cookbook name, version, and target Chef version.
-func (db *DB) ListServerCookbookComplexitiesByOrganisation(ctx context.Context, organisationID string) ([]ServerCookbookComplexity, error) {
+func (db *DB) ListServerCookbookComplexitiesByOrganisation(ctx context.Context, orgName string) ([]ServerCookbookComplexity, error) {
 	query := `
-		SELECT scc.id, scc.server_cookbook_id, scc.target_chef_version,
-		       scc.complexity_score, scc.complexity_label,
-		       scc.error_count, scc.deprecation_count, scc.correctness_count, scc.modernize_count,
-		       scc.auto_correctable_count, scc.manual_fix_count,
-		       scc.affected_node_count, scc.affected_role_count, scc.affected_policy_count,
-		       scc.evaluated_at, scc.created_at, scc.updated_at
-		  FROM server_cookbook_complexity scc
-		  JOIN server_cookbooks sc ON sc.id = scc.server_cookbook_id
-		 WHERE sc.organisation_id = $1
-		 ORDER BY sc.name, sc.version, scc.target_chef_version
+		SELECT ` + sccColumns + `
+		  FROM server_cookbook_complexity
+		 WHERE organisation_name = $1
+		 ORDER BY cookbook_name, cookbook_version, target_chef_version
 	`
-	return db.scanServerCookbookComplexities(ctx, query, organisationID)
+	return db.scanServerCookbookComplexities(ctx, query, orgName)
 }
 
 // ListServerCookbookComplexities returns all complexity records for server
 // cookbooks belonging to the given organisation, filtered by the specified
 // target Chef versions.
-func (db *DB) ListServerCookbookComplexities(ctx context.Context, organisationID string, targetChefVersions []string) ([]ServerCookbookComplexity, error) {
+func (db *DB) ListServerCookbookComplexities(ctx context.Context, orgName string, targetChefVersions []string) ([]ServerCookbookComplexity, error) {
 	if len(targetChefVersions) == 0 {
 		return nil, nil
 	}
 
-	// $1 is organisationID; $2, $3, ... are the target versions.
+	// $1 is orgName; $2, $3, ... are the target versions.
 	placeholders := make([]string, len(targetChefVersions))
 	args := make([]any, 0, 1+len(targetChefVersions))
-	args = append(args, organisationID)
+	args = append(args, orgName)
 	for i, v := range targetChefVersions {
 		args = append(args, v)
 		placeholders[i] = "$" + strconv.Itoa(i+2)
@@ -167,7 +151,7 @@ func (db *DB) ListServerCookbookComplexities(ctx context.Context, organisationID
 	query := `
 		SELECT ` + sccColumns + `
 		  FROM server_cookbook_complexity
-		 WHERE server_cookbook_id IN (SELECT id FROM server_cookbooks WHERE organisation_id = $1)
+		 WHERE organisation_name = $1
 		   AND target_chef_version IN (` + strings.Join(placeholders, ", ") + `)
 	`
 	return db.scanServerCookbookComplexities(ctx, query, args...)
@@ -178,15 +162,18 @@ func (db *DB) ListServerCookbookComplexities(ctx context.Context, organisationID
 // ---------------------------------------------------------------------------
 
 // UpsertServerCookbookComplexity inserts a new complexity record or updates
-// the existing one for the same (server_cookbook_id, target_chef_version)
-// combination. Returns the resulting row.
+// the existing one for the same (organisation_name, cookbook_name,
+// cookbook_version, target_chef_version) combination. Returns the resulting row.
 func (db *DB) UpsertServerCookbookComplexity(ctx context.Context, p UpsertServerCookbookComplexityParams) (*ServerCookbookComplexity, error) {
 	return db.upsertServerCookbookComplexity(ctx, db.q(), p)
 }
 
 func (db *DB) upsertServerCookbookComplexity(ctx context.Context, q queryable, p UpsertServerCookbookComplexityParams) (*ServerCookbookComplexity, error) {
-	if p.ServerCookbookID == "" {
-		return nil, fmt.Errorf("datastore: server_cookbook_id is required")
+	if p.OrganisationName == "" {
+		return nil, fmt.Errorf("datastore: organisation_name is required")
+	}
+	if p.CookbookName == "" {
+		return nil, fmt.Errorf("datastore: cookbook_name is required")
 	}
 	if p.TargetChefVersion == "" {
 		return nil, fmt.Errorf("datastore: target_chef_version is required")
@@ -194,14 +181,15 @@ func (db *DB) upsertServerCookbookComplexity(ctx context.Context, q queryable, p
 
 	query := `
 		INSERT INTO server_cookbook_complexity (
-			server_cookbook_id, target_chef_version,
+			organisation_name, cookbook_name, cookbook_version,
+			target_chef_version,
 			complexity_score, complexity_label,
 			error_count, deprecation_count, correctness_count, modernize_count,
 			auto_correctable_count, manual_fix_count,
 			affected_node_count, affected_role_count, affected_policy_count,
 			evaluated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (server_cookbook_id, target_chef_version)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		ON CONFLICT (organisation_name, cookbook_name, cookbook_version, target_chef_version)
 		DO UPDATE SET
 			complexity_score       = EXCLUDED.complexity_score,
 			complexity_label       = EXCLUDED.complexity_label,
@@ -220,7 +208,9 @@ func (db *DB) upsertServerCookbookComplexity(ctx context.Context, q queryable, p
 	`
 
 	r, err := scanServerCookbookComplexity(q.QueryRowContext(ctx, query,
-		p.ServerCookbookID,
+		p.OrganisationName,
+		p.CookbookName,
+		p.CookbookVersion,
 		p.TargetChefVersion,
 		p.ComplexityScore,
 		p.ComplexityLabel,
@@ -252,28 +242,23 @@ func (db *DB) UpsertServerCookbookComplexityTx(ctx context.Context, tx *sql.Tx, 
 // ---------------------------------------------------------------------------
 
 // DeleteServerCookbookComplexitiesByCookbook removes all complexity records
-// for the given server cookbook ID.
-func (db *DB) DeleteServerCookbookComplexitiesByCookbook(ctx context.Context, serverCookbookID string) error {
-	const query = `DELETE FROM server_cookbook_complexity WHERE server_cookbook_id = $1`
-	_, err := db.pool.ExecContext(ctx, query, serverCookbookID)
+// for the given organisation, cookbook name, and cookbook version.
+func (db *DB) DeleteServerCookbookComplexitiesByCookbook(ctx context.Context, orgName, cookbookName, cookbookVersion string) error {
+	const query = `DELETE FROM server_cookbook_complexity WHERE organisation_name = $1 AND cookbook_name = $2 AND cookbook_version = $3`
+	_, err := db.pool.ExecContext(ctx, query, orgName, cookbookName, cookbookVersion)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting server cookbook complexities for cookbook %s: %w", serverCookbookID, err)
+		return fmt.Errorf("datastore: deleting server cookbook complexities for cookbook %s/%s@%s: %w", orgName, cookbookName, cookbookVersion, err)
 	}
 	return nil
 }
 
 // DeleteServerCookbookComplexitiesByOrganisation removes all complexity
 // records for server cookbooks belonging to the given organisation.
-func (db *DB) DeleteServerCookbookComplexitiesByOrganisation(ctx context.Context, organisationID string) error {
-	const query = `
-		DELETE FROM server_cookbook_complexity
-		 WHERE server_cookbook_id IN (
-			SELECT id FROM server_cookbooks WHERE organisation_id = $1
-		 )
-	`
-	_, err := db.pool.ExecContext(ctx, query, organisationID)
+func (db *DB) DeleteServerCookbookComplexitiesByOrganisation(ctx context.Context, orgName string) error {
+	const query = `DELETE FROM server_cookbook_complexity WHERE organisation_name = $1`
+	_, err := db.pool.ExecContext(ctx, query, orgName)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting server cookbook complexities for organisation %s: %w", organisationID, err)
+		return fmt.Errorf("datastore: deleting server cookbook complexities for organisation %s: %w", orgName, err)
 	}
 	return nil
 }
@@ -297,8 +282,9 @@ func scanServerCookbookComplexity(row interface{ Scan(dest ...any) error }) (Ser
 	var r ServerCookbookComplexity
 
 	err := row.Scan(
-		&r.ID,
-		&r.ServerCookbookID,
+		&r.OrganisationName,
+		&r.CookbookName,
+		&r.CookbookVersion,
 		&r.TargetChefVersion,
 		&r.ComplexityScore,
 		&r.ComplexityLabel,
@@ -334,8 +320,9 @@ func (db *DB) scanServerCookbookComplexities(ctx context.Context, query string, 
 		var r ServerCookbookComplexity
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.ServerCookbookID,
+			&r.OrganisationName,
+			&r.CookbookName,
+			&r.CookbookVersion,
 			&r.TargetChefVersion,
 			&r.ComplexityScore,
 			&r.ComplexityLabel,

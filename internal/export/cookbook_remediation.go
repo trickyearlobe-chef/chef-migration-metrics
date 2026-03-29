@@ -128,7 +128,8 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 		)
 
 		for _, cc := range complexities {
-			cb, ok := cbMap[cc.ServerCookbookID]
+			ccKey := cc.OrganisationName + "/" + cc.CookbookName + "/" + cc.CookbookVersion
+			cb, ok := cbMap[ccKey]
 			if !ok {
 				// Orphaned complexity record — skip.
 				continue

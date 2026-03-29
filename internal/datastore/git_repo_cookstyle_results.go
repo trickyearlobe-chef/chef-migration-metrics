@@ -13,8 +13,8 @@ import (
 
 // GitRepoCookstyleResult represents a row in the git_repo_cookstyle_results table.
 type GitRepoCookstyleResult struct {
-	ID                  string    `json:"id"`
-	GitRepoID           string    `json:"git_repo_id"`
+	GitRepoName         string    `json:"git_repo_name"`
+	GitRepoURL          string    `json:"git_repo_url"`
 	TargetChefVersion   string    `json:"target_chef_version"`
 	CommitSHA           string    `json:"commit_sha,omitempty"`
 	Passed              bool      `json:"passed"`
@@ -32,9 +32,11 @@ type GitRepoCookstyleResult struct {
 }
 
 // UpsertGitRepoCookstyleResultParams contains the fields needed to insert or update
-// a git_repo_cookstyle_results row. The unique constraint is (git_repo_id, target_chef_version).
+// a git_repo_cookstyle_results row. The unique constraint is
+// (git_repo_name, git_repo_url, target_chef_version).
 type UpsertGitRepoCookstyleResultParams struct {
-	GitRepoID           string
+	GitRepoName         string
+	GitRepoURL          string
 	TargetChefVersion   string
 	CommitSHA           string
 	Passed              bool
@@ -55,8 +57,8 @@ type UpsertGitRepoCookstyleResultParams struct {
 // ---------------------------------------------------------------------------
 
 // UpsertGitRepoCookstyleResult inserts a new git repo cookstyle result or
-// updates the existing one for the same (git_repo_id, target_chef_version)
-// combination. Returns the resulting row.
+// updates the existing one for the same (git_repo_name, git_repo_url,
+// target_chef_version) combination. Returns the resulting row.
 func (db *DB) UpsertGitRepoCookstyleResult(ctx context.Context, p UpsertGitRepoCookstyleResultParams) (*GitRepoCookstyleResult, error) {
 	return db.upsertGitRepoCookstyleResult(ctx, db.q(), p)
 }
@@ -64,14 +66,15 @@ func (db *DB) UpsertGitRepoCookstyleResult(ctx context.Context, p UpsertGitRepoC
 func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p UpsertGitRepoCookstyleResultParams) (*GitRepoCookstyleResult, error) {
 	const query = `
 		INSERT INTO git_repo_cookstyle_results (
-			git_repo_id, target_chef_version, commit_sha, passed,
+			git_repo_name, git_repo_url,
+			target_chef_version, commit_sha, passed,
 			error_message,
 			offence_count, deprecation_count, correctness_count,
 			deprecation_warnings, offences,
 			process_stdout, process_stderr, duration_seconds,
 			scanned_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (git_repo_id, target_chef_version)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (git_repo_name, git_repo_url, target_chef_version)
 		DO UPDATE SET
 			commit_sha          = EXCLUDED.commit_sha,
 			passed              = EXCLUDED.passed,
@@ -85,7 +88,8 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 			process_stderr      = EXCLUDED.process_stderr,
 			duration_seconds    = EXCLUDED.duration_seconds,
 			scanned_at          = EXCLUDED.scanned_at
-		RETURNING id, git_repo_id, target_chef_version, commit_sha, passed,
+		RETURNING git_repo_name, git_repo_url,
+		          target_chef_version, commit_sha, passed,
 		          error_message,
 		          offence_count, deprecation_count, correctness_count,
 		          deprecation_warnings, offences,
@@ -106,7 +110,8 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 	var duration sql.NullInt64
 
 	err := q.QueryRowContext(ctx, query,
-		p.GitRepoID,
+		p.GitRepoName,
+		p.GitRepoURL,
 		targetVersion,
 		nullString(p.CommitSHA),
 		p.Passed,
@@ -121,8 +126,8 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 		nullInt(p.DurationSeconds),
 		p.ScannedAt,
 	).Scan(
-		&r.ID,
-		&r.GitRepoID,
+		&r.GitRepoName,
+		&r.GitRepoURL,
 		&tvOut,
 		&commitSHAOut,
 		&r.Passed,
@@ -159,22 +164,25 @@ func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p U
 // ---------------------------------------------------------------------------
 
 // GetGitRepoCookstyleResult returns the cookstyle result for the given git
-// repo ID and target Chef version. Returns (nil, nil) if no result exists.
-func (db *DB) GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, targetChefVersion string) (*GitRepoCookstyleResult, error) {
-	return db.getGitRepoCookstyleResult(ctx, db.q(), gitRepoID, targetChefVersion)
+// repo name, URL, and target Chef version. Returns (nil, nil) if no result
+// exists.
+func (db *DB) GetGitRepoCookstyleResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*GitRepoCookstyleResult, error) {
+	return db.getGitRepoCookstyleResult(ctx, db.q(), gitRepoName, gitRepoURL, targetChefVersion)
 }
 
-func (db *DB) getGitRepoCookstyleResult(ctx context.Context, q queryable, gitRepoID, targetChefVersion string) (*GitRepoCookstyleResult, error) {
+func (db *DB) getGitRepoCookstyleResult(ctx context.Context, q queryable, gitRepoName, gitRepoURL, targetChefVersion string) (*GitRepoCookstyleResult, error) {
 	const query = `
-		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		SELECT git_repo_name, git_repo_url,
+		       target_chef_version, commit_sha, passed,
 		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
 		       scanned_at, created_at
 		  FROM git_repo_cookstyle_results
-		 WHERE git_repo_id = $1
-		   AND (target_chef_version = $2 OR ($2 = '' AND target_chef_version IS NULL))
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
+		   AND (target_chef_version = $3 OR ($3 = '' AND target_chef_version IS NULL))
 	`
 
 	var targetVersion sql.NullString
@@ -182,7 +190,7 @@ func (db *DB) getGitRepoCookstyleResult(ctx context.Context, q queryable, gitRep
 		targetVersion = sql.NullString{String: targetChefVersion, Valid: true}
 	}
 
-	r, err := scanGitRepoCookstyleResult(q.QueryRowContext(ctx, query, gitRepoID, targetVersion))
+	r, err := scanGitRepoCookstyleResult(q.QueryRowContext(ctx, query, gitRepoName, gitRepoURL, targetVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -192,57 +200,31 @@ func (db *DB) getGitRepoCookstyleResult(ctx context.Context, q queryable, gitRep
 	return &r, nil
 }
 
-// GetGitRepoCookstyleResultByID returns a single git repo cookstyle result
-// by its primary key. Returns ErrNotFound if no such result exists.
-func (db *DB) GetGitRepoCookstyleResultByID(ctx context.Context, id string) (*GitRepoCookstyleResult, error) {
-	return db.getGitRepoCookstyleResultByID(ctx, db.q(), id)
-}
-
-func (db *DB) getGitRepoCookstyleResultByID(ctx context.Context, q queryable, id string) (*GitRepoCookstyleResult, error) {
-	const query = `
-		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
-		       error_message,
-		       offence_count, deprecation_count, correctness_count,
-		       deprecation_warnings, offences,
-		       process_stdout, process_stderr, duration_seconds,
-		       scanned_at, created_at
-		  FROM git_repo_cookstyle_results
-		 WHERE id = $1
-	`
-
-	r, err := scanGitRepoCookstyleResult(q.QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting git repo cookstyle result by id: %w", err)
-	}
-	return &r, nil
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
 // ListGitRepoCookstyleResults returns all cookstyle results for the given
-// git repo ID, ordered by target_chef_version.
-func (db *DB) ListGitRepoCookstyleResults(ctx context.Context, gitRepoID string) ([]GitRepoCookstyleResult, error) {
-	return db.listGitRepoCookstyleResults(ctx, db.q(), gitRepoID)
+// git repo name and URL, ordered by target_chef_version.
+func (db *DB) ListGitRepoCookstyleResults(ctx context.Context, gitRepoName, gitRepoURL string) ([]GitRepoCookstyleResult, error) {
+	return db.listGitRepoCookstyleResults(ctx, db.q(), gitRepoName, gitRepoURL)
 }
 
-func (db *DB) listGitRepoCookstyleResults(ctx context.Context, q queryable, gitRepoID string) ([]GitRepoCookstyleResult, error) {
+func (db *DB) listGitRepoCookstyleResults(ctx context.Context, q queryable, gitRepoName, gitRepoURL string) ([]GitRepoCookstyleResult, error) {
 	const query = `
-		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		SELECT git_repo_name, git_repo_url,
+		       target_chef_version, commit_sha, passed,
 		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
 		       scanned_at, created_at
 		  FROM git_repo_cookstyle_results
-		 WHERE git_repo_id = $1
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
 		 ORDER BY target_chef_version NULLS FIRST
 	`
-	return scanGitRepoCookstyleResults(q.QueryContext(ctx, query, gitRepoID))
+	return scanGitRepoCookstyleResults(q.QueryContext(ctx, query, gitRepoName, gitRepoURL))
 }
 
 // ListGitRepoCookstyleResultsByName returns all cookstyle results for git
@@ -254,16 +236,16 @@ func (db *DB) ListGitRepoCookstyleResultsByName(ctx context.Context, name string
 
 func (db *DB) listGitRepoCookstyleResultsByName(ctx context.Context, q queryable, name string) ([]GitRepoCookstyleResult, error) {
 	const query = `
-		SELECT r.id, r.git_repo_id, r.target_chef_version, r.commit_sha, r.passed,
-		       r.error_message,
-		       r.offence_count, r.deprecation_count, r.correctness_count,
-		       r.deprecation_warnings, r.offences,
-		       r.process_stdout, r.process_stderr, r.duration_seconds,
-		       r.scanned_at, r.created_at
-		  FROM git_repo_cookstyle_results r
-		  JOIN git_repos gr ON gr.id = r.git_repo_id
-		 WHERE gr.name = $1
-		 ORDER BY gr.git_repo_url, r.target_chef_version NULLS FIRST
+		SELECT git_repo_name, git_repo_url,
+		       target_chef_version, commit_sha, passed,
+		       error_message,
+		       offence_count, deprecation_count, correctness_count,
+		       deprecation_warnings, offences,
+		       process_stdout, process_stderr, duration_seconds,
+		       scanned_at, created_at
+		  FROM git_repo_cookstyle_results
+		 WHERE git_repo_name = $1
+		 ORDER BY git_repo_url, target_chef_version NULLS FIRST
 	`
 	return scanGitRepoCookstyleResults(q.QueryContext(ctx, query, name))
 }
@@ -277,7 +259,8 @@ func (db *DB) ListAllGitRepoCookstyleResults(ctx context.Context) ([]GitRepoCook
 
 func (db *DB) listAllGitRepoCookstyleResults(ctx context.Context, q queryable) ([]GitRepoCookstyleResult, error) {
 	const query = `
-		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		SELECT git_repo_name, git_repo_url,
+		       target_chef_version, commit_sha, passed,
 		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
@@ -305,7 +288,8 @@ func (db *DB) ListGitRepoCookstyleResultsByTargetVersions(ctx context.Context, t
 	}
 
 	query := `
-		SELECT id, git_repo_id, target_chef_version, commit_sha, passed,
+		SELECT git_repo_name, git_repo_url,
+		       target_chef_version, commit_sha, passed,
 		       error_message,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
@@ -322,16 +306,16 @@ func (db *DB) ListGitRepoCookstyleResultsByTargetVersions(ctx context.Context, t
 // ---------------------------------------------------------------------------
 
 // DeleteGitRepoCookstyleResultsByRepo removes all cookstyle results for the
-// given git repo ID.
-func (db *DB) DeleteGitRepoCookstyleResultsByRepo(ctx context.Context, gitRepoID string) error {
-	return db.deleteGitRepoCookstyleResultsByRepo(ctx, db.q(), gitRepoID)
+// given git repo name and URL.
+func (db *DB) DeleteGitRepoCookstyleResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error {
+	return db.deleteGitRepoCookstyleResultsByRepo(ctx, db.q(), gitRepoName, gitRepoURL)
 }
 
-func (db *DB) deleteGitRepoCookstyleResultsByRepo(ctx context.Context, q queryable, gitRepoID string) error {
-	const query = `DELETE FROM git_repo_cookstyle_results WHERE git_repo_id = $1`
-	_, err := q.ExecContext(ctx, query, gitRepoID)
+func (db *DB) deleteGitRepoCookstyleResultsByRepo(ctx context.Context, q queryable, gitRepoName, gitRepoURL string) error {
+	const query = `DELETE FROM git_repo_cookstyle_results WHERE git_repo_name = $1 AND git_repo_url = $2`
+	_, err := q.ExecContext(ctx, query, gitRepoName, gitRepoURL)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting git repo cookstyle results for repo %s: %w", gitRepoID, err)
+		return fmt.Errorf("datastore: deleting git repo cookstyle results for repo %s (%s): %w", gitRepoName, gitRepoURL, err)
 	}
 	return nil
 }
@@ -364,8 +348,8 @@ func scanGitRepoCookstyleResult(row interface{ Scan(dest ...any) error }) (GitRe
 	var duration sql.NullInt64
 
 	err := row.Scan(
-		&r.ID,
-		&r.GitRepoID,
+		&r.GitRepoName,
+		&r.GitRepoURL,
 		&tvOut,
 		&commitSHA,
 		&r.Passed,

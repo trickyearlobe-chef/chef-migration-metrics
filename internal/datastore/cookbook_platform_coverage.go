@@ -13,8 +13,8 @@ import (
 
 // CookbookPlatformCoverage represents a row in the cookbook_platform_coverage table.
 type CookbookPlatformCoverage struct {
-	ID           string    `json:"id"`
-	GitRepoID    string    `json:"git_repo_id,omitempty"`
+	GitRepoName  string    `json:"git_repo_name,omitempty"`
+	GitRepoURL   string    `json:"git_repo_url,omitempty"`
 	CookbookName string    `json:"cookbook_name"`
 	CoverageData any       `json:"coverage_data"` // JSON object, decoded from JSONB
 	EvaluatedAt  time.Time `json:"evaluated_at"`
@@ -24,7 +24,8 @@ type CookbookPlatformCoverage struct {
 
 // UpsertCookbookPlatformCoverageParams holds the fields for insert or update.
 type UpsertCookbookPlatformCoverageParams struct {
-	GitRepoID    string
+	GitRepoName  string
+	GitRepoURL   string
 	CookbookName string
 	CoverageData any // Will be marshalled to JSON for the JSONB column
 }
@@ -33,7 +34,7 @@ type UpsertCookbookPlatformCoverageParams struct {
 // Column lists — shared across all queries
 // ---------------------------------------------------------------------------
 
-const cpcColumns = `id, git_repo_id, cookbook_name, coverage_data, evaluated_at, created_at, updated_at`
+const cpcColumns = `git_repo_name, git_repo_url, cookbook_name, coverage_data, evaluated_at, created_at, updated_at`
 
 // ---------------------------------------------------------------------------
 // Get
@@ -97,10 +98,11 @@ func (db *DB) UpsertCookbookPlatformCoverage(ctx context.Context, p UpsertCookbo
 	}
 
 	query := `
-		INSERT INTO cookbook_platform_coverage (git_repo_id, cookbook_name, coverage_data, evaluated_at)
-		VALUES ($1, $2, $3, NOW())
+		INSERT INTO cookbook_platform_coverage (git_repo_name, git_repo_url, cookbook_name, coverage_data, evaluated_at)
+		VALUES ($1, $2, $3, $4, NOW())
 		ON CONFLICT (cookbook_name) DO UPDATE SET
-			git_repo_id   = EXCLUDED.git_repo_id,
+			git_repo_name = EXCLUDED.git_repo_name,
+			git_repo_url  = EXCLUDED.git_repo_url,
 			coverage_data = EXCLUDED.coverage_data,
 			evaluated_at  = NOW(),
 			updated_at    = NOW()
@@ -108,7 +110,8 @@ func (db *DB) UpsertCookbookPlatformCoverage(ctx context.Context, p UpsertCookbo
 	`
 
 	r, err := scanCookbookPlatformCoverage(db.q().QueryRowContext(ctx, query,
-		nullString(p.GitRepoID),
+		nullString(p.GitRepoName),
+		nullString(p.GitRepoURL),
 		p.CookbookName,
 		coverageJSON,
 	))
@@ -143,15 +146,16 @@ func (db *DB) DeleteCookbookPlatformCoverage(ctx context.Context, cookbookName s
 
 func scanCookbookPlatformCoverage(row interface{ Scan(dest ...any) error }) (CookbookPlatformCoverage, error) {
 	var r CookbookPlatformCoverage
-	var gitRepoID sql.NullString
+	var gitRepoName, gitRepoURL sql.NullString
 	var coverageJSON []byte
 
-	err := row.Scan(&r.ID, &gitRepoID, &r.CookbookName, &coverageJSON, &r.EvaluatedAt, &r.CreatedAt, &r.UpdatedAt)
+	err := row.Scan(&gitRepoName, &gitRepoURL, &r.CookbookName, &coverageJSON, &r.EvaluatedAt, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return CookbookPlatformCoverage{}, err
 	}
 
-	r.GitRepoID = stringFromNull(gitRepoID)
+	r.GitRepoName = stringFromNull(gitRepoName)
+	r.GitRepoURL = stringFromNull(gitRepoURL)
 	if len(coverageJSON) > 0 {
 		if err := json.Unmarshal(coverageJSON, &r.CoverageData); err != nil {
 			return CookbookPlatformCoverage{}, fmt.Errorf("corrupt coverage_data JSON for %s: %w", r.CookbookName, err)
@@ -169,14 +173,15 @@ func scanCookbookPlatformCoverages(rows *sql.Rows, err error) ([]CookbookPlatfor
 	var results []CookbookPlatformCoverage
 	for rows.Next() {
 		var r CookbookPlatformCoverage
-		var gitRepoID sql.NullString
+		var gitRepoName, gitRepoURL sql.NullString
 		var coverageJSON []byte
 
-		if err := rows.Scan(&r.ID, &gitRepoID, &r.CookbookName, &coverageJSON, &r.EvaluatedAt, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&gitRepoName, &gitRepoURL, &r.CookbookName, &coverageJSON, &r.EvaluatedAt, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("datastore: scanning cookbook platform coverage row: %w", err)
 		}
 
-		r.GitRepoID = stringFromNull(gitRepoID)
+		r.GitRepoName = stringFromNull(gitRepoName)
+		r.GitRepoURL = stringFromNull(gitRepoURL)
 		if len(coverageJSON) > 0 {
 			if err := json.Unmarshal(coverageJSON, &r.CoverageData); err != nil {
 				return nil, fmt.Errorf("corrupt coverage_data JSON for %s: %w", r.CookbookName, err)

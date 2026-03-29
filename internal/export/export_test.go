@@ -110,18 +110,14 @@ func testStore() *fakeStore {
 
 	readiness := map[string][]datastore.NodeReadiness{
 		"prod-org/web01": {{
-			ID:                     "nr-1",
-			NodeSnapshotID:         "snap-1",
-			OrganisationID:         "prod-org",
+			OrganisationName:       "prod-org",
 			NodeName:               "web01",
 			TargetChefVersion:      "18.0.0",
 			IsReady:                true,
 			AllCookbooksCompatible: true,
 		}},
 		"prod-org/db01": {{
-			ID:                     "nr-2",
-			NodeSnapshotID:         "snap-2",
-			OrganisationID:         "prod-org",
+			OrganisationName:       "prod-org",
 			NodeName:               "db01",
 			TargetChefVersion:      "18.0.0",
 			IsReady:                false,
@@ -129,9 +125,7 @@ func testStore() *fakeStore {
 			BlockingCookbooks:      json.RawMessage(`["legacy-db"]`),
 		}},
 		"prod-org/staging01": {{
-			ID:                     "nr-3",
-			NodeSnapshotID:         "snap-3",
-			OrganisationID:         "prod-org",
+			OrganisationName:       "prod-org",
 			NodeName:               "staging01",
 			TargetChefVersion:      "18.0.0",
 			IsReady:                true,
@@ -149,7 +143,9 @@ func testStore() *fakeStore {
 	complexities := map[string][]datastore.ServerCookbookComplexity{
 		"prod-org": {
 			{
-				ServerCookbookID:     "prod-org/legacy-db/1.0.0",
+				OrganisationName:     "prod-org",
+				CookbookName:         "legacy-db",
+				CookbookVersion:      "1.0.0",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      75,
 				ComplexityLabel:      "high",
@@ -161,7 +157,9 @@ func testStore() *fakeStore {
 				ErrorCount:           1,
 			},
 			{
-				ServerCookbookID:     "prod-org/webserver/2.0.0",
+				OrganisationName:     "prod-org",
+				CookbookName:         "webserver",
+				CookbookVersion:      "2.0.0",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      10,
 				ComplexityLabel:      "low",

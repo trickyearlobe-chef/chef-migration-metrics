@@ -101,6 +101,8 @@ This file contains the rules and conventions that must be followed at all times 
 
 - Scope spawned agents tightly. One file or one narrow topic per agent.
 - If a task requires many changes, split across multiple agents rather than risking context exhaustion.
+- ALWAYS make sure the main thread and all agents are using `file-edit-mcp` tools (`fem-*`) for file operations instead of console.
+
 
 ## Permission Boundaries
 

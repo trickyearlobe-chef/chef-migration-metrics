@@ -89,63 +89,63 @@ func (f *fakeReadinessDS) GetGitRepoByName(_ context.Context, name string) (data
 	return gr, nil
 }
 
-func tkKey(cookbookID, targetChefVersion string) string {
-	return cookbookID + "|" + targetChefVersion
+func tkKey(gitRepoName, targetChefVersion string) string {
+	return gitRepoName + "|" + targetChefVersion
 }
 
-func csKey(cookbookID, targetChefVersion string) string {
-	return cookbookID + "|" + targetChefVersion
+func csKey(orgName, cookbookName, cookbookVersion, targetChefVersion string) string {
+	return orgName + "/" + cookbookName + "/" + cookbookVersion + "|" + targetChefVersion
 }
 
-func ccKey(cookbookID, targetChefVersion string) string {
-	return cookbookID + "|" + targetChefVersion
+func ccKey(orgName, cookbookName, cookbookVersion, targetChefVersion string) string {
+	return orgName + "/" + cookbookName + "/" + cookbookVersion + "|" + targetChefVersion
 }
 
-func (f *fakeReadinessDS) GetLatestGitRepoTestKitchenResult(_ context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error) {
+func (f *fakeReadinessDS) GetLatestGitRepoTestKitchenResult(_ context.Context, gitRepoName, _, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error) {
 	if f.tkErr != nil {
 		return nil, f.tkErr
 	}
-	r := f.tkResults[tkKey(gitRepoID, targetChefVersion)]
+	r := f.tkResults[tkKey(gitRepoName, targetChefVersion)]
 	return r, nil
 }
 
-func (f *fakeReadinessDS) GetServerCookbookCookstyleResult(_ context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+func (f *fakeReadinessDS) GetServerCookbookCookstyleResult(_ context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 	if f.csErr != nil {
 		return nil, f.csErr
 	}
-	r := f.csResults[csKey(serverCookbookID, targetChefVersion)]
+	r := f.csResults[csKey(orgName, cookbookName, cookbookVersion, targetChefVersion)]
 	return r, nil
 }
 
-func (f *fakeReadinessDS) GetServerCookbookComplexity(_ context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookComplexity, error) {
+func (f *fakeReadinessDS) GetServerCookbookComplexity(_ context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookComplexity, error) {
 	if f.complexityErr != nil {
 		return nil, f.complexityErr
 	}
-	r := f.complexities[ccKey(serverCookbookID, targetChefVersion)]
+	r := f.complexities[ccKey(orgName, cookbookName, cookbookVersion, targetChefVersion)]
 	return r, nil
 }
 
-func gitCSKey(gitRepoID, targetChefVersion string) string {
-	return gitRepoID + "|" + targetChefVersion
+func gitCSKey(gitRepoName, targetChefVersion string) string {
+	return gitRepoName + "|" + targetChefVersion
 }
 
-func gcKey(gitRepoID, targetChefVersion string) string {
-	return gitRepoID + "|" + targetChefVersion
+func gcKey(gitRepoName, targetChefVersion string) string {
+	return gitRepoName + "|" + targetChefVersion
 }
 
-func (f *fakeReadinessDS) GetGitRepoCookstyleResult(_ context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error) {
+func (f *fakeReadinessDS) GetGitRepoCookstyleResult(_ context.Context, gitRepoName, _, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error) {
 	if f.gitCSErr != nil {
 		return nil, f.gitCSErr
 	}
-	r := f.gitCSResults[gitCSKey(gitRepoID, targetChefVersion)]
+	r := f.gitCSResults[gitCSKey(gitRepoName, targetChefVersion)]
 	return r, nil
 }
 
-func (f *fakeReadinessDS) GetGitRepoComplexity(_ context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoComplexity, error) {
+func (f *fakeReadinessDS) GetGitRepoComplexity(_ context.Context, gitRepoName, _, targetChefVersion string) (*datastore.GitRepoComplexity, error) {
 	if f.gitComplexityErr != nil {
 		return nil, f.gitComplexityErr
 	}
-	r := f.gitComplexities[gcKey(gitRepoID, targetChefVersion)]
+	r := f.gitComplexities[gcKey(gitRepoName, targetChefVersion)]
 	return r, nil
 }
 
@@ -158,9 +158,7 @@ func (f *fakeReadinessDS) UpsertNodeReadiness(_ context.Context, p datastore.Ups
 	f.upserted = append(f.upserted, p)
 	f.mu.Unlock()
 	return &datastore.NodeReadiness{
-		ID:                "fake-id",
-		NodeSnapshotID:    p.NodeSnapshotID,
-		OrganisationID:    p.OrganisationID,
+		OrganisationName:  p.OrganisationName,
 		NodeName:          p.NodeName,
 		TargetChefVersion: p.TargetChefVersion,
 		IsReady:           p.IsReady,
@@ -316,9 +314,9 @@ func (f *fakeReadinessDS) addCookbookID(name, version, orgName string) {
 	})
 }
 
-func (f *fakeReadinessDS) addTKResult(gitRepoID, targetChefVersion string, convergePassed, testsPassed bool) {
-	f.tkResults[tkKey(gitRepoID, targetChefVersion)] = &datastore.GitRepoTestKitchenResult{
-		GitRepoID:         gitRepoID,
+func (f *fakeReadinessDS) addTKResult(gitRepoName, targetChefVersion string, convergePassed, testsPassed bool) {
+	f.tkResults[tkKey(gitRepoName, targetChefVersion)] = &datastore.GitRepoTestKitchenResult{
+		GitRepoName:       gitRepoName,
 		TargetChefVersion: targetChefVersion,
 		ConvergePassed:    convergePassed,
 		TestsPassed:       testsPassed,
@@ -326,26 +324,30 @@ func (f *fakeReadinessDS) addTKResult(gitRepoID, targetChefVersion string, conve
 	}
 }
 
-func (f *fakeReadinessDS) addCSResult(serverCookbookID, targetChefVersion string, passed bool) {
-	f.csResults[csKey(serverCookbookID, targetChefVersion)] = &datastore.ServerCookbookCookstyleResult{
-		ServerCookbookID:  serverCookbookID,
+func (f *fakeReadinessDS) addCSResult(orgName, cookbookName, cookbookVersion, targetChefVersion string, passed bool) {
+	f.csResults[csKey(orgName, cookbookName, cookbookVersion, targetChefVersion)] = &datastore.ServerCookbookCookstyleResult{
+		OrganisationName:  orgName,
+		CookbookName:      cookbookName,
+		CookbookVersion:   cookbookVersion,
 		TargetChefVersion: targetChefVersion,
 		Passed:            passed,
 	}
 }
 
-func (f *fakeReadinessDS) addComplexity(serverCookbookID, targetChefVersion string, score int, label string) {
-	f.complexities[ccKey(serverCookbookID, targetChefVersion)] = &datastore.ServerCookbookComplexity{
-		ServerCookbookID:  serverCookbookID,
+func (f *fakeReadinessDS) addComplexity(orgName, cookbookName, cookbookVersion, targetChefVersion string, score int, label string) {
+	f.complexities[ccKey(orgName, cookbookName, cookbookVersion, targetChefVersion)] = &datastore.ServerCookbookComplexity{
+		OrganisationName:  orgName,
+		CookbookName:      cookbookName,
+		CookbookVersion:   cookbookVersion,
 		TargetChefVersion: targetChefVersion,
 		ComplexityScore:   score,
 		ComplexityLabel:   label,
 	}
 }
 
-func (f *fakeReadinessDS) addGitCSResult(gitRepoID, targetChefVersion string, passed bool) {
-	f.gitCSResults[gitCSKey(gitRepoID, targetChefVersion)] = &datastore.GitRepoCookstyleResult{
-		GitRepoID:         gitRepoID,
+func (f *fakeReadinessDS) addGitCSResult(gitRepoName, targetChefVersion string, passed bool) {
+	f.gitCSResults[gitCSKey(gitRepoName, targetChefVersion)] = &datastore.GitRepoCookstyleResult{
+		GitRepoName:       gitRepoName,
 		TargetChefVersion: targetChefVersion,
 		Passed:            passed,
 	}
@@ -1075,7 +1077,7 @@ func TestCheckCookbookCompatibility_TKTestFailIsIncompatible(t *testing.T) {
 func TestCheckCookbookCompatibility_CSPass_NoTK(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1090,7 +1092,7 @@ func TestCheckCookbookCompatibility_CSPass_NoTK(t *testing.T) {
 func TestCheckCookbookCompatibility_CSFail_NoTK(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1106,7 +1108,7 @@ func TestCheckCookbookCompatibility_CSPassNoTargetVersion(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// CookStyle result with empty target version (server-sourced scan).
-	ds.addCSResult("org-1/apt/7.4.0", "", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "", true)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1153,8 +1155,8 @@ func TestCheckCookbookCompatibility_CSCheckedWhenTKPresent(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
-	ds.addTKResult("apt", "18.0", true, true)        // TK passes
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", false) // server CS fails
+	ds.addTKResult("apt", "18.0", true, true)              // TK passes
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false) // server CS fails
 
 	cache := ds.buildFakeCache()
 	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1182,7 +1184,7 @@ func TestCheckCookbookCompatibility_MultiSource_ServerIncompatibleGitCompatible(
 	// Server CookStyle fails but git repo CookStyle passes → compatible
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", false) // server CS fails
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false) // server CS fails
 	ds.addGitRepo("apt", "abc123")
 	ds.addGitCSResult("apt", "18.0", true) // git CS passes
 
@@ -1200,7 +1202,7 @@ func TestCheckCookbookCompatibility_MultiSource_AllIncompatible(t *testing.T) {
 	// All sources incompatible
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
 	ds.addGitRepo("apt", "abc123")
 	ds.addGitCSResult("apt", "18.0", false)
 	ds.addTKResult("apt", "18.0", false, false)
@@ -1222,7 +1224,7 @@ func TestCheckCookbookCompatibility_MultiSource_VerdictFields(t *testing.T) {
 	// Verify verdict fields are populated correctly
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
 	ds.addGitRepo("apt", "sha-abc")
 	ds.addGitCSResult("apt", "18.0", true)
 
@@ -1264,7 +1266,7 @@ func TestCheckCookbookCompatibility_MultiSource_TKCompatibleOverridesCSFail(t *t
 	// TK passes, server CS fails → compatible (TK win)
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", false) // server CS fails
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false) // server CS fails
 	ds.addGitRepo("apt", "abc123")
 	ds.addTKResult("apt", "18.0", true, true) // TK passes
 
@@ -1282,7 +1284,7 @@ func TestCheckCookbookCompatibility_MultiSource_NoGitRepo(t *testing.T) {
 	// No git repo exists — only server CS checked
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	cache := ds.buildFakeCache()
 	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1307,8 +1309,10 @@ func TestCheckCookbookCompatibility_ErrorResultTreatedAsUntested(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// Server CS result with an error message (CookStyle crashed).
-	ds.csResults[csKey("org-1/apt/7.4.0", "18.0")] = &datastore.ServerCookbookCookstyleResult{
-		ServerCookbookID:  "org-1/apt/7.4.0",
+	ds.csResults[csKey("org-1", "apt", "7.4.0", "18.0")] = &datastore.ServerCookbookCookstyleResult{
+		OrganisationName:  "org-1",
+		CookbookName:      "apt",
+		CookbookVersion:   "7.4.0",
 		TargetChefVersion: "18.0",
 		Passed:            false,
 		ErrorMessage:      "CookStyle error (exit 2): Invalid .rubocop.yml",
@@ -1334,7 +1338,7 @@ func TestCheckCookbookCompatibility_GitCSErrorResultSkipped(t *testing.T) {
 	ds.addGitRepo("apt", "sha-abc")
 	// Git CS result with error.
 	ds.gitCSResults[gitCSKey("apt", "18.0")] = &datastore.GitRepoCookstyleResult{
-		GitRepoID:         "apt",
+		GitRepoName:       "apt",
 		TargetChefVersion: "18.0",
 		Passed:            false,
 		ErrorMessage:      "CookStyle error (exit 2): bad config",
@@ -1354,8 +1358,10 @@ func TestCheckCookbookCompatibility_ErrorResultDoesNotOverrideGoodResult(t *test
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// Server CS errored.
-	ds.csResults[csKey("org-1/apt/7.4.0", "18.0")] = &datastore.ServerCookbookCookstyleResult{
-		ServerCookbookID:  "org-1/apt/7.4.0",
+	ds.csResults[csKey("org-1", "apt", "7.4.0", "18.0")] = &datastore.ServerCookbookCookstyleResult{
+		OrganisationName:  "org-1",
+		CookbookName:      "apt",
+		CookbookVersion:   "7.4.0",
 		TargetChefVersion: "18.0",
 		Passed:            false,
 		ErrorMessage:      "CookStyle error (exit 2): crash",
@@ -1379,8 +1385,8 @@ func TestEvaluateOne_AllCompatibleSufficientDisk(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addCookbookID("nginx", "2.0.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
-	ds.addCSResult("org-1/nginx/2.0.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "nginx", "2.0.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,
@@ -1410,8 +1416,8 @@ func TestEvaluateOne_IncompatibleCookbook(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addCookbookID("nginx", "2.0.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
-	ds.addCSResult("org-1/nginx/2.0.0", "18.0", false) // FAIL
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "nginx", "2.0.0", "18.0", false) // FAIL
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,
@@ -1451,7 +1457,7 @@ func TestEvaluateOne_IncompatibleCookbook(t *testing.T) {
 func TestEvaluateOne_UntestedCookbook(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 	// "nginx" is in the ID map but has no test results.
 	ds.addCookbookID("nginx", "2.0.0", "org-1")
 
@@ -1479,7 +1485,7 @@ func TestEvaluateOne_UntestedCookbook(t *testing.T) {
 func TestEvaluateOne_InsufficientDisk(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,
@@ -1508,7 +1514,7 @@ func TestEvaluateOne_InsufficientDisk(t *testing.T) {
 func TestEvaluateOne_UnknownDiskSpace(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,
@@ -1535,7 +1541,7 @@ func TestEvaluateOne_UnknownDiskSpace(t *testing.T) {
 func TestEvaluateOne_StaleNode(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "stale-node", true,
@@ -1590,8 +1596,8 @@ func TestEvaluateOne_NoCookbooks(t *testing.T) {
 func TestEvaluateOne_ComplexityEnrichment(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("nginx", "2.0.0", "org-1")
-	ds.addCSResult("org-1/nginx/2.0.0", "18.0", false) // incompatible
-	ds.addComplexity("org-1/nginx/2.0.0", "18.0", 45, "high")
+	ds.addCSResult("org-1", "nginx", "2.0.0", "18.0", false) // incompatible
+	ds.addComplexity("org-1", "nginx", "2.0.0", "18.0", 45, "high")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,
@@ -1620,7 +1626,7 @@ func TestEvaluateOne_MultipleBlockingCookbooks(t *testing.T) {
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addCookbookID("nginx", "2.0.0", "org-1")
 	ds.addCookbookID("java", "8.5.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true) // pass
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true) // pass
 	// nginx and java: no results → untested
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
@@ -1650,7 +1656,7 @@ func TestEvaluateOne_MultipleBlockingCookbooks(t *testing.T) {
 func TestEvaluateOne_CookstyleOnlyPassIsNotBlocking(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true) // CookStyle pass, no TK
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true) // CookStyle pass, no TK
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,
@@ -1689,7 +1695,7 @@ func TestEvaluateOrganisation_Basic(t *testing.T) {
 			})),
 	}
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
 	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
@@ -1720,8 +1726,8 @@ func TestEvaluateOrganisation_MultipleTargetVersions(t *testing.T) {
 			})),
 	}
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
-	ds.addCSResult("org-1/apt/7.4.0", "17.0", false) // fails for 17.0
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "17.0", false) // fails for 17.0
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
 	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"17.0", "18.0"})
@@ -1868,7 +1874,7 @@ func TestEvaluateOrganisation_ConcurrencyBounded(t *testing.T) {
 				})))
 	}
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 3, 2048) // concurrency=3
 	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
@@ -1896,10 +1902,10 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	ds.addTKResult("apt", "18.0", true, true)
 	ds.addGitCSResult("apt", "18.0", true)
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
-	ds.addComplexity("org-1/apt/7.4.0", "18.0", 42, "medium")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
+	ds.addComplexity("org-1", "apt", "7.4.0", "18.0", 42, "medium")
 	ds.gitComplexities[gcKey("apt", "18.0")] = &datastore.GitRepoComplexity{
-		GitRepoID:         "apt",
+		GitRepoName:       "apt",
 		TargetChefVersion: "18.0",
 		ComplexityScore:   10,
 		ComplexityLabel:   "low",
@@ -1956,8 +1962,8 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 func TestBuildReadinessCache_FiltersTargetVersions(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
-	ds.addCSResult("org-1/apt/7.4.0", "17.0", false)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "17.0", false)
 
 	// Build cache for only 18.0
 	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
@@ -1977,7 +1983,7 @@ func TestBuildReadinessCache_IncludesNullTargetVersionCSResults(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// Server CS result with empty target version (scanned without profile)
-	ds.addCSResult("org-1/apt/7.4.0", "", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "", true)
 
 	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
 	if err != nil {
@@ -2186,8 +2192,7 @@ func TestPersistResult_Success(t *testing.T) {
 	sufficient := true
 	availMB := 5000
 	result := ReadinessResult{
-		NodeSnapshotID:         "snap-1",
-		OrganisationID:         "org-1",
+		OrganisationName:       "org-1",
 		NodeName:               "node-1",
 		TargetChefVersion:      "18.0",
 		IsReady:                false,
@@ -2238,8 +2243,7 @@ func TestPersistResult_NoBlockingCookbooks(t *testing.T) {
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
 	result := ReadinessResult{
-		NodeSnapshotID:         "snap-1",
-		OrganisationID:         "org-1",
+		OrganisationName:       "org-1",
 		NodeName:               "node-1",
 		TargetChefVersion:      "18.0",
 		IsReady:                true,
@@ -2267,8 +2271,7 @@ func TestPersistResult_UpsertError(t *testing.T) {
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
 	result := ReadinessResult{
-		NodeSnapshotID:    "snap-1",
-		OrganisationID:    "org-1",
+		OrganisationName:  "org-1",
 		NodeName:          "node-1",
 		TargetChefVersion: "18.0",
 		EvaluatedAt:       time.Now().UTC(),
@@ -2523,7 +2526,7 @@ func TestEvaluateOne_Ohai14_ReadyWithSufficientDisk(t *testing.T) {
 	// End-to-end: all cookbooks compatible, Ohai 14+ filesystem, sufficient disk.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,
@@ -2553,7 +2556,7 @@ func TestEvaluateOne_Ohai14_BlockedByDisk(t *testing.T) {
 	// End-to-end: all cookbooks compatible, Ohai 14+ filesystem, insufficient disk.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
-	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false,

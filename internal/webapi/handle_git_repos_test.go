@@ -87,9 +87,9 @@ func sampleGitRepos() []datastore.GitRepo {
 func sampleTKResults() []datastore.GitRepoTestKitchenResult {
 	now := time.Now()
 	return []datastore.GitRepoTestKitchenResult{
-		{ID: "tk-1", GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: now},
-		{ID: "tk-2", GitRepoID: "cookbook-b", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: now},
-		{ID: "tk-3", GitRepoID: "cookbook-c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: now},
+		{GitRepoName: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: now},
+		{GitRepoName: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: now},
+		{GitRepoName: "cookbook-c", GitRepoURL: "https://github.com/org/cookbook-c.git", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: now},
 		// cookbook-d has no TK result → "untested"
 	}
 }
@@ -97,8 +97,8 @@ func sampleTKResults() []datastore.GitRepoTestKitchenResult {
 func sampleCookstyleResults() []datastore.GitRepoCookstyleResult {
 	now := time.Now()
 	return []datastore.GitRepoCookstyleResult{
-		{ID: "cs-1", GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Passed: true, ScannedAt: now},
-		{ID: "cs-2", GitRepoID: "cookbook-b", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 5, ScannedAt: now},
+		{GitRepoName: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", TargetChefVersion: "18.0.0", Passed: true, ScannedAt: now},
+		{GitRepoName: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 5, ScannedAt: now},
 		// cookbook-c and cookbook-d have no cookstyle result → "untested"
 	}
 }
@@ -339,7 +339,7 @@ func TestHandleGitRepos_TKStatus_DifferentTargetVersion(t *testing.T) {
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
 				// This result is for version 19.0.0, not 18.0.0.
-				{ID: "tk-1", GitRepoID: "repo-1", TargetChefVersion: "19.0.0", Compatible: true, TimedOut: false, StartedAt: now},
+				{GitRepoName: "repo-1", GitRepoURL: "https://github.com/org/repo-1.git", TargetChefVersion: "19.0.0", Compatible: true, TimedOut: false, StartedAt: now},
 			}, nil
 		},
 	}
@@ -538,7 +538,7 @@ func TestHandleGitRepos_ExplicitTargetVersion(t *testing.T) {
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{ID: "tk-1", GitRepoID: "cookbook-a", TargetChefVersion: "19.0.0", Compatible: true, TimedOut: false, StartedAt: now},
+				{GitRepoName: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", TargetChefVersion: "19.0.0", Compatible: true, TimedOut: false, StartedAt: now},
 			}, nil
 		},
 	}
@@ -676,7 +676,7 @@ func TestHandleGitRepos_TKStatus_TimedOutPrecedence(t *testing.T) {
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			// Both TimedOut=true AND Compatible=true — TimedOut should win.
 			return []datastore.GitRepoTestKitchenResult{
-				{ID: "tk-1", GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: true, StartedAt: now},
+				{GitRepoName: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: true, StartedAt: now},
 			}, nil
 		},
 	}

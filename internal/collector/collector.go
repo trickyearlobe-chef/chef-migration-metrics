@@ -1242,7 +1242,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			} else if len(gitReposForAC) > 0 {
 				var csResults []datastore.GitRepoCookstyleResult
 				for _, repo := range gitReposForAC {
-					repoResults, err := c.db.ListGitRepoCookstyleResults(ctx, repo.Name)
+					repoResults, err := c.db.ListGitRepoCookstyleResults(ctx, repo.Name, repo.GitRepoURL)
 					if err != nil {
 						log.Warn(fmt.Sprintf("failed to list CookStyle results for git repo %s: %v", repo.Name, err),
 							logging.WithCollectionRunID(run.OrganisationName))
@@ -1258,8 +1258,8 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 					csInfos := make([]remediation.CookstyleResultInfo, 0, len(csResults))
 					for _, csr := range csResults {
 						csInfos = append(csInfos, remediation.CookstyleResultInfo{
-							ResultID:          csr.ID,
-							CookbookID:        csr.GitRepoID,
+							CookbookName:      csr.GitRepoName,
+							GitRepoURL:        csr.GitRepoURL,
 							TargetChefVersion: csr.TargetChefVersion,
 							OffenseCount:      csr.OffenceCount,
 							Passed:            csr.Passed,

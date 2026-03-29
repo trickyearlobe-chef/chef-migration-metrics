@@ -131,7 +131,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		// A cookbook that passed CookStyle (no error/fatal offenses) is
 		// compatible; one that failed is incompatible.
 		for _, cs := range cookstyleResults {
-			cbName := cookbookNameByID[cs.ServerCookbookID]
+			cbName := cookbookNameByID[cs.OrganisationName+"/"+cs.CookbookName+"/"+cs.CookbookVersion]
 			if cbName == "" {
 				continue
 			}
@@ -317,7 +317,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 
 	for _, cs := range allCookstyle {
-		repoName := repoNameByID[cs.GitRepoID]
+		repoName := repoNameByID[cs.GitRepoName]
 		if repoName == "" {
 			continue
 		}
@@ -502,7 +502,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 
 	for _, tk := range tkResults {
-		repoName := repoNameByID[tk.GitRepoID]
+		repoName := repoNameByID[tk.GitRepoName]
 		if repoName == "" {
 			continue
 		}

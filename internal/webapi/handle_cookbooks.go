@@ -120,12 +120,13 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 					continue
 				}
 				// One result per (server_cookbook_id, target_chef_version).
+				csKey := cs.OrganisationName + "/" + cs.CookbookName + "/" + cs.CookbookVersion
 				if cs.ErrorMessage != "" {
-					compatByID[cs.ServerCookbookID] = "error"
+					compatByID[csKey] = "error"
 				} else if cs.Passed {
-					compatByID[cs.ServerCookbookID] = "compatible"
+					compatByID[csKey] = "compatible"
 				} else {
-					compatByID[cs.ServerCookbookID] = "incompatible"
+					compatByID[csKey] = "incompatible"
 				}
 			}
 		}
@@ -305,10 +306,9 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 	for _, sc := range serverCookbooks {
 		detail := serverVersionDetail{Cookbook: sc}
 
-		scKey := sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
-		cookstyle, csErr := r.db.ListServerCookbookCookstyleResults(ctx, scKey)
+		cookstyle, csErr := r.db.ListServerCookbookCookstyleResults(ctx, sc.OrganisationName, sc.Name, sc.Version)
 		if csErr != nil {
-			r.logf("WARN", "listing cookstyle results for server cookbook %s: %v", scKey, csErr)
+			r.logf("WARN", "listing cookstyle results for server cookbook %s/%s@%s: %v", sc.OrganisationName, sc.Name, sc.Version, csErr)
 		} else {
 			detail.Cookstyle = cookstyle
 		}
@@ -320,14 +320,14 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 	for _, gr := range gitRepos {
 		detail := gitRepoDetail{GitRepo: gr}
 
-		cookstyle, csErr := r.db.ListGitRepoCookstyleResults(ctx, gr.Name)
+		cookstyle, csErr := r.db.ListGitRepoCookstyleResults(ctx, gr.Name, gr.GitRepoURL)
 		if csErr != nil {
 			r.logf("WARN", "listing cookstyle results for git repo %s: %v", gr.Name, csErr)
 		} else {
 			detail.Cookstyle = cookstyle
 		}
 
-		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.Name)
+		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.Name, gr.GitRepoURL)
 		if tkErr != nil {
 			r.logf("WARN", "listing test kitchen results for git repo %s: %v", gr.Name, tkErr)
 		} else {

@@ -13,8 +13,8 @@ import (
 
 // GitRepoTestKitchenResult represents a row in the git_repo_test_kitchen_results table.
 type GitRepoTestKitchenResult struct {
-	ID                string    `json:"id"`
-	GitRepoID         string    `json:"git_repo_id"`
+	GitRepoName       string    `json:"git_repo_name"`
+	GitRepoURL        string    `json:"git_repo_url"`
 	TargetChefVersion string    `json:"target_chef_version"`
 	CommitSHA         string    `json:"commit_sha"`
 	ConvergePassed    bool      `json:"converge_passed"`
@@ -37,9 +37,10 @@ type GitRepoTestKitchenResult struct {
 
 // UpsertGitRepoTestKitchenResultParams contains the fields needed to insert or
 // update a git_repo_test_kitchen_results row. The unique constraint is
-// (git_repo_id, target_chef_version).
+// (git_repo_name, git_repo_url, target_chef_version).
 type UpsertGitRepoTestKitchenResultParams struct {
-	GitRepoID         string
+	GitRepoName       string
+	GitRepoURL        string
 	TargetChefVersion string
 	CommitSHA         string
 	ConvergePassed    bool
@@ -63,7 +64,7 @@ type UpsertGitRepoTestKitchenResultParams struct {
 // Column lists — shared across all queries
 // ---------------------------------------------------------------------------
 
-const grtkrColumns = `id, git_repo_id, target_chef_version, commit_sha,
+const grtkrColumns = `git_repo_name, git_repo_url, target_chef_version, commit_sha,
        converge_passed, tests_passed, compatible, timed_out,
        process_stdout, process_stderr,
        converge_output, verify_output, destroy_output,
@@ -75,22 +76,23 @@ const grtkrColumns = `id, git_repo_id, target_chef_version, commit_sha,
 // ---------------------------------------------------------------------------
 
 // GetGitRepoTestKitchenResult returns the test kitchen result for the given
-// git repo ID, target Chef version, and commit SHA. Returns (nil, nil) if
-// no result exists.
-func (db *DB) GetGitRepoTestKitchenResult(ctx context.Context, gitRepoID, targetChefVersion, commitSHA string) (*GitRepoTestKitchenResult, error) {
-	return db.getGitRepoTestKitchenResult(ctx, db.q(), gitRepoID, targetChefVersion, commitSHA)
+// git repo name, URL, target Chef version, and commit SHA. Returns (nil, nil)
+// if no result exists.
+func (db *DB) GetGitRepoTestKitchenResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion, commitSHA string) (*GitRepoTestKitchenResult, error) {
+	return db.getGitRepoTestKitchenResult(ctx, db.q(), gitRepoName, gitRepoURL, targetChefVersion, commitSHA)
 }
 
-func (db *DB) getGitRepoTestKitchenResult(ctx context.Context, q queryable, gitRepoID, targetChefVersion, commitSHA string) (*GitRepoTestKitchenResult, error) {
+func (db *DB) getGitRepoTestKitchenResult(ctx context.Context, q queryable, gitRepoName, gitRepoURL, targetChefVersion, commitSHA string) (*GitRepoTestKitchenResult, error) {
 	query := `
 		SELECT ` + grtkrColumns + `
 		  FROM git_repo_test_kitchen_results
-		 WHERE git_repo_id = $1
-		   AND target_chef_version = $2
-		   AND commit_sha = $3
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
+		   AND target_chef_version = $3
+		   AND commit_sha = $4
 	`
 
-	r, err := scanGitRepoTestKitchenResult(q.QueryRowContext(ctx, query, gitRepoID, targetChefVersion, commitSHA))
+	r, err := scanGitRepoTestKitchenResult(q.QueryRowContext(ctx, query, gitRepoName, gitRepoURL, targetChefVersion, commitSHA))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -100,39 +102,21 @@ func (db *DB) getGitRepoTestKitchenResult(ctx context.Context, q queryable, gitR
 	return &r, nil
 }
 
-// GetGitRepoTestKitchenResultByID returns a single test kitchen result by its
-// primary key. Returns ErrNotFound if no result exists.
-func (db *DB) GetGitRepoTestKitchenResultByID(ctx context.Context, id string) (*GitRepoTestKitchenResult, error) {
-	query := `
-		SELECT ` + grtkrColumns + `
-		  FROM git_repo_test_kitchen_results
-		 WHERE id = $1
-	`
-
-	r, err := scanGitRepoTestKitchenResult(db.q().QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting git repo test kitchen result by id: %w", err)
-	}
-	return &r, nil
-}
-
 // GetLatestGitRepoTestKitchenResult returns the most recent test kitchen result
-// for the given git repo ID and target Chef version, regardless of commit
-// SHA. Returns (nil, nil) if no result exists.
-func (db *DB) GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoID, targetChefVersion string) (*GitRepoTestKitchenResult, error) {
+// for the given git repo name, URL, and target Chef version, regardless of
+// commit SHA. Returns (nil, nil) if no result exists.
+func (db *DB) GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*GitRepoTestKitchenResult, error) {
 	query := `
 		SELECT ` + grtkrColumns + `
 		  FROM git_repo_test_kitchen_results
-		 WHERE git_repo_id = $1
-		   AND target_chef_version = $2
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
+		   AND target_chef_version = $3
 		 ORDER BY started_at DESC
 		 LIMIT 1
 	`
 
-	r, err := scanGitRepoTestKitchenResult(db.q().QueryRowContext(ctx, query, gitRepoID, targetChefVersion))
+	r, err := scanGitRepoTestKitchenResult(db.q().QueryRowContext(ctx, query, gitRepoName, gitRepoURL, targetChefVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -147,16 +131,17 @@ func (db *DB) GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoID, 
 // ---------------------------------------------------------------------------
 
 // ListGitRepoTestKitchenResults returns all test kitchen results for the
-// given git repo ID, ordered by target_chef_version then started_at
+// given git repo name and URL, ordered by target_chef_version then started_at
 // descending.
-func (db *DB) ListGitRepoTestKitchenResults(ctx context.Context, gitRepoID string) ([]GitRepoTestKitchenResult, error) {
+func (db *DB) ListGitRepoTestKitchenResults(ctx context.Context, gitRepoName, gitRepoURL string) ([]GitRepoTestKitchenResult, error) {
 	query := `
 		SELECT ` + grtkrColumns + `
 		  FROM git_repo_test_kitchen_results
-		 WHERE git_repo_id = $1
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
 		 ORDER BY target_chef_version, started_at DESC
 	`
-	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query, gitRepoID))
+	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query, gitRepoName, gitRepoURL))
 }
 
 // ListGitRepoTestKitchenResultsByName returns all test kitchen results for
@@ -164,16 +149,10 @@ func (db *DB) ListGitRepoTestKitchenResults(ctx context.Context, gitRepoID strin
 // started_at descending.
 func (db *DB) ListGitRepoTestKitchenResultsByName(ctx context.Context, name string) ([]GitRepoTestKitchenResult, error) {
 	query := `
-		SELECT tkr.id, tkr.git_repo_id, tkr.target_chef_version, tkr.commit_sha,
-		       tkr.converge_passed, tkr.tests_passed, tkr.compatible, tkr.timed_out,
-		       tkr.process_stdout, tkr.process_stderr,
-		       tkr.converge_output, tkr.verify_output, tkr.destroy_output,
-		       tkr.driver_used, tkr.platform_tested, tkr.overrides_applied,
-		       tkr.duration_seconds, tkr.started_at, tkr.completed_at, tkr.created_at
-		  FROM git_repo_test_kitchen_results tkr
-		  JOIN git_repos gr ON gr.id = tkr.git_repo_id
-		 WHERE gr.name = $1
-		 ORDER BY tkr.target_chef_version, tkr.started_at DESC
+		SELECT ` + grtkrColumns + `
+		  FROM git_repo_test_kitchen_results
+		 WHERE git_repo_name = $1
+		 ORDER BY git_repo_url, target_chef_version, started_at DESC
 	`
 	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query, name))
 }
@@ -190,8 +169,9 @@ func (db *DB) ListAllGitRepoTestKitchenResults(ctx context.Context) ([]GitRepoTe
 }
 
 // ListLatestGitRepoTestKitchenResults returns the latest test kitchen result
-// per (git_repo_id, target_chef_version) combination, filtered by the given
-// target chef versions. Used by the readiness evaluator for bulk-loading.
+// per (git_repo_name, git_repo_url, target_chef_version) combination, filtered
+// by the given target chef versions. Used by the readiness evaluator for
+// bulk-loading.
 func (db *DB) ListLatestGitRepoTestKitchenResults(ctx context.Context, targetChefVersions []string) ([]GitRepoTestKitchenResult, error) {
 	if len(targetChefVersions) == 0 {
 		return nil, nil
@@ -206,11 +186,11 @@ func (db *DB) ListLatestGitRepoTestKitchenResults(ctx context.Context, targetChe
 	}
 
 	query := `
-		SELECT DISTINCT ON (git_repo_id, target_chef_version)
+		SELECT DISTINCT ON (git_repo_name, git_repo_url, target_chef_version)
 		       ` + grtkrColumns + `
 		  FROM git_repo_test_kitchen_results
 		 WHERE target_chef_version IN (` + strings.Join(placeholders, ", ") + `)
-		 ORDER BY git_repo_id, target_chef_version, started_at DESC
+		 ORDER BY git_repo_name, git_repo_url, target_chef_version, started_at DESC
 	`
 	return scanGitRepoTestKitchenResults(db.pool.QueryContext(ctx, query, args...))
 }
@@ -220,16 +200,19 @@ func (db *DB) ListLatestGitRepoTestKitchenResults(ctx context.Context, targetChe
 // ---------------------------------------------------------------------------
 
 // UpsertGitRepoTestKitchenResult inserts a new test kitchen result or updates
-// the existing one for the same (git_repo_id, target_chef_version)
-// combination. The commit_sha is updated on conflict to reflect the latest
-// tested commit. Returns the resulting row.
+// the existing one for the same (git_repo_name, git_repo_url,
+// target_chef_version) combination. The commit_sha is updated on conflict to
+// reflect the latest tested commit. Returns the resulting row.
 func (db *DB) UpsertGitRepoTestKitchenResult(ctx context.Context, p UpsertGitRepoTestKitchenResultParams) (*GitRepoTestKitchenResult, error) {
 	return db.upsertGitRepoTestKitchenResult(ctx, db.q(), p)
 }
 
 func (db *DB) upsertGitRepoTestKitchenResult(ctx context.Context, q queryable, p UpsertGitRepoTestKitchenResultParams) (*GitRepoTestKitchenResult, error) {
-	if p.GitRepoID == "" {
-		return nil, fmt.Errorf("datastore: git_repo_id is required")
+	if p.GitRepoName == "" {
+		return nil, fmt.Errorf("datastore: git_repo_name is required")
+	}
+	if p.GitRepoURL == "" {
+		return nil, fmt.Errorf("datastore: git_repo_url is required")
 	}
 	if p.TargetChefVersion == "" {
 		return nil, fmt.Errorf("datastore: target_chef_version is required")
@@ -240,14 +223,14 @@ func (db *DB) upsertGitRepoTestKitchenResult(ctx context.Context, q queryable, p
 
 	query := `
 		INSERT INTO git_repo_test_kitchen_results (
-			git_repo_id, target_chef_version, commit_sha,
+			git_repo_name, git_repo_url, target_chef_version, commit_sha,
 			converge_passed, tests_passed, compatible, timed_out,
 			process_stdout, process_stderr,
 			converge_output, verify_output, destroy_output,
 			driver_used, platform_tested, overrides_applied,
 			duration_seconds, started_at, completed_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-		ON CONFLICT (git_repo_id, target_chef_version)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		ON CONFLICT (git_repo_name, git_repo_url, target_chef_version)
 		DO UPDATE SET
 			commit_sha         = EXCLUDED.commit_sha,
 			converge_passed    = EXCLUDED.converge_passed,
@@ -274,7 +257,8 @@ func (db *DB) upsertGitRepoTestKitchenResult(ctx context.Context, q queryable, p
 	}
 
 	r, err := scanGitRepoTestKitchenResult(q.QueryRowContext(ctx, query,
-		p.GitRepoID,
+		p.GitRepoName,
+		p.GitRepoURL,
 		p.TargetChefVersion,
 		p.CommitSHA,
 		p.ConvergePassed,
@@ -304,27 +288,12 @@ func (db *DB) upsertGitRepoTestKitchenResult(ctx context.Context, q queryable, p
 // ---------------------------------------------------------------------------
 
 // DeleteGitRepoTestKitchenResultsByRepo removes all test kitchen results for
-// the given git repo ID. This forces a full retest on the next cycle.
-func (db *DB) DeleteGitRepoTestKitchenResultsByRepo(ctx context.Context, gitRepoID string) error {
-	const query = `DELETE FROM git_repo_test_kitchen_results WHERE git_repo_id = $1`
-	_, err := db.pool.ExecContext(ctx, query, gitRepoID)
+// the given git repo name and URL. This forces a full retest on the next cycle.
+func (db *DB) DeleteGitRepoTestKitchenResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error {
+	const query = `DELETE FROM git_repo_test_kitchen_results WHERE git_repo_name = $1 AND git_repo_url = $2`
+	_, err := db.pool.ExecContext(ctx, query, gitRepoName, gitRepoURL)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting git repo test kitchen results for repo %s: %w", gitRepoID, err)
-	}
-	return nil
-}
-
-// DeleteGitRepoTestKitchenResultByID removes a single test kitchen result by ID.
-// Returns ErrNotFound if no such result exists.
-func (db *DB) DeleteGitRepoTestKitchenResultByID(ctx context.Context, id string) error {
-	const query = `DELETE FROM git_repo_test_kitchen_results WHERE id = $1`
-	res, err := db.pool.ExecContext(ctx, query, id)
-	if err != nil {
-		return fmt.Errorf("datastore: deleting git repo test kitchen result %s: %w", id, err)
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return ErrNotFound
+		return fmt.Errorf("datastore: deleting git repo test kitchen results for repo %s (%s): %w", gitRepoName, gitRepoURL, err)
 	}
 	return nil
 }
@@ -342,8 +311,8 @@ func scanGitRepoTestKitchenResult(row interface{ Scan(dest ...any) error }) (Git
 	var completedAt sql.NullTime
 
 	err := row.Scan(
-		&r.ID,
-		&r.GitRepoID,
+		&r.GitRepoName,
+		&r.GitRepoURL,
 		&r.TargetChefVersion,
 		&r.CommitSHA,
 		&r.ConvergePassed,
@@ -396,8 +365,8 @@ func scanGitRepoTestKitchenResults(rows *sql.Rows, err error) ([]GitRepoTestKitc
 		var completedAt sql.NullTime
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.GitRepoID,
+			&r.GitRepoName,
+			&r.GitRepoURL,
 			&r.TargetChefVersion,
 			&r.CommitSHA,
 			&r.ConvergePassed,

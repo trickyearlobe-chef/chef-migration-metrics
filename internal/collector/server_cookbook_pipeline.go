@@ -345,11 +345,10 @@ func scanAndPreview(
 
 			// Autocorrect preview (only if scan produced offenses).
 			if autocorrectGen != nil && sr.OffenseCount > 0 {
-				dbResult, dbErr := db.GetServerCookbookCookstyleResult(ctx, cb.OrganisationName+"/"+cb.Name+"/"+cb.Version, tv)
+				dbResult, dbErr := db.GetServerCookbookCookstyleResult(ctx, cb.OrganisationName, cb.Name, cb.Version, tv)
 				if dbErr == nil && dbResult != nil {
 					csInfo := remediation.CookstyleResultInfo{
-						ResultID:          dbResult.ID,
-						CookbookID:        cb.OrganisationName + "/" + cb.Name + "/" + cb.Version,
+						OrganisationName:  cb.OrganisationName,
 						CookbookName:      cb.Name,
 						CookbookVersion:   cb.Version,
 						TargetChefVersion: tv,

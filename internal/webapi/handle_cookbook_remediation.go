@@ -65,7 +65,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	var cookstyleOffences []byte
 	var cookstylePassed *bool
 	var cookstyleScannedAt string
-	var cookstyleResultID string
+	var hasCookstyleResult bool
 	var complexityScore int
 	var complexityLabel string
 	var autoCorrectableCount int
@@ -82,17 +82,22 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	}
 
 	// Find the matching version among server cookbooks.
-	var serverCookbookID string
+	var serverOrgName string
+	var foundServerCookbook bool
 	for _, sc := range serverCookbooks {
 		if sc.Version == cookbookVersion {
-			serverCookbookID = sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
+			serverOrgName = sc.OrganisationName
+			foundServerCookbook = true
 			break
 		}
 	}
 
-	if serverCookbookID != "" {
+	// Track git repo URL for autocorrect preview lookups.
+	var gitRepoURL string
+
+	if foundServerCookbook {
 		// Fetch server cookbook cookstyle result.
-		csResult, csErr := r.db.GetServerCookbookCookstyleResult(ctx, serverCookbookID, targetVersion)
+		csResult, csErr := r.db.GetServerCookbookCookstyleResult(ctx, serverOrgName, cookbookName, cookbookVersion, targetVersion)
 		if csErr != nil {
 			r.logf("ERROR", "getting cookstyle result for server cookbook %s@%s target %s: %v", cookbookName, cookbookVersion, targetVersion, csErr)
 			WriteInternalError(w, "Failed to fetch cookstyle results.")
@@ -103,13 +108,13 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 			p := csResult.Passed
 			cookstylePassed = &p
 			cookstyleScannedAt = csResult.ScannedAt.Format("2006-01-02T15:04:05Z")
-			cookstyleResultID = csResult.ID
+			hasCookstyleResult = true
 		}
 
 		// Fetch complexity records for summary stats.
-		complexities, cxErr := r.db.ListServerCookbookComplexitiesByCookbook(ctx, serverCookbookID)
+		complexities, cxErr := r.db.ListServerCookbookComplexitiesByCookbook(ctx, serverOrgName, cookbookName, cookbookVersion)
 		if cxErr != nil {
-			r.logf("WARN", "listing complexity for server cookbook %s: %v", serverCookbookID, cxErr)
+			r.logf("WARN", "listing complexity for server cookbook %s/%s@%s: %v", serverOrgName, cookbookName, cookbookVersion, cxErr)
 		}
 		for _, cc := range complexities {
 			if cc.TargetChefVersion == targetVersion {
@@ -136,9 +141,9 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 			return
 		}
 		isGitRepo = true
-		gitRepoID := gitRepos[0].Name
+		gitRepoURL = gitRepos[0].GitRepoURL
 
-		csResult, csErr := r.db.GetGitRepoCookstyleResult(ctx, gitRepoID, targetVersion)
+		csResult, csErr := r.db.GetGitRepoCookstyleResult(ctx, gitRepos[0].Name, gitRepoURL, targetVersion)
 		if csErr != nil {
 			r.logf("ERROR", "getting cookstyle result for git repo %s target %s: %v", cookbookName, targetVersion, csErr)
 			WriteInternalError(w, "Failed to fetch cookstyle results.")
@@ -149,12 +154,12 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 			p := csResult.Passed
 			cookstylePassed = &p
 			cookstyleScannedAt = csResult.ScannedAt.Format("2006-01-02T15:04:05Z")
-			cookstyleResultID = csResult.ID
+			hasCookstyleResult = true
 		}
 
-		complexities, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, gitRepoID)
+		complexities, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, cookbookName, gitRepoURL)
 		if cxErr != nil {
-			r.logf("WARN", "listing complexity for git repo %s: %v", gitRepoID, cxErr)
+			r.logf("WARN", "listing complexity for git repo %s: %v", cookbookName, cxErr)
 		}
 		for _, cc := range complexities {
 			if cc.TargetChefVersion == targetVersion {
@@ -375,11 +380,11 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 
 	acPreview := autocorrectPreviewResp{Available: false}
 
-	if cookstyleResultID != "" {
+	if hasCookstyleResult {
 		if isGitRepo {
-			preview, acErr := r.db.GetGitRepoAutocorrectPreview(ctx, cookstyleResultID)
+			preview, acErr := r.db.GetGitRepoAutocorrectPreview(ctx, cookbookName, gitRepoURL, targetVersion)
 			if acErr != nil {
-				r.logf("WARN", "getting git repo autocorrect preview for cookstyle result %s: %v", cookstyleResultID, acErr)
+				r.logf("WARN", "getting git repo autocorrect preview for %s target %s: %v", cookbookName, targetVersion, acErr)
 			} else if preview != nil {
 				acPreview = autocorrectPreviewResp{
 					Available:           true,
@@ -392,9 +397,9 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 				}
 			}
 		} else {
-			preview, acErr := r.db.GetServerCookbookAutocorrectPreview(ctx, cookstyleResultID)
+			preview, acErr := r.db.GetServerCookbookAutocorrectPreview(ctx, serverOrgName, cookbookName, cookbookVersion, targetVersion)
 			if acErr != nil {
-				r.logf("WARN", "getting server cookbook autocorrect preview for cookstyle result %s: %v", cookstyleResultID, acErr)
+				r.logf("WARN", "getting server cookbook autocorrect preview for %s/%s@%s target %s: %v", serverOrgName, cookbookName, cookbookVersion, targetVersion, acErr)
 			} else if preview != nil {
 				acPreview = autocorrectPreviewResp{
 					Available:           true,

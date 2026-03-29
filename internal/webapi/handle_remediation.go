@@ -86,8 +86,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 	type priorityItem struct {
 		CookbookName         string `json:"cookbook_name"`
 		CookbookVersion      string `json:"cookbook_version,omitempty"`
-		CookbookID           string `json:"cookbook_id"`
-		OrganisationID       string `json:"organisation_id,omitempty"`
+		OrganisationName     string `json:"organisation_name,omitempty"`
 		ComplexityScore      int    `json:"complexity_score"`
 		ComplexityLabel      string `json:"complexity_label"`
 		AffectedNodeCount    int    `json:"affected_node_count"`
@@ -135,17 +134,13 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 			}
 			priorityScore := cc.ComplexityScore * blastRadius
 
-			// Look up cookbook metadata via the complexity's reference.
-			// After the natural-key migration, ServerCookbookID is a
-			// legacy placeholder — once ServerCookbookComplexity gains
-			// CookbookName/CookbookVersion fields this map can be removed.
-			cb := cbByID[cc.ServerCookbookID]
+			// Look up cookbook metadata via the complexity's natural key fields.
+			_ = cbByID[cc.CookbookName+":"+cc.CookbookVersion]
 
 			items = append(items, priorityItem{
-				CookbookName:         cb.Name,
-				CookbookVersion:      cb.Version,
-				CookbookID:           cc.ServerCookbookID,
-				OrganisationID:       org.Name,
+				CookbookName:         cc.CookbookName,
+				CookbookVersion:      cc.CookbookVersion,
+				OrganisationName:     cc.OrganisationName,
 				ComplexityScore:      cc.ComplexityScore,
 				ComplexityLabel:      cc.ComplexityLabel,
 				AffectedNodeCount:    cc.AffectedNodeCount,
@@ -174,7 +169,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		best := make(map[dedupeKey]int) // key → index into deduped
 		var deduped []priorityItem
 		for _, item := range items {
-			k := dedupeKey{Name: item.CookbookName, Org: item.OrganisationID}
+			k := dedupeKey{Name: item.CookbookName, Org: item.OrganisationName}
 			if idx, exists := best[k]; exists {
 				deduped[idx].VersionCount++
 				if item.ComplexityScore > deduped[idx].ComplexityScore {
@@ -377,13 +372,12 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 
 			// Apply owner filter: skip cookbooks that don't match ownership.
 			if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
-				cb := cbByID[cc.ServerCookbookID]
 				if of.Unowned {
-					if ownedKeys[cb.Name] {
+					if ownedKeys[cc.CookbookName] {
 						continue
 					}
 				} else {
-					if !ownedKeys[cb.Name] {
+					if !ownedKeys[cc.CookbookName] {
 						continue
 					}
 				}

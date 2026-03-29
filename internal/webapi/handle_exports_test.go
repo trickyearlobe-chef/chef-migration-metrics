@@ -518,7 +518,7 @@ func TestHandleExports_Async_LargeEstimate(t *testing.T) {
 		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
 			return nil, nil
 		},
-		ListNodeReadinessForSnapshotFn: func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error) {
+		ListNodeReadinessForSnapshotFn: func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
 			return nil, nil
 		},
 	}
@@ -1271,16 +1271,18 @@ func newExportMockStore() *mockStore {
 	}
 
 	readiness := map[string][]datastore.NodeReadiness{
-		"snap-1": {
+		"production/web1": {
 			{
-				ID:                "nr-1",
+				OrganisationName:  "production",
+				NodeName:          "web1",
 				TargetChefVersion: "18.0.0",
 				IsReady:           true,
 			},
 		},
-		"snap-2": {
+		"production/db1": {
 			{
-				ID:                "nr-2",
+				OrganisationName:  "production",
+				NodeName:          "db1",
 				TargetChefVersion: "18.0.0",
 				IsReady:           false,
 				BlockingCookbooks: json.RawMessage(`["mysql"]`),
@@ -1303,15 +1305,17 @@ func newExportMockStore() *mockStore {
 
 	complexities := []datastore.ServerCookbookComplexity{
 		{
-			ID:                "cc-1",
-			ServerCookbookID:  "cb-1",
+			OrganisationName:  "production",
+			CookbookName:      "apt",
+			CookbookVersion:   "7.4.0",
 			TargetChefVersion: "18.0.0",
 			ComplexityScore:   5,
 			ComplexityLabel:   "trivial",
 		},
 		{
-			ID:                "cc-2",
-			ServerCookbookID:  "cb-2",
+			OrganisationName:  "production",
+			CookbookName:      "mysql",
+			CookbookVersion:   "8.0.0",
 			TargetChefVersion: "18.0.0",
 			ComplexityScore:   42,
 			ComplexityLabel:   "moderate",
@@ -1328,8 +1332,8 @@ func newExportMockStore() *mockStore {
 			}
 			return nil, nil
 		},
-		ListNodeReadinessForSnapshotFn: func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error) {
-			return readiness[nodeSnapshotID], nil
+		ListNodeReadinessByNodeNameFn: func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
+			return readiness[orgName+"/"+nodeName], nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
 			// 2 total, 1 ready, 1 blocked

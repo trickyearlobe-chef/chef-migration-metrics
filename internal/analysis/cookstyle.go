@@ -111,11 +111,11 @@ func isErrorOrFatal(severity string) bool {
 // CookstyleScanResult holds the outcome of scanning a single cookbook
 // version with CookStyle.
 type CookstyleScanResult struct {
-	// CookbookID is the datastore ID of the scanned cookbook.
-	CookbookID string
+	// OrganisationName identifies the organisation (server cookbooks only).
+	OrganisationName string
 
-	// OrganisationID is the owning organisation.
-	OrganisationID string
+	// GitRepoURL is the repository URL (git repos only).
+	GitRepoURL string
 
 	// CookbookName is the cookbook's display name.
 	CookbookName string
@@ -350,8 +350,8 @@ func (s *CookstyleScanner) ScanGitRepos(
 				defer func() { <-sem }()
 			case <-ctx.Done():
 				resultsCh <- CookstyleScanResult{
-					CookbookID:        wi.Repo.Name,
 					CookbookName:      wi.Repo.Name,
+					GitRepoURL:        wi.Repo.GitRepoURL,
 					TargetChefVersion: wi.TargetVersion,
 					CommitSHA:         wi.Repo.HeadCommitSHA,
 					Error:             ctx.Err(),
@@ -434,10 +434,8 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	log := s.logger.WithScope(logging.ScopeCookstyleScan,
 		logging.WithCookbook(sc.Name, sc.Version))
 
-	scKey := sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
 	sr := CookstyleScanResult{
-		CookbookID:        scKey,
-		OrganisationID:    sc.OrganisationName,
+		OrganisationName:  sc.OrganisationName,
 		CookbookName:      sc.Name,
 		CookbookVersion:   sc.Version,
 		TargetChefVersion: targetChefVersion,
@@ -447,7 +445,7 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	// Server cookbook versions are immutable — an existing result is always
 	// valid. However, if the previous result was an error (exit code >= 2),
 	// re-scan in case the issue has been resolved (e.g. CookStyle update).
-	existing, err := s.db.GetServerCookbookCookstyleResult(ctx, scKey, targetChefVersion)
+	existing, err := s.db.GetServerCookbookCookstyleResult(ctx, sc.OrganisationName, sc.Name, sc.Version, targetChefVersion)
 	if err == nil && existing != nil && existing.ErrorMessage == "" {
 		log.Debug(fmt.Sprintf("skipping — already scanned at %s",
 			existing.ScannedAt.Format(time.RFC3339)))
@@ -572,8 +570,8 @@ func (s *CookstyleScanner) scanOneGitRepo(
 		logging.WithCookbook(gr.Name, ""))
 
 	sr := CookstyleScanResult{
-		CookbookID:        gr.Name,
 		CookbookName:      gr.Name,
+		GitRepoURL:        gr.GitRepoURL,
 		TargetChefVersion: targetChefVersion,
 		CommitSHA:         gr.HeadCommitSHA,
 	}
@@ -581,7 +579,7 @@ func (s *CookstyleScanner) scanOneGitRepo(
 	// Step 1: skip check.
 	// Git repos change with each commit — skip only when the HEAD commit
 	// SHA matches the previously scanned commit.
-	existing, err := s.db.GetGitRepoCookstyleResult(ctx, gr.Name, targetChefVersion)
+	existing, err := s.db.GetGitRepoCookstyleResult(ctx, gr.Name, gr.GitRepoURL, targetChefVersion)
 	if err == nil && existing != nil {
 		if existing.CommitSHA != "" && existing.CommitSHA == gr.HeadCommitSHA {
 			shaPreview := gr.HeadCommitSHA
@@ -832,7 +830,7 @@ func enrichOffenses(offenses []CookstyleOffense) []remediation.EnrichedOffense {
 }
 
 func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr CookstyleScanResult) {
-	if sr.CookbookID == "" {
+	if sr.CookbookName == "" {
 		return
 	}
 
@@ -851,7 +849,9 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 	}
 
 	params := datastore.UpsertServerCookbookCookstyleResultParams{
-		ServerCookbookID:    sr.CookbookID,
+		OrganisationName:    sr.OrganisationName,
+		CookbookName:        sr.CookbookName,
+		CookbookVersion:     sr.CookbookVersion,
 		TargetChefVersion:   sr.TargetChefVersion,
 		Passed:              sr.Passed,
 		OffenceCount:        sr.OffenseCount,
@@ -872,7 +872,7 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 }
 
 func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr CookstyleScanResult) {
-	if sr.CookbookID == "" {
+	if sr.CookbookName == "" {
 		return
 	}
 
@@ -891,7 +891,8 @@ func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr Cookstyl
 	}
 
 	params := datastore.UpsertGitRepoCookstyleResultParams{
-		GitRepoID:           sr.CookbookID,
+		GitRepoName:         sr.CookbookName,
+		GitRepoURL:          sr.GitRepoURL,
 		TargetChefVersion:   sr.TargetChefVersion,
 		CommitSHA:           sr.CommitSHA,
 		Passed:              sr.Passed,
@@ -918,8 +919,8 @@ func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr Cookstyl
 
 // ResetServerCookbookResults deletes existing CookStyle results for the
 // given server cookbook, so they will be rescanned on the next analysis cycle.
-func (s *CookstyleScanner) ResetServerCookbookResults(ctx context.Context, serverCookbookID string) error {
-	return s.db.DeleteServerCookbookCookstyleResultsByCookbook(ctx, serverCookbookID)
+func (s *CookstyleScanner) ResetServerCookbookResults(ctx context.Context, orgName, cookbookName, cookbookVersion string) error {
+	return s.db.DeleteServerCookbookCookstyleResultsByCookbook(ctx, orgName, cookbookName, cookbookVersion)
 }
 
 // ResetServerCookbookResultsByOrganisation deletes all CookStyle results for
@@ -930,8 +931,8 @@ func (s *CookstyleScanner) ResetServerCookbookResultsByOrganisation(ctx context.
 
 // ResetGitRepoResults deletes existing CookStyle results for the given git
 // repo, so they will be rescanned on the next analysis cycle.
-func (s *CookstyleScanner) ResetGitRepoResults(ctx context.Context, gitRepoID string) error {
-	return s.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gitRepoID)
+func (s *CookstyleScanner) ResetGitRepoResults(ctx context.Context, gitRepoName, gitRepoURL string) error {
+	return s.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gitRepoName, gitRepoURL)
 }
 
 // ---------------------------------------------------------------------------

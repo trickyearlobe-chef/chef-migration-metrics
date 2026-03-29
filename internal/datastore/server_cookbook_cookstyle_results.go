@@ -16,8 +16,9 @@ import (
 // server_cookbook_cookstyle_results table. Server cookbooks are immutable
 // snapshots fetched from a Chef Server, so there is no CommitSHA field.
 type ServerCookbookCookstyleResult struct {
-	ID                  string    `json:"id"`
-	ServerCookbookID    string    `json:"server_cookbook_id"`
+	OrganisationName    string    `json:"organisation_name"`
+	CookbookName        string    `json:"cookbook_name"`
+	CookbookVersion     string    `json:"cookbook_version"`
 	TargetChefVersion   string    `json:"target_chef_version"`
 	Passed              bool      `json:"passed"`
 	OffenceCount        int       `json:"offence_count"`
@@ -35,9 +36,11 @@ type ServerCookbookCookstyleResult struct {
 
 // UpsertServerCookbookCookstyleResultParams contains the fields needed to
 // insert or update a server_cookbook_cookstyle_results row. The unique
-// constraint is (server_cookbook_id, target_chef_version).
+// constraint is (organisation_name, cookbook_name, cookbook_version, target_chef_version).
 type UpsertServerCookbookCookstyleResultParams struct {
-	ServerCookbookID    string
+	OrganisationName    string
+	CookbookName        string
+	CookbookVersion     string
 	TargetChefVersion   string
 	Passed              bool
 	OffenceCount        int
@@ -57,8 +60,8 @@ type UpsertServerCookbookCookstyleResultParams struct {
 // ---------------------------------------------------------------------------
 
 // UpsertServerCookbookCookstyleResult inserts a new cookstyle result or
-// updates the existing one for the same (server_cookbook_id, target_chef_version)
-// combination. Returns the resulting row.
+// updates the existing one for the same (organisation_name, cookbook_name,
+// cookbook_version, target_chef_version) combination. Returns the resulting row.
 func (db *DB) UpsertServerCookbookCookstyleResult(ctx context.Context, p UpsertServerCookbookCookstyleResultParams) (*ServerCookbookCookstyleResult, error) {
 	return db.upsertServerCookbookCookstyleResult(ctx, db.q(), p)
 }
@@ -66,13 +69,14 @@ func (db *DB) UpsertServerCookbookCookstyleResult(ctx context.Context, p UpsertS
 func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryable, p UpsertServerCookbookCookstyleResultParams) (*ServerCookbookCookstyleResult, error) {
 	const query = `
 		INSERT INTO server_cookbook_cookstyle_results (
-			server_cookbook_id, target_chef_version, passed,
+			organisation_name, cookbook_name, cookbook_version,
+			target_chef_version, passed,
 			offence_count, deprecation_count, correctness_count,
 			deprecation_warnings, offences,
 			process_stdout, process_stderr, duration_seconds,
 			error_message, scanned_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-		ON CONFLICT (server_cookbook_id, target_chef_version)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (organisation_name, cookbook_name, cookbook_version, target_chef_version)
 		DO UPDATE SET
 			passed              = EXCLUDED.passed,
 			offence_count       = EXCLUDED.offence_count,
@@ -85,7 +89,8 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 			duration_seconds    = EXCLUDED.duration_seconds,
 			error_message       = EXCLUDED.error_message,
 			scanned_at          = EXCLUDED.scanned_at
-		RETURNING id, server_cookbook_id, target_chef_version, passed,
+		RETURNING organisation_name, cookbook_name, cookbook_version,
+		          target_chef_version, passed,
 		          offence_count, deprecation_count, correctness_count,
 		          deprecation_warnings, offences,
 		          process_stdout, process_stderr, duration_seconds,
@@ -105,7 +110,9 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 	var errorMessage sql.NullString
 
 	err := q.QueryRowContext(ctx, query,
-		p.ServerCookbookID,
+		p.OrganisationName,
+		p.CookbookName,
+		p.CookbookVersion,
 		targetVersion,
 		p.Passed,
 		p.OffenceCount,
@@ -119,8 +126,9 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 		nullString(p.ErrorMessage),
 		p.ScannedAt,
 	).Scan(
-		&r.ID,
-		&r.ServerCookbookID,
+		&r.OrganisationName,
+		&r.CookbookName,
+		&r.CookbookVersion,
 		&tvOut,
 		&r.Passed,
 		&r.OffenceCount,
@@ -155,22 +163,25 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 // ---------------------------------------------------------------------------
 
 // GetServerCookbookCookstyleResult returns the cookstyle result for the given
-// server cookbook ID and target Chef version. Returns (nil, nil) if no result
-// exists.
-func (db *DB) GetServerCookbookCookstyleResult(ctx context.Context, serverCookbookID, targetChefVersion string) (*ServerCookbookCookstyleResult, error) {
-	return db.getServerCookbookCookstyleResult(ctx, db.q(), serverCookbookID, targetChefVersion)
+// organisation, cookbook, and target Chef version. Returns (nil, nil) if no
+// result exists.
+func (db *DB) GetServerCookbookCookstyleResult(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*ServerCookbookCookstyleResult, error) {
+	return db.getServerCookbookCookstyleResult(ctx, db.q(), orgName, cookbookName, cookbookVersion, targetChefVersion)
 }
 
-func (db *DB) getServerCookbookCookstyleResult(ctx context.Context, q queryable, serverCookbookID, targetChefVersion string) (*ServerCookbookCookstyleResult, error) {
+func (db *DB) getServerCookbookCookstyleResult(ctx context.Context, q queryable, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*ServerCookbookCookstyleResult, error) {
 	const query = `
-		SELECT id, server_cookbook_id, target_chef_version, passed,
+		SELECT organisation_name, cookbook_name, cookbook_version,
+		       target_chef_version, passed,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
 		       error_message, scanned_at, created_at
 		  FROM server_cookbook_cookstyle_results
-		 WHERE server_cookbook_id = $1
-		   AND (target_chef_version = $2 OR ($2 = '' AND target_chef_version IS NULL))
+		 WHERE organisation_name = $1
+		   AND cookbook_name = $2
+		   AND cookbook_version = $3
+		   AND (target_chef_version = $4 OR ($4 = '' AND target_chef_version IS NULL))
 	`
 
 	var targetVersion sql.NullString
@@ -178,7 +189,7 @@ func (db *DB) getServerCookbookCookstyleResult(ctx context.Context, q queryable,
 		targetVersion = sql.NullString{String: targetChefVersion, Valid: true}
 	}
 
-	r, err := scanServerCookbookCookstyleResult(q.QueryRowContext(ctx, query, serverCookbookID, targetVersion))
+	r, err := scanServerCookbookCookstyleResult(q.QueryRowContext(ctx, query, orgName, cookbookName, cookbookVersion, targetVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -188,55 +199,32 @@ func (db *DB) getServerCookbookCookstyleResult(ctx context.Context, q queryable,
 	return &r, nil
 }
 
-// GetServerCookbookCookstyleResultByID returns a single cookstyle result by
-// its primary key. Returns ErrNotFound if no such result exists.
-func (db *DB) GetServerCookbookCookstyleResultByID(ctx context.Context, id string) (*ServerCookbookCookstyleResult, error) {
-	return db.getServerCookbookCookstyleResultByID(ctx, db.q(), id)
-}
-
-func (db *DB) getServerCookbookCookstyleResultByID(ctx context.Context, q queryable, id string) (*ServerCookbookCookstyleResult, error) {
-	const query = `
-		SELECT id, server_cookbook_id, target_chef_version, passed,
-		       offence_count, deprecation_count, correctness_count,
-		       deprecation_warnings, offences,
-		       process_stdout, process_stderr, duration_seconds,
-		       error_message, scanned_at, created_at
-		  FROM server_cookbook_cookstyle_results
-		 WHERE id = $1
-	`
-
-	r, err := scanServerCookbookCookstyleResult(q.QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting server cookbook cookstyle result by id: %w", err)
-	}
-	return &r, nil
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
 // ListServerCookbookCookstyleResults returns all cookstyle results for the
-// given server cookbook ID, ordered by target_chef_version.
-func (db *DB) ListServerCookbookCookstyleResults(ctx context.Context, serverCookbookID string) ([]ServerCookbookCookstyleResult, error) {
-	return db.listServerCookbookCookstyleResults(ctx, db.q(), serverCookbookID)
+// given organisation, cookbook name, and cookbook version, ordered by
+// target_chef_version.
+func (db *DB) ListServerCookbookCookstyleResults(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]ServerCookbookCookstyleResult, error) {
+	return db.listServerCookbookCookstyleResults(ctx, db.q(), orgName, cookbookName, cookbookVersion)
 }
 
-func (db *DB) listServerCookbookCookstyleResults(ctx context.Context, q queryable, serverCookbookID string) ([]ServerCookbookCookstyleResult, error) {
+func (db *DB) listServerCookbookCookstyleResults(ctx context.Context, q queryable, orgName, cookbookName, cookbookVersion string) ([]ServerCookbookCookstyleResult, error) {
 	const query = `
-		SELECT id, server_cookbook_id, target_chef_version, passed,
+		SELECT organisation_name, cookbook_name, cookbook_version,
+		       target_chef_version, passed,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
 		       error_message, scanned_at, created_at
 		  FROM server_cookbook_cookstyle_results
-		 WHERE server_cookbook_id = $1
+		 WHERE organisation_name = $1
+		   AND cookbook_name = $2
+		   AND cookbook_version = $3
 		 ORDER BY target_chef_version NULLS FIRST
 	`
-	return scanServerCookbookCookstyleResults(q.QueryContext(ctx, query, serverCookbookID))
+	return scanServerCookbookCookstyleResults(q.QueryContext(ctx, query, orgName, cookbookName, cookbookVersion))
 }
 
 // ListServerCookbookCookstyleResultsByOrganisationAndVersions returns all
@@ -245,12 +233,12 @@ func (db *DB) listServerCookbookCookstyleResults(ctx context.Context, q queryabl
 // target_chef_version IS NULL are always included (some cookbooks are scanned
 // without a target version profile). If targetChefVersions is empty, only
 // NULL-version rows are returned.
-func (db *DB) ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, organisationID string, targetChefVersions []string) ([]ServerCookbookCookstyleResult, error) {
-	return db.listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx, db.q(), organisationID, targetChefVersions)
+func (db *DB) ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, orgName string, targetChefVersions []string) ([]ServerCookbookCookstyleResult, error) {
+	return db.listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx, db.q(), orgName, targetChefVersions)
 }
 
-func (db *DB) listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, q queryable, organisationID string, targetChefVersions []string) ([]ServerCookbookCookstyleResult, error) {
-	args := []any{organisationID}
+func (db *DB) listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, q queryable, orgName string, targetChefVersions []string) ([]ServerCookbookCookstyleResult, error) {
+	args := []any{orgName}
 
 	var versionClause string
 	if len(targetChefVersions) > 0 {
@@ -265,13 +253,14 @@ func (db *DB) listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx co
 	}
 
 	query := `
-		SELECT id, server_cookbook_id, target_chef_version, passed,
+		SELECT organisation_name, cookbook_name, cookbook_version,
+		       target_chef_version, passed,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
 		       error_message, scanned_at, created_at
 		  FROM server_cookbook_cookstyle_results
-		 WHERE server_cookbook_id IN (SELECT id FROM server_cookbooks WHERE organisation_id = $1)
+		 WHERE organisation_name = $1
 		   ` + versionClause + `
 	`
 	return scanServerCookbookCookstyleResults(q.QueryContext(ctx, query, args...))
@@ -279,23 +268,23 @@ func (db *DB) listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx co
 
 // ListServerCookbookCookstyleResultsByOrganisation returns all cookstyle
 // results for server cookbooks belonging to the given organisation.
-func (db *DB) ListServerCookbookCookstyleResultsByOrganisation(ctx context.Context, organisationID string) ([]ServerCookbookCookstyleResult, error) {
-	return db.listServerCookbookCookstyleResultsByOrganisation(ctx, db.q(), organisationID)
+func (db *DB) ListServerCookbookCookstyleResultsByOrganisation(ctx context.Context, orgName string) ([]ServerCookbookCookstyleResult, error) {
+	return db.listServerCookbookCookstyleResultsByOrganisation(ctx, db.q(), orgName)
 }
 
-func (db *DB) listServerCookbookCookstyleResultsByOrganisation(ctx context.Context, q queryable, organisationID string) ([]ServerCookbookCookstyleResult, error) {
+func (db *DB) listServerCookbookCookstyleResultsByOrganisation(ctx context.Context, q queryable, orgName string) ([]ServerCookbookCookstyleResult, error) {
 	const query = `
-		SELECT r.id, r.server_cookbook_id, r.target_chef_version, r.passed,
-		       r.offence_count, r.deprecation_count, r.correctness_count,
-		       r.deprecation_warnings, r.offences,
-		       r.process_stdout, r.process_stderr, r.duration_seconds,
-		       r.error_message, r.scanned_at, r.created_at
-		  FROM server_cookbook_cookstyle_results r
-		  JOIN server_cookbooks sc ON sc.id = r.server_cookbook_id
-		 WHERE sc.organisation_id = $1
-		 ORDER BY sc.name, sc.version, r.target_chef_version NULLS FIRST
+		SELECT organisation_name, cookbook_name, cookbook_version,
+		       target_chef_version, passed,
+		       offence_count, deprecation_count, correctness_count,
+		       deprecation_warnings, offences,
+		       process_stdout, process_stderr, duration_seconds,
+		       error_message, scanned_at, created_at
+		  FROM server_cookbook_cookstyle_results
+		 WHERE organisation_name = $1
+		 ORDER BY cookbook_name, cookbook_version, target_chef_version NULLS FIRST
 	`
-	return scanServerCookbookCookstyleResults(q.QueryContext(ctx, query, organisationID))
+	return scanServerCookbookCookstyleResults(q.QueryContext(ctx, query, orgName))
 }
 
 // ---------------------------------------------------------------------------
@@ -303,36 +292,31 @@ func (db *DB) listServerCookbookCookstyleResultsByOrganisation(ctx context.Conte
 // ---------------------------------------------------------------------------
 
 // DeleteServerCookbookCookstyleResultsByCookbook removes all cookstyle
-// results for the given server cookbook ID.
-func (db *DB) DeleteServerCookbookCookstyleResultsByCookbook(ctx context.Context, serverCookbookID string) error {
-	return db.deleteServerCookbookCookstyleResultsByCookbook(ctx, db.q(), serverCookbookID)
+// results for the given organisation, cookbook name, and cookbook version.
+func (db *DB) DeleteServerCookbookCookstyleResultsByCookbook(ctx context.Context, orgName, cookbookName, cookbookVersion string) error {
+	return db.deleteServerCookbookCookstyleResultsByCookbook(ctx, db.q(), orgName, cookbookName, cookbookVersion)
 }
 
-func (db *DB) deleteServerCookbookCookstyleResultsByCookbook(ctx context.Context, q queryable, serverCookbookID string) error {
-	const query = `DELETE FROM server_cookbook_cookstyle_results WHERE server_cookbook_id = $1`
-	_, err := q.ExecContext(ctx, query, serverCookbookID)
+func (db *DB) deleteServerCookbookCookstyleResultsByCookbook(ctx context.Context, q queryable, orgName, cookbookName, cookbookVersion string) error {
+	const query = `DELETE FROM server_cookbook_cookstyle_results WHERE organisation_name = $1 AND cookbook_name = $2 AND cookbook_version = $3`
+	_, err := q.ExecContext(ctx, query, orgName, cookbookName, cookbookVersion)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting server cookbook cookstyle results for cookbook %s: %w", serverCookbookID, err)
+		return fmt.Errorf("datastore: deleting server cookbook cookstyle results for cookbook %s/%s@%s: %w", orgName, cookbookName, cookbookVersion, err)
 	}
 	return nil
 }
 
 // DeleteServerCookbookCookstyleResultsByOrganisation removes all cookstyle
 // results for server cookbooks belonging to the given organisation.
-func (db *DB) DeleteServerCookbookCookstyleResultsByOrganisation(ctx context.Context, organisationID string) error {
-	return db.deleteServerCookbookCookstyleResultsByOrganisation(ctx, db.q(), organisationID)
+func (db *DB) DeleteServerCookbookCookstyleResultsByOrganisation(ctx context.Context, orgName string) error {
+	return db.deleteServerCookbookCookstyleResultsByOrganisation(ctx, db.q(), orgName)
 }
 
-func (db *DB) deleteServerCookbookCookstyleResultsByOrganisation(ctx context.Context, q queryable, organisationID string) error {
-	const query = `
-		DELETE FROM server_cookbook_cookstyle_results
-		 WHERE server_cookbook_id IN (
-			SELECT id FROM server_cookbooks WHERE organisation_id = $1
-		 )
-	`
-	_, err := q.ExecContext(ctx, query, organisationID)
+func (db *DB) deleteServerCookbookCookstyleResultsByOrganisation(ctx context.Context, q queryable, orgName string) error {
+	const query = `DELETE FROM server_cookbook_cookstyle_results WHERE organisation_name = $1`
+	_, err := q.ExecContext(ctx, query, orgName)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting server cookbook cookstyle results for organisation %s: %w", organisationID, err)
+		return fmt.Errorf("datastore: deleting server cookbook cookstyle results for organisation %s: %w", orgName, err)
 	}
 	return nil
 }
@@ -365,8 +349,9 @@ func scanServerCookbookCookstyleResult(row *sql.Row) (ServerCookbookCookstyleRes
 	var errorMessage sql.NullString
 
 	err := row.Scan(
-		&r.ID,
-		&r.ServerCookbookID,
+		&r.OrganisationName,
+		&r.CookbookName,
+		&r.CookbookVersion,
 		&tvOut,
 		&r.Passed,
 		&r.OffenceCount,
@@ -412,8 +397,9 @@ func scanServerCookbookCookstyleResults(rows *sql.Rows, err error) ([]ServerCook
 		var errorMessage sql.NullString
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.ServerCookbookID,
+			&r.OrganisationName,
+			&r.CookbookName,
+			&r.CookbookVersion,
 			&tvOut,
 			&r.Passed,
 			&r.OffenceCount,
