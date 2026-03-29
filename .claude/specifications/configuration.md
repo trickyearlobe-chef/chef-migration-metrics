@@ -165,17 +165,27 @@ All packaging formats (RPM, DEB, container image) ship with a self-contained Rub
 analysis_tools:
   embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
   cookstyle_timeout_minutes: 10
-  test_kitchen_timeout_minutes: 30
   test_kitchen:
-    enabled: true                # set to false to disable Test Kitchen even when kitchen + docker are available
+    enabled: true
+    timeout_minutes: 30
+    driver: dokken
+    driver_settings: {}
+    driver_secrets: {}
+    image_field_name: ""
+    platform_map: []
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `embedded_bin_dir` | `/opt/chef-migration-metrics/embedded/bin` | Directory containing the embedded `cookstyle`, `kitchen`, and `ruby` binaries. At startup, the application looks for these tools here first. If the directory does not exist or the binaries are not found, the application falls back to `PATH` lookup. This fallback supports development environments and source builds where the embedded tree may not be present. |
 | `cookstyle_timeout_minutes` | `10` | Maximum wall-clock time for a single CookStyle scan before the process is killed and the result recorded as failed. |
-| `test_kitchen_timeout_minutes` | `30` | Maximum wall-clock time for a single Test Kitchen converge or verify step before the process is killed and the result recorded as failed. |
 | `test_kitchen.enabled` | `true` | Master toggle for Test Kitchen testing. When set to `false`, Test Kitchen is disabled regardless of whether the `kitchen` and `docker` binaries are available. When `true` (the default), Test Kitchen is enabled automatically if both binaries are detected at startup. Set this to `false` to turn off Test Kitchen without removing Docker or Kitchen from the system. |
+| `test_kitchen.timeout_minutes` | `30` | Maximum wall-clock time for a single Test Kitchen converge or verify step. Replaces `test_kitchen_timeout_minutes`. |
+| `test_kitchen.driver` | `dokken` | Test Kitchen driver profile. Built-in profiles: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, `custom`. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md). |
+| `test_kitchen.driver_settings` | `{}` | Driver connection settings as key-value pairs (plaintext). Keys are driver-specific (e.g. `vcenter_host`, `region`). |
+| `test_kitchen.driver_secrets` | `{}` | Driver secret settings. Keys are driver setting names, values are credential names from the `credentials` table. |
+| `test_kitchen.image_field_name` | set by profile | Driver-specific field name for the image identifier in the platform map. Required only for the `custom` profile. |
+| `test_kitchen.platform_map` | `[]` | Platform image mapping list. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) § Platform Image Mapping. |
 
 > **Path resolution order:** For `cookstyle` and `kitchen`, the application resolves binaries in this order:
 > 1. `<embedded_bin_dir>/cookstyle` (or `kitchen`)
@@ -183,7 +193,9 @@ analysis_tools:
 >
 > This means a standard RPM/DEB/container installation uses the embedded tools automatically, while a developer running from source with `cookstyle` and `kitchen` installed via Chef Workstation or `gem install` will use their system copies.
 
-> **Docker requirement:** Test Kitchen with the `kitchen-dokken` driver requires Docker to be installed and accessible to the user running Chef Migration Metrics. Docker is **not** embedded — it is the only external runtime dependency for Test Kitchen testing. If Docker is unavailable, Test Kitchen testing is disabled but CookStyle scanning still runs against both server-sourced and git-sourced cookbooks, providing deprecation detection and remediation guidance.
+For driver-specific configuration examples (vCenter, vRA, EC2), see [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) § Configuration Schema.
+
+> **Docker requirement:** Only applies when `test_kitchen.driver` is `dokken` (default). When a non-dokken driver is configured, Docker is not required. Docker is **not** embedded — it is the only external runtime dependency for dokken-based Test Kitchen testing. If Docker is unavailable and the driver is `dokken`, Test Kitchen testing is disabled but CookStyle scanning still runs against both server-sourced and git-sourced cookbooks, providing deprecation detection and remediation guidance.
 
 > **Disabling Test Kitchen:** To disable Test Kitchen without uninstalling Docker or Kitchen, set `analysis_tools.test_kitchen.enabled: false`. This is useful in environments where Docker is present for other purposes but Test Kitchen runs are not wanted (e.g. resource-constrained hosts, CI pipelines that only need CookStyle results, or during initial evaluation). When disabled, the startup log emits an informational message confirming the override.
 
@@ -797,9 +809,10 @@ exports:
 analysis_tools:
   embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
   cookstyle_timeout_minutes: 10
-  test_kitchen_timeout_minutes: 30
   test_kitchen:
-    enabled: true              # set to false to disable Test Kitchen even when kitchen + docker are available
+    enabled: true
+    timeout_minutes: 30
+    driver: dokken
 
 elasticsearch:
   enabled: false
