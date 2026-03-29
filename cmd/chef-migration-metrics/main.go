@@ -747,7 +747,7 @@ func run() int {
 	// recorder when the performance section is enabled. The recorder is
 	// passed to the router which installs the timing middleware.
 	var recorder *perf.Recorder
-	if cfg.Performance.Enabled {
+	if cfg.Performance.IsEnabled() {
 		windowSec := cfg.Performance.WindowSeconds
 		if windowSec <= 0 {
 			windowSec = 300
