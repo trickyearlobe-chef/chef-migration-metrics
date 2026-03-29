@@ -616,6 +616,46 @@ export interface GitRepoDetailResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Platform Coverage
+// ---------------------------------------------------------------------------
+
+export interface ProductionPlatform {
+  platform: string;
+  platform_version: string;
+  platform_family: string;
+  node_count: number;
+}
+
+export interface TestedPlatformMatch {
+  kitchen_name: string;
+  platform: string;
+  platform_version: string;
+  node_count: number;
+}
+
+export interface CoverageReport {
+  kitchen_platforms: string[];
+  production_platforms: ProductionPlatform[];
+  tested_and_in_production: TestedPlatformMatch[];
+  tested_not_in_production: string[];
+  in_production_not_tested: ProductionPlatform[];
+  gap_count: number;
+  total_production_nodes: number;
+  covered_node_count: number;
+  coverage_percentage: number;
+}
+
+export interface CookbookPlatformCoverage {
+  id: string;
+  git_repo_id?: string;
+  cookbook_name: string;
+  coverage_data: CoverageReport;
+  evaluated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Remediation
 // ---------------------------------------------------------------------------
 

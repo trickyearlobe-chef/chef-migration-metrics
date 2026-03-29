@@ -1,12 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchCookbookDetail, requestCookbookRescan } from "../api";
-import type { CookbookDetailResponse } from "../types";
+import {
+  fetchCookbookDetail,
+  fetchCookbookPlatformCoverage,
+  requestCookbookRescan,
+} from "../api";
+import type {
+  CookbookDetailResponse,
+  CookbookPlatformCoverage,
+} from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
+import { PlatformCoverageCard } from "../components/PlatformCoverageCard";
 import { StatusBadge } from "../components/StatusBadge";
 
 /** Small helper – renders a label/value row in the metadata grid. */
-function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+function MetaRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex gap-2 py-1.5 text-sm">
       <dt className="w-36 shrink-0 font-medium text-gray-500">{label}</dt>
@@ -17,7 +31,8 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
 
 /** Render a JSON-style map (platforms or dependencies) as inline badges. */
 function MapBadges({ map }: { map?: Record<string, string> }) {
-  if (!map || Object.keys(map).length === 0) return <span className="text-gray-400 italic">None</span>;
+  if (!map || Object.keys(map).length === 0)
+    return <span className="text-gray-400 italic">None</span>;
   return (
     <div className="flex flex-wrap gap-1.5">
       {Object.entries(map).map(([k, v]) => (
@@ -25,13 +40,13 @@ function MapBadges({ map }: { map?: Record<string, string> }) {
           key={k}
           className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-700"
         >
-          {k}{v ? ` ${v}` : ""}
+          {k}
+          {v ? ` ${v}` : ""}
         </span>
       ))}
     </div>
   );
 }
-
 
 export function CookbookDetailPage() {
   const [expandedMeta, setExpandedMeta] = useState<Record<string, boolean>>({});
@@ -46,6 +61,9 @@ export function CookbookDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
   const [rescanMsg, setRescanMsg] = useState<string | null>(null);
+  const [coverage, setCoverage] = useState<CookbookPlatformCoverage | null>(
+    null,
+  );
 
   const load = useCallback(() => {
     if (!name) return;
@@ -70,19 +88,31 @@ export function CookbookDetailPage() {
       .finally(() => setRescanning(false));
   }, [name, load]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!name) return;
+    fetchCookbookPlatformCoverage(name)
+      .then(setCoverage)
+      .catch(() => setCoverage(null)); // Silently ignore — coverage is optional
+  }, [name]);
 
   if (loading) return <LoadingSpinner message="Loading cookbook detail…" />;
   if (error) return <ErrorAlert message={error} onRetry={load} />;
   if (!data) return null;
 
   const hasGitRepos = data.git_repos && data.git_repos.length > 0;
-  const hasServerCookbooks = data.server_cookbooks && data.server_cookbooks.length > 0;
+  const hasServerCookbooks =
+    data.server_cookbooks && data.server_cookbooks.length > 0;
 
   return (
     <div className="space-y-6">
       <nav className="text-sm text-gray-500">
-        <Link to="/cookbooks" className="hover:text-blue-600 hover:underline">Cookbooks</Link>
+        <Link to="/cookbooks" className="hover:text-blue-600 hover:underline">
+          Cookbooks
+        </Link>
         <span className="mx-1">/</span>
         <span className="text-gray-800">{data.name}</span>
       </nav>
@@ -110,10 +140,13 @@ export function CookbookDetailPage() {
         <div className="card">
           <div className="flex items-center justify-between">
             <div>
-              <h4 className="text-sm font-medium text-gray-600">Git Repository</h4>
+              <h4 className="text-sm font-medium text-gray-600">
+                Git Repository
+              </h4>
               <p className="mt-1 text-sm text-gray-500">
-                This cookbook also has a git repository source.
-                View CookStyle results, Test Kitchen results, committers, and remediation detail on the git repo page.
+                This cookbook also has a git repository source. View CookStyle
+                results, Test Kitchen results, committers, and remediation
+                detail on the git repo page.
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {data.git_repos.map((gd, idx) => (
@@ -137,6 +170,13 @@ export function CookbookDetailPage() {
         </div>
       )}
 
+      {coverage && coverage.coverage_data && (
+        <PlatformCoverageCard
+          coverage={coverage.coverage_data}
+          evaluatedAt={coverage.evaluated_at}
+        />
+      )}
+
       {!hasServerCookbooks && !hasGitRepos ? (
         <EmptyState title="No versions found" />
       ) : !hasServerCookbooks ? (
@@ -145,20 +185,23 @@ export function CookbookDetailPage() {
           No Chef Server versions found for this cookbook.
           {hasGitRepos && (
             <span>
-              {" "}See the{" "}
+              {" "}
+              See the{" "}
               <Link
                 to={`/git-repos/${encodeURIComponent(data.name)}`}
                 className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
               >
                 git repo page
-              </Link>
-              {" "}for source repository details.
+              </Link>{" "}
+              for source repository details.
             </span>
           )}
         </div>
       ) : (
         <div className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Chef Server Versions</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Chef Server Versions
+          </h3>
           {data.server_cookbooks.map((vd, idx) => {
             const cb = vd.cookbook;
             return (
@@ -173,8 +216,13 @@ export function CookbookDetailPage() {
                     )}
                   </h3>
                   <span className="badge badge-cookstyle">Chef Server</span>
-                  <StatusBadge variant={cb.is_active ? "active" : "inactive"} size="sm" />
-                  {cb.is_stale_cookbook && <StatusBadge variant="stale" label="Stale" size="sm" />}
+                  <StatusBadge
+                    variant={cb.is_active ? "active" : "inactive"}
+                    size="sm"
+                  />
+                  {cb.is_stale_cookbook && (
+                    <StatusBadge variant="stale" label="Stale" size="sm" />
+                  )}
                   {cb.is_frozen && (
                     <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
                       Frozen
@@ -188,7 +236,9 @@ export function CookbookDetailPage() {
                     onClick={() => toggleMeta(`sc-${idx}`)}
                     className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"
                   >
-                    <span className="text-xs">{expandedMeta[`sc-${idx}`] ? "▼" : "▶"}</span>
+                    <span className="text-xs">
+                      {expandedMeta[`sc-${idx}`] ? "▼" : "▶"}
+                    </span>
                     {expandedMeta[`sc-${idx}`] ? "Hide" : "Show"} Metadata
                   </button>
 
@@ -204,11 +254,19 @@ export function CookbookDetailPage() {
                         <MetaRow label="License">{cb.license}</MetaRow>
                       )}
                       <MetaRow label="Download">
-                        <span className={cb.download_status === "ok" ? "text-green-700" : "text-amber-600"}>
+                        <span
+                          className={
+                            cb.download_status === "ok"
+                              ? "text-green-700"
+                              : "text-amber-600"
+                          }
+                        >
                           {cb.download_status}
                         </span>
                         {cb.download_error && (
-                          <span className="ml-2 text-xs text-red-500">({cb.download_error})</span>
+                          <span className="ml-2 text-xs text-red-500">
+                            ({cb.download_error})
+                          </span>
                         )}
                       </MetaRow>
                       <MetaRow label="Platforms">
@@ -218,13 +276,19 @@ export function CookbookDetailPage() {
                         <MapBadges map={cb.dependencies} />
                       </MetaRow>
                       {cb.first_seen_at && (
-                        <MetaRow label="First Seen">{new Date(cb.first_seen_at).toLocaleString()}</MetaRow>
+                        <MetaRow label="First Seen">
+                          {new Date(cb.first_seen_at).toLocaleString()}
+                        </MetaRow>
                       )}
                       {cb.last_fetched_at && (
-                        <MetaRow label="Last Fetched">{new Date(cb.last_fetched_at).toLocaleString()}</MetaRow>
+                        <MetaRow label="Last Fetched">
+                          {new Date(cb.last_fetched_at).toLocaleString()}
+                        </MetaRow>
                       )}
                       {cb.updated_at && (
-                        <MetaRow label="Updated At">{new Date(cb.updated_at).toLocaleString()}</MetaRow>
+                        <MetaRow label="Updated At">
+                          {new Date(cb.updated_at).toLocaleString()}
+                        </MetaRow>
                       )}
                     </dl>
                   )}
@@ -233,18 +297,26 @@ export function CookbookDetailPage() {
                 {/* Cookstyle results */}
                 {vd.cookstyle && vd.cookstyle.length > 0 && (
                   <div>
-                    <h4 className="mb-2 text-sm font-medium text-gray-600">CookStyle Results</h4>
+                    <h4 className="mb-2 text-sm font-medium text-gray-600">
+                      CookStyle Results
+                    </h4>
                     <div className="space-y-2">
                       {vd.cookstyle.map((cs) => (
-                        <div key={cs.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
-                          <span className="text-xs text-gray-500">Target: {cs.target_chef_version}</span>
+                        <div
+                          key={cs.id}
+                          className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3"
+                        >
+                          <span className="text-xs text-gray-500">
+                            Target: {cs.target_chef_version}
+                          </span>
                           <StatusBadge
                             variant={cs.passed ? "compatible" : "incompatible"}
                             label={cs.passed ? "Passed" : "Failed"}
                             size="sm"
                           />
                           <span className="text-xs text-gray-500">
-                            Offences: {cs.offence_count} | Deprecations: {cs.deprecation_count}
+                            Offences: {cs.offence_count} | Deprecations:{" "}
+                            {cs.deprecation_count}
                           </span>
                           <span className="text-xs text-gray-400">
                             Scanned: {new Date(cs.scanned_at).toLocaleString()}
