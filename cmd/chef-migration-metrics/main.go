@@ -31,6 +31,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
@@ -742,6 +743,22 @@ func run() int {
 	// EventHub was created earlier (before DBWriter) so the broadcast
 	// callback could capture it. It is already running.
 
+	// Performance instrumentation — create the in-memory request latency
+	// recorder when the performance section is enabled. The recorder is
+	// passed to the router which installs the timing middleware.
+	var recorder *perf.Recorder
+	if cfg.Performance.Enabled {
+		windowSec := cfg.Performance.WindowSeconds
+		if windowSec <= 0 {
+			windowSec = 300
+		}
+		recorder = perf.NewRecorder(time.Duration(windowSec)*time.Second, 200, 1000)
+		startup.Info(fmt.Sprintf("performance instrumentation enabled (window=%ds)", windowSec))
+		if cfg.Performance.PprofEnabled {
+			startup.Warn("pprof endpoints enabled — do not use in production without auth")
+		}
+	}
+
 	// Attempt to load the built React frontend assets from disk.
 	// The Vite build outputs to frontend/dist/. In Docker this is at
 	// /src/frontend/dist during the build stage; at runtime, the binary
@@ -774,6 +791,10 @@ func run() int {
 			}()
 			return nil
 		}),
+	}
+
+	if recorder != nil {
+		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))
 	}
 
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {

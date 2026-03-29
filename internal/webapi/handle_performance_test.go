@@ -156,6 +156,7 @@ func TestHandlePerformance_DELETE_HappyPath(t *testing.T) {
 
 	// Record some samples, then reset.
 	r.recorder.Record("GET /api/v1/nodes", 50*time.Millisecond)
+	r.recorder.Record("POST /api/v1/exports", 200*time.Millisecond)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/performance", nil)
 	w := httptest.NewRecorder()
@@ -165,10 +166,19 @@ func TestHandlePerformance_DELETE_HappyPath(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
 	}
 
-	// Verify stats are cleared.
+	// The handler resets the recorder, but the timing middleware records
+	// the DELETE request itself *after* the handler returns. So the
+	// snapshot should contain at most one entry (the DELETE itself) and
+	// the original entries should be gone.
 	snap := r.recorder.Snapshot()
-	if len(snap) != 0 {
-		t.Errorf("snapshot after reset has %d entries, want 0", len(snap))
+	if len(snap) > 1 {
+		t.Errorf("snapshot after reset has %d entries, want <= 1 (only the DELETE itself)", len(snap))
+	}
+	for _, ks := range snap {
+		if ks.Key != "GET /api/v1/nodes" && ks.Key != "POST /api/v1/exports" {
+			continue // this is the DELETE request recorded by the middleware — expected
+		}
+		t.Errorf("original key %q survived reset", ks.Key)
 	}
 }
 
