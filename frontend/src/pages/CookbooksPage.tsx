@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
@@ -13,7 +14,13 @@ import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
 import { highestSemver } from "../semver";
 
 /** Render a coloured download-status pill with optional error tooltip. */
-function DownloadStatusBadge({ status, error }: { status: string; error?: string }) {
+function DownloadStatusBadge({
+  status,
+  error,
+}: {
+  status: string;
+  error?: string;
+}) {
   const styles: Record<string, string> = {
     ok: "bg-green-100 text-green-800 ring-green-600/20",
     failed: "bg-red-100 text-red-800 ring-red-600/20",
@@ -63,10 +70,14 @@ export function CookbooksPage() {
   // Filters
   const [active, setActive] = useState(searchParams.get("active") || "");
   const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
-  const [compatibility, setCompatibility] = useState(searchParams.get("compatibility") || "");
-  const [downloadStatus, setDownloadStatus] = useState(searchParams.get("download_status") || "");
+  const [compatibility, setCompatibility] = useState(
+    searchParams.get("compatibility") || "",
+  );
+  const [downloadStatus, setDownloadStatus] = useState(
+    searchParams.get("download_status") || "",
+  );
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to name ascending.
   const [sortField, setSortField] = useState("name");
@@ -74,11 +85,19 @@ export function CookbooksPage() {
 
   // Target Chef versions loaded from backend config.
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(searchParams.get("target_chef_version") || "");
+  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(
+    searchParams.get("target_chef_version") || "",
+  );
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
-    if (searchParams.has("compatibility") || searchParams.has("active") || searchParams.has("name") || searchParams.has("target_chef_version") || searchParams.has("download_status")) {
+    if (
+      searchParams.has("compatibility") ||
+      searchParams.has("active") ||
+      searchParams.has("name") ||
+      searchParams.has("target_chef_version") ||
+      searchParams.has("download_status")
+    ) {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
@@ -109,7 +128,8 @@ export function CookbooksPage() {
     if (nameFilter) filters.name = nameFilter;
     if (compatibility) filters.compatibility = compatibility;
     if (downloadStatus) filters.download_status = downloadStatus;
-    if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
+    if (selectedTargetVersion)
+      filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
     if (sortOrder) filters.order = sortOrder;
 
@@ -120,13 +140,41 @@ export function CookbooksPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, active, nameFilter, compatibility, downloadStatus, selectedTargetVersion, page, sortField, sortOrder]);
+  }, [
+    selectedOrg,
+    active,
+    nameFilter,
+    compatibility,
+    downloadStatus,
+    selectedTargetVersion,
+    page,
+    sortField,
+    sortOrder,
+  ]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [selectedOrg, active, nameFilter, compatibility, downloadStatus, selectedTargetVersion, sortField, sortOrder]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  useEffect(() => {
+    setPage(1);
+  }, [
+    selectedOrg,
+    active,
+    nameFilter,
+    compatibility,
+    downloadStatus,
+    selectedTargetVersion,
+    sortField,
+    sortOrder,
+  ]);
 
   // Count active filters for the clear button.
-  const activeFilterCount = [nameFilter, active, compatibility, downloadStatus].filter(Boolean).length;
+  const activeFilterCount = [
+    nameFilter,
+    active,
+    compatibility,
+    downloadStatus,
+  ].filter(Boolean).length;
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -156,7 +204,9 @@ export function CookbooksPage() {
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Name</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Name
+          </label>
           <input
             type="text"
             value={nameFilter}
@@ -166,7 +216,9 @@ export function CookbooksPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Active</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Active
+          </label>
           <select
             value={active}
             onChange={(e) => setActive(e.target.value)}
@@ -178,7 +230,9 @@ export function CookbooksPage() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Compatibility</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Compatibility
+          </label>
           <select
             value={compatibility}
             onChange={(e) => setCompatibility(e.target.value)}
@@ -191,7 +245,9 @@ export function CookbooksPage() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Download</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Download
+          </label>
           <select
             value={downloadStatus}
             onChange={(e) => setDownloadStatus(e.target.value)}
@@ -205,14 +261,18 @@ export function CookbooksPage() {
         </div>
         {targetVersions.length > 1 && (
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">Target Version</label>
+            <label className="mb-1 block text-xs font-medium text-gray-500">
+              Target Version
+            </label>
             <select
               value={selectedTargetVersion}
               onChange={(e) => setSelectedTargetVersion(e.target.value)}
               className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               {targetVersions.map((v) => (
-                <option key={v} value={v}>{v}</option>
+                <option key={v} value={v}>
+                  {v}
+                </option>
               ))}
             </select>
           </div>
@@ -234,27 +294,60 @@ export function CookbooksPage() {
       {!loading && !error && (
         <>
           {cookbooks.length === 0 ? (
-            <EmptyState title="No cookbooks found" description="Adjust filters or wait for data collection." />
+            <EmptyState
+              title="No cookbooks found"
+              description="Adjust filters or wait for data collection."
+            />
           ) : (
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("name")}>
-                      Name<span className="text-xs text-blue-500">{sortIndicator("name")}</span>
+                    <th
+                      className="cursor-pointer select-none hover:text-gray-700"
+                      onClick={() => handleSort("name")}
+                    >
+                      Name
+                      <span className="text-xs text-blue-500">
+                        {sortIndicator("name")}
+                      </span>
                     </th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("version")}>
-                      Version<span className="text-xs text-blue-500">{sortIndicator("version")}</span>
+                    <th
+                      className="cursor-pointer select-none hover:text-gray-700"
+                      onClick={() => handleSort("version")}
+                    >
+                      Version
+                      <span className="text-xs text-blue-500">
+                        {sortIndicator("version")}
+                      </span>
                     </th>
                     {!selectedOrg && <th>Organisation</th>}
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("compatibility")}>
-                      Compatibility<span className="text-xs text-blue-500">{sortIndicator("compatibility")}</span>
+                    <th
+                      className="cursor-pointer select-none hover:text-gray-700"
+                      onClick={() => handleSort("compatibility")}
+                    >
+                      Compatibility
+                      <span className="text-xs text-blue-500">
+                        {sortIndicator("compatibility")}
+                      </span>
                     </th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("active")}>
-                      Status<span className="text-xs text-blue-500">{sortIndicator("active")}</span>
+                    <th
+                      className="cursor-pointer select-none hover:text-gray-700"
+                      onClick={() => handleSort("active")}
+                    >
+                      Status
+                      <span className="text-xs text-blue-500">
+                        {sortIndicator("active")}
+                      </span>
                     </th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("download_status")}>
-                      Download<span className="text-xs text-blue-500">{sortIndicator("download_status")}</span>
+                    <th
+                      className="cursor-pointer select-none hover:text-gray-700"
+                      onClick={() => handleSort("download_status")}
+                    >
+                      Download
+                      <span className="text-xs text-blue-500">
+                        {sortIndicator("download_status")}
+                      </span>
                     </th>
                   </tr>
                 </thead>
@@ -279,7 +372,9 @@ export function CookbooksPage() {
                       </td>
                       {!selectedOrg && (
                         <td>
-                          <span className="text-sm text-gray-600">{cb.organisation_name ?? "—"}</span>
+                          <span className="text-sm text-gray-600">
+                            {cb.organisation_name ?? "—"}
+                          </span>
                         </td>
                       )}
                       <td>
@@ -295,12 +390,19 @@ export function CookbooksPage() {
                             size="sm"
                           />
                           {cb.is_stale_cookbook && (
-                            <StatusBadge variant="stale" label="Stale" size="sm" />
+                            <StatusBadge
+                              variant="stale"
+                              label="Stale"
+                              size="sm"
+                            />
                           )}
                         </div>
                       </td>
                       <td>
-                        <DownloadStatusBadge status={cb.download_status} error={cb.download_error} />
+                        <DownloadStatusBadge
+                          status={cb.download_status}
+                          error={cb.download_error}
+                        />
                       </td>
                     </tr>
                   ))}

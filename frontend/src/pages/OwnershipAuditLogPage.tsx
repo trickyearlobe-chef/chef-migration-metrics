@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { fetchAuditLog, type AuditLogFilterQuery } from "../api";
 import type { OwnershipAuditEntry, Pagination as PaginationType } from "../types";
@@ -41,7 +42,7 @@ export function OwnershipAuditLogPage() {
   const [ownerName, setOwnerName] = useState("");
   const [actor, setActor] = useState("");
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const perPage = DEFAULT_PAGE_SIZE;
 
   // Track which row's details are expanded (by entry id)
   const [expandedId, setExpandedId] = useState<string | null>(null);
