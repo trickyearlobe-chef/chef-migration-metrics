@@ -43,29 +43,12 @@ progress can be tracked over time.
   `internal/datastore/`, all handlers in `internal/webapi/`, readiness
   evaluator in `internal/analysis/`, collector in `internal/collector/`.
 
-- [ ] **B1 — Fix N+1 readiness queries in web handlers** — `handleNodes`
-  fires an individual `ListNodeReadinessByNodeName` query per node on the
-  page (50 queries per request). `handleDashboardReadiness` does the same
-  for all owned nodes. Replace with a bulk query that loads readiness for
-  all node names at once.
-  Files: `handle_nodes.go` L89–100, `handle_dashboard.go` L438–461.
-  **Note:** The far worse N+1 in the readiness *evaluator* (~12M queries
-  per run at 60K nodes) was resolved in `refactor/readiness-bulk-load` —
-  all lookup data is now bulk-loaded into an in-memory cache before the
-  fan-out loop. This B1 item covers only the remaining web handler N+1.
-
 - [ ] **B2 — Push cookbook-by-node filtering into SQL** —
   `handleNodesByCookbook` loads every node's full JSON (`IncludeHeavyJSON:
   true`) into memory then does `strings.Contains` substring matching, which can
   false-positive (e.g. `"apt"` matches `"apt-repo"`). Replace with a SQL JSONB
   `?` operator or a dedicated junction table query.
   Files: `handle_nodes.go` L472–474, L651–658.
-
-- [ ] **B3 — Deduplicate node snapshot filter query builders** —
-  `buildNodeSnapshotFilterQuery` and `buildNodeSnapshotFilterParts` share ~80%
-  of their CTE and WHERE clause logic. Refactor so the full-query builder calls
-  the parts builder internally.
-  File: `node_snapshot_filter.go` L83–244 and L500–582.
 
 - [ ] **B4a — Enrich readiness trend with metric snapshots** —
   `handleDashboardReadinessTrend` still queries live `CountNodeReadiness`
@@ -85,10 +68,10 @@ progress can be tracked over time.
   Files: `handle_dashboard.go`, `handle_nodes.go`, `handle_cookbooks.go`,
   `handle_git_repos.go`.
 
-- [ ] **B5 — Add datastore tests** — 18 of 20 datastore source files have no
+- [ ] **B5 — Add datastore tests** — 15 of 20 datastore source files have no
   corresponding `*_test.go`. This is the most critical layer for correctness.
-  Only `datastore_test.go`, `export_jobs_test.go`, and
-  `node_snapshot_filter_test.go` currently exist.
+  `datastore_test.go`, `export_jobs_test.go`, `node_snapshot_filter_test.go`,
+  `log_entries_test.go`, and `collection_runs_test.go` currently exist.
   Directory: `internal/datastore/`.
 
 ### Project
@@ -129,19 +112,6 @@ progress can be tracked over time.
   least unit tests for shared hooks and utility functions.
 
 
-
-### Backend
-
-- [ ] **B8 — Deduplicate log entry filter building** — `ListLogEntries` and
-  `CountLogEntries` in `log_entries.go` duplicate the entire WHERE clause
-  construction. Extract a `buildLogEntryFilterQuery` helper, mirroring the
-  pattern used for node snapshots.
-
-- [ ] **B10 — Add SQL push-down for collection runs** —
-  `handleCollectionRuns` loads ALL historical runs across all orgs into memory,
-  then paginates. For long-running installations this grows unboundedly.
-  File: `handle_logs.go` L142–146.
-
 ### Project
 
 - [ ] **P2 — Populate or remove `internal/models/`** — CLAUDE.md specifies
@@ -153,11 +123,6 @@ progress can be tracked over time.
   notification channels are referenced in `secrets-storage.md` and
   `todo-visualisation.md`, but no code exists. Either build the package or
   update the specs to remove the references.
-
-- [ ] **P4 — Decompose `main.go` `run()` function** — At 860 lines
-  (L48–909), `run()` handles CLI parsing, config loading, database setup, auth,
-  secrets, key rotation, TLS, collector, and HTTP server setup. Split into
-  named functions for each phase.
 
 ---
 
