@@ -15,6 +15,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 )
 
 // CollectionTriggerFunc is a function that triggers an immediate collection
@@ -69,6 +70,11 @@ type Router struct {
 	// is requested. Nil when not wired up — rescan handlers fall back to
 	// the "will run on next collection cycle" behaviour.
 	triggerCollection CollectionTriggerFunc
+
+	// recorder holds the in-memory request latency circular buffer used
+	// by the timing middleware and the GET /api/v1/admin/performance
+	// endpoint. Nil when performance instrumentation is disabled.
+	recorder *perf.Recorder
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -355,6 +361,12 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
+
+	// Performance diagnostics (admin-only, gated on config + recorder).
+	if r.cfg.Performance.Enabled && r.recorder != nil {
+		r.adminOnly("/api/v1/admin/performance", r.handlePerformance)
+		r.adminOnly("/api/v1/admin/performance/db", r.handlePerformanceDB)
+	}
 
 	// -----------------------------------------------------------------
 	// Frontend SPA fallback — serves index.html for client-side routing.
