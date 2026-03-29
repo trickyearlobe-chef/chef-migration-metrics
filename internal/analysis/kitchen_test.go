@@ -423,7 +423,7 @@ func TestBuildOverlay_DriverOverride(t *testing.T) {
 func TestBuildOverlay_DriverConfig(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vcenter",
-		DriverSettings: map[string]string{
+		DriverSettings: map[string]any{
 			"privileged": "true",
 			"network":    "host",
 		},
@@ -445,7 +445,7 @@ func TestBuildOverlay_DriverConfigWithoutDriverOverride(t *testing.T) {
 	// driver block, so DriverSettings are silently ignored.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "dokken",
-		DriverSettings: map[string]string{
+		DriverSettings: map[string]any{
 			"privileged": "true",
 		},
 	})
@@ -487,7 +487,7 @@ func TestBuildOverlay_PlatformOverrides(t *testing.T) {
 func TestBuildOverlay_AllOverridesCombined(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "ec2",
-		DriverSettings: map[string]string{
+		DriverSettings: map[string]any{
 			"instance_type": "t3.medium",
 		},
 		DriverSecrets: map[string]string{
@@ -1558,7 +1558,7 @@ func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 	// Scenario: test on real AWS instances.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "ec2",
-		DriverSettings: map[string]string{
+		DriverSettings: map[string]any{
 			"region":        "us-east-1",
 			"instance_type": "t3.large",
 		},
@@ -1619,7 +1619,7 @@ func TestBuildOverlay_ProductionPlatformAlignment(t *testing.T) {
 func TestBuildOverlay_VCenterWithCredentials(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver:         "vcenter",
-		DriverSettings: map[string]string{"vcenter_host": "vcenter.example.com"},
+		DriverSettings: map[string]any{"vcenter_host": "vcenter.example.com"},
 		DriverSecrets:  map[string]string{"vcenter_password": "vcenter-cred"},
 		PlatformMap: []config.PlatformMapEntry{
 			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
@@ -1754,6 +1754,21 @@ func TestNormalizeEnvVarSuffix(t *testing.T) {
 		got := normalizeEnvVarSuffix(tc.input)
 		if got != tc.want {
 			t.Errorf("normalizeEnvVarSuffix(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeEnvVarSuffix_SpecialChars(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"ubuntu/22.04", "UBUNTU_22_04"},
+		{"Windows Server 2022", "WINDOWS_SERVER_2022"},
+		{"my-platform.v2", "MY_PLATFORM_V2"},
+		{"simple", "SIMPLE"},
+	}
+	for _, tc := range tests {
+		got := normalizeEnvVarSuffix(tc.in)
+		if got != tc.want {
+			t.Errorf("normalizeEnvVarSuffix(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
