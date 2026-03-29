@@ -72,12 +72,12 @@ func TestBuildNodeSnapshotFilterQuery_HeavyJSON(t *testing.T) {
 	}
 }
 
-func TestBuildNodeSnapshotFilterQuery_OrganisationIDs(t *testing.T) {
+func TestBuildNodeSnapshotFilterQuery_OrganisationNames(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
-		OrganisationIDs: []string{"org-1", "org-2"},
+		OrganisationNames: []string{"org-1", "org-2"},
 	})
 
-	if !strings.Contains(q, "cn.organisation_id = ANY($1)") {
+	if !strings.Contains(q, "cn.organisation_name = ANY($1)") {
 		t.Errorf("query missing org filter clause, got:\n%s", q)
 	}
 	if len(args) != 1 {
@@ -384,17 +384,17 @@ func TestBuildNodeSnapshotFilterQuery_OffsetOnly(t *testing.T) {
 
 func TestBuildNodeSnapshotFilterQuery_AllFilters(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
-		OrganisationIDs: []string{"org-1"},
-		NodeName:        "web",
-		Environment:     "prod",
-		Platform:        "ubuntu",
-		ChefVersion:     "18",
-		PolicyName:      "base",
-		PolicyGroup:     "default",
-		Role:            "webserver",
-		Stale:           boolPtr(true),
-		Limit:           25,
-		Offset:          50,
+		OrganisationNames: []string{"org-1"},
+		NodeName:          "web",
+		Environment:       "prod",
+		Platform:          "ubuntu",
+		ChefVersion:       "18",
+		PolicyName:        "base",
+		PolicyGroup:       "default",
+		Role:              "webserver",
+		Stale:             boolPtr(true),
+		Limit:             25,
+		Offset:            50,
 	})
 
 	// 9 filter args + 2 pagination args = 11 total.
@@ -413,7 +413,7 @@ func TestBuildNodeSnapshotFilterQuery_AllFilters(t *testing.T) {
 
 	// Spot-check that all filter clauses are present.
 	checks := []string{
-		"organisation_id = ANY(",
+		"organisation_name = ANY(",
 		"LOWER(cn.node_name) LIKE",
 		"LOWER(cn.chef_environment) LIKE",
 		"LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, ''))",
@@ -437,10 +437,10 @@ func TestBuildNodeSnapshotFilterQuery_ParameterNumbering(t *testing.T) {
 	// Verify that parameter numbers are sequential and correctly ordered
 	// when multiple filters are used.
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
-		OrganisationIDs: []string{"org-1"},
-		Environment:     "prod",
-		ChefVersion:     "18",
-		Limit:           10,
+		OrganisationNames: []string{"org-1"},
+		Environment:       "prod",
+		ChefVersion:       "18",
+		Limit:             10,
 	})
 
 	if len(args) != 4 {
@@ -473,8 +473,8 @@ func TestBuildNodeSnapshotFilterQuery_CTE_CollectionRunValidation(t *testing.T) 
 		t.Error("CTE missing MAX(started_at) correlated subquery")
 	}
 	// The correlated subquery must scope per-org.
-	if !strings.Contains(q, "cr2.organisation_id = ns.organisation_id") {
-		t.Error("CTE correlated subquery not scoped to organisation_id")
+	if !strings.Contains(q, "cr2.organisation_name = ns.organisation_name") {
+		t.Error("CTE correlated subquery not scoped to organisation_name")
 	}
 }
 
@@ -482,7 +482,7 @@ func TestBuildNodeSnapshotFilterQuery_CollectionRunJoin(t *testing.T) {
 	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{})
 
 	// Must JOIN to collection_runs.
-	if !strings.Contains(q, "INNER JOIN collection_runs cr ON cr.id = ns.collection_run_id") {
+	if !strings.Contains(q, "INNER JOIN collection_runs cr ON cr.organisation_name = ns.collection_run_org") {
 		t.Error("CTE missing collection_runs JOIN")
 	}
 }
@@ -507,11 +507,11 @@ func TestBuildNodeSnapshotFilterParts_NoFilters(t *testing.T) {
 
 func TestBuildNodeSnapshotFilterParts_WithFilters(t *testing.T) {
 	_, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{
-		OrganisationIDs: []string{"org-1"},
-		Environment:     "staging",
+		OrganisationNames: []string{"org-1"},
+		Environment:       "staging",
 	})
 
-	if !strings.Contains(where, "organisation_id = ANY($1)") {
+	if !strings.Contains(where, "organisation_name = ANY($1)") {
 		t.Error("where missing org filter")
 	}
 	if !strings.Contains(where, "LOWER(cn.chef_environment) LIKE") {
@@ -549,8 +549,8 @@ func TestBuildNodeSnapshotFilterParts_NoPagination(t *testing.T) {
 func TestNodeSnapshotFilter_ZeroValue(t *testing.T) {
 	var f NodeSnapshotFilter
 
-	if f.OrganisationIDs != nil {
-		t.Error("zero-value OrganisationIDs should be nil")
+	if f.OrganisationNames != nil {
+		t.Error("zero-value OrganisationNames should be nil")
 	}
 	if f.NodeName != "" {
 		t.Error("zero-value NodeName should be empty")
@@ -573,10 +573,10 @@ func TestNodeSnapshotFilter_ZeroValue(t *testing.T) {
 func TestBuildNodeSnapshotFilterQuery_EmptyOrgSlice(t *testing.T) {
 	// Empty slice should be treated as "no filter" (all orgs).
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
-		OrganisationIDs: []string{},
+		OrganisationNames: []string{},
 	})
 
-	if strings.Contains(q, "organisation_id = ANY") {
+	if strings.Contains(q, "organisation_name = ANY") {
 		t.Error("empty org slice should not produce ANY clause")
 	}
 	if len(args) != 0 {
@@ -586,10 +586,10 @@ func TestBuildNodeSnapshotFilterQuery_EmptyOrgSlice(t *testing.T) {
 
 func TestBuildNodeSnapshotFilterQuery_SingleOrg(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
-		OrganisationIDs: []string{"org-only"},
+		OrganisationNames: []string{"org-only"},
 	})
 
-	if !strings.Contains(q, "organisation_id = ANY($1)") {
+	if !strings.Contains(q, "organisation_name = ANY($1)") {
 		t.Error("single org should still use ANY clause")
 	}
 	if len(args) != 1 {
@@ -599,7 +599,7 @@ func TestBuildNodeSnapshotFilterQuery_SingleOrg(t *testing.T) {
 
 func TestBuildNodeSnapshotFilterQuery_MultipleOrgs(t *testing.T) {
 	_, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
-		OrganisationIDs: []string{"org-1", "org-2", "org-3"},
+		OrganisationNames: []string{"org-1", "org-2", "org-3"},
 	})
 
 	if len(args) != 1 {
@@ -613,7 +613,7 @@ func TestBuildNodeSnapshotFilterQuery_OrderByAlwaysPresent(t *testing.T) {
 		{},
 		{NodeName: "test"},
 		{Limit: 10, Offset: 5},
-		{OrganisationIDs: []string{"org-1"}, Environment: "prod"},
+		{OrganisationNames: []string{"org-1"}, Environment: "prod"},
 	}
 
 	for i, f := range tests {
@@ -662,7 +662,7 @@ func TestBuildNodeSnapshotFilterQuery_CountOverAlwaysPresent(t *testing.T) {
 	tests := []NodeSnapshotFilter{
 		{},
 		{NodeName: "test", Limit: 10},
-		{OrganisationIDs: []string{"org-1"}, Stale: boolPtr(true)},
+		{OrganisationNames: []string{"org-1"}, Stale: boolPtr(true)},
 	}
 
 	for i, f := range tests {

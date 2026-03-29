@@ -14,7 +14,6 @@ import (
 // Session represents a row in the sessions table.
 type Session struct {
 	ID           string
-	UserID       string
 	Username     string
 	AuthProvider string
 	Role         string
@@ -24,7 +23,6 @@ type Session struct {
 
 // InsertSessionParams holds the parameters for creating a new session.
 type InsertSessionParams struct {
-	UserID       string
 	Username     string
 	AuthProvider string
 	Role         string
@@ -32,16 +30,14 @@ type InsertSessionParams struct {
 }
 
 // sessionColumns is the SELECT column list for the sessions table.
-const sessionColumns = `id, user_id, username, auth_provider, role, expires_at, created_at`
+const sessionColumns = `id, username, auth_provider, role, expires_at, created_at`
 
 // scanSession scans a single session row into a Session struct.
 func scanSession(row interface{ Scan(dest ...any) error }) (Session, error) {
 	var s Session
-	var userID sql.NullString
 
 	err := row.Scan(
 		&s.ID,
-		&userID,
 		&s.Username,
 		&s.AuthProvider,
 		&s.Role,
@@ -51,7 +47,6 @@ func scanSession(row interface{ Scan(dest ...any) error }) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	s.UserID = stringFromNull(userID)
 	return s, nil
 }
 
@@ -64,12 +59,11 @@ func scanSession(row interface{ Scan(dest ...any) error }) (Session, error) {
 // session token.
 func (db *DB) InsertSession(ctx context.Context, p InsertSessionParams) (Session, error) {
 	query := `
-		INSERT INTO sessions (user_id, username, auth_provider, role, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO sessions (username, auth_provider, role, expires_at)
+		VALUES ($1, $2, $3, $4)
 		RETURNING ` + sessionColumns
 
 	row := db.pool.QueryRowContext(ctx, query,
-		nullString(p.UserID),
 		p.Username,
 		p.AuthProvider,
 		p.Role,
@@ -132,19 +126,6 @@ func (db *DB) DeleteSession(ctx context.Context, id string) error {
 	return nil
 }
 
-// DeleteSessionsByUserID removes all sessions for the given user ID. This is
-// useful when locking an account or changing a password.
-func (db *DB) DeleteSessionsByUserID(ctx context.Context, userID string) (int, error) {
-	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM sessions WHERE user_id = $1`, userID,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("datastore: deleting sessions by user_id: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
-}
-
 // DeleteSessionsByUsername removes all sessions for the given username. This
 // covers both local and externally authenticated sessions.
 func (db *DB) DeleteSessionsByUsername(ctx context.Context, username string) (int, error) {
@@ -162,11 +143,11 @@ func (db *DB) DeleteSessionsByUsername(ctx context.Context, username string) (in
 // Listing
 // ---------------------------------------------------------------------------
 
-// ListSessionsByUserID returns all sessions for the given user ID, ordered by
-// created_at descending.
-func (db *DB) ListSessionsByUserID(ctx context.Context, userID string) ([]Session, error) {
-	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE user_id = $1 ORDER BY created_at DESC`
-	return db.scanSessions(ctx, query, userID)
+// ListSessionsByUsername returns all sessions for the given username, ordered
+// by created_at descending.
+func (db *DB) ListSessionsByUsername(ctx context.Context, username string) ([]Session, error) {
+	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE username = $1 ORDER BY created_at DESC`
+	return db.scanSessions(ctx, query, username)
 }
 
 // CountActiveSessions returns the number of non-expired sessions.

@@ -6,7 +6,7 @@ package collector
 import "github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 
 // deduplicateSnapshotParams removes duplicate entries from a slice of
-// InsertNodeSnapshotParams, keyed by (OrganisationID, NodeName). When
+// InsertNodeSnapshotParams, keyed by (OrganisationName, NodeName). When
 // duplicates exist the last occurrence wins — this matches the semantics
 // of the Chef Server partial search, where later pages may contain
 // fresher data for the same node.
@@ -32,7 +32,7 @@ func deduplicateSnapshotParams(params []datastore.InsertNodeSnapshotParams) ([]d
 	// capture the value we want to keep.
 	lastIndex := make(map[dedupKey]int, len(params))
 	for i, p := range params {
-		lastIndex[dedupKey{p.OrganisationID, p.NodeName}] = i
+		lastIndex[dedupKey{p.OrganisationName, p.NodeName}] = i
 	}
 
 	// No duplicates — fast path.
@@ -47,7 +47,7 @@ func deduplicateSnapshotParams(params []datastore.InsertNodeSnapshotParams) ([]d
 	result := make([]datastore.InsertNodeSnapshotParams, 0, len(lastIndex))
 
 	for i := len(params) - 1; i >= 0; i-- {
-		k := dedupKey{params[i].OrganisationID, params[i].NodeName}
+		k := dedupKey{params[i].OrganisationName, params[i].NodeName}
 		if seen[k] {
 			continue
 		}

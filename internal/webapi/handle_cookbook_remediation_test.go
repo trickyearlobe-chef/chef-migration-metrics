@@ -103,7 +103,7 @@ func TestHandleCookbookRemediation_MissingVersion(t *testing.T) {
 func TestHandleCookbookRemediation_NoTargetVersion(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{{ID: "cb-1", Name: "apt", Version: "1.0.0"}}, nil
+			return []datastore.ServerCookbook{{Name: "apt", Version: "1.0.0"}}, nil
 		},
 	}
 	cfg := &config.Config{}
@@ -148,7 +148,7 @@ func TestHandleCookbookRemediation_VersionNotFound(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "2.0.0"},
+				{Name: "apt", Version: "2.0.0"},
 			}, nil
 		},
 	}
@@ -173,13 +173,13 @@ func TestHandleCookbookRemediation_NoCookstyleResult(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return nil, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
 	}
@@ -284,19 +284,17 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
-			if serverCookbookID != "cb-1" {
-				t.Errorf("GetServerCookbookCookstyleResult serverCookbookID = %q, want cb-1", serverCookbookID)
-			}
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			if targetChefVersion != "18.0" {
 				t.Errorf("GetServerCookbookCookstyleResult targetChefVersion = %q, want 18.0", targetChefVersion)
 			}
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            false,
 				OffenceCount:      3,
@@ -304,10 +302,12 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 				ScannedAt:         now,
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return []datastore.ServerCookbookComplexity{
 				{
-					ServerCookbookID:     "cb-1",
+					OrganisationName:     orgName,
+					CookbookName:         cookbookName,
+					CookbookVersion:      cookbookVersion,
 					TargetChefVersion:    "18.0",
 					ComplexityScore:      42,
 					ComplexityLabel:      "medium",
@@ -318,7 +318,7 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 				},
 			}, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, nil // No preview
 		},
 	}
@@ -483,13 +483,14 @@ func TestHandleCookbookRemediation_WithOffenses_FlatFormat(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "nginx", Version: "2.0.0"},
+				{Name: "nginx", Version: "2.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-2",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            false,
 				OffenceCount:      2,
@@ -497,10 +498,10 @@ func TestHandleCookbookRemediation_WithOffenses_FlatFormat(t *testing.T) {
 				ScannedAt:         time.Now().UTC(),
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, nil
 		},
 	}
@@ -570,13 +571,14 @@ func TestHandleCookbookRemediation_WithAutocorrectPreview(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            false,
 				OffenceCount:      1,
@@ -584,17 +586,15 @@ func TestHandleCookbookRemediation_WithAutocorrectPreview(t *testing.T) {
 				ScannedAt:         now,
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
-			if cookstyleResultID != "cs-1" {
-				t.Errorf("GetServerCookbookAutocorrectPreview id = %q, want cs-1", cookstyleResultID)
-			}
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return &datastore.ServerCookbookAutocorrectPreview{
-				ID:                  "acp-1",
-				ServerCookbookID:    "cb-1",
-				CookstyleResultID:   "cs-1",
+				OrganisationName:    orgName,
+				CookbookName:        cookbookName,
+				CookbookVersion:     cookbookVersion,
+				TargetChefVersion:   targetChefVersion,
 				TotalOffenses:       5,
 				CorrectableOffenses: 3,
 				RemainingOffenses:   2,
@@ -653,25 +653,29 @@ func TestHandleCookbookRemediation_ExplicitTargetVersion(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			if targetChefVersion != "17.0" {
 				t.Errorf("expected target 17.0, got %q", targetChefVersion)
 			}
 			return nil, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return []datastore.ServerCookbookComplexity{
 				{
-					ServerCookbookID:  "cb-1",
+					OrganisationName:  orgName,
+					CookbookName:      cookbookName,
+					CookbookVersion:   cookbookVersion,
 					TargetChefVersion: "17.0",
 					ComplexityScore:   10,
 					ComplexityLabel:   "low",
 				},
 				{
-					ServerCookbookID:  "cb-1",
+					OrganisationName:  orgName,
+					CookbookName:      cookbookName,
+					CookbookVersion:   cookbookVersion,
 					TargetChefVersion: "18.0",
 					ComplexityScore:   90,
 					ComplexityLabel:   "critical",
@@ -734,10 +738,10 @@ func TestHandleCookbookRemediation_DBError_GetCookstyleResult(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return nil, errors.New("query timeout")
 		},
 	}
@@ -762,13 +766,14 @@ func TestHandleCookbookRemediation_PassedCookstyle(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            true,
 				OffenceCount:      0,
@@ -776,17 +781,19 @@ func TestHandleCookbookRemediation_PassedCookstyle(t *testing.T) {
 				ScannedAt:         time.Now().UTC(),
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return []datastore.ServerCookbookComplexity{
 				{
-					ServerCookbookID:  "cb-1",
+					OrganisationName:  orgName,
+					CookbookName:      cookbookName,
+					CookbookVersion:   cookbookVersion,
 					TargetChefVersion: "18.0",
 					ComplexityScore:   0,
 					ComplexityLabel:   "low",
 				},
 			}, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, nil
 		},
 	}
@@ -830,13 +837,14 @@ func TestHandleCookbookRemediation_MalformedOffensesJSON(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            false,
 				OffenceCount:      1,
@@ -844,10 +852,10 @@ func TestHandleCookbookRemediation_MalformedOffensesJSON(t *testing.T) {
 				ScannedAt:         time.Now().UTC(),
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, nil
 		},
 	}
@@ -883,23 +891,24 @@ func TestHandleCookbookRemediation_EmptyOffensesArray(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            true,
 				Offences:          []byte(`[]`),
 				ScannedAt:         time.Now().UTC(),
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, nil
 		},
 	}
@@ -934,23 +943,24 @@ func TestHandleCookbookRemediation_NilOffencesBytes(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            false,
 				Offences:          nil, // No JSONB data stored
 				ScannedAt:         time.Now().UTC(),
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, nil
 		},
 	}
@@ -985,20 +995,20 @@ func TestHandleCookbookRemediation_MultipleVersions_SelectsCorrect(t *testing.T)
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
-				{ID: "cb-2", Name: "apt", Version: "2.0.0"},
-				{ID: "cb-3", Name: "apt", Version: "3.0.0"},
+				{Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "2.0.0"},
+				{Name: "apt", Version: "3.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
-			if serverCookbookID != "cb-2" {
-				t.Errorf("expected serverCookbookID=cb-2, got %q", serverCookbookID)
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+			if cookbookVersion != "2.0.0" {
+				t.Errorf("expected cookbookVersion=2.0.0, got %q", cookbookVersion)
 			}
 			return nil, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
-			if serverCookbookID != "cb-2" {
-				t.Errorf("expected serverCookbookID=cb-2, got %q", serverCookbookID)
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
+			if cookbookVersion != "2.0.0" {
+				t.Errorf("expected cookbookVersion=2.0.0, got %q", cookbookVersion)
 			}
 			return nil, nil
 		},
@@ -1034,7 +1044,7 @@ func TestCookbookRemediationRoute_DoesNotBreakDetailRoute(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: name, Version: "1.0.0"},
+				{Name: name, Version: "1.0.0"},
 			}, nil
 		},
 	}
@@ -1069,23 +1079,24 @@ func TestHandleCookbookRemediation_AutocorrectPreviewDBError(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            false,
 				Offences:          []byte(`[]`),
 				ScannedAt:         time.Now().UTC(),
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, errors.New("disk I/O error")
 		},
 	}
@@ -1136,13 +1147,14 @@ func TestHandleCookbookRemediation_UnknownCop_NilRemediation(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return &datastore.ServerCookbookCookstyleResult{
-				ID:                "cs-1",
-				ServerCookbookID:  "cb-1",
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
 				TargetChefVersion: "18.0",
 				Passed:            false,
 				OffenceCount:      1,
@@ -1150,10 +1162,10 @@ func TestHandleCookbookRemediation_UnknownCop_NilRemediation(t *testing.T) {
 				ScannedAt:         time.Now().UTC(),
 			}, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
 		},
-		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, cookstyleResultID string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
 			return nil, nil
 		},
 	}
@@ -1197,13 +1209,13 @@ func TestHandleCookbookRemediation_ComplexityError_Graceful(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0"},
+				{Name: "apt", Version: "1.0.0"},
 			}, nil
 		},
-		GetServerCookbookCookstyleResultFn: func(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
 			return nil, nil
 		},
-		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, serverCookbookID string) ([]datastore.ServerCookbookComplexity, error) {
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, errors.New("complexity table missing")
 		},
 	}

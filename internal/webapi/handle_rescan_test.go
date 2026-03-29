@@ -73,8 +73,12 @@ func noopDeleteFn() func(ctx context.Context) error {
 	return func(ctx context.Context) error { return nil }
 }
 
-func noopDeleteByIDFn() func(ctx context.Context, id string) error {
-	return func(ctx context.Context, id string) error { return nil }
+func noopDeleteByCookbookFn() func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error {
+	return func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error { return nil }
+}
+
+func noopDeleteByRepoFn() func(ctx context.Context, gitRepoName, gitRepoURL string) error {
+	return func(ctx context.Context, gitRepoName, gitRepoURL string) error { return nil }
 }
 
 // minimalRescanAllStore returns a mockStore with all the methods required by
@@ -99,15 +103,15 @@ func minimalCookbookRescanStore() *mockStore {
 	return &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "sc-1", Name: name, Version: "1.0.0"},
-				{ID: "sc-2", Name: name, Version: "2.0.0"},
+				{Name: name, Version: "1.0.0"},
+				{Name: name, Version: "2.0.0"},
 			}, nil
 		},
-		DeleteServerCookbookCookstyleResultsByCookbookFn:    noopDeleteByIDFn(),
-		DeleteServerCookbookComplexitiesByCookbookFn:        noopDeleteByIDFn(),
-		DeleteServerCookbookAutocorrectPreviewsByCookbookFn: noopDeleteByIDFn(),
-		ResetServerCookbookDownloadStatusFn: func(ctx context.Context, id string) (datastore.ServerCookbook, error) {
-			return datastore.ServerCookbook{ID: id}, nil
+		DeleteServerCookbookCookstyleResultsByCookbookFn:    noopDeleteByCookbookFn(),
+		DeleteServerCookbookComplexitiesByCookbookFn:        noopDeleteByCookbookFn(),
+		DeleteServerCookbookAutocorrectPreviewsByCookbookFn: noopDeleteByCookbookFn(),
+		ResetServerCookbookDownloadStatusFn: func(ctx context.Context, organisationName, name, version string) (datastore.ServerCookbook, error) {
+			return datastore.ServerCookbook{OrganisationName: organisationName, Name: name, Version: version}, nil
 		},
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return nil, nil
@@ -121,12 +125,12 @@ func minimalGitRepoRescanStore() *mockStore {
 	return &mockStore{
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "gr-1", Name: name},
+				{Name: name},
 			}, nil
 		},
-		DeleteGitRepoCookstyleResultsByRepoFn:    noopDeleteByIDFn(),
-		DeleteGitRepoComplexitiesByRepoFn:        noopDeleteByIDFn(),
-		DeleteGitRepoAutocorrectPreviewsByRepoFn: noopDeleteByIDFn(),
+		DeleteGitRepoCookstyleResultsByRepoFn:    noopDeleteByRepoFn(),
+		DeleteGitRepoComplexitiesByRepoFn:        noopDeleteByRepoFn(),
+		DeleteGitRepoAutocorrectPreviewsByRepoFn: noopDeleteByRepoFn(),
 	}
 }
 
@@ -389,12 +393,12 @@ func TestHandleCookbookRescan_WithGitRepos(t *testing.T) {
 		},
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "gr-1", Name: name},
+				{Name: name},
 			}, nil
 		},
-		DeleteGitRepoCookstyleResultsByRepoFn:    noopDeleteByIDFn(),
-		DeleteGitRepoComplexitiesByRepoFn:        noopDeleteByIDFn(),
-		DeleteGitRepoAutocorrectPreviewsByRepoFn: noopDeleteByIDFn(),
+		DeleteGitRepoCookstyleResultsByRepoFn:    noopDeleteByRepoFn(),
+		DeleteGitRepoComplexitiesByRepoFn:        noopDeleteByRepoFn(),
+		DeleteGitRepoAutocorrectPreviewsByRepoFn: noopDeleteByRepoFn(),
 	}
 	r := newTestRouterWithTrigger(store, succeedingTrigger(&calls))
 

@@ -589,7 +589,7 @@ func TestActiveUnusedCounting(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildDetailParams_Empty(t *testing.T) {
-	params := buildDetailParams("a-1", "org-1", nil, nil, nil)
+	params := buildDetailParams("org-1", nil, nil, nil)
 	if len(params) != 0 {
 		t.Errorf("expected 0 params for empty input, got %d", len(params))
 	}
@@ -620,17 +620,14 @@ func TestBuildDetailParams_ActiveCookbook(t *testing.T) {
 		{Name: "ntp", Version: "3.0.0"}: true,
 	}
 
-	params := buildDetailParams("analysis-1", "org-1", agg, inv, active)
+	params := buildDetailParams("org-1", agg, inv, active)
 	if len(params) != 1 {
 		t.Fatalf("expected 1 param, got %d", len(params))
 	}
 
 	p := params[0]
-	if p.AnalysisID != "analysis-1" {
-		t.Errorf("expected AnalysisID=analysis-1, got %q", p.AnalysisID)
-	}
-	if p.OrganisationID != "org-1" {
-		t.Errorf("expected OrganisationID=org-1, got %q", p.OrganisationID)
+	if p.OrganisationName != "org-1" {
+		t.Errorf("expected OrganisationName=org-1, got %q", p.OrganisationName)
 	}
 	if p.CookbookName != "ntp" {
 		t.Errorf("expected CookbookName=ntp, got %q", p.CookbookName)
@@ -666,7 +663,7 @@ func TestBuildDetailParams_UnusedCookbook(t *testing.T) {
 
 	active := map[cookbookVersionKey]bool{}
 
-	params := buildDetailParams("a-1", "org-1", agg, inv, active)
+	params := buildDetailParams("org-1", agg, inv, active)
 	if len(params) != 1 {
 		t.Fatalf("expected 1 param, got %d", len(params))
 	}
@@ -707,7 +704,7 @@ func TestBuildDetailParams_MixedActiveAndUnused(t *testing.T) {
 		{Name: "apache2", Version: "5.0.0"}: true,
 	}
 
-	params := buildDetailParams("a-1", "org-1", agg, inv, active)
+	params := buildDetailParams("org-1", agg, inv, active)
 	if len(params) != 3 {
 		t.Fatalf("expected 3 params, got %d", len(params))
 	}
@@ -766,7 +763,7 @@ func TestBuildDetailParams_CookbookNotInInventoryButInAgg(t *testing.T) {
 	inv := map[cookbookVersionKey]bool{} // Empty inventory
 	active := buildActiveSet(agg)
 
-	params := buildDetailParams("a-1", "org-1", agg, inv, active)
+	params := buildDetailParams("org-1", agg, inv, active)
 	if len(params) != 1 {
 		t.Fatalf("expected 1 param, got %d", len(params))
 	}
@@ -789,7 +786,7 @@ func TestBuildDetailParams_DeterministicOrder(t *testing.T) {
 		{Name: "m-cookbook", Version: "1.0"}: true,
 	}
 
-	params := buildDetailParams("a-1", "org-1", nil, inv, nil)
+	params := buildDetailParams("org-1", nil, inv, nil)
 	if len(params) != 4 {
 		t.Fatalf("expected 4 params, got %d", len(params))
 	}
@@ -1279,20 +1276,17 @@ func TestEndToEnd_FullAnalysisPipeline(t *testing.T) {
 	}
 
 	// Build detail params.
-	detailParams := buildDetailParams("analysis-1", "org-1", aggregated, inventorySet, activeSet)
+	detailParams := buildDetailParams("org-1", aggregated, inventorySet, activeSet)
 
 	// Should have 8 entries (5 active + 3 unused from inventory).
 	if len(detailParams) != 8 {
 		t.Fatalf("expected 8 detail params, got %d", len(detailParams))
 	}
 
-	// Verify all params have correct IDs.
+	// Verify all params have correct organisation name.
 	for _, p := range detailParams {
-		if p.AnalysisID != "analysis-1" {
-			t.Errorf("expected AnalysisID=analysis-1, got %q", p.AnalysisID)
-		}
-		if p.OrganisationID != "org-1" {
-			t.Errorf("expected OrganisationID=org-1, got %q", p.OrganisationID)
+		if p.OrganisationName != "org-1" {
+			t.Errorf("expected OrganisationName=org-1, got %q", p.OrganisationName)
 		}
 	}
 
@@ -1426,7 +1420,7 @@ func TestEndToEnd_NoNodesAllUnused(t *testing.T) {
 		t.Errorf("expected 2 unused, got %d", unusedCount)
 	}
 
-	params := buildDetailParams("a1", "o1", aggregated, inventorySet, activeSet)
+	params := buildDetailParams("o1", aggregated, inventorySet, activeSet)
 	if len(params) != 2 {
 		t.Fatalf("expected 2 params, got %d", len(params))
 	}
@@ -1485,7 +1479,7 @@ func TestBuildDetailParams_AllFieldsPopulated(t *testing.T) {
 		{Name: "full", Version: "1.0"}: true,
 	}
 
-	params := buildDetailParams("a1", "o1", agg, inv, active)
+	params := buildDetailParams("o1", agg, inv, active)
 	if len(params) != 1 {
 		t.Fatalf("expected 1 param, got %d", len(params))
 	}

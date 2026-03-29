@@ -86,8 +86,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 	type priorityItem struct {
 		CookbookName         string `json:"cookbook_name"`
 		CookbookVersion      string `json:"cookbook_version,omitempty"`
-		CookbookID           string `json:"cookbook_id"`
-		OrganisationID       string `json:"organisation_id,omitempty"`
+		OrganisationName     string `json:"organisation_name,omitempty"`
 		ComplexityScore      int    `json:"complexity_score"`
 		ComplexityLabel      string `json:"complexity_label"`
 		AffectedNodeCount    int    `json:"affected_node_count"`
@@ -104,21 +103,21 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 	var items []priorityItem
 
 	for _, org := range orgs {
-		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing complexities for org %s in remediation priority: %v", org.Name, err)
 			continue
 		}
 
-		// Build a map from server cookbook ID to cookbook metadata.
-		cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+		// Build a map from cookbook name:version to cookbook metadata.
+		cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing server cookbooks for org %s in remediation priority: %v", org.Name, err)
 			continue
 		}
-		cbMap := make(map[string]datastore.ServerCookbook, len(cookbooks))
+		cbByID := make(map[string]datastore.ServerCookbook, len(cookbooks))
 		for _, cb := range cookbooks {
-			cbMap[cb.ID] = cb
+			cbByID[cb.Name+":"+cb.Version] = cb
 		}
 
 		for _, cc := range complexities {
@@ -135,13 +134,13 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 			}
 			priorityScore := cc.ComplexityScore * blastRadius
 
-			cb := cbMap[cc.ServerCookbookID]
+			// Look up cookbook metadata via the complexity's natural key fields.
+			_ = cbByID[cc.CookbookName+":"+cc.CookbookVersion]
 
 			items = append(items, priorityItem{
-				CookbookName:         cb.Name,
-				CookbookVersion:      cb.Version,
-				CookbookID:           cc.ServerCookbookID,
-				OrganisationID:       org.ID,
+				CookbookName:         cc.CookbookName,
+				CookbookVersion:      cc.CookbookVersion,
+				OrganisationName:     cc.OrganisationName,
 				ComplexityScore:      cc.ComplexityScore,
 				ComplexityLabel:      cc.ComplexityLabel,
 				AffectedNodeCount:    cc.AffectedNodeCount,
@@ -170,7 +169,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		best := make(map[dedupeKey]int) // key → index into deduped
 		var deduped []priorityItem
 		for _, item := range items {
-			k := dedupeKey{Name: item.CookbookName, Org: item.OrganisationID}
+			k := dedupeKey{Name: item.CookbookName, Org: item.OrganisationName}
 			if idx, exists := best[k]; exists {
 				deduped[idx].VersionCount++
 				if item.ComplexityScore > deduped[idx].ComplexityScore {
@@ -346,23 +345,23 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 	)
 
 	for _, org := range orgs {
-		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing complexities for org %s in remediation summary: %v", org.Name, err)
 			continue
 		}
 
-		// Build a map from server cookbook ID to cookbook metadata for ownership filtering.
-		var cbMap map[string]datastore.ServerCookbook
+		// Build a map from cookbook name:version to cookbook metadata for ownership filtering.
+		var cbByID map[string]datastore.ServerCookbook
 		if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
-			cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+			cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 			if err != nil {
 				r.logf("WARN", "listing server cookbooks for org %s in remediation summary: %v", org.Name, err)
 				continue
 			}
-			cbMap = make(map[string]datastore.ServerCookbook, len(cookbooks))
+			cbByID = make(map[string]datastore.ServerCookbook, len(cookbooks))
 			for _, cb := range cookbooks {
-				cbMap[cb.ID] = cb
+				cbByID[cb.Name+":"+cb.Version] = cb
 			}
 		}
 
@@ -373,13 +372,12 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 
 			// Apply owner filter: skip cookbooks that don't match ownership.
 			if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
-				cb := cbMap[cc.ServerCookbookID]
 				if of.Unowned {
-					if ownedKeys[cb.Name] {
+					if ownedKeys[cc.CookbookName] {
 						continue
 					}
 				} else {
-					if !ownedKeys[cb.Name] {
+					if !ownedKeys[cc.CookbookName] {
 						continue
 					}
 				}
@@ -407,7 +405,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 	// Also compute blocked node readiness across all orgs.
 	var totalReadinessBlocked int
 	for _, org := range orgs {
-		_, _, blocked, err := r.db.CountNodeReadiness(ctx, org.ID, targetVersion)
+		_, _, blocked, err := r.db.CountNodeReadiness(ctx, org.Name, targetVersion)
 		if err != nil {
 			r.logf("WARN", "counting node readiness for org %s version %s: %v", org.Name, targetVersion, err)
 			continue

@@ -110,7 +110,8 @@ func ComputeAndUpsertCoverageForRepo(
 
 	// Step 4: Upsert into database.
 	_, err = db.UpsertCookbookPlatformCoverage(ctx, datastore.UpsertCookbookPlatformCoverageParams{
-		GitRepoID:    repo.ID,
+		GitRepoName:  repo.Name,
+		GitRepoURL:   repo.GitRepoURL,
 		CookbookName: repo.Name,
 		CoverageData: report,
 	})

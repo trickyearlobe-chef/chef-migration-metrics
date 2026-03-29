@@ -207,7 +207,7 @@ func (app *serverApp) attachDBWriter() {
 				CommitSHA:           p.CommitSHA,
 				ChefClientVersion:   p.ChefClientVersion,
 				ProcessOutput:       p.ProcessOutput,
-				CollectionRunID:     p.CollectionRunID,
+				CollectionRunOrg:    p.CollectionRunID,
 				NotificationChannel: p.NotificationChannel,
 				ExportJobID:         p.ExportJobID,
 				TLSDomain:           p.TLSDomain,
@@ -215,7 +215,7 @@ func (app *serverApp) attachDBWriter() {
 			if dsErr != nil {
 				return "", dsErr
 			}
-			return entry.ID, nil
+			return fmt.Sprintf("%d", entry.ID), nil
 		},
 	)
 	hub := app.hub
@@ -365,10 +365,10 @@ func (app *serverApp) markInterruptedRuns(ctx context.Context) {
 		return
 	}
 	for _, r := range staleRuns {
-		if _, err := app.db.InterruptCollectionRun(ctx, r.ID); err != nil {
-			app.startup.Warn(fmt.Sprintf("could not mark collection run %s as interrupted: %v", r.ID, err))
+		if _, err := app.db.InterruptCollectionRun(ctx, r.OrganisationName); err != nil {
+			app.startup.Warn(fmt.Sprintf("could not mark collection run %s as interrupted: %v", r.OrganisationName, err))
 		} else {
-			app.startup.Info(fmt.Sprintf("marked stale collection run %s (org %s) as interrupted", r.ID, r.OrganisationID))
+			app.startup.Info(fmt.Sprintf("marked stale collection run %s as interrupted", r.OrganisationName))
 		}
 	}
 }
@@ -683,7 +683,7 @@ func (app *serverApp) cookbookDirOpts() []collector.Option {
 			if deleteAfterScan {
 				return ""
 			}
-			return filepath.Join(cookbookCacheDir, sc.OrganisationID, sc.Name, sc.Version)
+			return filepath.Join(cookbookCacheDir, sc.OrganisationName, sc.Name, sc.Version)
 		}),
 		collector.WithGitRepoDirFn(func(repo datastore.GitRepo) string {
 			return filepath.Join(gitCookbookDir, repo.Name)

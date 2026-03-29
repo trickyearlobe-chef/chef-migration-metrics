@@ -12,16 +12,16 @@ import (
 )
 
 // Organisation represents a row in the organisations table.
+// The natural primary key is Name — there is no surrogate UUID.
 type Organisation struct {
-	ID                    string    `json:"id"`
-	Name                  string    `json:"name"`
-	ChefServerURL         string    `json:"chef_server_url"`
-	OrgName               string    `json:"org_name"`
-	ClientName            string    `json:"client_name"`
-	ClientKeyCredentialID string    `json:"client_key_credential_id,omitempty"`
-	Source                string    `json:"source"` // "config" or "api"
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	Name                    string    `json:"name"`
+	ChefServerURL           string    `json:"chef_server_url"`
+	OrgName                 string    `json:"org_name"`
+	ClientName              string    `json:"client_name"`
+	ClientKeyCredentialName string    `json:"client_key_credential_name,omitempty"`
+	Source                  string    `json:"source"` // "config" or "api"
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 // MarshalJSON implements json.Marshaler so that Organisation can be serialised
@@ -45,11 +45,11 @@ func (o Organisation) MarshalJSON() ([]byte, error) {
 // UpsertOrganisationParams holds the fields required to upsert an
 // organisation from configuration.
 type UpsertOrganisationParams struct {
-	Name                  string
-	ChefServerURL         string
-	OrgName               string
-	ClientName            string
-	ClientKeyCredentialID string // optional — empty string means NULL
+	Name                    string
+	ChefServerURL           string
+	OrgName                 string
+	ClientName              string
+	ClientKeyCredentialName string // optional — empty string means NULL
 }
 
 func (db *DB) UpsertOrganisationFromConfig(ctx context.Context, p UpsertOrganisationParams) (Organisation, error) {
@@ -71,39 +71,38 @@ func (db *DB) upsertOrganisationFromConfig(ctx context.Context, q queryable, p U
 	}
 
 	const query = `
-		INSERT INTO organisations (name, chef_server_url, org_name, client_name, client_key_credential_id, source)
+		INSERT INTO organisations (name, chef_server_url, org_name, client_name, client_key_credential_name, source)
 		VALUES ($1, $2, $3, $4, $5, 'config')
 		ON CONFLICT (name) DO UPDATE SET
-			chef_server_url          = EXCLUDED.chef_server_url,
-			org_name                 = EXCLUDED.org_name,
-			client_name              = EXCLUDED.client_name,
-			client_key_credential_id = EXCLUDED.client_key_credential_id,
-			source                   = 'config',
-			updated_at               = now()
-		RETURNING id, name, chef_server_url, org_name, client_name,
-		          client_key_credential_id, source, created_at, updated_at
+			chef_server_url            = EXCLUDED.chef_server_url,
+			org_name                   = EXCLUDED.org_name,
+			client_name                = EXCLUDED.client_name,
+			client_key_credential_name = EXCLUDED.client_key_credential_name,
+			source                     = 'config',
+			updated_at                 = now()
+		RETURNING name, chef_server_url, org_name, client_name,
+		          client_key_credential_name, source, created_at, updated_at
 	`
 
-	var credID sql.NullString
-	if p.ClientKeyCredentialID != "" {
-		credID = sql.NullString{String: p.ClientKeyCredentialID, Valid: true}
+	var credName sql.NullString
+	if p.ClientKeyCredentialName != "" {
+		credName = sql.NullString{String: p.ClientKeyCredentialName, Valid: true}
 	}
 
 	var org Organisation
-	var scanCredID sql.NullString
+	var scanCredName sql.NullString
 	err := q.QueryRowContext(ctx, query,
 		p.Name,
 		p.ChefServerURL,
 		p.OrgName,
 		p.ClientName,
-		credID,
+		credName,
 	).Scan(
-		&org.ID,
 		&org.Name,
 		&org.ChefServerURL,
 		&org.OrgName,
 		&org.ClientName,
-		&scanCredID,
+		&scanCredName,
 		&org.Source,
 		&org.CreatedAt,
 		&org.UpdatedAt,
@@ -111,7 +110,7 @@ func (db *DB) upsertOrganisationFromConfig(ctx context.Context, q queryable, p U
 	if err != nil {
 		return Organisation{}, fmt.Errorf("datastore: upserting organisation %q: %w", p.Name, err)
 	}
-	org.ClientKeyCredentialID = stringFromNull(scanCredID)
+	org.ClientKeyCredentialName = stringFromNull(scanCredName)
 	return org, nil
 }
 
@@ -147,7 +146,7 @@ func (db *DB) SyncOrganisationsFromConfig(ctx context.Context, params []UpsertOr
 		for _, org := range existing {
 			if !configNames[org.Name] {
 				if _, err := tx.ExecContext(ctx,
-					`DELETE FROM organisations WHERE id = $1`, org.ID,
+					`DELETE FROM organisations WHERE name = $1`, org.Name,
 				); err != nil {
 					return fmt.Errorf("datastore: removing stale organisation %q: %w", org.Name, err)
 				}
@@ -166,36 +165,26 @@ func (db *DB) SyncOrganisationsFromConfig(ctx context.Context, params []UpsertOr
 // Query methods
 // ---------------------------------------------------------------------------
 
-// GetOrganisation returns the organisation with the given UUID. Returns
+// GetOrganisation returns the organisation with the given name. Returns
 // ErrNotFound if no such organisation exists.
-func (db *DB) GetOrganisation(ctx context.Context, id string) (Organisation, error) {
-	return db.getOrganisation(ctx, db.q(), id)
+func (db *DB) GetOrganisation(ctx context.Context, name string) (Organisation, error) {
+	return db.getOrganisation(ctx, db.q(), name)
 }
 
-func (db *DB) getOrganisation(ctx context.Context, q queryable, id string) (Organisation, error) {
+func (db *DB) getOrganisation(ctx context.Context, q queryable, name string) (Organisation, error) {
 	const query = `
-		SELECT id, name, chef_server_url, org_name, client_name,
-		       client_key_credential_id, source, created_at, updated_at
-		FROM organisations
-		WHERE id = $1
-	`
-	return scanOrganisation(q.QueryRowContext(ctx, query, id))
-}
-
-// GetOrganisationByName returns the organisation with the given name.
-// Returns ErrNotFound if no such organisation exists.
-func (db *DB) GetOrganisationByName(ctx context.Context, name string) (Organisation, error) {
-	return db.getOrganisationByName(ctx, db.q(), name)
-}
-
-func (db *DB) getOrganisationByName(ctx context.Context, q queryable, name string) (Organisation, error) {
-	const query = `
-		SELECT id, name, chef_server_url, org_name, client_name,
-		       client_key_credential_id, source, created_at, updated_at
+		SELECT name, chef_server_url, org_name, client_name,
+		       client_key_credential_name, source, created_at, updated_at
 		FROM organisations
 		WHERE name = $1
 	`
 	return scanOrganisation(q.QueryRowContext(ctx, query, name))
+}
+
+// GetOrganisationByName is an alias for GetOrganisation retained for
+// call-site compatibility. Name is the primary key.
+func (db *DB) GetOrganisationByName(ctx context.Context, name string) (Organisation, error) {
+	return db.GetOrganisation(ctx, name)
 }
 
 // ListOrganisations returns all organisations ordered by name.
@@ -205,8 +194,8 @@ func (db *DB) ListOrganisations(ctx context.Context) ([]Organisation, error) {
 
 func (db *DB) listOrganisations(ctx context.Context, q queryable) ([]Organisation, error) {
 	const query = `
-		SELECT id, name, chef_server_url, org_name, client_name,
-		       client_key_credential_id, source, created_at, updated_at
+		SELECT name, chef_server_url, org_name, client_name,
+		       client_key_credential_name, source, created_at, updated_at
 		FROM organisations
 		ORDER BY name
 	`
@@ -217,8 +206,8 @@ func (db *DB) listOrganisations(ctx context.Context, q queryable) ([]Organisatio
 // value. Used internally by SyncOrganisationsFromConfig.
 func (db *DB) listOrganisationsBySource(ctx context.Context, q queryable, source string) ([]Organisation, error) {
 	const query = `
-		SELECT id, name, chef_server_url, org_name, client_name,
-		       client_key_credential_id, source, created_at, updated_at
+		SELECT name, chef_server_url, org_name, client_name,
+		       client_key_credential_name, source, created_at, updated_at
 		FROM organisations
 		WHERE source = $1
 		ORDER BY name
@@ -226,13 +215,13 @@ func (db *DB) listOrganisationsBySource(ctx context.Context, q queryable, source
 	return scanOrganisations(q.QueryContext(ctx, query, source))
 }
 
-// DeleteOrganisation removes the organisation with the given UUID. Returns
+// DeleteOrganisation removes the organisation with the given name. Returns
 // ErrNotFound if no such organisation exists. Cascading deletes will remove
 // associated collection runs, node snapshots, cookbooks, and other dependent
 // data.
-func (db *DB) DeleteOrganisation(ctx context.Context, id string) error {
+func (db *DB) DeleteOrganisation(ctx context.Context, name string) error {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM organisations WHERE id = $1`, id,
+		`DELETE FROM organisations WHERE name = $1`, name,
 	)
 	if err != nil {
 		return fmt.Errorf("datastore: deleting organisation: %w", err)
@@ -255,14 +244,13 @@ func (db *DB) DeleteOrganisation(ctx context.Context, id string) error {
 // ErrNotFound when the row contains sql.ErrNoRows.
 func scanOrganisation(row *sql.Row) (Organisation, error) {
 	var org Organisation
-	var credID sql.NullString
+	var credName sql.NullString
 	err := row.Scan(
-		&org.ID,
 		&org.Name,
 		&org.ChefServerURL,
 		&org.OrgName,
 		&org.ClientName,
-		&credID,
+		&credName,
 		&org.Source,
 		&org.CreatedAt,
 		&org.UpdatedAt,
@@ -273,7 +261,7 @@ func scanOrganisation(row *sql.Row) (Organisation, error) {
 		}
 		return Organisation{}, fmt.Errorf("datastore: scanning organisation: %w", err)
 	}
-	org.ClientKeyCredentialID = stringFromNull(credID)
+	org.ClientKeyCredentialName = stringFromNull(credName)
 	return org, nil
 }
 
@@ -287,21 +275,20 @@ func scanOrganisations(rows *sql.Rows, err error) ([]Organisation, error) {
 	var orgs []Organisation
 	for rows.Next() {
 		var org Organisation
-		var credID sql.NullString
+		var credName sql.NullString
 		if err := rows.Scan(
-			&org.ID,
 			&org.Name,
 			&org.ChefServerURL,
 			&org.OrgName,
 			&org.ClientName,
-			&credID,
+			&credName,
 			&org.Source,
 			&org.CreatedAt,
 			&org.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning organisation row: %w", err)
 		}
-		org.ClientKeyCredentialID = stringFromNull(credID)
+		org.ClientKeyCredentialName = stringFromNull(credName)
 		orgs = append(orgs, org)
 	}
 	if err := rows.Err(); err != nil {

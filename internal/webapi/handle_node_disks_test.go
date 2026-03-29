@@ -33,7 +33,7 @@ func TestHandleNodeDisks_NotEnoughSegments(t *testing.T) {
 func TestHandleNodeDisks_MethodNotAllowed(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -65,7 +65,7 @@ func TestHandleNodeDisks_OrgNotFound(t *testing.T) {
 func TestHandleNodeDisks_NodeNotFound(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{}, datastore.ErrNotFound
@@ -100,7 +100,7 @@ func TestHandleNodeDisks_OrgDBError(t *testing.T) {
 func TestHandleNodeDisks_NodeDBError(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{}, errors.New("connection refused")
@@ -146,13 +146,12 @@ func TestHandleNodeDisks_HappyPath_Linux(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-1",
 				NodeName:       "pandora.home.arpa",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     fsData,
 				CollectedAt:    now,
@@ -265,13 +264,12 @@ func TestHandleNodeDisks_HappyPath_Windows(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-2",
 				NodeName:       "win11-001.home.arpa",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "windows",
 				Filesystem:     fsData,
 				CollectedAt:    now,
@@ -324,13 +322,12 @@ func TestHandleNodeDisks_NullFilesystem(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-3",
 				NodeName:       "empty-node",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     nil,
 				CollectedAt:    now,
@@ -427,13 +424,12 @@ func TestHandleNodeDisks_FiltersVirtualFS(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-4",
 				NodeName:       "linux-host",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     fsData,
 				CollectedAt:    now,
@@ -494,13 +490,12 @@ func TestHandleNodeDisks_ShowAllIncludesVirtualFS(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-5",
 				NodeName:       "linux-host",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     fsData,
 				CollectedAt:    now,
@@ -530,14 +525,13 @@ func TestHandleNodeDisks_NodeNameWithSlash(t *testing.T) {
 	calledWith := ""
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			calledWith = nodeName
 			return datastore.NodeSnapshot{
-				ID:             "snap-6",
 				NodeName:       nodeName,
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     nil,
 				CollectedAt:    now,
@@ -561,13 +555,12 @@ func TestHandleNodeDisks_MalformedJSON(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-7",
 				NodeName:       "bad-json",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     json.RawMessage(`{not valid json`),
 				CollectedAt:    now,
@@ -601,13 +594,12 @@ func TestHandleNodeDisks_EmptyByMountpoint(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-8",
 				NodeName:       "empty-mounts",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     fsData,
 				CollectedAt:    now,
@@ -639,13 +631,12 @@ func TestHandleNodeDisks_NoByMountpointKey(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				ID:             "snap-9",
 				NodeName:       "no-mount-key",
-				OrganisationID: "org-1",
+				OrganisationName: "org-1",
 				Platform:       "ubuntu",
 				Filesystem:     fsData,
 				CollectedAt:    now,

@@ -85,7 +85,7 @@ func runServerCookbookPipeline(
 	// needing download (pending/failed) AND those already downloaded (ok)
 	// that may still need CookStyle scanning. The scan-skip logic inside
 	// scanOneServerCookbook handles the immutability optimisation.
-	cookbooks, err := db.ListActiveServerCookbooksForPipeline(ctx, org.ID)
+	cookbooks, err := db.ListActiveServerCookbooksForPipeline(ctx, org.Name)
 	if err != nil {
 		log.Error(fmt.Sprintf("failed to list cookbooks for pipeline: %v", err))
 		result.Duration = time.Since(start)
@@ -204,10 +204,10 @@ func runServerCookbookPipeline(
 				mu.Lock()
 				failed++
 				errors = append(errors, CookbookFetchError{
-					CookbookID: cb.ID,
-					Name:       cb.Name,
-					Version:    cb.Version,
-					Err:        fmt.Errorf("download failed"),
+					OrganisationName: cb.OrganisationName,
+					Name:             cb.Name,
+					Version:          cb.Version,
+					Err:              fmt.Errorf("download failed"),
 				})
 				mu.Unlock()
 				completedCount.Add(1)
@@ -242,7 +242,7 @@ func runServerCookbookPipeline(
 	// Legacy cache cleanup (runs after all workers are done).
 	// -----------------------------------------------------------------------
 	if deleteAfterScan && cookbookCacheDir != "" {
-		cleaned := cleanLegacyCookbookCache(log, cookbookCacheDir, org.ID)
+		cleaned := cleanLegacyCookbookCache(log, cookbookCacheDir, org.Name)
 		result.Cleaned = cleaned
 		if cleaned > 0 {
 			log.Info(fmt.Sprintf("cleaned %d legacy cached cookbook directory/directories for org %s", cleaned, org.Name))
@@ -284,7 +284,7 @@ func resolveCookbookDir(
 	if cb.IsDownloaded() {
 		// Already downloaded — try to find it in the cache.
 		if !deleteAfterScan && cookbookCacheDir != "" {
-			candidateDir := filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
+			candidateDir := filepath.Join(cookbookCacheDir, cb.OrganisationName, cb.Name, cb.Version)
 			if info, statErr := os.Stat(candidateDir); statErr == nil && info.IsDir() {
 				return candidateDir, true
 			}
@@ -345,11 +345,10 @@ func scanAndPreview(
 
 			// Autocorrect preview (only if scan produced offenses).
 			if autocorrectGen != nil && sr.OffenseCount > 0 {
-				dbResult, dbErr := db.GetServerCookbookCookstyleResult(ctx, cb.ID, tv)
+				dbResult, dbErr := db.GetServerCookbookCookstyleResult(ctx, cb.OrganisationName, cb.Name, cb.Version, tv)
 				if dbErr == nil && dbResult != nil {
 					csInfo := remediation.CookstyleResultInfo{
-						ResultID:          dbResult.ID,
-						CookbookID:        cb.ID,
+						OrganisationName:  cb.OrganisationName,
 						CookbookName:      cb.Name,
 						CookbookVersion:   cb.Version,
 						TargetChefVersion: tv,
@@ -403,17 +402,17 @@ func downloadCookbook(
 	var err error
 
 	if !deleteAfterScan && cookbookCacheDir != "" {
-		// Persistent cache: <cookbookCacheDir>/<org_id>/<name>/<version>/
-		destDir = filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
+		// Persistent cache: <cookbookCacheDir>/<org_name>/<name>/<version>/
+		destDir = filepath.Join(cookbookCacheDir, cb.OrganisationName, cb.Name, cb.Version)
 		if err = os.MkdirAll(destDir, 0o750); err != nil {
-			markDownloadFailed(ctx, db, cb.ID, err)
+			markDownloadFailed(ctx, db, cb.OrganisationName, cb.Name, cb.Version, err)
 			return "", fmt.Errorf("creating cache directory %s: %w", destDir, err)
 		}
 	} else {
 		// Ephemeral temp directory — removed by caller after scanning.
 		destDir, err = os.MkdirTemp("", fmt.Sprintf("cmm-cb-%s-%s-*", cb.Name, cb.Version))
 		if err != nil {
-			markDownloadFailed(ctx, db, cb.ID, err)
+			markDownloadFailed(ctx, db, cb.OrganisationName, cb.Name, cb.Version, err)
 			return "", fmt.Errorf("creating temp directory: %w", err)
 		}
 	}
@@ -422,7 +421,7 @@ func downloadCookbook(
 	manifest, mErr := client.GetCookbookVersionManifest(ctx, cb.Name, cb.Version)
 	if mErr != nil {
 		_ = os.RemoveAll(destDir)
-		markDownloadFailed(ctx, db, cb.ID, mErr)
+		markDownloadFailed(ctx, db, cb.OrganisationName, cb.Name, cb.Version, mErr)
 		return "", mErr
 	}
 
@@ -430,7 +429,7 @@ func downloadCookbook(
 	_, extractErr := extractCookbookFiles(ctx, client, manifest, destDir)
 	if extractErr != nil {
 		_ = os.RemoveAll(destDir)
-		markDownloadFailed(ctx, db, cb.ID, extractErr)
+		markDownloadFailed(ctx, db, cb.OrganisationName, cb.Name, cb.Version, extractErr)
 		return "", extractErr
 	}
 
@@ -443,19 +442,21 @@ func downloadCookbook(
 		platformsJSON, _ := json.Marshal(meta.Platforms)
 		dependenciesJSON, _ := json.Marshal(meta.Dependencies)
 		_, _ = db.UpdateServerCookbookMetadata(ctx, datastore.UpdateServerCookbookMetadataParams{
-			ID:              cb.ID,
-			IsFrozen:        manifest.Frozen,
-			Maintainer:      meta.Maintainer,
-			Description:     meta.Description,
-			LongDescription: meta.LongDescription,
-			License:         meta.License,
-			Platforms:       platformsJSON,
-			Dependencies:    dependenciesJSON,
+			OrganisationName: cb.OrganisationName,
+			Name:             cb.Name,
+			Version:          cb.Version,
+			IsFrozen:         manifest.Frozen,
+			Maintainer:       meta.Maintainer,
+			Description:      meta.Description,
+			LongDescription:  meta.LongDescription,
+			License:          meta.License,
+			Platforms:        platformsJSON,
+			Dependencies:     dependenciesJSON,
 		})
 	}
 
 	// Mark as downloaded.
-	if _, markErr := db.MarkServerCookbookDownloadOK(ctx, cb.ID); markErr != nil {
+	if _, markErr := db.MarkServerCookbookDownloadOK(ctx, cb.OrganisationName, cb.Name, cb.Version); markErr != nil {
 		// Non-fatal — files are on disk and scannable even if the DB
 		// status update fails.
 		_ = markErr

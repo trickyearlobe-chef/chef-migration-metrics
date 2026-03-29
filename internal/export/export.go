@@ -55,9 +55,10 @@ type DataStore interface {
 	// the given organisation.
 	ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 
-	// ListNodeReadinessForSnapshot returns all readiness records for the
-	// given node snapshot, ordered by target_chef_version.
-	ListNodeReadinessForSnapshot(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error)
+	// ListNodeReadinessByNodeName returns the latest readiness records for
+	// the given node within the specified organisation, ordered by
+	// target_chef_version.
+	ListNodeReadinessByNodeName(ctx context.Context, organisationName, nodeName string) ([]datastore.NodeReadiness, error)
 
 	// ListServerCookbooksByOrganisation returns all server cookbooks belonging
 	// to the given organisation.

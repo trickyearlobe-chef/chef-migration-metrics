@@ -86,8 +86,7 @@ type BlockingCookbook struct {
 // ReadinessResult holds the evaluation outcome for a single node × target
 // Chef Client version pair.
 type ReadinessResult struct {
-	NodeSnapshotID         string
-	OrganisationID         string
+	OrganisationName       string
 	NodeName               string
 	TargetChefVersion      string
 	IsReady                bool
@@ -111,26 +110,26 @@ type ReadinessDataStore interface {
 	// Node snapshots
 	ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 
-	// Server cookbooks — used to resolve cookbook name+version to server cookbook ID
-	GetServerCookbookIDMap(ctx context.Context, organisationID string) (map[string]map[string]string, error)
+	// Server cookbooks — list all for an org (used to build the cookbook ID map)
+	ListServerCookbooksByOrganisation(ctx context.Context, organisationName string) ([]datastore.ServerCookbook, error)
 
 	// Git repos — used to resolve cookbook name to git repo for TK cross-lookup
 	GetGitRepoByName(ctx context.Context, name string) (datastore.GitRepo, error)
 
 	// Test Kitchen results (git repo)
-	GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
+	GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
 
 	// CookStyle results (server cookbook)
-	GetServerCookbookCookstyleResult(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
+	GetServerCookbookCookstyleResult(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
 
 	// CookStyle results (git repo)
-	GetGitRepoCookstyleResult(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
+	GetGitRepoCookstyleResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
 
 	// Server cookbook complexity
-	GetServerCookbookComplexity(ctx context.Context, serverCookbookID, targetChefVersion string) (*datastore.ServerCookbookComplexity, error)
+	GetServerCookbookComplexity(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookComplexity, error)
 
 	// Git repo complexity
-	GetGitRepoComplexity(ctx context.Context, gitRepoID, targetChefVersion string) (*datastore.GitRepoComplexity, error)
+	GetGitRepoComplexity(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoComplexity, error)
 
 	// Persistence
 	UpsertNodeReadiness(ctx context.Context, p datastore.UpsertNodeReadinessParams) (*datastore.NodeReadiness, error)
@@ -201,7 +200,7 @@ func buildReadinessCache(
 	}
 	for i := range tkResults {
 		r := &tkResults[i]
-		cache.tkResults[cacheKey(r.GitRepoID, r.TargetChefVersion)] = r
+		cache.tkResults[cacheKey(r.GitRepoName, r.TargetChefVersion)] = r
 	}
 
 	// 3. Git repo CookStyle results
@@ -211,7 +210,7 @@ func buildReadinessCache(
 	}
 	for i := range gitCSResults {
 		r := &gitCSResults[i]
-		cache.gitCSResults[cacheKey(r.GitRepoID, r.TargetChefVersion)] = r
+		cache.gitCSResults[cacheKey(r.GitRepoName, r.TargetChefVersion)] = r
 	}
 
 	// 4. Server cookbook CookStyle results (org-scoped, includes NULL target versions)
@@ -221,7 +220,7 @@ func buildReadinessCache(
 	}
 	for i := range serverCSResults {
 		r := &serverCSResults[i]
-		cache.serverCSResults[cacheKey(r.ServerCookbookID, r.TargetChefVersion)] = r
+		cache.serverCSResults[cacheKey(r.OrganisationName+"/"+r.CookbookName+"/"+r.CookbookVersion, r.TargetChefVersion)] = r
 	}
 
 	// 5. Server cookbook complexity (org-scoped)
@@ -231,7 +230,7 @@ func buildReadinessCache(
 	}
 	for i := range serverComplexities {
 		c := &serverComplexities[i]
-		cache.serverComplexity[cacheKey(c.ServerCookbookID, c.TargetChefVersion)] = c
+		cache.serverComplexity[cacheKey(c.OrganisationName+"/"+c.CookbookName+"/"+c.CookbookVersion, c.TargetChefVersion)] = c
 	}
 
 	// 6. Git repo complexity
@@ -241,7 +240,7 @@ func buildReadinessCache(
 	}
 	for i := range gitComplexities {
 		c := &gitComplexities[i]
-		cache.gitComplexity[cacheKey(c.GitRepoID, c.TargetChefVersion)] = c
+		cache.gitComplexity[cacheKey(c.GitRepoName, c.TargetChefVersion)] = c
 	}
 
 	return cache, nil
@@ -343,11 +342,14 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 		return nil, nil
 	}
 
-	// Step 2: Pre-load the cookbook ID map.
-	cookbookIDMap, err := e.db.GetServerCookbookIDMap(ctx, organisationID)
+	// Step 2: Build the cookbook ID map from server cookbooks.
+	// The composite natural key (org/name/version) serves as the cookbook ID
+	// for looking up CookStyle results and complexity scores.
+	serverCookbooks, err := e.db.ListServerCookbooksByOrganisation(ctx, organisationID)
 	if err != nil {
-		return nil, fmt.Errorf("readiness: loading cookbook ID map: %w", err)
+		return nil, fmt.Errorf("readiness: listing server cookbooks: %w", err)
 	}
+	cookbookIDMap := buildCookbookIDMap(serverCookbooks)
 
 	// Step 3: Bulk-load all lookup data into an in-memory cache.
 	// This replaces ~12M individual DB queries with ~5 bulk queries.
@@ -429,8 +431,7 @@ func (e *ReadinessEvaluator) evaluateOne(
 	now := time.Now().UTC()
 
 	result := ReadinessResult{
-		NodeSnapshotID:    snapshot.ID,
-		OrganisationID:    snapshot.OrganisationID,
+		OrganisationName:  snapshot.OrganisationName,
 		NodeName:          snapshot.NodeName,
 		TargetChefVersion: targetChefVersion,
 		StaleData:         snapshot.IsStale,
@@ -534,8 +535,8 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 						}
 					}
 				case SourceGitCookstyle, SourceGitTestKitchen:
-					if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.ID != "" {
-						if gc := cache.gitComplexity[cacheKey(gitRepo.ID, targetChefVersion)]; gc != nil {
+					if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.Name != "" {
+						if gc := cache.gitComplexity[cacheKey(gitRepo.Name, targetChefVersion)]; gc != nil {
 							bc.Verdicts[i].ComplexityScore = gc.ComplexityScore
 							bc.Verdicts[i].ComplexityLabel = gc.ComplexityLabel
 						}
@@ -608,8 +609,8 @@ func checkCookbookCompatibility(
 
 	// --- Source 1: Git repo Test Kitchen ---
 	gitRepo, hasGitRepo := cache.gitRepos[cookbookName]
-	if hasGitRepo && gitRepo.ID != "" {
-		tkResult := cache.tkResults[cacheKey(gitRepo.ID, targetChefVersion)]
+	if hasGitRepo && gitRepo.Name != "" {
+		tkResult := cache.tkResults[cacheKey(gitRepo.Name, targetChefVersion)]
 		if tkResult != nil {
 			anyTested = true
 			v := CookbookSourceVerdict{
@@ -627,7 +628,7 @@ func checkCookbookCompatibility(
 		}
 
 		// --- Source 2: Git repo CookStyle ---
-		gitCSResult := cache.gitCSResults[cacheKey(gitRepo.ID, targetChefVersion)]
+		gitCSResult := cache.gitCSResults[cacheKey(gitRepo.Name, targetChefVersion)]
 		if gitCSResult != nil && gitCSResult.ErrorMessage == "" {
 			anyTested = true
 			v := CookbookSourceVerdict{
@@ -737,6 +738,23 @@ func lookupCookbookID(idMap map[string]map[string]string, name, version string) 
 		return ""
 	}
 	return versions[version]
+}
+
+// buildCookbookIDMap constructs a name → version → compositeID lookup map
+// from a slice of ServerCookbook structs. The composite ID is
+// "organisationName/name/version", matching the key format used by CookStyle
+// scanning and complexity scoring after the natural-keys migration.
+func buildCookbookIDMap(cookbooks []datastore.ServerCookbook) map[string]map[string]string {
+	idMap := make(map[string]map[string]string, len(cookbooks))
+	for _, cb := range cookbooks {
+		versions, ok := idMap[cb.Name]
+		if !ok {
+			versions = make(map[string]string)
+			idMap[cb.Name] = versions
+		}
+		versions[cb.Version] = cb.OrganisationName + "/" + cb.Name + "/" + cb.Version
+	}
+	return idMap
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,8 +1060,7 @@ func (e *ReadinessEvaluator) persistResult(ctx context.Context, result Readiness
 
 	requiredDiskMB := result.RequiredDiskMB
 	_, err := e.db.UpsertNodeReadiness(ctx, datastore.UpsertNodeReadinessParams{
-		NodeSnapshotID:         result.NodeSnapshotID,
-		OrganisationID:         result.OrganisationID,
+		OrganisationName:       result.OrganisationName,
 		NodeName:               result.NodeName,
 		TargetChefVersion:      result.TargetChefVersion,
 		IsReady:                result.IsReady,

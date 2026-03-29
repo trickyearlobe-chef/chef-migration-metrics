@@ -14,45 +14,45 @@ import (
 
 func TestValidateAnalysisParams_Valid(t *testing.T) {
 	err := validateAnalysisParams(InsertCookbookUsageAnalysisParams{
-		OrganisationID:  "org-1",
-		CollectionRunID: "run-1",
-		AnalysedAt:      time.Now(),
+		OrganisationName: "org-1",
+		CollectionRunOrg: "run-1",
+		AnalysedAt:       time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestValidateAnalysisParams_MissingOrganisationID(t *testing.T) {
+func TestValidateAnalysisParams_MissingOrganisationName(t *testing.T) {
 	err := validateAnalysisParams(InsertCookbookUsageAnalysisParams{
-		CollectionRunID: "run-1",
-		AnalysedAt:      time.Now(),
+		CollectionRunOrg: "run-1",
+		AnalysedAt:       time.Now(),
 	})
 	if err == nil {
-		t.Fatal("expected error for missing organisation ID")
+		t.Fatal("expected error for missing organisation name")
 	}
-	if got := err.Error(); got != "datastore: organisation ID is required for cookbook usage analysis" {
+	if got := err.Error(); got != "datastore: organisation name is required for cookbook usage analysis" {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
-func TestValidateAnalysisParams_MissingCollectionRunID(t *testing.T) {
+func TestValidateAnalysisParams_MissingCollectionRunOrg(t *testing.T) {
 	err := validateAnalysisParams(InsertCookbookUsageAnalysisParams{
-		OrganisationID: "org-1",
-		AnalysedAt:     time.Now(),
+		OrganisationName: "org-1",
+		AnalysedAt:       time.Now(),
 	})
 	if err == nil {
-		t.Fatal("expected error for missing collection run ID")
+		t.Fatal("expected error for missing collection run org")
 	}
-	if got := err.Error(); got != "datastore: collection run ID is required for cookbook usage analysis" {
+	if got := err.Error(); got != "datastore: collection run org is required for cookbook usage analysis" {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateAnalysisParams_MissingAnalysedAt(t *testing.T) {
 	err := validateAnalysisParams(InsertCookbookUsageAnalysisParams{
-		OrganisationID:  "org-1",
-		CollectionRunID: "run-1",
+		OrganisationName: "org-1",
+		CollectionRunOrg: "run-1",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing analysed_at")
@@ -63,30 +63,30 @@ func TestValidateAnalysisParams_MissingAnalysedAt(t *testing.T) {
 }
 
 func TestValidateAnalysisParams_ValidationOrder(t *testing.T) {
-	// All fields missing — should fail on organisation ID first.
+	// All fields missing — should fail on organisation name first.
 	err := validateAnalysisParams(InsertCookbookUsageAnalysisParams{})
 	if err == nil {
 		t.Fatal("expected error for empty params")
 	}
-	if got := err.Error(); got != "datastore: organisation ID is required for cookbook usage analysis" {
-		t.Errorf("expected organisation ID error first, got: %v", err)
+	if got := err.Error(); got != "datastore: organisation name is required for cookbook usage analysis" {
+		t.Errorf("expected organisation name error first, got: %v", err)
 	}
 
-	// Organisation ID present — should fail on collection run ID.
+	// Organisation name present — should fail on collection run org.
 	err = validateAnalysisParams(InsertCookbookUsageAnalysisParams{
-		OrganisationID: "org-1",
+		OrganisationName: "org-1",
 	})
 	if err == nil {
-		t.Fatal("expected error for missing collection run ID")
+		t.Fatal("expected error for missing collection run org")
 	}
-	if got := err.Error(); got != "datastore: collection run ID is required for cookbook usage analysis" {
-		t.Errorf("expected collection run ID error, got: %v", err)
+	if got := err.Error(); got != "datastore: collection run org is required for cookbook usage analysis" {
+		t.Errorf("expected collection run org error, got: %v", err)
 	}
 
-	// Organisation ID + collection run ID — should fail on analysed_at.
+	// Organisation name + collection run org — should fail on analysed_at.
 	err = validateAnalysisParams(InsertCookbookUsageAnalysisParams{
-		OrganisationID:  "org-1",
-		CollectionRunID: "run-1",
+		OrganisationName: "org-1",
+		CollectionRunOrg: "run-1",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing analysed_at")
@@ -102,49 +102,32 @@ func TestValidateAnalysisParams_ValidationOrder(t *testing.T) {
 
 func TestValidateDetailParams_Valid(t *testing.T) {
 	err := validateDetailParams(InsertCookbookUsageDetailParams{
-		AnalysisID:      "analysis-1",
-		OrganisationID:  "org-1",
-		CookbookName:    "apt",
-		CookbookVersion: "7.4.0",
+		OrganisationName: "org-1",
+		CookbookName:     "apt",
+		CookbookVersion:  "7.4.0",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestValidateDetailParams_MissingAnalysisID(t *testing.T) {
+func TestValidateDetailParams_MissingOrganisationName(t *testing.T) {
 	err := validateDetailParams(InsertCookbookUsageDetailParams{
-		OrganisationID:  "org-1",
 		CookbookName:    "apt",
 		CookbookVersion: "7.4.0",
 	})
 	if err == nil {
-		t.Fatal("expected error for missing analysis ID")
+		t.Fatal("expected error for missing organisation name")
 	}
-	if got := err.Error(); got != "datastore: analysis ID is required for cookbook usage detail" {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateDetailParams_MissingOrganisationID(t *testing.T) {
-	err := validateDetailParams(InsertCookbookUsageDetailParams{
-		AnalysisID:      "analysis-1",
-		CookbookName:    "apt",
-		CookbookVersion: "7.4.0",
-	})
-	if err == nil {
-		t.Fatal("expected error for missing organisation ID")
-	}
-	if got := err.Error(); got != "datastore: organisation ID is required for cookbook usage detail" {
+	if got := err.Error(); got != "datastore: organisation name is required for cookbook usage detail" {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateDetailParams_MissingCookbookName(t *testing.T) {
 	err := validateDetailParams(InsertCookbookUsageDetailParams{
-		AnalysisID:      "analysis-1",
-		OrganisationID:  "org-1",
-		CookbookVersion: "7.4.0",
+		OrganisationName: "org-1",
+		CookbookVersion:  "7.4.0",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing cookbook name")
@@ -156,9 +139,8 @@ func TestValidateDetailParams_MissingCookbookName(t *testing.T) {
 
 func TestValidateDetailParams_MissingCookbookVersion(t *testing.T) {
 	err := validateDetailParams(InsertCookbookUsageDetailParams{
-		AnalysisID:     "analysis-1",
-		OrganisationID: "org-1",
-		CookbookName:   "apt",
+		OrganisationName: "org-1",
+		CookbookName:     "apt",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing cookbook version")
@@ -169,30 +151,18 @@ func TestValidateDetailParams_MissingCookbookVersion(t *testing.T) {
 }
 
 func TestValidateDetailParams_ValidationOrder(t *testing.T) {
-	// All fields missing — should fail on analysis ID first.
+	// All fields missing — should fail on organisation name first.
 	err := validateDetailParams(InsertCookbookUsageDetailParams{})
 	if err == nil {
 		t.Fatal("expected error for empty params")
 	}
-	if got := err.Error(); got != "datastore: analysis ID is required for cookbook usage detail" {
-		t.Errorf("expected analysis ID error first, got: %v", err)
+	if got := err.Error(); got != "datastore: organisation name is required for cookbook usage detail" {
+		t.Errorf("expected organisation name error first, got: %v", err)
 	}
 
-	// Analysis ID present — should fail on organisation ID.
+	// Organisation name present — should fail on cookbook name.
 	err = validateDetailParams(InsertCookbookUsageDetailParams{
-		AnalysisID: "analysis-1",
-	})
-	if err == nil {
-		t.Fatal("expected error for missing organisation ID")
-	}
-	if got := err.Error(); got != "datastore: organisation ID is required for cookbook usage detail" {
-		t.Errorf("expected organisation ID error, got: %v", err)
-	}
-
-	// Analysis ID + organisation ID — should fail on cookbook name.
-	err = validateDetailParams(InsertCookbookUsageDetailParams{
-		AnalysisID:     "analysis-1",
-		OrganisationID: "org-1",
+		OrganisationName: "org-1",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing cookbook name")
@@ -201,11 +171,10 @@ func TestValidateDetailParams_ValidationOrder(t *testing.T) {
 		t.Errorf("expected cookbook name error, got: %v", err)
 	}
 
-	// Analysis ID + organisation ID + cookbook name — should fail on cookbook version.
+	// Organisation name + cookbook name — should fail on cookbook version.
 	err = validateDetailParams(InsertCookbookUsageDetailParams{
-		AnalysisID:     "analysis-1",
-		OrganisationID: "org-1",
-		CookbookName:   "apt",
+		OrganisationName: "org-1",
+		CookbookName:     "apt",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing cookbook version")
@@ -221,11 +190,11 @@ func TestValidateDetailParams_ValidationOrder(t *testing.T) {
 
 func TestInsertCookbookUsageAnalysisParams_Defaults(t *testing.T) {
 	var p InsertCookbookUsageAnalysisParams
-	if p.OrganisationID != "" {
-		t.Errorf("zero-value OrganisationID should be empty, got %q", p.OrganisationID)
+	if p.OrganisationName != "" {
+		t.Errorf("zero-value OrganisationName should be empty, got %q", p.OrganisationName)
 	}
-	if p.CollectionRunID != "" {
-		t.Errorf("zero-value CollectionRunID should be empty, got %q", p.CollectionRunID)
+	if p.CollectionRunOrg != "" {
+		t.Errorf("zero-value CollectionRunOrg should be empty, got %q", p.CollectionRunOrg)
 	}
 	if !p.AnalysedAt.IsZero() {
 		t.Error("zero-value AnalysedAt should be zero time")
@@ -238,11 +207,8 @@ func TestInsertCookbookUsageAnalysisParams_Defaults(t *testing.T) {
 
 func TestInsertCookbookUsageDetailParams_Defaults(t *testing.T) {
 	var p InsertCookbookUsageDetailParams
-	if p.AnalysisID != "" {
-		t.Errorf("zero-value AnalysisID should be empty, got %q", p.AnalysisID)
-	}
-	if p.OrganisationID != "" {
-		t.Errorf("zero-value OrganisationID should be empty, got %q", p.OrganisationID)
+	if p.OrganisationName != "" {
+		t.Errorf("zero-value OrganisationName should be empty, got %q", p.OrganisationName)
 	}
 	if p.CookbookName != "" {
 		t.Errorf("zero-value CookbookName should be empty, got %q", p.CookbookName)

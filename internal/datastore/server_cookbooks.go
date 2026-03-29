@@ -20,27 +20,26 @@ const (
 
 // ServerCookbook represents a row in the server_cookbooks table. Each row is
 // a single cookbook name+version pair fetched from a Chef Infra Server,
-// scoped to an organisation.
+// scoped to an organisation. PK is (organisation_name, name, version).
 type ServerCookbook struct {
-	ID              string          `json:"id"`
-	OrganisationID  string          `json:"organisation_id"`
-	Name            string          `json:"name"`
-	Version         string          `json:"version"`
-	IsActive        bool            `json:"is_active"`
-	IsStaleCookbook bool            `json:"is_stale_cookbook"`
-	IsFrozen        bool            `json:"is_frozen"`
-	DownloadStatus  string          `json:"download_status"`
-	DownloadError   string          `json:"download_error,omitempty"`
-	Maintainer      string          `json:"maintainer,omitempty"`
-	Description     string          `json:"description,omitempty"`
-	LongDescription string          `json:"long_description,omitempty"`
-	License         string          `json:"license,omitempty"`
-	Platforms       json.RawMessage `json:"platforms,omitempty"`
-	Dependencies    json.RawMessage `json:"dependencies,omitempty"`
-	FirstSeenAt     time.Time       `json:"first_seen_at,omitempty"`
-	LastFetchedAt   time.Time       `json:"last_fetched_at,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	OrganisationName string          `json:"organisation_name"`
+	Name             string          `json:"name"`
+	Version          string          `json:"version"`
+	IsActive         bool            `json:"is_active"`
+	IsStaleCookbook  bool            `json:"is_stale_cookbook"`
+	IsFrozen         bool            `json:"is_frozen"`
+	DownloadStatus   string          `json:"download_status"`
+	DownloadError    string          `json:"download_error,omitempty"`
+	Maintainer       string          `json:"maintainer,omitempty"`
+	Description      string          `json:"description,omitempty"`
+	LongDescription  string          `json:"long_description,omitempty"`
+	License          string          `json:"license,omitempty"`
+	Platforms        json.RawMessage `json:"platforms,omitempty"`
+	Dependencies     json.RawMessage `json:"dependencies,omitempty"`
+	FirstSeenAt      time.Time       `json:"first_seen_at,omitempty"`
+	LastFetchedAt    time.Time       `json:"last_fetched_at,omitempty"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 // IsDownloaded returns true if the server cookbook content has been
@@ -64,7 +63,7 @@ func (sc ServerCookbook) MarshalJSON() ([]byte, error) {
 // serverCookbookColumns is the column list used by all SELECT queries
 // against server_cookbooks, kept in one place for consistency.
 const serverCookbookColumns = `
-	id, organisation_id, name, version,
+	organisation_name, name, version,
 	is_active, is_stale_cookbook, is_frozen,
 	download_status, download_error,
 	maintainer, description, long_description, license,
@@ -77,15 +76,15 @@ const serverCookbookColumns = `
 // ---------------------------------------------------------------------------
 
 // UpsertServerCookbookParams holds the fields required to upsert a server
-// cookbook. The upsert key is (organisation_id, name, version).
+// cookbook. The upsert key is (organisation_name, name, version).
 type UpsertServerCookbookParams struct {
-	OrganisationID  string
-	Name            string
-	Version         string
-	IsActive        bool
-	IsStaleCookbook bool
-	FirstSeenAt     time.Time // set on first insert, not overwritten on update
-	LastFetchedAt   time.Time
+	OrganisationName string
+	Name             string
+	Version          string
+	IsActive         bool
+	IsStaleCookbook  bool
+	FirstSeenAt      time.Time // set on first insert, not overwritten on update
+	LastFetchedAt    time.Time
 }
 
 // UpsertServerCookbook inserts or updates a server cookbook row.
@@ -94,8 +93,8 @@ func (db *DB) UpsertServerCookbook(ctx context.Context, p UpsertServerCookbookPa
 }
 
 func (db *DB) upsertServerCookbook(ctx context.Context, q queryable, p UpsertServerCookbookParams) (ServerCookbook, error) {
-	if p.OrganisationID == "" {
-		return ServerCookbook{}, fmt.Errorf("datastore: organisation ID is required for server cookbook")
+	if p.OrganisationName == "" {
+		return ServerCookbook{}, fmt.Errorf("datastore: organisation name is required for server cookbook")
 	}
 	if p.Name == "" {
 		return ServerCookbook{}, fmt.Errorf("datastore: cookbook name is required")
@@ -112,13 +111,13 @@ func (db *DB) upsertServerCookbook(ctx context.Context, q queryable, p UpsertSer
 
 	const query = `
 		INSERT INTO server_cookbooks (
-			organisation_id, name, version,
+			organisation_name, name, version,
 			is_active, is_stale_cookbook,
 			first_seen_at, last_fetched_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7
 		)
-		ON CONFLICT (organisation_id, name, version)
+		ON CONFLICT (organisation_name, name, version)
 		DO UPDATE SET
 			is_active         = EXCLUDED.is_active,
 			is_stale_cookbook  = EXCLUDED.is_stale_cookbook,
@@ -127,7 +126,7 @@ func (db *DB) upsertServerCookbook(ctx context.Context, q queryable, p UpsertSer
 		RETURNING ` + serverCookbookColumns
 
 	return scanServerCookbook(q.QueryRowContext(ctx, query,
-		p.OrganisationID,
+		p.OrganisationName,
 		p.Name,
 		p.Version,
 		p.IsActive,
@@ -170,13 +169,13 @@ func (db *DB) BulkUpsertServerCookbooks(ctx context.Context, params []UpsertServ
 // cookbooks (by name) within the given organisation, and is_active = false
 // for all others. Called after a collection run to reflect which cookbooks
 // are actually in use by at least one node.
-func (db *DB) MarkServerCookbooksActiveForOrg(ctx context.Context, organisationID string, activeNames []string) error {
+func (db *DB) MarkServerCookbooksActiveForOrg(ctx context.Context, organisationName string, activeNames []string) error {
 	return db.Tx(ctx, func(tx *sql.Tx) error {
 		// Deactivate all server cookbooks for this org.
 		_, err := tx.ExecContext(ctx,
 			`UPDATE server_cookbooks SET is_active = FALSE, updated_at = now()
-			 WHERE organisation_id = $1`,
-			organisationID,
+			 WHERE organisation_name = $1`,
+			organisationName,
 		)
 		if err != nil {
 			return fmt.Errorf("datastore: deactivating server cookbooks: %w", err)
@@ -189,8 +188,8 @@ func (db *DB) MarkServerCookbooksActiveForOrg(ctx context.Context, organisationI
 		// Activate the ones that are in use.
 		_, err = tx.ExecContext(ctx,
 			`UPDATE server_cookbooks SET is_active = TRUE, updated_at = now()
-			 WHERE organisation_id = $1 AND name = ANY($2)`,
-			organisationID,
+			 WHERE organisation_name = $1 AND name = ANY($2)`,
+			organisationName,
 			stringSliceToArray(activeNames),
 		)
 		if err != nil {
@@ -205,9 +204,9 @@ func (db *DB) MarkServerCookbooksActiveForOrg(ctx context.Context, organisationI
 // server cookbooks belonging to the given organisation. A cookbook is marked
 // stale if its first_seen_at is before the cutoff time. Returns the number
 // of cookbooks marked as stale.
-func (db *DB) MarkStaleServerCookbooksForOrg(ctx context.Context, organisationID string, cutoff time.Time) (int, error) {
-	if organisationID == "" {
-		return 0, fmt.Errorf("datastore: organisation ID is required to mark stale server cookbooks")
+func (db *DB) MarkStaleServerCookbooksForOrg(ctx context.Context, organisationName string, cutoff time.Time) (int, error) {
+	if organisationName == "" {
+		return 0, fmt.Errorf("datastore: organisation name is required to mark stale server cookbooks")
 	}
 
 	var staleCount int
@@ -215,8 +214,8 @@ func (db *DB) MarkStaleServerCookbooksForOrg(ctx context.Context, organisationID
 		// Clear stale flag for all cookbooks in the org.
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE server_cookbooks SET is_stale_cookbook = FALSE, updated_at = now()
-			 WHERE organisation_id = $1`,
-			organisationID,
+			 WHERE organisation_name = $1`,
+			organisationName,
 		); err != nil {
 			return fmt.Errorf("datastore: clearing stale server cookbook flags: %w", err)
 		}
@@ -224,8 +223,8 @@ func (db *DB) MarkStaleServerCookbooksForOrg(ctx context.Context, organisationID
 		// Set stale flag where first_seen_at is before the cutoff.
 		res, err := tx.ExecContext(ctx,
 			`UPDATE server_cookbooks SET is_stale_cookbook = TRUE, updated_at = now()
-			 WHERE organisation_id = $1 AND first_seen_at < $2`,
-			organisationID, cutoff,
+			 WHERE organisation_name = $1 AND first_seen_at < $2`,
+			organisationName, cutoff,
 		)
 		if err != nil {
 			return fmt.Errorf("datastore: marking stale server cookbooks: %w", err)
@@ -244,91 +243,38 @@ func (db *DB) MarkStaleServerCookbooksForOrg(ctx context.Context, organisationID
 }
 
 // ---------------------------------------------------------------------------
-// Batch lookup
-// ---------------------------------------------------------------------------
-
-// GetServerCookbookIDMap returns a nested map of cookbook name → version → ID
-// for all server cookbooks belonging to the given organisation. This is used
-// during collection to efficiently resolve cookbook IDs when building
-// cookbook-node usage records, avoiding N+1 queries.
-func (db *DB) GetServerCookbookIDMap(ctx context.Context, organisationID string) (map[string]map[string]string, error) {
-	return db.getServerCookbookIDMap(ctx, db.q(), organisationID)
-}
-
-func (db *DB) getServerCookbookIDMap(ctx context.Context, q queryable, organisationID string) (map[string]map[string]string, error) {
-	const query = `
-		SELECT id, name, version
-		FROM server_cookbooks
-		WHERE organisation_id = $1
-	`
-
-	rows, err := q.QueryContext(ctx, query, organisationID)
-	if err != nil {
-		return nil, fmt.Errorf("datastore: querying server cookbook ID map: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[string]map[string]string)
-	for rows.Next() {
-		var id, name, version string
-		if err := rows.Scan(&id, &name, &version); err != nil {
-			return nil, fmt.Errorf("datastore: scanning server cookbook ID map row: %w", err)
-		}
-		if result[name] == nil {
-			result[name] = make(map[string]string)
-		}
-		result[name][version] = id
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("datastore: iterating server cookbook ID map rows: %w", err)
-	}
-	return result, nil
-}
-
-// ---------------------------------------------------------------------------
 // Query methods
 // ---------------------------------------------------------------------------
 
-// GetServerCookbook returns a server cookbook by UUID. Returns ErrNotFound
-// if no such server cookbook exists.
-func (db *DB) GetServerCookbook(ctx context.Context, id string) (ServerCookbook, error) {
-	return db.getServerCookbook(ctx, db.q(), id)
-}
-
-func (db *DB) getServerCookbook(ctx context.Context, q queryable, id string) (ServerCookbook, error) {
-	query := `SELECT ` + serverCookbookColumns + ` FROM server_cookbooks WHERE id = $1`
-	return scanServerCookbook(q.QueryRowContext(ctx, query, id))
-}
-
 // GetServerCookbookByKey returns a server cookbook by its natural key
-// (organisation_id, name, version). Returns ErrNotFound if no match exists.
-func (db *DB) GetServerCookbookByKey(ctx context.Context, organisationID, name, version string) (ServerCookbook, error) {
-	return db.getServerCookbookByKey(ctx, db.q(), organisationID, name, version)
+// (organisation_name, name, version). Returns ErrNotFound if no match exists.
+func (db *DB) GetServerCookbookByKey(ctx context.Context, organisationName, name, version string) (ServerCookbook, error) {
+	return db.getServerCookbookByKey(ctx, db.q(), organisationName, name, version)
 }
 
-func (db *DB) getServerCookbookByKey(ctx context.Context, q queryable, organisationID, name, version string) (ServerCookbook, error) {
+func (db *DB) getServerCookbookByKey(ctx context.Context, q queryable, organisationName, name, version string) (ServerCookbook, error) {
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
-		WHERE organisation_id = $1 AND name = $2 AND version = $3`
-	return scanServerCookbook(q.QueryRowContext(ctx, query, organisationID, name, version))
+		WHERE organisation_name = $1 AND name = $2 AND version = $3`
+	return scanServerCookbook(q.QueryRowContext(ctx, query, organisationName, name, version))
 }
 
 // ListServerCookbooksByOrganisation returns all server cookbooks for the
 // given organisation, ordered by name then version.
-func (db *DB) ListServerCookbooksByOrganisation(ctx context.Context, organisationID string) ([]ServerCookbook, error) {
-	return db.listServerCookbooksByOrganisation(ctx, db.q(), organisationID)
+func (db *DB) ListServerCookbooksByOrganisation(ctx context.Context, organisationName string) ([]ServerCookbook, error) {
+	return db.listServerCookbooksByOrganisation(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listServerCookbooksByOrganisation(ctx context.Context, q queryable, organisationID string) ([]ServerCookbook, error) {
+func (db *DB) listServerCookbooksByOrganisation(ctx context.Context, q queryable, organisationName string) ([]ServerCookbook, error) {
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		ORDER BY name, version`
-	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
+	return scanServerCookbooks(q.QueryContext(ctx, query, organisationName))
 }
 
 // ListServerCookbooksByName returns all server cookbook rows with the given
-// name across all organisations, ordered by organisation_id then version.
+// name across all organisations, ordered by organisation_name then version.
 func (db *DB) ListServerCookbooksByName(ctx context.Context, name string) ([]ServerCookbook, error) {
 	return db.listServerCookbooksByName(ctx, db.q(), name)
 }
@@ -337,55 +283,55 @@ func (db *DB) listServerCookbooksByName(ctx context.Context, q queryable, name s
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
 		WHERE name = $1
-		ORDER BY organisation_id, version`
+		ORDER BY organisation_name, version`
 	return scanServerCookbooks(q.QueryContext(ctx, query, name))
 }
 
 // ListActiveServerCookbooksByOrganisation returns only active server
 // cookbooks for the given organisation, ordered by name then version.
-func (db *DB) ListActiveServerCookbooksByOrganisation(ctx context.Context, organisationID string) ([]ServerCookbook, error) {
-	return db.listActiveServerCookbooksByOrganisation(ctx, db.q(), organisationID)
+func (db *DB) ListActiveServerCookbooksByOrganisation(ctx context.Context, organisationName string) ([]ServerCookbook, error) {
+	return db.listActiveServerCookbooksByOrganisation(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listActiveServerCookbooksByOrganisation(ctx context.Context, q queryable, organisationID string) ([]ServerCookbook, error) {
+func (db *DB) listActiveServerCookbooksByOrganisation(ctx context.Context, q queryable, organisationName string) ([]ServerCookbook, error) {
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
-		WHERE organisation_id = $1 AND is_active = TRUE
+		WHERE organisation_name = $1 AND is_active = TRUE
 		ORDER BY name, version`
-	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
+	return scanServerCookbooks(q.QueryContext(ctx, query, organisationName))
 }
 
 // ListStaleServerCookbooksByOrganisation returns server cookbooks flagged
 // as stale for the given organisation, ordered by name then version.
-func (db *DB) ListStaleServerCookbooksByOrganisation(ctx context.Context, organisationID string) ([]ServerCookbook, error) {
-	return db.listStaleServerCookbooksByOrganisation(ctx, db.q(), organisationID)
+func (db *DB) ListStaleServerCookbooksByOrganisation(ctx context.Context, organisationName string) ([]ServerCookbook, error) {
+	return db.listStaleServerCookbooksByOrganisation(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listStaleServerCookbooksByOrganisation(ctx context.Context, q queryable, organisationID string) ([]ServerCookbook, error) {
+func (db *DB) listStaleServerCookbooksByOrganisation(ctx context.Context, q queryable, organisationName string) ([]ServerCookbook, error) {
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
-		WHERE organisation_id = $1 AND is_stale_cookbook = TRUE
+		WHERE organisation_name = $1 AND is_stale_cookbook = TRUE
 		ORDER BY name, version`
-	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
+	return scanServerCookbooks(q.QueryContext(ctx, query, organisationName))
 }
 
 // ServerCookbookExists checks whether a server cookbook with the given
 // organisation, name, and version already exists with download_status = 'ok'.
 // Used by the collection process to skip downloading immutable cookbook
 // versions that are already stored.
-func (db *DB) ServerCookbookExists(ctx context.Context, organisationID, name, version string) (bool, error) {
-	return db.serverCookbookExists(ctx, db.q(), organisationID, name, version)
+func (db *DB) ServerCookbookExists(ctx context.Context, organisationName, name, version string) (bool, error) {
+	return db.serverCookbookExists(ctx, db.q(), organisationName, name, version)
 }
 
-func (db *DB) serverCookbookExists(ctx context.Context, q queryable, organisationID, name, version string) (bool, error) {
+func (db *DB) serverCookbookExists(ctx context.Context, q queryable, organisationName, name, version string) (bool, error) {
 	var exists bool
 	err := q.QueryRowContext(ctx,
 		`SELECT EXISTS(
 			SELECT 1 FROM server_cookbooks
-			WHERE organisation_id = $1 AND name = $2 AND version = $3
+			WHERE organisation_name = $1 AND name = $2 AND version = $3
 			  AND download_status = 'ok'
 		)`,
-		organisationID, name, version,
+		organisationName, name, version,
 	).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("datastore: checking server cookbook existence: %w", err)
@@ -398,11 +344,14 @@ func (db *DB) serverCookbookExists(ctx context.Context, q queryable, organisatio
 // ---------------------------------------------------------------------------
 
 // UpdateServerCookbookDownloadStatusParams holds the fields required to
-// update a server cookbook's download status.
+// update a server cookbook's download status. The cookbook is identified by
+// its natural key (OrganisationName, Name, Version).
 type UpdateServerCookbookDownloadStatusParams struct {
-	ID             string
-	DownloadStatus string // "ok", "failed", or "pending"
-	DownloadError  string // Error detail (only set when status = "failed")
+	OrganisationName string
+	Name             string
+	Version          string
+	DownloadStatus   string // "ok", "failed", or "pending"
+	DownloadError    string // Error detail (only set when status = "failed")
 }
 
 // UpdateServerCookbookDownloadStatus updates the download_status and
@@ -413,8 +362,8 @@ func (db *DB) UpdateServerCookbookDownloadStatus(ctx context.Context, p UpdateSe
 }
 
 func (db *DB) updateServerCookbookDownloadStatus(ctx context.Context, q queryable, p UpdateServerCookbookDownloadStatusParams) (ServerCookbook, error) {
-	if p.ID == "" {
-		return ServerCookbook{}, fmt.Errorf("datastore: server cookbook ID is required to update download status")
+	if p.OrganisationName == "" || p.Name == "" || p.Version == "" {
+		return ServerCookbook{}, fmt.Errorf("datastore: organisation name, cookbook name, and version are required to update download status")
 	}
 	if p.DownloadStatus != DownloadStatusOK && p.DownloadStatus != DownloadStatusFailed && p.DownloadStatus != DownloadStatusPending {
 		return ServerCookbook{}, fmt.Errorf("datastore: invalid download status: %q", p.DownloadStatus)
@@ -428,31 +377,35 @@ func (db *DB) updateServerCookbookDownloadStatus(ctx context.Context, q queryabl
 
 	query := `
 		UPDATE server_cookbooks
-		SET download_status = $2,
-		    download_error  = $3,
+		SET download_status = $4,
+		    download_error  = $5,
 		    updated_at      = now()
-		WHERE id = $1
+		WHERE organisation_name = $1 AND name = $2 AND version = $3
 		RETURNING ` + serverCookbookColumns
 
-	return scanServerCookbook(q.QueryRowContext(ctx, query, p.ID, p.DownloadStatus, dlError))
+	return scanServerCookbook(q.QueryRowContext(ctx, query, p.OrganisationName, p.Name, p.Version, p.DownloadStatus, dlError))
 }
 
 // MarkServerCookbookDownloadOK is a convenience wrapper that marks a server
 // cookbook as successfully downloaded.
-func (db *DB) MarkServerCookbookDownloadOK(ctx context.Context, id string) (ServerCookbook, error) {
+func (db *DB) MarkServerCookbookDownloadOK(ctx context.Context, organisationName, name, version string) (ServerCookbook, error) {
 	return db.UpdateServerCookbookDownloadStatus(ctx, UpdateServerCookbookDownloadStatusParams{
-		ID:             id,
-		DownloadStatus: DownloadStatusOK,
+		OrganisationName: organisationName,
+		Name:             name,
+		Version:          version,
+		DownloadStatus:   DownloadStatusOK,
 	})
 }
 
 // MarkServerCookbookDownloadFailed is a convenience wrapper that marks a
 // server cookbook download as failed with the given error detail.
-func (db *DB) MarkServerCookbookDownloadFailed(ctx context.Context, id, downloadError string) (ServerCookbook, error) {
+func (db *DB) MarkServerCookbookDownloadFailed(ctx context.Context, organisationName, name, version, downloadError string) (ServerCookbook, error) {
 	return db.UpdateServerCookbookDownloadStatus(ctx, UpdateServerCookbookDownloadStatusParams{
-		ID:             id,
-		DownloadStatus: DownloadStatusFailed,
-		DownloadError:  downloadError,
+		OrganisationName: organisationName,
+		Name:             name,
+		Version:          version,
+		DownloadStatus:   DownloadStatusFailed,
+		DownloadError:    downloadError,
 	})
 }
 
@@ -460,35 +413,35 @@ func (db *DB) MarkServerCookbookDownloadFailed(ctx context.Context, id, download
 // given organisation that have a download_status of 'pending' or 'failed'.
 // These are cookbook versions that should be (re-)downloaded on the next
 // collection run. Results are ordered by name then version.
-func (db *DB) ListServerCookbooksNeedingDownload(ctx context.Context, organisationID string) ([]ServerCookbook, error) {
-	return db.listServerCookbooksNeedingDownload(ctx, db.q(), organisationID)
+func (db *DB) ListServerCookbooksNeedingDownload(ctx context.Context, organisationName string) ([]ServerCookbook, error) {
+	return db.listServerCookbooksNeedingDownload(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listServerCookbooksNeedingDownload(ctx context.Context, q queryable, organisationID string) ([]ServerCookbook, error) {
+func (db *DB) listServerCookbooksNeedingDownload(ctx context.Context, q queryable, organisationName string) ([]ServerCookbook, error) {
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		  AND download_status IN ('pending', 'failed')
 		ORDER BY name, version`
-	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
+	return scanServerCookbooks(q.QueryContext(ctx, query, organisationName))
 }
 
 // ListActiveServerCookbooksNeedingDownload returns active server cookbooks
 // for the given organisation that need downloading. Only active cookbooks
 // (applied to at least one node) are returned — unused cookbooks are flagged
 // but do not need to be fetched for analysis.
-func (db *DB) ListActiveServerCookbooksNeedingDownload(ctx context.Context, organisationID string) ([]ServerCookbook, error) {
-	return db.listActiveServerCookbooksNeedingDownload(ctx, db.q(), organisationID)
+func (db *DB) ListActiveServerCookbooksNeedingDownload(ctx context.Context, organisationName string) ([]ServerCookbook, error) {
+	return db.listActiveServerCookbooksNeedingDownload(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listActiveServerCookbooksNeedingDownload(ctx context.Context, q queryable, organisationID string) ([]ServerCookbook, error) {
+func (db *DB) listActiveServerCookbooksNeedingDownload(ctx context.Context, q queryable, organisationName string) ([]ServerCookbook, error) {
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		  AND is_active = TRUE
 		  AND download_status IN ('pending', 'failed')
 		ORDER BY name, version`
-	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
+	return scanServerCookbooks(q.QueryContext(ctx, query, organisationName))
 }
 
 // ListActiveServerCookbooksForPipeline returns active server cookbooks for
@@ -498,17 +451,17 @@ func (db *DB) listActiveServerCookbooksNeedingDownload(ctx context.Context, q qu
 // The pipeline's internal skip logic handles the "already scanned"
 // optimisation, so this query intentionally returns all active cookbooks
 // regardless of scan state.
-func (db *DB) ListActiveServerCookbooksForPipeline(ctx context.Context, organisationID string) ([]ServerCookbook, error) {
-	return db.listActiveServerCookbooksForPipeline(ctx, db.q(), organisationID)
+func (db *DB) ListActiveServerCookbooksForPipeline(ctx context.Context, organisationName string) ([]ServerCookbook, error) {
+	return db.listActiveServerCookbooksForPipeline(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listActiveServerCookbooksForPipeline(ctx context.Context, q queryable, organisationID string) ([]ServerCookbook, error) {
+func (db *DB) listActiveServerCookbooksForPipeline(ctx context.Context, q queryable, organisationName string) ([]ServerCookbook, error) {
 	// Return all active cookbooks, ordered so that cookbooks needing
 	// download come first (pending/failed before ok). Within each status
 	// group, sort by name and version for predictable ordering.
 	query := `SELECT ` + serverCookbookColumns + `
 		FROM server_cookbooks
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		  AND is_active = TRUE
 		ORDER BY
 		  CASE download_status
@@ -517,16 +470,18 @@ func (db *DB) listActiveServerCookbooksForPipeline(ctx context.Context, q querya
 		    WHEN 'ok'      THEN 2
 		  END,
 		  name, version`
-	return scanServerCookbooks(q.QueryContext(ctx, query, organisationID))
+	return scanServerCookbooks(q.QueryContext(ctx, query, organisationName))
 }
 
 // ResetServerCookbookDownloadStatus resets the download_status to 'pending'
 // and clears the download_error for a specific server cookbook. This is the
 // "manual rescan" operation that forces a fresh download on the next run.
-func (db *DB) ResetServerCookbookDownloadStatus(ctx context.Context, id string) (ServerCookbook, error) {
+func (db *DB) ResetServerCookbookDownloadStatus(ctx context.Context, organisationName, name, version string) (ServerCookbook, error) {
 	return db.UpdateServerCookbookDownloadStatus(ctx, UpdateServerCookbookDownloadStatusParams{
-		ID:             id,
-		DownloadStatus: DownloadStatusPending,
+		OrganisationName: organisationName,
+		Name:             name,
+		Version:          version,
+		DownloadStatus:   DownloadStatusPending,
 	})
 }
 
@@ -556,15 +511,19 @@ func (db *DB) ResetAllServerCookbookDownloadStatuses(ctx context.Context) (int, 
 
 // UpdateServerCookbookMetadataParams holds the metadata fields to populate
 // on a server cookbook after its manifest has been fetched from the Chef API.
+// The cookbook is identified by its natural key (OrganisationName, Name,
+// Version).
 type UpdateServerCookbookMetadataParams struct {
-	ID              string
-	IsFrozen        bool
-	Maintainer      string
-	Description     string
-	LongDescription string
-	License         string
-	Platforms       json.RawMessage // JSON object, e.g. {"ubuntu": ">= 18.04"}
-	Dependencies    json.RawMessage // JSON object, e.g. {"apt": ">= 0.0.0"}
+	OrganisationName string
+	Name             string
+	Version          string
+	IsFrozen         bool
+	Maintainer       string
+	Description      string
+	LongDescription  string
+	License          string
+	Platforms        json.RawMessage // JSON object, e.g. {"ubuntu": ">= 18.04"}
+	Dependencies     json.RawMessage // JSON object, e.g. {"apt": ">= 0.0.0"}
 }
 
 // UpdateServerCookbookMetadata populates the metadata fields on a server
@@ -576,8 +535,8 @@ func (db *DB) UpdateServerCookbookMetadata(ctx context.Context, p UpdateServerCo
 }
 
 func (db *DB) updateServerCookbookMetadata(ctx context.Context, q queryable, p UpdateServerCookbookMetadataParams) (ServerCookbook, error) {
-	if p.ID == "" {
-		return ServerCookbook{}, fmt.Errorf("datastore: server cookbook ID is required to update metadata")
+	if p.OrganisationName == "" || p.Name == "" || p.Version == "" {
+		return ServerCookbook{}, fmt.Errorf("datastore: organisation name, cookbook name, and version are required to update metadata")
 	}
 
 	// Normalise nil JSON to null for database storage.
@@ -586,19 +545,21 @@ func (db *DB) updateServerCookbookMetadata(ctx context.Context, q queryable, p U
 
 	query := `
 		UPDATE server_cookbooks
-		SET is_frozen         = $2,
-		    maintainer        = $3,
-		    description       = $4,
-		    long_description  = $5,
-		    license           = $6,
-		    platforms         = $7,
-		    dependencies      = $8,
+		SET is_frozen         = $4,
+		    maintainer        = $5,
+		    description       = $6,
+		    long_description  = $7,
+		    license           = $8,
+		    platforms         = $9,
+		    dependencies      = $10,
 		    updated_at        = now()
-		WHERE id = $1
+		WHERE organisation_name = $1 AND name = $2 AND version = $3
 		RETURNING ` + serverCookbookColumns
 
 	return scanServerCookbook(q.QueryRowContext(ctx, query,
-		p.ID,
+		p.OrganisationName,
+		p.Name,
+		p.Version,
 		p.IsFrozen,
 		nullString(p.Maintainer),
 		nullString(p.Description),
@@ -613,13 +574,14 @@ func (db *DB) updateServerCookbookMetadata(ctx context.Context, q queryable, p U
 // Delete
 // ---------------------------------------------------------------------------
 
-// DeleteServerCookbook removes the server cookbook with the given UUID.
-// Returns ErrNotFound if no such server cookbook exists. Cascading deletes
-// will remove associated cookstyle results, autocorrect previews, complexity
-// records, and node usage records.
-func (db *DB) DeleteServerCookbook(ctx context.Context, id string) error {
+// DeleteServerCookbook removes the server cookbook identified by its natural
+// key (organisation_name, name, version). Returns ErrNotFound if no such
+// server cookbook exists. Cascading deletes will remove associated cookstyle
+// results, autocorrect previews, complexity records, and node usage records.
+func (db *DB) DeleteServerCookbook(ctx context.Context, organisationName, name, version string) error {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM server_cookbooks WHERE id = $1`, id,
+		`DELETE FROM server_cookbooks WHERE organisation_name = $1 AND name = $2 AND version = $3`,
+		organisationName, name, version,
 	)
 	if err != nil {
 		return fmt.Errorf("datastore: deleting server cookbook: %w", err)
@@ -645,8 +607,7 @@ func scanServerCookbook(row *sql.Row) (ServerCookbook, error) {
 	var firstSeen, lastFetched sql.NullTime
 
 	err := row.Scan(
-		&sc.ID,
-		&sc.OrganisationID,
+		&sc.OrganisationName,
 		&sc.Name,
 		&sc.Version,
 		&sc.IsActive,
@@ -698,8 +659,7 @@ func scanServerCookbooks(rows *sql.Rows, err error) ([]ServerCookbook, error) {
 		var firstSeen, lastFetched sql.NullTime
 
 		if err := rows.Scan(
-			&sc.ID,
-			&sc.OrganisationID,
+			&sc.OrganisationName,
 			&sc.Name,
 			&sc.Version,
 			&sc.IsActive,

@@ -13,8 +13,8 @@ import (
 
 // GitRepoComplexity represents a row in the git_repo_complexity table.
 type GitRepoComplexity struct {
-	ID                   string    `json:"id"`
-	GitRepoID            string    `json:"git_repo_id"`
+	GitRepoName          string    `json:"git_repo_name"`
+	GitRepoURL           string    `json:"git_repo_url"`
 	TargetChefVersion    string    `json:"target_chef_version"`
 	ComplexityScore      int       `json:"complexity_score"`
 	ComplexityLabel      string    `json:"complexity_label"`
@@ -34,9 +34,10 @@ type GitRepoComplexity struct {
 
 // UpsertGitRepoComplexityParams contains the fields needed to insert or
 // update a git_repo_complexity row. The unique constraint is
-// (git_repo_id, target_chef_version).
+// (git_repo_name, git_repo_url, target_chef_version).
 type UpsertGitRepoComplexityParams struct {
-	GitRepoID            string
+	GitRepoName          string
+	GitRepoURL           string
 	TargetChefVersion    string
 	ComplexityScore      int
 	ComplexityLabel      string
@@ -56,7 +57,7 @@ type UpsertGitRepoComplexityParams struct {
 // Column list — shared across all queries
 // ---------------------------------------------------------------------------
 
-const grcColumns = `id, git_repo_id, target_chef_version,
+const grcColumns = `git_repo_name, git_repo_url, target_chef_version,
        complexity_score, complexity_label,
        error_count, deprecation_count, correctness_count, modernize_count,
        auto_correctable_count, manual_fix_count,
@@ -68,20 +69,21 @@ const grcColumns = `id, git_repo_id, target_chef_version,
 // ---------------------------------------------------------------------------
 
 // GetGitRepoComplexity returns the complexity record for the given git repo
-// ID and target Chef version. Returns (nil, nil) if no record exists.
-func (db *DB) GetGitRepoComplexity(ctx context.Context, gitRepoID, targetChefVersion string) (*GitRepoComplexity, error) {
-	return db.getGitRepoComplexity(ctx, db.q(), gitRepoID, targetChefVersion)
+// name, URL, and target Chef version. Returns (nil, nil) if no record exists.
+func (db *DB) GetGitRepoComplexity(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*GitRepoComplexity, error) {
+	return db.getGitRepoComplexity(ctx, db.q(), gitRepoName, gitRepoURL, targetChefVersion)
 }
 
-func (db *DB) getGitRepoComplexity(ctx context.Context, q queryable, gitRepoID, targetChefVersion string) (*GitRepoComplexity, error) {
+func (db *DB) getGitRepoComplexity(ctx context.Context, q queryable, gitRepoName, gitRepoURL, targetChefVersion string) (*GitRepoComplexity, error) {
 	query := `
 		SELECT ` + grcColumns + `
 		  FROM git_repo_complexity
-		 WHERE git_repo_id = $1
-		   AND target_chef_version = $2
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
+		   AND target_chef_version = $3
 	`
 
-	r, err := scanGitRepoComplexity(q.QueryRowContext(ctx, query, gitRepoID, targetChefVersion))
+	r, err := scanGitRepoComplexity(q.QueryRowContext(ctx, query, gitRepoName, gitRepoURL, targetChefVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -91,55 +93,31 @@ func (db *DB) getGitRepoComplexity(ctx context.Context, q queryable, gitRepoID, 
 	return &r, nil
 }
 
-// GetGitRepoComplexityByID returns a single complexity record by its
-// primary key. Returns ErrNotFound if no record exists.
-func (db *DB) GetGitRepoComplexityByID(ctx context.Context, id string) (*GitRepoComplexity, error) {
-	query := `
-		SELECT ` + grcColumns + `
-		  FROM git_repo_complexity
-		 WHERE id = $1
-	`
-
-	r, err := scanGitRepoComplexity(db.q().QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting git repo complexity by id: %w", err)
-	}
-	return &r, nil
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
 // ListGitRepoComplexitiesByRepo returns all complexity records for the
-// given git repo ID, ordered by target_chef_version.
-func (db *DB) ListGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) ([]GitRepoComplexity, error) {
+// given git repo name and URL, ordered by target_chef_version.
+func (db *DB) ListGitRepoComplexitiesByRepo(ctx context.Context, gitRepoName, gitRepoURL string) ([]GitRepoComplexity, error) {
 	query := `
 		SELECT ` + grcColumns + `
 		  FROM git_repo_complexity
-		 WHERE git_repo_id = $1
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
 		 ORDER BY target_chef_version
 	`
-	return db.scanGitRepoComplexities(ctx, query, gitRepoID)
+	return db.scanGitRepoComplexities(ctx, query, gitRepoName, gitRepoURL)
 }
 
 // ListGitRepoComplexitiesByName returns all complexity records for git repos
 // with the given name, ordered by target Chef version.
 func (db *DB) ListGitRepoComplexitiesByName(ctx context.Context, name string) ([]GitRepoComplexity, error) {
 	query := `
-		SELECT grc.id, grc.git_repo_id, grc.target_chef_version,
-		       grc.complexity_score, grc.complexity_label,
-		       grc.error_count, grc.deprecation_count, grc.correctness_count, grc.modernize_count,
-		       grc.auto_correctable_count, grc.manual_fix_count,
-		       grc.affected_node_count, grc.affected_role_count, grc.affected_policy_count,
-		       grc.evaluated_at, grc.created_at, grc.updated_at
-		  FROM git_repo_complexity grc
-		  JOIN git_repos gr ON gr.id = grc.git_repo_id
-		 WHERE gr.name = $1
-		 ORDER BY grc.target_chef_version
+		SELECT ` + grcColumns + `
+		  FROM git_repo_complexity
+		 WHERE git_repo_name = $1
+		 ORDER BY git_repo_url, target_chef_version
 	`
 	return db.scanGitRepoComplexities(ctx, query, name)
 }
@@ -183,15 +161,18 @@ func (db *DB) ListAllGitRepoComplexities(ctx context.Context) ([]GitRepoComplexi
 // ---------------------------------------------------------------------------
 
 // UpsertGitRepoComplexity inserts a new complexity record or updates the
-// existing one for the same (git_repo_id, target_chef_version) combination.
-// Returns the resulting row.
+// existing one for the same (git_repo_name, git_repo_url, target_chef_version)
+// combination. Returns the resulting row.
 func (db *DB) UpsertGitRepoComplexity(ctx context.Context, p UpsertGitRepoComplexityParams) (*GitRepoComplexity, error) {
 	return db.upsertGitRepoComplexity(ctx, db.q(), p)
 }
 
 func (db *DB) upsertGitRepoComplexity(ctx context.Context, q queryable, p UpsertGitRepoComplexityParams) (*GitRepoComplexity, error) {
-	if p.GitRepoID == "" {
-		return nil, fmt.Errorf("datastore: git_repo_id is required")
+	if p.GitRepoName == "" {
+		return nil, fmt.Errorf("datastore: git_repo_name is required")
+	}
+	if p.GitRepoURL == "" {
+		return nil, fmt.Errorf("datastore: git_repo_url is required")
 	}
 	if p.TargetChefVersion == "" {
 		return nil, fmt.Errorf("datastore: target_chef_version is required")
@@ -199,14 +180,14 @@ func (db *DB) upsertGitRepoComplexity(ctx context.Context, q queryable, p Upsert
 
 	query := `
 		INSERT INTO git_repo_complexity (
-			git_repo_id, target_chef_version,
+			git_repo_name, git_repo_url, target_chef_version,
 			complexity_score, complexity_label,
 			error_count, deprecation_count, correctness_count, modernize_count,
 			auto_correctable_count, manual_fix_count,
 			affected_node_count, affected_role_count, affected_policy_count,
 			evaluated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (git_repo_id, target_chef_version)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (git_repo_name, git_repo_url, target_chef_version)
 		DO UPDATE SET
 			complexity_score       = EXCLUDED.complexity_score,
 			complexity_label       = EXCLUDED.complexity_label,
@@ -225,7 +206,8 @@ func (db *DB) upsertGitRepoComplexity(ctx context.Context, q queryable, p Upsert
 	`
 
 	r, err := scanGitRepoComplexity(q.QueryRowContext(ctx, query,
-		p.GitRepoID,
+		p.GitRepoName,
+		p.GitRepoURL,
 		p.TargetChefVersion,
 		p.ComplexityScore,
 		p.ComplexityLabel,
@@ -257,12 +239,12 @@ func (db *DB) UpsertGitRepoComplexityTx(ctx context.Context, tx *sql.Tx, p Upser
 // ---------------------------------------------------------------------------
 
 // DeleteGitRepoComplexitiesByRepo removes all complexity records for the
-// given git repo ID. Forces recomputation on the next analysis cycle.
-func (db *DB) DeleteGitRepoComplexitiesByRepo(ctx context.Context, gitRepoID string) error {
-	const query = `DELETE FROM git_repo_complexity WHERE git_repo_id = $1`
-	_, err := db.pool.ExecContext(ctx, query, gitRepoID)
+// given git repo name and URL. Forces recomputation on the next analysis cycle.
+func (db *DB) DeleteGitRepoComplexitiesByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error {
+	const query = `DELETE FROM git_repo_complexity WHERE git_repo_name = $1 AND git_repo_url = $2`
+	_, err := db.pool.ExecContext(ctx, query, gitRepoName, gitRepoURL)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting git repo complexities for repo %s: %w", gitRepoID, err)
+		return fmt.Errorf("datastore: deleting git repo complexities for repo %s (%s): %w", gitRepoName, gitRepoURL, err)
 	}
 	return nil
 }
@@ -285,8 +267,8 @@ func scanGitRepoComplexity(row interface{ Scan(dest ...any) error }) (GitRepoCom
 	var r GitRepoComplexity
 
 	err := row.Scan(
-		&r.ID,
-		&r.GitRepoID,
+		&r.GitRepoName,
+		&r.GitRepoURL,
 		&r.TargetChefVersion,
 		&r.ComplexityScore,
 		&r.ComplexityLabel,
@@ -322,8 +304,8 @@ func (db *DB) scanGitRepoComplexities(ctx context.Context, query string, args ..
 		var r GitRepoComplexity
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.GitRepoID,
+			&r.GitRepoName,
+			&r.GitRepoURL,
 			&r.TargetChefVersion,
 			&r.ComplexityScore,
 			&r.ComplexityLabel,

@@ -11,8 +11,8 @@ import (
 )
 
 // GitRepoCommitter represents a row in the git_repo_committers table.
+// PK is (git_repo_url, author_email).
 type GitRepoCommitter struct {
-	ID            string    `json:"id"`
 	GitRepoURL    string    `json:"git_repo_url"`
 	AuthorName    string    `json:"author_name"`
 	AuthorEmail   string    `json:"author_email"`
@@ -92,7 +92,7 @@ func (db *DB) listCommittersByRepo(ctx context.Context, q queryable, f Committer
 	}
 
 	dataQuery := fmt.Sprintf(`
-		SELECT id, git_repo_url, author_name, author_email,
+		SELECT git_repo_url, author_name, author_email,
 		       commit_count, first_commit_at, last_commit_at, collected_at
 		FROM git_repo_committers
 		%s
@@ -206,7 +206,7 @@ func (db *DB) getOwnerEmailsForGitRepo(ctx context.Context, q queryable, gitRepo
 	const query = `
 		SELECT LOWER(o.contact_email)
 		FROM owners o
-		JOIN ownership_assignments oa ON oa.owner_id = o.id
+		JOIN ownership_assignments oa ON oa.owner_name = o.name
 		WHERE oa.entity_type = 'git_repo'
 		  AND oa.entity_key = $1
 		  AND o.contact_email != ''
@@ -242,7 +242,6 @@ func scanCommitters(rows *sql.Rows) ([]GitRepoCommitter, error) {
 	for rows.Next() {
 		var c GitRepoCommitter
 		if err := rows.Scan(
-			&c.ID,
 			&c.GitRepoURL,
 			&c.AuthorName,
 			&c.AuthorEmail,

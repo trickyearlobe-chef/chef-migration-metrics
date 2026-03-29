@@ -997,8 +997,8 @@ func TestTestGitRepos_FiltersReposWithoutTestSuite(t *testing.T) {
 	}
 
 	repos := []datastore.GitRepo{
-		{ID: "1", Name: "no-tests", HasTestSuite: false, HeadCommitSHA: "abc123"},
-		{ID: "2", Name: "no-sha", HasTestSuite: true, HeadCommitSHA: ""},
+		{Name: "no-tests", HasTestSuite: false, HeadCommitSHA: "abc123"},
+		{Name: "no-sha", HasTestSuite: true, HeadCommitSHA: ""},
 	}
 
 	result := s.TestGitRepos(context.Background(), repos, []string{"18.0.0"}, func(gr datastore.GitRepo) string { return "/tmp/" + gr.Name })
@@ -1018,7 +1018,7 @@ func TestTestGitRepos_NoTargetVersions(t *testing.T) {
 	}
 
 	repos := []datastore.GitRepo{
-		{ID: "1", Name: "good-cb", HasTestSuite: true, HeadCommitSHA: "abc123"},
+		{Name: "good-cb", HasTestSuite: true, HeadCommitSHA: "abc123"},
 	}
 
 	result := s.TestGitRepos(context.Background(), repos, nil, func(gr datastore.GitRepo) string { return "/tmp/" + gr.Name })
@@ -1042,8 +1042,8 @@ func TestTestGitRepos_WorkItemCount(t *testing.T) {
 	}
 
 	repos := []datastore.GitRepo{
-		{ID: "1", Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
-		{ID: "2", Name: "cb-b", HasTestSuite: true, HeadCommitSHA: "bbb"},
+		{Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
+		{Name: "cb-b", HasTestSuite: true, HeadCommitSHA: "bbb"},
 	}
 	versions := []string{"17.0.0", "18.0.0", "18.5.0"}
 
@@ -1071,7 +1071,7 @@ func TestTestGitRepos_EmptyDir(t *testing.T) {
 	}
 
 	repos := []datastore.GitRepo{
-		{ID: "1", Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
+		{Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
 	}
 
 	result := s.TestGitRepos(context.Background(), repos, []string{"18.0.0"},
@@ -1094,7 +1094,7 @@ func TestTestGitRepos_ContextCancelled(t *testing.T) {
 	}
 
 	repos := []datastore.GitRepo{
-		{ID: "1", Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
+		{Name: "cb-a", HasTestSuite: true, HeadCommitSHA: "aaa"},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

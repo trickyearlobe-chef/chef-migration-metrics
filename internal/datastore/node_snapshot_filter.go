@@ -17,9 +17,9 @@ import (
 // substring (ILIKE-equivalent) matching to maintain behavioural parity with
 // export.FilterNodes.
 type NodeSnapshotFilter struct {
-	// OrganisationIDs restricts results to nodes belonging to these orgs.
+	// OrganisationNames restricts results to nodes belonging to these orgs.
 	// Empty means all organisations (subject to collection run validation).
-	OrganisationIDs []string
+	OrganisationNames []string
 
 	// NodeName filters by case-insensitive substring match on node_name.
 	NodeName string
@@ -82,14 +82,14 @@ type NodeSnapshotFilter struct {
 //   - args: the positional parameter values
 func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, args []interface{}) {
 	// Determine column list based on whether heavy JSON is requested.
-	lightCols := `cn.id, cn.collection_run_id, cn.organisation_id, cn.node_name,
+	lightCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
 		       cn.chef_environment, cn.chef_version,
 		       cn.platform, cn.platform_version, cn.platform_family,
 		       cn.run_list, cn.roles,
 		       cn.policy_name, cn.policy_group,
 		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at`
 
-	heavyCols := `cn.id, cn.collection_run_id, cn.organisation_id, cn.node_name,
+	heavyCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
 		       cn.chef_environment, cn.chef_version,
 		       cn.platform, cn.platform_version, cn.platform_family,
 		       cn.filesystem, cn.cookbooks, cn.run_list, cn.roles,
@@ -183,6 +183,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 
 	for rows.Next() {
 		var ns NodeSnapshot
+		var collectionRunOrg sql.NullString
 		var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
 		var policyName, policyGroup sql.NullString
 		var ohaiTime sql.NullFloat64
@@ -192,9 +193,8 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		if includeHeavy {
 			var filesystem, cookbooks, customAttributes []byte
 			if err := rows.Scan(
-				&ns.ID,
-				&ns.CollectionRunID,
-				&ns.OrganisationID,
+				&collectionRunOrg,
+				&ns.OrganisationName,
 				&ns.NodeName,
 				&chefEnv,
 				&chefVer,
@@ -221,9 +221,8 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 			ns.CustomAttributes = jsonFromNullBytes(customAttributes)
 		} else {
 			if err := rows.Scan(
-				&ns.ID,
-				&ns.CollectionRunID,
-				&ns.OrganisationID,
+				&collectionRunOrg,
+				&ns.OrganisationName,
 				&ns.NodeName,
 				&chefEnv,
 				&chefVer,
@@ -244,6 +243,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 			}
 		}
 
+		ns.CollectionRunOrg = stringFromNull(collectionRunOrg)
 		ns.ChefEnvironment = stringFromNull(chefEnv)
 		ns.ChefVersion = stringFromNull(chefVer)
 		ns.Platform = stringFromNull(platform)
@@ -409,7 +409,7 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter) (
 // so additional conditions can be appended with AND.
 func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where string, args []interface{}) {
 	cte = `WITH completed_nodes AS (
-		SELECT ns.id, ns.collection_run_id, ns.organisation_id, ns.node_name,
+		SELECT ns.collection_run_org, ns.organisation_name, ns.node_name,
 		       ns.chef_environment, ns.chef_version,
 		       ns.platform, ns.platform_version, ns.platform_family,
 		       ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
@@ -417,12 +417,12 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 		       ns.ohai_time, ns.custom_attributes,
 		       ns.is_stale, ns.collected_at, ns.created_at
 		  FROM node_snapshots ns
-		 INNER JOIN collection_runs cr ON cr.id = ns.collection_run_id
+		 INNER JOIN collection_runs cr ON cr.organisation_name = ns.collection_run_org
 		 WHERE cr.status = 'completed'
 		   AND cr.started_at = (
 		         SELECT MAX(cr2.started_at)
 		           FROM collection_runs cr2
-		          WHERE cr2.organisation_id = ns.organisation_id
+		          WHERE cr2.organisation_name = ns.organisation_name
 		            AND cr2.status = 'completed'
 		       )
 	)`
@@ -436,9 +436,9 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 		return fmt.Sprintf("$%d", argN)
 	}
 
-	if len(f.OrganisationIDs) > 0 {
-		where += " AND cn.organisation_id = ANY(" + nextArg() + ")"
-		args = append(args, pq.Array(f.OrganisationIDs))
+	if len(f.OrganisationNames) > 0 {
+		where += " AND cn.organisation_name = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.OrganisationNames))
 	}
 
 	if f.NodeName != "" {

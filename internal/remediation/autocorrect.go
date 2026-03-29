@@ -45,18 +45,20 @@ type AutocorrectExecutor interface {
 // AutocorrectPreviewResult holds the outcome of generating an auto-correct
 // preview for a single cookbook version.
 type AutocorrectPreviewResult struct {
-	// CookbookID is the datastore ID of the cookbook.
-	CookbookID string
+	// OrganisationName identifies the organisation (server cookbooks only).
+	OrganisationName string
 
-	// CookstyleResultID is the datastore ID of the CookStyle scan result
-	// that triggered this preview.
-	CookstyleResultID string
-
-	// CookbookName is the cookbook's display name.
+	// CookbookName is the cookbook's display name (or git repo name).
 	CookbookName string
 
-	// CookbookVersion is the version string.
+	// CookbookVersion is the version string (empty for git repos).
 	CookbookVersion string
+
+	// GitRepoURL is the repository URL (git repos only).
+	GitRepoURL string
+
+	// TargetChefVersion is the Chef Client version the scan targeted.
+	TargetChefVersion string
 
 	// TotalOffenses is the total number of offenses before auto-correct.
 	TotalOffenses int
@@ -170,17 +172,17 @@ const (
 // scan result needed to decide whether to generate a preview and to
 // associate the preview with the result.
 type CookstyleResultInfo struct {
-	// ResultID is the datastore ID (primary key) of the cookstyle_results row.
-	ResultID string
+	// OrganisationName identifies the organisation (server cookbooks only).
+	OrganisationName string
 
-	// CookbookID is the datastore ID of the cookbook (ServerCookbookID or GitRepoID).
-	CookbookID string
-
-	// CookbookName is the cookbook's display name (for logging).
+	// CookbookName is the cookbook's display name (or git repo name).
 	CookbookName string
 
-	// CookbookVersion is the version string (for logging).
+	// CookbookVersion is the version string (server cookbooks only).
 	CookbookVersion string
+
+	// GitRepoURL is the repository URL (git repos only).
+	GitRepoURL string
 
 	// TargetChefVersion is the Chef Client version the scan targeted.
 	TargetChefVersion string
@@ -268,10 +270,11 @@ func (g *AutocorrectGenerator) generateOne(
 		logging.WithCookbook(csResult.CookbookName, csResult.CookbookVersion))
 
 	pr := AutocorrectPreviewResult{
-		CookbookID:        csResult.CookbookID,
-		CookstyleResultID: csResult.ResultID,
+		OrganisationName:  csResult.OrganisationName,
 		CookbookName:      csResult.CookbookName,
 		CookbookVersion:   csResult.CookbookVersion,
+		GitRepoURL:        csResult.GitRepoURL,
+		TargetChefVersion: csResult.TargetChefVersion,
 	}
 
 	// Step 1: skip if zero offenses — no auto-correct needed.
@@ -286,12 +289,12 @@ func (g *AutocorrectGenerator) generateOne(
 	var existingGeneratedAt *time.Time
 	switch csResult.Source {
 	case SourceGitRepo:
-		existing, err := g.db.GetGitRepoAutocorrectPreview(ctx, csResult.ResultID)
+		existing, err := g.db.GetGitRepoAutocorrectPreview(ctx, csResult.CookbookName, csResult.GitRepoURL, csResult.TargetChefVersion)
 		if err == nil && existing != nil {
 			existingGeneratedAt = &existing.GeneratedAt
 		}
 	default: // SourceServerCookbook or unset — default to server cookbook
-		existing, err := g.db.GetServerCookbookAutocorrectPreview(ctx, csResult.ResultID)
+		existing, err := g.db.GetServerCookbookAutocorrectPreview(ctx, csResult.OrganisationName, csResult.CookbookName, csResult.CookbookVersion, csResult.TargetChefVersion)
 		if err == nil && existing != nil {
 			existingGeneratedAt = &existing.GeneratedAt
 		}
@@ -306,9 +309,9 @@ func (g *AutocorrectGenerator) generateOne(
 	}
 
 	// Step 3: resolve cookbook directory.
-	dir := cookbookDir(csResult.CookbookID)
+	dir := cookbookDir(csResult.CookbookName)
 	if dir == "" {
-		pr.Error = fmt.Errorf("cookbook directory not found for %s", csResult.CookbookID)
+		pr.Error = fmt.Errorf("cookbook directory not found for %s", csResult.CookbookName)
 		return pr
 	}
 
@@ -458,7 +461,7 @@ func writeAutocorrectTargetConfig(cookbookDir, targetChefVersion string) string 
 // ---------------------------------------------------------------------------
 
 func (g *AutocorrectGenerator) persistPreview(ctx context.Context, source string, pr AutocorrectPreviewResult) {
-	if pr.CookbookID == "" || pr.CookstyleResultID == "" {
+	if pr.CookbookName == "" || pr.TargetChefVersion == "" {
 		return
 	}
 
@@ -469,8 +472,9 @@ func (g *AutocorrectGenerator) persistPreview(ctx context.Context, source string
 	switch source {
 	case SourceGitRepo:
 		params := datastore.UpsertGitRepoAutocorrectPreviewParams{
-			GitRepoID:           pr.CookbookID,
-			CookstyleResultID:   pr.CookstyleResultID,
+			GitRepoName:         pr.CookbookName,
+			GitRepoURL:          pr.GitRepoURL,
+			TargetChefVersion:   pr.TargetChefVersion,
 			TotalOffenses:       pr.TotalOffenses,
 			CorrectableOffenses: pr.CorrectableOffenses,
 			RemainingOffenses:   pr.RemainingOffenses,
@@ -481,8 +485,10 @@ func (g *AutocorrectGenerator) persistPreview(ctx context.Context, source string
 		_, persistErr = g.db.UpsertGitRepoAutocorrectPreview(ctx, params)
 	default: // SourceServerCookbook or unset — default to server cookbook
 		params := datastore.UpsertServerCookbookAutocorrectPreviewParams{
-			ServerCookbookID:    pr.CookbookID,
-			CookstyleResultID:   pr.CookstyleResultID,
+			OrganisationName:    pr.OrganisationName,
+			CookbookName:        pr.CookbookName,
+			CookbookVersion:     pr.CookbookVersion,
+			TargetChefVersion:   pr.TargetChefVersion,
 			TotalOffenses:       pr.TotalOffenses,
 			CorrectableOffenses: pr.CorrectableOffenses,
 			RemainingOffenses:   pr.RemainingOffenses,
@@ -505,12 +511,19 @@ func (g *AutocorrectGenerator) persistPreview(ctx context.Context, source string
 // ResetPreviews deletes existing auto-correct previews for the given
 // cookbook or repo, so they will be regenerated on the next analysis cycle.
 // The source parameter determines which table to delete from.
-func (g *AutocorrectGenerator) ResetPreviews(ctx context.Context, source string, id string) error {
+//
+// For git repos: name is the repo name, extra is the repo URL.
+// For server cookbooks: name is the org name, extra is "cookbookName/cookbookVersion".
+func (g *AutocorrectGenerator) ResetPreviews(ctx context.Context, source, name, extra string) error {
 	switch source {
 	case SourceGitRepo:
-		return g.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, id)
+		return g.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, name, extra)
 	default: // SourceServerCookbook or unset
-		return g.db.DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx, id)
+		parts := strings.SplitN(extra, "/", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("remediation: invalid cookbook key %q — expected name/version", extra)
+		}
+		return g.db.DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx, name, parts[0], parts[1])
 	}
 }
 

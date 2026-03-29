@@ -97,13 +97,13 @@ func TestBuildLogEntryFilterWhere_CookbookName(t *testing.T) {
 	}
 }
 
-func TestBuildLogEntryFilterWhere_CollectionRunID(t *testing.T) {
-	where, args := buildLogEntryFilterWhere(LogEntryFilter{CollectionRunID: "run-123"})
-	if !strings.Contains(where, "AND collection_run_id = $1") {
-		t.Errorf("where missing collection_run_id clause: %s", where)
+func TestBuildLogEntryFilterWhere_CollectionRunOrg(t *testing.T) {
+	where, args := buildLogEntryFilterWhere(LogEntryFilter{CollectionRunOrg: "run-org-1"})
+	if !strings.Contains(where, "AND collection_run_org = $1") {
+		t.Errorf("where missing collection_run_org clause: %s", where)
 	}
-	if len(args) != 1 || args[0] != "run-123" {
-		t.Errorf("args = %v, want [run-123]", args)
+	if len(args) != 1 || args[0] != "run-org-1" {
+		t.Errorf("args = %v, want [run-org-1]", args)
 	}
 }
 
@@ -154,13 +154,13 @@ func TestBuildLogEntryFilterWhere_AllFilters(t *testing.T) {
 	since := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	until := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	f := LogEntryFilter{
-		Scope:           "collection",
-		Severity:        "ERROR",
-		Organisation:    "prod",
-		CookbookName:    "apt",
-		CollectionRunID: "run-1",
-		Since:           since,
-		Until:           until,
+		Scope:            "collection",
+		Severity:         "ERROR",
+		Organisation:     "prod",
+		CookbookName:     "apt",
+		CollectionRunOrg: "run-1",
+		Since:            since,
+		Until:            until,
 	}
 	where, args := buildLogEntryFilterWhere(f)
 
@@ -227,12 +227,12 @@ func TestBuildLogEntryFilterWhere_LimitOffsetNotIncluded(t *testing.T) {
 
 func TestBuildLogEntryFilterWhere_EmptyStringsIgnored(t *testing.T) {
 	f := LogEntryFilter{
-		Scope:           "",
-		Severity:        "",
-		MinSeverity:     "",
-		Organisation:    "",
-		CookbookName:    "",
-		CollectionRunID: "",
+		Scope:            "",
+		Severity:         "",
+		MinSeverity:      "",
+		Organisation:     "",
+		CookbookName:     "",
+		CollectionRunOrg: "",
 	}
 	where, args := buildLogEntryFilterWhere(f)
 	if where != " WHERE 1=1" {

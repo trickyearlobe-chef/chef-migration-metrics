@@ -23,7 +23,6 @@ type mockSessionStore struct {
 	insertSessionFn            func(ctx context.Context, p datastore.InsertSessionParams) (datastore.Session, error)
 	getValidSessionFn          func(ctx context.Context, id string) (datastore.Session, error)
 	deleteSessionFn            func(ctx context.Context, id string) error
-	deleteSessionsByUserIDFn   func(ctx context.Context, userID string) (int, error)
 	deleteSessionsByUsernameFn func(ctx context.Context, username string) (int, error)
 	deleteExpiredSessionsFn    func(ctx context.Context) (int, error)
 }
@@ -34,7 +33,6 @@ func (m *mockSessionStore) InsertSession(ctx context.Context, p datastore.Insert
 	}
 	return datastore.Session{
 		ID:           "sess-uuid-1234",
-		UserID:       p.UserID,
 		Username:     p.Username,
 		AuthProvider: p.AuthProvider,
 		Role:         p.Role,
@@ -55,13 +53,6 @@ func (m *mockSessionStore) DeleteSession(ctx context.Context, id string) error {
 		return m.deleteSessionFn(ctx, id)
 	}
 	return nil
-}
-
-func (m *mockSessionStore) DeleteSessionsByUserID(ctx context.Context, userID string) (int, error) {
-	if m.deleteSessionsByUserIDFn != nil {
-		return m.deleteSessionsByUserIDFn(ctx, userID)
-	}
-	return 0, nil
 }
 
 func (m *mockSessionStore) DeleteSessionsByUsername(ctx context.Context, username string) (int, error) {
@@ -117,7 +108,7 @@ func TestNewSessionManagerWithLogger(t *testing.T) {
 	}))
 
 	// Creating a session should trigger a log message.
-	_, _ = sm.CreateSession(context.Background(), "uid", "alice", "local", "admin")
+	_, _ = sm.CreateSession(context.Background(), "alice", "local", "admin")
 	if !logged {
 		t.Error("expected logger to be called during CreateSession")
 	}
@@ -134,7 +125,6 @@ func TestCreateSessionSuccess(t *testing.T) {
 			insertedParams = p
 			return datastore.Session{
 				ID:           "new-session-id",
-				UserID:       p.UserID,
 				Username:     p.Username,
 				AuthProvider: p.AuthProvider,
 				Role:         p.Role,
@@ -147,7 +137,7 @@ func TestCreateSessionSuccess(t *testing.T) {
 	sm := NewSessionManager(store, 2*time.Hour)
 	before := time.Now()
 
-	sess, err := sm.CreateSession(context.Background(), "user-123", "alice", "local", "admin")
+	sess, err := sm.CreateSession(context.Background(), "alice", "local", "admin")
 	if err != nil {
 		t.Fatalf("CreateSession returned error: %v", err)
 	}
@@ -179,7 +169,7 @@ func TestCreateSessionStoreError(t *testing.T) {
 	}
 
 	sm := NewSessionManager(store, time.Hour)
-	_, err := sm.CreateSession(context.Background(), "uid", "alice", "local", "admin")
+	_, err := sm.CreateSession(context.Background(), "alice", "local", "admin")
 	if err == nil {
 		t.Fatal("expected error when store returns error")
 	}
@@ -198,7 +188,6 @@ func TestValidateSessionSuccess(t *testing.T) {
 			}
 			return datastore.Session{
 				ID:           "valid-token",
-				UserID:       "user-1",
 				Username:     "bob",
 				AuthProvider: "local",
 				Role:         "viewer",
@@ -221,9 +210,6 @@ func TestValidateSessionSuccess(t *testing.T) {
 	}
 	if info.Role != "viewer" {
 		t.Errorf("Role = %q, want %q", info.Role, "viewer")
-	}
-	if info.UserID != "user-1" {
-		t.Errorf("UserID = %q, want %q", info.UserID, "user-1")
 	}
 }
 
@@ -337,8 +323,8 @@ func TestInvalidateSessionStoreError(t *testing.T) {
 
 func TestInvalidateUserSessions(t *testing.T) {
 	store := &mockSessionStore{
-		deleteSessionsByUserIDFn: func(ctx context.Context, userID string) (int, error) {
-			if userID == "user-1" {
+		deleteSessionsByUsernameFn: func(ctx context.Context, username string) (int, error) {
+			if username == "user-1" {
 				return 3, nil
 			}
 			return 0, nil

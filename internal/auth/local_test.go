@@ -78,7 +78,6 @@ func makeLocalUser(username, password, role string, locked bool, failedAttempts 
 		panic("test setup: HashPassword failed: " + err.Error())
 	}
 	return datastore.User{
-		ID:                  "user-id-" + username,
 		Username:            username,
 		DisplayName:         username + " Display",
 		Email:               username + "@example.com",
@@ -298,7 +297,6 @@ func TestAuthenticateStoreError(t *testing.T) {
 
 func TestAuthenticateNonLocalProvider(t *testing.T) {
 	ldapUser := datastore.User{
-		ID:           "ldap-user-1",
 		Username:     "ldap-alice",
 		PasswordHash: "irrelevant",
 		Role:         "viewer",
@@ -700,7 +698,6 @@ func TestLoginSuccess(t *testing.T) {
 		insertSessionFn: func(ctx context.Context, p datastore.InsertSessionParams) (datastore.Session, error) {
 			return datastore.Session{
 				ID:           "new-session-id",
-				UserID:       p.UserID,
 				Username:     p.Username,
 				AuthProvider: p.AuthProvider,
 				Role:         p.Role,
