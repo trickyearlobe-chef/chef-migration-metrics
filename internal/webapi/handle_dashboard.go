@@ -265,77 +265,61 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 		return
 	}
 
-	// Ownership-filtered path: fall back to querying node_snapshots via
-	// collection runs. This only returns data for runs that still have
-	// associated node snapshot rows (i.e. the current run).
+	// Ownership-filtered path: read from metric_snapshots and apply
+	// ownership filtering against the per-node data in the JSONB payload.
+	// This avoids querying live node_snapshots (which suffers from the
+	// sawtooth problem during mid-collection updates).
 	for _, org := range orgs {
-		runs, err := r.db.ListCollectionRuns(ctx, org.ID, 10)
+		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 10)
 		if err != nil {
-			r.logf("WARN", "listing collection runs for org %s in trend: %v", org.Name, err)
+			r.logf("WARN", "listing metric snapshots for org %s in ownership-filtered version trend: %v", org.Name, err)
 			continue
 		}
-		for _, run := range runs {
-			if run.Status != "completed" {
+		for _, ms := range metrics {
+			var payload struct {
+				Distribution map[string]int `json:"distribution"`
+				TotalNodes   int            `json:"total_nodes"`
+				Nodes        []struct {
+					Name    string `json:"name"`
+					Version string `json:"version"`
+				} `json:"nodes"`
+				NodesOmitted bool `json:"nodes_omitted"`
+			}
+			if err := json.Unmarshal(ms.Data, &payload); err != nil {
+				r.logf("WARN", "unmarshalling metric snapshot %s for ownership trend: %v", ms.ID, err)
 				continue
 			}
 
-			var dist map[string]int
-			var total int
-
-			// Build an allowed-node list from the owned keys.
-			var allowed []string
-			for k := range ownedKeys {
-				if of.Unowned {
-					break
-				}
-				allowed = append(allowed, k)
+			// Skip snapshots where per-node data is unavailable
+			// (large orgs with nodes_omitted, or old-format snapshots).
+			if payload.NodesOmitted || payload.Nodes == nil {
+				continue
 			}
 
-			if of.Unowned {
-				// For "unowned" we need to exclude owned nodes. The filtered
-				// query supports inclusion only, so we fall back to the full
-				// result and subtract owned node counts.
-				allDist, err := r.db.CountChefVersionsByCollectionRun(ctx, run.ID)
-				if err != nil {
-					r.logf("WARN", "counting versions for run %s in trend: %v", run.ID, err)
-					continue
-				}
-				ownedNodeNames := make([]string, 0, len(ownedKeys))
-				for k := range ownedKeys {
-					ownedNodeNames = append(ownedNodeNames, k)
-				}
-				ownedDist, err := r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, ownedNodeNames)
-				if err != nil {
-					r.logf("WARN", "counting owned versions for run %s in trend: %v", run.ID, err)
-					continue
-				}
-				dist = make(map[string]int)
-				for v, cnt := range allDist {
-					remaining := cnt - ownedDist[v]
-					if remaining > 0 {
-						dist[v] = remaining
-						total += remaining
+			// Apply ownership filtering to per-node data and
+			// re-aggregate into a version distribution.
+			dist := make(map[string]int)
+			total := 0
+			for _, n := range payload.Nodes {
+				if ownedKeys != nil {
+					if of.Unowned {
+						if ownedKeys[n.Name] {
+							continue // skip owned nodes
+						}
+					} else {
+						if !ownedKeys[n.Name] {
+							continue // skip unowned nodes
+						}
 					}
 				}
-			} else {
-				dist, err = r.db.CountChefVersionsByCollectionRunFiltered(ctx, run.ID, allowed)
-				if err != nil {
-					r.logf("WARN", "counting filtered versions for run %s in trend: %v", run.ID, err)
-					continue
-				}
-				for _, cnt := range dist {
-					total += cnt
-				}
+				dist[n.Version]++
+				total++
 			}
 
-			completedAt := ""
-			if !run.CompletedAt.IsZero() {
-				completedAt = run.CompletedAt.Format("2006-01-02T15:04:05Z")
-			}
 			points = append(points, trendPoint{
 				OrganisationName: org.Name,
-				CollectionRunID:  run.ID,
-				CompletedAt:      completedAt,
+				CollectionRunID:  ms.CollectionRunID,
+				CompletedAt:      ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
 				TotalNodes:       total,
 				Distribution:     dist,
 			})
