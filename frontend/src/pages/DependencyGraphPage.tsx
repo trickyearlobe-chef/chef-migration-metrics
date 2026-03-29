@@ -56,26 +56,48 @@ export function DependencyGraphPage() {
         {/* View mode toggle */}
         <div className="flex rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
           <button
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === "graph"
-              ? "bg-blue-50 text-blue-700"
-              : "text-gray-600 hover:text-gray-900"
-              }`}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              viewMode === "graph"
+                ? "bg-blue-50 text-blue-700"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
             onClick={() => setViewMode("graph")}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z"
+              />
             </svg>
             Graph
           </button>
           <button
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === "table"
-              ? "bg-blue-50 text-blue-700"
-              : "text-gray-600 hover:text-gray-900"
-              }`}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              viewMode === "table"
+                ? "bg-blue-50 text-blue-700"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
             onClick={() => setViewMode("table")}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M10.875 12h-1.5m1.5 0c.621 0 1.125.504 1.125 1.125M12 12h7.5m-7.5 0c0 .621-.504 1.125-1.125 1.125M21.375 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-2.25 0h.008v.008h-.008v-.008Zm0-3.75h.008v.008h-.008V12Zm0-3.75h.008v.008h-.008V8.25Z" />
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M10.875 12h-1.5m1.5 0c.621 0 1.125.504 1.125 1.125M12 12h7.5m-7.5 0c0 .621-.504 1.125-1.125 1.125M21.375 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-2.25 0h.008v.008h-.008v-.008Zm0-3.75h.008v.008h-.008V12Zm0-3.75h.008v.008h-.008V8.25Z"
+              />
             </svg>
             Table
           </button>
@@ -139,7 +161,9 @@ function GraphView({ organisation }: { organisation: string }) {
 
   // Interaction state
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "role" | "cookbook">("all");
+  const [filterType, setFilterType] = useState<"all" | "role" | "cookbook">(
+    "all",
+  );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
@@ -192,19 +216,27 @@ function GraphView({ organisation }: { organisation: string }) {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="stat-card">
           <span className="stat-label">Total Nodes</span>
-          <span className="stat-value text-gray-800">{data.summary.total_nodes}</span>
+          <span className="stat-value text-gray-800">
+            {data.summary.total_nodes}
+          </span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Total Edges</span>
-          <span className="stat-value text-gray-800">{data.summary.total_edges}</span>
+          <span className="stat-value text-gray-800">
+            {data.summary.total_edges}
+          </span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Roles</span>
-          <span className="stat-value text-blue-600">{data.summary.role_count}</span>
+          <span className="stat-value text-blue-600">
+            {data.summary.role_count}
+          </span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Cookbooks</span>
-          <span className="stat-value text-emerald-600">{data.summary.cookbook_count}</span>
+          <span className="stat-value text-emerald-600">
+            {data.summary.cookbook_count}
+          </span>
         </div>
       </div>
 
@@ -213,8 +245,18 @@ function GraphView({ organisation }: { organisation: string }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           {/* Search */}
           <div className="relative flex-1">
-            <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            <svg
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+              />
             </svg>
             <input
               type="text"
@@ -232,16 +274,21 @@ function GraphView({ organisation }: { organisation: string }) {
               <button
                 key={type}
                 onClick={() => setFilterType(type)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${filterType === type
-                  ? type === "role"
-                    ? "bg-blue-100 text-blue-800"
-                    : type === "cookbook"
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-gray-200 text-gray-800"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  filterType === type
+                    ? type === "role"
+                      ? "bg-blue-100 text-blue-800"
+                      : type === "cookbook"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-gray-200 text-gray-800"
+                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                }`}
               >
-                {type === "all" ? "All" : type === "role" ? "Roles" : "Cookbooks"}
+                {type === "all"
+                  ? "All"
+                  : type === "role"
+                    ? "Roles"
+                    : "Cookbooks"}
               </button>
             ))}
           </div>
@@ -252,8 +299,18 @@ function GraphView({ organisation }: { organisation: string }) {
               onClick={() => setSelectedNodeId(null)}
               className="flex items-center gap-1 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200"
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18 18 6M6 6l12 12"
+                />
               </svg>
               Clear selection
             </button>
@@ -272,12 +329,21 @@ function GraphView({ organisation }: { organisation: string }) {
           </span>
           <span className="flex items-center gap-1.5">
             <svg className="h-3 w-8" viewBox="0 0 32 12">
-              <line x1="0" y1="6" x2="32" y2="6" stroke="#94a3b8" strokeWidth="1.5" />
+              <line
+                x1="0"
+                y1="6"
+                x2="32"
+                y2="6"
+                stroke="#94a3b8"
+                strokeWidth="1.5"
+              />
               <polygon points="28,3 32,6 28,9" fill="#94a3b8" />
             </svg>
             Depends on
           </span>
-          <span className="ml-auto text-[10px] text-gray-400">Click a node to highlight its connections • Drag nodes to reposition</span>
+          <span className="ml-auto text-[10px] text-gray-400">
+            Click a node to highlight its connections • Drag nodes to reposition
+          </span>
         </div>
       </div>
 
@@ -338,7 +404,13 @@ function ForceGraph({
 
   // Pan/zoom state
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const panRef = useRef<{ active: boolean; startX: number; startY: number; origTx: number; origTy: number }>({
+  const panRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    origTx: number;
+    origTy: number;
+  }>({
     active: false,
     startX: 0,
     startY: 0,
@@ -673,7 +745,9 @@ function ForceGraph({
         const n = nodeMap.get(drag.nodeId);
         if (n) {
           // If barely moved, treat as a click
-          const dist = Math.abs(e.clientX - drag.startX) + Math.abs(e.clientY - drag.startY);
+          const dist =
+            Math.abs(e.clientX - drag.startX) +
+            Math.abs(e.clientY - drag.startY);
           if (dist < 5) {
             onSelectNode(selectedNodeId === nodeId ? null : nodeId);
           }
@@ -708,7 +782,11 @@ function ForceGraph({
       if (!panRef.current.active) return;
       const dx = ev.clientX - panRef.current.startX;
       const dy = ev.clientY - panRef.current.startY;
-      setTransform((t) => ({ ...t, x: panRef.current.origTx + dx, y: panRef.current.origTy + dy }));
+      setTransform((t) => ({
+        ...t,
+        x: panRef.current.origTx + dx,
+        y: panRef.current.origTy + dy,
+      }));
     };
 
     const handlePanUp = () => {
@@ -771,8 +849,18 @@ function ForceGraph({
           className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
           title="Zoom in"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 4.5v15m7.5-7.5h-15"
+            />
           </svg>
         </button>
         <button
@@ -780,8 +868,18 @@ function ForceGraph({
           className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
           title="Zoom out"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M19.5 12h-15"
+            />
           </svg>
         </button>
         <div className="mx-1 border-t border-gray-200" />
@@ -790,8 +888,18 @@ function ForceGraph({
           className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
           title="Reset view"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25"
+            />
           </svg>
         </button>
       </div>
@@ -840,7 +948,9 @@ function ForceGraph({
           </marker>
         </defs>
 
-        <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
+        <g
+          transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}
+        >
           {/* Edges */}
           {edges.map((e, i) => {
             const source = nodeMap.get(e.source);
@@ -862,8 +972,7 @@ function ForceGraph({
             const ty = target.y - (dy / dist) * targetR;
 
             const isHighlighted =
-              opacity > 0.6 &&
-              (connectedToSelected || connectedToHovered);
+              opacity > 0.6 && (connectedToSelected || connectedToHovered);
 
             return (
               <line
@@ -875,7 +984,11 @@ function ForceGraph({
                 stroke={isHighlighted ? "#3b82f6" : "#94a3b8"}
                 strokeWidth={isHighlighted ? 2 : 1}
                 opacity={opacity}
-                markerEnd={isHighlighted ? "url(#arrowhead-highlight)" : "url(#arrowhead)"}
+                markerEnd={
+                  isHighlighted
+                    ? "url(#arrowhead-highlight)"
+                    : "url(#arrowhead)"
+                }
                 style={{ transition: "opacity 0.2s" }}
               />
             );
@@ -1016,15 +1129,27 @@ function SelectedNodePanel({
           )}
           <div>
             <h4 className="text-sm font-semibold text-gray-800">{node.name}</h4>
-            <span className="text-[10px] uppercase tracking-wide text-gray-400">{node.type}</span>
+            <span className="text-[10px] uppercase tracking-wide text-gray-400">
+              {node.type}
+            </span>
           </div>
         </div>
         <button
           onClick={onClose}
           className="rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M6 18 18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -1033,15 +1158,21 @@ function SelectedNodePanel({
         {/* Stats */}
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-md bg-gray-50 p-2 text-center">
-            <div className="text-lg font-bold text-gray-700">{connectedNodes.length}</div>
+            <div className="text-lg font-bold text-gray-700">
+              {connectedNodes.length}
+            </div>
             <div className="text-[10px] text-gray-500">Connected</div>
           </div>
           <div className="rounded-md bg-gray-50 p-2 text-center">
-            <div className="text-lg font-bold text-blue-600">{outgoing.length}</div>
+            <div className="text-lg font-bold text-blue-600">
+              {outgoing.length}
+            </div>
             <div className="text-[10px] text-gray-500">Depends on</div>
           </div>
           <div className="rounded-md bg-gray-50 p-2 text-center">
-            <div className="text-lg font-bold text-amber-600">{incoming.length}</div>
+            <div className="text-lg font-bold text-amber-600">
+              {incoming.length}
+            </div>
             <div className="text-[10px] text-gray-500">Used by</div>
           </div>
         </div>
@@ -1049,7 +1180,9 @@ function SelectedNodePanel({
         {/* Cookbook dependencies */}
         {depCookbooks.length > 0 && (
           <div>
-            <h5 className="mb-1 font-medium text-gray-600">Cookbook Dependencies</h5>
+            <h5 className="mb-1 font-medium text-gray-600">
+              Cookbook Dependencies
+            </h5>
             <div className="flex flex-wrap gap-1">
               {depCookbooks.map((n) => (
                 <Link
@@ -1068,7 +1201,9 @@ function SelectedNodePanel({
         {/* Role dependencies */}
         {depRoles.length > 0 && (
           <div>
-            <h5 className="mb-1 font-medium text-gray-600">Role Dependencies</h5>
+            <h5 className="mb-1 font-medium text-gray-600">
+              Role Dependencies
+            </h5>
             <div className="flex flex-wrap gap-1">
               {depRoles.map((n) => (
                 <span
@@ -1110,8 +1245,18 @@ function SelectedNodePanel({
             className="mt-2 flex items-center justify-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
           >
             View Cookbook Details
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+              />
             </svg>
           </Link>
         )}
@@ -1243,7 +1388,6 @@ function TableView({ organisation }: { organisation: string }) {
                 label="Role Name"
                 field="role_name"
                 currentField={sortField}
-                currentOrder={sortOrder}
                 onSort={handleSort}
                 indicator={sortIndicator}
               />
@@ -1251,7 +1395,6 @@ function TableView({ organisation }: { organisation: string }) {
                 label="Cookbooks"
                 field="cookbook_count"
                 currentField={sortField}
-                currentOrder={sortOrder}
                 onSort={handleSort}
                 indicator={sortIndicator}
               />
@@ -1259,7 +1402,6 @@ function TableView({ organisation }: { organisation: string }) {
                 label="Roles"
                 field="role_count"
                 currentField={sortField}
-                currentOrder={sortOrder}
                 onSort={handleSort}
                 indicator={sortIndicator}
               />
@@ -1267,7 +1409,6 @@ function TableView({ organisation }: { organisation: string }) {
                 label="Total Deps"
                 field="total_dependencies"
                 currentField={sortField}
-                currentOrder={sortOrder}
                 onSort={handleSort}
                 indicator={sortIndicator}
               />
@@ -1357,14 +1498,12 @@ function SortableHeader({
   label,
   field,
   currentField,
-  currentOrder: _currentOrder,
   onSort,
   indicator,
 }: {
   label: string;
   field: string;
   currentField: string;
-  currentOrder: "asc" | "desc";
   onSort: (field: string) => void;
   indicator: (field: string) => string | null;
 }) {
@@ -1406,14 +1545,19 @@ function TableRow({
       >
         <td className="w-8 text-center">
           <svg
-            className={`inline-block h-4 w-4 text-gray-400 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""
-              }`}
+            className={`inline-block h-4 w-4 text-gray-400 transition-transform duration-200 ${
+              isExpanded ? "rotate-90" : ""
+            }`}
             fill="none"
             viewBox="0 0 24 24"
             strokeWidth={2}
             stroke="currentColor"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="m8.25 4.5 7.5 7.5-7.5 7.5"
+            />
           </svg>
         </td>
         <td className="font-medium text-gray-900">{row.role_name}</td>
@@ -1445,10 +1589,11 @@ function TableRow({
             {row.dependencies.slice(0, 4).map((d) => (
               <span
                 key={`${d.type}:${d.name}`}
-                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${d.type === "cookbook"
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-blue-50 text-blue-700"
-                  }`}
+                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                  d.type === "cookbook"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-blue-50 text-blue-700"
+                }`}
               >
                 <span
                   className={`inline-block h-1 w-1 ${d.type === "cookbook" ? "rounded-full bg-emerald-500" : "rounded-sm bg-blue-500"}`}

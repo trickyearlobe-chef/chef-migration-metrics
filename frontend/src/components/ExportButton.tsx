@@ -1,9 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  createExport,
-  fetchExportStatus,
-  downloadExportUrl,
-} from "../api";
+import { createExport, fetchExportStatus, downloadExportUrl } from "../api";
 import type {
   ExportType,
   ExportFormat,
@@ -42,10 +38,10 @@ export interface ExportButtonProps {
 
 type Phase =
   | "idle"
-  | "selecting"   // format picker is open
-  | "exporting"   // waiting for sync response or async job creation
-  | "polling"     // async job created, polling for completion
-  | "done"        // download triggered
+  | "selecting" // format picker is open
+  | "exporting" // waiting for sync response or async job creation
+  | "polling" // async job created, polling for completion
+  | "done" // download triggered
   | "error";
 
 const POLL_INTERVAL_MS = 2000;
@@ -67,7 +63,7 @@ export function ExportButton({
 }: ExportButtonProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [_jobId, setJobId] = useState<string | null>(null);
+  const [, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const pollCountRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -92,54 +88,51 @@ export function ExportButton({
     return () => document.removeEventListener("mousedown", handler);
   }, [phase]);
 
-  const startPolling = useCallback(
-    (id: string) => {
-      pollCountRef.current = 0;
-      setJobId(id);
-      setJobStatus("pending");
-      setPhase("polling");
+  const startPolling = useCallback((id: string) => {
+    pollCountRef.current = 0;
+    setJobId(id);
+    setJobStatus("pending");
+    setPhase("polling");
 
-      pollTimerRef.current = setInterval(async () => {
-        pollCountRef.current += 1;
-        if (pollCountRef.current > MAX_POLLS) {
+    pollTimerRef.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > MAX_POLLS) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setError("Export timed out. Check the export job status later.");
+        setPhase("error");
+        return;
+      }
+
+      try {
+        const status: ExportJobResponse = await fetchExportStatus(id);
+        setJobStatus(status.status);
+
+        if (status.status === "completed" && status.download_url) {
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-          setError("Export timed out. Check the export job status later.");
+          // Trigger download.
+          const a = document.createElement("a");
+          a.href = downloadExportUrl(id);
+          a.download = "";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setPhase("done");
+          // Reset to idle after a brief moment.
+          setTimeout(() => {
+            setPhase("idle");
+            setJobId(null);
+            setJobStatus(null);
+          }, 3000);
+        } else if (status.status === "failed") {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setError(status.error_message ?? "Export failed.");
           setPhase("error");
-          return;
         }
-
-        try {
-          const status: ExportJobResponse = await fetchExportStatus(id);
-          setJobStatus(status.status);
-
-          if (status.status === "completed" && status.download_url) {
-            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-            // Trigger download.
-            const a = document.createElement("a");
-            a.href = downloadExportUrl(id);
-            a.download = "";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setPhase("done");
-            // Reset to idle after a brief moment.
-            setTimeout(() => {
-              setPhase("idle");
-              setJobId(null);
-              setJobStatus(null);
-            }, 3000);
-          } else if (status.status === "failed") {
-            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-            setError(status.error_message ?? "Export failed.");
-            setPhase("error");
-          }
-        } catch (_e) {
-          // Transient poll failure — keep trying until MAX_POLLS.
-        }
-      }, POLL_INTERVAL_MS);
-    },
-    [],
-  );
+      } catch (_e) {
+        // Transient poll failure — keep trying until MAX_POLLS.
+      }
+    }, POLL_INTERVAL_MS);
+  }, []);
 
   const handleExport = useCallback(
     async (format: ExportFormat) => {
