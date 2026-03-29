@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -689,10 +690,10 @@ func (r *Router) handleCreateAssignments(w http.ResponseWriter, req *http.Reques
 		}
 
 		assignment, err := r.db.InsertAssignment(req.Context(), datastore.InsertAssignmentParams{
-			OwnerID:          owner.Name,
+			OwnerName:        owner.Name,
 			EntityType:       a.EntityType,
 			EntityKey:        a.EntityKey,
-			OrganisationID:   orgID,
+			OrganisationName: orgID,
 			AssignmentSource: "manual",
 			Confidence:       "definitive",
 			Notes:            a.Notes,
@@ -733,8 +734,14 @@ func (r *Router) handleDeleteAssignment(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	id, parseErr := strconv.ParseInt(assignmentID, 10, 64)
+	if parseErr != nil {
+		WriteBadRequest(w, "Invalid assignment ID.")
+		return
+	}
+
 	// Get the assignment details for audit logging.
-	assignment, err := r.db.GetAssignment(req.Context(), assignmentID)
+	assignment, err := r.db.GetAssignment(req.Context(), id)
 	if errors.Is(err, datastore.ErrNotFound) {
 		WriteNotFound(w, "Assignment not found.")
 		return
@@ -745,7 +752,7 @@ func (r *Router) handleDeleteAssignment(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	if err := r.db.DeleteAssignment(req.Context(), assignmentID); err != nil {
+	if err := r.db.DeleteAssignment(req.Context(), id); err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {
 			WriteNotFound(w, "Assignment not found.")
 			return

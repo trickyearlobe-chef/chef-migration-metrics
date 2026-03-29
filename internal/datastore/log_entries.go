@@ -14,7 +14,7 @@ import (
 // LogEntry represents a row in the log_entries table. Each entry is a single
 // structured log event produced by the application.
 type LogEntry struct {
-	ID                  string    `json:"id"`
+	ID                  int64     `json:"id"`
 	Timestamp           time.Time `json:"timestamp"`
 	Severity            string    `json:"severity"`
 	Scope               string    `json:"scope"`
@@ -25,7 +25,7 @@ type LogEntry struct {
 	CommitSHA           string    `json:"commit_sha,omitempty"`
 	ChefClientVersion   string    `json:"chef_client_version,omitempty"`
 	ProcessOutput       string    `json:"process_output,omitempty"`
-	CollectionRunID     string    `json:"collection_run_id,omitempty"`
+	CollectionRunOrg    string    `json:"collection_run_org,omitempty"`
 	NotificationChannel string    `json:"notification_channel,omitempty"`
 	ExportJobID         string    `json:"export_job_id,omitempty"`
 	TLSDomain           string    `json:"tls_domain,omitempty"`
@@ -54,7 +54,7 @@ type InsertLogEntryParams struct {
 	CommitSHA           string
 	ChefClientVersion   string
 	ProcessOutput       string
-	CollectionRunID     string
+	CollectionRunOrg    string
 	NotificationChannel string
 	ExportJobID         string
 	TLSDomain           string
@@ -96,7 +96,7 @@ func (db *DB) insertLogEntry(ctx context.Context, q queryable, p InsertLogEntryP
 			timestamp, severity, scope, message,
 			organisation, cookbook_name, cookbook_version,
 			commit_sha, chef_client_version, process_output,
-			collection_run_id, notification_channel, export_job_id,
+			collection_run_org, notification_channel, export_job_id,
 			tls_domain
 		) VALUES (
 			$1, $2, $3, $4,
@@ -108,7 +108,7 @@ func (db *DB) insertLogEntry(ctx context.Context, q queryable, p InsertLogEntryP
 		RETURNING id, timestamp, severity, scope, message,
 		          organisation, cookbook_name, cookbook_version,
 		          commit_sha, chef_client_version, process_output,
-		          collection_run_id, notification_channel, export_job_id,
+		          collection_run_org, notification_channel, export_job_id,
 		          tls_domain, created_at
 	`
 
@@ -123,7 +123,7 @@ func (db *DB) insertLogEntry(ctx context.Context, q queryable, p InsertLogEntryP
 		nullString(p.CommitSHA),
 		nullString(p.ChefClientVersion),
 		nullString(p.ProcessOutput),
-		nullStringUUID(p.CollectionRunID),
+		nullString(p.CollectionRunOrg),
 		nullString(p.NotificationChannel),
 		nullString(p.ExportJobID),
 		nullString(p.TLSDomain),
@@ -144,7 +144,7 @@ func (db *DB) BulkInsertLogEntries(ctx context.Context, entries []InsertLogEntry
 				timestamp, severity, scope, message,
 				organisation, cookbook_name, cookbook_version,
 				commit_sha, chef_client_version, process_output,
-				collection_run_id, notification_channel, export_job_id,
+				collection_run_org, notification_channel, export_job_id,
 				tls_domain
 			) VALUES (
 				$1, $2, $3, $4,
@@ -177,7 +177,7 @@ func (db *DB) BulkInsertLogEntries(ctx context.Context, entries []InsertLogEntry
 				nullString(p.CommitSHA),
 				nullString(p.ChefClientVersion),
 				nullString(p.ProcessOutput),
-				nullStringUUID(p.CollectionRunID),
+				nullString(p.CollectionRunOrg),
 				nullString(p.NotificationChannel),
 				nullString(p.ExportJobID),
 				nullString(p.TLSDomain),
@@ -197,8 +197,8 @@ func (db *DB) BulkInsertLogEntries(ctx context.Context, entries []InsertLogEntry
 // ---------------------------------------------------------------------------
 
 // GetLogEntry retrieves a single log entry by ID.
-func (db *DB) GetLogEntry(ctx context.Context, id string) (LogEntry, error) {
-	if id == "" {
+func (db *DB) GetLogEntry(ctx context.Context, id int64) (LogEntry, error) {
+	if id == 0 {
 		return LogEntry{}, fmt.Errorf("datastore: log entry ID is required")
 	}
 
@@ -206,7 +206,7 @@ func (db *DB) GetLogEntry(ctx context.Context, id string) (LogEntry, error) {
 		SELECT id, timestamp, severity, scope, message,
 		       organisation, cookbook_name, cookbook_version,
 		       commit_sha, chef_client_version, process_output,
-		       collection_run_id, notification_channel, export_job_id,
+		       collection_run_org, notification_channel, export_job_id,
 		       tls_domain, created_at
 		FROM log_entries
 		WHERE id = $1
@@ -238,8 +238,8 @@ type LogEntryFilter struct {
 	// CookbookName filters by cookbook name.
 	CookbookName string
 
-	// CollectionRunID filters by the associated collection run.
-	CollectionRunID string
+	// CollectionRunOrg filters by the associated collection run org name.
+	CollectionRunOrg string
 
 	// Since filters entries with timestamp >= Since.
 	Since time.Time
@@ -318,9 +318,9 @@ func buildLogEntryFilterWhere(f LogEntryFilter) (where string, args []interface{
 		where += " AND cookbook_name = " + nextArg()
 		args = append(args, f.CookbookName)
 	}
-	if f.CollectionRunID != "" {
-		where += " AND collection_run_id = " + nextArg()
-		args = append(args, f.CollectionRunID)
+	if f.CollectionRunOrg != "" {
+		where += " AND collection_run_org = " + nextArg()
+		args = append(args, f.CollectionRunOrg)
 	}
 	if !f.Since.IsZero() {
 		where += " AND timestamp >= " + nextArg()
@@ -343,7 +343,7 @@ func (db *DB) ListLogEntries(ctx context.Context, f LogEntryFilter) ([]LogEntry,
 		SELECT id, timestamp, severity, scope, message,
 		       organisation, cookbook_name, cookbook_version,
 		       commit_sha, chef_client_version, process_output,
-		       collection_run_id, notification_channel, export_job_id,
+		       collection_run_org, notification_channel, export_job_id,
 		       tls_domain, created_at
 		FROM log_entries` + where + " ORDER BY timestamp DESC"
 
@@ -398,24 +398,25 @@ func (db *DB) CountLogEntries(ctx context.Context, f LogEntryFilter) (int, error
 }
 
 // ListLogEntriesByCollectionRun retrieves all log entries for the given
-// collection run, ordered by timestamp ascending (chronological).
-func (db *DB) ListLogEntriesByCollectionRun(ctx context.Context, collectionRunID string) ([]LogEntry, error) {
-	if collectionRunID == "" {
-		return nil, fmt.Errorf("datastore: collection run ID is required")
+// collection run (identified by org name), ordered by timestamp ascending
+// (chronological).
+func (db *DB) ListLogEntriesByCollectionRun(ctx context.Context, orgName string) ([]LogEntry, error) {
+	if orgName == "" {
+		return nil, fmt.Errorf("datastore: collection run org name is required")
 	}
 
 	const query = `
 		SELECT id, timestamp, severity, scope, message,
 		       organisation, cookbook_name, cookbook_version,
 		       commit_sha, chef_client_version, process_output,
-		       collection_run_id, notification_channel, export_job_id,
+		       collection_run_org, notification_channel, export_job_id,
 		       tls_domain, created_at
 		FROM log_entries
-		WHERE collection_run_id = $1
+		WHERE collection_run_org = $1
 		ORDER BY timestamp ASC
 	`
 
-	rows, err := db.q().QueryContext(ctx, query, collectionRunID)
+	rows, err := db.q().QueryContext(ctx, query, orgName)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: listing log entries by collection run: %w", err)
 	}
@@ -466,14 +467,15 @@ func (db *DB) PurgeLogEntriesOlderThanDays(ctx context.Context, retentionDays in
 }
 
 // DeleteLogEntriesByCollectionRun deletes all log entries associated with
-// the given collection run. Returns the number of rows deleted.
-func (db *DB) DeleteLogEntriesByCollectionRun(ctx context.Context, collectionRunID string) (int64, error) {
-	if collectionRunID == "" {
-		return 0, fmt.Errorf("datastore: collection run ID is required")
+// the given collection run (identified by org name). Returns the number of
+// rows deleted.
+func (db *DB) DeleteLogEntriesByCollectionRun(ctx context.Context, orgName string) (int64, error) {
+	if orgName == "" {
+		return 0, fmt.Errorf("datastore: collection run org name is required")
 	}
 
-	const query = `DELETE FROM log_entries WHERE collection_run_id = $1`
-	result, err := db.q().ExecContext(ctx, query, collectionRunID)
+	const query = `DELETE FROM log_entries WHERE collection_run_org = $1`
+	result, err := db.q().ExecContext(ctx, query, orgName)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: deleting log entries by collection run: %w", err)
 	}
@@ -494,7 +496,7 @@ func scanLogEntry(row *sql.Row) (LogEntry, error) {
 		commitSHA           sql.NullString
 		chefClientVersion   sql.NullString
 		processOutput       sql.NullString
-		collectionRunID     sql.NullString
+		collectionRunOrg    sql.NullString
 		notificationChannel sql.NullString
 		exportJobID         sql.NullString
 		tlsDomain           sql.NullString
@@ -512,7 +514,7 @@ func scanLogEntry(row *sql.Row) (LogEntry, error) {
 		&commitSHA,
 		&chefClientVersion,
 		&processOutput,
-		&collectionRunID,
+		&collectionRunOrg,
 		&notificationChannel,
 		&exportJobID,
 		&tlsDomain,
@@ -531,7 +533,7 @@ func scanLogEntry(row *sql.Row) (LogEntry, error) {
 	le.CommitSHA = stringFromNull(commitSHA)
 	le.ChefClientVersion = stringFromNull(chefClientVersion)
 	le.ProcessOutput = stringFromNull(processOutput)
-	le.CollectionRunID = stringFromNull(collectionRunID)
+	le.CollectionRunOrg = stringFromNull(collectionRunOrg)
 	le.NotificationChannel = stringFromNull(notificationChannel)
 	le.ExportJobID = stringFromNull(exportJobID)
 	le.TLSDomain = stringFromNull(tlsDomain)
@@ -549,7 +551,7 @@ func scanLogEntryRow(rows *sql.Rows) (LogEntry, error) {
 		commitSHA           sql.NullString
 		chefClientVersion   sql.NullString
 		processOutput       sql.NullString
-		collectionRunID     sql.NullString
+		collectionRunOrg    sql.NullString
 		notificationChannel sql.NullString
 		exportJobID         sql.NullString
 		tlsDomain           sql.NullString
@@ -567,7 +569,7 @@ func scanLogEntryRow(rows *sql.Rows) (LogEntry, error) {
 		&commitSHA,
 		&chefClientVersion,
 		&processOutput,
-		&collectionRunID,
+		&collectionRunOrg,
 		&notificationChannel,
 		&exportJobID,
 		&tlsDomain,
@@ -583,7 +585,7 @@ func scanLogEntryRow(rows *sql.Rows) (LogEntry, error) {
 	le.CommitSHA = stringFromNull(commitSHA)
 	le.ChefClientVersion = stringFromNull(chefClientVersion)
 	le.ProcessOutput = stringFromNull(processOutput)
-	le.CollectionRunID = stringFromNull(collectionRunID)
+	le.CollectionRunOrg = stringFromNull(collectionRunOrg)
 	le.NotificationChannel = stringFromNull(notificationChannel)
 	le.ExportJobID = stringFromNull(exportJobID)
 	le.TLSDomain = stringFromNull(tlsDomain)
@@ -594,16 +596,6 @@ func scanLogEntryRow(rows *sql.Rows) (LogEntry, error) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// nullStringUUID converts a string to sql.NullString, treating empty strings
-// as NULL. This is used for UUID foreign key columns where the empty string
-// is not a valid UUID.
-func nullStringUUID(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: s, Valid: true}
-}
 
 // stringSliceToArray converts a []string to a pq-compatible array literal
 // for use with ANY($N) queries.

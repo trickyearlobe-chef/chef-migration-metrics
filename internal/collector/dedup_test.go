@@ -13,11 +13,11 @@ import (
 
 func makeSnapshotParam(orgID, nodeName, chefVersion string) datastore.InsertNodeSnapshotParams {
 	return datastore.InsertNodeSnapshotParams{
-		CollectionRunID: "run-1",
-		OrganisationID:  orgID,
-		NodeName:        nodeName,
-		ChefVersion:     chefVersion,
-		CollectedAt:     time.Now().UTC(),
+		CollectionRunOrg: "run-1",
+		OrganisationName: orgID,
+		NodeName:         nodeName,
+		ChefVersion:      chefVersion,
+		CollectedAt:      time.Now().UTC(),
 	}
 }
 

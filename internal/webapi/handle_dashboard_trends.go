@@ -115,7 +115,7 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 
 	type trendPoint struct {
 		OrganisationName string `json:"organisation_name"`
-		CollectionRunID  string `json:"collection_run_id"`
+		CollectionRunOrg string `json:"collection_run_org"`
 		CompletedAt      string `json:"completed_at"`
 		TotalNodes       int    `json:"total_nodes"`
 		StaleNodes       int    `json:"stale_nodes"`
@@ -141,12 +141,12 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 				FreshNodes int `json:"fresh_nodes"`
 			}
 			if err := json.Unmarshal(ms.Data, &payload); err != nil {
-				r.logf("WARN", "unmarshalling metric snapshot %s for stale trend: %v", ms.ID, err)
+				r.logf("WARN", "unmarshalling metric snapshot %d for stale trend: %v", ms.ID, err)
 				continue
 			}
 			points = append(points, trendPoint{
 				OrganisationName: org.Name,
-				CollectionRunID:  ms.CollectionRunID,
+				CollectionRunOrg: ms.CollectionRunOrg,
 				CompletedAt:      ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
 				TotalNodes:       payload.TotalNodes,
 				StaleNodes:       payload.StaleNodes,

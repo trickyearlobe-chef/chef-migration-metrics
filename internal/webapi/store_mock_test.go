@@ -39,7 +39,7 @@ type mockStore struct {
 	CountNodeReadinessFn                                func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error)
 	ListServerCookbooksByOrganisationFn                 func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
 	ListServerCookbooksByNameFn                         func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
-	ResetServerCookbookDownloadStatusFn                 func(ctx context.Context, id string) (datastore.ServerCookbook, error)
+	ResetServerCookbookDownloadStatusFn                 func(ctx context.Context, organisationName, name, version string) (datastore.ServerCookbook, error)
 	ResetAllServerCookbookDownloadStatusesFn            func(ctx context.Context) (int, error)
 	ListGitReposFn                                      func(ctx context.Context) ([]datastore.GitRepo, error)
 	ListGitReposByNameFn                                func(ctx context.Context, name string) ([]datastore.GitRepo, error)
@@ -73,7 +73,7 @@ type mockStore struct {
 	DeleteAllGitRepoAutocorrectPreviewsFn               func(ctx context.Context) error
 	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
 	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
-	GetLogEntryFn                                       func(ctx context.Context, id string) (datastore.LogEntry, error)
+	GetLogEntryFn                                       func(ctx context.Context, id int64) (datastore.LogEntry, error)
 	ListRoleDependenciesByOrgFn                         func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
 	CountDependenciesByRoleFn                           func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
 	CountRolesPerCookbookFn                             func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
@@ -92,9 +92,9 @@ type mockStore struct {
 	CountAssignmentsByOwnerFn                           func(ctx context.Context, ownerName string) (map[string]int, error)
 	InsertAssignmentFn                                  func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error)
 	ListAssignmentsByOwnerFn                            func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error)
-	GetAssignmentFn                                     func(ctx context.Context, id string) (datastore.OwnershipAssignment, error)
-	DeleteAssignmentFn                                  func(ctx context.Context, id string) error
-	ReassignOwnershipFn                                 func(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (int, int, error)
+	GetAssignmentFn                                     func(ctx context.Context, id int64) (datastore.OwnershipAssignment, error)
+	DeleteAssignmentFn                                  func(ctx context.Context, id int64) error
+	ReassignOwnershipFn                                 func(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (int, int, error)
 	LookupOwnershipFn                                   func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
 	GetOwnerReadinessSummaryFn                          func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
 	GetOwnerCookbookSummaryFn                           func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
@@ -290,9 +290,9 @@ func (m *mockStore) ListServerCookbooksByName(ctx context.Context, name string) 
 	return nil, nil
 }
 
-func (m *mockStore) ResetServerCookbookDownloadStatus(ctx context.Context, id string) (datastore.ServerCookbook, error) {
+func (m *mockStore) ResetServerCookbookDownloadStatus(ctx context.Context, organisationName, name, version string) (datastore.ServerCookbook, error) {
 	if m.ResetServerCookbookDownloadStatusFn != nil {
-		return m.ResetServerCookbookDownloadStatusFn(ctx, id)
+		return m.ResetServerCookbookDownloadStatusFn(ctx, organisationName, name, version)
 	}
 	return datastore.ServerCookbook{}, nil
 }
@@ -544,7 +544,7 @@ func (m *mockStore) CountLogEntries(ctx context.Context, filter datastore.LogEnt
 	return 0, nil
 }
 
-func (m *mockStore) GetLogEntry(ctx context.Context, id string) (datastore.LogEntry, error) {
+func (m *mockStore) GetLogEntry(ctx context.Context, id int64) (datastore.LogEntry, error) {
 	if m.GetLogEntryFn != nil {
 		return m.GetLogEntryFn(ctx, id)
 	}
@@ -693,23 +693,23 @@ func (m *mockStore) ListAssignmentsByOwner(ctx context.Context, f datastore.Assi
 	return nil, 0, nil
 }
 
-func (m *mockStore) GetAssignment(ctx context.Context, id string) (datastore.OwnershipAssignment, error) {
+func (m *mockStore) GetAssignment(ctx context.Context, id int64) (datastore.OwnershipAssignment, error) {
 	if m.GetAssignmentFn != nil {
 		return m.GetAssignmentFn(ctx, id)
 	}
 	return datastore.OwnershipAssignment{}, nil
 }
 
-func (m *mockStore) DeleteAssignment(ctx context.Context, id string) error {
+func (m *mockStore) DeleteAssignment(ctx context.Context, id int64) error {
 	if m.DeleteAssignmentFn != nil {
 		return m.DeleteAssignmentFn(ctx, id)
 	}
 	return nil
 }
 
-func (m *mockStore) ReassignOwnership(ctx context.Context, fromOwnerID, toOwnerID string, entityType, organisationID string) (int, int, error) {
+func (m *mockStore) ReassignOwnership(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (int, int, error) {
 	if m.ReassignOwnershipFn != nil {
-		return m.ReassignOwnershipFn(ctx, fromOwnerID, toOwnerID, entityType, organisationID)
+		return m.ReassignOwnershipFn(ctx, fromOwnerName, toOwnerName, entityType, organisationName)
 	}
 	return 0, 0, nil
 }

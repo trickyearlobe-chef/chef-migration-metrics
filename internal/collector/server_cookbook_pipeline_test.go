@@ -299,10 +299,9 @@ func TestDownloadCookbook_SignatureCompiles(t *testing.T) {
 func TestDownloadCookbook_UsesCacheDir_WhenRetaining(t *testing.T) {
 	cacheDir := t.TempDir()
 	cb := datastore.ServerCookbook{
-		ID:             "cb-1",
-		OrganisationID: "org-abc",
-		Name:           "nginx",
-		Version:        "5.1.0",
+		OrganisationName: "org-abc",
+		Name:             "nginx",
+		Version:          "5.1.0",
 	}
 
 	// nil client panics in the Chef API layer, but the cache directory
@@ -325,10 +324,9 @@ func TestDownloadCookbook_UsesCacheDir_WhenRetaining(t *testing.T) {
 func TestDownloadCookbook_UsesTempDir_WhenDeleting(t *testing.T) {
 	cacheDir := t.TempDir()
 	cb := datastore.ServerCookbook{
-		ID:             "cb-2",
-		OrganisationID: "org-xyz",
-		Name:           "apache2",
-		Version:        "3.0.0",
+		OrganisationName: "org-xyz",
+		Name:             "apache2",
+		Version:          "3.0.0",
 	}
 
 	// nil client panics, but we only care about which directory was used.
@@ -346,10 +344,9 @@ func TestDownloadCookbook_UsesTempDir_WhenDeleting(t *testing.T) {
 
 func TestDownloadCookbook_UsesTempDir_WhenCacheDirEmpty(t *testing.T) {
 	cb := datastore.ServerCookbook{
-		ID:             "cb-3",
-		OrganisationID: "org-123",
-		Name:           "java",
-		Version:        "1.0.0",
+		OrganisationName: "org-123",
+		Name:             "java",
+		Version:          "1.0.0",
 	}
 
 	// Empty cookbookCacheDir with deleteAfterScan=false should still

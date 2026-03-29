@@ -71,28 +71,29 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 	}
 
 	for _, sc := range serverCookbooks {
-		csErr := r.db.DeleteServerCookbookCookstyleResultsByCookbook(ctx, sc.ID)
+		scKey := sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
+		csErr := r.db.DeleteServerCookbookCookstyleResultsByCookbook(ctx, scKey)
 		if csErr != nil {
-			r.logf("WARN", "deleting cookstyle results for server cookbook %s (%s): %v", sc.ID, sc.Name, csErr)
+			r.logf("WARN", "deleting cookstyle results for server cookbook %s: %v", scKey, csErr)
 			lastErr = csErr
 		}
 
-		cxErr := r.db.DeleteServerCookbookComplexitiesByCookbook(ctx, sc.ID)
+		cxErr := r.db.DeleteServerCookbookComplexitiesByCookbook(ctx, scKey)
 		if cxErr != nil {
-			r.logf("WARN", "deleting complexity records for server cookbook %s (%s): %v", sc.ID, sc.Name, cxErr)
+			r.logf("WARN", "deleting complexity records for server cookbook %s: %v", scKey, cxErr)
 			lastErr = cxErr
 		}
 
-		acErr := r.db.DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx, sc.ID)
+		acErr := r.db.DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx, scKey)
 		if acErr != nil {
-			r.logf("WARN", "deleting autocorrect previews for server cookbook %s (%s): %v", sc.ID, sc.Name, acErr)
+			r.logf("WARN", "deleting autocorrect previews for server cookbook %s: %v", scKey, acErr)
 			lastErr = acErr
 		}
 
 		// Reset download_status to 'pending' so the streaming pipeline
 		// re-downloads and re-scans the files on the next collection cycle.
-		if _, dlErr := r.db.ResetServerCookbookDownloadStatus(ctx, sc.ID); dlErr != nil {
-			r.logf("WARN", "resetting download status for server cookbook %s (%s): %v", sc.ID, sc.Name, dlErr)
+		if _, dlErr := r.db.ResetServerCookbookDownloadStatus(ctx, sc.OrganisationName, sc.Name, sc.Version); dlErr != nil {
+			r.logf("WARN", "resetting download status for server cookbook %s: %v", scKey, dlErr)
 			lastErr = dlErr
 		}
 

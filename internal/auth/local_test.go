@@ -698,7 +698,6 @@ func TestLoginSuccess(t *testing.T) {
 		insertSessionFn: func(ctx context.Context, p datastore.InsertSessionParams) (datastore.Session, error) {
 			return datastore.Session{
 				ID:           "new-session-id",
-				UserID:       p.UserID,
 				Username:     p.Username,
 				AuthProvider: p.AuthProvider,
 				Role:         p.Role,

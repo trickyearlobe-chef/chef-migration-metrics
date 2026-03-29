@@ -37,8 +37,8 @@ func (f *fakeStore) ListNodeSnapshotsByOrganisation(_ context.Context, orgID str
 	return f.nodesByOrg[orgID], nil
 }
 
-func (f *fakeStore) ListNodeReadinessForSnapshot(_ context.Context, snapID string) ([]datastore.NodeReadiness, error) {
-	return f.readiness[snapID], nil
+func (f *fakeStore) ListNodeReadinessByNodeName(_ context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
+	return f.readiness[orgName+"/"+nodeName], nil
 }
 
 func (f *fakeStore) ListServerCookbooksByOrganisation(_ context.Context, orgID string) ([]datastore.ServerCookbook, error) {
@@ -73,46 +73,43 @@ func testStore() *fakeStore {
 
 	nodes := []datastore.NodeSnapshot{
 		{
-			ID:              "snap-1",
-			OrganisationID:  "prod-org",
-			NodeName:        "web01",
-			ChefEnvironment: "production",
-			ChefVersion:     "16.0.0",
-			Platform:        "ubuntu",
-			PlatformVersion: "20.04",
-			PolicyName:      "web",
-			PolicyGroup:     "prod",
-			Roles:           json.RawMessage(`["base","webserver"]`),
-			CollectedAt:     time.Now(),
+			OrganisationName: "prod-org",
+			NodeName:         "web01",
+			ChefEnvironment:  "production",
+			ChefVersion:      "16.0.0",
+			Platform:         "ubuntu",
+			PlatformVersion:  "20.04",
+			PolicyName:       "web",
+			PolicyGroup:      "prod",
+			Roles:            json.RawMessage(`["base","webserver"]`),
+			CollectedAt:      time.Now(),
 		},
 		{
-			ID:              "snap-2",
-			OrganisationID:  "prod-org",
-			NodeName:        "db01",
-			ChefEnvironment: "production",
-			ChefVersion:     "15.0.0",
-			Platform:        "centos",
-			PlatformVersion: "7",
-			PolicyName:      "",
-			PolicyGroup:     "",
-			Roles:           json.RawMessage(`["base","database"]`),
-			CollectedAt:     time.Now(),
+			OrganisationName: "prod-org",
+			NodeName:         "db01",
+			ChefEnvironment:  "production",
+			ChefVersion:      "15.0.0",
+			Platform:         "centos",
+			PlatformVersion:  "7",
+			PolicyName:       "",
+			PolicyGroup:      "",
+			Roles:            json.RawMessage(`["base","database"]`),
+			CollectedAt:      time.Now(),
 		},
 		{
-			ID:              "snap-3",
-			OrganisationID:  "prod-org",
-			NodeName:        "staging01",
-			ChefEnvironment: "staging",
-			ChefVersion:     "17.0.0",
-			Platform:        "ubuntu",
-			PlatformVersion: "22.04",
-			Roles:           json.RawMessage(`["base"]`),
-			CollectedAt:     time.Now(),
+			OrganisationName: "prod-org",
+			NodeName:         "staging01",
+			ChefEnvironment:  "staging",
+			ChefVersion:      "17.0.0",
+			Platform:         "ubuntu",
+			PlatformVersion:  "22.04",
+			Roles:            json.RawMessage(`["base"]`),
+			CollectedAt:      time.Now(),
 		},
 	}
 
 	readiness := map[string][]datastore.NodeReadiness{
-		"snap-1": {{
+		"prod-org/web01": {{
 			ID:                     "nr-1",
 			NodeSnapshotID:         "snap-1",
 			OrganisationID:         "prod-org",
@@ -121,7 +118,7 @@ func testStore() *fakeStore {
 			IsReady:                true,
 			AllCookbooksCompatible: true,
 		}},
-		"snap-2": {{
+		"prod-org/db01": {{
 			ID:                     "nr-2",
 			NodeSnapshotID:         "snap-2",
 			OrganisationID:         "prod-org",
@@ -131,7 +128,7 @@ func testStore() *fakeStore {
 			AllCookbooksCompatible: false,
 			BlockingCookbooks:      json.RawMessage(`["legacy-db"]`),
 		}},
-		"snap-3": {{
+		"prod-org/staging01": {{
 			ID:                     "nr-3",
 			NodeSnapshotID:         "snap-3",
 			OrganisationID:         "prod-org",
@@ -144,16 +141,15 @@ func testStore() *fakeStore {
 
 	cookbooks := map[string][]datastore.ServerCookbook{
 		"prod-org": {
-			{ID: "cb-1", OrganisationID: "prod-org", Name: "legacy-db", Version: "1.0.0"},
-			{ID: "cb-2", OrganisationID: "prod-org", Name: "webserver", Version: "2.0.0"},
+			{OrganisationName: "prod-org", Name: "legacy-db", Version: "1.0.0"},
+			{OrganisationName: "prod-org", Name: "webserver", Version: "2.0.0"},
 		},
 	}
 
 	complexities := map[string][]datastore.ServerCookbookComplexity{
 		"prod-org": {
 			{
-				ID:                   "cc-1",
-				ServerCookbookID:     "cb-1",
+				ServerCookbookID:     "prod-org/legacy-db/1.0.0",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      75,
 				ComplexityLabel:      "high",
@@ -165,8 +161,7 @@ func testStore() *fakeStore {
 				ErrorCount:           1,
 			},
 			{
-				ID:                   "cc-2",
-				ServerCookbookID:     "cb-2",
+				ServerCookbookID:     "prod-org/webserver/2.0.0",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      10,
 				ComplexityLabel:      "low",

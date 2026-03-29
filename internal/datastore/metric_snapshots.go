@@ -15,9 +15,9 @@ import (
 // Pre-aggregated data is stored in the Data field as JSON so that
 // dashboard trend views avoid scanning the large node_snapshots table.
 type MetricSnapshot struct {
-	ID                string          `json:"id"`
-	CollectionRunID   string          `json:"collection_run_id,omitempty"`
-	OrganisationID    string          `json:"organisation_id"`
+	ID                int64           `json:"id"`
+	CollectionRunOrg  string          `json:"collection_run_org,omitempty"`
+	OrganisationName  string          `json:"organisation_name"`
 	SnapshotType      string          `json:"snapshot_type"`
 	TargetChefVersion string          `json:"target_chef_version,omitempty"`
 	Data              json.RawMessage `json:"data"`
@@ -27,8 +27,8 @@ type MetricSnapshot struct {
 
 // InsertMetricSnapshotParams holds the fields required to insert a metric snapshot.
 type InsertMetricSnapshotParams struct {
-	CollectionRunID   string
-	OrganisationID    string
+	CollectionRunOrg  string
+	OrganisationName  string
 	SnapshotType      string
 	TargetChefVersion string
 	Data              json.RawMessage
@@ -45,8 +45,8 @@ func (db *DB) InsertMetricSnapshot(ctx context.Context, p InsertMetricSnapshotPa
 }
 
 func (db *DB) insertMetricSnapshot(ctx context.Context, q queryable, p InsertMetricSnapshotParams) (MetricSnapshot, error) {
-	if p.OrganisationID == "" {
-		return MetricSnapshot{}, fmt.Errorf("datastore: organisation ID is required to insert a metric snapshot")
+	if p.OrganisationName == "" {
+		return MetricSnapshot{}, fmt.Errorf("datastore: organisation name is required to insert a metric snapshot")
 	}
 	if p.SnapshotType == "" {
 		return MetricSnapshot{}, fmt.Errorf("datastore: snapshot type is required to insert a metric snapshot")
@@ -60,18 +60,18 @@ func (db *DB) insertMetricSnapshot(ctx context.Context, q queryable, p InsertMet
 
 	const query = `
 		INSERT INTO metric_snapshots (
-			collection_run_id, organisation_id, snapshot_type,
+			collection_run_org, organisation_name, snapshot_type,
 			target_chef_version, data, snapshot_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6
 		)
-		RETURNING id, collection_run_id, organisation_id, snapshot_type,
+		RETURNING id, collection_run_org, organisation_name, snapshot_type,
 		          target_chef_version, data, snapshot_at, created_at
 	`
 
 	return scanMetricSnapshot(q.QueryRowContext(ctx, query,
-		nullString(p.CollectionRunID),
-		p.OrganisationID,
+		nullString(p.CollectionRunOrg),
+		p.OrganisationName,
 		p.SnapshotType,
 		nullString(p.TargetChefVersion),
 		[]byte(p.Data),
@@ -87,20 +87,20 @@ func (db *DB) insertMetricSnapshot(ctx context.Context, q queryable, p InsertMet
 // organisation filtered by snapshot_type, ordered by snapshot_at DESC.
 // If limit > 0, the result set is capped to that many rows. This is used
 // for trend charts.
-func (db *DB) ListMetricSnapshotsByOrganisation(ctx context.Context, organisationID, snapshotType string, limit int) ([]MetricSnapshot, error) {
-	return db.listMetricSnapshotsByOrganisation(ctx, db.q(), organisationID, snapshotType, limit)
+func (db *DB) ListMetricSnapshotsByOrganisation(ctx context.Context, organisationName, snapshotType string, limit int) ([]MetricSnapshot, error) {
+	return db.listMetricSnapshotsByOrganisation(ctx, db.q(), organisationName, snapshotType, limit)
 }
 
-func (db *DB) listMetricSnapshotsByOrganisation(ctx context.Context, q queryable, organisationID, snapshotType string, limit int) ([]MetricSnapshot, error) {
+func (db *DB) listMetricSnapshotsByOrganisation(ctx context.Context, q queryable, organisationName, snapshotType string, limit int) ([]MetricSnapshot, error) {
 	query := `
-		SELECT id, collection_run_id, organisation_id, snapshot_type,
+		SELECT id, collection_run_org, organisation_name, snapshot_type,
 		       target_chef_version, data, snapshot_at, created_at
 		FROM metric_snapshots
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		  AND snapshot_type = $2
 		ORDER BY snapshot_at DESC
 	`
-	args := []any{organisationID, snapshotType}
+	args := []any{organisationName, snapshotType}
 
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -112,21 +112,21 @@ func (db *DB) listMetricSnapshotsByOrganisation(ctx context.Context, q queryable
 // ListMetricSnapshotsByOrganisationAndVersion returns metric snapshots for
 // the given organisation filtered by snapshot_type and target_chef_version,
 // ordered by snapshot_at DESC. If limit > 0, the result set is capped.
-func (db *DB) ListMetricSnapshotsByOrganisationAndVersion(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]MetricSnapshot, error) {
-	return db.listMetricSnapshotsByOrganisationAndVersion(ctx, db.q(), organisationID, snapshotType, targetChefVersion, limit)
+func (db *DB) ListMetricSnapshotsByOrganisationAndVersion(ctx context.Context, organisationName, snapshotType, targetChefVersion string, limit int) ([]MetricSnapshot, error) {
+	return db.listMetricSnapshotsByOrganisationAndVersion(ctx, db.q(), organisationName, snapshotType, targetChefVersion, limit)
 }
 
-func (db *DB) listMetricSnapshotsByOrganisationAndVersion(ctx context.Context, q queryable, organisationID, snapshotType, targetChefVersion string, limit int) ([]MetricSnapshot, error) {
+func (db *DB) listMetricSnapshotsByOrganisationAndVersion(ctx context.Context, q queryable, organisationName, snapshotType, targetChefVersion string, limit int) ([]MetricSnapshot, error) {
 	query := `
-		SELECT id, collection_run_id, organisation_id, snapshot_type,
+		SELECT id, collection_run_org, organisation_name, snapshot_type,
 		       target_chef_version, data, snapshot_at, created_at
 		FROM metric_snapshots
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		  AND snapshot_type = $2
 		  AND target_chef_version = $3
 		ORDER BY snapshot_at DESC
 	`
-	args := []any{organisationID, snapshotType, targetChefVersion}
+	args := []any{organisationName, snapshotType, targetChefVersion}
 
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -160,13 +160,13 @@ func (db *DB) PurgeMetricSnapshotsOlderThan(ctx context.Context, cutoff time.Tim
 
 func scanMetricSnapshot(row *sql.Row) (MetricSnapshot, error) {
 	var ms MetricSnapshot
-	var collectionRunID, targetChefVersion sql.NullString
+	var collectionRunOrg, targetChefVersion sql.NullString
 	var data []byte
 
 	err := row.Scan(
 		&ms.ID,
-		&collectionRunID,
-		&ms.OrganisationID,
+		&collectionRunOrg,
+		&ms.OrganisationName,
 		&ms.SnapshotType,
 		&targetChefVersion,
 		&data,
@@ -180,7 +180,7 @@ func scanMetricSnapshot(row *sql.Row) (MetricSnapshot, error) {
 		return MetricSnapshot{}, fmt.Errorf("datastore: scanning metric snapshot: %w", err)
 	}
 
-	ms.CollectionRunID = stringFromNull(collectionRunID)
+	ms.CollectionRunOrg = stringFromNull(collectionRunOrg)
 	ms.TargetChefVersion = stringFromNull(targetChefVersion)
 	ms.Data = jsonFromNullBytes(data)
 	return ms, nil
@@ -195,13 +195,13 @@ func scanMetricSnapshots(rows *sql.Rows, err error) ([]MetricSnapshot, error) {
 	var snapshots []MetricSnapshot
 	for rows.Next() {
 		var ms MetricSnapshot
-		var collectionRunID, targetChefVersion sql.NullString
+		var collectionRunOrg, targetChefVersion sql.NullString
 		var data []byte
 
 		if err := rows.Scan(
 			&ms.ID,
-			&collectionRunID,
-			&ms.OrganisationID,
+			&collectionRunOrg,
+			&ms.OrganisationName,
 			&ms.SnapshotType,
 			&targetChefVersion,
 			&data,
@@ -211,7 +211,7 @@ func scanMetricSnapshots(rows *sql.Rows, err error) ([]MetricSnapshot, error) {
 			return nil, fmt.Errorf("datastore: scanning metric snapshot row: %w", err)
 		}
 
-		ms.CollectionRunID = stringFromNull(collectionRunID)
+		ms.CollectionRunOrg = stringFromNull(collectionRunOrg)
 		ms.TargetChefVersion = stringFromNull(targetChefVersion)
 		ms.Data = jsonFromNullBytes(data)
 		snapshots = append(snapshots, ms)

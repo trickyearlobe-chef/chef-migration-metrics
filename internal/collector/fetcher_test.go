@@ -88,10 +88,10 @@ func TestFormatDownloadError_APIError_403(t *testing.T) {
 
 func TestCookbookFetchError_Error(t *testing.T) {
 	cfe := CookbookFetchError{
-		CookbookID: "abc-123",
-		Name:       "nginx",
-		Version:    "5.1.0",
-		Err:        fmt.Errorf("404 Not Found"),
+		OrganisationName: "test-org",
+		Name:             "nginx",
+		Version:          "5.1.0",
+		Err:              fmt.Errorf("404 Not Found"),
 	}
 
 	got := cfe.Error()
@@ -103,10 +103,10 @@ func TestCookbookFetchError_Error(t *testing.T) {
 
 func TestCookbookFetchError_Error_EmptyVersion(t *testing.T) {
 	cfe := CookbookFetchError{
-		CookbookID: "abc-123",
-		Name:       "base",
-		Version:    "",
-		Err:        fmt.Errorf("something went wrong"),
+		OrganisationName: "test-org",
+		Name:             "base",
+		Version:          "",
+		Err:              fmt.Errorf("something went wrong"),
 	}
 
 	got := cfe.Error()
@@ -281,11 +281,11 @@ func TestCookbook_NeedsDownload(t *testing.T) {
 
 func TestCookbook_MarshalJSON_IncludesDownloadStatus(t *testing.T) {
 	cb := datastore.ServerCookbook{
-		ID:             "abc-123",
-		Name:           "nginx",
-		Version:        "5.1.0",
-		DownloadStatus: datastore.DownloadStatusFailed,
-		DownloadError:  "404 Not Found",
+		OrganisationName: "test-org",
+		Name:             "nginx",
+		Version:          "5.1.0",
+		DownloadStatus:   datastore.DownloadStatusFailed,
+		DownloadError:    "404 Not Found",
 	}
 
 	data, err := json.Marshal(cb)
@@ -313,11 +313,11 @@ func TestCookbook_MarshalJSON_IncludesDownloadStatus(t *testing.T) {
 
 func TestCookbook_MarshalJSON_OmitsEmptyDownloadError(t *testing.T) {
 	cb := datastore.ServerCookbook{
-		ID:             "abc-123",
-		Name:           "nginx",
-		Version:        "5.1.0",
-		DownloadStatus: datastore.DownloadStatusOK,
-		DownloadError:  "", // Empty — should be omitted
+		OrganisationName: "test-org",
+		Name:             "nginx",
+		Version:          "5.1.0",
+		DownloadStatus:   datastore.DownloadStatusOK,
+		DownloadError:    "", // Empty — should be omitted
 	}
 
 	data, err := json.Marshal(cb)
@@ -347,13 +347,21 @@ func TestCookbook_MarshalJSON_OmitsEmptyDownloadError(t *testing.T) {
 
 func TestUpdateCookbookDownloadStatusParams_Fields(t *testing.T) {
 	p := datastore.UpdateServerCookbookDownloadStatusParams{
-		ID:             "abc-123",
-		DownloadStatus: datastore.DownloadStatusFailed,
-		DownloadError:  "timeout after 30s",
+		OrganisationName: "test-org",
+		Name:             "nginx",
+		Version:          "5.1.0",
+		DownloadStatus:   datastore.DownloadStatusFailed,
+		DownloadError:    "timeout after 30s",
 	}
 
-	if p.ID != "abc-123" {
-		t.Errorf("ID = %q, want %q", p.ID, "abc-123")
+	if p.OrganisationName != "test-org" {
+		t.Errorf("OrganisationName = %q, want %q", p.OrganisationName, "test-org")
+	}
+	if p.Name != "nginx" {
+		t.Errorf("Name = %q, want %q", p.Name, "nginx")
+	}
+	if p.Version != "5.1.0" {
+		t.Errorf("Version = %q, want %q", p.Version, "5.1.0")
 	}
 	if p.DownloadStatus != "failed" {
 		t.Errorf("DownloadStatus = %q, want %q", p.DownloadStatus, "failed")
@@ -421,9 +429,9 @@ func TestFetchCookbooks_EmptyCookbookList_NoPanic(t *testing.T) {
 
 func TestCookbookFetchError_MultipleErrors(t *testing.T) {
 	errors := []CookbookFetchError{
-		{CookbookID: "id1", Name: "nginx", Version: "5.1.0", Err: fmt.Errorf("404 Not Found")},
-		{CookbookID: "id2", Name: "apt", Version: "7.4.0", Err: fmt.Errorf("timeout")},
-		{CookbookID: "id3", Name: "base", Version: "1.3.2", Err: fmt.Errorf("permission denied")},
+		{OrganisationName: "org1", Name: "nginx", Version: "5.1.0", Err: fmt.Errorf("404 Not Found")},
+		{OrganisationName: "org2", Name: "apt", Version: "7.4.0", Err: fmt.Errorf("timeout")},
+		{OrganisationName: "org3", Name: "base", Version: "1.3.2", Err: fmt.Errorf("permission denied")},
 	}
 
 	expected := []string{

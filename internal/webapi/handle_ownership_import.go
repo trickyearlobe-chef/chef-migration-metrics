@@ -221,10 +221,10 @@ func (r *Router) handleOwnershipImport(w http.ResponseWriter, req *http.Request)
 
 		// Create the assignment.
 		_, err := r.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
-			OwnerID:          owner.Name,
+			OwnerName:        owner.Name,
 			EntityType:       row.EntityType,
 			EntityKey:        row.EntityKey,
-			OrganisationID:   orgID,
+			OrganisationName: orgID,
 			AssignmentSource: "import",
 			Confidence:       "definitive",
 			Notes:            row.Notes,
@@ -462,7 +462,7 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 
 		// Create a git_repo assignment linking the owner to the cookbook's repo URL.
 		_, err = r.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
-			OwnerID:          owner.Name,
+			OwnerName:        owner.Name,
 			EntityType:       "git_repo",
 			EntityKey:        repoURL,
 			AssignmentSource: "manual",

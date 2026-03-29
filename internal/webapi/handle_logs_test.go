@@ -322,8 +322,8 @@ func TestHandleLogs_HappyPath_WithEntries(t *testing.T) {
 		},
 		ListLogEntriesFn: func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error) {
 			return []datastore.LogEntry{
-				{ID: "log-1", Severity: "INFO", Scope: "collection", Message: "started", Timestamp: now},
-				{ID: "log-2", Severity: "WARN", Scope: "collection", Message: "slow", Timestamp: now},
+				{ID: 1, Severity: "INFO", Scope: "collection", Message: "started", Timestamp: now},
+				{ID: 2, Severity: "WARN", Scope: "collection", Message: "slow", Timestamp: now},
 			}, nil
 		},
 	}
@@ -420,30 +420,30 @@ func TestHandleLogs_DBError_List(t *testing.T) {
 func TestHandleLogDetail_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
-		GetLogEntryFn: func(ctx context.Context, id string) (datastore.LogEntry, error) {
-			if id == "abc-123" {
-				return datastore.LogEntry{ID: "abc-123", Severity: "INFO", Message: "hello", Timestamp: now}, nil
+		GetLogEntryFn: func(ctx context.Context, id int64) (datastore.LogEntry, error) {
+			if id == 42 {
+				return datastore.LogEntry{ID: 42, Severity: "INFO", Message: "hello", Timestamp: now}, nil
 			}
 			return datastore.LogEntry{}, datastore.ErrNotFound
 		},
 	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/abc-123", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/42", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 	var entry struct {
-		ID      string `json:"id"`
+		ID      int64  `json:"id"`
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &entry); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if entry.ID != "abc-123" {
-		t.Errorf("id = %q, want %q", entry.ID, "abc-123")
+	if entry.ID != 42 {
+		t.Errorf("id = %d, want %d", entry.ID, 42)
 	}
 	if entry.Message != "hello" {
 		t.Errorf("message = %q, want %q", entry.Message, "hello")
@@ -452,13 +452,13 @@ func TestHandleLogDetail_HappyPath(t *testing.T) {
 
 func TestHandleLogDetail_NotFound(t *testing.T) {
 	store := &mockStore{
-		GetLogEntryFn: func(ctx context.Context, id string) (datastore.LogEntry, error) {
+		GetLogEntryFn: func(ctx context.Context, id int64) (datastore.LogEntry, error) {
 			return datastore.LogEntry{}, datastore.ErrNotFound
 		},
 	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/no-such-id", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/999", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
@@ -475,13 +475,13 @@ func TestHandleLogDetail_NotFound(t *testing.T) {
 
 func TestHandleLogDetail_DBError(t *testing.T) {
 	store := &mockStore{
-		GetLogEntryFn: func(ctx context.Context, id string) (datastore.LogEntry, error) {
+		GetLogEntryFn: func(ctx context.Context, id int64) (datastore.LogEntry, error) {
 			return datastore.LogEntry{}, errors.New("disk I/O error")
 		},
 	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/abc-123", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/42", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
@@ -520,7 +520,7 @@ func TestHandleCollectionRuns_HappyPath_WithRuns(t *testing.T) {
 		},
 		ListCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
 			return []datastore.CollectionRunWithOrg{
-				{OrganisationName: "prod", Run: datastore.CollectionRun{ID: "run-1", OrganisationID: "org-1", Status: "completed", StartedAt: now, CompletedAt: now}},
+				{OrganisationName: "prod", Run: datastore.CollectionRun{OrganisationName: "org-1", Status: "completed", StartedAt: now, CompletedAt: now}},
 			}, nil
 		},
 	}
@@ -555,7 +555,7 @@ func TestHandleCollectionRuns_HappyPath_FilterByOrg(t *testing.T) {
 				t.Errorf("filter.Organisation = %q, want %q", f.Organisation, "prod")
 			}
 			return []datastore.CollectionRunWithOrg{
-				{OrganisationName: "prod", Run: datastore.CollectionRun{ID: "run-1", OrganisationID: "org-1", Status: "completed", StartedAt: now}},
+				{OrganisationName: "prod", Run: datastore.CollectionRun{OrganisationName: "org-1", Status: "completed", StartedAt: now}},
 			}, nil
 		},
 	}
@@ -587,7 +587,7 @@ func TestHandleCollectionRuns_HappyPath_FilterByStatus(t *testing.T) {
 		},
 		ListCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
 			return []datastore.CollectionRunWithOrg{
-				{OrganisationName: "prod", Run: datastore.CollectionRun{ID: "run-1", Status: "completed", StartedAt: now}},
+				{OrganisationName: "prod", Run: datastore.CollectionRun{Status: "completed", StartedAt: now}},
 			}, nil
 		},
 	}

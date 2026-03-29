@@ -110,15 +110,15 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 			continue
 		}
 
-		// Build a map from server cookbook ID to cookbook metadata.
+		// Build a map from cookbook name:version to cookbook metadata.
 		cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing server cookbooks for org %s in remediation priority: %v", org.Name, err)
 			continue
 		}
-		cbMap := make(map[string]datastore.ServerCookbook, len(cookbooks))
+		cbByID := make(map[string]datastore.ServerCookbook, len(cookbooks))
 		for _, cb := range cookbooks {
-			cbMap[cb.ID] = cb
+			cbByID[cb.Name+":"+cb.Version] = cb
 		}
 
 		for _, cc := range complexities {
@@ -135,7 +135,11 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 			}
 			priorityScore := cc.ComplexityScore * blastRadius
 
-			cb := cbMap[cc.ServerCookbookID]
+			// Look up cookbook metadata via the complexity's reference.
+			// After the natural-key migration, ServerCookbookID is a
+			// legacy placeholder — once ServerCookbookComplexity gains
+			// CookbookName/CookbookVersion fields this map can be removed.
+			cb := cbByID[cc.ServerCookbookID]
 
 			items = append(items, priorityItem{
 				CookbookName:         cb.Name,
@@ -352,17 +356,17 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 			continue
 		}
 
-		// Build a map from server cookbook ID to cookbook metadata for ownership filtering.
-		var cbMap map[string]datastore.ServerCookbook
+		// Build a map from cookbook name:version to cookbook metadata for ownership filtering.
+		var cbByID map[string]datastore.ServerCookbook
 		if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
 			cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 			if err != nil {
 				r.logf("WARN", "listing server cookbooks for org %s in remediation summary: %v", org.Name, err)
 				continue
 			}
-			cbMap = make(map[string]datastore.ServerCookbook, len(cookbooks))
+			cbByID = make(map[string]datastore.ServerCookbook, len(cookbooks))
 			for _, cb := range cookbooks {
-				cbMap[cb.ID] = cb
+				cbByID[cb.Name+":"+cb.Version] = cb
 			}
 		}
 
@@ -373,7 +377,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 
 			// Apply owner filter: skip cookbooks that don't match ownership.
 			if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
-				cb := cbMap[cc.ServerCookbookID]
+				cb := cbByID[cc.ServerCookbookID]
 				if of.Unowned {
 					if ownedKeys[cb.Name] {
 						continue

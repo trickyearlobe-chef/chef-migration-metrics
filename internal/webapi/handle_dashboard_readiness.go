@@ -57,7 +57,11 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 	// the fast aggregate CountNodeReadiness path.
 	if ownedKeys != nil {
 		// Build the set of allowed node names across all orgs.
-		allowedNodes := make(map[string]string) // node_name -> snapshot_id
+		type nodeKey struct {
+			orgName  string
+			nodeName string
+		}
+		var allowedNodes []nodeKey
 		for _, org := range orgs {
 			nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.Name)
 			if err != nil {
@@ -66,7 +70,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 			}
 			for _, n := range nodes {
 				if ownershipInclude(n.NodeName, ownedKeys, of) {
-					allowedNodes[n.NodeName] = n.ID
+					allowedNodes = append(allowedNodes, nodeKey{orgName: n.OrganisationName, nodeName: n.NodeName})
 				}
 			}
 		}
@@ -74,8 +78,8 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		var summaries []readinessSummary
 		for _, tv := range targetVersions {
 			var totalAll, readyAll, blockedAll int
-			for _, snapshotID := range allowedNodes {
-				readiness, err := r.db.ListNodeReadinessForSnapshot(ctx, snapshotID)
+			for _, nk := range allowedNodes {
+				readiness, err := r.db.ListNodeReadinessByNodeName(ctx, nk.orgName, nk.nodeName)
 				if err != nil {
 					continue
 				}
@@ -181,7 +185,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 
 	type trendPoint struct {
 		OrganisationName  string  `json:"organisation_name"`
-		CollectionRunID   string  `json:"collection_run_id"`
+		CollectionRunOrg  string  `json:"collection_run_org"`
 		CompletedAt       string  `json:"completed_at"`
 		TargetChefVersion string  `json:"target_chef_version"`
 		TotalNodes        int     `json:"total_nodes"`
@@ -216,7 +220,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 					NodesOmitted bool `json:"nodes_omitted"`
 				}
 				if jErr := json.Unmarshal(ms.Data, &payload); jErr != nil {
-					r.logf("WARN", "unmarshalling readiness snapshot %s: %v", ms.ID, jErr)
+					r.logf("WARN", "unmarshalling readiness snapshot %d: %v", ms.ID, jErr)
 					continue
 				}
 
@@ -253,7 +257,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 
 				points = append(points, trendPoint{
 					OrganisationName:  org.Name,
-					CollectionRunID:   ms.CollectionRunID,
+					CollectionRunOrg:  ms.CollectionRunOrg,
 					CompletedAt:       ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
 					TargetChefVersion: tv,
 					TotalNodes:        total,

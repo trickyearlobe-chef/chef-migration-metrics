@@ -693,8 +693,8 @@ func TestListAssignments_HappyPath(t *testing.T) {
 			}
 			return []datastore.OwnershipAssignment{
 				{
-					ID:               "a1",
-					OwnerID:          "id-1",
+					ID:               1,
+					OwnerName:        "web-platform",
 					EntityType:       "node",
 					EntityKey:        "web-01",
 					AssignmentSource: "manual",
@@ -788,8 +788,8 @@ func TestCreateAssignments_HappyPath(t *testing.T) {
 		},
 		InsertAssignmentFn: func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
 			return datastore.OwnershipAssignment{
-				ID:               "a-new",
-				OwnerID:          p.OwnerID,
+				ID:               1,
+				OwnerName:        p.OwnerName,
 				EntityType:       p.EntityType,
 				EntityKey:        p.EntityKey,
 				AssignmentSource: p.AssignmentSource,
@@ -915,7 +915,7 @@ func TestCreateAssignments_Duplicate(t *testing.T) {
 }
 
 func TestCreateAssignments_WithOrganisation(t *testing.T) {
-	var capturedOrgID string
+	var capturedOrgName string
 	store := &mockStore{
 		GetOwnerByNameFn: func(ctx context.Context, name string) (datastore.Owner, error) {
 			return datastore.Owner{Name: name}, nil
@@ -924,13 +924,13 @@ func TestCreateAssignments_WithOrganisation(t *testing.T) {
 			return datastore.Organisation{Name: name}, nil
 		},
 		InsertAssignmentFn: func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
-			capturedOrgID = p.OrganisationID
+			capturedOrgName = p.OrganisationName
 			return datastore.OwnershipAssignment{
-				ID:               "a-new",
-				OwnerID:          p.OwnerID,
+				ID:               1,
+				OwnerName:        p.OwnerName,
 				EntityType:       p.EntityType,
 				EntityKey:        p.EntityKey,
-				OrganisationID:   p.OrganisationID,
+				OrganisationName: p.OrganisationName,
 				AssignmentSource: "manual",
 				Confidence:       "definitive",
 				CreatedAt:        time.Now(),
@@ -949,8 +949,8 @@ func TestCreateAssignments_WithOrganisation(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusCreated, w.Body.String())
 	}
-	if capturedOrgID != "prod" {
-		t.Errorf("organisation_id = %q, want %q", capturedOrgID, "prod")
+	if capturedOrgName != "prod" {
+		t.Errorf("organisation_name = %q, want %q", capturedOrgName, "prod")
 	}
 }
 
@@ -996,7 +996,7 @@ func TestCreateAssignments_InvalidJSON(t *testing.T) {
 
 func TestDeleteAssignment_HappyPath(t *testing.T) {
 	store := &mockStore{
-		GetAssignmentFn: func(ctx context.Context, id string) (datastore.OwnershipAssignment, error) {
+		GetAssignmentFn: func(ctx context.Context, id int64) (datastore.OwnershipAssignment, error) {
 			return datastore.OwnershipAssignment{
 				ID:               id,
 				EntityType:       "node",
@@ -1005,7 +1005,7 @@ func TestDeleteAssignment_HappyPath(t *testing.T) {
 				Confidence:       "definitive",
 			}, nil
 		},
-		DeleteAssignmentFn: func(ctx context.Context, id string) error {
+		DeleteAssignmentFn: func(ctx context.Context, id int64) error {
 			return nil
 		},
 		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
@@ -1014,7 +1014,7 @@ func TestDeleteAssignment_HappyPath(t *testing.T) {
 	}
 	r := ownershipRouter(store)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/owners/web-platform/assignments/a-1", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/owners/web-platform/assignments/1", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNoContent {
@@ -1024,13 +1024,13 @@ func TestDeleteAssignment_HappyPath(t *testing.T) {
 
 func TestDeleteAssignment_NotFound(t *testing.T) {
 	store := &mockStore{
-		GetAssignmentFn: func(ctx context.Context, id string) (datastore.OwnershipAssignment, error) {
+		GetAssignmentFn: func(ctx context.Context, id int64) (datastore.OwnershipAssignment, error) {
 			return datastore.OwnershipAssignment{}, datastore.ErrNotFound
 		},
 	}
 	r := ownershipRouter(store)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/owners/web-platform/assignments/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/owners/web-platform/assignments/99999", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
@@ -1041,7 +1041,7 @@ func TestDeleteAssignment_NotFound(t *testing.T) {
 func TestDeleteAssignment_MethodNotAllowed(t *testing.T) {
 	r := ownershipTestConfig()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/owners/web-platform/assignments/a-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/owners/web-platform/assignments/1", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusMethodNotAllowed {
@@ -1058,7 +1058,7 @@ func TestReassign_HappyPath(t *testing.T) {
 		GetOwnerByNameFn: func(ctx context.Context, name string) (datastore.Owner, error) {
 			return datastore.Owner{Name: name}, nil
 		},
-		ReassignOwnershipFn: func(ctx context.Context, fromOwnerID, toOwnerID, entityType, organisationID string) (int, int, error) {
+		ReassignOwnershipFn: func(ctx context.Context, fromOwnerName, toOwnerName, entityType, organisationName string) (int, int, error) {
 			return 10, 2, nil
 		},
 		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
@@ -1166,7 +1166,7 @@ func TestReassign_WithEntityTypeFilter(t *testing.T) {
 		GetOwnerByNameFn: func(ctx context.Context, name string) (datastore.Owner, error) {
 			return datastore.Owner{Name: name}, nil
 		},
-		ReassignOwnershipFn: func(ctx context.Context, fromOwnerID, toOwnerID, entityType, organisationID string) (int, int, error) {
+		ReassignOwnershipFn: func(ctx context.Context, fromOwnerName, toOwnerName, entityType, organisationName string) (int, int, error) {
 			capturedEntityType = entityType
 			return 5, 0, nil
 		},
@@ -1193,7 +1193,7 @@ func TestReassign_WithDeleteSourceOwner(t *testing.T) {
 		GetOwnerByNameFn: func(ctx context.Context, name string) (datastore.Owner, error) {
 			return datastore.Owner{Name: name}, nil
 		},
-		ReassignOwnershipFn: func(ctx context.Context, fromOwnerID, toOwnerID, entityType, organisationID string) (int, int, error) {
+		ReassignOwnershipFn: func(ctx context.Context, fromOwnerName, toOwnerName, entityType, organisationName string) (int, int, error) {
 			return 5, 0, nil
 		},
 		CountAssignmentsByOwnerFn: func(ctx context.Context, ownerName string) (map[string]int, error) {
@@ -1233,7 +1233,7 @@ func TestReassign_DeleteSourceOwnerNotAllowedWhenRemainingAssignments(t *testing
 		GetOwnerByNameFn: func(ctx context.Context, name string) (datastore.Owner, error) {
 			return datastore.Owner{Name: name}, nil
 		},
-		ReassignOwnershipFn: func(ctx context.Context, fromOwnerID, toOwnerID, entityType, organisationID string) (int, int, error) {
+		ReassignOwnershipFn: func(ctx context.Context, fromOwnerName, toOwnerName, entityType, organisationName string) (int, int, error) {
 			return 3, 0, nil
 		},
 		CountAssignmentsByOwnerFn: func(ctx context.Context, ownerName string) (map[string]int, error) {
@@ -1292,7 +1292,7 @@ func TestReassign_DBError(t *testing.T) {
 		GetOwnerByNameFn: func(ctx context.Context, name string) (datastore.Owner, error) {
 			return datastore.Owner{Name: name}, nil
 		},
-		ReassignOwnershipFn: func(ctx context.Context, fromOwnerID, toOwnerID, entityType, organisationID string) (int, int, error) {
+		ReassignOwnershipFn: func(ctx context.Context, fromOwnerName, toOwnerName, entityType, organisationName string) (int, int, error) {
 			return 0, 0, errors.New("transaction failed")
 		},
 	}
@@ -1316,8 +1316,8 @@ func TestReassign_WithOrganisationFilter(t *testing.T) {
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
 			return datastore.Organisation{Name: name}, nil
 		},
-		ReassignOwnershipFn: func(ctx context.Context, fromOwnerID, toOwnerID, entityType, organisationID string) (int, int, error) {
-			capturedOrgID = organisationID
+		ReassignOwnershipFn: func(ctx context.Context, fromOwnerName, toOwnerName, entityType, organisationName string) (int, int, error) {
+			capturedOrgID = organisationName
 			return 3, 0, nil
 		},
 		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
@@ -1510,7 +1510,7 @@ func TestAuditLog_HappyPath(t *testing.T) {
 		ListAuditLogFn: func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error) {
 			return []datastore.OwnershipAuditEntry{
 				{
-					ID:        "log-1",
+					ID:        1,
 					Timestamp: now,
 					Action:    "owner_created",
 					Actor:     "admin@example.com",
@@ -1632,7 +1632,6 @@ func TestCookbookCommitters_HappyPath(t *testing.T) {
 		ListCommittersByRepoFn: func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error) {
 			return []datastore.GitRepoCommitter{
 				{
-					ID:            "c-1",
 					GitRepoURL:    "https://gitlab.example.com/cookbooks/nginx.git",
 					AuthorName:    "Jane Smith",
 					AuthorEmail:   "jsmith@example.com",
@@ -1842,7 +1841,7 @@ func TestCookbookCommittersAssign_HappyPath(t *testing.T) {
 			return datastore.Owner{Name: p.Name, OwnerType: "individual"}, nil
 		},
 		InsertAssignmentFn: func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
-			return datastore.OwnershipAssignment{ID: "a-new"}, nil
+			return datastore.OwnershipAssignment{ID: 100}, nil
 		},
 		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
 			return nil
@@ -1886,7 +1885,7 @@ func TestCookbookCommittersAssign_ExistingOwner(t *testing.T) {
 			return datastore.Owner{Name: name, OwnerType: "individual"}, nil
 		},
 		InsertAssignmentFn: func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
-			return datastore.OwnershipAssignment{ID: "a-new"}, nil
+			return datastore.OwnershipAssignment{ID: 100}, nil
 		},
 		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
 			return nil

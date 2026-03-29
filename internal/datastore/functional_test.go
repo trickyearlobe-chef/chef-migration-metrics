@@ -585,15 +585,15 @@ func TestFunctional_GetProductionPlatformsForCookbook(t *testing.T) {
 	}
 
 	run, err := db.CreateCollectionRun(ctx, CreateCollectionRunParams{
-		OrganisationID: org.Name,
+		OrganisationName: org.Name,
 	})
 	if err != nil {
 		t.Fatalf("creating collection run: %v", err)
 	}
 
 	cleanupTestData(t, db,
-		"DELETE FROM node_snapshots WHERE collection_run_id = '"+run.ID+"'",
-		"DELETE FROM collection_runs WHERE id = '"+run.ID+"'",
+		"DELETE FROM node_snapshots WHERE collection_run_org = '"+run.OrganisationName+"'",
+		"DELETE FROM collection_runs WHERE organisation_name = '"+run.OrganisationName+"'",
 		"DELETE FROM organisations WHERE id = '"+org.Name+"'",
 	)
 
@@ -610,23 +610,23 @@ func TestFunctional_GetProductionPlatformsForCookbook(t *testing.T) {
 
 	nodes := []InsertNodeSnapshotParams{
 		{
-			CollectionRunID: run.ID, OrganisationID: org.Name,
+			CollectionRunOrg: run.OrganisationName, OrganisationName: org.Name,
 			NodeName: "func-web1", Platform: "ubuntu", PlatformVersion: "22.04", PlatformFamily: "debian",
 			Cookbooks: cookbooksWithTarget, CollectedAt: now,
 		},
 		{
-			CollectionRunID: run.ID, OrganisationID: org.Name,
+			CollectionRunOrg: run.OrganisationName, OrganisationName: org.Name,
 			NodeName: "func-web2", Platform: "ubuntu", PlatformVersion: "22.04", PlatformFamily: "debian",
 			Cookbooks: cookbooksWithTarget, CollectedAt: now,
 		},
 		{
-			CollectionRunID: run.ID, OrganisationID: org.Name,
+			CollectionRunOrg: run.OrganisationName, OrganisationName: org.Name,
 			NodeName: "func-db1", Platform: "centos", PlatformVersion: "7.9.2009", PlatformFamily: "rhel",
 			Cookbooks: cookbooksWithTarget, CollectedAt: now,
 		},
 		{
 			// This node does NOT have func-test-cb — should not appear.
-			CollectionRunID: run.ID, OrganisationID: org.Name,
+			CollectionRunOrg: run.OrganisationName, OrganisationName: org.Name,
 			NodeName: "func-other1", Platform: "rocky", PlatformVersion: "9.3", PlatformFamily: "rhel",
 			Cookbooks: cookbooksWithout, CollectedAt: now,
 		},

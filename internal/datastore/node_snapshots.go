@@ -16,10 +16,10 @@ import (
 
 // NodeSnapshot represents a row in the node_snapshots table. Each snapshot
 // captures the state of a single node at the time of a collection run.
+// The primary key is (organisation_name, node_name).
 type NodeSnapshot struct {
-	ID               string          `json:"id"`
-	CollectionRunID  string          `json:"collection_run_id"`
-	OrganisationID   string          `json:"organisation_id"`
+	CollectionRunOrg string          `json:"collection_run_org,omitempty"`
+	OrganisationName string          `json:"organisation_name"`
 	NodeName         string          `json:"node_name"`
 	ChefEnvironment  string          `json:"chef_environment,omitempty"`
 	ChefVersion      string          `json:"chef_version,omitempty"`
@@ -58,8 +58,8 @@ func (ns NodeSnapshot) MarshalJSON() ([]byte, error) {
 // InsertNodeSnapshotParams holds the fields required to insert a single
 // node snapshot.
 type InsertNodeSnapshotParams struct {
-	CollectionRunID  string
-	OrganisationID   string
+	CollectionRunOrg string
+	OrganisationName string
 	NodeName         string
 	ChefEnvironment  string
 	ChefVersion      string
@@ -79,17 +79,17 @@ type InsertNodeSnapshotParams struct {
 }
 
 // UpsertNodeSnapshot inserts a node snapshot or updates the existing row for
-// the same (organisation_id, node_name) combination. Returns the resulting row.
+// the same (organisation_name, node_name) combination. Returns the resulting row.
 func (db *DB) UpsertNodeSnapshot(ctx context.Context, p InsertNodeSnapshotParams) (NodeSnapshot, error) {
 	return db.upsertNodeSnapshot(ctx, db.q(), p)
 }
 
 func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeSnapshotParams) (NodeSnapshot, error) {
-	if p.CollectionRunID == "" {
-		return NodeSnapshot{}, fmt.Errorf("datastore: collection run ID is required to insert a node snapshot")
+	if p.CollectionRunOrg == "" {
+		return NodeSnapshot{}, fmt.Errorf("datastore: collection run org is required to insert a node snapshot")
 	}
-	if p.OrganisationID == "" {
-		return NodeSnapshot{}, fmt.Errorf("datastore: organisation ID is required to insert a node snapshot")
+	if p.OrganisationName == "" {
+		return NodeSnapshot{}, fmt.Errorf("datastore: organisation name is required to insert a node snapshot")
 	}
 	if p.NodeName == "" {
 		return NodeSnapshot{}, fmt.Errorf("datastore: node name is required to insert a node snapshot")
@@ -100,7 +100,7 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 
 	const query = `
 		INSERT INTO node_snapshots (
-			collection_run_id, organisation_id, node_name,
+			collection_run_org, organisation_name, node_name,
 			chef_environment, chef_version, platform, platform_version,
 			platform_family, filesystem, cookbooks, run_list, roles,
 			policy_name, policy_group, ohai_time, custom_attributes,
@@ -109,8 +109,8 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16, $17, $18
 		)
-		ON CONFLICT (organisation_id, node_name) DO UPDATE SET
-			collection_run_id  = EXCLUDED.collection_run_id,
+		ON CONFLICT (organisation_name, node_name) DO UPDATE SET
+			collection_run_org = EXCLUDED.collection_run_org,
 			chef_environment   = EXCLUDED.chef_environment,
 			chef_version       = EXCLUDED.chef_version,
 			platform           = EXCLUDED.platform,
@@ -126,7 +126,7 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			custom_attributes  = EXCLUDED.custom_attributes,
 			is_stale           = EXCLUDED.is_stale,
 			collected_at       = EXCLUDED.collected_at
-		RETURNING id, collection_run_id, organisation_id, node_name,
+		RETURNING collection_run_org, organisation_name, node_name,
 		          chef_environment, chef_version, platform, platform_version,
 		          platform_family, filesystem, cookbooks, run_list, roles,
 		          policy_name, policy_group, ohai_time, custom_attributes,
@@ -134,8 +134,8 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 	`
 
 	return scanNodeSnapshot(q.QueryRowContext(ctx, query,
-		p.CollectionRunID,
-		p.OrganisationID,
+		p.CollectionRunOrg,
+		p.OrganisationName,
 		p.NodeName,
 		nullString(p.ChefEnvironment),
 		nullString(p.ChefVersion),
@@ -160,26 +160,25 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 // ---------------------------------------------------------------------------
 
 // BulkUpsertNodeSnapshots upserts multiple node snapshots within a single
-// transaction. Existing rows for the same (organisation_id, node_name) are
-// updated in place, preserving their primary key. Returns the count of rows
-// affected (inserted or updated). If any upsert fails, the entire batch is
-// rolled back.
+// transaction. Existing rows for the same (organisation_name, node_name) are
+// updated in place. Returns the count of rows affected (inserted or updated).
+// If any upsert fails, the entire batch is rolled back.
 func (db *DB) BulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams) (int, error) {
 	_, count, err := db.bulkUpsertNodeSnapshots(ctx, params, false)
 	return count, err
 }
 
 // bulkUpsertNodeSnapshots is the implementation for BulkUpsertNodeSnapshots.
-// The returnIDs parameter controls whether the query uses RETURNING id to
+// The returnKeys parameter controls whether the query uses RETURNING to
 // populate the returned map. When false (the normal path), the map is nil.
-func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams, returnIDs bool) (map[string]string, int, error) {
+func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSnapshotParams, returnKeys bool) (map[string]string, int, error) {
 	if len(params) == 0 {
 		return nil, 0, nil
 	}
 
-	var idMap map[string]string
-	if returnIDs {
-		idMap = make(map[string]string, len(params))
+	var keyMap map[string]string
+	if returnKeys {
+		keyMap = make(map[string]string, len(params))
 	}
 
 	const batchSize = 500
@@ -197,11 +196,11 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 			// Validate the batch.
 			for i, p := range batch {
 				idx := start + i
-				if p.CollectionRunID == "" {
-					return fmt.Errorf("datastore: collection run ID is required (row %d)", idx)
+				if p.CollectionRunOrg == "" {
+					return fmt.Errorf("datastore: collection run org is required (row %d)", idx)
 				}
-				if p.OrganisationID == "" {
-					return fmt.Errorf("datastore: organisation ID is required (row %d)", idx)
+				if p.OrganisationName == "" {
+					return fmt.Errorf("datastore: organisation name is required (row %d)", idx)
 				}
 				if p.NodeName == "" {
 					return fmt.Errorf("datastore: node name is required (row %d)", idx)
@@ -212,7 +211,7 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 			var sb strings.Builder
 			sb.WriteString(`
 				INSERT INTO node_snapshots (
-					collection_run_id, organisation_id, node_name,
+					collection_run_org, organisation_name, node_name,
 					chef_environment, chef_version, platform, platform_version,
 					platform_family, filesystem, cookbooks, run_list, roles,
 					policy_name, policy_group, ohai_time, custom_attributes,
@@ -239,8 +238,8 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 				}
 
 				args = append(args,
-					p.CollectionRunID,
-					p.OrganisationID,
+					p.CollectionRunOrg,
+					p.OrganisationName,
 					p.NodeName,
 					nullString(p.ChefEnvironment),
 					nullString(p.ChefVersion),
@@ -262,8 +261,8 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 
 			// Append the ON CONFLICT ... DO UPDATE clause.
 			sb.WriteString(`
-				ON CONFLICT (organisation_id, node_name) DO UPDATE SET
-					collection_run_id  = EXCLUDED.collection_run_id,
+				ON CONFLICT (organisation_name, node_name) DO UPDATE SET
+					collection_run_org = EXCLUDED.collection_run_org,
 					chef_environment   = EXCLUDED.chef_environment,
 					chef_version       = EXCLUDED.chef_version,
 					platform           = EXCLUDED.platform,
@@ -281,26 +280,24 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					collected_at       = EXCLUDED.collected_at
 			`)
 
-			if returnIDs {
-				sb.WriteString(" RETURNING id")
+			if returnKeys {
+				sb.WriteString(" RETURNING organisation_name, node_name")
 				rows, err := tx.QueryContext(ctx, sb.String(), args...)
 				if err != nil {
 					return fmt.Errorf("datastore: batch upserting node snapshots (rows %d-%d): %w", start, end-1, err)
 				}
-				i := 0
 				for rows.Next() {
-					var snapshotID string
-					if err := rows.Scan(&snapshotID); err != nil {
+					var orgName, nodeName string
+					if err := rows.Scan(&orgName, &nodeName); err != nil {
 						rows.Close()
-						return fmt.Errorf("datastore: scanning batch node snapshot ID: %w", err)
+						return fmt.Errorf("datastore: scanning batch node snapshot key: %w", err)
 					}
-					idMap[batch[i].NodeName] = snapshotID
-					i++
+					keyMap[nodeName] = orgName
 					inserted++
 				}
 				rows.Close()
 				if err := rows.Err(); err != nil {
-					return fmt.Errorf("datastore: iterating batch node snapshot IDs: %w", err)
+					return fmt.Errorf("datastore: iterating batch node snapshot keys: %w", err)
 				}
 			} else {
 				result, err := tx.ExecContext(ctx, sb.String(), args...)
@@ -317,114 +314,95 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 	if err != nil {
 		return nil, 0, err
 	}
-	return idMap, inserted, nil
+	return keyMap, inserted, nil
 }
 
 // ---------------------------------------------------------------------------
 // Query methods
 // ---------------------------------------------------------------------------
 
-// GetNodeSnapshot returns the node snapshot with the given UUID. Returns
-// ErrNotFound if no such snapshot exists.
-func (db *DB) GetNodeSnapshot(ctx context.Context, id string) (NodeSnapshot, error) {
-	return db.getNodeSnapshot(ctx, db.q(), id)
-}
-
-func (db *DB) getNodeSnapshot(ctx context.Context, q queryable, id string) (NodeSnapshot, error) {
-	const query = `
-		SELECT id, collection_run_id, organisation_id, node_name,
-		       chef_environment, chef_version, platform, platform_version,
-		       platform_family, filesystem, cookbooks, run_list, roles,
-		       policy_name, policy_group, ohai_time, custom_attributes,
-		       is_stale, collected_at, created_at
-		FROM node_snapshots
-		WHERE id = $1
-	`
-	return scanNodeSnapshot(q.QueryRowContext(ctx, query, id))
-}
-
 // ListNodeSnapshotsByCollectionRun returns all node snapshots for the given
-// collection run, ordered by node name.
-func (db *DB) ListNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) ([]NodeSnapshot, error) {
-	return db.listNodeSnapshotsByCollectionRun(ctx, db.q(), collectionRunID)
+// collection run (identified by organisation name), ordered by node name.
+func (db *DB) ListNodeSnapshotsByCollectionRun(ctx context.Context, orgName string) ([]NodeSnapshot, error) {
+	return db.listNodeSnapshotsByCollectionRun(ctx, db.q(), orgName)
 }
 
-func (db *DB) listNodeSnapshotsByCollectionRun(ctx context.Context, q queryable, collectionRunID string) ([]NodeSnapshot, error) {
+func (db *DB) listNodeSnapshotsByCollectionRun(ctx context.Context, q queryable, orgName string) ([]NodeSnapshot, error) {
 	const query = `
-		SELECT id, collection_run_id, organisation_id, node_name,
+		SELECT collection_run_org, organisation_name, node_name,
 		       chef_environment, chef_version, platform, platform_version,
 		       platform_family, filesystem, cookbooks, run_list, roles,
 		       policy_name, policy_group, ohai_time, custom_attributes,
 		       is_stale, collected_at, created_at
 		FROM node_snapshots
-		WHERE collection_run_id = $1
+		WHERE collection_run_org = $1
 		ORDER BY node_name
 	`
-	return scanNodeSnapshots(q.QueryContext(ctx, query, collectionRunID))
+	return scanNodeSnapshots(q.QueryContext(ctx, query, orgName))
 }
 
 // ListNodeSnapshotsByOrganisation returns all node snapshots for the given
 // organisation from the most recent completed collection run. This gives the
 // current picture of the fleet for that org. Returns an empty slice if no
 // completed collection run exists.
-func (db *DB) ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]NodeSnapshot, error) {
-	return db.listNodeSnapshotsByOrganisation(ctx, db.q(), organisationID)
+func (db *DB) ListNodeSnapshotsByOrganisation(ctx context.Context, organisationName string) ([]NodeSnapshot, error) {
+	return db.listNodeSnapshotsByOrganisation(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, organisationID string) ([]NodeSnapshot, error) {
+func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, organisationName string) ([]NodeSnapshot, error) {
 	const query = `
-		SELECT ns.id, ns.collection_run_id, ns.organisation_id, ns.node_name,
+		SELECT ns.collection_run_org, ns.organisation_name, ns.node_name,
 		       ns.chef_environment, ns.chef_version, ns.platform, ns.platform_version,
 		       ns.platform_family, ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
 		       ns.policy_name, ns.policy_group, ns.ohai_time, ns.custom_attributes,
 		       ns.is_stale, ns.collected_at, ns.created_at
 		FROM node_snapshots ns
-		INNER JOIN collection_runs cr ON cr.id = ns.collection_run_id
-		WHERE ns.organisation_id = $1
+		INNER JOIN collection_runs cr ON cr.organisation_name = ns.collection_run_org
+		WHERE ns.organisation_name = $1
 		  AND cr.status = 'completed'
 		  AND cr.started_at = (
 			SELECT MAX(cr2.started_at)
 			FROM collection_runs cr2
-			WHERE cr2.organisation_id = $1 AND cr2.status = 'completed'
+			WHERE cr2.organisation_name = $1 AND cr2.status = 'completed'
 		  )
 		ORDER BY ns.node_name
 	`
-	return scanNodeSnapshots(q.QueryContext(ctx, query, organisationID))
+	return scanNodeSnapshots(q.QueryContext(ctx, query, organisationName))
 }
 
 // GetNodeSnapshotByName returns the most recent snapshot for a node with the
 // given name in the given organisation. Returns ErrNotFound if no snapshot
 // exists for that node.
-func (db *DB) GetNodeSnapshotByName(ctx context.Context, organisationID, nodeName string) (NodeSnapshot, error) {
-	return db.getNodeSnapshotByName(ctx, db.q(), organisationID, nodeName)
+func (db *DB) GetNodeSnapshotByName(ctx context.Context, organisationName, nodeName string) (NodeSnapshot, error) {
+	return db.getNodeSnapshotByName(ctx, db.q(), organisationName, nodeName)
 }
 
-func (db *DB) getNodeSnapshotByName(ctx context.Context, q queryable, organisationID, nodeName string) (NodeSnapshot, error) {
+func (db *DB) getNodeSnapshotByName(ctx context.Context, q queryable, organisationName, nodeName string) (NodeSnapshot, error) {
 	const query = `
-		SELECT id, collection_run_id, organisation_id, node_name,
+		SELECT collection_run_org, organisation_name, node_name,
 		       chef_environment, chef_version, platform, platform_version,
 		       platform_family, filesystem, cookbooks, run_list, roles,
 		       policy_name, policy_group, ohai_time, custom_attributes,
 		       is_stale, collected_at, created_at
 		FROM node_snapshots
-		WHERE organisation_id = $1 AND node_name = $2
+		WHERE organisation_name = $1 AND node_name = $2
 		ORDER BY collected_at DESC
 		LIMIT 1
 	`
-	return scanNodeSnapshot(q.QueryRowContext(ctx, query, organisationID, nodeName))
+	return scanNodeSnapshot(q.QueryRowContext(ctx, query, organisationName, nodeName))
 }
 
 // CountNodeSnapshotsByCollectionRun returns the number of node snapshots
-// associated with the given collection run.
-func (db *DB) CountNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) (int, error) {
-	return db.countNodeSnapshotsByCollectionRun(ctx, db.q(), collectionRunID)
+// associated with the given collection run (identified by organisation name).
+func (db *DB) CountNodeSnapshotsByCollectionRun(ctx context.Context, orgName string) (int, error) {
+	return db.countNodeSnapshotsByCollectionRun(ctx, db.q(), orgName)
 }
 
-func (db *DB) countNodeSnapshotsByCollectionRun(ctx context.Context, q queryable, collectionRunID string) (int, error) {
+func (db *DB) countNodeSnapshotsByCollectionRun(ctx context.Context, q queryable, orgName string) (int, error) {
 	var count int
 	err := q.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM node_snapshots WHERE collection_run_id = $1`,
-		collectionRunID,
+		`SELECT COUNT(*) FROM node_snapshots WHERE collection_run_org = $1`,
+		orgName,
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: counting node snapshots: %w", err)
@@ -433,16 +411,16 @@ func (db *DB) countNodeSnapshotsByCollectionRun(ctx context.Context, q queryable
 }
 
 // CountStaleNodesByCollectionRun returns the number of stale node snapshots
-// in the given collection run.
-func (db *DB) CountStaleNodesByCollectionRun(ctx context.Context, collectionRunID string) (int, error) {
-	return db.countStaleNodesByCollectionRun(ctx, db.q(), collectionRunID)
+// in the given collection run (identified by organisation name).
+func (db *DB) CountStaleNodesByCollectionRun(ctx context.Context, orgName string) (int, error) {
+	return db.countStaleNodesByCollectionRun(ctx, db.q(), orgName)
 }
 
-func (db *DB) countStaleNodesByCollectionRun(ctx context.Context, q queryable, collectionRunID string) (int, error) {
+func (db *DB) countStaleNodesByCollectionRun(ctx context.Context, q queryable, orgName string) (int, error) {
 	var count int
 	err := q.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM node_snapshots WHERE collection_run_id = $1 AND is_stale = TRUE`,
-		collectionRunID,
+		`SELECT COUNT(*) FROM node_snapshots WHERE collection_run_org = $1 AND is_stale = TRUE`,
+		orgName,
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: counting stale node snapshots: %w", err)
@@ -451,11 +429,12 @@ func (db *DB) countStaleNodesByCollectionRun(ctx context.Context, q queryable, c
 }
 
 // DeleteNodeSnapshotsByCollectionRun removes all node snapshots for the
-// given collection run. Returns the number of rows deleted.
-func (db *DB) DeleteNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) (int, error) {
+// given collection run (identified by organisation name). Returns the number
+// of rows deleted.
+func (db *DB) DeleteNodeSnapshotsByCollectionRun(ctx context.Context, orgName string) (int, error) {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM node_snapshots WHERE collection_run_id = $1`,
-		collectionRunID,
+		`DELETE FROM node_snapshots WHERE collection_run_org = $1`,
+		orgName,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: deleting node snapshots: %w", err)
@@ -476,19 +455,19 @@ func (db *DB) DeleteNodeSnapshotsByCollectionRun(ctx context.Context, collection
 // Returns the count of deleted rows. If activeNodeNames is empty, no rows
 // are deleted (safety guard against accidental purge during transient
 // collection failures).
-func (db *DB) DeleteOrphanedNodeSnapshots(ctx context.Context, organisationID string, activeNodeNames []string) (int, error) {
+func (db *DB) DeleteOrphanedNodeSnapshots(ctx context.Context, organisationName string, activeNodeNames []string) (int, error) {
 	if len(activeNodeNames) == 0 {
 		return 0, nil
 	}
 
 	const query = `
 		DELETE FROM node_snapshots
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		  AND node_name != ALL($2::text[])
 	`
-	res, err := db.pool.ExecContext(ctx, query, organisationID, pq.Array(activeNodeNames))
+	res, err := db.pool.ExecContext(ctx, query, organisationName, pq.Array(activeNodeNames))
 	if err != nil {
-		return 0, fmt.Errorf("datastore: deleting orphaned node snapshots for org %s: %w", organisationID, err)
+		return 0, fmt.Errorf("datastore: deleting orphaned node snapshots for org %s: %w", organisationName, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
@@ -498,16 +477,17 @@ func (db *DB) DeleteOrphanedNodeSnapshots(ctx context.Context, organisationID st
 }
 
 // CountStaleFreshByCollectionRun returns total, stale, and fresh node counts
-// for the given collection run without loading full node snapshot rows.
-func (db *DB) CountStaleFreshByCollectionRun(ctx context.Context, collectionRunID string) (total, stale, fresh int, err error) {
+// for the given collection run (identified by organisation name) without
+// loading full node snapshot rows.
+func (db *DB) CountStaleFreshByCollectionRun(ctx context.Context, orgName string) (total, stale, fresh int, err error) {
 	const query = `
 		SELECT COUNT(*) AS total,
 		       COUNT(*) FILTER (WHERE is_stale = TRUE) AS stale,
 		       COUNT(*) FILTER (WHERE is_stale = FALSE) AS fresh
 		  FROM node_snapshots
-		 WHERE collection_run_id = $1
+		 WHERE collection_run_org = $1
 	`
-	err = db.pool.QueryRowContext(ctx, query, collectionRunID).Scan(&total, &stale, &fresh)
+	err = db.pool.QueryRowContext(ctx, query, orgName).Scan(&total, &stale, &fresh)
 	if err != nil {
 		err = fmt.Errorf("datastore: counting stale/fresh by collection run: %w", err)
 	}
@@ -542,15 +522,15 @@ func jsonFromNullBytes(data []byte) json.RawMessage {
 
 func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	var ns NodeSnapshot
+	var collectionRunOrg sql.NullString
 	var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
 	var policyName, policyGroup sql.NullString
 	var ohaiTime sql.NullFloat64
 	var filesystem, cookbooks, runList, roles, customAttributes []byte
 
 	err := row.Scan(
-		&ns.ID,
-		&ns.CollectionRunID,
-		&ns.OrganisationID,
+		&collectionRunOrg,
+		&ns.OrganisationName,
 		&ns.NodeName,
 		&chefEnv,
 		&chefVer,
@@ -576,6 +556,7 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 		return NodeSnapshot{}, fmt.Errorf("datastore: scanning node snapshot: %w", err)
 	}
 
+	ns.CollectionRunOrg = stringFromNull(collectionRunOrg)
 	ns.ChefEnvironment = stringFromNull(chefEnv)
 	ns.ChefVersion = stringFromNull(chefVer)
 	ns.Platform = stringFromNull(platform)
@@ -601,15 +582,15 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 	var snapshots []NodeSnapshot
 	for rows.Next() {
 		var ns NodeSnapshot
+		var collectionRunOrg sql.NullString
 		var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
 		var policyName, policyGroup sql.NullString
 		var ohaiTime sql.NullFloat64
 		var filesystem, cookbooks, runList, roles, customAttributes []byte
 
 		if err := rows.Scan(
-			&ns.ID,
-			&ns.CollectionRunID,
-			&ns.OrganisationID,
+			&collectionRunOrg,
+			&ns.OrganisationName,
 			&ns.NodeName,
 			&chefEnv,
 			&chefVer,
@@ -631,6 +612,7 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 			return nil, fmt.Errorf("datastore: scanning node snapshot row: %w", err)
 		}
 
+		ns.CollectionRunOrg = stringFromNull(collectionRunOrg)
 		ns.ChefEnvironment = stringFromNull(chefEnv)
 		ns.ChefVersion = stringFromNull(chefVer)
 		ns.Platform = stringFromNull(platform)

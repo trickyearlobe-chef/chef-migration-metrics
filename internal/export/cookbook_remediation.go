@@ -108,10 +108,10 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 			continue
 		}
 
-		// Build a map from cookbook ID to cookbook metadata for joining.
+		// Build a map from cookbook key to cookbook metadata for joining.
 		cbMap := make(map[string]datastore.ServerCookbook, len(cookbooks))
 		for _, cb := range cookbooks {
-			cbMap[cb.ID] = cb
+			cbMap[cb.OrganisationName+"/"+cb.Name+"/"+cb.Version] = cb
 		}
 
 		complexities, err := db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)

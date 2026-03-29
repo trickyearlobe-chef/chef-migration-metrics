@@ -28,6 +28,7 @@ type fakeReadinessDS struct {
 
 	snapshots       []datastore.NodeSnapshot
 	cookbookIDs     map[string]map[string]string // name → version → id
+	serverCookbooks []datastore.ServerCookbook
 	gitRepos        map[string]datastore.GitRepo // name → GitRepo
 	tkResults       map[string]*datastore.GitRepoTestKitchenResult
 	csResults       map[string]*datastore.ServerCookbookCookstyleResult
@@ -37,15 +38,15 @@ type fakeReadinessDS struct {
 	upserted        []datastore.UpsertNodeReadinessParams
 
 	// Error injection
-	listSnapshotsErr error
-	cookbookIDMapErr error
-	gitRepoErr       error
-	tkErr            error
-	csErr            error
-	complexityErr    error
-	gitCSErr         error
-	gitComplexityErr error
-	upsertErr        error
+	listSnapshotsErr       error
+	listServerCookbooksErr error
+	gitRepoErr             error
+	tkErr                  error
+	csErr                  error
+	complexityErr          error
+	gitCSErr               error
+	gitComplexityErr       error
+	upsertErr              error
 
 	// Call counters
 	upsertCount atomic.Int64
@@ -70,11 +71,11 @@ func (f *fakeReadinessDS) ListNodeSnapshotsByOrganisation(_ context.Context, _ s
 	return f.snapshots, nil
 }
 
-func (f *fakeReadinessDS) GetServerCookbookIDMap(_ context.Context, _ string) (map[string]map[string]string, error) {
-	if f.cookbookIDMapErr != nil {
-		return nil, f.cookbookIDMapErr
+func (f *fakeReadinessDS) ListServerCookbooksByOrganisation(_ context.Context, _ string) ([]datastore.ServerCookbook, error) {
+	if f.listServerCookbooksErr != nil {
+		return nil, f.listServerCookbooksErr
 	}
-	return f.cookbookIDs, nil
+	return f.serverCookbooks, nil
 }
 
 func (f *fakeReadinessDS) GetGitRepoByName(_ context.Context, name string) (datastore.GitRepo, error) {
@@ -299,11 +300,20 @@ func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 
 // --- Add helpers ---
 
-func (f *fakeReadinessDS) addCookbookID(name, version, id string) {
+func (f *fakeReadinessDS) addCookbookID(name, version, orgName string) {
+	// orgName is used as the organisation name for the server cookbook.
+	// The composite ID (orgName/name/version) is stored in cookbookIDs and
+	// also matches what buildCookbookIDMap produces from serverCookbooks.
+	compositeID := orgName + "/" + name + "/" + version
 	if f.cookbookIDs[name] == nil {
 		f.cookbookIDs[name] = make(map[string]string)
 	}
-	f.cookbookIDs[name][version] = id
+	f.cookbookIDs[name][version] = compositeID
+	f.serverCookbooks = append(f.serverCookbooks, datastore.ServerCookbook{
+		OrganisationName: orgName,
+		Name:             name,
+		Version:          version,
+	})
 }
 
 func (f *fakeReadinessDS) addTKResult(gitRepoID, targetChefVersion string, convergePassed, testsPassed bool) {
@@ -352,15 +362,14 @@ func (f *fakeReadinessDS) addGitRepo(name, headSHA string) {
 // Helper to make a node snapshot
 // ---------------------------------------------------------------------------
 
-func makeSnapshot(id, orgID, nodeName string, isStale bool, cookbooks, filesystem json.RawMessage) datastore.NodeSnapshot {
+func makeSnapshot(orgName, nodeName string, isStale bool, cookbooks, filesystem json.RawMessage) datastore.NodeSnapshot {
 	return datastore.NodeSnapshot{
-		ID:             id,
-		OrganisationID: orgID,
-		NodeName:       nodeName,
-		IsStale:        isStale,
-		Cookbooks:      cookbooks,
-		Filesystem:     filesystem,
-		CollectedAt:    time.Now().UTC(),
+		OrganisationName: orgName,
+		NodeName:         nodeName,
+		IsStale:          isStale,
+		Cookbooks:        cookbooks,
+		Filesystem:       filesystem,
+		CollectedAt:      time.Now().UTC(),
 	}
 }
 
@@ -857,7 +866,7 @@ func TestFindBestMountWindows_NoDriveMatch(t *testing.T) {
 
 func TestEvaluateDiskSpace_LinuxSufficientSpace(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
@@ -873,7 +882,7 @@ func TestEvaluateDiskSpace_LinuxSufficientSpace(t *testing.T) {
 
 func TestEvaluateDiskSpace_LinuxInsufficientSpace(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "2097152", KBUsed: "1048576", KBAvailable: "1048576", PercentUsed: "50%", Mount: "/"},
 		}))
@@ -889,7 +898,7 @@ func TestEvaluateDiskSpace_LinuxInsufficientSpace(t *testing.T) {
 
 func TestEvaluateDiskSpace_MissingFilesystem(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil)
+	snap := makeSnapshot("org-1", "node-1", false, nil, nil)
 	_, known := e.evaluateDiskSpace(snap)
 	if known {
 		t.Error("expected unknown for missing filesystem")
@@ -898,7 +907,7 @@ func TestEvaluateDiskSpace_MissingFilesystem(t *testing.T) {
 
 func TestEvaluateDiskSpace_EmptyFilesystem(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil, json.RawMessage(`{}`))
+	snap := makeSnapshot("org-1", "node-1", false, nil, json.RawMessage(`{}`))
 	_, known := e.evaluateDiskSpace(snap)
 	if known {
 		t.Error("expected unknown for empty filesystem")
@@ -908,7 +917,7 @@ func TestEvaluateDiskSpace_EmptyFilesystem(t *testing.T) {
 func TestEvaluateDiskSpace_StringValues(t *testing.T) {
 	// Chef Client versions may report string or integer values.
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
@@ -925,7 +934,7 @@ func TestEvaluateDiskSpace_IntegerValues(t *testing.T) {
 	// Use raw JSON with numeric (non-string) values.
 	raw := json.RawMessage(`{"/dev/sda1": {"kb_size": 20511356, "kb_used": 5123456, "kb_available": 10240000, "percent_used": "26%", "mount": "/"}}`)
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil, raw)
+	snap := makeSnapshot("org-1", "node-1", false, nil, raw)
 	availMB, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known")
@@ -938,7 +947,7 @@ func TestEvaluateDiskSpace_IntegerValues(t *testing.T) {
 func TestEvaluateDiskSpace_MissingKBAvailable(t *testing.T) {
 	raw := json.RawMessage(`{"/dev/sda1": {"kb_size": "20511356", "mount": "/"}}`)
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil, raw)
+	snap := makeSnapshot("org-1", "node-1", false, nil, raw)
 	availMB, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known (with 0 available)")
@@ -950,7 +959,7 @@ func TestEvaluateDiskSpace_MissingKBAvailable(t *testing.T) {
 
 func TestEvaluateDiskSpace_WindowsDrive(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		windowsFilesystemJSON(map[string]windowsDrive{
 			"C:": {KBSize: "104857600", KBUsed: "52428800", KBAvailable: "52428800", PercentUsed: "50%"},
 		}))
@@ -969,6 +978,9 @@ func TestEvaluateDiskSpace_WindowsDrive(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLookupCookbookID(t *testing.T) {
+	// Note: lookupCookbookID works with whatever ID strings are stored in the map.
+	// After the natural-keys migration, IDs are composite "org/name/version" strings,
+	// but this test exercises the lookup logic with simple values.
 	idMap := map[string]map[string]string{
 		"apt":   {"7.4.0": "id-apt-740", "7.3.0": "id-apt-730"},
 		"nginx": {"2.0.0": "id-nginx-200"},
@@ -1010,7 +1022,7 @@ func TestCheckCookbookCompatibility_TKOnlyIsCompatible(t *testing.T) {
 	// With multi-source evaluation, a passing TK result via git repo makes
 	// the cookbook compatible even without a CS result.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
 	ds.addTKResult("apt", "18.0", true, true)
 
@@ -1028,7 +1040,7 @@ func TestCheckCookbookCompatibility_TKConvergeFailIsIncompatible(t *testing.T) {
 	// With multi-source evaluation, a failing TK result (converge fail) via
 	// git repo makes the cookbook incompatible.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
 	ds.addTKResult("apt", "18.0", false, false)
 
@@ -1046,7 +1058,7 @@ func TestCheckCookbookCompatibility_TKTestFailIsIncompatible(t *testing.T) {
 	// With multi-source evaluation, a failing TK result (test fail) via
 	// git repo makes the cookbook incompatible.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
 	ds.addTKResult("apt", "18.0", true, false)
 
@@ -1062,8 +1074,8 @@ func TestCheckCookbookCompatibility_TKTestFailIsIncompatible(t *testing.T) {
 
 func TestCheckCookbookCompatibility_CSPass_NoTK(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1077,8 +1089,8 @@ func TestCheckCookbookCompatibility_CSPass_NoTK(t *testing.T) {
 
 func TestCheckCookbookCompatibility_CSFail_NoTK(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", false)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1092,9 +1104,9 @@ func TestCheckCookbookCompatibility_CSFail_NoTK(t *testing.T) {
 
 func TestCheckCookbookCompatibility_CSPassNoTargetVersion(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// CookStyle result with empty target version (server-sourced scan).
-	ds.addCSResult("id-apt", "", true)
+	ds.addCSResult("org-1/apt/7.4.0", "", true)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1108,7 +1120,7 @@ func TestCheckCookbookCompatibility_CSPassNoTargetVersion(t *testing.T) {
 
 func TestCheckCookbookCompatibility_Untested(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// No TK or CS results.
 
 	cache := ds.buildFakeCache()
@@ -1139,10 +1151,10 @@ func TestCheckCookbookCompatibility_CSCheckedWhenTKPresent(t *testing.T) {
 	// With multi-source evaluation, both TK and CS are checked independently.
 	// TK passes, CS fails → overall compatible because TK is a compatible source.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
-	ds.addTKResult("apt", "18.0", true, true) // TK passes
-	ds.addCSResult("id-apt", "18.0", false)           // server CS fails
+	ds.addTKResult("apt", "18.0", true, true)        // TK passes
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", false) // server CS fails
 
 	cache := ds.buildFakeCache()
 	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1169,8 +1181,8 @@ func TestCheckCookbookCompatibility_CSCheckedWhenTKPresent(t *testing.T) {
 func TestCheckCookbookCompatibility_MultiSource_ServerIncompatibleGitCompatible(t *testing.T) {
 	// Server CookStyle fails but git repo CookStyle passes → compatible
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", false) // server CS fails
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", false) // server CS fails
 	ds.addGitRepo("apt", "abc123")
 	ds.addGitCSResult("apt", "18.0", true) // git CS passes
 
@@ -1187,8 +1199,8 @@ func TestCheckCookbookCompatibility_MultiSource_ServerIncompatibleGitCompatible(
 func TestCheckCookbookCompatibility_MultiSource_AllIncompatible(t *testing.T) {
 	// All sources incompatible
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", false)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
 	ds.addGitRepo("apt", "abc123")
 	ds.addGitCSResult("apt", "18.0", false)
 	ds.addTKResult("apt", "18.0", false, false)
@@ -1209,8 +1221,8 @@ func TestCheckCookbookCompatibility_MultiSource_AllIncompatible(t *testing.T) {
 func TestCheckCookbookCompatibility_MultiSource_VerdictFields(t *testing.T) {
 	// Verify verdict fields are populated correctly
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", false)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
 	ds.addGitRepo("apt", "sha-abc")
 	ds.addGitCSResult("apt", "18.0", true)
 
@@ -1251,8 +1263,8 @@ func TestCheckCookbookCompatibility_MultiSource_VerdictFields(t *testing.T) {
 func TestCheckCookbookCompatibility_MultiSource_TKCompatibleOverridesCSFail(t *testing.T) {
 	// TK passes, server CS fails → compatible (TK win)
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", false) // server CS fails
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", false) // server CS fails
 	ds.addGitRepo("apt", "abc123")
 	ds.addTKResult("apt", "18.0", true, true) // TK passes
 
@@ -1269,8 +1281,8 @@ func TestCheckCookbookCompatibility_MultiSource_TKCompatibleOverridesCSFail(t *t
 func TestCheckCookbookCompatibility_MultiSource_NoGitRepo(t *testing.T) {
 	// No git repo exists — only server CS checked
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	cache := ds.buildFakeCache()
 	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1293,10 +1305,10 @@ func TestCheckCookbookCompatibility_ErrorResultTreatedAsUntested(t *testing.T) {
 	// skipped — not treated as compatible or incompatible. The cookbook
 	// should appear as "untested".
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// Server CS result with an error message (CookStyle crashed).
-	ds.csResults[csKey("id-apt", "18.0")] = &datastore.ServerCookbookCookstyleResult{
-		ServerCookbookID:  "id-apt",
+	ds.csResults[csKey("org-1/apt/7.4.0", "18.0")] = &datastore.ServerCookbookCookstyleResult{
+		ServerCookbookID:  "org-1/apt/7.4.0",
 		TargetChefVersion: "18.0",
 		Passed:            false,
 		ErrorMessage:      "CookStyle error (exit 2): Invalid .rubocop.yml",
@@ -1318,7 +1330,7 @@ func TestCheckCookbookCompatibility_ErrorResultTreatedAsUntested(t *testing.T) {
 func TestCheckCookbookCompatibility_GitCSErrorResultSkipped(t *testing.T) {
 	// Git CookStyle result with ErrorMessage should also be skipped.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "sha-abc")
 	// Git CS result with error.
 	ds.gitCSResults[gitCSKey("apt", "18.0")] = &datastore.GitRepoCookstyleResult{
@@ -1340,10 +1352,10 @@ func TestCheckCookbookCompatibility_ErrorResultDoesNotOverrideGoodResult(t *test
 	// Server CS errored, but git CS passed → should be compatible.
 	// The error result is skipped, the good result counts.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// Server CS errored.
-	ds.csResults[csKey("id-apt", "18.0")] = &datastore.ServerCookbookCookstyleResult{
-		ServerCookbookID:  "id-apt",
+	ds.csResults[csKey("org-1/apt/7.4.0", "18.0")] = &datastore.ServerCookbookCookstyleResult{
+		ServerCookbookID:  "org-1/apt/7.4.0",
 		TargetChefVersion: "18.0",
 		Passed:            false,
 		ErrorMessage:      "CookStyle error (exit 2): crash",
@@ -1365,13 +1377,13 @@ func TestCheckCookbookCompatibility_ErrorResultDoesNotOverrideGoodResult(t *test
 
 func TestEvaluateOne_AllCompatibleSufficientDisk(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCookbookID("nginx", "2.0.0", "id-nginx")
-	ds.addCSResult("id-apt", "18.0", true)
-	ds.addCSResult("id-nginx", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCookbookID("nginx", "2.0.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1/nginx/2.0.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0", "nginx": "2.0.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1396,13 +1408,13 @@ func TestEvaluateOne_AllCompatibleSufficientDisk(t *testing.T) {
 
 func TestEvaluateOne_IncompatibleCookbook(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCookbookID("nginx", "2.0.0", "id-nginx")
-	ds.addCSResult("id-apt", "18.0", true)
-	ds.addCSResult("id-nginx", "18.0", false) // FAIL
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCookbookID("nginx", "2.0.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1/nginx/2.0.0", "18.0", false) // FAIL
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0", "nginx": "2.0.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1438,13 +1450,13 @@ func TestEvaluateOne_IncompatibleCookbook(t *testing.T) {
 
 func TestEvaluateOne_UntestedCookbook(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 	// "nginx" is in the ID map but has no test results.
-	ds.addCookbookID("nginx", "2.0.0", "id-nginx")
+	ds.addCookbookID("nginx", "2.0.0", "org-1")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0", "nginx": "2.0.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1466,11 +1478,11 @@ func TestEvaluateOne_UntestedCookbook(t *testing.T) {
 
 func TestEvaluateOne_InsufficientDisk(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "2097152", KBUsed: "1048576", KBAvailable: "1048576", PercentUsed: "50%", Mount: "/"},
@@ -1495,11 +1507,11 @@ func TestEvaluateOne_InsufficientDisk(t *testing.T) {
 
 func TestEvaluateOne_UnknownDiskSpace(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 		nil) // no filesystem data
 
@@ -1522,11 +1534,11 @@ func TestEvaluateOne_UnknownDiskSpace(t *testing.T) {
 
 func TestEvaluateOne_StaleNode(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "stale-node", true,
+	snap := makeSnapshot("org-1", "stale-node", true,
 		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1555,7 +1567,7 @@ func TestEvaluateOne_NoCookbooks(t *testing.T) {
 	ds := newFakeReadinessDS()
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "bare-node", false,
+	snap := makeSnapshot("org-1", "bare-node", false,
 		nil, // no cookbooks
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1577,12 +1589,12 @@ func TestEvaluateOne_NoCookbooks(t *testing.T) {
 
 func TestEvaluateOne_ComplexityEnrichment(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("nginx", "2.0.0", "id-nginx")
-	ds.addCSResult("id-nginx", "18.0", false) // incompatible
-	ds.addComplexity("id-nginx", "18.0", 45, "high")
+	ds.addCookbookID("nginx", "2.0.0", "org-1")
+	ds.addCSResult("org-1/nginx/2.0.0", "18.0", false) // incompatible
+	ds.addComplexity("org-1/nginx/2.0.0", "18.0", 45, "high")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"nginx": "2.0.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1605,14 +1617,14 @@ func TestEvaluateOne_ComplexityEnrichment(t *testing.T) {
 
 func TestEvaluateOne_MultipleBlockingCookbooks(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCookbookID("nginx", "2.0.0", "id-nginx")
-	ds.addCookbookID("java", "8.5.0", "id-java")
-	ds.addCSResult("id-apt", "18.0", true) // pass
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCookbookID("nginx", "2.0.0", "org-1")
+	ds.addCookbookID("java", "8.5.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true) // pass
 	// nginx and java: no results → untested
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0", "nginx": "2.0.0", "java": "8.5.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1637,11 +1649,11 @@ func TestEvaluateOne_MultipleBlockingCookbooks(t *testing.T) {
 
 func TestEvaluateOne_CookstyleOnlyPassIsNotBlocking(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true) // CookStyle pass, no TK
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true) // CookStyle pass, no TK
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
@@ -1665,19 +1677,19 @@ func TestEvaluateOne_CookstyleOnlyPassIsNotBlocking(t *testing.T) {
 func TestEvaluateOrganisation_Basic(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false,
+		makeSnapshot("org-1", "node-1", false,
 			cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 			linuxFilesystemJSON(map[string]linuxMount{
 				"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 			})),
-		makeSnapshot("snap-2", "org-1", "node-2", false,
+		makeSnapshot("org-1", "node-2", false,
 			cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 			linuxFilesystemJSON(map[string]linuxMount{
 				"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 			})),
 	}
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
 	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
@@ -1701,15 +1713,15 @@ func TestEvaluateOrganisation_Basic(t *testing.T) {
 func TestEvaluateOrganisation_MultipleTargetVersions(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false,
+		makeSnapshot("org-1", "node-1", false,
 			cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 			linuxFilesystemJSON(map[string]linuxMount{
 				"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 			})),
 	}
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
-	ds.addCSResult("id-apt", "17.0", false) // fails for 17.0
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1/apt/7.4.0", "17.0", false) // fails for 17.0
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
 	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"17.0", "18.0"})
@@ -1749,7 +1761,7 @@ func TestEvaluateOrganisation_NoSnapshots(t *testing.T) {
 func TestEvaluateOrganisation_NoTargetVersions(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
@@ -1779,16 +1791,16 @@ func TestEvaluateOrganisation_ListSnapshotsError(t *testing.T) {
 func TestEvaluateOrganisation_CookbookIDMapError(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
-	ds.cookbookIDMapErr = fmt.Errorf("connection refused")
+	ds.listServerCookbooksErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
 	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !contains(err.Error(), "loading cookbook ID map") {
+	if !contains(err.Error(), "listing server cookbooks") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -1796,11 +1808,11 @@ func TestEvaluateOrganisation_CookbookIDMapError(t *testing.T) {
 func TestEvaluateOrganisation_UpsertErrorDoesNotAbortBatch(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+		makeSnapshot("org-1", "node-1", false, nil,
 			linuxFilesystemJSON(map[string]linuxMount{
 				"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 			})),
-		makeSnapshot("snap-2", "org-1", "node-2", false, nil,
+		makeSnapshot("org-1", "node-2", false, nil,
 			linuxFilesystemJSON(map[string]linuxMount{
 				"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 			})),
@@ -1823,7 +1835,7 @@ func TestEvaluateOrganisation_ContextCancellation(t *testing.T) {
 	// Create many snapshots.
 	for i := 0; i < 50; i++ {
 		ds.snapshots = append(ds.snapshots,
-			makeSnapshot(fmt.Sprintf("snap-%d", i), "org-1", fmt.Sprintf("node-%d", i), false, nil,
+			makeSnapshot("org-1", fmt.Sprintf("node-%d", i), false, nil,
 				linuxFilesystemJSON(map[string]linuxMount{
 					"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 				})))
@@ -1849,14 +1861,14 @@ func TestEvaluateOrganisation_ConcurrencyBounded(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		name := fmt.Sprintf("node-%d", i)
 		ds.snapshots = append(ds.snapshots,
-			makeSnapshot(fmt.Sprintf("snap-%d", i), "org-1", name, false,
+			makeSnapshot("org-1", name, false,
 				cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 				linuxFilesystemJSON(map[string]linuxMount{
 					"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 				})))
 	}
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 3, 2048) // concurrency=3
 	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
@@ -1883,9 +1895,9 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	ds.addGitRepo("apt", "sha-abc")
 	ds.addTKResult("apt", "18.0", true, true)
 	ds.addGitCSResult("apt", "18.0", true)
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", false)
-	ds.addComplexity("id-apt", "18.0", 42, "medium")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", false)
+	ds.addComplexity("org-1/apt/7.4.0", "18.0", 42, "medium")
 	ds.gitComplexities[gcKey("apt", "18.0")] = &datastore.GitRepoComplexity{
 		GitRepoID:         "apt",
 		TargetChefVersion: "18.0",
@@ -1920,14 +1932,14 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	}
 
 	// Server CS results
-	if scs := cache.serverCSResults[cacheKey("id-apt", "18.0")]; scs == nil {
+	if scs := cache.serverCSResults[cacheKey("org-1/apt/7.4.0", "18.0")]; scs == nil {
 		t.Error("expected server CS result in cache")
 	} else if scs.Passed {
 		t.Error("expected server CS result to have failed")
 	}
 
 	// Server complexity
-	if sc := cache.serverComplexity[cacheKey("id-apt", "18.0")]; sc == nil {
+	if sc := cache.serverComplexity[cacheKey("org-1/apt/7.4.0", "18.0")]; sc == nil {
 		t.Error("expected server complexity in cache")
 	} else if sc.ComplexityScore != 42 {
 		t.Errorf("expected complexity score 42, got %d", sc.ComplexityScore)
@@ -1943,9 +1955,9 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 
 func TestBuildReadinessCache_FiltersTargetVersions(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
-	ds.addCSResult("id-apt", "17.0", false)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
+	ds.addCSResult("org-1/apt/7.4.0", "17.0", false)
 
 	// Build cache for only 18.0
 	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
@@ -1953,19 +1965,19 @@ func TestBuildReadinessCache_FiltersTargetVersions(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if scs := cache.serverCSResults[cacheKey("id-apt", "18.0")]; scs == nil {
+	if scs := cache.serverCSResults[cacheKey("org-1/apt/7.4.0", "18.0")]; scs == nil {
 		t.Error("expected server CS result for 18.0")
 	}
-	if scs := cache.serverCSResults[cacheKey("id-apt", "17.0")]; scs != nil {
+	if scs := cache.serverCSResults[cacheKey("org-1/apt/7.4.0", "17.0")]; scs != nil {
 		t.Error("did not expect server CS result for 17.0 (not in target versions)")
 	}
 }
 
 func TestBuildReadinessCache_IncludesNullTargetVersionCSResults(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
 	// Server CS result with empty target version (scanned without profile)
-	ds.addCSResult("id-apt", "", true)
+	ds.addCSResult("org-1/apt/7.4.0", "", true)
 
 	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
 	if err != nil {
@@ -1973,7 +1985,7 @@ func TestBuildReadinessCache_IncludesNullTargetVersionCSResults(t *testing.T) {
 	}
 
 	// The empty-target-version result should be in the cache
-	if scs := cache.serverCSResults[cacheKey("id-apt", "")]; scs == nil {
+	if scs := cache.serverCSResults[cacheKey("org-1/apt/7.4.0", "")]; scs == nil {
 		t.Error("expected server CS result with empty target version in cache")
 	}
 }
@@ -1981,7 +1993,7 @@ func TestBuildReadinessCache_IncludesNullTargetVersionCSResults(t *testing.T) {
 func TestEvaluateOrganisation_BulkLoadError_GitRepos(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 	ds.gitRepoErr = fmt.Errorf("connection refused")
 
@@ -1998,7 +2010,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitRepos(t *testing.T) {
 func TestEvaluateOrganisation_BulkLoadError_TKResults(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 	ds.tkErr = fmt.Errorf("connection refused")
 
@@ -2015,7 +2027,7 @@ func TestEvaluateOrganisation_BulkLoadError_TKResults(t *testing.T) {
 func TestEvaluateOrganisation_BulkLoadError_ServerCSResults(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 	ds.csErr = fmt.Errorf("connection refused")
 
@@ -2032,7 +2044,7 @@ func TestEvaluateOrganisation_BulkLoadError_ServerCSResults(t *testing.T) {
 func TestEvaluateOrganisation_BulkLoadError_GitCSResults(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 	ds.gitCSErr = fmt.Errorf("connection refused")
 
@@ -2049,7 +2061,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitCSResults(t *testing.T) {
 func TestEvaluateOrganisation_BulkLoadError_ServerComplexities(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 	ds.complexityErr = fmt.Errorf("connection refused")
 
@@ -2066,7 +2078,7 @@ func TestEvaluateOrganisation_BulkLoadError_ServerComplexities(t *testing.T) {
 func TestEvaluateOrganisation_BulkLoadError_GitComplexities(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil),
+		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 	ds.gitComplexityErr = fmt.Errorf("connection refused")
 
@@ -2084,14 +2096,14 @@ func TestEvaluateOrganisation_EmptyCache(t *testing.T) {
 	// No CookStyle/TK/complexity data at all — all cookbooks should show as untested
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("snap-1", "org-1", "node-1", false,
+		makeSnapshot("org-1", "node-1", false,
 			cookbooksJSON(map[string]string{"apt": "7.4.0", "nginx": "2.0.0"}),
 			linuxFilesystemJSON(map[string]linuxMount{
 				"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 			})),
 	}
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCookbookID("nginx", "2.0.0", "id-nginx")
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCookbookID("nginx", "2.0.0", "org-1")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
@@ -2391,7 +2403,7 @@ func TestEvaluateDiskSpace_Ohai14_LinuxSufficientSpace(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
 			"/dev/vda2,/": {
 				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
@@ -2417,7 +2429,7 @@ func TestEvaluateDiskSpace_Ohai14_LinuxInsufficientSpace(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
 			"/dev/vda2,/": {
 				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
@@ -2439,7 +2451,7 @@ func TestEvaluateDiskSpace_Ohai14_LinuxDedicatedHabMount(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
 			"/dev/vda2,/": {
 				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
@@ -2466,7 +2478,7 @@ func TestEvaluateDiskSpace_Ohai14_WindowsDrive(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
-	snap := makeSnapshot("snap-1", "org-1", "win-node", false, nil,
+	snap := makeSnapshot("org-1", "win-node", false, nil,
 		ohai14WindowsFilesystemJSON(map[string]ohaiPairEntry{
 			",C:": {
 				Mount: "C:", Device: "", FSType: "ntfs",
@@ -2490,7 +2502,7 @@ func TestEvaluateDiskSpace_Ohai14_IntegerValues(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
 			"/dev/vda2,/": {
 				Mount: "/", Device: "/dev/vda2", FSType: "ext4",
@@ -2510,11 +2522,11 @@ func TestEvaluateDiskSpace_Ohai14_IntegerValues(t *testing.T) {
 func TestEvaluateOne_Ohai14_ReadyWithSufficientDisk(t *testing.T) {
 	// End-to-end: all cookbooks compatible, Ohai 14+ filesystem, sufficient disk.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
 			"/dev/vda2,/": {
@@ -2540,11 +2552,11 @@ func TestEvaluateOne_Ohai14_ReadyWithSufficientDisk(t *testing.T) {
 func TestEvaluateOne_Ohai14_BlockedByDisk(t *testing.T) {
 	// End-to-end: all cookbooks compatible, Ohai 14+ filesystem, insufficient disk.
 	ds := newFakeReadinessDS()
-	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addCSResult("id-apt", "18.0", true)
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1/apt/7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false,
+	snap := makeSnapshot("org-1", "node-1", false,
 		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
 		ohai14LinuxFilesystemJSON(map[string]ohaiPairEntry{
 			"/dev/vda2,/": {
@@ -2573,10 +2585,10 @@ func TestEvaluateOne_Ohai14_BlockedByDisk(t *testing.T) {
 func TestEvaluateDiskSpace_HabUnderOpt(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
 	// /opt is mounted, but /hab is not under /opt — root should match.
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
-			"/dev/sdb1": {KBSize: "102400000", KBUsed: "50000000", KBAvailable: "47360000", PercentUsed: "51%", Mount: "/opt"},
+			"/dev/sdb1": {KBSize: "10000000", KBUsed: "1000000", KBAvailable: "8000000", PercentUsed: "10%", Mount: "/opt"},
 		}))
 
 	availMB, known := e.evaluateDiskSpace(snap)
@@ -2592,10 +2604,10 @@ func TestEvaluateDiskSpace_HabUnderOpt(t *testing.T) {
 
 func TestEvaluateDiskSpace_DedicatedHabOverridesRoot(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
-			"/dev/sdb1": {KBSize: "102400000", KBUsed: "50000000", KBAvailable: "100000", PercentUsed: "99%", Mount: "/hab"},
+			"/dev/sdb1": {KBSize: "5000000", KBUsed: "1000000", KBAvailable: "3000000", PercentUsed: "20%", Mount: "/hab"},
 		}))
 
 	availMB, known := e.evaluateDiskSpace(snap)
@@ -2603,7 +2615,7 @@ func TestEvaluateDiskSpace_DedicatedHabOverridesRoot(t *testing.T) {
 		t.Fatal("expected known")
 	}
 	// /hab mount should be preferred over root.
-	expected := 100000 / 1024
+	expected := 3000000 / 1024
 	if availMB != expected {
 		t.Errorf("expected %d MB (dedicated /hab), got %d MB", expected, availMB)
 	}
@@ -2618,7 +2630,7 @@ func TestEvaluateOne_ExactDiskSpaceBoundary(t *testing.T) {
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
 	// Exactly 2048 MB free = 2048 * 1024 = 2097152 KB.
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "4194304", KBUsed: "2097152", KBAvailable: "2097152", PercentUsed: "50%", Mount: "/"},
 		}))
@@ -2640,7 +2652,7 @@ func TestEvaluateOne_OneBelowDiskSpaceBoundary(t *testing.T) {
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
 	// 2047 MB free = 2047 * 1024 = 2096128 KB.
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "4194304", KBUsed: "2098176", KBAvailable: "2096128", PercentUsed: "50%", Mount: "/"},
 		}))
@@ -2664,7 +2676,7 @@ func TestReadinessResult_RequiredDiskMBDefaultsToMinFreeDisk(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 4096)
 
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil,
+	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
@@ -2681,7 +2693,7 @@ func TestReadinessResult_EvaluatedAtSet(t *testing.T) {
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
 	before := time.Now().UTC().Add(-time.Second)
-	snap := makeSnapshot("snap-1", "org-1", "node-1", false, nil, nil)
+	snap := makeSnapshot("org-1", "node-1", false, nil, nil)
 	cache := ds.buildFakeCache()
 	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
 	after := time.Now().UTC().Add(time.Second)
