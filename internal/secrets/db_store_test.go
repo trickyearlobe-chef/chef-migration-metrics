@@ -1429,11 +1429,11 @@ func TestStore_ListByType_AllTypes(t *testing.T) {
 	mustCreateGeneric(t, store, "gen", "v", "admin")
 	mustCreateWebhook(t, store, "hook", "https://x.com", "admin")
 
-	store.Create(ctx, CreateCredentialInput{
+	_, _ = store.Create(ctx, CreateCredentialInput{
 		Name: "ldap", CredentialType: CredentialTypeLDAPBindPassword,
 		Plaintext: []byte("p"), CreatedBy: "admin",
 	})
-	store.Create(ctx, CreateCredentialInput{
+	_, _ = store.Create(ctx, CreateCredentialInput{
 		Name: "smtp", CredentialType: CredentialTypeSMTPPassword,
 		Plaintext: []byte("p"), CreatedBy: "admin",
 	})
@@ -2314,11 +2314,11 @@ func TestStore_MultipleTypes_IndependentStorage(t *testing.T) {
 	mustCreateGeneric(t, store, "generic-1", "gen-value", "admin")
 	mustCreateWebhook(t, store, "webhook-1", "https://example.com/hook", "admin")
 
-	store.Create(ctx, CreateCredentialInput{
+	_, _ = store.Create(ctx, CreateCredentialInput{
 		Name: "ldap-1", CredentialType: CredentialTypeLDAPBindPassword,
 		Plaintext: []byte("ldap-pass"), CreatedBy: "admin",
 	})
-	store.Create(ctx, CreateCredentialInput{
+	_, _ = store.Create(ctx, CreateCredentialInput{
 		Name: "smtp-1", CredentialType: CredentialTypeSMTPPassword,
 		Plaintext: []byte("smtp-pass"), CreatedBy: "admin",
 	})

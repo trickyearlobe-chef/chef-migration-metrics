@@ -210,7 +210,7 @@ func TestDiskFS_ReturnsNilForFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	if got := diskFS(f.Name()); got != nil {
 		t.Fatalf("diskFS() = %v for a regular file; want nil", got)

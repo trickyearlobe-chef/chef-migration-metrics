@@ -398,7 +398,7 @@ func sortCookbookRows(items []cookbookRow, field, order string) {
 		case "download_status":
 			less = items[i].DownloadStatus < items[j].DownloadStatus
 		default: // "name"
-			if strings.ToLower(items[i].Name) == strings.ToLower(items[j].Name) {
+			if strings.EqualFold(items[i].Name, items[j].Name) {
 				less = items[i].Version < items[j].Version
 			} else {
 				less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)

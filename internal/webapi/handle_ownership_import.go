@@ -50,7 +50,7 @@ func (r *Router) handleOwnershipImport(w http.ResponseWriter, req *http.Request)
 		WriteBadRequest(w, "file field is required.")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Parse rows from the uploaded file.
 	type importRow struct {
@@ -350,11 +350,6 @@ func (r *Router) handleCookbookCommitters(w http.ResponseWriter, req *http.Reque
 			GitRepoCommitter: c,
 			IsOwner:          ownerEmails[strings.ToLower(c.AuthorEmail)],
 		}
-	}
-
-	// Ensure data is always a JSON array, not null.
-	if items == nil {
-		items = []committerWithOwner{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{

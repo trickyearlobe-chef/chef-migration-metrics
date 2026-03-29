@@ -148,6 +148,12 @@ func (r *Router) triggerCollectionInBackground() bool {
 		return false
 	}
 
+	// Release the timer goroutine once the context expires or the
+	// collection finishes (whichever comes first). We cannot defer
+	// cancel() in this function because bgCtx outlives it — the
+	// background collection still needs the context.
+	go func() { <-bgCtx.Done(); cancel() }()
+
 	r.logf("INFO", "immediate collection run triggered by rescan request")
 	return true
 }
