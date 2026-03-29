@@ -75,7 +75,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 ## Platform Coverage Analysis
 
 - [x] Parse `.kitchen.yml` from git repo working directory to extract platform names
-- [ ] Query production platforms per cookbook from `cookbook_node_usage` + `node_snapshots`
+- [x] Query production platforms per cookbook from `cookbook_node_usage` + `node_snapshots`
 - [x] Implement fuzzy matching: split kitchen name on last hyphen → `(os, version)`
 - [x] Implement major version matching: `centos-7` matches `7.9.2009`
 - [x] Implement `platform_family` grouping: `rhel-9` matches `rocky`, `alma`, `centos`
@@ -83,7 +83,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [x] Compute coverage report: tested_and_in_production, tested_not_in_production, in_production_not_tested
 - [x] Compute gap_count, total_production_nodes, covered_node_count, coverage_percentage
 - [x] Upsert results into `cookbook_platform_coverage` table
-- [ ] Schedule coverage recomputation after each collection + analysis cycle
+- [x] Schedule coverage recomputation after each collection + analysis cycle
 - [x] Write unit tests for platform name parsing and fuzzy matching
 - [x] Write unit tests for coverage computation (all categories, edge cases)
 

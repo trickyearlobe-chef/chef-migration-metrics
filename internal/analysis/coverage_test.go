@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
 func TestParseKitchenPlatformName_Ubuntu(t *testing.T) {
@@ -470,5 +472,69 @@ func TestComputeCoverage_EmptyKitchenWithProduction(t *testing.T) {
 	}
 	if len(r.ProductionPlatforms) != 2 {
 		t.Errorf("production_platforms: got %d, want 2", len(r.ProductionPlatforms))
+	}
+}
+
+func TestProductionPlatformsFromRows_Empty(t *testing.T) {
+	result := ProductionPlatformsFromRows(nil)
+	if len(result) != 0 {
+		t.Errorf("expected empty slice, got %d items", len(result))
+	}
+	// Must not be nil (JSON [] not null).
+	if result == nil {
+		t.Error("expected non-nil empty slice")
+	}
+}
+
+func TestProductionPlatformsFromRows_Conversion(t *testing.T) {
+	rows := []datastore.ProductionPlatformRow{
+		{Platform: "ubuntu", PlatformVersion: "22.04", PlatformFamily: "debian", NodeCount: 47},
+		{Platform: "centos", PlatformVersion: "7.9.2009", PlatformFamily: "rhel", NodeCount: 12},
+		{Platform: "rocky", PlatformVersion: "9.3", PlatformFamily: "rhel", NodeCount: 8},
+	}
+
+	result := ProductionPlatformsFromRows(rows)
+
+	if len(result) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(result))
+	}
+
+	// Verify first entry.
+	if result[0].Platform != "ubuntu" {
+		t.Errorf("result[0].Platform: got %q, want %q", result[0].Platform, "ubuntu")
+	}
+	if result[0].PlatformVersion != "22.04" {
+		t.Errorf("result[0].PlatformVersion: got %q, want %q", result[0].PlatformVersion, "22.04")
+	}
+	if result[0].PlatformFamily != "debian" {
+		t.Errorf("result[0].PlatformFamily: got %q, want %q", result[0].PlatformFamily, "debian")
+	}
+	if result[0].NodeCount != 47 {
+		t.Errorf("result[0].NodeCount: got %d, want 47", result[0].NodeCount)
+	}
+
+	// Verify last entry.
+	if result[2].Platform != "rocky" {
+		t.Errorf("result[2].Platform: got %q, want %q", result[2].Platform, "rocky")
+	}
+	if result[2].NodeCount != 8 {
+		t.Errorf("result[2].NodeCount: got %d, want 8", result[2].NodeCount)
+	}
+}
+
+func TestProductionPlatformsFromRows_PreservesOrder(t *testing.T) {
+	rows := []datastore.ProductionPlatformRow{
+		{Platform: "rocky", PlatformVersion: "9.3", PlatformFamily: "rhel", NodeCount: 8},
+		{Platform: "ubuntu", PlatformVersion: "22.04", PlatformFamily: "debian", NodeCount: 47},
+	}
+
+	result := ProductionPlatformsFromRows(rows)
+
+	// Order must match input — caller (datastore query) controls ordering.
+	if result[0].Platform != "rocky" {
+		t.Errorf("result[0].Platform: got %q, want %q (order should be preserved)", result[0].Platform, "rocky")
+	}
+	if result[1].Platform != "ubuntu" {
+		t.Errorf("result[1].Platform: got %q, want %q", result[1].Platform, "ubuntu")
 	}
 }

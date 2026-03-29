@@ -164,6 +164,10 @@ const (
 	// ScopeOwnership is used for ownership auto-derivation events —
 	// rule evaluation, assignment creation, and stale assignment cleanup.
 	ScopeOwnership Scope = "ownership"
+
+	// ScopePlatformCoverage is used for platform coverage analysis events —
+	// computing tested vs production platform coverage per cookbook.
+	ScopePlatformCoverage Scope = "platform_coverage"
 )
 
 // validScopes is the set of recognised scope values. Used for validation.
@@ -182,6 +186,7 @@ var validScopes = map[Scope]bool{
 	ScopeWebAPI:               true,
 	ScopeAuth:                 true,
 	ScopeOwnership:            true,
+	ScopePlatformCoverage:     true,
 }
 
 // IsValidScope returns true if s is a recognised scope value.

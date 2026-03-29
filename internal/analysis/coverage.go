@@ -4,9 +4,15 @@
 package analysis
 
 import (
+	"context"
+	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 )
 
 // CoverageReport is the JSONB structure stored in cookbook_platform_coverage.
@@ -36,6 +42,114 @@ type TestedPlatformMatch struct {
 	Platform        string `json:"platform"`
 	PlatformVersion string `json:"platform_version"`
 	NodeCount       int    `json:"node_count"`
+}
+
+// ProductionPlatformsFromRows converts datastore ProductionPlatformRow slices
+// to the analysis domain type. Returns a non-nil empty slice when the input
+// is nil or empty (so JSON marshalling produces [] not null).
+func ProductionPlatformsFromRows(rows []datastore.ProductionPlatformRow) []ProductionPlatform {
+	result := make([]ProductionPlatform, len(rows))
+	for i, r := range rows {
+		result[i] = ProductionPlatform{
+			Platform:        r.Platform,
+			PlatformVersion: r.PlatformVersion,
+			PlatformFamily:  r.PlatformFamily,
+			NodeCount:       r.NodeCount,
+		}
+	}
+	return result
+}
+
+// ComputeAndUpsertCoverageForRepo computes platform coverage for a single
+// git repo cookbook and upserts the result into the database. It:
+//  1. Parses .kitchen.yml from the repo working directory
+//  2. Queries production platforms from node_snapshots
+//  3. Runs ComputeCoverage to match kitchen ↔ production platforms
+//  4. Upserts the CoverageReport into cookbook_platform_coverage
+//
+// Returns nil if the repo has no .kitchen.yml (no coverage to compute).
+// Errors are logged as warnings and returned to the caller.
+func ComputeAndUpsertCoverageForRepo(
+	ctx context.Context,
+	db *datastore.DB,
+	logger *logging.Logger,
+	repo datastore.GitRepo,
+	repoDir string,
+) error {
+	log := logger.WithScope(logging.ScopePlatformCoverage,
+		logging.WithCookbook(repo.Name, ""))
+
+	// Step 1: Find and parse .kitchen.yml.
+	kitchenPath := filepath.Join(repoDir, ".kitchen.yml")
+	if _, err := os.Stat(kitchenPath); os.IsNotExist(err) {
+		log.Debug(fmt.Sprintf("no .kitchen.yml in %s — skipping coverage", repo.Name))
+		return nil
+	}
+
+	kitchenPlatforms := ParseKitchenYMLPlatforms(kitchenPath)
+	if len(kitchenPlatforms) == 0 {
+		log.Debug(fmt.Sprintf("no platforms in .kitchen.yml for %s — skipping coverage", repo.Name))
+		return nil
+	}
+
+	// Step 2: Query production platforms from node_snapshots.
+	rows, err := db.GetProductionPlatformsForCookbook(ctx, repo.Name)
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to query production platforms for %s: %v", repo.Name, err))
+		return fmt.Errorf("querying production platforms for %s: %w", repo.Name, err)
+	}
+	prodPlatforms := ProductionPlatformsFromRows(rows)
+
+	// Step 3: Compute coverage.
+	report := ComputeCoverage(kitchenPlatforms, prodPlatforms)
+
+	log.Info(fmt.Sprintf(
+		"cookbook %s: %d kitchen platform(s), %d production platform(s), coverage %.1f%% (%d gap(s))",
+		repo.Name, len(kitchenPlatforms), len(prodPlatforms),
+		report.CoveragePercentage, report.GapCount))
+
+	// Step 4: Upsert into database.
+	_, err = db.UpsertCookbookPlatformCoverage(ctx, datastore.UpsertCookbookPlatformCoverageParams{
+		GitRepoID:    repo.ID,
+		CookbookName: repo.Name,
+		CoverageData: report,
+	})
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to upsert coverage for %s: %v", repo.Name, err))
+		return fmt.Errorf("upserting coverage for %s: %w", repo.Name, err)
+	}
+
+	return nil
+}
+
+// ComputeAllGitRepoCoverage runs coverage analysis for all provided git
+// repos. It is intended to be called after the collection + analysis cycle
+// completes. Errors for individual repos are logged and do not abort the
+// batch. Returns the count of repos that were evaluated and the count that
+// had errors.
+func ComputeAllGitRepoCoverage(
+	ctx context.Context,
+	db *datastore.DB,
+	logger *logging.Logger,
+	repos []datastore.GitRepo,
+	repoDirFn func(datastore.GitRepo) string,
+) (evaluated int, errCount int) {
+	for _, repo := range repos {
+		if ctx.Err() != nil {
+			break
+		}
+
+		dir := repoDirFn(repo)
+		if dir == "" {
+			continue
+		}
+
+		evaluated++
+		if err := ComputeAndUpsertCoverageForRepo(ctx, db, logger, repo, dir); err != nil {
+			errCount++
+		}
+	}
+	return evaluated, errCount
 }
 
 // ParseKitchenPlatformName splits a kitchen platform name on the LAST hyphen
