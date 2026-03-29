@@ -24,6 +24,7 @@ import { OwnershipImportPage } from "./pages/OwnershipImportPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminActionsPage } from "./pages/AdminActionsPage";
 import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
+import { AdminPerformancePage } from "./pages/AdminPerformancePage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -42,8 +43,19 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
             fill="none"
             viewBox="0 0 24 24"
           >
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
           </svg>
           Loading\u2026
         </div>
@@ -109,24 +121,36 @@ export function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/nodes" element={<NodesPage />} />
             <Route path="/nodes/:org/:name" element={<NodeDetailPage />} />
-            <Route path="/nodes/:org/:name/disks" element={<NodeDiskDetailPage />} />
+            <Route
+              path="/nodes/:org/:name/disks"
+              element={<NodeDiskDetailPage />}
+            />
             <Route path="/cookbooks" element={<CookbooksPage />} />
             <Route path="/cookbooks/:name" element={<CookbookDetailPage />} />
-            <Route path="/cookbooks/:name/committers" element={<CookbookCommittersPage />} />
+            <Route
+              path="/cookbooks/:name/committers"
+              element={<CookbookCommittersPage />}
+            />
             <Route
               path="/cookbooks/:name/:version/remediation"
               element={<CookbookRemediationPage />}
             />
             <Route path="/git-repos" element={<GitReposPage />} />
             <Route path="/git-repos/:name" element={<GitRepoDetailPage />} />
-            <Route path="/git-repos/:name/committers" element={<CookbookCommittersPage />} />
+            <Route
+              path="/git-repos/:name/committers"
+              element={<CookbookCommittersPage />}
+            />
             <Route
               path="/git-repos/:name/:version/remediation"
               element={<GitRepoRemediationPage />}
             />
             <Route path="/remediation" element={<RemediationPage />} />
             <Route path="/ownership" element={<OwnersPage />} />
-            <Route path="/ownership/audit-log" element={<OwnershipAuditLogPage />} />
+            <Route
+              path="/ownership/audit-log"
+              element={<OwnershipAuditLogPage />}
+            />
             <Route path="/ownership/import" element={<OwnershipImportPage />} />
             <Route path="/ownership/:name" element={<OwnerDetailPage />} />
             <Route path="/dependencies" element={<DependencyGraphPage />} />
@@ -154,6 +178,14 @@ export function App() {
               element={
                 <RequireAdmin>
                   <AdminSystemStatsPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/admin/performance"
+              element={
+                <RequireAdmin>
+                  <AdminPerformancePage />
                 </RequireAdmin>
               }
             />
