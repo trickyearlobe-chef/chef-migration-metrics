@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { SMALL_PAGE_SIZE } from "../constants";
+import { SMALL_PAGE_SIZE } from "../../constants";
 import { Link } from "react-router-dom";
-import { useOrg } from "../context/OrgContext";
-import { useSort } from "../hooks/useSort";
-import { SortableColumnHeader } from "../components/SortableColumnHeader";
+import { useOrg } from "../../context/OrgContext";
+import { useSort } from "../../hooks/useSort";
+import { SortableColumnHeader } from "../../components/SortableColumnHeader";
 import {
   fetchDependencyGraph,
   fetchDependencyGraphTable,
   type DependencyGraphTableQuery,
-} from "../api";
+} from "../../api";
 import type {
   DependencyGraphResponse,
   DependencyGraphNode,
@@ -16,9 +16,9 @@ import type {
   DependencyGraphTableResponse,
   DependencyTableRow,
   SharedCookbook,
-} from "../types";
-import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
-import { Pagination } from "../components/Pagination";
+} from "../../types";
+import { LoadingSpinner, ErrorAlert, EmptyState } from "../../components/Feedback";
+import { Pagination } from "../../components/Pagination";
 
 // ---------------------------------------------------------------------------
 // Dependency Graph page
