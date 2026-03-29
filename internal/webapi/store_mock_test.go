@@ -20,6 +20,8 @@ type mockStore struct {
 	GetOrganisationByNameFn                             func(ctx context.Context, name string) (datastore.Organisation, error)
 	GetLatestCollectionRunFn                            func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
 	ListCollectionRunsFn                                func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
+	ListCollectionRunsFilteredFn                        func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error)
+	CountCollectionRunsFilteredFn                       func(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
 	ListNodeSnapshotsByOrganisationFn                   func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 	ListNodeSnapshotsFilteredFn                         func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
 	CountNodeVersionDistributionFn                      func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
@@ -32,6 +34,7 @@ type mockStore struct {
 	GetNodeSnapshotByNameFn                             func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
 	ListNodeReadinessForSnapshotFn                      func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error)
 	ListNodeReadinessByNodeNameFn                       func(ctx context.Context, organisationID, nodeName string) ([]datastore.NodeReadiness, error)
+	BulkListNodeReadinessByNodeNamesFn                  func(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error)
 	CountNodeReadinessFn                                func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error)
 	ListServerCookbooksByOrganisationFn                 func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
 	ListServerCookbooksByNameFn                         func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
@@ -150,6 +153,20 @@ func (m *mockStore) ListCollectionRuns(ctx context.Context, organisationID strin
 	return nil, nil
 }
 
+func (m *mockStore) ListCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
+	if m.ListCollectionRunsFilteredFn != nil {
+		return m.ListCollectionRunsFilteredFn(ctx, f)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CountCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) (int, error) {
+	if m.CountCollectionRunsFilteredFn != nil {
+		return m.CountCollectionRunsFilteredFn(ctx, f)
+	}
+	return 0, nil
+}
+
 func (m *mockStore) ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
 	if m.ListNodeSnapshotsByOrganisationFn != nil {
 		return m.ListNodeSnapshotsByOrganisationFn(ctx, organisationID)
@@ -230,6 +247,13 @@ func (m *mockStore) ListNodeReadinessForSnapshot(ctx context.Context, nodeSnapsh
 func (m *mockStore) ListNodeReadinessByNodeName(ctx context.Context, organisationID, nodeName string) ([]datastore.NodeReadiness, error) {
 	if m.ListNodeReadinessByNodeNameFn != nil {
 		return m.ListNodeReadinessByNodeNameFn(ctx, organisationID, nodeName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) BulkListNodeReadinessByNodeNames(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error) {
+	if m.BulkListNodeReadinessByNodeNamesFn != nil {
+		return m.BulkListNodeReadinessByNodeNamesFn(ctx, organisationID, nodeNames)
 	}
 	return nil, nil
 }
