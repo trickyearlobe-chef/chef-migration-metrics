@@ -184,6 +184,14 @@ export interface CookbookFilterQuery extends PaginationQuery {
   order?: "asc" | "desc";
 }
 
+export interface GitRepoFilterQuery extends PaginationQuery {
+  name?: string;
+  compatibility?: string; // "compatible" | "incompatible" | "untested" | ""
+  tk_status?: string; // "passed" | "failed" | "timed_out" | "untested" | ""
+  clone_status?: string; // "ok" | "failed" | "pending" | ""
+  target_chef_version?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Health & version
 // ---------------------------------------------------------------------------
@@ -479,15 +487,9 @@ export function fetchCookbookRemediation(
 // Git Repos
 // ---------------------------------------------------------------------------
 
-export function fetchGitRepos(filters?: {
-  name?: string;
-  compatibility?: string;
-  tk_status?: string;
-  clone_status?: string;
-  target_chef_version?: string;
-  page?: number;
-  per_page?: number;
-}): Promise<GitRepoListResponse> {
+export function fetchGitRepos(
+  filters?: GitRepoFilterQuery,
+): Promise<GitRepoListResponse> {
   return apiFetch<GitRepoListResponse>(
     buildUrl(
       "/git-repos",

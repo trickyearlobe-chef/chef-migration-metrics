@@ -137,6 +137,14 @@ func run() int {
 		return 1
 	}
 	defer db.Close()
+
+	// Apply configurable pool settings (defaults are set in config.setDefaults).
+	db.Configure(
+		cfg.Datastore.MaxOpenConns,
+		cfg.Datastore.MaxIdleConns,
+		time.Duration(cfg.Datastore.ConnMaxLifetimeMinutes)*time.Minute,
+		time.Duration(cfg.Datastore.ConnMaxIdleTimeMinutes)*time.Minute,
+	)
 	startup.Info("database connection established")
 
 	// -------------------------------------------------------------------

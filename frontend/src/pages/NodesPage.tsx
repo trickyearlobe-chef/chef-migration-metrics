@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
@@ -96,7 +97,7 @@ export function NodesPage() {
     (searchParams.get("readiness") as ReadinessFilter) || "",
   );
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to node_name ascending (backend default).
   const [sortField, setSortField] = useState("node_name");
