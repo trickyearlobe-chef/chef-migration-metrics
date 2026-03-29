@@ -1512,6 +1512,68 @@ func (c *Collector) defaultClientFactory(ctx context.Context, org datastore.Orga
 	return client, nil
 }
 
+// maxNodesInMetricSnapshot is the threshold above which per-node data is
+// omitted from the metric snapshot JSONB payload to avoid excessive sizes.
+const maxNodesInMetricSnapshot = 50000
+
+// nodeVersionEntry is a single node's name and version, included in the
+// metric snapshot payload to support ownership-filtered trend queries.
+type nodeVersionEntry struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+// buildVersionDistributionPayload builds the JSONB payload for a
+// chef_version_distribution metric snapshot from in-memory node snapshot
+// params. The payload includes per-node data (name + version) so that
+// ownership-filtered trend queries can be served from metric_snapshots
+// instead of querying live node_snapshots mid-collection.
+//
+// For organisations exceeding maxNodesInMetricSnapshot nodes, per-node
+// data is omitted and nodes_omitted is set to true.
+func buildVersionDistributionPayload(snapshotParams []datastore.InsertNodeSnapshotParams) (json.RawMessage, error) {
+	versionDist := make(map[string]int, 16)
+	var totalStale, totalFresh int
+
+	// Pre-allocate the nodes slice unless the org is too large.
+	omitNodes := len(snapshotParams) > maxNodesInMetricSnapshot
+	var nodes []nodeVersionEntry
+	if !omitNodes {
+		nodes = make([]nodeVersionEntry, 0, len(snapshotParams))
+	}
+
+	for _, p := range snapshotParams {
+		ver := p.ChefVersion
+		if ver == "" {
+			ver = "unknown"
+		}
+		versionDist[ver]++
+		if p.IsStale {
+			totalStale++
+		} else {
+			totalFresh++
+		}
+		if !omitNodes {
+			nodes = append(nodes, nodeVersionEntry{Name: p.NodeName, Version: ver})
+		}
+	}
+
+	payload := map[string]interface{}{
+		"distribution":  versionDist,
+		"total_nodes":   len(snapshotParams),
+		"stale_nodes":   totalStale,
+		"fresh_nodes":   totalFresh,
+		"nodes_omitted": omitNodes,
+	}
+	if omitNodes {
+		// Explicitly omit the nodes key to save space.
+	} else {
+		payload["nodes"] = nodes
+	}
+
+	return json.Marshal(payload)
+}
+
 // recordMetricSnapshots persists pre-aggregated metric snapshots for the
 // organisation so that dashboard trend charts can display historical data
 // without scanning the (now current-state-only) node_snapshots table.
@@ -1524,31 +1586,15 @@ func (c *Collector) recordMetricSnapshots(
 ) {
 	now := time.Now().UTC()
 
-	// Build version distribution and stale/fresh counts from the in-memory
-	// snapshot params (avoids a re-read from the database).
-	versionDist := make(map[string]int, 16)
-	var totalStale, totalFresh int
-	for _, p := range snapshotParams {
-		ver := p.ChefVersion
-		if ver == "" {
-			ver = "unknown"
-		}
-		versionDist[ver]++
-		if p.IsStale {
-			totalStale++
-		} else {
-			totalFresh++
-		}
+	if len(snapshotParams) > maxNodesInMetricSnapshot {
+		log.Warn(fmt.Sprintf("organisation %s has %d nodes (>%d) — per-node data omitted from metric snapshot; ownership-filtered trend unavailable",
+			organisationID, len(snapshotParams), maxNodesInMetricSnapshot),
+			logging.WithCollectionRunID(collectionRunID))
 	}
 
 	// chef_version_distribution metric snapshot — used by the version
 	// distribution trend chart.
-	distJSON, err := json.Marshal(map[string]interface{}{
-		"distribution": versionDist,
-		"total_nodes":  len(snapshotParams),
-		"stale_nodes":  totalStale,
-		"fresh_nodes":  totalFresh,
-	})
+	distJSON, err := buildVersionDistributionPayload(snapshotParams)
 	if err != nil {
 		log.Warn(fmt.Sprintf("failed to marshal chef_version_distribution metric: %v", err),
 			logging.WithCollectionRunID(collectionRunID))
