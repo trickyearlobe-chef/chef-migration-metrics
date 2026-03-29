@@ -185,7 +185,7 @@ func buildComplexityMap(complexities []datastore.ServerCookbookComplexity, targe
 	m := make(map[string]int, len(complexities))
 	for _, cc := range complexities {
 		if cc.TargetChefVersion == targetVersion {
-			m[cc.ServerCookbookID] = cc.ComplexityScore
+			m[cc.OrganisationName+"/"+cc.CookbookName+"/"+cc.CookbookVersion] = cc.ComplexityScore
 		}
 	}
 	return m

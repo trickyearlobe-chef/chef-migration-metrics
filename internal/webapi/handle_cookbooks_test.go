@@ -535,7 +535,7 @@ func TestHandleCookbookDetail_HappyPath(t *testing.T) {
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return nil, nil
 		},
-		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, id string) ([]datastore.ServerCookbookCookstyleResult, error) {
+		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return nil, nil
 		},
 	}
@@ -598,13 +598,13 @@ func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
 				{Name: "myapp"},
 			}, nil
 		},
-		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, id string) ([]datastore.ServerCookbookCookstyleResult, error) {
+		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return nil, nil
 		},
-		ListGitRepoCookstyleResultsFn: func(ctx context.Context, id string) ([]datastore.GitRepoCookstyleResult, error) {
+		ListGitRepoCookstyleResultsFn: func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoCookstyleResult, error) {
 			return nil, nil
 		},
-		ListGitRepoTestKitchenResultsFn: func(ctx context.Context, id string) ([]datastore.GitRepoTestKitchenResult, error) {
+		ListGitRepoTestKitchenResultsFn: func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoTestKitchenResult, error) {
 			return nil, nil
 		},
 	}
@@ -632,8 +632,8 @@ func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(body.ServerCookbooks) != 1 || body.ServerCookbooks[0].Cookbook.Name != "apt" {
-		t.Errorf("expected 1 server cookbook with name apt")
+	if len(body.ServerCookbooks) != 1 || body.ServerCookbooks[0].Cookbook.Name != "myapp" {
+		t.Errorf("expected 1 server cookbook with name myapp")
 	}
 	if len(body.GitRepos) != 1 || body.GitRepos[0].GitRepo.Name != "myapp" {
 		t.Errorf("expected 1 git repo with name myapp")
@@ -697,20 +697,20 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "ok"},
-				{Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
 			}, nil
 		},
 		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return []datastore.ServerCookbookCookstyleResult{
 				// apt 1.0.0: passed
-				{ID: "cs-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0", Passed: true, OffenceCount: 0},
+				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0", Passed: true, OffenceCount: 0},
 				// apt 2.0.0: failed (different version of same cookbook can differ)
-				{ID: "cs-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0", Passed: false, OffenceCount: 5},
+				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "2.0.0", TargetChefVersion: "18.0", Passed: false, OffenceCount: 5},
 				// nginx: failed
-				{ID: "cs-3", ServerCookbookID: "cb-3", TargetChefVersion: "18.0", Passed: false, OffenceCount: 3},
+				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0", Passed: false, OffenceCount: 3},
 				// mysql: no cookstyle result → untested
 			}, nil
 		},

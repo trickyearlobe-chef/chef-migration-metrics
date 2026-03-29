@@ -791,9 +791,9 @@ func TestCopyFile_NonexistentSource(t *testing.T) {
 
 func TestAutocorrectPreviewResult_SkippedState(t *testing.T) {
 	pr := AutocorrectPreviewResult{
-		CookbookID: "cb-1",
-		Skipped:    true,
-		SkipReason: "zero offenses",
+		CookbookName: "cb-1",
+		Skipped:      true,
+		SkipReason:   "zero offenses",
 	}
 	if !pr.Skipped {
 		t.Error("expected Skipped = true")
@@ -805,8 +805,8 @@ func TestAutocorrectPreviewResult_SkippedState(t *testing.T) {
 
 func TestAutocorrectPreviewResult_ErrorState(t *testing.T) {
 	pr := AutocorrectPreviewResult{
-		CookbookID: "cb-2",
-		Error:      os.ErrNotExist,
+		CookbookName: "cb-2",
+		Error:        os.ErrNotExist,
 	}
 	if pr.Error == nil {
 		t.Error("expected non-nil Error")

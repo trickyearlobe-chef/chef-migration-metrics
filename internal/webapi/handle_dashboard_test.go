@@ -731,14 +731,14 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{Name: "apt", Version: "1.0.0"},
-				{Name: "nginx", Version: "1.0.0"},
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0"},
 			}, nil
 		},
 		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return []datastore.ServerCookbookCookstyleResult{
-				{ID: "cs-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", Passed: true, OffenceCount: 0},
-				{ID: "cs-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 3},
+				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: true, OffenceCount: 0},
+				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 3},
 			}, nil
 		},
 	}
@@ -1152,9 +1152,9 @@ func TestHandleDashboardComplexityTrend_HappyPath(t *testing.T) {
 		},
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 			return []datastore.ServerCookbookComplexity{
-				{ID: "cc-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0.0", ComplexityScore: 10, ComplexityLabel: "low"},
-				{ID: "cc-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 45, ComplexityLabel: "high"},
-				{ID: "cc-3", ServerCookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 80, ComplexityLabel: "critical"},
+				{OrganisationName: "prod", CookbookName: "cb-1", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", ComplexityScore: 10, ComplexityLabel: "low"},
+				{OrganisationName: "prod", CookbookName: "cb-2", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", ComplexityScore: 45, ComplexityLabel: "high"},
+				{OrganisationName: "prod", CookbookName: "cb-3", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", ComplexityScore: 80, ComplexityLabel: "critical"},
 			}, nil
 		},
 	}
@@ -1270,12 +1270,12 @@ func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 			if orgID == "prod" {
 				return []datastore.ServerCookbookComplexity{
-					{ID: "cc-1", ServerCookbookID: "cb-1", TargetChefVersion: "17.0.0", ComplexityScore: 20, ComplexityLabel: "medium"},
-					{ID: "cc-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 5, ComplexityLabel: "low"},
+					{OrganisationName: "prod", CookbookName: "cb-1", CookbookVersion: "1.0.0", TargetChefVersion: "17.0.0", ComplexityScore: 20, ComplexityLabel: "medium"},
+					{OrganisationName: "prod", CookbookName: "cb-2", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", ComplexityScore: 5, ComplexityLabel: "low"},
 				}, nil
 			}
 			return []datastore.ServerCookbookComplexity{
-				{ID: "cc-3", ServerCookbookID: "cb-3", TargetChefVersion: "18.0.0", ComplexityScore: 60, ComplexityLabel: "critical"},
+				{OrganisationName: "staging", CookbookName: "cb-3", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", ComplexityScore: 60, ComplexityLabel: "critical"},
 			}, nil
 		},
 	}
@@ -1696,7 +1696,7 @@ func TestHandleDashboardCookbookDownloadStatus_HappyPath_MixedStatuses(t *testin
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
+			return []datastore.ServerCookbook{ // line ~1699
 				{OrganisationName: "prod-org", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok", IsActive: true},
 				{OrganisationName: "prod-org", Name: "apache2", Version: "5.1.0", DownloadStatus: "ok", IsActive: true},
 				{OrganisationName: "prod-org", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
@@ -2276,9 +2276,9 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath(t *testing.T) {
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "cookbook-b", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "cookbook-c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: time.Now()},
+				{GitRepoName: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "cookbook-b", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "cookbook-c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: time.Now()},
 			}, nil
 		},
 	}
@@ -2342,7 +2342,7 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_WithUntested(t *testi
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			// Only cookbook-a has been tested — cookbook-b and cookbook-c are untested.
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
 			}, nil
 		},
 	}
@@ -2429,8 +2429,8 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersion
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "cookbook-a", TargetChefVersion: "19.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "cookbook-a", TargetChefVersion: "19.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
 			}, nil
 		},
 	}
@@ -2525,9 +2525,9 @@ func TestHandleDashboardTestKitchenCompatibility_PassedPercent(t *testing.T) {
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "b", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "b", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoName: "c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
 				// d is untested
 			}, nil
 		},
