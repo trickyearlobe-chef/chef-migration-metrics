@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { fetchNodeDisks } from "../api";
 import type { NodeDiskDetailResponse, DiskEntry } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
+import { useSort } from "../hooks/useSort";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
 
 // ---------------------------------------------------------------------------
 // Node disk detail page — shows filesystem / disk data collected from Ohai.
@@ -39,11 +41,7 @@ function hasWindowsFields(disks: DiskEntry[]): boolean {
 
 /** Returns true when any disk entry has inode data. */
 function hasInodeData(disks: DiskEntry[]): boolean {
-  return disks.some(
-    (d) =>
-      d.total_inodes != null &&
-      d.total_inodes > 0,
-  );
+  return disks.some((d) => d.total_inodes != null && d.total_inodes > 0);
 }
 
 /** Returns true when inodes are more than 30% used (i.e. less than 70% free). */
@@ -67,9 +65,11 @@ type SortField =
   | "drive_type"
   | "encryption_status";
 
-type SortOrder = "asc" | "desc";
-
-function compareDiskEntries(a: DiskEntry, b: DiskEntry, field: SortField): number {
+function compareDiskEntries(
+  a: DiskEntry,
+  b: DiskEntry,
+  field: SortField,
+): number {
   switch (field) {
     case "mount":
       return a.mount.localeCompare(b.mount);
@@ -88,44 +88,12 @@ function compareDiskEntries(a: DiskEntry, b: DiskEntry, field: SortField): numbe
     case "drive_type":
       return (a.drive_type ?? "").localeCompare(b.drive_type ?? "");
     case "encryption_status":
-      return (a.encryption_status ?? "").localeCompare(b.encryption_status ?? "");
+      return (a.encryption_status ?? "").localeCompare(
+        b.encryption_status ?? "",
+      );
     default:
       return 0;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Sortable column header
-// ---------------------------------------------------------------------------
-
-function SortableColHeader({
-  label,
-  field,
-  currentField,
-  currentOrder,
-  onSort,
-  className,
-}: {
-  label: string;
-  field: SortField;
-  currentField: SortField;
-  currentOrder: SortOrder;
-  onSort: (field: SortField) => void;
-  className?: string;
-}) {
-  const isActive = field === currentField;
-  const arrow = !isActive ? " ↕" : currentOrder === "asc" ? " ↑" : " ↓";
-  return (
-    <th
-      className={
-        "cursor-pointer select-none hover:text-gray-700 " + (className ?? "")
-      }
-      onClick={() => onSort(field)}
-    >
-      {label}
-      <span className="text-xs text-blue-500">{arrow}</span>
-    </th>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -133,10 +101,7 @@ function SortableColHeader({
 // ---------------------------------------------------------------------------
 
 function InodeRow({ disk }: { disk: DiskEntry }) {
-  if (
-    disk.total_inodes == null ||
-    disk.total_inodes <= 0
-  ) {
+  if (disk.total_inodes == null || disk.total_inodes <= 0) {
     return null;
   }
 
@@ -180,7 +145,8 @@ function DiskRow({
   showInodes: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const canExpand = showInodes && disk.total_inodes != null && disk.total_inodes > 0;
+  const canExpand =
+    showInodes && disk.total_inodes != null && disk.total_inodes > 0;
   const pct = disk.percent_used;
 
   return (
@@ -197,7 +163,12 @@ function DiskRow({
           )}
           {disk.mount}
           {canExpand && inodePressure(disk) && (
-            <span className="ml-1.5 text-amber-500" title="Free inodes below 70%">⚠</span>
+            <span
+              className="ml-1.5 text-amber-500"
+              title="Free inodes below 70%"
+            >
+              ⚠
+            </span>
           )}
         </td>
         <td className="font-mono">{disk.device}</td>
@@ -246,8 +217,11 @@ export function NodeDiskDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [sortField, setSortField] = useState<SortField>("mount");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+  const { sortField, sortOrder, handleSort } = useSort<SortField>({
+    defaultField: "mount",
+    defaultOrder: "asc",
+    descendingFields: ["kb_size", "kb_used", "kb_available", "percent_used"],
+  });
 
   const load = useCallback(() => {
     if (!org || !name) return;
@@ -263,18 +237,6 @@ export function NodeDiskDetailPage() {
     load();
   }, [load]);
 
-  const handleSort = useCallback(
-    (field: SortField) => {
-      if (field === sortField) {
-        setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-      } else {
-        setSortField(field);
-        setSortOrder("asc");
-      }
-    },
-    [sortField],
-  );
-
   const disks = useMemo(() => {
     if (!data) return [];
     const sorted = [...data.disks].sort((a, b) => {
@@ -284,7 +246,8 @@ export function NodeDiskDetailPage() {
     return sorted;
   }, [data, sortField, sortOrder]);
 
-  if (loading && !data) return <LoadingSpinner message="Loading filesystem data…" />;
+  if (loading && !data)
+    return <LoadingSpinner message="Loading filesystem data…" />;
   if (error && !data) return <ErrorAlert message={error} onRetry={load} />;
   if (!data) return null;
 
@@ -316,7 +279,8 @@ export function NodeDiskDetailPage() {
         </h2>
         {data.platform && (
           <p className="mt-1 text-sm text-gray-500">
-            Platform: <span className="font-medium text-gray-700">{data.platform}</span>
+            Platform:{" "}
+            <span className="font-medium text-gray-700">{data.platform}</span>
           </p>
         )}
       </div>
@@ -371,17 +335,71 @@ export function NodeDiskDetailPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <SortableColHeader label="Mount Point" field="mount" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
-                    <SortableColHeader label="Device" field="device" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
-                    <SortableColHeader label="FS Type" field="fs_type" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
-                    <SortableColHeader label="Size" field="kb_size" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
-                    <SortableColHeader label="Used" field="kb_used" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
-                    <SortableColHeader label="Available" field="kb_available" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
-                    <SortableColHeader label="% Used" field="percent_used" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                    <SortableColumnHeader
+                      label="Mount Point"
+                      field="mount"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Device"
+                      field="device"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="FS Type"
+                      field="fs_type"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Size"
+                      field="kb_size"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Used"
+                      field="kb_used"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Available"
+                      field="kb_available"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="% Used"
+                      field="percent_used"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     {showWindows && (
                       <>
-                        <SortableColHeader label="Drive Type" field="drive_type" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
-                        <SortableColHeader label="Encryption" field="encryption_status" currentField={sortField} currentOrder={sortOrder} onSort={handleSort} />
+                        <SortableColumnHeader
+                          label="Drive Type"
+                          field="drive_type"
+                          currentField={sortField}
+                          currentOrder={sortOrder}
+                          onSort={handleSort}
+                        />
+                        <SortableColumnHeader
+                          label="Encryption"
+                          field="encryption_status"
+                          currentField={sortField}
+                          currentOrder={sortOrder}
+                          onSort={handleSort}
+                        />
                       </>
                     )}
                   </tr>
@@ -401,8 +419,6 @@ export function NodeDiskDetailPage() {
           </div>
         )
       )}
-
-
     </div>
   );
 }

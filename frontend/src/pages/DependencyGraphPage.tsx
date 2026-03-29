@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { SMALL_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
+import { useSort } from "../hooks/useSort";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import {
   fetchDependencyGraph,
   fetchDependencyGraphTable,
@@ -1276,8 +1278,20 @@ function TableView({ organisation }: { organisation: string }) {
   const [error, setError] = useState<string | null>(null);
 
   // Sort & pagination
-  const [sortField, setSortField] = useState<string>("total_dependencies");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  type DepTableSortField =
+    | "role_name"
+    | "cookbook_count"
+    | "role_count"
+    | "total_dependencies";
+  const {
+    sortField,
+    sortOrder,
+    handleSort: rawHandleSort,
+  } = useSort<DepTableSortField>({
+    defaultField: "total_dependencies",
+    defaultOrder: "desc",
+    descendingFields: ["cookbook_count", "role_count", "total_dependencies"],
+  });
   const [page, setPage] = useState(1);
   const perPage = SMALL_PAGE_SIZE;
 
@@ -1304,19 +1318,9 @@ function TableView({ organisation }: { organisation: string }) {
     load();
   }, [load]);
 
-  const handleSort = (field: string) => {
-    if (field === sortField) {
-      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortOrder(field === "role_name" ? "asc" : "desc");
-    }
+  const handleSort = (field: DepTableSortField) => {
+    rawHandleSort(field);
     setPage(1);
-  };
-
-  const sortIndicator = (field: string) => {
-    if (field !== sortField) return null;
-    return sortOrder === "asc" ? " ↑" : " ↓";
   };
 
   if (loading && !data) {
@@ -1385,33 +1389,33 @@ function TableView({ organisation }: { organisation: string }) {
           <thead>
             <tr>
               <th className="w-8" />
-              <SortableHeader
+              <SortableColumnHeader
                 label="Role Name"
                 field="role_name"
                 currentField={sortField}
+                currentOrder={sortOrder}
                 onSort={handleSort}
-                indicator={sortIndicator}
               />
-              <SortableHeader
+              <SortableColumnHeader
                 label="Cookbooks"
                 field="cookbook_count"
                 currentField={sortField}
+                currentOrder={sortOrder}
                 onSort={handleSort}
-                indicator={sortIndicator}
               />
-              <SortableHeader
+              <SortableColumnHeader
                 label="Roles"
                 field="role_count"
                 currentField={sortField}
+                currentOrder={sortOrder}
                 onSort={handleSort}
-                indicator={sortIndicator}
               />
-              <SortableHeader
+              <SortableColumnHeader
                 label="Total Deps"
                 field="total_dependencies"
                 currentField={sortField}
+                currentOrder={sortOrder}
                 onSort={handleSort}
-                indicator={sortIndicator}
               />
               <th>Depended on by</th>
               <th>Dependencies</th>
@@ -1494,33 +1498,6 @@ function SharedCookbooksCard({ cookbooks }: { cookbooks: SharedCookbook[] }) {
 // ---------------------------------------------------------------------------
 // Sortable Table Header
 // ---------------------------------------------------------------------------
-
-function SortableHeader({
-  label,
-  field,
-  currentField,
-  onSort,
-  indicator,
-}: {
-  label: string;
-  field: string;
-  currentField: string;
-  onSort: (field: string) => void;
-  indicator: (field: string) => string | null;
-}) {
-  const isActive = field === currentField;
-  return (
-    <th
-      className="cursor-pointer select-none hover:text-gray-700"
-      onClick={() => onSort(field)}
-    >
-      <span className={isActive ? "text-blue-600" : ""}>
-        {label}
-        {indicator(field)}
-      </span>
-    </th>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Table Row (expandable)
