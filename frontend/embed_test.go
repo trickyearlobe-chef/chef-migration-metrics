@@ -26,7 +26,7 @@ func TestDistFS_ReturnsValidFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening index.html from embedded FS: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	stat, err := f.Stat()
 	if err != nil {

@@ -4,6 +4,7 @@
 package datastore
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -95,7 +96,7 @@ func TestProductionPlatformRow_JSONRoundTrip(t *testing.T) {
 func TestGetProductionPlatformsForCookbook_EmptyCookbookName(t *testing.T) {
 	db := &DB{pool: nil}
 
-	_, err := db.GetProductionPlatformsForCookbook(nil, "")
+	_, err := db.GetProductionPlatformsForCookbook(context.TODO(), "")
 	if err == nil {
 		t.Fatal("expected error for empty cookbook name, got nil")
 	}

@@ -534,7 +534,7 @@ func (r *Router) serveFrontendAsset(w http.ResponseWriter, req *http.Request) {
 	// Try to open the requested path as a real file.
 	f, err := r.frontendFS.Open(p)
 	if err == nil {
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		// Check it's not a directory — if it is, fall through to index.html.
 		if stat, statErr := f.Stat(); statErr == nil && !stat.IsDir() {
 			http.ServeFileFS(w, req, r.frontendFS, p)
