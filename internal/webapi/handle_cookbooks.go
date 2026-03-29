@@ -72,12 +72,12 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	// Build org name lookup and collect all cookbook rows.
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
+		orgNameByID[org.Name] = org.Name
 	}
 
 	var rows []cookbookRow
 	for _, org := range orgs {
-		cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+		cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, err)
 			continue
@@ -109,7 +109,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	compatByID := make(map[string]string)
 	if targetChefVersion != "" {
 		for _, org := range orgs {
-			csResults, cErr := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.ID)
+			csResults, cErr := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.Name)
 			if cErr != nil {
 				r.logf("WARN", "listing cookstyle results for org %s: %v", org.Name, cErr)
 				continue
@@ -318,16 +318,16 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 	for _, gr := range gitRepos {
 		detail := gitRepoDetail{GitRepo: gr}
 
-		cookstyle, csErr := r.db.ListGitRepoCookstyleResults(ctx, gr.ID)
+		cookstyle, csErr := r.db.ListGitRepoCookstyleResults(ctx, gr.Name)
 		if csErr != nil {
-			r.logf("WARN", "listing cookstyle results for git repo %s: %v", gr.ID, csErr)
+			r.logf("WARN", "listing cookstyle results for git repo %s: %v", gr.Name, csErr)
 		} else {
 			detail.Cookstyle = cookstyle
 		}
 
-		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.ID)
+		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.Name)
 		if tkErr != nil {
-			r.logf("WARN", "listing test kitchen results for git repo %s: %v", gr.ID, tkErr)
+			r.logf("WARN", "listing test kitchen results for git repo %s: %v", gr.Name, tkErr)
 		} else {
 			detail.TestKitchen = tk
 		}

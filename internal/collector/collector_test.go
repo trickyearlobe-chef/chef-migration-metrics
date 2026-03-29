@@ -1897,7 +1897,7 @@ func TestRunForOrganisations_ErrorWhenAlreadyRunning(t *testing.T) {
 	c.mu.Unlock()
 
 	orgs := map[string]datastore.Organisation{
-		"test-id": {ID: "test-id", Name: "test-org"},
+		"test-org": {Name: "test-org"},
 	}
 
 	_, err := c.runForOrganisations(context.Background(), orgs)
@@ -2304,10 +2304,10 @@ func TestBuildVersionDistributionPayload_LargeOrgOmitsNodes(t *testing.T) {
 // readinessSnapshotPayload mirrors the JSON structure returned by
 // buildReadinessSnapshotPayload so we can unmarshal and assert.
 type readinessSnapshotPayload struct {
-	TotalNodes   int `json:"total_nodes"`
-	Ready        int `json:"ready"`
-	Blocked      int `json:"blocked"`
-	Nodes        []struct {
+	TotalNodes int `json:"total_nodes"`
+	Ready      int `json:"ready"`
+	Blocked    int `json:"blocked"`
+	Nodes      []struct {
 		Name    string `json:"name"`
 		IsReady bool   `json:"is_ready"`
 	} `json:"nodes"`

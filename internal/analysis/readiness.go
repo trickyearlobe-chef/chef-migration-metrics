@@ -534,8 +534,8 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 						}
 					}
 				case SourceGitCookstyle, SourceGitTestKitchen:
-					if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.ID != "" {
-						if gc := cache.gitComplexity[cacheKey(gitRepo.ID, targetChefVersion)]; gc != nil {
+					if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.Name != "" {
+						if gc := cache.gitComplexity[cacheKey(gitRepo.Name, targetChefVersion)]; gc != nil {
 							bc.Verdicts[i].ComplexityScore = gc.ComplexityScore
 							bc.Verdicts[i].ComplexityLabel = gc.ComplexityLabel
 						}
@@ -608,8 +608,8 @@ func checkCookbookCompatibility(
 
 	// --- Source 1: Git repo Test Kitchen ---
 	gitRepo, hasGitRepo := cache.gitRepos[cookbookName]
-	if hasGitRepo && gitRepo.ID != "" {
-		tkResult := cache.tkResults[cacheKey(gitRepo.ID, targetChefVersion)]
+	if hasGitRepo && gitRepo.Name != "" {
+		tkResult := cache.tkResults[cacheKey(gitRepo.Name, targetChefVersion)]
 		if tkResult != nil {
 			anyTested = true
 			v := CookbookSourceVerdict{
@@ -627,7 +627,7 @@ func checkCookbookCompatibility(
 		}
 
 		// --- Source 2: Git repo CookStyle ---
-		gitCSResult := cache.gitCSResults[cacheKey(gitRepo.ID, targetChefVersion)]
+		gitCSResult := cache.gitCSResults[cacheKey(gitRepo.Name, targetChefVersion)]
 		if gitCSResult != nil && gitCSResult.ErrorMessage == "" {
 			anyTested = true
 			v := CookbookSourceVerdict{

@@ -206,8 +206,8 @@ func TestFilterOrgIDs_WithOrgs(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "prod"},
-				{ID: "org-2", Name: "staging"},
+				{Name: "prod"},
+				{Name: "staging"},
 			}, nil
 		},
 	}
@@ -334,7 +334,7 @@ func testRouterWithTargetVersions(versions []string, wsEnabled *bool) *Router {
 func TestHandleFilterEnvironments_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
 			return []string{"production", "staging"}, nil
@@ -366,7 +366,7 @@ func TestHandleFilterEnvironments_HappyPath(t *testing.T) {
 func TestHandleFilterEnvironments_HappyPath_Empty(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
 			return nil, nil
@@ -394,7 +394,7 @@ func TestHandleFilterEnvironments_HappyPath_Empty(t *testing.T) {
 func TestHandleFilterRoles_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error) {
 			return []string{"base", "db", "web"}, nil
@@ -426,7 +426,7 @@ func TestHandleFilterRoles_HappyPath(t *testing.T) {
 func TestHandleFilterPlatforms_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
 			return []string{"centos", "ubuntu"}, nil
@@ -454,7 +454,7 @@ func TestHandleFilterPlatforms_HappyPath(t *testing.T) {
 func TestHandleFilterPolicyNames_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
 			// SQL DISTINCT already excludes empty strings.
@@ -483,7 +483,7 @@ func TestHandleFilterPolicyNames_HappyPath(t *testing.T) {
 func TestHandleFilterPolicyGroups_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
 			return []string{"prod-eu-west", "prod-us-east"}, nil
@@ -599,7 +599,7 @@ func TestHandleFilterPolicyGroups_DBError(t *testing.T) {
 func TestHandleFilterEnvironments_DistinctDBError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
 			return nil, errors.New("partial failure")
@@ -618,7 +618,7 @@ func TestHandleFilterEnvironments_DistinctDBError(t *testing.T) {
 func TestHandleFilterRoles_DistinctDBError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error) {
 			return nil, errors.New("partial failure")

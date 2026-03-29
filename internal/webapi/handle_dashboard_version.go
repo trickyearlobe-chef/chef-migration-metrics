@@ -41,7 +41,7 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	// When ownership filtering is active, fall back to in-memory path
@@ -151,7 +151,7 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	// Use SQL push-down for node-level filters, no pagination.
@@ -202,7 +202,7 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 // has a collection run currently in "running" status.
 func (r *Router) anyOrgCollectionRunning(ctx context.Context, orgs []datastore.Organisation) bool {
 	for _, org := range orgs {
-		run, err := r.db.GetLatestCollectionRun(ctx, org.ID)
+		run, err := r.db.GetLatestCollectionRun(ctx, org.Name)
 		if err != nil {
 			continue // no run or error — treat as not running
 		}
@@ -225,7 +225,7 @@ func (r *Router) versionDistFromMetricSnapshots(
 	found := false
 
 	for _, org := range orgs {
-		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 1)
+		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 1)
 		if err != nil || len(metrics) == 0 {
 			continue
 		}
@@ -265,7 +265,7 @@ func (r *Router) versionDistFromMetricSnapshotsOwnerFiltered(
 	found := false
 
 	for _, org := range orgs {
-		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 1)
+		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 1)
 		if err != nil || len(metrics) == 0 {
 			continue
 		}
@@ -349,7 +349,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 	// raw snapshots have been deduplicated.
 	if !ownerFilterActive {
 		for _, org := range orgs {
-			metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 10)
+			metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 10)
 			if err != nil {
 				r.logf("WARN", "listing metric snapshots for org %s in version trend: %v", org.Name, err)
 				continue
@@ -385,7 +385,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 	// This avoids querying live node_snapshots (which suffers from the
 	// sawtooth problem during mid-collection updates).
 	for _, org := range orgs {
-		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 10)
+		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 10)
 		if err != nil {
 			r.logf("WARN", "listing metric snapshots for org %s in ownership-filtered version trend: %v", org.Name, err)
 			continue

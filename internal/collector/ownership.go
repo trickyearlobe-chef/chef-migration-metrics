@@ -118,7 +118,7 @@ func (e *OwnershipEvaluator) EvaluateAfterCollection(ctx context.Context, orgID,
 		created := 0
 		for _, m := range matches {
 			_, err := e.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
-				OwnerID:          owner.ID,
+				OwnerID:          owner.Name,
 				EntityType:       m.EntityType,
 				EntityKey:        m.EntityKey,
 				OrganisationID:   orgID,
@@ -217,7 +217,7 @@ func (e *OwnershipEvaluator) evaluateCMDBRule(ctx context.Context, orgID string,
 				}
 				return created, 0, skipped, fmt.Errorf("looking up CMDB owner %q: %w", m.OwnerName, lookupErr)
 			}
-			ownerID = owner.ID
+			ownerID = owner.Name
 			ownerCache[m.OwnerName] = ownerID
 		}
 

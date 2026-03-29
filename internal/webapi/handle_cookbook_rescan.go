@@ -107,21 +107,21 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 		r.logf("WARN", "listing git repos for rescan %s: %v", cookbookName, err)
 	} else {
 		for _, gr := range gitRepos {
-			csErr := r.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gr.ID)
+			csErr := r.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gr.Name)
 			if csErr != nil {
-				r.logf("WARN", "deleting cookstyle results for git repo %s (%s): %v", gr.ID, gr.Name, csErr)
+				r.logf("WARN", "deleting cookstyle results for git repo %s (%s): %v", gr.Name, gr.Name, csErr)
 				lastErr = csErr
 			}
 
-			cxErr := r.db.DeleteGitRepoComplexitiesByRepo(ctx, gr.ID)
+			cxErr := r.db.DeleteGitRepoComplexitiesByRepo(ctx, gr.Name)
 			if cxErr != nil {
-				r.logf("WARN", "deleting complexity records for git repo %s (%s): %v", gr.ID, gr.Name, cxErr)
+				r.logf("WARN", "deleting complexity records for git repo %s (%s): %v", gr.Name, gr.Name, cxErr)
 				lastErr = cxErr
 			}
 
-			acErr := r.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, gr.ID)
+			acErr := r.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, gr.Name)
 			if acErr != nil {
-				r.logf("WARN", "deleting autocorrect previews for git repo %s (%s): %v", gr.ID, gr.Name, acErr)
+				r.logf("WARN", "deleting autocorrect previews for git repo %s (%s): %v", gr.Name, gr.Name, acErr)
 				lastErr = acErr
 			}
 

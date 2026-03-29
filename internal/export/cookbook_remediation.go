@@ -96,13 +96,13 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
+		orgNameByID[org.Name] = org.Name
 	}
 
 	var results []cookbookRemediationRow
 
 	for _, org := range orgs {
-		cookbooks, err := db.ListServerCookbooksByOrganisation(ctx, org.ID)
+		cookbooks, err := db.ListServerCookbooksByOrganisation(ctx, org.Name)
 		if err != nil {
 			// Non-fatal — skip this org.
 			continue
@@ -114,7 +114,7 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 			cbMap[cb.ID] = cb
 		}
 
-		complexities, err := db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		complexities, err := db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)
 		if err != nil {
 			// Non-fatal — skip this org's complexity data.
 			continue
@@ -137,7 +137,7 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 			results = append(results, cookbookRemediationRow{
 				CookbookName:         cb.Name,
 				Version:              cb.Version,
-				Organisation:         orgNameByID[org.ID],
+				Organisation:         orgNameByID[org.Name],
 				TargetChefVersion:    cc.TargetChefVersion,
 				ComplexityScore:      cc.ComplexityScore,
 				ComplexityLabel:      cc.ComplexityLabel,

@@ -210,7 +210,7 @@ func (a *LocalAuthenticator) Login(
 
 	// Create a session for the authenticated user.
 	sess, err := sessions.CreateSession(ctx,
-		result.User.ID,
+		result.User.Username,
 		result.User.Username,
 		result.User.AuthProvider,
 		result.User.Role,

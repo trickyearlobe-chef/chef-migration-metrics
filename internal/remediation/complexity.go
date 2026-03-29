@@ -492,20 +492,20 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 	blastRadii map[string]BlastRadius,
 ) ComplexityResult {
 	result := ComplexityResult{
-		CookbookID:        repo.ID,
+		CookbookID:        repo.Name,
 		CookbookName:      repo.Name,
 		TargetChefVersion: targetChefVersion,
 	}
 
 	// Step 1: Load CookStyle result.
-	csResult, csErr := s.db.GetGitRepoCookstyleResult(ctx, repo.ID, targetChefVersion)
+	csResult, csErr := s.db.GetGitRepoCookstyleResult(ctx, repo.Name, targetChefVersion)
 	if csErr != nil {
 		result.Error = fmt.Errorf("loading cookstyle result: %w", csErr)
 		return result
 	}
 
 	// Step 2: Load Test Kitchen result (git repos only).
-	tkResult, tkErr := s.db.GetLatestGitRepoTestKitchenResult(ctx, repo.ID, targetChefVersion)
+	tkResult, tkErr := s.db.GetLatestGitRepoTestKitchenResult(ctx, repo.Name, targetChefVersion)
 
 	// If neither CookStyle nor Test Kitchen results exist, this repo has
 	// not been scanned yet. Skip scoring so the cookbook remains "untested"
@@ -542,7 +542,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 
 	// Step 6: Compute score.
 	input := ComplexityInput{
-		CookbookID:        repo.ID,
+		CookbookID:        repo.Name,
 		CookbookName:      repo.Name,
 		TargetChefVersion: targetChefVersion,
 		Cookstyle:         offenseSummary,

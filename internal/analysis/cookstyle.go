@@ -350,7 +350,7 @@ func (s *CookstyleScanner) ScanGitRepos(
 				defer func() { <-sem }()
 			case <-ctx.Done():
 				resultsCh <- CookstyleScanResult{
-					CookbookID:        wi.Repo.ID,
+					CookbookID:        wi.Repo.Name,
 					CookbookName:      wi.Repo.Name,
 					TargetChefVersion: wi.TargetVersion,
 					CommitSHA:         wi.Repo.HeadCommitSHA,
@@ -571,7 +571,7 @@ func (s *CookstyleScanner) scanOneGitRepo(
 		logging.WithCookbook(gr.Name, ""))
 
 	sr := CookstyleScanResult{
-		CookbookID:        gr.ID,
+		CookbookID:        gr.Name,
 		CookbookName:      gr.Name,
 		TargetChefVersion: targetChefVersion,
 		CommitSHA:         gr.HeadCommitSHA,
@@ -580,7 +580,7 @@ func (s *CookstyleScanner) scanOneGitRepo(
 	// Step 1: skip check.
 	// Git repos change with each commit — skip only when the HEAD commit
 	// SHA matches the previously scanned commit.
-	existing, err := s.db.GetGitRepoCookstyleResult(ctx, gr.ID, targetChefVersion)
+	existing, err := s.db.GetGitRepoCookstyleResult(ctx, gr.Name, targetChefVersion)
 	if err == nil && existing != nil {
 		if existing.CommitSHA != "" && existing.CommitSHA == gr.HeadCommitSHA {
 			shaPreview := gr.HeadCommitSHA

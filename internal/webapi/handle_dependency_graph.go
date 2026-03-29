@@ -60,7 +60,7 @@ func (r *Router) handleDependencyGraph(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	deps, err3 := r.db.ListRoleDependenciesByOrg(ctx, org.ID)
+	deps, err3 := r.db.ListRoleDependenciesByOrg(ctx, org.Name)
 	if err3 != nil {
 		r.logf("ERROR", "listing role dependencies for org %s: %v", orgName, err3)
 		WriteInternalError(w, "Failed to load dependency data.")
@@ -235,7 +235,7 @@ func (r *Router) handleDependencyGraphTable(w http.ResponseWriter, req *http.Req
 	}
 
 	// Get per-role dependency counts.
-	roleCounts, err := r.db.CountDependenciesByRole(ctx, org.ID)
+	roleCounts, err := r.db.CountDependenciesByRole(ctx, org.Name)
 	if err != nil {
 		r.logf("ERROR", "counting dependencies by role for org %s: %v", orgName, err)
 		WriteInternalError(w, "Failed to load dependency counts.")
@@ -244,7 +244,7 @@ func (r *Router) handleDependencyGraphTable(w http.ResponseWriter, req *http.Req
 
 	// Get all dependencies so we can compute transitive (reverse) counts —
 	// i.e. how many other roles depend on each role.
-	allDeps, err := r.db.ListRoleDependenciesByOrg(ctx, org.ID)
+	allDeps, err := r.db.ListRoleDependenciesByOrg(ctx, org.Name)
 	if err != nil {
 		r.logf("ERROR", "listing dependencies for org %s in table view: %v", orgName, err)
 		WriteInternalError(w, "Failed to load dependency data.")
@@ -336,7 +336,7 @@ func (r *Router) handleDependencyGraphTable(w http.ResponseWriter, req *http.Req
 	page, total := PaginateSlice(rows, pg)
 
 	// Also fetch cookbook-to-role counts for a summary.
-	cbRoleCounts, err := r.db.CountRolesPerCookbook(ctx, org.ID)
+	cbRoleCounts, err := r.db.CountRolesPerCookbook(ctx, org.Name)
 	if err != nil {
 		r.logf("WARN", "counting roles per cookbook for org %s: %v", orgName, err)
 		cbRoleCounts = nil

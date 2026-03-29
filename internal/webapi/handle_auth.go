@@ -117,8 +117,8 @@ func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 		Provider: info.AuthProvider,
 	}
 
-	if r.authStore != nil && info.UserID != "" {
-		user, err := r.authStore.GetUserByID(req.Context(), info.UserID)
+	if r.authStore != nil && info.Username != "" {
+		user, err := r.authStore.GetUserByUsername(req.Context(), info.Username)
 		if err == nil {
 			resp.DisplayName = user.DisplayName
 			resp.Email = user.Email

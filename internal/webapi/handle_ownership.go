@@ -685,11 +685,11 @@ func (r *Router) handleCreateAssignments(w http.ResponseWriter, req *http.Reques
 				WriteInternalError(w, "Failed to look up organisation.")
 				return
 			}
-			orgID = org.ID
+			orgID = org.Name
 		}
 
 		assignment, err := r.db.InsertAssignment(req.Context(), datastore.InsertAssignmentParams{
-			OwnerID:          owner.ID,
+			OwnerID:          owner.Name,
 			EntityType:       a.EntityType,
 			EntityKey:        a.EntityKey,
 			OrganisationID:   orgID,
@@ -842,10 +842,10 @@ func (r *Router) handleOwnershipReassign(w http.ResponseWriter, req *http.Reques
 			WriteInternalError(w, "Failed to look up organisation.")
 			return
 		}
-		orgID = org.ID
+		orgID = org.Name
 	}
 
-	reassigned, skippedCount, err := r.db.ReassignOwnership(req.Context(), fromOwner.ID, toOwner.ID, body.EntityType, orgID)
+	reassigned, skippedCount, err := r.db.ReassignOwnership(req.Context(), fromOwner.Name, toOwner.Name, body.EntityType, orgID)
 	if err != nil {
 		r.logf("ERROR", "ownership: reassigning: %v", err)
 		WriteInternalError(w, "Failed to reassign ownership.")
@@ -922,7 +922,7 @@ func (r *Router) handleOwnershipLookup(w http.ResponseWriter, req *http.Request)
 			WriteInternalError(w, "Failed to look up organisation.")
 			return
 		}
-		orgID = org.ID
+		orgID = org.Name
 	}
 
 	owners, err := r.db.LookupOwnership(req.Context(), entityType, entityKey, orgID)
