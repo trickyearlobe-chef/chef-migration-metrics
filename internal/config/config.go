@@ -406,9 +406,13 @@ type ElasticsearchConfig struct {
 // Datastore
 // ---------------------------------------------------------------------------
 
-// DatastoreConfig holds the database connection settings.
+// DatastoreConfig holds the database connection settings and pool tuning.
 type DatastoreConfig struct {
-	URL string `yaml:"url"`
+	URL                    string `yaml:"url"`
+	MaxOpenConns           int    `yaml:"max_open_conns"`
+	MaxIdleConns           int    `yaml:"max_idle_conns"`
+	ConnMaxLifetimeMinutes int    `yaml:"conn_max_lifetime_minutes"`
+	ConnMaxIdleTimeMinutes int    `yaml:"conn_max_idle_time_minutes"`
 }
 
 // ---------------------------------------------------------------------------
@@ -724,6 +728,18 @@ func (c *Config) setDefaults() {
 	// Datastore
 	if c.Datastore.URL == "" {
 		c.Datastore.URL = "postgres://localhost:5432/chef_migration_metrics"
+	}
+	if c.Datastore.MaxOpenConns == 0 {
+		c.Datastore.MaxOpenConns = 25
+	}
+	if c.Datastore.MaxIdleConns == 0 {
+		c.Datastore.MaxIdleConns = 5
+	}
+	if c.Datastore.ConnMaxLifetimeMinutes == 0 {
+		c.Datastore.ConnMaxLifetimeMinutes = 5
+	}
+	if c.Datastore.ConnMaxIdleTimeMinutes == 0 {
+		c.Datastore.ConnMaxIdleTimeMinutes = 1
 	}
 
 	// Server
