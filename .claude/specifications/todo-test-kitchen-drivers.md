@@ -18,9 +18,9 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [x] Map iteration in `buildOverlay` produces non-deterministic YAML — sort keys before writing `DriverSettings`, `DriverSecrets`, and per-platform settings.
 - [x] `ParseKitchenYMLPlatforms` doesn't strip inline YAML comments — `- name: ubuntu-22.04  # LTS` parses as `"ubuntu-22.04  # LTS"`.
 - [x] `normalizeEnvVarSuffix` only replaces `-` and `.` — platform names with `/`, spaces, or other special chars produce invalid env var names. Strip all non-alphanumeric/non-underscore chars.
-- [ ] Redundant `CREATE INDEX` on `cookbook_name` in migration 0008 — unique constraint already creates an index. Remove the explicit index.
-- [ ] No duplicate `kitchen_name` validation in platform map config.
-- [ ] `MethodNotAllowed` handler test only checks `!= 200` instead of asserting `405`.
+- [x] Redundant `CREATE INDEX` on `cookbook_name` in migration 0008 — unique constraint already creates an index. Remove the explicit index.
+- [x] No duplicate `kitchen_name` validation in platform map config.
+- [x] `MethodNotAllowed` handler test only checks `!= 200` instead of asserting `405`.
 
 ## Review Test Gaps
 
