@@ -163,36 +163,8 @@ progress can be tracked over time.
 
 ## 🟢 Low Priority
 
-### Frontend
-
-- [ ] **F9 — Add `GitRepoFilterQuery` type** — `GitReposPage.tsx` uses an
-  inline anonymous type for its filter query instead of a named interface in
-  `api.ts` like `CookbookFilterQuery` and `NodeFilterQuery`.
-
-- [ ] **F12 — Centralise `perPage` constants** — Hardcoded `50` appears in 7
-  files and `25` in 3 files. Define `DEFAULT_PAGE_SIZE` and `SMALL_PAGE_SIZE`
-  in a shared constants file.
-
-### Backend
-
-- [ ] **B12 — Remove deprecated `filterNodes` function** —
-  `handle_nodes.go` L590–602 is explicitly marked deprecated in its docstring.
-  Verify the export system no longer uses it, then remove.
-
-- [ ] **B14 — Add timeout bounds to background contexts** —
-  `handle_admin_rescan_all.go` and `handle_exports.go` use
-  `context.Background()` for long-running goroutines without any timeout. Add
-  `context.WithTimeout` to prevent runaway jobs.
-
-- [ ] **B15 — Make DB pool settings configurable** — `datastore.go` L61–64
-  hardcodes `MaxOpenConns(25)`, `MaxIdleConns(5)`, `ConnMaxLifetime(5m)`,
-  `ConnMaxIdleTime(1m)`. These should be configurable via `DatastoreConfig`.
-
 ### Project
 
-- [ ] **P7 — Split `handle_dashboard.go`** — At 1,597 lines with 12
-  independent endpoint handlers, this should be split into focused files like
-  `handle_dashboard_readiness.go`, `handle_dashboard_compatibility.go`, etc.
 
 - [ ] **P8 — Fix errcheck linter violations** — The `errcheck` linter is
   disabled in `.golangci.yml` due to 50+ violations. Re-enable and fix
