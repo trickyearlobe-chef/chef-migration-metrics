@@ -482,6 +482,14 @@ type DataStore interface {
 	// ResetPgStats calls pg_stat_statements_reset() (if available) and
 	// pg_stat_reset() to clear cumulative PostgreSQL statistics.
 	ResetPgStats(ctx context.Context) error
+
+	// -----------------------------------------------------------------
+	// Cookbook Platform Coverage
+	// -----------------------------------------------------------------
+
+	// GetCookbookPlatformCoverage returns the platform coverage analysis
+	// for the named cookbook. Returns (nil, nil) if no coverage exists.
+	GetCookbookPlatformCoverage(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

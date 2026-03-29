@@ -111,6 +111,7 @@ type mockStore struct {
 	IndexStatsFn                                        func(ctx context.Context) ([]datastore.IndexStat, error)
 	ActiveQueriesFn                                     func(ctx context.Context) ([]datastore.ActiveQuery, error)
 	ResetPgStatsFn                                      func(ctx context.Context) error
+	GetCookbookPlatformCoverageFn                       func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
 }
 
 // compile-time check
@@ -842,6 +843,13 @@ func (m *mockStore) ResetPgStats(ctx context.Context) error {
 		return m.ResetPgStatsFn(ctx)
 	}
 	return nil
+}
+
+func (m *mockStore) GetCookbookPlatformCoverage(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error) {
+	if m.GetCookbookPlatformCoverageFn != nil {
+		return m.GetCookbookPlatformCoverageFn(ctx, cookbookName)
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------
