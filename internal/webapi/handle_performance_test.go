@@ -29,9 +29,11 @@ type testPerfConfig struct {
 	windowSeconds int
 }
 
+func boolPtr(b bool) *bool { return &b }
+
 func newPerfRouter(store *mockStore, pc *testPerfConfig) *Router {
 	cfg := testConfig()
-	cfg.Performance.Enabled = pc.enabled
+	cfg.Performance.Enabled = boolPtr(pc.enabled)
 	cfg.Performance.WindowSeconds = pc.windowSeconds
 
 	rec := perf.NewRecorder(time.Duration(pc.windowSeconds)*time.Second, 200, 1000)
@@ -42,7 +44,7 @@ func newPerfRouter(store *mockStore, pc *testPerfConfig) *Router {
 
 func newPerfRouterDisabled(store *mockStore) *Router {
 	cfg := testConfig()
-	cfg.Performance.Enabled = false
+	cfg.Performance.Enabled = boolPtr(false)
 
 	hub := NewEventHub()
 	go hub.Run()
