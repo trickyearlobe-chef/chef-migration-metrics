@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
-import { fetchGitRepoRemediation, fetchFilterTargetChefVersions } from "../api";
+import { fetchGitRepoRemediation } from "../api";
 import type {
   GitRepoRemediationResponse,
   OffenseGroup,
@@ -10,7 +10,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { ComplexityBadge, StatusBadge } from "../components/StatusBadge";
-import { highestSemver } from "../semver";
+import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 
 // ---------------------------------------------------------------------------
 // Git Repo Remediation Detail Page
@@ -35,29 +35,14 @@ export function GitRepoRemediationPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Target version selector — initialised from URL search param if present.
-  const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<string>(
-    searchParams.get("target_chef_version") ?? "",
-  );
-  const [versionsLoading, setVersionsLoading] = useState(true);
-
-  // Load available target versions on mount.
-  useEffect(() => {
-    setVersionsLoading(true);
-    fetchFilterTargetChefVersions()
-      .then((res) => {
-        const versions = res.data ?? [];
-        setTargetVersions(versions);
-        if (versions.length > 0 && !selectedVersion) {
-          setSelectedVersion(highestSemver(versions) ?? versions[0]);
-        }
-      })
-      .catch(() => {
-        // Non-fatal — the page can still load with the default target version.
-      })
-      .finally(() => setVersionsLoading(false));
-    // intentionally run only once on mount
-  }, []);
+  const {
+    targetVersions,
+    selectedVersion,
+    setSelectedVersion,
+    versionsLoading,
+  } = useTargetChefVersion({
+    initialVersion: searchParams.get("target_chef_version") || undefined,
+  });
 
   const load = useCallback(() => {
     if (!name || !version || !selectedVersion) return;
@@ -112,10 +97,7 @@ export function GitRepoRemediationPage() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="text-sm text-gray-500">
-        <Link
-          to="/git-repos"
-          className="hover:text-blue-600 hover:underline"
-        >
+        <Link to="/git-repos" className="hover:text-blue-600 hover:underline">
           Git Repos
         </Link>
         <span className="mx-1">/</span>
@@ -148,8 +130,7 @@ export function GitRepoRemediationPage() {
             )}
             {data.scanned_at && (
               <>
-                {" · "}Scanned{" "}
-                {new Date(data.scanned_at).toLocaleString()}
+                {" · "}Scanned {new Date(data.scanned_at).toLocaleString()}
               </>
             )}
           </p>
@@ -485,21 +466,21 @@ function OffenseGroupCard({
               {/* Version lifecycle */}
               {(group.remediation.introduced_in ||
                 group.remediation.removed_in) && (
-                  <div className="mt-2 flex gap-4 text-xs text-gray-500">
-                    {group.remediation.introduced_in && (
-                      <span>
-                        Introduced in Chef{" "}
-                        <strong>{group.remediation.introduced_in}</strong>
-                      </span>
-                    )}
-                    {group.remediation.removed_in && (
-                      <span>
-                        Removed in Chef{" "}
-                        <strong>{group.remediation.removed_in}</strong>
-                      </span>
-                    )}
-                  </div>
-                )}
+                <div className="mt-2 flex gap-4 text-xs text-gray-500">
+                  {group.remediation.introduced_in && (
+                    <span>
+                      Introduced in Chef{" "}
+                      <strong>{group.remediation.introduced_in}</strong>
+                    </span>
+                  )}
+                  {group.remediation.removed_in && (
+                    <span>
+                      Removed in Chef{" "}
+                      <strong>{group.remediation.removed_in}</strong>
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Replacement pattern (before/after) */}
               {group.remediation.replacement_pattern && (

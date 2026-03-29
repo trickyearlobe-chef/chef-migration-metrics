@@ -3,6 +3,7 @@ import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import { useSort } from "../hooks/useSort";
+import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import {
   fetchNodes,
@@ -11,7 +12,6 @@ import {
   fetchFilterPolicyGroups,
   fetchFilterEnvironments,
   fetchFilterPlatforms,
-  fetchFilterTargetChefVersions,
   type NodeFilterQuery,
 } from "../api";
 import type {
@@ -23,7 +23,6 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StaleBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
-import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Readiness filter values
@@ -129,9 +128,14 @@ export function NodesPage() {
   });
 
   // Target Chef version for readiness filter and exports (loaded from backend config)
-  const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedTargetVersion, setSelectedTargetVersion] =
-    useState<string>("");
+  const initialTargetVersion = searchParams.get("target_version") || "";
+  const {
+    targetVersions,
+    selectedVersion: selectedTargetVersion,
+    setSelectedVersion: setSelectedTargetVersion,
+  } = useTargetChefVersion({
+    initialVersion: initialTargetVersion || undefined,
+  });
 
   // Filter option values loaded from the backend
   const [roleOptions, setRoleOptions] = useState<string[]>([]);
@@ -139,23 +143,6 @@ export function NodesPage() {
   const [policyGroupOptions, setPolicyGroupOptions] = useState<string[]>([]);
   const [environmentOptions, setEnvironmentOptions] = useState<string[]>([]);
   const [platformOptions, setPlatformOptions] = useState<string[]>([]);
-
-  // Load target Chef versions once on mount. If a target_version query param
-  // is present (e.g. from a dashboard link), use it as the initial selection.
-  const initialTargetVersion = searchParams.get("target_version") || "";
-  useEffect(() => {
-    fetchFilterTargetChefVersions()
-      .then((res) => {
-        const versions = res.data ?? [];
-        setTargetVersions(versions);
-        if (initialTargetVersion && versions.includes(initialTargetVersion)) {
-          setSelectedTargetVersion(initialTargetVersion);
-        } else if (versions.length > 0 && !selectedTargetVersion) {
-          setSelectedTargetVersion(highestSemver(versions) ?? versions[0]);
-        }
-      })
-      .catch(() => setTargetVersions([]));
-  }, []); // intentionally run only on mount
 
   // Clear the search params after they have been consumed so the URL stays
   // clean and subsequent filter changes don't conflict with the initial params.
