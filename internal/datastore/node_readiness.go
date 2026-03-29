@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // NodeReadiness represents a row in the node_readiness table. Each record
@@ -153,6 +155,78 @@ func (db *DB) ListNodeReadinessByNodeName(ctx context.Context, organisationID, n
 		 ORDER BY target_chef_version
 	`
 	return db.scanNodeReadinessRows(ctx, query, organisationID, nodeName)
+}
+
+// BulkListNodeReadinessByNodeNames returns the latest readiness records for
+// multiple nodes within the specified organisation in a single query. This
+// replaces the N+1 pattern of calling ListNodeReadinessByNodeName per node.
+// Results are returned as a map keyed by node_name for O(1) lookup.
+func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, organisationID string, nodeNames []string) (map[string][]NodeReadiness, error) {
+	if len(nodeNames) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT ` + nrColumns + `
+		  FROM node_readiness
+		 WHERE organisation_id = $1
+		   AND node_name = ANY($2)
+		   AND ` + latestReadinessForOrg("$1") + `
+		 ORDER BY node_name, target_chef_version
+	`
+	rows, err := db.pool.QueryContext(ctx, query, organisationID, pq.Array(nodeNames))
+	if err != nil {
+		return nil, fmt.Errorf("datastore: bulk listing node readiness: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]NodeReadiness, len(nodeNames))
+	for rows.Next() {
+		var r NodeReadiness
+		var sufficientDisk sql.NullBool
+		var availableDisk, requiredDisk sql.NullInt64
+		var blockingCookbooks []byte
+
+		if err := rows.Scan(
+			&r.ID,
+			&r.NodeSnapshotID,
+			&r.OrganisationID,
+			&r.NodeName,
+			&r.TargetChefVersion,
+			&r.IsReady,
+			&r.AllCookbooksCompatible,
+			&sufficientDisk,
+			&blockingCookbooks,
+			&availableDisk,
+			&requiredDisk,
+			&r.StaleData,
+			&r.EvaluatedAt,
+			&r.CreatedAt,
+			&r.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("datastore: scanning bulk node readiness row: %w", err)
+		}
+
+		if sufficientDisk.Valid {
+			v := sufficientDisk.Bool
+			r.SufficientDiskSpace = &v
+		}
+		if availableDisk.Valid {
+			v := int(availableDisk.Int64)
+			r.AvailableDiskMB = &v
+		}
+		if requiredDisk.Valid {
+			v := int(requiredDisk.Int64)
+			r.RequiredDiskMB = &v
+		}
+		r.BlockingCookbooks = jsonFromNullBytes(blockingCookbooks)
+
+		result[r.NodeName] = append(result[r.NodeName], r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating bulk node readiness rows: %w", err)
+	}
+	return result, nil
 }
 
 // ListNodeReadinessForOrganisation returns all readiness records for the

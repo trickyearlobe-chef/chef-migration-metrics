@@ -446,6 +446,135 @@ func TestHandleNodesByCookbook_DBError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// bulkLoadReadiness tests
+// ---------------------------------------------------------------------------
+
+func TestBulkLoadReadiness_SingleOrg(t *testing.T) {
+	called := false
+	store := &mockStore{
+		BulkListNodeReadinessByNodeNamesFn: func(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error) {
+			called = true
+			if organisationID != "org-1" {
+				t.Errorf("organisationID = %q, want %q", organisationID, "org-1")
+			}
+			if len(nodeNames) != 2 {
+				t.Errorf("nodeNames len = %d, want 2", len(nodeNames))
+			}
+			return map[string][]datastore.NodeReadiness{
+				"web1": {{NodeName: "web1", TargetChefVersion: "18.0.0", IsReady: true}},
+				"web2": {{NodeName: "web2", TargetChefVersion: "18.0.0", IsReady: false, BlockingCookbooks: json.RawMessage(`["apt"]`)}},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	nodes := []datastore.NodeSnapshot{
+		{ID: "n1", OrganisationID: "org-1", NodeName: "web1"},
+		{ID: "n2", OrganisationID: "org-1", NodeName: "web2"},
+	}
+
+	result := bulkLoadReadiness(context.Background(), store, nodes, r)
+
+	if !called {
+		t.Fatal("BulkListNodeReadinessByNodeNames was not called")
+	}
+	if len(result) != 2 {
+		t.Fatalf("result len = %d, want 2", len(result))
+	}
+	if len(result["web1"]) != 1 || !result["web1"][0].IsReady {
+		t.Errorf("web1 readiness: got %+v", result["web1"])
+	}
+	if len(result["web2"]) != 1 || result["web2"][0].IsReady {
+		t.Errorf("web2 readiness: got %+v", result["web2"])
+	}
+	if result["web2"][0].BlockingCookbookCount != 1 {
+		t.Errorf("web2 blocking count = %d, want 1", result["web2"][0].BlockingCookbookCount)
+	}
+}
+
+func TestBulkLoadReadiness_MultipleOrgs(t *testing.T) {
+	callsByOrg := make(map[string][]string)
+	store := &mockStore{
+		BulkListNodeReadinessByNodeNamesFn: func(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error) {
+			callsByOrg[organisationID] = nodeNames
+			result := make(map[string][]datastore.NodeReadiness)
+			for _, name := range nodeNames {
+				result[name] = []datastore.NodeReadiness{
+					{NodeName: name, TargetChefVersion: "18.0.0", IsReady: true},
+				}
+			}
+			return result, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	nodes := []datastore.NodeSnapshot{
+		{ID: "n1", OrganisationID: "org-1", NodeName: "web1"},
+		{ID: "n2", OrganisationID: "org-2", NodeName: "db1"},
+		{ID: "n3", OrganisationID: "org-1", NodeName: "web2"},
+	}
+
+	result := bulkLoadReadiness(context.Background(), store, nodes, r)
+
+	// Should have been called once per org (2 calls total, not 3).
+	if len(callsByOrg) != 2 {
+		t.Fatalf("expected 2 bulk calls (one per org), got %d", len(callsByOrg))
+	}
+	if len(callsByOrg["org-1"]) != 2 {
+		t.Errorf("org-1 node names len = %d, want 2", len(callsByOrg["org-1"]))
+	}
+	if len(callsByOrg["org-2"]) != 1 {
+		t.Errorf("org-2 node names len = %d, want 1", len(callsByOrg["org-2"]))
+	}
+
+	// All three nodes should have readiness entries.
+	if len(result) != 3 {
+		t.Fatalf("result len = %d, want 3", len(result))
+	}
+	for _, name := range []string{"web1", "web2", "db1"} {
+		if len(result[name]) != 1 {
+			t.Errorf("result[%q] len = %d, want 1", name, len(result[name]))
+		}
+	}
+}
+
+func TestBulkLoadReadiness_EmptyNodes(t *testing.T) {
+	store := &mockStore{
+		BulkListNodeReadinessByNodeNamesFn: func(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error) {
+			t.Fatal("BulkListNodeReadinessByNodeNames should not be called for empty nodes")
+			return nil, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	result := bulkLoadReadiness(context.Background(), store, nil, r)
+
+	if len(result) != 0 {
+		t.Errorf("result len = %d, want 0", len(result))
+	}
+}
+
+func TestBulkLoadReadiness_DBErrorNonFatal(t *testing.T) {
+	store := &mockStore{
+		BulkListNodeReadinessByNodeNamesFn: func(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error) {
+			return nil, errors.New("connection timeout")
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	nodes := []datastore.NodeSnapshot{
+		{ID: "n1", OrganisationID: "org-1", NodeName: "web1"},
+	}
+
+	// Should not panic — DB errors are non-fatal.
+	result := bulkLoadReadiness(context.Background(), store, nodes, r)
+
+	if len(result) != 0 {
+		t.Errorf("result len = %d, want 0 (error should suppress readiness)", len(result))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Compile-time import usage guards
 // ---------------------------------------------------------------------------
 
