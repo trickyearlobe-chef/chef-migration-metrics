@@ -112,9 +112,9 @@ func (r *Router) handleAdminCreateUser(w http.ResponseWriter, req *http.Request)
 	if body.Role == "" {
 		body.Role = "viewer"
 	}
-	if body.Role != "admin" && body.Role != "viewer" {
+	if body.Role != "admin" && body.Role != "operator" && body.Role != "viewer" {
 		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-			fmt.Sprintf("Invalid role %q. Must be \"admin\" or \"viewer\".", body.Role))
+			fmt.Sprintf("Invalid role %q. Must be \"admin\", \"operator\", or \"viewer\".", body.Role))
 		return
 	}
 
@@ -209,9 +209,9 @@ func (r *Router) handleAdminUpdateUser(w http.ResponseWriter, req *http.Request)
 	}
 
 	// Validate role if provided.
-	if body.Role != nil && *body.Role != "admin" && *body.Role != "viewer" {
+	if body.Role != nil && *body.Role != "admin" && *body.Role != "operator" && *body.Role != "viewer" {
 		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-			fmt.Sprintf("Invalid role %q. Must be \"admin\" or \"viewer\".", *body.Role))
+			fmt.Sprintf("Invalid role %q. Must be \"admin\", \"operator\", or \"viewer\".", *body.Role))
 		return
 	}
 
