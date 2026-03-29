@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 )
 
 // nodeResp is the JSON response struct for a single node in list endpoints.
@@ -559,29 +558,6 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string) datastore
 	}
 
 	return f
-}
-
-// filterNodes applies optional query-parameter filters (environment, platform,
-// chef_version, policy_name, policy_group, stale) to the given slice,
-// returning only matching nodes. It delegates to the shared export.FilterNodes
-// implementation so that API handlers and export generators use identical
-// filtering logic.
-//
-// Deprecated: prefer nodeSnapshotFilterFromRequest + ListNodeSnapshotsFiltered
-// for SQL push-down. This function is retained for the export system and as a
-// fallback.
-func filterNodes(req *http.Request, nodes []datastore.NodeSnapshot) []datastore.NodeSnapshot {
-	q := req.URL.Query()
-	return export.FilterNodes(nodes, export.Filters{
-		Environment: q.Get("environment"),
-		Platform:    q.Get("platform"),
-		ChefVersion: q.Get("chef_version"),
-		PolicyName:  q.Get("policy_name"),
-		PolicyGroup: q.Get("policy_group"),
-		Role:        q.Get("role"),
-		Stale:       q.Get("stale"),
-		NodeName:    q.Get("node_name"),
-	})
 }
 
 // applyOwnerFilter applies ownership filtering to a slice of node snapshots
