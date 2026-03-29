@@ -6,26 +6,26 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Review Bugs (must fix before merge)
 
-- [ ] `DriverSettings` type is `map[string]string` — cannot represent nested YAML structures (spec shows nested `vm_customization`). Change to `map[string]any` in both `TestKitchenConfig` and `PlatformMapEntry`. Update overlay generation and tests.
-- [ ] `majorVersionMatch` false-positive: only compares before first `.`, so `22.04` matches `22.10`. Fix to compare as many version components as the kitchen version specifies. Add test for `majorVersionMatch("22.04", "22.10")` → `false`.
+- [x] `DriverSettings` type is `map[string]string` — cannot represent nested YAML structures (spec shows nested `vm_customization`). Change to `map[string]any` in both `TestKitchenConfig` and `PlatformMapEntry`. Update overlay generation and tests.
+- [x] `majorVersionMatch` false-positive: only compares before first `.`, so `22.04` matches `22.10`. Fix to compare as many version components as the kitchen version specifies. Add test for `majorVersionMatch("22.04", "22.10")` → `false`.
 
 ## Review Fixes (fix or track in tech debt)
 
-- [ ] `InjectCredentialEnvVars` returns `baseEnv` unfiltered when creds are nil/empty — stale `CMM_TK_*` vars leak to child process. Move stripping logic before the early return.
-- [ ] Unknown driver warns "proceeding as custom" but skips `image_field_name` validation. Condition should be `driver == "custom" || !knownDrivers[driver]`.
-- [ ] Silent `json.Unmarshal` error discard in `cookbook_platform_coverage.go` scanner — corrupt JSONB data swallowed. Log or return error.
-- [ ] `ValidateDriverCredentials` discards resolved plaintext without zeroing — decrypted bytes leak to GC. Zero immediately after validation check.
-- [ ] Map iteration in `buildOverlay` produces non-deterministic YAML — sort keys before writing `DriverSettings`, `DriverSecrets`, and per-platform settings.
-- [ ] `ParseKitchenYMLPlatforms` doesn't strip inline YAML comments — `- name: ubuntu-22.04  # LTS` parses as `"ubuntu-22.04  # LTS"`.
-- [ ] `normalizeEnvVarSuffix` only replaces `-` and `.` — platform names with `/`, spaces, or other special chars produce invalid env var names. Strip all non-alphanumeric/non-underscore chars.
+- [x] `InjectCredentialEnvVars` returns `baseEnv` unfiltered when creds are nil/empty — stale `CMM_TK_*` vars leak to child process. Move stripping logic before the early return.
+- [x] Unknown driver warns "proceeding as custom" but skips `image_field_name` validation. Condition should be `driver == "custom" || !knownDrivers[driver]`.
+- [x] Silent `json.Unmarshal` error discard in `cookbook_platform_coverage.go` scanner — corrupt JSONB data swallowed. Log or return error.
+- [x] `ValidateDriverCredentials` discards resolved plaintext without zeroing — decrypted bytes leak to GC. Zero immediately after validation check.
+- [x] Map iteration in `buildOverlay` produces non-deterministic YAML — sort keys before writing `DriverSettings`, `DriverSecrets`, and per-platform settings.
+- [x] `ParseKitchenYMLPlatforms` doesn't strip inline YAML comments — `- name: ubuntu-22.04  # LTS` parses as `"ubuntu-22.04  # LTS"`.
+- [x] `normalizeEnvVarSuffix` only replaces `-` and `.` — platform names with `/`, spaces, or other special chars produce invalid env var names. Strip all non-alphanumeric/non-underscore chars.
 - [ ] Redundant `CREATE INDEX` on `cookbook_name` in migration 0008 — unique constraint already creates an index. Remove the explicit index.
 - [ ] No duplicate `kitchen_name` validation in platform map config.
 - [ ] `MethodNotAllowed` handler test only checks `!= 200` instead of asserting `405`.
 
 ## Review Test Gaps
 
-- [ ] Add test: `majorVersionMatch("22.04", "22.10")` → false (exposes version bug)
-- [ ] Add test: `InjectCredentialEnvVars` with stale `CMM_TK_*` and nil creds (exposes stripping bug)
+- [x] Add test: `majorVersionMatch("22.04", "22.10")` → false (exposes version bug)
+- [x] Add test: `InjectCredentialEnvVars` with stale `CMM_TK_*` and nil creds (exposes stripping bug)
 - [ ] Add test: per-platform `DriverSettings` in overlay (code path at kitchen.go L669-671 untested)
 - [ ] Add test: `DriverSecrets` without `DriverSettings` (secrets-only driver block)
 - [ ] Add test: unknown driver + missing `image_field_name`
