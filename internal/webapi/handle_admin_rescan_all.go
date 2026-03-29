@@ -6,6 +6,7 @@ package webapi
 import (
 	"context"
 	"net/http"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -134,10 +135,15 @@ func (r *Router) triggerCollectionInBackground() bool {
 	}
 
 	// Use a detached context — the collection run must not be cancelled
-	// when the HTTP response is sent.
-	bgCtx := context.Background()
+	// when the HTTP response is sent. The 4-hour timeout prevents runaway
+	// jobs from holding resources indefinitely. We intentionally do not
+	// defer cancel() here because the context outlives this function —
+	// the timer goroutine will clean up when the timeout fires or the
+	// collection completes and stops using the context.
+	bgCtx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
 
 	if err := r.triggerCollection(bgCtx); err != nil {
+		cancel() // release timer resources immediately on failure
 		r.logf("WARN", "could not trigger immediate collection run: %v", err)
 		return false
 	}
