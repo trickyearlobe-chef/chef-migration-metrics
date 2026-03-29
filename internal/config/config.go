@@ -43,6 +43,7 @@ type Config struct {
 	Auth                       AuthConfig          `yaml:"auth"`
 	Ownership                  OwnershipConfig     `yaml:"ownership"`
 	SystemHealth               SystemHealthConfig  `yaml:"system_health"`
+	Performance                PerformanceConfig   `yaml:"performance"`
 
 	// explicitExportsDir tracks whether the user explicitly set exports.output_directory.
 	explicitExportsDir bool
@@ -283,6 +284,17 @@ func (sh SystemHealthConfig) IsPauseCollectionOnCritical() bool {
 		return true
 	}
 	return *sh.PauseCollectionOnCritical
+}
+
+// ---------------------------------------------------------------------------
+// Performance
+// ---------------------------------------------------------------------------
+
+// PerformanceConfig controls the in-app performance diagnostics.
+type PerformanceConfig struct {
+	Enabled       bool `yaml:"enabled"`
+	PprofEnabled  bool `yaml:"pprof_enabled"`
+	WindowSeconds int  `yaml:"window_seconds"`
 }
 
 // ---------------------------------------------------------------------------
@@ -776,6 +788,11 @@ func (c *Config) setDefaults() {
 	if c.SystemHealth.PauseCollectionOnCritical == nil {
 		t := true
 		c.SystemHealth.PauseCollectionOnCritical = &t
+	}
+
+	// Performance
+	if c.Performance.WindowSeconds <= 0 {
+		c.Performance.WindowSeconds = 300
 	}
 }
 
