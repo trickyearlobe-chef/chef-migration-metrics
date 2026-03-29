@@ -74,6 +74,25 @@ progress can be tracked over time.
   the parts builder internally.
   File: `node_snapshot_filter.go` L83–244 and L500–582.
 
+- [ ] **B4a — Enrich readiness trend with metric snapshots** —
+  `handleDashboardReadinessTrend` still queries live `CountNodeReadiness`
+  instead of reading from `metric_snapshots`. It doesn't suffer from the
+  sawtooth bug (no `collection_run_id` dependency) but is inconsistent with
+  the version-distribution trend which now reads from snapshots. Follow-up to
+  the collection-dashboard isolation fix. Requires recording a
+  `readiness_summary` metric snapshot type in `recordMetricSnapshots`.
+  Files: `handle_dashboard.go` `handleDashboardReadinessTrend`,
+  `collector.go` `recordMetricSnapshots`.
+
+- [ ] **B4b — Remove dead CountChefVersionsByCollectionRun calls** —
+  `CountChefVersionsByCollectionRun` and `CountChefVersionsByCollectionRunFiltered`
+  are no longer called from trend handlers after the collection-dashboard
+  isolation fix. Verify no other callers remain, then remove from
+  `node_snapshots.go`, `store.go` interface, and mock. Low priority — dead
+  code but not harmful.
+  Files: `internal/datastore/node_snapshots.go`,
+  `internal/webapi/store.go`, `internal/webapi/store_mock_test.go`.
+
 - [ ] **B4 — Extract ownership filter helper** — The same ~25-line ownership
   resolution pattern (parse filter → check `Unowned` → call
   `resolveAllOwnedEntityKeys` or `resolveOwnedEntityKeys` → in-memory filter)
