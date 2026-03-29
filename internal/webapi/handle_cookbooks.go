@@ -271,6 +271,12 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// /api/v1/cookbooks/:name/platform-coverage
+	if len(segments) >= 2 && segments[len(segments)-1] == "platform-coverage" {
+		r.handleCookbookPlatformCoverage(w, req)
+		return
+	}
+
 	// /api/v1/cookbooks/:name/reset-git
 	if len(segments) >= 2 && segments[len(segments)-1] == "reset-git" {
 		r.handleCookbookResetGit(w, req)
