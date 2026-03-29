@@ -92,7 +92,7 @@ func fetchCookbooks( //nolint:unused // complete feature, not yet wired into col
 	}
 
 	// Find all active cookbook versions that need downloading.
-	cookbooks, err := db.ListActiveServerCookbooksNeedingDownload(ctx, org.ID)
+	cookbooks, err := db.ListActiveServerCookbooksNeedingDownload(ctx, org.Name)
 	if err != nil {
 		log.Error(fmt.Sprintf("failed to list cookbooks needing download: %v", err))
 		return CookbookFetchResult{

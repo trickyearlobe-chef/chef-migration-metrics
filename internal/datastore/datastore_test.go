@@ -599,7 +599,6 @@ func TestServerCookbook_DownloadHelpers(t *testing.T) {
 
 func TestOrganisation_MarshalJSON(t *testing.T) {
 	org := Organisation{
-		ID:            "test-id",
 		Name:          "test-org",
 		ChefServerURL: "https://chef.example.com",
 		OrgName:       "myorg",
@@ -673,7 +672,6 @@ func TestServerCookbook_MarshalJSON(t *testing.T) {
 
 func TestGitRepo_MarshalJSON(t *testing.T) {
 	gr := GitRepo{
-		ID:         "gr-id",
 		Name:       "apache2",
 		GitRepoURL: "https://github.com/example/apache2",
 	}

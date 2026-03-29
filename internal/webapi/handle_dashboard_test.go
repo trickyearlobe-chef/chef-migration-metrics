@@ -505,7 +505,7 @@ func TestHandleDashboardVersionDistribution_HappyPath_WithNodes(t *testing.T) {
 	_ = time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		CountNodeVersionDistributionFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
 			return map[string]int{
@@ -593,7 +593,7 @@ func TestHandleDashboardReadiness_HappyPath_Empty(t *testing.T) {
 func TestHandleDashboardReadiness_HappyPath_WithData(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, orgID, tv string) (int, int, int, error) {
 			return 10, 7, 3, nil
@@ -664,7 +664,7 @@ func TestHandleDashboardVersionDistributionTrend_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
@@ -727,7 +727,7 @@ func TestHandleDashboardVersionDistributionTrend_DBError(t *testing.T) {
 func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
@@ -803,7 +803,7 @@ func TestHandleDashboardReadinessTrend_Fallback_NoSnapshots(t *testing.T) {
 	// live CountNodeReadiness for a single current-state point.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, orgID, tv string) (int, int, int, error) {
 			return 5, 3, 2, nil
@@ -844,7 +844,7 @@ func TestHandleDashboardReadinessTrend_HappyPath_Snapshots(t *testing.T) {
 	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
 			if snapshotType != "readiness_summary" {
@@ -939,7 +939,7 @@ func TestHandleDashboardReadinessTrend_Snapshots_OwnershipFiltered(t *testing.T)
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
 			return []datastore.OwnershipAssignment{
@@ -1001,7 +1001,7 @@ func TestHandleDashboardReadinessTrend_Snapshots_NodesOmitted_SkippedUnderOwnerF
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
 			return []datastore.OwnershipAssignment{
@@ -1049,7 +1049,7 @@ func TestHandleDashboardReadinessTrend_Snapshots_Empty(t *testing.T) {
 	// Snapshots exist but all have zero total_nodes — empty result.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationAndVersionFn: func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
@@ -1148,7 +1148,7 @@ func TestHandleDashboardComplexityTrend_MethodNotAllowed_DELETE(t *testing.T) {
 func TestHandleDashboardComplexityTrend_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 			return []datastore.ServerCookbookComplexity{
@@ -1214,7 +1214,7 @@ func TestHandleDashboardComplexityTrend_HappyPath(t *testing.T) {
 func TestHandleDashboardComplexityTrend_HappyPath_Empty(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 			return nil, nil
@@ -1263,12 +1263,12 @@ func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "prod"},
-				{ID: "org-2", Name: "staging"},
+				{Name: "prod"},
+				{Name: "staging"},
 			}, nil
 		},
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
-			if orgID == "org-1" {
+			if orgID == "prod" {
 				return []datastore.ServerCookbookComplexity{
 					{ID: "cc-1", ServerCookbookID: "cb-1", TargetChefVersion: "17.0.0", ComplexityScore: 20, ComplexityLabel: "medium"},
 					{ID: "cc-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0.0", ComplexityScore: 5, ComplexityLabel: "low"},
@@ -1350,7 +1350,7 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
@@ -1413,7 +1413,7 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 func TestHandleDashboardStaleTrend_HappyPath_Empty(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return nil, nil
@@ -1445,7 +1445,7 @@ func TestHandleDashboardStaleTrend_SkipsNonCompletedRuns(t *testing.T) {
 	// snapshot exists.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
@@ -1506,7 +1506,7 @@ func TestHandleDashboardStaleTrend_MultipleRuns(t *testing.T) {
 	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
@@ -1633,7 +1633,7 @@ func TestHandleDashboardCookbookDownloadStatus_HappyPath_NoCookbooks(t *testing.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "test-org"},
+				{Name: "test-org"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
@@ -1692,16 +1692,16 @@ func TestHandleDashboardCookbookDownloadStatus_HappyPath_MixedStatuses(t *testin
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "prod-org"},
+				{Name: "prod-org"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok", IsActive: true},
-				{ID: "cb-2", OrganisationID: "org-1", Name: "apache2", Version: "5.1.0", DownloadStatus: "ok", IsActive: true},
-				{ID: "cb-3", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
-				{ID: "cb-4", OrganisationID: "org-1", Name: "mysql", Version: "8.0.0", DownloadStatus: "pending", IsActive: false},
-				{ID: "cb-5", OrganisationID: "org-1", Name: "java", Version: "2.0.0", DownloadStatus: "failed", DownloadError: "connection timeout", IsActive: false},
+				{ID: "cb-1", OrganisationID: "prod-org", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok", IsActive: true},
+				{ID: "cb-2", OrganisationID: "prod-org", Name: "apache2", Version: "5.1.0", DownloadStatus: "ok", IsActive: true},
+				{ID: "cb-3", OrganisationID: "prod-org", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "HTTP 403: Forbidden", IsActive: true},
+				{ID: "cb-4", OrganisationID: "prod-org", Name: "mysql", Version: "8.0.0", DownloadStatus: "pending", IsActive: false},
+				{ID: "cb-5", OrganisationID: "prod-org", Name: "java", Version: "2.0.0", DownloadStatus: "failed", DownloadError: "connection timeout", IsActive: false},
 			}, nil
 		},
 	}
@@ -1816,7 +1816,7 @@ func TestHandleDashboardCookbookDownloadStatus_IgnoresGitCookbooks(t *testing.T)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "test-org"},
+				{Name: "test-org"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
@@ -1858,7 +1858,7 @@ func TestHandleDashboardCookbookDownloadStatus_AllOK(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "test-org"},
+				{Name: "test-org"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
@@ -1928,20 +1928,20 @@ func TestHandleDashboardCookbookDownloadStatus_MultipleOrgs(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "prod"},
-				{ID: "org-2", Name: "staging"},
+				{Name: "prod"},
+				{Name: "staging"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
-			if organisationID == "org-1" {
+			if organisationID == "prod" {
 				return []datastore.ServerCookbook{
-					{ID: "cb-1", OrganisationID: "org-1", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
-					{ID: "cb-2", OrganisationID: "org-1", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "404 Not Found", IsActive: true},
+					{ID: "cb-1", OrganisationID: "prod", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+					{ID: "cb-2", OrganisationID: "prod", Name: "nginx", Version: "3.0.0", DownloadStatus: "failed", DownloadError: "404 Not Found", IsActive: true},
 				}, nil
 			}
 			return []datastore.ServerCookbook{
-				{ID: "cb-3", OrganisationID: "org-2", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
-				{ID: "cb-4", OrganisationID: "org-2", Name: "redis", Version: "1.0.0", DownloadStatus: "pending"},
+				{ID: "cb-3", OrganisationID: "staging", Name: "mysql", Version: "8.0.0", DownloadStatus: "ok"},
+				{ID: "cb-4", OrganisationID: "staging", Name: "redis", Version: "1.0.0", DownloadStatus: "pending"},
 			}, nil
 		},
 	}
@@ -2019,16 +2019,16 @@ func TestHandleDashboardCookbookDownloadStatus_CookbookListError_NonFatal(t *tes
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "org1"},
-				{ID: "org-2", Name: "org2"},
+				{Name: "org1"},
+				{Name: "org2"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
-			if organisationID == "org-1" {
+			if organisationID == "org1" {
 				return nil, errors.New("timeout")
 			}
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", OrganisationID: "org-2", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
+				{ID: "cb-1", OrganisationID: "org2", Name: "apache2", Version: "5.0.0", DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -2066,7 +2066,7 @@ func TestHandleDashboardCookbookDownloadStatus_EmptyDownloadStatusTreatedAsPendi
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "test-org"},
+				{Name: "test-org"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
@@ -2112,7 +2112,7 @@ func TestHandleDashboardCookbookDownloadStatus_FailedSortedActiveFirst(t *testin
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "test-org"},
+				{Name: "test-org"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
@@ -2271,16 +2271,16 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
-				{ID: "repo-2", Name: "cookbook-b"},
-				{ID: "repo-3", Name: "cookbook-c"},
+				{Name: "cookbook-a"},
+				{Name: "cookbook-b"},
+				{Name: "cookbook-c"},
 			}, nil
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "repo-2", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "repo-3", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: time.Now()},
+				{GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoID: "cookbook-b", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoID: "cookbook-c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: time.Now()},
 			}, nil
 		},
 	}
@@ -2336,15 +2336,15 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_WithUntested(t *testi
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
-				{ID: "repo-2", Name: "cookbook-b"},
-				{ID: "repo-3", Name: "cookbook-c"},
+				{Name: "cookbook-a"},
+				{Name: "cookbook-b"},
+				{Name: "cookbook-c"},
 			}, nil
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
-			// Only repo-1 has been tested — repo-2 and repo-3 are untested.
+			// Only cookbook-a has been tested — cookbook-b and cookbook-c are untested.
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
 			}, nil
 		},
 	}
@@ -2426,13 +2426,13 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersion
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
+				{Name: "cookbook-a"},
 			}, nil
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "repo-1", TargetChefVersion: "19.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoID: "cookbook-a", TargetChefVersion: "19.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
 			}, nil
 		},
 	}
@@ -2497,7 +2497,7 @@ func TestHandleDashboardTestKitchenCompatibility_DBError_GitRepos(t *testing.T) 
 func TestHandleDashboardTestKitchenCompatibility_DBError_TKResults(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return []datastore.GitRepo{{ID: "repo-1", Name: "a"}}, nil
+			return []datastore.GitRepo{{Name: "a"}}, nil
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return nil, errors.New("connection refused")
@@ -2519,18 +2519,18 @@ func TestHandleDashboardTestKitchenCompatibility_PassedPercent(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "a"},
-				{ID: "repo-2", Name: "b"},
-				{ID: "repo-3", Name: "c"},
-				{ID: "repo-4", Name: "d"},
+				{Name: "a"},
+				{Name: "b"},
+				{Name: "c"},
+				{Name: "d"},
 			}, nil
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "repo-2", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoID: "repo-3", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
-				// repo-4 is untested
+				{GitRepoID: "a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoID: "b", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
+				{GitRepoID: "c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
+				// d is untested
 			}, nil
 		},
 	}
@@ -2571,7 +2571,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_HappyPath(t *
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
 			return []datastore.OwnershipAssignment{
@@ -2654,7 +2654,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_Unowned(t *te
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListOwnersFn: func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
 			return []datastore.Owner{{Name: "team-a"}}, 1, nil
@@ -2733,7 +2733,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_NodesOmitted(
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
 			return []datastore.OwnershipAssignment{
@@ -2792,7 +2792,7 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_BackwardCompa
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
 			return []datastore.OwnershipAssignment{
@@ -2849,7 +2849,7 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{
@@ -2924,7 +2924,7 @@ func TestHandleDashboardVersionDistribution_NoRunningCollection_UsesLiveData(t *
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{
@@ -2976,7 +2976,7 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_NoMetricSnapshot(
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{
@@ -3030,7 +3030,7 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_WithOwnership(t *
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{

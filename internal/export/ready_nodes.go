@@ -119,13 +119,13 @@ func collectReadyNodes(ctx context.Context, db DataStore, params ReadyNodeExport
 
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
+		orgNameByID[org.Name] = org.Name
 	}
 
 	var results []nodeWithReadiness
 
 	for _, org := range orgs {
-		nodes, err := db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
+		nodes, err := db.ListNodeSnapshotsByOrganisation(ctx, org.Name)
 		if err != nil {
 			// Log-worthy but non-fatal — skip this org.
 			continue

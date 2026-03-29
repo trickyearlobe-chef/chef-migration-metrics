@@ -186,7 +186,7 @@ func (r *Router) filterOrgIDs(req *http.Request) (datastore.NodeSnapshotFilter, 
 	}
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 	return datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}, nil
 }

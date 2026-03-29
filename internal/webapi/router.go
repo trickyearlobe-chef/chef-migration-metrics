@@ -97,7 +97,6 @@ type Router struct {
 type AuthStore interface {
 	InsertUser(ctx context.Context, p datastore.InsertUserParams) (datastore.User, error)
 	GetUserByUsername(ctx context.Context, username string) (datastore.User, error)
-	GetUserByID(ctx context.Context, id string) (datastore.User, error)
 	ListUsers(ctx context.Context) ([]datastore.User, error)
 	CountUsers(ctx context.Context) (int, error)
 	UpdateUser(ctx context.Context, username string, p datastore.UpdateUserParams) (datastore.User, error)

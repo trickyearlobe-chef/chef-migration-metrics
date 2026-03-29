@@ -136,7 +136,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 			return
 		}
 		isGitRepo = true
-		gitRepoID := gitRepos[0].ID
+		gitRepoID := gitRepos[0].Name
 
 		csResult, csErr := r.db.GetGitRepoCookstyleResult(ctx, gitRepoID, targetVersion)
 		if csErr != nil {

@@ -53,11 +53,11 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 	// Build an org ID → name lookup for annotating failures.
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
+		orgNameByID[org.Name] = org.Name
 	}
 
 	for _, org := range orgs {
-		serverCookbooks, cbErr := r.db.ListServerCookbooksByOrganisation(req.Context(), org.ID)
+		serverCookbooks, cbErr := r.db.ListServerCookbooksByOrganisation(req.Context(), org.Name)
 		if cbErr != nil {
 			r.logf("WARN", "listing server cookbooks for org %s in download status: %v", org.Name, cbErr)
 			continue

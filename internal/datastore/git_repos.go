@@ -19,11 +19,10 @@ const (
 	CloneStatusPending = "pending" // Not yet attempted
 )
 
-// GitRepo represents a row in the git_repos table. Each row is a unique
-// cookbook name. The git_repo_url records which URL the repo was cloned from.
-// Git repos are not org-scoped — they are matched by name across organisations.
+// GitRepo represents a row in the git_repos table. The composite natural
+// primary key is (Name, GitRepoURL). Git repos are not org-scoped — they
+// are matched by name across organisations.
 type GitRepo struct {
-	ID            string    `json:"id"`
 	Name          string    `json:"name"`
 	GitRepoURL    string    `json:"git_repo_url"`
 	HeadCommitSHA string    `json:"head_commit_sha,omitempty"`
@@ -56,7 +55,7 @@ func (gr GitRepo) MarshalJSON() ([]byte, error) {
 // gitRepoColumns is the column list used by all SELECT queries against
 // git_repos, kept in one place for consistency.
 const gitRepoColumns = `
-	id, name, git_repo_url, head_commit_sha, default_branch,
+	name, git_repo_url, head_commit_sha, default_branch,
 	has_test_suite, clone_status, clone_error,
 	last_fetched_at, created_at, updated_at
 `
@@ -66,7 +65,7 @@ const gitRepoColumns = `
 // ---------------------------------------------------------------------------
 
 // UpsertGitRepoParams holds the fields required to upsert a git repo.
-// The upsert key is (name).
+// The upsert key is (name, git_repo_url).
 type UpsertGitRepoParams struct {
 	Name          string
 	GitRepoURL    string
@@ -77,7 +76,7 @@ type UpsertGitRepoParams struct {
 }
 
 // UpsertGitRepo inserts or updates a git repo row. If a row for this
-// cookbook name already exists, its URL, HEAD, branch, test suite flag,
+// (name, git_repo_url) already exists, its HEAD, branch, test suite flag,
 // and clone status are updated.
 func (db *DB) UpsertGitRepo(ctx context.Context, p UpsertGitRepoParams) (GitRepo, error) {
 	return db.upsertGitRepo(ctx, db.q(), p)
@@ -101,9 +100,8 @@ func (db *DB) upsertGitRepo(ctx context.Context, q queryable, p UpsertGitRepoPar
 		) VALUES (
 			$1, $2, $3, $4, $5, 'ok', NULL, $6
 		)
-		ON CONFLICT (name)
+		ON CONFLICT (name, git_repo_url)
 		DO UPDATE SET
-			git_repo_url    = EXCLUDED.git_repo_url,
 			head_commit_sha = EXCLUDED.head_commit_sha,
 			default_branch  = EXCLUDED.default_branch,
 			has_test_suite  = EXCLUDED.has_test_suite,
@@ -127,15 +125,17 @@ func (db *DB) upsertGitRepo(ctx context.Context, q queryable, p UpsertGitRepoPar
 // Query methods
 // ---------------------------------------------------------------------------
 
-// GetGitRepo returns a git repo by UUID. Returns ErrNotFound if no such
-// git repo exists.
-func (db *DB) GetGitRepo(ctx context.Context, id string) (GitRepo, error) {
-	return db.getGitRepo(ctx, db.q(), id)
+// GetGitRepoByKey returns a git repo by its composite primary key
+// (name, git_repo_url). Returns ErrNotFound if no such git repo exists.
+func (db *DB) GetGitRepoByKey(ctx context.Context, name, gitRepoURL string) (GitRepo, error) {
+	return db.getGitRepoByKey(ctx, db.q(), name, gitRepoURL)
 }
 
-func (db *DB) getGitRepo(ctx context.Context, q queryable, id string) (GitRepo, error) {
-	query := `SELECT ` + gitRepoColumns + ` FROM git_repos WHERE id = $1`
-	return scanGitRepo(q.QueryRowContext(ctx, query, id))
+func (db *DB) getGitRepoByKey(ctx context.Context, q queryable, name, gitRepoURL string) (GitRepo, error) {
+	query := `SELECT ` + gitRepoColumns + `
+		FROM git_repos
+		WHERE name = $1 AND git_repo_url = $2`
+	return scanGitRepo(q.QueryRowContext(ctx, query, name, gitRepoURL))
 }
 
 // GetGitRepoByName returns the git repo with the given cookbook name.
@@ -152,7 +152,6 @@ func (db *DB) getGitRepoByName(ctx context.Context, q queryable, name string) (G
 }
 
 // ListGitRepos returns all git repos, ordered by name.
-// There is exactly one row per cookbook name.
 func (db *DB) ListGitRepos(ctx context.Context) ([]GitRepo, error) {
 	return db.listGitRepos(ctx, db.q())
 }
@@ -164,9 +163,7 @@ func (db *DB) listGitRepos(ctx context.Context, q queryable) ([]GitRepo, error) 
 	return scanGitRepos(q.QueryContext(ctx, query))
 }
 
-// ListGitReposByName returns the git repo row for the given cookbook name.
-// The result is returned as a slice for API compatibility, but will contain
-// at most one element since name is unique.
+// ListGitReposByName returns the git repo rows for the given cookbook name.
 func (db *DB) ListGitReposByName(ctx context.Context, name string) ([]GitRepo, error) {
 	return db.listGitReposByName(ctx, db.q(), name)
 }
@@ -272,20 +269,20 @@ func (db *DB) DeleteGitReposByName(ctx context.Context, name string) (DeleteGitR
 
 // MarkGitRepoCloneOK marks a git repo as successfully cloned/pulled and
 // clears any previous clone error.
-func (db *DB) MarkGitRepoCloneOK(ctx context.Context, id string) (GitRepo, error) {
+func (db *DB) MarkGitRepoCloneOK(ctx context.Context, name, gitRepoURL string) (GitRepo, error) {
 	const query = `
 		UPDATE git_repos
 		   SET clone_status = 'ok',
 		       clone_error  = NULL,
 		       updated_at   = now()
-		 WHERE id = $1
+		 WHERE name = $1 AND git_repo_url = $2
 		RETURNING ` + gitRepoColumns
-	return scanGitRepo(db.pool.QueryRowContext(ctx, query, id))
+	return scanGitRepo(db.pool.QueryRowContext(ctx, query, name, gitRepoURL))
 }
 
 // MarkGitRepoCloneFailed marks a git repo clone as failed with the given
 // error detail.
-func (db *DB) MarkGitRepoCloneFailed(ctx context.Context, id, cloneError string) (GitRepo, error) {
+func (db *DB) MarkGitRepoCloneFailed(ctx context.Context, name, gitRepoURL, cloneError string) (GitRepo, error) {
 	var ce sql.NullString
 	if cloneError != "" {
 		ce = sql.NullString{String: cloneError, Valid: true}
@@ -293,11 +290,11 @@ func (db *DB) MarkGitRepoCloneFailed(ctx context.Context, id, cloneError string)
 	const query = `
 		UPDATE git_repos
 		   SET clone_status = 'failed',
-		       clone_error  = $2,
+		       clone_error  = $3,
 		       updated_at   = now()
-		 WHERE id = $1
+		 WHERE name = $1 AND git_repo_url = $2
 		RETURNING ` + gitRepoColumns
-	return scanGitRepo(db.pool.QueryRowContext(ctx, query, id, ce))
+	return scanGitRepo(db.pool.QueryRowContext(ctx, query, name, gitRepoURL, ce))
 }
 
 // UpsertGitRepoFailed inserts or updates a git repo row in the 'failed'
@@ -321,9 +318,8 @@ func (db *DB) UpsertGitRepoFailed(ctx context.Context, name, gitRepoURL, cloneEr
 		) VALUES (
 			$1, $2, 'failed', $3
 		)
-		ON CONFLICT (name)
+		ON CONFLICT (name, git_repo_url)
 		DO UPDATE SET
-			git_repo_url = EXCLUDED.git_repo_url,
 			clone_status = 'failed',
 			clone_error  = EXCLUDED.clone_error,
 			updated_at   = now()
@@ -334,22 +330,23 @@ func (db *DB) UpsertGitRepoFailed(ctx context.Context, name, gitRepoURL, cloneEr
 
 // ResetGitRepoCloneStatus resets the clone_status to 'pending' and clears
 // the clone_error. This forces a fresh clone attempt on the next run.
-func (db *DB) ResetGitRepoCloneStatus(ctx context.Context, id string) (GitRepo, error) {
+func (db *DB) ResetGitRepoCloneStatus(ctx context.Context, name, gitRepoURL string) (GitRepo, error) {
 	const query = `
 		UPDATE git_repos
 		   SET clone_status = 'pending',
 		       clone_error  = NULL,
 		       updated_at   = now()
-		 WHERE id = $1
+		 WHERE name = $1 AND git_repo_url = $2
 		RETURNING ` + gitRepoColumns
-	return scanGitRepo(db.pool.QueryRowContext(ctx, query, id))
+	return scanGitRepo(db.pool.QueryRowContext(ctx, query, name, gitRepoURL))
 }
 
-// DeleteGitRepo removes a single git repo by UUID. Returns ErrNotFound if
-// no such git repo exists. Cascading deletes handle dependent rows.
-func (db *DB) DeleteGitRepo(ctx context.Context, id string) error {
+// DeleteGitRepo removes a single git repo by its composite primary key
+// (name, git_repo_url). Returns ErrNotFound if no such git repo exists.
+// Cascading deletes handle dependent rows.
+func (db *DB) DeleteGitRepo(ctx context.Context, name, gitRepoURL string) error {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM git_repos WHERE id = $1`, id,
+		`DELETE FROM git_repos WHERE name = $1 AND git_repo_url = $2`, name, gitRepoURL,
 	)
 	if err != nil {
 		return fmt.Errorf("datastore: deleting git repo: %w", err)
@@ -374,7 +371,6 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 	var lastFetched sql.NullTime
 
 	err := row.Scan(
-		&gr.ID,
 		&gr.Name,
 		&gr.GitRepoURL,
 		&commitSHA,
@@ -413,7 +409,6 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 		var lastFetched sql.NullTime
 
 		if err := rows.Scan(
-			&gr.ID,
 			&gr.Name,
 			&gr.GitRepoURL,
 			&commitSHA,

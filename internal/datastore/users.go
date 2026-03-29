@@ -13,7 +13,6 @@ import (
 
 // User represents a row in the users table.
 type User struct {
-	ID                  string
 	Username            string
 	DisplayName         string
 	Email               string
@@ -47,7 +46,7 @@ type UpdateUserParams struct {
 }
 
 // userColumns is the SELECT column list for the users table.
-const userColumns = `id, username, display_name, email, password_hash, role,
+const userColumns = `username, display_name, email, password_hash, role,
 	auth_provider, is_locked, failed_login_attempts, last_login_at,
 	created_at, updated_at`
 
@@ -58,7 +57,6 @@ func scanUser(row interface{ Scan(dest ...any) error }) (User, error) {
 	var lastLogin sql.NullTime
 
 	err := row.Scan(
-		&u.ID,
 		&u.Username,
 		&displayName,
 		&email,
@@ -145,22 +143,6 @@ func (db *DB) GetUserByUsername(ctx context.Context, username string) (User, err
 			return User{}, ErrNotFound
 		}
 		return User{}, fmt.Errorf("datastore: getting user by username: %w", err)
-	}
-	return u, nil
-}
-
-// GetUserByID returns the user with the given ID. Returns ErrNotFound if no
-// such user exists.
-func (db *DB) GetUserByID(ctx context.Context, id string) (User, error) {
-	query := `SELECT ` + userColumns + ` FROM users WHERE id = $1`
-	row := db.pool.QueryRowContext(ctx, query, id)
-
-	u, err := scanUser(row)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return User{}, ErrNotFound
-		}
-		return User{}, fmt.Errorf("datastore: getting user by id: %w", err)
 	}
 	return u, nil
 }

@@ -63,7 +63,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		if of.Unowned {
 			allCookbooks := make(map[string]bool)
 			for _, org := range orgs {
-				cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+				cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 				if err != nil {
 					r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, err)
 					continue
@@ -110,14 +110,14 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 	seen := make(map[tvName]bool)
 
 	for _, org := range orgs {
-		cookstyleResults, err := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.ID)
+		cookstyleResults, err := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing server cookbook cookstyle results for org %s: %v", org.Name, err)
 			continue
 		}
 
 		// Also need the cookbook metadata to get the name.
-		serverCookbooks, scErr := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+		serverCookbooks, scErr := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 		if scErr != nil {
 			r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, scErr)
 			continue
@@ -302,7 +302,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	repoNameByID := make(map[string]string, len(gitRepos))
 	repoCloneStatus := make(map[string]string, len(gitRepos))
 	for _, gr := range gitRepos {
-		repoNameByID[gr.ID] = gr.Name
+		repoNameByID[gr.Name] = gr.Name
 		repoCloneStatus[gr.Name] = gr.CloneStatus
 	}
 
@@ -490,7 +490,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 	repoNameByID := make(map[string]string, len(gitRepos))
 	for _, gr := range gitRepos {
-		repoNameByID[gr.ID] = gr.Name
+		repoNameByID[gr.Name] = gr.Name
 	}
 
 	// Load all test kitchen results.

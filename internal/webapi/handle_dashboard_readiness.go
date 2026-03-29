@@ -59,7 +59,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		// Build the set of allowed node names across all orgs.
 		allowedNodes := make(map[string]string) // node_name -> snapshot_id
 		for _, org := range orgs {
-			nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
+			nodes, err := r.db.ListNodeSnapshotsByOrganisation(ctx, org.Name)
 			if err != nil {
 				r.logf("WARN", "listing nodes for org %s in readiness owner filter: %v", org.Name, err)
 				continue
@@ -115,7 +115,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 	for _, tv := range targetVersions {
 		var totalAll, readyAll, blockedAll int
 		for _, org := range orgs {
-			total, ready, blocked, err := r.db.CountNodeReadiness(ctx, org.ID, tv)
+			total, ready, blocked, err := r.db.CountNodeReadiness(ctx, org.Name, tv)
 			if err != nil {
 				r.logf("WARN", "counting readiness for org %s version %s: %v", org.Name, tv, err)
 				continue
@@ -196,7 +196,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 	snapshotFound := false
 	for _, org := range orgs {
 		for _, tv := range targetVersions {
-			metrics, mErr := r.db.ListMetricSnapshotsByOrganisationAndVersion(ctx, org.ID, "readiness_summary", tv, 10)
+			metrics, mErr := r.db.ListMetricSnapshotsByOrganisationAndVersion(ctx, org.Name, "readiness_summary", tv, 10)
 			if mErr != nil {
 				r.logf("WARN", "listing readiness snapshots for org %s version %s: %v", org.Name, tv, mErr)
 				continue
@@ -271,7 +271,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 	if !snapshotFound && !ownerFilterActive {
 		for _, org := range orgs {
 			for _, tv := range targetVersions {
-				total, ready, blocked, cErr := r.db.CountNodeReadiness(ctx, org.ID, tv)
+				total, ready, blocked, cErr := r.db.CountNodeReadiness(ctx, org.Name, tv)
 				if cErr != nil {
 					r.logf("WARN", "counting readiness for org %s version %s in trend fallback: %v", org.Name, tv, cErr)
 					continue

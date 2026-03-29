@@ -111,7 +111,7 @@ func TestHandleDependencyGraph_OrganisationNotFound(t *testing.T) {
 func TestHandleDependencyGraph_HappyPath_Empty(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		ListRoleDependenciesByOrgFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 			return nil, nil
@@ -169,7 +169,7 @@ func TestHandleDependencyGraph_HappyPath_WithData(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		ListRoleDependenciesByOrgFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 			return []datastore.RoleDependency{
@@ -338,7 +338,7 @@ func TestHandleDependencyGraph_DBError_GetOrg(t *testing.T) {
 func TestHandleDependencyGraph_DBError_ListDeps(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		ListRoleDependenciesByOrgFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 			return nil, errors.New("query timeout")
@@ -365,7 +365,7 @@ func TestHandleDependencyGraph_NodeDeduplication(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		ListRoleDependenciesByOrgFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 			// Two different roles depend on the same cookbook — the cookbook
@@ -515,7 +515,7 @@ func TestHandleDependencyGraphTable_OrganisationNotFound(t *testing.T) {
 func TestHandleDependencyGraphTable_HappyPath_Empty(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return nil, nil
@@ -574,7 +574,7 @@ func TestHandleDependencyGraphTable_HappyPath_WithData(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -700,7 +700,7 @@ func TestHandleDependencyGraphTable_SortByRoleName(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -759,7 +759,7 @@ func TestHandleDependencyGraphTable_SortByCookbookCountDesc(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -823,7 +823,7 @@ func TestHandleDependencyGraphTable_Pagination(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			counts := make([]datastore.RoleDependencyCount, 7)
@@ -901,7 +901,7 @@ func TestHandleDependencyGraphTable_Pagination(t *testing.T) {
 func TestHandleDependencyGraphTable_DBError_CountDeps(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return nil, errors.New("query timeout")
@@ -922,7 +922,7 @@ func TestHandleDependencyGraphTable_DBError_CountDeps(t *testing.T) {
 func TestHandleDependencyGraphTable_DBError_ListDeps(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -954,7 +954,7 @@ func TestHandleDependencyGraphTable_SharedCookbooks_OnlyIncludesMultiRole(t *tes
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -1016,7 +1016,7 @@ func TestHandleDependencyGraphTable_TransitiveCounts(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -1093,7 +1093,7 @@ func TestHandleDependencyGraphTable_TransitiveCounts(t *testing.T) {
 func TestDependencyGraphRoutes_NotFallingThrough(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		ListRoleDependenciesByOrgFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 			return nil, nil
@@ -1134,7 +1134,7 @@ func TestHandleDependencyGraphTable_CountRolesPerCookbook_ErrorNonFatal(t *testi
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -1172,7 +1172,7 @@ func TestHandleDependencyGraphTable_SharedCookbooks_LimitedTo20(t *testing.T) {
 
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return nil, nil
@@ -1246,7 +1246,7 @@ func TestIsNotFound(t *testing.T) {
 func TestHandleDependencyGraphTable_DependenciesNeverNull(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		CountDependenciesByRoleFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 			return []datastore.RoleDependencyCount{
@@ -1304,7 +1304,7 @@ func TestHandleDependencyGraphTable_DependenciesNeverNull(t *testing.T) {
 func TestDependencyGraph_TableDoesNotShadowBase(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		ListRoleDependenciesByOrgFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 			return nil, nil

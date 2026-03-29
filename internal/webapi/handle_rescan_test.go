@@ -121,7 +121,7 @@ func minimalGitRepoRescanStore() *mockStore {
 	return &mockStore{
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "gr-1", Name: name},
+				{Name: name},
 			}, nil
 		},
 		DeleteGitRepoCookstyleResultsByRepoFn:    noopDeleteByIDFn(),
@@ -389,7 +389,7 @@ func TestHandleCookbookRescan_WithGitRepos(t *testing.T) {
 		},
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "gr-1", Name: name},
+				{Name: name},
 			}, nil
 		},
 		DeleteGitRepoCookstyleResultsByRepoFn:    noopDeleteByIDFn(),

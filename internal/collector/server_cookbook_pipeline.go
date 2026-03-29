@@ -85,7 +85,7 @@ func runServerCookbookPipeline(
 	// needing download (pending/failed) AND those already downloaded (ok)
 	// that may still need CookStyle scanning. The scan-skip logic inside
 	// scanOneServerCookbook handles the immutability optimisation.
-	cookbooks, err := db.ListActiveServerCookbooksForPipeline(ctx, org.ID)
+	cookbooks, err := db.ListActiveServerCookbooksForPipeline(ctx, org.Name)
 	if err != nil {
 		log.Error(fmt.Sprintf("failed to list cookbooks for pipeline: %v", err))
 		result.Duration = time.Since(start)
@@ -242,7 +242,7 @@ func runServerCookbookPipeline(
 	// Legacy cache cleanup (runs after all workers are done).
 	// -----------------------------------------------------------------------
 	if deleteAfterScan && cookbookCacheDir != "" {
-		cleaned := cleanLegacyCookbookCache(log, cookbookCacheDir, org.ID)
+		cleaned := cleanLegacyCookbookCache(log, cookbookCacheDir, org.Name)
 		result.Cleaned = cleaned
 		if cleaned > 0 {
 			log.Info(fmt.Sprintf("cleaned %d legacy cached cookbook directory/directories for org %s", cleaned, org.Name))

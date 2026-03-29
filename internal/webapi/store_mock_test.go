@@ -41,7 +41,6 @@ type mockStore struct {
 	ListServerCookbooksByNameFn                         func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
 	ResetServerCookbookDownloadStatusFn                 func(ctx context.Context, id string) (datastore.ServerCookbook, error)
 	ResetAllServerCookbookDownloadStatusesFn            func(ctx context.Context) (int, error)
-	GetGitRepoFn                                        func(ctx context.Context, id string) (datastore.GitRepo, error)
 	ListGitReposFn                                      func(ctx context.Context) ([]datastore.GitRepo, error)
 	ListGitReposByNameFn                                func(ctx context.Context, name string) ([]datastore.GitRepo, error)
 	DeleteGitReposByNameFn                              func(ctx context.Context, name string) (datastore.DeleteGitRepoResult, error)
@@ -308,13 +307,6 @@ func (m *mockStore) ResetAllServerCookbookDownloadStatuses(ctx context.Context) 
 // -----------------------------------------------------------------
 // Git repos
 // -----------------------------------------------------------------
-
-func (m *mockStore) GetGitRepo(ctx context.Context, id string) (datastore.GitRepo, error) {
-	if m.GetGitRepoFn != nil {
-		return m.GetGitRepoFn(ctx, id)
-	}
-	return datastore.GitRepo{}, nil
-}
 
 func (m *mockStore) ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error) {
 	if m.ListGitReposFn != nil {

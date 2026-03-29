@@ -487,7 +487,7 @@ func TestHandleExports_Async_LargeEstimate(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "production"},
+				{Name: "production"},
 			}, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
@@ -562,7 +562,7 @@ func TestHandleExports_Async_InsertJobError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "production"},
+				{Name: "production"},
 			}, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
@@ -1237,12 +1237,12 @@ func exportTestConfig() *config.Config {
 // sync export tests. It provides one organisation with two nodes (one ready,
 // one blocked) and two cookbooks with complexity records.
 func newExportMockStore() *mockStore {
-	org := datastore.Organisation{ID: "org-1", Name: "production"}
+	org := datastore.Organisation{Name: "production"}
 
 	nodes := []datastore.NodeSnapshot{
 		{
 			ID:              "snap-1",
-			OrganisationID:  "org-1",
+			OrganisationID:  "production",
 			NodeName:        "web1",
 			ChefEnvironment: "prod",
 			ChefVersion:     "17.10.0",
@@ -1257,7 +1257,7 @@ func newExportMockStore() *mockStore {
 		},
 		{
 			ID:              "snap-2",
-			OrganisationID:  "org-1",
+			OrganisationID:  "production",
 			NodeName:        "db1",
 			ChefEnvironment: "prod",
 			ChefVersion:     "16.0.0",
@@ -1295,13 +1295,13 @@ func newExportMockStore() *mockStore {
 	cookbooks := []datastore.ServerCookbook{
 		{
 			ID:             "cb-1",
-			OrganisationID: "org-1",
+			OrganisationID: "production",
 			Name:           "apt",
 			Version:        "7.4.0",
 		},
 		{
 			ID:             "cb-2",
-			OrganisationID: "org-1",
+			OrganisationID: "production",
 			Name:           "mysql",
 			Version:        "8.0.0",
 		},
@@ -1329,7 +1329,7 @@ func newExportMockStore() *mockStore {
 			return []datastore.Organisation{org}, nil
 		},
 		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
-			if organisationID == "org-1" {
+			if organisationID == "production" {
 				return nodes, nil
 			}
 			return nil, nil
@@ -1342,13 +1342,13 @@ func newExportMockStore() *mockStore {
 			return 2, 1, 1, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
-			if organisationID == "org-1" {
+			if organisationID == "production" {
 				return cookbooks, nil
 			}
 			return nil, nil
 		},
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
-			if organisationID == "org-1" {
+			if organisationID == "production" {
 				return complexities, nil
 			}
 			return nil, nil

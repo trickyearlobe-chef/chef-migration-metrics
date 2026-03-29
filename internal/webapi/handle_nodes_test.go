@@ -227,7 +227,7 @@ func TestHandleNodes_HappyPath_WithNodes(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			return []datastore.NodeSnapshot{
@@ -277,7 +277,7 @@ func TestHandleNodeDetail_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{ID: "snap-1", NodeName: "web1", OrganisationID: "org-1", CollectedAt: now}, nil
@@ -327,7 +327,7 @@ func TestHandleNodeDetail_OrgNotFound(t *testing.T) {
 func TestHandleNodeDetail_NodeNotFound(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{}, datastore.ErrNotFound
@@ -367,7 +367,7 @@ func TestHandleNodesByVersion_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			// The handler sets ChefVersionExact, so only matching nodes returned.
@@ -422,7 +422,7 @@ func TestHandleNodesByCookbook_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			return []datastore.NodeSnapshot{

@@ -77,29 +77,29 @@ func decodeGitRepoListResponse(t *testing.T, w *httptest.ResponseRecorder) gitRe
 
 func sampleGitRepos() []datastore.GitRepo {
 	return []datastore.GitRepo{
-		{ID: "repo-1", Name: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", HasTestSuite: true},
-		{ID: "repo-2", Name: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", HasTestSuite: false},
-		{ID: "repo-3", Name: "cookbook-c", GitRepoURL: "https://github.com/org/cookbook-c.git", HasTestSuite: true},
-		{ID: "repo-4", Name: "cookbook-d", GitRepoURL: "https://github.com/org/cookbook-d.git", HasTestSuite: true},
+		{Name: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", HasTestSuite: true},
+		{Name: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", HasTestSuite: false},
+		{Name: "cookbook-c", GitRepoURL: "https://github.com/org/cookbook-c.git", HasTestSuite: true},
+		{Name: "cookbook-d", GitRepoURL: "https://github.com/org/cookbook-d.git", HasTestSuite: true},
 	}
 }
 
 func sampleTKResults() []datastore.GitRepoTestKitchenResult {
 	now := time.Now()
 	return []datastore.GitRepoTestKitchenResult{
-		{ID: "tk-1", GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: now},
-		{ID: "tk-2", GitRepoID: "repo-2", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: now},
-		{ID: "tk-3", GitRepoID: "repo-3", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: now},
-		// repo-4 has no TK result → "untested"
+		{ID: "tk-1", GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: now},
+		{ID: "tk-2", GitRepoID: "cookbook-b", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: now},
+		{ID: "tk-3", GitRepoID: "cookbook-c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: now},
+		// cookbook-d has no TK result → "untested"
 	}
 }
 
 func sampleCookstyleResults() []datastore.GitRepoCookstyleResult {
 	now := time.Now()
 	return []datastore.GitRepoCookstyleResult{
-		{ID: "cs-1", GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Passed: true, ScannedAt: now},
-		{ID: "cs-2", GitRepoID: "repo-2", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 5, ScannedAt: now},
-		// repo-3 and repo-4 have no cookstyle result → "untested"
+		{ID: "cs-1", GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Passed: true, ScannedAt: now},
+		{ID: "cs-2", GitRepoID: "cookbook-b", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 5, ScannedAt: now},
+		// cookbook-c and cookbook-d have no cookstyle result → "untested"
 	}
 }
 
@@ -257,7 +257,7 @@ func TestHandleGitRepos_FilterTKStatus_NoMatch(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "only-repo"},
+				{Name: "only-repo"},
 			}, nil
 		},
 		ListAllGitRepoComplexitiesFn: func(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
@@ -330,7 +330,7 @@ func TestHandleGitRepos_TKStatus_DifferentTargetVersion(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
+				{Name: "cookbook-a"},
 			}, nil
 		},
 		ListAllGitRepoComplexitiesFn: func(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
@@ -368,7 +368,7 @@ func TestHandleGitRepos_TKResults_DBError(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
+				{Name: "cookbook-a"},
 			}, nil
 		},
 		ListAllGitRepoComplexitiesFn: func(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
@@ -530,7 +530,7 @@ func TestHandleGitRepos_ExplicitTargetVersion(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
+				{Name: "cookbook-a"},
 			}, nil
 		},
 		ListAllGitRepoComplexitiesFn: func(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
@@ -538,7 +538,7 @@ func TestHandleGitRepos_ExplicitTargetVersion(t *testing.T) {
 		},
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return []datastore.GitRepoTestKitchenResult{
-				{ID: "tk-1", GitRepoID: "repo-1", TargetChefVersion: "19.0.0", Compatible: true, TimedOut: false, StartedAt: now},
+				{ID: "tk-1", GitRepoID: "cookbook-a", TargetChefVersion: "19.0.0", Compatible: true, TimedOut: false, StartedAt: now},
 			}, nil
 		},
 	}
@@ -624,7 +624,7 @@ func TestHandleGitRepos_NoTargetVersions(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
+				{Name: "cookbook-a"},
 			}, nil
 		},
 		// These should not be called since no target version is configured.
@@ -667,7 +667,7 @@ func TestHandleGitRepos_TKStatus_TimedOutPrecedence(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "repo-1", Name: "cookbook-a"},
+				{Name: "cookbook-a"},
 			}, nil
 		},
 		ListAllGitRepoComplexitiesFn: func(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
@@ -676,7 +676,7 @@ func TestHandleGitRepos_TKStatus_TimedOutPrecedence(t *testing.T) {
 		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			// Both TimedOut=true AND Compatible=true — TimedOut should win.
 			return []datastore.GitRepoTestKitchenResult{
-				{ID: "tk-1", GitRepoID: "repo-1", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: true, StartedAt: now},
+				{ID: "tk-1", GitRepoID: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: true, StartedAt: now},
 			}, nil
 		},
 	}

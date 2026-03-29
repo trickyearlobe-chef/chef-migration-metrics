@@ -298,7 +298,7 @@ func (s *KitchenScanner) TestGitRepos(
 				defer func() { <-sem }()
 			case <-ctx.Done():
 				resultsCh <- KitchenRunResult{
-					CookbookID:        wi.Repo.ID,
+					CookbookID:        wi.Repo.Name,
 					CookbookName:      wi.Repo.Name,
 					TargetChefVersion: wi.TargetVersion,
 					CommitSHA:         wi.Repo.HeadCommitSHA,
@@ -357,7 +357,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		logging.WithOrganisation(gr.Name))
 
 	result := KitchenRunResult{
-		CookbookID:        gr.ID,
+		CookbookID:        gr.Name,
 		CookbookName:      gr.Name,
 		TargetChefVersion: targetVersion,
 		CommitSHA:         gr.HeadCommitSHA,
@@ -373,7 +373,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 
 	// Step 1: Check skip condition — if a result exists for this commit SHA,
 	// skip the run.
-	existing, err := s.db.GetLatestGitRepoTestKitchenResult(ctx, gr.ID, targetVersion)
+	existing, err := s.db.GetLatestGitRepoTestKitchenResult(ctx, gr.Name, targetVersion)
 	if err != nil {
 		result.Error = fmt.Errorf("checking existing result: %w", err)
 		return result
@@ -796,7 +796,7 @@ func (s *KitchenScanner) persistResult(ctx context.Context, gr datastore.GitRepo
 	}
 
 	params := datastore.UpsertGitRepoTestKitchenResultParams{
-		GitRepoID:         gr.ID,
+		GitRepoID:         gr.Name,
 		TargetChefVersion: rr.TargetChefVersion,
 		CommitSHA:         rr.CommitSHA,
 		ConvergePassed:    rr.ConvergePassed,

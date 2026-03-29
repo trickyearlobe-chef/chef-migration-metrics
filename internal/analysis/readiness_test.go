@@ -341,9 +341,8 @@ func (f *fakeReadinessDS) addGitCSResult(gitRepoID, targetChefVersion string, pa
 	}
 }
 
-func (f *fakeReadinessDS) addGitRepo(name, id, headSHA string) {
+func (f *fakeReadinessDS) addGitRepo(name, headSHA string) {
 	f.gitRepos[name] = datastore.GitRepo{
-		ID:            id,
 		Name:          name,
 		HeadCommitSHA: headSHA,
 	}
@@ -1012,8 +1011,8 @@ func TestCheckCookbookCompatibility_TKOnlyIsCompatible(t *testing.T) {
 	// the cookbook compatible even without a CS result.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
-	ds.addTKResult("gitrepo-apt", "18.0", true, true)
+	ds.addGitRepo("apt", "abc123")
+	ds.addTKResult("apt", "18.0", true, true)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1030,8 +1029,8 @@ func TestCheckCookbookCompatibility_TKConvergeFailIsIncompatible(t *testing.T) {
 	// git repo makes the cookbook incompatible.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
-	ds.addTKResult("gitrepo-apt", "18.0", false, false)
+	ds.addGitRepo("apt", "abc123")
+	ds.addTKResult("apt", "18.0", false, false)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1048,8 +1047,8 @@ func TestCheckCookbookCompatibility_TKTestFailIsIncompatible(t *testing.T) {
 	// git repo makes the cookbook incompatible.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
-	ds.addTKResult("gitrepo-apt", "18.0", true, false)
+	ds.addGitRepo("apt", "abc123")
+	ds.addTKResult("apt", "18.0", true, false)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1141,8 +1140,8 @@ func TestCheckCookbookCompatibility_CSCheckedWhenTKPresent(t *testing.T) {
 	// TK passes, CS fails → overall compatible because TK is a compatible source.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
-	ds.addTKResult("gitrepo-apt", "18.0", true, true) // TK passes
+	ds.addGitRepo("apt", "abc123")
+	ds.addTKResult("apt", "18.0", true, true) // TK passes
 	ds.addCSResult("id-apt", "18.0", false)           // server CS fails
 
 	cache := ds.buildFakeCache()
@@ -1172,8 +1171,8 @@ func TestCheckCookbookCompatibility_MultiSource_ServerIncompatibleGitCompatible(
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", false) // server CS fails
-	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
-	ds.addGitCSResult("gitrepo-apt", "18.0", true) // git CS passes
+	ds.addGitRepo("apt", "abc123")
+	ds.addGitCSResult("apt", "18.0", true) // git CS passes
 
 	cache := ds.buildFakeCache()
 	status, _, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1190,9 +1189,9 @@ func TestCheckCookbookCompatibility_MultiSource_AllIncompatible(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", false)
-	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
-	ds.addGitCSResult("gitrepo-apt", "18.0", false)
-	ds.addTKResult("gitrepo-apt", "18.0", false, false)
+	ds.addGitRepo("apt", "abc123")
+	ds.addGitCSResult("apt", "18.0", false)
+	ds.addTKResult("apt", "18.0", false, false)
 
 	cache := ds.buildFakeCache()
 	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1212,8 +1211,8 @@ func TestCheckCookbookCompatibility_MultiSource_VerdictFields(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", false)
-	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
-	ds.addGitCSResult("gitrepo-apt", "18.0", true)
+	ds.addGitRepo("apt", "sha-abc")
+	ds.addGitCSResult("apt", "18.0", true)
 
 	cache := ds.buildFakeCache()
 	_, _, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1254,8 +1253,8 @@ func TestCheckCookbookCompatibility_MultiSource_TKCompatibleOverridesCSFail(t *t
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", false) // server CS fails
-	ds.addGitRepo("apt", "gitrepo-apt", "abc123")
-	ds.addTKResult("gitrepo-apt", "18.0", true, true) // TK passes
+	ds.addGitRepo("apt", "abc123")
+	ds.addTKResult("apt", "18.0", true, true) // TK passes
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1320,10 +1319,10 @@ func TestCheckCookbookCompatibility_GitCSErrorResultSkipped(t *testing.T) {
 	// Git CookStyle result with ErrorMessage should also be skipped.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
-	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
+	ds.addGitRepo("apt", "sha-abc")
 	// Git CS result with error.
-	ds.gitCSResults[gitCSKey("gitrepo-apt", "18.0")] = &datastore.GitRepoCookstyleResult{
-		GitRepoID:         "gitrepo-apt",
+	ds.gitCSResults[gitCSKey("apt", "18.0")] = &datastore.GitRepoCookstyleResult{
+		GitRepoID:         "apt",
 		TargetChefVersion: "18.0",
 		Passed:            false,
 		ErrorMessage:      "CookStyle error (exit 2): bad config",
@@ -1350,8 +1349,8 @@ func TestCheckCookbookCompatibility_ErrorResultDoesNotOverrideGoodResult(t *test
 		ErrorMessage:      "CookStyle error (exit 2): crash",
 	}
 	// Git CS passed.
-	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
-	ds.addGitCSResult("gitrepo-apt", "18.0", true)
+	ds.addGitRepo("apt", "sha-abc")
+	ds.addGitCSResult("apt", "18.0", true)
 
 	cache := ds.buildFakeCache()
 	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -1881,14 +1880,14 @@ func TestEvaluateOrganisation_ConcurrencyBounded(t *testing.T) {
 
 func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	ds := newFakeReadinessDS()
-	ds.addGitRepo("apt", "gitrepo-apt", "sha-abc")
-	ds.addTKResult("gitrepo-apt", "18.0", true, true)
-	ds.addGitCSResult("gitrepo-apt", "18.0", true)
+	ds.addGitRepo("apt", "sha-abc")
+	ds.addTKResult("apt", "18.0", true, true)
+	ds.addGitCSResult("apt", "18.0", true)
 	ds.addCookbookID("apt", "7.4.0", "id-apt")
 	ds.addCSResult("id-apt", "18.0", false)
 	ds.addComplexity("id-apt", "18.0", 42, "medium")
-	ds.gitComplexities[gcKey("gitrepo-apt", "18.0")] = &datastore.GitRepoComplexity{
-		GitRepoID:         "gitrepo-apt",
+	ds.gitComplexities[gcKey("apt", "18.0")] = &datastore.GitRepoComplexity{
+		GitRepoID:         "apt",
 		TargetChefVersion: "18.0",
 		ComplexityScore:   10,
 		ComplexityLabel:   "low",
@@ -1907,14 +1906,14 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	}
 
 	// TK results
-	if tk := cache.tkResults[cacheKey("gitrepo-apt", "18.0")]; tk == nil {
+	if tk := cache.tkResults[cacheKey("apt", "18.0")]; tk == nil {
 		t.Error("expected TK result in cache")
 	} else if !tk.Compatible {
 		t.Error("expected TK result to be compatible")
 	}
 
 	// Git CS results
-	if gcs := cache.gitCSResults[cacheKey("gitrepo-apt", "18.0")]; gcs == nil {
+	if gcs := cache.gitCSResults[cacheKey("apt", "18.0")]; gcs == nil {
 		t.Error("expected git CS result in cache")
 	} else if !gcs.Passed {
 		t.Error("expected git CS result to have passed")
@@ -1935,7 +1934,7 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	}
 
 	// Git complexity
-	if gc := cache.gitComplexity[cacheKey("gitrepo-apt", "18.0")]; gc == nil {
+	if gc := cache.gitComplexity[cacheKey("apt", "18.0")]; gc == nil {
 		t.Error("expected git complexity in cache")
 	} else if gc.ComplexityScore != 10 {
 		t.Errorf("expected complexity score 10, got %d", gc.ComplexityScore)

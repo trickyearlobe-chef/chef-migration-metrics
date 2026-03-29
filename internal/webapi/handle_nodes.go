@@ -66,8 +66,8 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	orgNameByID := make(map[string]string, len(orgs))
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
-		orgIDs = append(orgIDs, org.ID)
+		orgNameByID[org.Name] = org.Name
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	pg := ParsePagination(req)
@@ -151,7 +151,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 	// (we'll paginate after ownership filtering).
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 	f := nodeSnapshotFilterFromRequest(req, orgIDs)
 	// No limit/offset — we need all matching nodes for ownership filtering.
@@ -254,7 +254,7 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Get the most recent snapshot for this node.
-	snapshot, err := r.db.GetNodeSnapshotByName(req.Context(), org.ID, nodeName)
+	snapshot, err := r.db.GetNodeSnapshotByName(req.Context(), org.Name, nodeName)
 	if errors.Is(err, datastore.ErrNotFound) {
 		WriteNotFound(w, fmt.Sprintf("Node %q not found in organisation %q.", nodeName, orgName))
 		return
@@ -271,7 +271,7 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	// since been replaced by a newer collection run. Querying by name
 	// matches the same path the dashboard uses and is resilient to
 	// snapshot ID drift.
-	readiness, err := r.db.ListNodeReadinessByNodeName(req.Context(), org.ID, nodeName)
+	readiness, err := r.db.ListNodeReadinessByNodeName(req.Context(), org.Name, nodeName)
 	if err != nil {
 		r.logf("WARN", "listing readiness for node %s/%s: %v", orgName, nodeName, err)
 		// Non-fatal — we still return the snapshot.
@@ -314,7 +314,7 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	// Use SQL push-down with exact chef_version match.
@@ -373,8 +373,8 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 	orgIDs := make([]string, 0, len(orgs))
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
-		orgNameByID[org.ID] = org.Name
+		orgIDs = append(orgIDs, org.Name)
+		orgNameByID[org.Name] = org.Name
 	}
 
 	// Use SQL push-down for org filtering. We need the cookbooks JSONB

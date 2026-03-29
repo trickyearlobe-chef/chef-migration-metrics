@@ -158,10 +158,6 @@ type DataStore interface {
 	// Git repos
 	// -----------------------------------------------------------------
 
-	// GetGitRepo returns a git repo by UUID. Returns datastore.ErrNotFound
-	// if no such git repo exists.
-	GetGitRepo(ctx context.Context, id string) (datastore.GitRepo, error)
-
 	// ListGitRepos returns all git repos, deduplicated by name (most
 	// recently fetched row per name), ordered by name.
 	ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)

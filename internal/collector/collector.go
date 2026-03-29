@@ -274,7 +274,7 @@ func (c *Collector) ResumeInterruptedRuns(ctx context.Context) (*ResumeResult, e
 	}
 	orgByID := make(map[string]datastore.Organisation, len(allOrgs))
 	for _, org := range allOrgs {
-		orgByID[org.ID] = org
+		orgByID[org.Name] = org
 	}
 
 	for _, run := range interrupted {
@@ -348,7 +348,7 @@ func (c *Collector) ResumeInterruptedRuns(ctx context.Context) (*ResumeResult, e
 			continue
 		}
 
-		orgsNeedingCollection[org.ID] = org
+		orgsNeedingCollection[org.Name] = org
 		result.Resumed++
 		runLog.Info(fmt.Sprintf("will resume collection for org %s (interrupted run %s)",
 			org.Name, run.ID))
@@ -686,7 +686,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 	// Step 1: Create a collection run row.
 	run, err := c.db.CreateCollectionRun(ctx, datastore.CreateCollectionRunParams{
-		OrganisationID: org.ID,
+		OrganisationID: org.Name,
 	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("creating collection run: %w", err)
@@ -829,7 +829,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 		snapshotParams = append(snapshotParams, datastore.InsertNodeSnapshotParams{
 			CollectionRunID:  run.ID,
-			OrganisationID:   org.ID,
+			OrganisationID:   org.Name,
 			NodeName:         nd.Name(),
 			ChefEnvironment:  nd.ChefEnvironment(),
 			ChefVersion:      nd.ChefVersion(),
@@ -904,7 +904,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		for i, p := range snapshotParams {
 			activeNames[i] = p.NodeName
 		}
-		orphaned, orphanErr := c.db.DeleteOrphanedNodeSnapshots(ctx, org.ID, activeNames)
+		orphaned, orphanErr := c.db.DeleteOrphanedNodeSnapshots(ctx, org.Name, activeNames)
 		if orphanErr != nil {
 			log.Warn(fmt.Sprintf("failed to clean up orphaned node snapshots: %v", orphanErr),
 				logging.WithCollectionRunID(run.ID))
@@ -937,7 +937,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// pre-aggregated snapshots allow the dashboard to show historical
 	// trends without scanning the (now current-state-only) node_snapshots
 	// table.
-	c.recordMetricSnapshots(ctx, log, run.ID, org.ID, snapshotParams)
+	c.recordMetricSnapshots(ctx, log, run.ID, org.Name, snapshotParams)
 
 	// Step 5: Fetch cookbook inventory from the Chef server.
 	log.Info("fetching cookbook inventory",
@@ -972,7 +972,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			// when we first observed this version. The stale flag is evaluated
 			// against the threshold on upsert.
 			cookbookParams = append(cookbookParams, datastore.UpsertServerCookbookParams{
-				OrganisationID:  org.ID,
+				OrganisationID:  org.Name,
 				Name:            cbName,
 				Version:         ver.Version,
 				IsActive:        isActive,
@@ -1003,7 +1003,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	for name := range activeCookbookNames {
 		activeNames = append(activeNames, name)
 	}
-	if err := c.db.MarkServerCookbooksActiveForOrg(ctx, org.ID, activeNames); err != nil {
+	if err := c.db.MarkServerCookbooksActiveForOrg(ctx, org.Name, activeNames); err != nil {
 		log.Warn(fmt.Sprintf("failed to mark active cookbooks: %v", err),
 			logging.WithCollectionRunID(run.ID))
 	}
@@ -1012,7 +1012,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// recent version's first_seen_at is older than the configured threshold.
 	// This is done via a database update for cookbooks belonging to this org.
 	staleCookbookCutoff := now.Add(-staleCookbookThreshold)
-	staleCount, staleErr := c.db.MarkStaleServerCookbooksForOrg(ctx, org.ID, staleCookbookCutoff)
+	staleCount, staleErr := c.db.MarkStaleServerCookbooksForOrg(ctx, org.Name, staleCookbookCutoff)
 	if staleErr != nil {
 		log.Warn(fmt.Sprintf("failed to mark stale cookbooks: %v", staleErr),
 			logging.WithCollectionRunID(run.ID))
@@ -1107,12 +1107,12 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		// Complexity scoring for server cookbooks runs after the pipeline
 		// completes so CookStyle results are available.
 		if c.complexityScorer != nil && len(c.cfg.TargetChefVersions) > 0 {
-			orgCBs, cxListErr := c.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+			orgCBs, cxListErr := c.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 			if cxListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list server cookbooks for complexity scoring: %v", cxListErr),
 					logging.WithCollectionRunID(run.ID))
 			} else {
-				cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.ID)
+				cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.Name)
 				log.Info(fmt.Sprintf(
 					"server cookbook complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
 					cxBatch.Total, cxBatch.Scored, cxBatch.Skipped, cxBatch.Errors,
@@ -1242,7 +1242,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			} else if len(gitReposForAC) > 0 {
 				var csResults []datastore.GitRepoCookstyleResult
 				for _, repo := range gitReposForAC {
-					repoResults, err := c.db.ListGitRepoCookstyleResults(ctx, repo.ID)
+					repoResults, err := c.db.ListGitRepoCookstyleResults(ctx, repo.Name)
 					if err != nil {
 						log.Warn(fmt.Sprintf("failed to list CookStyle results for git repo %s: %v", repo.Name, err),
 							logging.WithCollectionRunID(run.ID))
@@ -1269,7 +1269,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 					repoByID := make(map[string]datastore.GitRepo, len(gitReposForAC))
 					for _, repo := range gitReposForAC {
-						repoByID[repo.ID] = repo
+						repoByID[repo.Name] = repo
 					}
 					dirFn := func(cookbookID string) string {
 						repo, ok := repoByID[cookbookID]
@@ -1296,7 +1296,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				log.Warn(fmt.Sprintf("failed to list git repos for complexity scoring: %v", grCXListErr),
 					logging.WithCollectionRunID(run.ID))
 			} else if len(gitReposForCX) > 0 {
-				grCXBatch := c.complexityScorer.ScoreGitRepos(ctx, gitReposForCX, c.cfg.TargetChefVersions, org.ID)
+				grCXBatch := c.complexityScorer.ScoreGitRepos(ctx, gitReposForCX, c.cfg.TargetChefVersions, org.Name)
 				log.Info(fmt.Sprintf(
 					"git repo complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
 					grCXBatch.Total, grCXBatch.Scored, grCXBatch.Skipped, grCXBatch.Errors,
@@ -1335,9 +1335,9 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				roleDetails = append(roleDetails, rd)
 			}
 
-			depParams := BuildRoleDependencies(org.ID, roleDetails)
+			depParams := BuildRoleDependencies(org.Name, roleDetails)
 
-			replaced, replaceErr := c.db.ReplaceRoleDependenciesForOrg(ctx, org.ID, depParams)
+			replaced, replaceErr := c.db.ReplaceRoleDependenciesForOrg(ctx, org.Name, depParams)
 			if replaceErr != nil {
 				log.Warn(fmt.Sprintf("failed to persist role dependency graph: %v", replaceErr),
 					logging.WithCollectionRunID(run.ID))
@@ -1365,7 +1365,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			}
 		}
 
-		usageResult, usageErr := c.analyser.RunUsageAnalysis(ctx, org.ID, run.ID, nodeRecords, inventoryEntries)
+		usageResult, usageErr := c.analyser.RunUsageAnalysis(ctx, org.Name, run.ID, nodeRecords, inventoryEntries)
 		if usageErr != nil {
 			log.Warn(fmt.Sprintf("cookbook usage analysis failed: %v", usageErr),
 				logging.WithCollectionRunID(run.ID))
@@ -1424,7 +1424,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		log.Info("evaluating node readiness",
 			logging.WithCollectionRunID(run.ID))
 
-		readinessResults, readinessErr := c.readinessEval.EvaluateOrganisation(ctx, org.ID, org.Name, c.cfg.TargetChefVersions)
+		readinessResults, readinessErr := c.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, c.cfg.TargetChefVersions)
 		if readinessErr != nil {
 			log.Warn(fmt.Sprintf("node readiness evaluation failed: %v", readinessErr),
 				logging.WithCollectionRunID(run.ID))
@@ -1447,7 +1447,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			// These pre-aggregated snapshots allow the dashboard to show
 			// historical readiness trends without querying live
 			// node_readiness rows.
-			c.recordReadinessSnapshots(ctx, log, run.ID, org.ID, readinessResults, c.cfg.TargetChefVersions)
+			c.recordReadinessSnapshots(ctx, log, run.ID, org.Name, readinessResults, c.cfg.TargetChefVersions)
 		}
 	}
 
@@ -1458,7 +1458,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		log.Info("evaluating ownership auto-derivation rules",
 			logging.WithCollectionRunID(run.ID))
 
-		if ownerErr := c.ownershipEval.EvaluateAfterCollection(ctx, org.ID, org.Name); ownerErr != nil {
+		if ownerErr := c.ownershipEval.EvaluateAfterCollection(ctx, org.Name, org.Name); ownerErr != nil {
 			log.Warn(fmt.Sprintf("ownership evaluation failed: %v", ownerErr),
 				logging.WithCollectionRunID(run.ID))
 		} else {
@@ -1504,7 +1504,7 @@ func (c *Collector) finishRun() {
 func (c *Collector) defaultClientFactory(ctx context.Context, org datastore.Organisation) (*chefapi.Client, error) {
 	// Determine the credential source for the client key.
 	src := secrets.CredentialSource{
-		CredentialName: org.ClientKeyCredentialID,
+		CredentialName: org.ClientKeyCredentialName,
 	}
 
 	// Check if the config has a file path or env var for this org.

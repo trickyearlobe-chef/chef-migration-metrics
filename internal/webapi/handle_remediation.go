@@ -104,14 +104,14 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 	var items []priorityItem
 
 	for _, org := range orgs {
-		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing complexities for org %s in remediation priority: %v", org.Name, err)
 			continue
 		}
 
 		// Build a map from server cookbook ID to cookbook metadata.
-		cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+		cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing server cookbooks for org %s in remediation priority: %v", org.Name, err)
 			continue
@@ -141,7 +141,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 				CookbookName:         cb.Name,
 				CookbookVersion:      cb.Version,
 				CookbookID:           cc.ServerCookbookID,
-				OrganisationID:       org.ID,
+				OrganisationID:       org.Name,
 				ComplexityScore:      cc.ComplexityScore,
 				ComplexityLabel:      cc.ComplexityLabel,
 				AffectedNodeCount:    cc.AffectedNodeCount,
@@ -346,7 +346,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 	)
 
 	for _, org := range orgs {
-		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)
 		if err != nil {
 			r.logf("WARN", "listing complexities for org %s in remediation summary: %v", org.Name, err)
 			continue
@@ -355,7 +355,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 		// Build a map from server cookbook ID to cookbook metadata for ownership filtering.
 		var cbMap map[string]datastore.ServerCookbook
 		if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
-			cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.ID)
+			cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 			if err != nil {
 				r.logf("WARN", "listing server cookbooks for org %s in remediation summary: %v", org.Name, err)
 				continue
@@ -407,7 +407,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 	// Also compute blocked node readiness across all orgs.
 	var totalReadinessBlocked int
 	for _, org := range orgs {
-		_, _, blocked, err := r.db.CountNodeReadiness(ctx, org.ID, targetVersion)
+		_, _, blocked, err := r.db.CountNodeReadiness(ctx, org.Name, targetVersion)
 		if err != nil {
 			r.logf("WARN", "counting node readiness for org %s version %s: %v", org.Name, targetVersion, err)
 			continue

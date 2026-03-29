@@ -43,7 +43,7 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	// When ownership filtering is active, fall back to in-memory path.
@@ -105,7 +105,7 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}

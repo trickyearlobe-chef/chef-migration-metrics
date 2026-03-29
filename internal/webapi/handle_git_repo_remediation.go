@@ -77,7 +77,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	gitRepoID := gitRepos[0].ID
+	gitRepoID := gitRepos[0].Name
 
 	// Fetch cookstyle result.
 	var cookstyleOffences []byte
