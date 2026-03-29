@@ -98,28 +98,9 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Pre-load readiness data for the page's nodes so we can attach a
-	// summary to each row without N+1 queries. Index by node_snapshot_id
-	// for O(1) lookup. We query by (organisation_id, node_name) rather
-	// than by snapshot ID because the readiness record's snapshot ID may
-	// be stale if the evaluator ran against an earlier snapshot.
-	readinessBySnapshotID := make(map[string][]nodeReadinessSummaryEntry)
-	for _, n := range nodes {
-		recs, err := r.db.ListNodeReadinessByNodeName(req.Context(), n.OrganisationID, n.NodeName)
-		if err != nil {
-			continue // non-fatal — readiness just won't be shown
-		}
-		for _, rec := range recs {
-			readinessBySnapshotID[n.ID] = append(readinessBySnapshotID[n.ID], nodeReadinessSummaryEntry{
-				TargetChefVersion:      rec.TargetChefVersion,
-				IsReady:                rec.IsReady,
-				AllCookbooksCompatible: rec.AllCookbooksCompatible,
-				SufficientDiskSpace:    rec.SufficientDiskSpace,
-				BlockingCookbookCount:  countBlockingCookbooks(rec.BlockingCookbooks),
-				StaleData:              rec.StaleData,
-			})
-		}
-	}
+	// Bulk-load readiness data for the page's nodes (1 query per org
+	// instead of 1 per node). Index by node_name for O(1) lookup.
+	readinessByNodeName := bulkLoadReadiness(req.Context(), r.db, nodes, r)
 
 	result := make([]nodeResp, 0, len(nodes))
 	for _, n := range nodes {
@@ -138,7 +119,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 			IsStale:          n.IsStale,
 			OhaiTime:         n.OhaiTime,
 			CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
-			Readiness:        readinessBySnapshotID[n.ID],
+			Readiness:        readinessByNodeName[n.NodeName],
 		})
 	}
 
@@ -219,25 +200,9 @@ func (r *Router) handleNodesWithOwnerFilter(
 	// Paginate the ownership-filtered results.
 	pageNodes, total := PaginateSlice(allNodes, pg)
 
-	// Pre-load readiness data for the page. Query by (organisation_id,
-	// node_name) rather than snapshot ID — see comment in handleNodes.
-	readinessBySnapshotID := make(map[string][]nodeReadinessSummaryEntry)
-	for _, n := range pageNodes {
-		recs, err := r.db.ListNodeReadinessByNodeName(ctx, n.OrganisationID, n.NodeName)
-		if err != nil {
-			continue
-		}
-		for _, rec := range recs {
-			readinessBySnapshotID[n.ID] = append(readinessBySnapshotID[n.ID], nodeReadinessSummaryEntry{
-				TargetChefVersion:      rec.TargetChefVersion,
-				IsReady:                rec.IsReady,
-				AllCookbooksCompatible: rec.AllCookbooksCompatible,
-				SufficientDiskSpace:    rec.SufficientDiskSpace,
-				BlockingCookbookCount:  countBlockingCookbooks(rec.BlockingCookbooks),
-				StaleData:              rec.StaleData,
-			})
-		}
-	}
+	// Bulk-load readiness data for the page (1 query per org instead of
+	// 1 per node) — see bulkLoadReadiness.
+	readinessByNodeName := bulkLoadReadiness(ctx, r.db, pageNodes, r)
 
 	result := make([]nodeResp, 0, len(pageNodes))
 	for _, n := range pageNodes {
@@ -256,7 +221,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 			IsStale:          n.IsStale,
 			OhaiTime:         n.OhaiTime,
 			CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
-			Readiness:        readinessBySnapshotID[n.ID],
+			Readiness:        readinessByNodeName[n.NodeName],
 		})
 	}
 
@@ -602,6 +567,40 @@ func applyOwnerFilter(ctx context.Context, r *Router, nodes []datastore.NodeSnap
 		}
 	}
 	return filtered
+}
+
+// bulkLoadReadiness loads readiness data for a slice of node snapshots using
+// one bulk query per organisation instead of one query per node (N+1). It
+// returns a map keyed by node_name containing the summary entries ready to
+// attach to nodeResp rows.
+func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.NodeSnapshot, r *Router) map[string][]nodeReadinessSummaryEntry {
+	// Group node names by organisation ID.
+	namesByOrg := make(map[string][]string)
+	for _, n := range nodes {
+		namesByOrg[n.OrganisationID] = append(namesByOrg[n.OrganisationID], n.NodeName)
+	}
+
+	result := make(map[string][]nodeReadinessSummaryEntry, len(nodes))
+	for orgID, names := range namesByOrg {
+		bulk, err := db.BulkListNodeReadinessByNodeNames(ctx, orgID, names)
+		if err != nil {
+			r.logf("WARN", "bulk loading readiness for org %s: %v", orgID, err)
+			continue // non-fatal — readiness just won't be shown
+		}
+		for nodeName, recs := range bulk {
+			for _, rec := range recs {
+				result[nodeName] = append(result[nodeName], nodeReadinessSummaryEntry{
+					TargetChefVersion:      rec.TargetChefVersion,
+					IsReady:                rec.IsReady,
+					AllCookbooksCompatible: rec.AllCookbooksCompatible,
+					SufficientDiskSpace:    rec.SufficientDiskSpace,
+					BlockingCookbookCount:  countBlockingCookbooks(rec.BlockingCookbooks),
+					StaleData:              rec.StaleData,
+				})
+			}
+		}
+	}
+	return result
 }
 
 // nodeUsesCookbook checks whether a node snapshot's Cookbooks JSON contains

@@ -282,19 +282,13 @@ func minSeverityValues(minSev string) []string {
 	return all[ord:]
 }
 
-// ListLogEntries retrieves log entries matching the given filter, ordered by
-// timestamp descending (newest first).
-func (db *DB) ListLogEntries(ctx context.Context, f LogEntryFilter) ([]LogEntry, error) {
-	query := `
-		SELECT id, timestamp, severity, scope, message,
-		       organisation, cookbook_name, cookbook_version,
-		       commit_sha, chef_client_version, process_output,
-		       collection_run_id, notification_channel, export_job_id,
-		       tls_domain, created_at
-		FROM log_entries
-		WHERE 1=1
-	`
-	args := []interface{}{}
+// buildLogEntryFilterWhere returns the WHERE clause (starting with
+// " WHERE 1=1") and positional args for a LogEntryFilter. It is the
+// single source of truth for log entry filtering, used by both
+// ListLogEntries and CountLogEntries.
+func buildLogEntryFilterWhere(f LogEntryFilter) (where string, args []interface{}) {
+	where = " WHERE 1=1"
+	args = []interface{}{}
 	argN := 0
 
 	nextArg := func() string {
@@ -303,41 +297,63 @@ func (db *DB) ListLogEntries(ctx context.Context, f LogEntryFilter) ([]LogEntry,
 	}
 
 	if f.Scope != "" {
-		query += " AND scope = " + nextArg()
+		where += " AND scope = " + nextArg()
 		args = append(args, f.Scope)
 	}
 	if f.Severity != "" {
-		query += " AND severity = " + nextArg()
+		where += " AND severity = " + nextArg()
 		args = append(args, f.Severity)
 	} else if f.MinSeverity != "" {
 		values := minSeverityValues(f.MinSeverity)
 		if len(values) > 0 {
-			query += " AND severity = ANY(" + nextArg() + ")"
+			where += " AND severity = ANY(" + nextArg() + ")"
 			args = append(args, stringSliceToArray(values))
 		}
 	}
 	if f.Organisation != "" {
-		query += " AND organisation = " + nextArg()
+		where += " AND organisation = " + nextArg()
 		args = append(args, f.Organisation)
 	}
 	if f.CookbookName != "" {
-		query += " AND cookbook_name = " + nextArg()
+		where += " AND cookbook_name = " + nextArg()
 		args = append(args, f.CookbookName)
 	}
 	if f.CollectionRunID != "" {
-		query += " AND collection_run_id = " + nextArg()
+		where += " AND collection_run_id = " + nextArg()
 		args = append(args, f.CollectionRunID)
 	}
 	if !f.Since.IsZero() {
-		query += " AND timestamp >= " + nextArg()
+		where += " AND timestamp >= " + nextArg()
 		args = append(args, f.Since)
 	}
 	if !f.Until.IsZero() {
-		query += " AND timestamp < " + nextArg()
+		where += " AND timestamp < " + nextArg()
 		args = append(args, f.Until)
 	}
 
-	query += " ORDER BY timestamp DESC"
+	return where, args
+}
+
+// ListLogEntries retrieves log entries matching the given filter, ordered by
+// timestamp descending (newest first).
+func (db *DB) ListLogEntries(ctx context.Context, f LogEntryFilter) ([]LogEntry, error) {
+	where, args := buildLogEntryFilterWhere(f)
+
+	query := `
+		SELECT id, timestamp, severity, scope, message,
+		       organisation, cookbook_name, cookbook_version,
+		       commit_sha, chef_client_version, process_output,
+		       collection_run_id, notification_channel, export_job_id,
+		       tls_domain, created_at
+		FROM log_entries` + where + " ORDER BY timestamp DESC"
+
+	// Pagination — argument numbering continues from where
+	// buildLogEntryFilterWhere left off.
+	argN := len(args)
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
+	}
 
 	if f.Limit > 0 {
 		query += " LIMIT " + nextArg()
@@ -371,49 +387,8 @@ func (db *DB) ListLogEntries(ctx context.Context, f LogEntryFilter) ([]LogEntry,
 // CountLogEntries returns the total number of log entries matching the given
 // filter (ignoring Limit and Offset).
 func (db *DB) CountLogEntries(ctx context.Context, f LogEntryFilter) (int, error) {
-	query := `SELECT COUNT(*) FROM log_entries WHERE 1=1`
-	args := []interface{}{}
-	argN := 0
-
-	nextArg := func() string {
-		argN++
-		return fmt.Sprintf("$%d", argN)
-	}
-
-	if f.Scope != "" {
-		query += " AND scope = " + nextArg()
-		args = append(args, f.Scope)
-	}
-	if f.Severity != "" {
-		query += " AND severity = " + nextArg()
-		args = append(args, f.Severity)
-	} else if f.MinSeverity != "" {
-		values := minSeverityValues(f.MinSeverity)
-		if len(values) > 0 {
-			query += " AND severity = ANY(" + nextArg() + ")"
-			args = append(args, stringSliceToArray(values))
-		}
-	}
-	if f.Organisation != "" {
-		query += " AND organisation = " + nextArg()
-		args = append(args, f.Organisation)
-	}
-	if f.CookbookName != "" {
-		query += " AND cookbook_name = " + nextArg()
-		args = append(args, f.CookbookName)
-	}
-	if f.CollectionRunID != "" {
-		query += " AND collection_run_id = " + nextArg()
-		args = append(args, f.CollectionRunID)
-	}
-	if !f.Since.IsZero() {
-		query += " AND timestamp >= " + nextArg()
-		args = append(args, f.Since)
-	}
-	if !f.Until.IsZero() {
-		query += " AND timestamp < " + nextArg()
-		args = append(args, f.Until)
-	}
+	where, args := buildLogEntryFilterWhere(f)
+	query := `SELECT COUNT(*) FROM log_entries` + where
 
 	var count int
 	if err := db.q().QueryRowContext(ctx, query, args...).Scan(&count); err != nil {

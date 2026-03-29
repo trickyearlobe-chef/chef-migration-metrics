@@ -44,6 +44,15 @@ type DataStore interface {
 	// by started_at descending. If limit > 0 at most limit rows are returned.
 	ListCollectionRuns(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
 
+	// ListCollectionRunsFiltered returns collection runs across all
+	// organisations matching the given filter, joined with org name,
+	// ordered by started_at descending.
+	ListCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error)
+
+	// CountCollectionRunsFiltered returns the total number of collection
+	// runs matching the given filter (ignoring Limit and Offset).
+	CountCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
+
 	// -----------------------------------------------------------------
 	// Node snapshots
 	// -----------------------------------------------------------------
@@ -107,6 +116,11 @@ type DataStore interface {
 	// the given node within the specified organisation. Queries by
 	// (organisation_id, node_name) rather than node_snapshot_id.
 	ListNodeReadinessByNodeName(ctx context.Context, organisationID, nodeName string) ([]datastore.NodeReadiness, error)
+
+	// BulkListNodeReadinessByNodeNames returns the latest readiness records
+	// for multiple nodes within the specified organisation in a single query.
+	// Results are returned as a map keyed by node_name.
+	BulkListNodeReadinessByNodeNames(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error)
 
 	// CountNodeReadiness returns the total, ready, and blocked counts for
 	// the given organisation and target Chef version.
