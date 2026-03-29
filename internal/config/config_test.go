@@ -185,8 +185,11 @@ func TestDefaults_AnalysisTools(t *testing.T) {
 	if cfg.AnalysisTools.CookstyleTimeoutMinutes != 10 {
 		t.Errorf("expected cookstyle_timeout_minutes 10, got %d", cfg.AnalysisTools.CookstyleTimeoutMinutes)
 	}
-	if cfg.AnalysisTools.TestKitchenTimeoutMinutes != 30 {
-		t.Errorf("expected test_kitchen_timeout_minutes 30, got %d", cfg.AnalysisTools.TestKitchenTimeoutMinutes)
+	if cfg.AnalysisTools.TestKitchen.TimeoutMinutes != 30 {
+		t.Errorf("expected test_kitchen.timeout_minutes 30, got %d", cfg.AnalysisTools.TestKitchen.TimeoutMinutes)
+	}
+	if cfg.AnalysisTools.TestKitchen.Driver != "dokken" {
+		t.Errorf("expected test_kitchen.driver dokken, got %q", cfg.AnalysisTools.TestKitchen.Driver)
 	}
 }
 
@@ -2073,7 +2076,171 @@ organisations:
 analysis_tools:
   test_kitchen_timeout_minutes: -1
 `
-	expectParseError(t, yaml, "test_kitchen_timeout_minutes must be >= 1")
+	expectParseError(t, yaml, "test_kitchen_timeout_minutes must be >= 0")
+}
+
+func TestDefaults_TestKitchenDriver(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if cfg.AnalysisTools.TestKitchen.Driver != "dokken" {
+		t.Errorf("expected default driver dokken, got %q", cfg.AnalysisTools.TestKitchen.Driver)
+	}
+	if cfg.AnalysisTools.TestKitchen.EffectiveDriver() != "dokken" {
+		t.Errorf("expected effective driver dokken, got %q", cfg.AnalysisTools.TestKitchen.EffectiveDriver())
+	}
+}
+
+func TestTestKitchenConfig_EffectiveTimeoutMinutes(t *testing.T) {
+	tk := TestKitchenConfig{}
+	if tk.EffectiveTimeoutMinutes() != 30 {
+		t.Errorf("expected default timeout 30, got %d", tk.EffectiveTimeoutMinutes())
+	}
+	tk.TimeoutMinutes = 60
+	if tk.EffectiveTimeoutMinutes() != 60 {
+		t.Errorf("expected timeout 60, got %d", tk.EffectiveTimeoutMinutes())
+	}
+}
+
+func TestTestKitchenConfig_EffectiveDriver(t *testing.T) {
+	tk := TestKitchenConfig{}
+	if tk.EffectiveDriver() != "dokken" {
+		t.Errorf("expected default driver dokken, got %q", tk.EffectiveDriver())
+	}
+	tk.Driver = "vcenter"
+	if tk.EffectiveDriver() != "vcenter" {
+		t.Errorf("expected driver vcenter, got %q", tk.EffectiveDriver())
+	}
+}
+
+func TestTestKitchenBackwardCompat_TimeoutMigration(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen_timeout_minutes: 45
+`
+	cfg, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AnalysisTools.TestKitchen.TimeoutMinutes != 45 {
+		t.Errorf("expected nested timeout 45, got %d", cfg.AnalysisTools.TestKitchen.TimeoutMinutes)
+	}
+	found := false
+	for _, w := range warnings.Messages {
+		if strings.Contains(w, "deprecated") && strings.Contains(w, "test_kitchen_timeout_minutes") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected deprecation warning for test_kitchen_timeout_minutes")
+	}
+}
+
+func TestTestKitchenBackwardCompat_NestedTakesPrecedence(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen_timeout_minutes: 45
+  test_kitchen:
+    timeout_minutes: 60
+`
+	cfg := mustParse(t, yaml)
+	if cfg.AnalysisTools.TestKitchen.TimeoutMinutes != 60 {
+		t.Errorf("expected nested timeout 60 to take precedence, got %d", cfg.AnalysisTools.TestKitchen.TimeoutMinutes)
+	}
+}
+
+func TestValidation_CustomDriverRequiresImageFieldName(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  test_kitchen:
+    driver: custom
+`
+	expectParseError(t, yaml, "image_field_name is required when driver is \"custom\"")
+}
+
+func TestValidation_PlatformMapKitchenNameRequired(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  test_kitchen:
+    driver: vcenter
+    platform_map:
+      - kitchen_name: ""
+        image: tmpl-ubuntu
+`
+	expectParseError(t, yaml, "kitchen_name is required")
+}
+
+func TestValidation_VCenterDriverConfig(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: vcenter
+    driver_settings:
+      vcenter_host: vcenter.example.com
+    driver_secrets:
+      vcenter_password: vcenter-cred
+    platform_map:
+      - kitchen_name: ubuntu-22.04
+        image: tmpl-ubuntu-2204
+`
+	cfg := mustParse(t, yaml)
+	if cfg.AnalysisTools.TestKitchen.Driver != "vcenter" {
+		t.Errorf("expected driver vcenter, got %q", cfg.AnalysisTools.TestKitchen.Driver)
+	}
+	if cfg.AnalysisTools.TestKitchen.DriverSettings["vcenter_host"] != "vcenter.example.com" {
+		t.Error("expected vcenter_host in driver_settings")
+	}
+	if cfg.AnalysisTools.TestKitchen.DriverSecrets["vcenter_password"] != "vcenter-cred" {
+		t.Error("expected vcenter_password in driver_secrets")
+	}
+	if len(cfg.AnalysisTools.TestKitchen.PlatformMap) != 1 {
+		t.Fatalf("expected 1 platform map entry, got %d", len(cfg.AnalysisTools.TestKitchen.PlatformMap))
+	}
+	entry := cfg.AnalysisTools.TestKitchen.PlatformMap[0]
+	if entry.KitchenName != "ubuntu-22.04" {
+		t.Errorf("expected kitchen_name ubuntu-22.04, got %q", entry.KitchenName)
+	}
+	if entry.Image != "tmpl-ubuntu-2204" {
+		t.Errorf("expected image tmpl-ubuntu-2204, got %q", entry.Image)
+	}
+}
+
+func TestValidation_PlatformMapWithTransport(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: vcenter
+    platform_map:
+      - kitchen_name: ubuntu-22.04
+        image: tmpl-ubuntu-2204
+        transport:
+          username: kitchen
+          password_credential: kitchen-vm-password
+`
+	cfg := mustParse(t, yaml)
+	entry := cfg.AnalysisTools.TestKitchen.PlatformMap[0]
+	if entry.Transport == nil {
+		t.Fatal("expected transport to be set")
+	}
+	if entry.Transport.Username != "kitchen" {
+		t.Errorf("expected username kitchen, got %q", entry.Transport.Username)
+	}
+	if entry.Transport.PasswordCredential != "kitchen-vm-password" {
+		t.Errorf("expected password_credential, got %q", entry.Transport.PasswordCredential)
+	}
 }
 
 func TestValidation_AnalysisToolsEmbeddedBinDirWarning(t *testing.T) {
@@ -2235,7 +2402,8 @@ concurrency:
 analysis_tools:
   embedded_bin_dir: ` + dir + `
   cookstyle_timeout_minutes: 5
-  test_kitchen_timeout_minutes: 15
+  test_kitchen:
+    timeout_minutes: 15
 
 readiness:
   min_free_disk_mb: 4096

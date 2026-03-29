@@ -622,30 +622,29 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	buf.WriteString("# DO NOT EDIT — this file is overwritten on each test run\n")
 
 	hasContent := false
+	driver := s.effectiveDriver(detectedDriver)
+	profile := LookupProfile(s.tkConfig.Driver, s.tkConfig.ImageFieldName)
 
-	// --- Driver override ---
-	if s.tkConfig.DriverOverride != "" {
+	// --- Driver block (non-dokken only) ---
+	if !IsDokken(s.tkConfig.Driver) {
 		buf.WriteString("\ndriver:\n")
-		fmt.Fprintf(&buf, "  name: %s\n", s.tkConfig.DriverOverride)
-		// Merge driver_config entries.
-		for k, v := range s.tkConfig.DriverConfig {
+		fmt.Fprintf(&buf, "  name: %s\n", s.tkConfig.Driver)
+		// Plaintext driver settings.
+		for k, v := range s.tkConfig.DriverSettings {
 			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlScalar(v))
 		}
-		hasContent = true
-	} else if len(s.tkConfig.DriverConfig) > 0 {
-		// No driver name override but there is driver config to merge.
-		buf.WriteString("\ndriver:\n")
-		for k, v := range s.tkConfig.DriverConfig {
-			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlScalar(v))
+		// Secret driver settings — referenced via ERB env vars.
+		for k := range s.tkConfig.DriverSecrets {
+			envName := driverSecretEnvVar(k)
+			fmt.Fprintf(&buf, "  %s: <%%= ENV['%s'] %%>\n", k, envName)
 		}
 		hasContent = true
 	}
 
 	// --- Provisioner override (target Chef version) ---
 	if targetVersion != "" {
-		effectiveDriver := s.effectiveDriver(detectedDriver)
 		buf.WriteString("\nprovisioner:\n")
-		if effectiveDriver == "dokken" {
+		if driver == "dokken" {
 			fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
 		} else {
 			fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
@@ -653,31 +652,33 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 		hasContent = true
 	}
 
-	// --- Platform overrides ---
-	if len(s.tkConfig.PlatformOverrides) > 0 {
+	// --- Platform map (non-dokken only) ---
+	if !IsDokken(s.tkConfig.Driver) && len(s.tkConfig.PlatformMap) > 0 {
 		buf.WriteString("\nplatforms:\n")
-		for _, p := range s.tkConfig.PlatformOverrides {
-			fmt.Fprintf(&buf, "  - name: %s\n", p.Name)
-			if len(p.Driver) > 0 {
-				buf.WriteString("    driver:\n")
-				for k, v := range p.Driver {
-					fmt.Fprintf(&buf, "      %s: %s\n", k, yamlScalar(v))
+		for _, entry := range s.tkConfig.PlatformMap {
+			fmt.Fprintf(&buf, "  - name: %s\n", entry.KitchenName)
+			buf.WriteString("    driver:\n")
+			// Image field mapped through the profile.
+			fmt.Fprintf(&buf, "      %s: %s\n", profile.ImageFieldName, yamlScalar(entry.Image))
+			// Per-platform driver settings merged on top of top-level.
+			for k, v := range entry.DriverSettings {
+				fmt.Fprintf(&buf, "      %s: %s\n", k, yamlScalar(v))
+			}
+			// Transport block.
+			if entry.Transport != nil {
+				buf.WriteString("    transport:\n")
+				if entry.Transport.Username != "" {
+					fmt.Fprintf(&buf, "      username: %s\n", yamlScalar(entry.Transport.Username))
+				}
+				if entry.Transport.PasswordCredential != "" {
+					envName := transportPasswordEnvVar(entry.KitchenName)
+					fmt.Fprintf(&buf, "      password: <%%= ENV['%s'] %%>\n", envName)
+				}
+				if entry.Transport.SSHKeyCredential != "" {
+					envName := transportKeyEnvVar(entry.KitchenName)
+					fmt.Fprintf(&buf, "      ssh_key: <%%= ENV['%s'] %%>\n", envName)
 				}
 			}
-			if len(p.Attributes) > 0 {
-				buf.WriteString("    attributes:\n")
-				writeAttributes(&buf, p.Attributes, 6)
-			}
-		}
-		hasContent = true
-	}
-
-	// --- Extra YAML (escape hatch) ---
-	if s.tkConfig.ExtraYAML != "" {
-		buf.WriteString("\n")
-		buf.WriteString(s.tkConfig.ExtraYAML)
-		if !strings.HasSuffix(s.tkConfig.ExtraYAML, "\n") {
-			buf.WriteString("\n")
 		}
 		hasContent = true
 	}
@@ -689,30 +690,63 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 }
 
 // effectiveDriver returns the driver that will actually be used, considering
-// the override. If no override is set, falls back to what was detected in
-// the cookbook's .kitchen.yml.
+// the config. If the config specifies a driver, that is used. Otherwise
+// falls back to what was detected in the cookbook's .kitchen.yml, then to
+// "dokken" as the default.
 func (s *KitchenScanner) effectiveDriver(detectedDriver string) string {
-	if s.tkConfig.DriverOverride != "" {
-		return s.tkConfig.DriverOverride
+	if s.tkConfig.Driver != "" {
+		return s.tkConfig.Driver
 	}
 	if detectedDriver != "" {
 		return detectedDriver
 	}
-	return "unknown"
+	return "dokken"
 }
 
 // effectivePlatformSummary returns a short human-readable summary of the
-// platforms being tested. If overrides are set, lists their names;
-// otherwise returns "cookbook-defined".
+// platforms being tested. If a platform map is configured, lists the
+// mapped kitchen names; otherwise returns "cookbook-defined".
 func (s *KitchenScanner) effectivePlatformSummary() string {
-	if len(s.tkConfig.PlatformOverrides) == 0 {
+	if len(s.tkConfig.PlatformMap) == 0 {
 		return "cookbook-defined"
 	}
-	names := make([]string, 0, len(s.tkConfig.PlatformOverrides))
-	for _, p := range s.tkConfig.PlatformOverrides {
-		names = append(names, p.Name)
+	names := make([]string, 0, len(s.tkConfig.PlatformMap))
+	for _, entry := range s.tkConfig.PlatformMap {
+		names = append(names, entry.KitchenName)
 	}
 	return strings.Join(names, ", ")
+}
+
+// ---------------------------------------------------------------------------
+// Credential environment variable naming
+// ---------------------------------------------------------------------------
+
+// driverSecretEnvVar returns the environment variable name for a driver
+// secret key. The key is uppercased with hyphens replaced by underscores,
+// prefixed with CMM_TK_SECRET_.
+func driverSecretEnvVar(key string) string {
+	return "CMM_TK_SECRET_" + normalizeEnvVarSuffix(key)
+}
+
+// transportPasswordEnvVar returns the environment variable name for a
+// platform's transport password. The platform name is normalised.
+func transportPasswordEnvVar(kitchenName string) string {
+	return "CMM_TK_TRANSPORT_" + normalizeEnvVarSuffix(kitchenName)
+}
+
+// transportKeyEnvVar returns the environment variable name for a
+// platform's SSH key. The platform name is normalised.
+func transportKeyEnvVar(kitchenName string) string {
+	return "CMM_TK_KEY_" + normalizeEnvVarSuffix(kitchenName)
+}
+
+// normalizeEnvVarSuffix uppercases and replaces hyphens and dots with
+// underscores for use in environment variable names.
+func normalizeEnvVarSuffix(s string) string {
+	s = strings.ToUpper(s)
+	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.ReplaceAll(s, ".", "_")
+	return s
 }
 
 // ---------------------------------------------------------------------------

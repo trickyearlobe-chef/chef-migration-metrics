@@ -156,6 +156,15 @@ type AnalysisToolsConfig struct {
 	TestKitchen               TestKitchenConfig `yaml:"test_kitchen"`
 }
 
+// resolveTestKitchenBackwardCompat emits a deprecation warning if the
+// legacy test_kitchen_timeout_minutes field was used. The actual value
+// migration happens in setDefaults (before nested defaults are applied).
+func (a *AnalysisToolsConfig) resolveTestKitchenBackwardCompat(w *Warnings) {
+	if a.TestKitchenTimeoutMinutes > 0 {
+		w.add("analysis_tools.test_kitchen_timeout_minutes is deprecated; use analysis_tools.test_kitchen.timeout_minutes instead")
+	}
+}
+
 // IsCookstyleEnabled returns true if CookStyle scanning is enabled in the
 // configuration. Defaults to true when the field is omitted.
 func (a *AnalysisToolsConfig) IsCookstyleEnabled() bool {
@@ -165,85 +174,89 @@ func (a *AnalysisToolsConfig) IsCookstyleEnabled() bool {
 	return *a.CookstyleEnabled
 }
 
-// TestKitchenConfig controls driver and platform overrides for Test Kitchen
-// runs. These allow the operator to force a specific virtualisation /
-// containerisation provider and to test cookbooks against the actual
-// platforms that consume them rather than whatever the cookbook author chose.
+// TestKitchenConfig controls the pluggable driver architecture for Test
+// Kitchen runs. It replaces the hardcoded Docker/dokken assumption with
+// opaque settings bags that work for any driver (vcenter, vra, ec2, etc.).
+// See test-kitchen-drivers.md for the full specification.
 type TestKitchenConfig struct {
 	// Enabled controls whether Test Kitchen testing is active. When set to
-	// false, Test Kitchen is disabled even if the kitchen and docker binaries
-	// are available. When omitted or set to true (the default), Test Kitchen
-	// is enabled automatically if both kitchen and docker are detected at
-	// startup.
-	//
-	// Use this to turn off Test Kitchen without removing docker or kitchen
-	// from the system:
-	//
-	//   analysis_tools:
-	//     test_kitchen:
-	//       enabled: false
+	// false, Test Kitchen is disabled even if the kitchen binary is
+	// available. When omitted or set to true (the default), Test Kitchen
+	// is enabled automatically if the kitchen binary is detected at startup
+	// (and Docker is available for dokken).
 	Enabled *bool `yaml:"enabled"`
 
-	// DriverOverride forces every Test Kitchen run to use the named driver
-	// (e.g. "dokken", "vagrant", "ec2", "azurerm") regardless of what the
-	// cookbook's .kitchen.yml specifies. When empty the cookbook's own
-	// driver setting is left intact.
-	DriverOverride string `yaml:"driver_override"`
+	// TimeoutMinutes is the maximum wall-clock time for a single Test
+	// Kitchen converge or verify step. Defaults to 30.
+	TimeoutMinutes int `yaml:"timeout_minutes"`
 
-	// DriverConfig is an arbitrary map of key-value pairs merged into the
-	// driver section of the generated .kitchen.local.yml. Useful for
-	// setting driver-specific options like privileged mode, network, or
-	// instance type. Keys must be valid YAML scalars. Example:
-	//   driver_config:
-	//     privileged: "true"
-	//     instance_type: t3.medium
-	DriverConfig map[string]string `yaml:"driver_config"`
+	// Driver selects the Test Kitchen driver profile. Built-in profiles:
+	// dokken, vcenter, vra, ec2, azurerm, google, vagrant, openstack.
+	// Use "custom" for any driver gem not in the built-in list.
+	// Defaults to "dokken".
+	Driver string `yaml:"driver"`
 
-	// PlatformOverrides replaces the platforms list in the generated
-	// .kitchen.local.yml so cookbooks are tested against the actual OS
-	// images consumed in production rather than the cookbook's defaults.
-	// Each entry maps directly to a Test Kitchen platform definition.
-	// When this list is non-empty, the cookbook's own platform list is
-	// completely replaced.
-	//
-	// Example:
-	//   platform_overrides:
-	//     - name: ubuntu-22.04
-	//       driver:
-	//         image: dokken/ubuntu-22.04
-	//     - name: centos-8
-	//       driver:
-	//         image: dokken/centos-8
-	PlatformOverrides []TestKitchenPlatform `yaml:"platform_overrides"`
+	// DriverSettings contains plaintext driver connection settings as
+	// key-value pairs. Keys are driver-specific (e.g. vcenter_host,
+	// region). These are serialised into the top-level driver: block of
+	// the generated .kitchen.local.yml overlay.
+	DriverSettings map[string]string `yaml:"driver_settings"`
 
-	// ExtraYAML is a raw YAML block merged verbatim into every generated
-	// .kitchen.local.yml after the driver, provisioner, and platform
-	// overrides. This is the escape hatch for anything not covered by the
-	// structured fields above — transport settings, verifier overrides,
-	// lifecycle hooks, etc.
-	//
-	// Example:
-	//   extra_yaml: |
-	//     transport:
-	//       name: ssh
-	//     verifier:
-	//       name: inspec
-	ExtraYAML string `yaml:"extra_yaml"`
+	// DriverSecrets maps driver setting names to credential names from
+	// the credentials table. At runtime each secret is resolved via the
+	// credential resolver and injected as CMM_TK_SECRET_<UPPER_KEY>
+	// environment variables. The overlay references them via ERB.
+	DriverSecrets map[string]string `yaml:"driver_secrets"`
+
+	// ImageFieldName is the YAML key used for the image identifier in
+	// platform map entries. Built-in profiles set this automatically
+	// (e.g. "template" for vcenter, "ami" for ec2). Required only for
+	// the "custom" profile.
+	ImageFieldName string `yaml:"image_field_name"`
+
+	// PlatformMap translates kitchen platform names to driver-specific
+	// image identifiers. Each entry maps a kitchen_name to an image and
+	// optional per-platform driver settings and transport credentials.
+	// For dokken with an empty platform map, all platforms pass through
+	// unchanged (backward compatible).
+	PlatformMap []PlatformMapEntry `yaml:"platform_map"`
 }
 
-// TestKitchenPlatform describes a single platform entry for the
-// .kitchen.local.yml override. It mirrors Test Kitchen's own platform
-// schema so the operator can specify exactly which OS images to test.
-type TestKitchenPlatform struct {
-	// Name is the Test Kitchen platform name (e.g. "ubuntu-22.04").
-	Name string `yaml:"name"`
+// PlatformMapEntry maps a single kitchen platform name to a driver-specific
+// image identifier and optional per-platform settings.
+type PlatformMapEntry struct {
+	// KitchenName is the platform name as it appears in the cookbook's
+	// .kitchen.yml (e.g. "ubuntu-22.04", "centos-7", "windows-2022").
+	KitchenName string `yaml:"kitchen_name"`
 
-	// Driver contains driver-specific platform settings (e.g. image name,
-	// box URL). The map is written as-is under the platform's driver key.
-	Driver map[string]string `yaml:"driver"`
+	// Image is the driver-specific image identifier (e.g. vSphere
+	// template name, AMI ID, Docker image). The built-in profile
+	// determines which driver key it maps to.
+	Image string `yaml:"image"`
 
-	// Attributes contains platform-level default attributes. Optional.
-	Attributes map[string]interface{} `yaml:"attributes"`
+	// DriverSettings contains per-platform driver settings (datacenter,
+	// cluster, resource pool, subnet, etc.). Merged on top of the
+	// top-level DriverSettings.
+	DriverSettings map[string]string `yaml:"driver_settings"`
+
+	// Transport contains optional transport override for connecting to
+	// provisioned instances (SSH/WinRM credentials).
+	Transport *PlatformMapTransport `yaml:"transport"`
+}
+
+// PlatformMapTransport holds transport credentials for a platform map
+// entry. Credentials are resolved at runtime from the credentials table.
+type PlatformMapTransport struct {
+	// Username is the SSH/WinRM username for connecting to the instance.
+	Username string `yaml:"username"`
+
+	// PasswordCredential is the credential name for the SSH/WinRM password.
+	// Resolved at runtime and injected as CMM_TK_TRANSPORT_<NORMALIZED_PLATFORM>.
+	PasswordCredential string `yaml:"password_credential"`
+
+	// SSHKeyCredential is the credential name for the SSH private key (PEM).
+	// Resolved at runtime and injected as CMM_TK_KEY_<NORMALIZED_PLATFORM>.
+	SSHKeyCredential string `yaml:"ssh_key_credential"`
 }
 
 // IsEnabled returns true if Test Kitchen testing is enabled in the
@@ -253,6 +266,22 @@ func (tk *TestKitchenConfig) IsEnabled() bool {
 		return true
 	}
 	return *tk.Enabled
+}
+
+// EffectiveDriver returns the configured driver, defaulting to "dokken".
+func (tk *TestKitchenConfig) EffectiveDriver() string {
+	if tk.Driver == "" {
+		return "dokken"
+	}
+	return tk.Driver
+}
+
+// EffectiveTimeoutMinutes returns the configured timeout, defaulting to 30.
+func (tk *TestKitchenConfig) EffectiveTimeoutMinutes() int {
+	if tk.TimeoutMinutes <= 0 {
+		return 30
+	}
+	return tk.TimeoutMinutes
 }
 
 // ---------------------------------------------------------------------------
@@ -626,8 +655,19 @@ func (c *Config) setDefaults() {
 	if c.AnalysisTools.CookstyleTimeoutMinutes == 0 {
 		c.AnalysisTools.CookstyleTimeoutMinutes = 10
 	}
-	if c.AnalysisTools.TestKitchenTimeoutMinutes == 0 {
-		c.AnalysisTools.TestKitchenTimeoutMinutes = 30
+	// Backward compat: migrate deprecated test_kitchen_timeout_minutes
+	// into the nested field BEFORE applying defaults, so the legacy value
+	// is preserved when the nested field was not explicitly set.
+	if c.AnalysisTools.TestKitchenTimeoutMinutes > 0 && c.AnalysisTools.TestKitchen.TimeoutMinutes == 0 {
+		c.AnalysisTools.TestKitchen.TimeoutMinutes = c.AnalysisTools.TestKitchenTimeoutMinutes
+	}
+
+	// Test Kitchen nested defaults.
+	if c.AnalysisTools.TestKitchen.Driver == "" {
+		c.AnalysisTools.TestKitchen.Driver = "dokken"
+	}
+	if c.AnalysisTools.TestKitchen.TimeoutMinutes == 0 {
+		c.AnalysisTools.TestKitchen.TimeoutMinutes = 30
 	}
 	if c.AnalysisTools.CookstyleEnabled == nil {
 		t := true
@@ -1092,31 +1132,56 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	if c.AnalysisTools.CookstyleTimeoutMinutes < 1 {
 		ve.add("analysis_tools.cookstyle_timeout_minutes must be >= 1")
 	}
-	if c.AnalysisTools.TestKitchenTimeoutMinutes < 1 {
-		ve.add("analysis_tools.test_kitchen_timeout_minutes must be >= 1")
+
+	// Backward compat: migrate deprecated test_kitchen_timeout_minutes.
+	c.AnalysisTools.resolveTestKitchenBackwardCompat(w)
+
+	if c.AnalysisTools.TestKitchenTimeoutMinutes < 0 {
+		ve.add("analysis_tools.test_kitchen_timeout_minutes must be >= 0")
 	}
+
 	if c.AnalysisTools.EmbeddedBinDir != "" {
 		if info, err := os.Stat(c.AnalysisTools.EmbeddedBinDir); err != nil || !info.IsDir() {
 			w.addf("analysis_tools.embedded_bin_dir %q does not exist or is not a directory; falling back to PATH lookup", c.AnalysisTools.EmbeddedBinDir)
 		}
 	}
 
-	// Validate Test Kitchen overrides.
+	// Validate Test Kitchen driver configuration.
 	tk := c.AnalysisTools.TestKitchen
-	if tk.DriverOverride != "" {
-		validDrivers := map[string]bool{
-			"dokken": true, "vagrant": true, "ec2": true,
-			"azurerm": true, "gce": true, "hyperv": true,
-			"docker": true, "digitalocean": true, "openstack": true,
+
+	if tk.TimeoutMinutes < 0 {
+		ve.add("analysis_tools.test_kitchen.timeout_minutes must be >= 0")
+	}
+
+	// Driver profile validation.
+	driver := tk.EffectiveDriver()
+	knownDrivers := map[string]bool{
+		"dokken": true, "vcenter": true, "vra": true, "ec2": true,
+		"azurerm": true, "google": true, "vagrant": true, "openstack": true,
+		"custom": true,
+	}
+	if !knownDrivers[driver] {
+		w.addf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile; proceeding as custom", driver)
+	}
+
+	// Custom profile requires image_field_name.
+	if driver == "custom" && tk.ImageFieldName == "" {
+		ve.add("analysis_tools.test_kitchen.image_field_name is required when driver is \"custom\"")
+	}
+
+	// Platform map validation.
+	for i, entry := range tk.PlatformMap {
+		if entry.KitchenName == "" {
+			ve.addf("analysis_tools.test_kitchen.platform_map[%d].kitchen_name is required", i)
 		}
-		if !validDrivers[tk.DriverOverride] {
-			w.addf("analysis_tools.test_kitchen.driver_override %q is not a recognised Test Kitchen driver; proceeding anyway", tk.DriverOverride)
+		if entry.Image == "" && driver != "dokken" {
+			w.addf("analysis_tools.test_kitchen.platform_map[%d].image is empty; platform %q will be skipped", i, entry.KitchenName)
 		}
 	}
-	for i, p := range tk.PlatformOverrides {
-		if p.Name == "" {
-			ve.addf("analysis_tools.test_kitchen.platform_overrides[%d].name is required", i)
-		}
+
+	// Non-dokken driver warnings.
+	if driver != "dokken" && len(tk.PlatformMap) == 0 {
+		w.add("analysis_tools.test_kitchen.platform_map is empty for non-dokken driver; Test Kitchen will skip all cookbooks")
 	}
 }
 
