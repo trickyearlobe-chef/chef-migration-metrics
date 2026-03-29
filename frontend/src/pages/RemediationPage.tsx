@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
+import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import {
   fetchRemediationSummary,
   fetchRemediationPriority,
-  fetchFilterTargetChefVersions,
   fetchFilterComplexityLabels,
   type RemediationQuery,
 } from "../api";
@@ -20,7 +20,6 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { ComplexityBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
-import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Remediation Priority page
@@ -39,21 +38,28 @@ export function RemediationPage() {
   const org = selectedOrg || undefined;
 
   // Target Chef version state
-  const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<string>("");
-  const [versionsLoading, setVersionsLoading] = useState(true);
+  const {
+    targetVersions,
+    selectedVersion,
+    setSelectedVersion,
+    versionsLoading,
+  } = useTargetChefVersion();
 
   // Complexity label filter state
   const [complexityLabels, setComplexityLabels] = useState<string[]>([]);
   const [selectedComplexity, setSelectedComplexity] = useState<string>("");
 
   // Summary state
-  const [summary, setSummary] = useState<RemediationSummaryResponse | null>(null);
+  const [summary, setSummary] = useState<RemediationSummaryResponse | null>(
+    null,
+  );
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
   // Priority table state
-  const [priority, setPriority] = useState<RemediationPriorityResponse | null>(null);
+  const [priority, setPriority] = useState<RemediationPriorityResponse | null>(
+    null,
+  );
   const [priorityLoading, setPriorityLoading] = useState(false);
   const [priorityError, setPriorityError] = useState<string | null>(null);
 
@@ -64,24 +70,9 @@ export function RemediationPage() {
   const perPage = DEFAULT_PAGE_SIZE;
 
   // -----------------------------------------------------------------------
-  // Load available target Chef versions and complexity labels on mount
+  // Load available complexity labels on mount
   // -----------------------------------------------------------------------
   useEffect(() => {
-    setVersionsLoading(true);
-    fetchFilterTargetChefVersions()
-      .then((res) => {
-        const versions = res.data ?? [];
-        setTargetVersions(versions);
-        if (versions.length > 0 && !selectedVersion) {
-          setSelectedVersion(highestSemver(versions) ?? versions[0]);
-        }
-      })
-      .catch(() => {
-        // If we can't load versions, the summary/priority calls will use
-        // the backend default. Leave the selector empty.
-      })
-      .finally(() => setVersionsLoading(false));
-
     fetchFilterComplexityLabels()
       .then((res) => setComplexityLabels(res.data ?? []))
       .catch(() => setComplexityLabels([]));
@@ -91,7 +82,8 @@ export function RemediationPage() {
   // Load summary whenever org or target version changes
   // -----------------------------------------------------------------------
   const loadSummary = useCallback(() => {
-    if (!selectedVersion && targetVersions.length === 0 && versionsLoading) return;
+    if (!selectedVersion && targetVersions.length === 0 && versionsLoading)
+      return;
 
     setSummaryLoading(true);
     setSummaryError(null);
@@ -113,7 +105,8 @@ export function RemediationPage() {
   // Load priority table whenever org, version, sort, or page changes
   // -----------------------------------------------------------------------
   const loadPriority = useCallback(() => {
-    if (!selectedVersion && targetVersions.length === 0 && versionsLoading) return;
+    if (!selectedVersion && targetVersions.length === 0 && versionsLoading)
+      return;
 
     setPriorityLoading(true);
     setPriorityError(null);
@@ -132,7 +125,16 @@ export function RemediationPage() {
       .then(setPriority)
       .catch((e: Error) => setPriorityError(e.message))
       .finally(() => setPriorityLoading(false));
-  }, [org, selectedVersion, selectedComplexity, sortField, sortOrder, page, targetVersions.length, versionsLoading]);
+  }, [
+    org,
+    selectedVersion,
+    selectedComplexity,
+    sortField,
+    sortOrder,
+    page,
+    targetVersions.length,
+    versionsLoading,
+  ]);
 
   useEffect(() => {
     loadPriority();
@@ -165,15 +167,21 @@ export function RemediationPage() {
     <div className="space-y-6">
       {/* Page header with version selector */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-xl font-bold text-gray-800">Remediation Priority</h2>
+        <h2 className="text-xl font-bold text-gray-800">
+          Remediation Priority
+        </h2>
         <div className="flex items-center gap-4">
           {/* Target Chef version selector */}
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-500">Target Chef Version</label>
+            <label className="text-sm font-medium text-gray-500">
+              Target Chef Version
+            </label>
             {versionsLoading ? (
               <span className="text-xs text-gray-400">Loading…</span>
             ) : targetVersions.length === 0 ? (
-              <span className="text-xs text-gray-400">No target versions configured</span>
+              <span className="text-xs text-gray-400">
+                No target versions configured
+              </span>
             ) : (
               <select
                 value={selectedVersion}
@@ -181,7 +189,9 @@ export function RemediationPage() {
                 className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 {targetVersions.map((v) => (
-                  <option key={v} value={v}>{v}</option>
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
                 ))}
               </select>
             )}
@@ -190,7 +200,9 @@ export function RemediationPage() {
           {/* Complexity label filter */}
           {complexityLabels.length > 0 && (
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-500">Complexity</label>
+              <label className="text-sm font-medium text-gray-500">
+                Complexity
+              </label>
               <select
                 value={selectedComplexity}
                 onChange={(e) => setSelectedComplexity(e.target.value)}
@@ -213,8 +225,12 @@ export function RemediationPage() {
             filters={
               {
                 ...(org ? { organisation: org } : {}),
-                ...(selectedVersion ? { target_chef_version: selectedVersion } : {}),
-                ...(selectedComplexity ? { complexity_label: selectedComplexity } : {}),
+                ...(selectedVersion
+                  ? { target_chef_version: selectedVersion }
+                  : {}),
+                ...(selectedComplexity
+                  ? { complexity_label: selectedComplexity }
+                  : {}),
               } as ExportFilters
             }
             label="Export"
@@ -286,7 +302,10 @@ function SummaryHeader({
       label: "Need Remediation",
       value: summary.total_needing_remediation,
       sub: `of ${summary.total_cookbooks_evaluated} evaluated`,
-      color: summary.total_needing_remediation > 0 ? "text-red-600" : "text-green-600",
+      color:
+        summary.total_needing_remediation > 0
+          ? "text-red-600"
+          : "text-green-600",
       icon: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
     },
     {
@@ -307,7 +326,10 @@ function SummaryHeader({
       label: "Blocked Nodes",
       value: summary.blocked_nodes_by_readiness,
       sub: `${summary.blocked_nodes_by_complexity.toLocaleString()} by cookbook complexity`,
-      color: summary.blocked_nodes_by_readiness > 0 ? "text-red-600" : "text-green-600",
+      color:
+        summary.blocked_nodes_by_readiness > 0
+          ? "text-red-600"
+          : "text-green-600",
       icon: "M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636",
     },
   ];
@@ -325,7 +347,11 @@ function SummaryHeader({
               stroke="currentColor"
               aria-hidden="true"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d={card.icon} />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d={card.icon}
+              />
             </svg>
             <span className="stat-label">{card.label}</span>
           </div>
@@ -364,7 +390,8 @@ function PriorityTable({
   page: number;
   onPageChange: (page: number) => void;
 }) {
-  if (loading) return <LoadingSpinner message="Loading remediation priorities…" />;
+  if (loading)
+    return <LoadingSpinner message="Loading remediation priorities…" />;
   if (error) return <ErrorAlert message={error} onRetry={onRetry} />;
   if (!data) return null;
 
@@ -413,18 +440,41 @@ function PriorityTable({
       {/* Aggregate banner */}
       <div className="flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
         <span className="font-medium text-gray-700">
-          {totalRow.cookbooks.toLocaleString()} cookbook{totalRow.cookbooks !== 1 ? "s" : ""}
+          {totalRow.cookbooks.toLocaleString()} cookbook
+          {totalRow.cookbooks !== 1 ? "s" : ""}
         </span>
         <span className="text-gray-400">|</span>
         <span className="text-green-700">
-          <svg className="mr-1 inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          <svg
+            className="mr-1 inline h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4.5 12.75l6 6 9-13.5"
+            />
           </svg>
           {totalRow.auto.toLocaleString()} auto-correctable
         </span>
         <span className="text-amber-700">
-          <svg className="mr-1 inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.049.58.025 1.193-.14 1.743" />
+          <svg
+            className="mr-1 inline h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.049.58.025 1.193-.14 1.743"
+            />
           </svg>
           {totalRow.manual.toLocaleString()} manual fixes
         </span>
@@ -475,7 +525,8 @@ function PriorityTable({
 
 function PriorityRow({ item }: { item: RemediationPriorityItem }) {
   // Determine if this is a "quick win" — only auto-correctable issues, no manual
-  const isQuickWin = item.auto_correctable_count > 0 && item.manual_fix_count === 0;
+  const isQuickWin =
+    item.auto_correctable_count > 0 && item.manual_fix_count === 0;
 
   return (
     <tr className={isQuickWin ? "bg-green-50/40" : ""}>
@@ -539,11 +590,13 @@ function PriorityRow({ item }: { item: RemediationPriorityItem }) {
       <td>
         <div className="flex flex-col">
           <span className="text-sm font-medium text-gray-800">
-            {item.affected_node_count.toLocaleString()} node{item.affected_node_count !== 1 ? "s" : ""}
+            {item.affected_node_count.toLocaleString()} node
+            {item.affected_node_count !== 1 ? "s" : ""}
           </span>
           {item.affected_role_count > 0 && (
             <span className="text-xs text-gray-400">
-              {item.affected_role_count} role{item.affected_role_count !== 1 ? "s" : ""}
+              {item.affected_role_count} role
+              {item.affected_role_count !== 1 ? "s" : ""}
             </span>
           )}
         </div>
@@ -558,8 +611,19 @@ function PriorityRow({ item }: { item: RemediationPriorityItem }) {
       <td>
         {item.auto_correctable_count > 0 ? (
           <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M4.5 12.75l6 6 9-13.5"
+              />
             </svg>
             {item.auto_correctable_count}
           </span>
@@ -616,7 +680,9 @@ function PriorityScoreBar({ score }: { score: number }) {
           style={{ width: `${Math.max(pct, score > 0 ? 4 : 0)}%` }}
         />
       </div>
-      <span className="text-xs font-medium text-gray-600">{score.toLocaleString()}</span>
+      <span className="text-xs font-medium text-gray-600">
+        {score.toLocaleString()}
+      </span>
     </div>
   );
 }

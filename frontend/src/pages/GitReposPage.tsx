@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSort } from "../hooks/useSort";
+import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
-import { fetchGitRepos, fetchFilterTargetChefVersions } from "../api";
+import { fetchGitRepos } from "../api";
 import type { GitRepoListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
-import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Git Repos list page — paginated table from GET /api/v1/git-repos showing
@@ -94,10 +94,13 @@ export function GitReposPage() {
   });
 
   // Target Chef versions loaded from backend config.
-  const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(
-    searchParams.get("target_chef_version") || "",
-  );
+  const {
+    targetVersions,
+    selectedVersion: selectedTargetVersion,
+    setSelectedVersion: setSelectedTargetVersion,
+  } = useTargetChefVersion({
+    initialVersion: searchParams.get("target_chef_version") || undefined,
+  });
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
@@ -111,19 +114,6 @@ export function GitReposPage() {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
-
-  // Load target Chef versions once on mount.
-  useEffect(() => {
-    fetchFilterTargetChefVersions()
-      .then((res) => {
-        const versions = res.data ?? [];
-        setTargetVersions(versions);
-        if (versions.length > 0 && !selectedTargetVersion) {
-          setSelectedTargetVersion(highestSemver(versions) ?? versions[0]);
-        }
-      })
-      .catch(() => setTargetVersions([]));
-  }, []); // intentionally run only on mount
 
   const load = useCallback(() => {
     setLoading(true);
