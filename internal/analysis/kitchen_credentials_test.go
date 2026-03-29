@@ -113,8 +113,8 @@ func TestResolveKitchenCredentials_DriverSecrets(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing env var %s, got keys: %v", envName, envVarKeys(kc.EnvVars))
 	}
-	if val != "secret-value" {
-		t.Errorf("env var %s = %q, want %q", envName, val, "secret-value")
+	if string(val) != "secret-value" {
+		t.Errorf("env var %s = %q, want %q", envName, string(val), "secret-value")
 	}
 }
 
@@ -144,8 +144,8 @@ func TestResolveKitchenCredentials_TransportPassword(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing env var %s, got keys: %v", envName, envVarKeys(kc.EnvVars))
 	}
-	if val != "pass-123" {
-		t.Errorf("env var %s = %q, want %q", envName, val, "pass-123")
+	if string(val) != "pass-123" {
+		t.Errorf("env var %s = %q, want %q", envName, string(val), "pass-123")
 	}
 }
 
@@ -175,7 +175,7 @@ func TestResolveKitchenCredentials_TransportSSHKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing env var %s, got keys: %v", envName, envVarKeys(kc.EnvVars))
 	}
-	if !strings.Contains(val, "RSA PRIVATE KEY") {
+	if !strings.Contains(string(val), "RSA PRIVATE KEY") {
 		t.Errorf("env var %s does not contain expected key material", envName)
 	}
 }
@@ -218,8 +218,8 @@ func TestResolveKitchenCredentials_MixedSecrets(t *testing.T) {
 			t.Errorf("missing env var %s", envName)
 			continue
 		}
-		if got != wantVal {
-			t.Errorf("env var %s = %q, want %q", envName, got, wantVal)
+		if string(got) != wantVal {
+			t.Errorf("env var %s = %q, want %q", envName, string(got), wantVal)
 		}
 	}
 	if len(kc.EnvVars) != len(expected) {
@@ -249,7 +249,7 @@ func TestResolveKitchenCredentials_ResolutionFailure(t *testing.T) {
 	// Partial results: the known credential should still be present.
 	found := false
 	for _, v := range kc.EnvVars {
-		if v == "known-value" {
+		if string(v) == "known-value" {
 			found = true
 			break
 		}
@@ -307,13 +307,16 @@ func TestKitchenCredentials_Cleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(kc.plaintexts) == 0 {
-		t.Fatal("expected plaintexts to be tracked")
+	if len(kc.EnvVars) == 0 {
+		t.Fatal("expected EnvVars to be populated")
 	}
 
-	// Capture references before cleanup.
-	plaintextRefs := make([][]byte, len(kc.plaintexts))
-	copy(plaintextRefs, kc.plaintexts)
+	// Capture references to the []byte values before cleanup so we can
+	// verify they were zeroed.
+	var plaintextRefs [][]byte
+	for _, v := range kc.EnvVars {
+		plaintextRefs = append(plaintextRefs, v)
+	}
 
 	kc.Cleanup()
 
@@ -325,9 +328,6 @@ func TestKitchenCredentials_Cleanup(t *testing.T) {
 	if kc.EnvVars != nil {
 		t.Error("EnvVars should be nil after Cleanup")
 	}
-	if kc.plaintexts != nil {
-		t.Error("plaintexts should be nil after Cleanup")
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +336,7 @@ func TestKitchenCredentials_Cleanup(t *testing.T) {
 
 func TestInjectCredentialEnvVars_Empty(t *testing.T) {
 	base := []string{"HOME=/home/user", "PATH=/usr/bin"}
-	creds := &KitchenCredentials{EnvVars: map[string]string{}}
+	creds := &KitchenCredentials{EnvVars: map[string][]byte{}}
 
 	result := InjectCredentialEnvVars(base, creds)
 	if len(result) != len(base) {
@@ -352,8 +352,8 @@ func TestInjectCredentialEnvVars_Empty(t *testing.T) {
 func TestInjectCredentialEnvVars_AppendsVars(t *testing.T) {
 	base := []string{"HOME=/home/user"}
 	creds := &KitchenCredentials{
-		EnvVars: map[string]string{
-			"CMM_TK_SECRET_FOO": "bar",
+		EnvVars: map[string][]byte{
+			"CMM_TK_SECRET_FOO": []byte("bar"),
 		},
 	}
 
@@ -383,8 +383,8 @@ func TestInjectCredentialEnvVars_StripsExistingCMMTK(t *testing.T) {
 		"PATH=/usr/bin",
 	}
 	creds := &KitchenCredentials{
-		EnvVars: map[string]string{
-			"CMM_TK_SECRET_NEW": "fresh",
+		EnvVars: map[string][]byte{
+			"CMM_TK_SECRET_NEW": []byte("fresh"),
 		},
 	}
 
@@ -459,7 +459,7 @@ func TestInjectCredentialEnvVars_EmptyCreds_StripsStaleCMMTK(t *testing.T) {
 		"CMM_TK_OLD=stale",
 		"PATH=/usr/bin",
 	}
-	creds := &KitchenCredentials{EnvVars: map[string]string{}}
+	creds := &KitchenCredentials{EnvVars: map[string][]byte{}}
 
 	result := InjectCredentialEnvVars(base, creds)
 
@@ -637,7 +637,7 @@ func (t *trackingCredentialStore) ReferencedBy(ctx context.Context, name string)
 // Helpers
 // ---------------------------------------------------------------------------
 
-func envVarKeys(m map[string]string) []string {
+func envVarKeys(m map[string][]byte) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -16,24 +16,21 @@ import (
 // run. The Cleanup function MUST be called after the Test Kitchen process
 // exits to zero all plaintext from memory.
 type KitchenCredentials struct {
-	// EnvVars maps environment variable names to their plaintext values.
-	// These must be injected into the Test Kitchen child process.
-	EnvVars map[string]string
-
-	// plaintexts holds references to all resolved plaintext byte slices
-	// so they can be zeroed on cleanup.
-	plaintexts [][]byte
+	// EnvVars maps environment variable names to their plaintext values
+	// as byte slices. Using []byte instead of string ensures that
+	// Cleanup can zero every copy of the credential data — Go strings
+	// are immutable so string copies would persist in heap until GC.
+	// The values are converted to strings only at injection time in
+	// InjectCredentialEnvVars.
+	EnvVars map[string][]byte
 }
 
 // Cleanup zeros all credential plaintext from memory and clears the env
 // var map. This MUST be called after the Test Kitchen process exits.
 func (kc *KitchenCredentials) Cleanup() {
-	for _, p := range kc.plaintexts {
-		secrets.ZeroBytes(p)
-	}
-	kc.plaintexts = nil
-	for k := range kc.EnvVars {
-		kc.EnvVars[k] = ""
+	for k, v := range kc.EnvVars {
+		secrets.ZeroBytes(v)
+		delete(kc.EnvVars, k)
 	}
 	kc.EnvVars = nil
 }
@@ -52,10 +49,10 @@ func ResolveKitchenCredentials(
 	tkConfig config.TestKitchenConfig,
 ) (*KitchenCredentials, error) {
 	if resolver == nil {
-		return &KitchenCredentials{EnvVars: map[string]string{}}, nil
+		return &KitchenCredentials{EnvVars: map[string][]byte{}}, nil
 	}
 
-	kc := &KitchenCredentials{EnvVars: make(map[string]string)}
+	kc := &KitchenCredentials{EnvVars: make(map[string][]byte)}
 	var errs []string
 
 	// 1. Driver secrets.
@@ -68,8 +65,7 @@ func ResolveKitchenCredentials(
 			continue
 		}
 		envName := driverSecretEnvVar(key)
-		kc.EnvVars[envName] = string(resolved.Plaintext)
-		kc.plaintexts = append(kc.plaintexts, resolved.Plaintext)
+		kc.EnvVars[envName] = resolved.Plaintext
 	}
 
 	// 2. Transport secrets (password and SSH key per platform).
@@ -86,8 +82,7 @@ func ResolveKitchenCredentials(
 					entry.KitchenName, entry.Transport.PasswordCredential, err))
 			} else {
 				envName := transportPasswordEnvVar(entry.KitchenName)
-				kc.EnvVars[envName] = string(resolved.Plaintext)
-				kc.plaintexts = append(kc.plaintexts, resolved.Plaintext)
+				kc.EnvVars[envName] = resolved.Plaintext
 			}
 		}
 		if entry.Transport.SSHKeyCredential != "" {
@@ -99,8 +94,7 @@ func ResolveKitchenCredentials(
 					entry.KitchenName, entry.Transport.SSHKeyCredential, err))
 			} else {
 				envName := transportKeyEnvVar(entry.KitchenName)
-				kc.EnvVars[envName] = string(resolved.Plaintext)
-				kc.plaintexts = append(kc.plaintexts, resolved.Plaintext)
+				kc.EnvVars[envName] = resolved.Plaintext
 			}
 		}
 	}
@@ -113,8 +107,10 @@ func ResolveKitchenCredentials(
 
 // InjectCredentialEnvVars returns a copy of the base environment with the
 // credential env vars appended. This is used to build the child process
-// environment. It also strips any pre-existing CMM_TK_* variables from
-// the base environment to avoid leaking stale credentials.
+// environment. The []byte credential values are converted to strings only
+// here, at the last moment before injection. It also strips any
+// pre-existing CMM_TK_* variables from the base environment to avoid
+// leaking stale credentials.
 func InjectCredentialEnvVars(baseEnv []string, creds *KitchenCredentials) []string {
 	// Always filter out any existing CMM_TK_* vars from base to avoid
 	// leaking stale credentials, even when creds is nil or empty.
@@ -137,9 +133,10 @@ func InjectCredentialEnvVars(baseEnv []string, creds *KitchenCredentials) []stri
 		return out
 	}
 
-	// Append credential env vars.
+	// Append credential env vars — string conversion happens here at
+	// injection time so the []byte originals remain zeroable.
 	for k, v := range creds.EnvVars {
-		out = append(out, k+"="+v)
+		out = append(out, k+"="+string(v))
 	}
 	return out
 }
