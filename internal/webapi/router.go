@@ -17,6 +17,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
 // CollectionTriggerFunc is a function that triggers an immediate collection
@@ -82,6 +83,12 @@ type Router struct {
 	// performance instrumentation is disabled (requests go directly
 	// through r.mux).
 	timingHandler http.Handler
+
+	// credentialStore provides encrypted credential CRUD for the admin
+	// credential management endpoints. Nil when the master encryption
+	// key (CMM_CREDENTIAL_ENCRYPTION_KEY) is not configured — credential
+	// endpoints return 503.
+	credentialStore secrets.CredentialStore
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -156,6 +163,15 @@ func WithAuth(
 func WithCollectionTrigger(fn CollectionTriggerFunc) RouterOption {
 	return func(r *Router) {
 		r.triggerCollection = fn
+	}
+}
+
+// WithCredentialStore sets the encrypted credential store used by the admin
+// credential management endpoints. When nil, credential endpoints return
+// 503 Service Unavailable.
+func WithCredentialStore(store secrets.CredentialStore) RouterOption {
+	return func(r *Router) {
+		r.credentialStore = store
 	}
 }
 
@@ -371,8 +387,8 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)
 	// -----------------------------------------------------------------
-	r.adminOnly("/api/v1/admin/credentials", r.handleNotImplemented)
-	r.adminOnly("/api/v1/admin/credentials/", r.handleNotImplemented)
+	r.adminOnly("/api/v1/admin/credentials", r.handleCredentials)
+	r.adminOnly("/api/v1/admin/credentials/", r.handleCredentials)
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
 		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers)

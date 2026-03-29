@@ -25,19 +25,19 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Web API Integration
 
-- [ ] Wire `CredentialStore` into `internal/webapi/` admin credential handlers
-- [ ] Implement `GET /api/v1/admin/credentials` handler (metadata only)
-- [ ] Implement `POST /api/v1/admin/credentials` handler (validate, encrypt, store)
-- [ ] Implement `PUT /api/v1/admin/credentials/:name` handler (rotate value)
-- [ ] Implement `DELETE /api/v1/admin/credentials/:name` handler (reference check, hard delete)
-- [ ] Implement `POST /api/v1/admin/credentials/:name/test` handler
-- [ ] Return `503` when `CMM_CREDENTIAL_ENCRYPTION_KEY` is not configured
-- [ ] Require `admin` role on all credential endpoints
-- [ ] Verify no endpoint returns `encrypted_value` or plaintext in any response
-- [ ] Log all credential operations at `INFO` with `scope: secrets`
-- [ ] Write handler tests for each endpoint (success and error cases)
-- [ ] Write handler tests for authorisation enforcement (non-admin rejected)
-- [ ] Write handler tests for `503` when encryption key is missing
+- [x] Wire `CredentialStore` into `internal/webapi/` admin credential handlers
+- [x] Implement `GET /api/v1/admin/credentials` handler (metadata only)
+- [x] Implement `POST /api/v1/admin/credentials` handler (validate, encrypt, store)
+- [x] Implement `PUT /api/v1/admin/credentials/:name` handler (rotate value)
+- [x] Implement `DELETE /api/v1/admin/credentials/:name` handler (reference check, hard delete)
+- [x] Implement `POST /api/v1/admin/credentials/:name/test` handler
+- [x] Return `503` when `CMM_CREDENTIAL_ENCRYPTION_KEY` is not configured
+- [x] Require `admin` role on all credential endpoints
+- [x] Verify no endpoint returns `encrypted_value` or plaintext in any response
+- [x] Log all credential operations at `INFO` with `scope: secrets`
+- [x] Write handler tests for each endpoint (success and error cases)
+- [x] Write handler tests for authorisation enforcement (non-admin rejected)
+- [x] Write handler tests for `503` when encryption key is missing
 
 ## Consumer Integration
 
