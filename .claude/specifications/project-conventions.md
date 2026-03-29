@@ -21,7 +21,7 @@ Project-specific technical conventions for the Chef Migration Metrics dashboard.
 ## Go Package Layout
 
 - All Go code is a single module. Application packages live under `internal/`.
-- Shared domain types live in `internal/models/`.
+- Shared domain types live alongside their domain packages (e.g. `internal/datastore/`, `internal/analysis/`). There is no separate `internal/models/` package.
 - Database queries are centralised in `internal/datastore/` — other packages must not import `database/sql` directly.
 - HTTP handlers in `internal/webapi/` are thin wrappers — business logic lives in domain packages.
 - Config structs live in `internal/config/` and are passed by value or interface — packages must not read config files or env vars directly.
