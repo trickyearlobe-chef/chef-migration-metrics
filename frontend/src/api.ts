@@ -71,6 +71,9 @@ import type {
   CreateCredentialRequest,
   UpdateCredentialRequest,
   TestCredentialResponse,
+  TestKitchenConfig,
+  TestKitchenConfigResponse,
+  TestKitchenConfigSaveResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -1502,6 +1505,69 @@ export async function testCredential(
   }
 
   return res.json() as Promise<TestCredentialResponse>;
+}
+
+// ---------------------------------------------------------------------------
+// Test Kitchen Configuration (admin)
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/test-kitchen/config — get effective TK config. */
+export function fetchTestKitchenConfig(): Promise<TestKitchenConfigResponse> {
+  return apiFetch<TestKitchenConfigResponse>(
+    buildUrl("/admin/test-kitchen/config"),
+  );
+}
+
+/** PUT /api/v1/admin/test-kitchen/config — save TK config. */
+export async function saveTestKitchenConfig(
+  body: TestKitchenConfig,
+): Promise<TestKitchenConfigSaveResponse> {
+  const url = buildUrl("/admin/test-kitchen/config");
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.code || errBody.error || code;
+      message = errBody.message || errBody.details?.join("; ") || message;
+    } catch {
+      // ignore parse failure
+    }
+    throw new ApiError(res.status, code, message);
+  }
+
+  return res.json() as Promise<TestKitchenConfigSaveResponse>;
+}
+
+/** DELETE /api/v1/admin/test-kitchen/config?confirm=true — revert to file config. */
+export async function deleteTestKitchenConfig(): Promise<void> {
+  const url = buildUrl("/admin/test-kitchen/config", { confirm: "true" });
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const errBody = await res.json();
+      code = errBody.code || code;
+      message = errBody.message || message;
+    } catch {
+      // ignore parse failure
+    }
+    throw new ApiError(res.status, code, message);
+  }
 }
 
 // ---------------------------------------------------------------------------

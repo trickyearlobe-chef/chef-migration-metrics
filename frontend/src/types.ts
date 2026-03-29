@@ -1311,3 +1311,50 @@ export interface TestCredentialResponse {
   error?: string | null;
   metadata?: Record<string, unknown> | null;
 }
+
+// ---------------------------------------------------------------------------
+// Test Kitchen Configuration (admin)
+// ---------------------------------------------------------------------------
+
+/** Platform map transport credentials. */
+export interface PlatformMapTransport {
+  username: string;
+  password_credential: string;
+  ssh_key_credential: string;
+}
+
+/** A single entry in the Test Kitchen platform map. */
+export interface PlatformMapEntry {
+  kitchen_name: string;
+  image: string;
+  driver_settings: Record<string, unknown>;
+  transport: PlatformMapTransport | null;
+}
+
+/** Test Kitchen configuration stored in runtime_settings. */
+export interface TestKitchenConfig {
+  enabled: boolean | null;
+  driver: string;
+  timeout_minutes: number;
+  driver_settings: Record<string, unknown>;
+  driver_secrets: Record<string, string>;
+  image_field_name: string;
+  platform_map: PlatformMapEntry[];
+}
+
+/** Response from GET /api/v1/admin/test-kitchen/config. */
+export interface TestKitchenConfigResponse {
+  config: TestKitchenConfig;
+  source: "database" | "file";
+  updated_at?: string;
+  updated_by?: string;
+}
+
+/** Response from PUT with validation errors. */
+export interface TestKitchenConfigSaveResponse {
+  config: TestKitchenConfig;
+  source: string;
+  updated_at?: string;
+  updated_by?: string;
+  warnings?: string[];
+}
