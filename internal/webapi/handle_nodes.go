@@ -15,6 +15,27 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 )
 
+// nodeResp is the JSON response struct for a single node in list endpoints.
+// Defined at package level to avoid duplication across handleNodes and
+// handleNodesWithOwnerFilter.
+type nodeResp struct {
+	ID               string                      `json:"id"`
+	OrganisationID   string                      `json:"organisation_id"`
+	OrganisationName string                      `json:"organisation_name"`
+	NodeName         string                      `json:"node_name"`
+	ChefEnvironment  string                      `json:"chef_environment,omitempty"`
+	ChefVersion      string                      `json:"chef_version,omitempty"`
+	Platform         string                      `json:"platform,omitempty"`
+	PlatformVersion  string                      `json:"platform_version,omitempty"`
+	PlatformFamily   string                      `json:"platform_family,omitempty"`
+	PolicyName       string                      `json:"policy_name,omitempty"`
+	PolicyGroup      string                      `json:"policy_group,omitempty"`
+	IsStale          bool                        `json:"is_stale"`
+	OhaiTime         float64                     `json:"ohai_time,omitempty"`
+	CollectedAt      string                      `json:"collected_at"`
+	Readiness        []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
+}
+
 // handleNodes handles GET /api/v1/nodes — lists all node snapshots across
 // all organisations, optionally filtered by query parameters.
 //
@@ -99,24 +120,6 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 				StaleData:              rec.StaleData,
 			})
 		}
-	}
-
-	type nodeResp struct {
-		ID               string                      `json:"id"`
-		OrganisationID   string                      `json:"organisation_id"`
-		OrganisationName string                      `json:"organisation_name"`
-		NodeName         string                      `json:"node_name"`
-		ChefEnvironment  string                      `json:"chef_environment,omitempty"`
-		ChefVersion      string                      `json:"chef_version,omitempty"`
-		Platform         string                      `json:"platform,omitempty"`
-		PlatformVersion  string                      `json:"platform_version,omitempty"`
-		PlatformFamily   string                      `json:"platform_family,omitempty"`
-		PolicyName       string                      `json:"policy_name,omitempty"`
-		PolicyGroup      string                      `json:"policy_group,omitempty"`
-		IsStale          bool                        `json:"is_stale"`
-		OhaiTime         float64                     `json:"ohai_time,omitempty"`
-		CollectedAt      string                      `json:"collected_at"`
-		Readiness        []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
 	}
 
 	result := make([]nodeResp, 0, len(nodes))
@@ -245,24 +248,6 @@ func (r *Router) handleNodesWithOwnerFilter(
 				StaleData:              rec.StaleData,
 			})
 		}
-	}
-
-	type nodeResp struct {
-		ID               string                      `json:"id"`
-		OrganisationID   string                      `json:"organisation_id"`
-		OrganisationName string                      `json:"organisation_name"`
-		NodeName         string                      `json:"node_name"`
-		ChefEnvironment  string                      `json:"chef_environment,omitempty"`
-		ChefVersion      string                      `json:"chef_version,omitempty"`
-		Platform         string                      `json:"platform,omitempty"`
-		PlatformVersion  string                      `json:"platform_version,omitempty"`
-		PlatformFamily   string                      `json:"platform_family,omitempty"`
-		PolicyName       string                      `json:"policy_name,omitempty"`
-		PolicyGroup      string                      `json:"policy_group,omitempty"`
-		IsStale          bool                        `json:"is_stale"`
-		OhaiTime         float64                     `json:"ohai_time,omitempty"`
-		CollectedAt      string                      `json:"collected_at"`
-		Readiness        []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
 	}
 
 	result := make([]nodeResp, 0, len(pageNodes))
