@@ -33,27 +33,27 @@ Update specifications to support a pluggable Test Kitchen driver architecture, r
    - Platform coverage analysis (kitchen platforms vs production node platforms)
    - Driver migration examples (vCenter→vRA, vCenter→EC2)
 
-2. Update `analysis.md` — generalize Test Kitchen invocation:
+2. ~~Update `analysis.md`~~ ✅ Done — generalised Test Kitchen invocation:
    - Overlay generation supports any driver via profile + opaque settings
    - Reference test-kitchen-drivers.md for driver/credential/platform details
    - Startup validation for non-dokken drivers (credential checks replace Docker check)
    - Platform coverage gap reporting as post-analysis step
 
-3. Update `configuration.md` — extend `analysis_tools.test_kitchen`:
+3. ~~Update `configuration.md`~~ ✅ Done — extended `analysis_tools.test_kitchen`:
    - `driver` setting (profile name)
    - `driver_settings` / `driver_secrets` maps
    - `platform_map` list
    - `image_field_name` for custom profiles
    - Cross-reference test-kitchen-drivers.md for full schema
 
-4. Update `datastore.md`:
-   - Add `driver` and `platform_name` columns to `git_repo_test_kitchen_results`
-   - Add `cookbook_platform_coverage` table
+4. ~~Update `datastore.md`~~ ✅ Done:
+   - `driver` and `platform_name` columns added to `git_repo_test_kitchen_results`
+   - `cookbook_platform_coverage` table added
    - Cross-reference test-kitchen-drivers.md for JSONB structure
 
-5. Update todo files with new tasks
+5. ~~Create `todo-test-kitchen-drivers.md`~~ ✅ Done
 
-6. Commit each spec update individually
+6. ~~Commit each spec update individually~~ ✅ Done (4 commits)
 
 ## Acceptance Criteria
 
