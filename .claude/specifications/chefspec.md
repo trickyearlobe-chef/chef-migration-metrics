@@ -19,11 +19,24 @@ convergence behaviour via RSpec.
 ChefSpec occupies a distinct position between static analysis and full
 integration testing:
 
-| Tool         | Analysis Type       | Infrastructure   | Confidence | Speed  |
+| Tool         | Analysis Type       | Execution Model   | Confidence | Speed  |
 |--------------|---------------------|-------------------|------------|--------|
-| CookStyle    | Static analysis     | None              | Low–Medium | Fast   |
-| ChefSpec     | Unit testing        | Docker (ChefZero) | Medium     | Medium |
-| Test Kitchen | Integration testing | Docker/VM         | High       | Slow   |
+| CookStyle    | Static analysis     | Host process      | Low–Medium | Fast   |
+| ChefSpec     | Unit testing        | Docker container  | Medium     | Medium |
+| Test Kitchen | Integration testing | Host process → VM/container | High       | Slow   |
+
+These three tools are completely independent — they have different execution
+models, different infrastructure requirements, and no runtime dependency on each
+other:
+
+- **CookStyle** runs as a direct process on the CMM host. No Docker, no
+  containers, no VMs.
+- **ChefSpec** runs inside a disposable Docker container to isolate side
+  effects from cookbook code (see § 2. Why Docker). Docker is always required.
+- **Test Kitchen** runs as a process on the CMM host and provisions its own
+  test targets via driver plugins — Docker containers (dokken), vSphere VMs
+  (vcenter), EC2 instances (ec2), etc. Docker is only required when using the
+  dokken driver. See the Test Kitchen Driver Abstraction spec for details.
 
 Adding ChefSpec scanning provides an intermediate confidence signal that catches
 runtime convergence errors, conditional logic bugs, and resource interaction
@@ -47,18 +60,29 @@ cycle.
 - Modifying or generating ChefSpec tests. The scanner runs them as authored.
 - Supporting non-RSpec test frameworks such as Minitest.
 - Running ChefSpec directly on the host. All execution must be containerised.
+- Sharing execution infrastructure with Test Kitchen or CookStyle. ChefSpec's
+  Docker requirement is independent — it exists to isolate Ruby side effects,
+  not because of any relationship with the other tools.
 
 ---
 
 ## 2. Why Docker
 
-ChefSpec tests run recipes through ChefZero, which performs in-memory
-convergence of Chef resources. Although ChefZero does not actually execute
-provider actions against the real operating system, cookbook code frequently
-makes direct Ruby calls outside of Chef resources — file operations, shell
-commands, library helpers, and `ruby_block` resources that execute arbitrary
-code. These side effects can modify the host filesystem, install packages, or
-alter system state in ways that are difficult to predict or clean up.
+ChefSpec needs Docker for reasons entirely unrelated to Test Kitchen or
+CookStyle. Test Kitchen runs on the host and provisions its own test targets
+(VMs, containers, cloud instances) via driver plugins — it does not need Docker
+unless using the dokken driver. CookStyle runs directly on the host as a static
+analysis tool. ChefSpec is the only scanner that must always run inside a
+container.
+
+The reason: ChefSpec tests run recipes through ChefZero, which performs
+in-memory convergence of Chef resources. Although ChefZero does not actually
+execute provider actions against the real operating system, cookbook code
+frequently makes direct Ruby calls outside of Chef resources — file operations,
+shell commands, library helpers, and `ruby_block` resources that execute
+arbitrary code. These side effects can modify the host filesystem, install
+packages, or alter system state in ways that are difficult to predict or clean
+up.
 
 Running ChefSpec inside a disposable Docker container provides:
 
@@ -68,9 +92,10 @@ Running ChefSpec inside a disposable Docker container provides:
 - **Reproducibility** — the container image pins the Ruby version, Chef gem
   version, and OS libraries, eliminating "works on my machine" variance between
   collection hosts.
-- **Consistency with Test Kitchen** — Test Kitchen already requires Docker. By
-  sharing the same Docker dependency, ChefSpec adds no new infrastructure
-  requirements.
+- **Host protection** — unlike CookStyle (static analysis, no execution risk)
+  and Test Kitchen (provisions separate VMs/containers for convergence),
+  ChefSpec executes cookbook Ruby code in-process where side effects can leak.
+  The container boundary prevents this from affecting the CMM host.
 - **Target version testing** — different container images can bundle different
   Chef Infra Client versions, allowing ChefSpec to run against the configured
   target Chef versions without contaminating the host's gem environment.
@@ -143,10 +168,13 @@ The configuration should nest under `analysis_tools.chefspec` with keys
 ### 4.3 Tool detection
 
 Add a Docker availability check to the embedded tool resolver if one does not
-already exist. Since Test Kitchen already requires Docker, the resolver's
-existing `DockerEnabled` flag can be reused. The ChefSpec scanner requires
-Docker to be available. No additional host-level tools (rspec, bundler) are
-needed because everything runs inside the container.
+already exist. ChefSpec always requires Docker regardless of the Test Kitchen
+driver configuration — even when Test Kitchen uses a non-dokken driver (e.g.
+vcenter, ec2) that has no Docker dependency. The two tools have independent
+infrastructure requirements.
+
+No additional host-level tools (rspec, bundler) are needed because everything
+runs inside the container.
 
 The three-way startup gate follows the existing pattern: if Docker is not
 available, the scanner is not created. If Docker is available but the config
@@ -612,9 +640,14 @@ The implementation should be delivered in the following sequence:
 
 ### 16.1 Parallel ChefSpec and Test Kitchen
 
-Steps 11b and 12 have no data dependency and could run concurrently. This would
-require coordinating the worker pools to stay within overall Docker resource
-limits. An errgroup or similar pattern could manage this.
+Steps 11b and 12 have no data dependency and could run concurrently. ChefSpec
+and Test Kitchen are completely independent scanners with different execution
+models (ChefSpec runs in Docker containers on the host; Test Kitchen provisions
+its own targets via driver plugins). When Test Kitchen uses a non-dokken driver
+(e.g. vcenter, ec2), there is no shared Docker resource contention at all. When
+both use Docker, coordinating the worker pools to stay within overall Docker
+resource limits would be needed. An errgroup or similar pattern could manage
+this.
 
 ### 16.2 Coverage metrics
 
@@ -634,8 +667,11 @@ rspec could be invoked with specific file paths derived from `git diff`. This
 optimisation should only be considered after the baseline implementation is
 stable.
 
-### 16.5 Shared Docker image with Test Kitchen
+### 16.5 Shared Docker image with dokken
 
-If both ChefSpec and Test Kitchen use the same base images, image pulls and
-builds could be shared. This is particularly valuable in bandwidth-constrained
-environments where pulling large images is expensive.
+When Test Kitchen is configured to use the dokken driver, both ChefSpec and
+dokken use Docker containers with Chef Infra Client installed. If their base
+images share layers, image pulls could be reduced. This only applies to the
+dokken driver — non-dokken drivers (vcenter, ec2, vra, etc.) provision real
+VMs and have no Docker images to share. This is a minor optimisation relevant
+only to bandwidth-constrained environments.
