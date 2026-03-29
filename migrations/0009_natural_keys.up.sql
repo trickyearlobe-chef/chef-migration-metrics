@@ -314,9 +314,10 @@ UPDATE server_cookbook_autocorrect_previews ap
        cookbook_name = sc.name,
        cookbook_version = sc.version,
        target_chef_version = cr.target_chef_version
-  FROM server_cookbooks sc
-  JOIN server_cookbook_cookstyle_results cr ON cr.id = ap.cookstyle_result_id
- WHERE sc.id = ap.server_cookbook_id;
+  FROM server_cookbooks sc,
+       server_cookbook_cookstyle_results cr
+ WHERE cr.id = ap.cookstyle_result_id
+   AND sc.id = ap.server_cookbook_id;
 
 DELETE FROM server_cookbook_autocorrect_previews
  WHERE organisation_name IS NULL;
@@ -326,9 +327,10 @@ UPDATE git_repo_autocorrect_previews ap
    SET git_repo_name = gr.name,
        git_repo_url = gr.git_repo_url,
        target_chef_version = cr.target_chef_version
-  FROM git_repos gr
-  JOIN git_repo_cookstyle_results cr ON cr.id = ap.cookstyle_result_id
- WHERE gr.id = ap.git_repo_id;
+  FROM git_repos gr,
+       git_repo_cookstyle_results cr
+ WHERE cr.id = ap.cookstyle_result_id
+   AND gr.id = ap.git_repo_id;
 
 DELETE FROM git_repo_autocorrect_previews
  WHERE git_repo_name IS NULL;
