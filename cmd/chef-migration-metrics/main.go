@@ -46,80 +46,114 @@ func main() {
 	os.Exit(run())
 }
 
-func run() int {
-	// -------------------------------------------------------------------
-	// CLI flags
-	// -------------------------------------------------------------------
-	var (
-		configPath     string
-		migrationsDir  string
-		showVersion    bool
-		healthcheck    bool
-		healthcheckURL string
-	)
+// ---------------------------------------------------------------------------
+// CLI flags — parsed before any application setup.
+// ---------------------------------------------------------------------------
 
-	flag.StringVar(&configPath, "config", "", "Path to configuration file (or set CHEF_MIGRATION_METRICS_CONFIG)")
-	flag.StringVar(&migrationsDir, "migrations-dir", "", "Path to SQL migrations directory (default: ./migrations or /usr/share/chef-migration-metrics/migrations)")
-	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
-	flag.BoolVar(&healthcheck, "healthcheck", false, "Run health check against a running instance and exit")
-	flag.StringVar(&healthcheckURL, "healthcheck-url", "", "URL for health check (default: http://localhost:<port>/api/v1/health)")
+type cliFlags struct {
+	configPath     string
+	migrationsDir  string
+	showVersion    bool
+	healthcheck    bool
+	healthcheckURL string
+}
+
+func parseCLI() cliFlags {
+	var f cliFlags
+	flag.StringVar(&f.configPath, "config", "", "Path to configuration file (or set CHEF_MIGRATION_METRICS_CONFIG)")
+	flag.StringVar(&f.migrationsDir, "migrations-dir", "", "Path to SQL migrations directory (default: ./migrations or /usr/share/chef-migration-metrics/migrations)")
+	flag.BoolVar(&f.showVersion, "version", false, "Print version and exit")
+	flag.BoolVar(&f.healthcheck, "healthcheck", false, "Run health check against a running instance and exit")
+	flag.StringVar(&f.healthcheckURL, "healthcheck-url", "", "URL for health check (default: http://localhost:<port>/api/v1/health)")
 	flag.Parse()
+	return f
+}
 
-	if showVersion {
-		fmt.Println("chef-migration-metrics", version)
-		return 0
-	}
+// ---------------------------------------------------------------------------
+// serverApp holds state that flows between startup phases.
+// ---------------------------------------------------------------------------
 
-	if healthcheck {
-		return runHealthcheck(healthcheckURL)
-	}
+type serverApp struct {
+	cfg             *config.Config
+	configuredLevel logging.Severity
+	logger          *logging.Logger
+	startup         *logging.ScopedLogger
+	stdoutWriter    logging.Writer
+	db              *datastore.DB
+	hub             *webapi.EventHub
 
-	// -------------------------------------------------------------------
-	// Bootstrap logger — stdout only until the database is available.
-	// We start with INFO; this will be overridden once config is loaded.
-	// -------------------------------------------------------------------
-	stdoutWriter := logging.NewStdoutWriter()
-	logger := logging.New(logging.Options{
+	// Auth components.
+	localAuth      *auth.LocalAuthenticator
+	sessionMgr     *auth.SessionManager
+	authMiddleware *auth.Middleware
+
+	// Secrets components.
+	encryptor    *secrets.Encryptor
+	credStore    *secrets.DBCredentialStore
+	credResolver *secrets.CredentialResolver
+
+	// Collector components.
+	coll  *collector.Collector
+	sched *collector.Scheduler
+
+	// Export cleanup stop function.
+	stopExportCleanup func()
+}
+
+// ---------------------------------------------------------------------------
+// Phase: bootstrap logger (stdout only, INFO level).
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) setupBootstrapLogger() {
+	app.stdoutWriter = logging.NewStdoutWriter()
+	app.logger = logging.New(logging.Options{
 		Level:   logging.INFO,
-		Writers: []logging.Writer{stdoutWriter},
+		Writers: []logging.Writer{app.stdoutWriter},
 	})
-	startup := logger.WithScope(logging.ScopeStartup)
+	app.startup = app.logger.WithScope(logging.ScopeStartup)
+}
 
-	// -------------------------------------------------------------------
-	// Configuration
-	// -------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Phase: load configuration and reconfigure logger.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) loadConfig(configPath string) error {
 	cfg, warnings, err := config.Load(configPath)
 	if err != nil {
-		startup.Error(fmt.Sprintf("loading configuration: %v", err))
-		return 1
+		app.startup.Error(fmt.Sprintf("loading configuration: %v", err))
+		return err
 	}
 	if warnings != nil {
 		for _, w := range warnings.Messages {
-			startup.Warn(fmt.Sprintf("config: %s", w))
+			app.startup.Warn(fmt.Sprintf("config: %s", w))
 		}
 	}
 
-	// Re-create the logger with the configured log level now that config
-	// is available. The DBWriter will be added once the DB is connected.
-	configuredLevel := logging.INFO
+	app.configuredLevel = logging.INFO
 	if cfg.Logging.Level != "" {
 		parsed, parseErr := logging.ParseSeverity(cfg.Logging.Level)
 		if parseErr != nil {
-			startup.Warn(fmt.Sprintf("config: %v", parseErr))
+			app.startup.Warn(fmt.Sprintf("config: %v", parseErr))
 		}
-		configuredLevel = parsed
+		app.configuredLevel = parsed
 	}
-	logger = logging.New(logging.Options{
-		Level:   configuredLevel,
-		Writers: []logging.Writer{stdoutWriter},
+	app.logger = logging.New(logging.Options{
+		Level:   app.configuredLevel,
+		Writers: []logging.Writer{app.stdoutWriter},
 	})
-	startup = logger.WithScope(logging.ScopeStartup)
-	startup.Info("configuration loaded successfully")
+	app.startup = app.logger.WithScope(logging.ScopeStartup)
+	app.startup.Info("configuration loaded successfully")
 
-	// -------------------------------------------------------------------
-	// Database connection
-	// -------------------------------------------------------------------
-	dbURL := cfg.Datastore.URL
+	app.cfg = cfg
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Phase: database connection, pool configuration, event hub, DB log writer.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) setupDatabase() error {
+	dbURL := app.cfg.Datastore.URL
 	if dbURL == "" {
 		dbURL = os.Getenv("CMM_DATABASE_URL")
 	}
@@ -127,41 +161,42 @@ func run() int {
 		dbURL = os.Getenv("DATABASE_URL")
 	}
 	if dbURL == "" {
-		startup.Error("no database URL configured (set datastore.url in config, CMM_DATABASE_URL, or DATABASE_URL)")
-		return 1
+		app.startup.Error("no database URL configured (set datastore.url in config, CMM_DATABASE_URL, or DATABASE_URL)")
+		return fmt.Errorf("no database URL configured")
 	}
 
 	db, err := datastore.Open(dbURL)
 	if err != nil {
-		startup.Error(fmt.Sprintf("connecting to database: %v", err))
-		return 1
+		app.startup.Error(fmt.Sprintf("connecting to database: %v", err))
+		return err
 	}
-	defer db.Close()
 
-	// Apply configurable pool settings (defaults are set in config.setDefaults).
 	db.Configure(
-		cfg.Datastore.MaxOpenConns,
-		cfg.Datastore.MaxIdleConns,
-		time.Duration(cfg.Datastore.ConnMaxLifetimeMinutes)*time.Minute,
-		time.Duration(cfg.Datastore.ConnMaxIdleTimeMinutes)*time.Minute,
+		app.cfg.Datastore.MaxOpenConns,
+		app.cfg.Datastore.MaxIdleConns,
+		time.Duration(app.cfg.Datastore.ConnMaxLifetimeMinutes)*time.Minute,
+		time.Duration(app.cfg.Datastore.ConnMaxIdleTimeMinutes)*time.Minute,
 	)
-	startup.Info("database connection established")
+	app.startup.Info("database connection established")
+	app.db = db
 
-	// -------------------------------------------------------------------
 	// EventHub — create early so the DBWriter broadcast callback can
 	// capture it. The run loop starts immediately in a background
 	// goroutine; it will be stopped during graceful shutdown.
-	// -------------------------------------------------------------------
-	hub := webapi.NewEventHub()
-	go hub.Run()
+	app.hub = webapi.NewEventHub()
+	go app.hub.Run()
 
-	// -------------------------------------------------------------------
-	// Attach DBWriter — from this point, log entries are also persisted
-	// to the log_entries table for the web UI log viewer.
-	// -------------------------------------------------------------------
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Phase: attach DB log writer for persisting log entries.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) attachDBWriter() {
 	dbAdapter := logging.NewDatastoreAdapter(
 		func(ctx context.Context, p logging.LogEntryParams) (string, error) {
-			entry, dsErr := db.InsertLogEntry(ctx, datastore.InsertLogEntryParams{
+			entry, dsErr := app.db.InsertLogEntry(ctx, datastore.InsertLogEntryParams{
 				Timestamp:           p.Timestamp,
 				Severity:            p.Severity,
 				Scope:               p.Scope,
@@ -183,18 +218,13 @@ func run() int {
 			return entry.ID, nil
 		},
 	)
+	hub := app.hub
 	dbWriter := logging.NewDBWriter(dbAdapter,
 		logging.WithContext(context.Background()),
 		logging.WithOnError(func(entry logging.Entry, dbErr error) {
-			// Fall back to stderr so DB-write failures are not silent.
-			// We cannot use the logger here (infinite loop), so use
-			// the stdlib log package for this one edge case.
 			log.Printf("WARN: failed to persist log entry to database: %v", dbErr)
 		}),
 		logging.WithOnBroadcast(func(entry logging.Entry) {
-			// Broadcast the log entry to subscribed WebSocket clients.
-			// hub.Broadcast is non-blocking by design, so this is safe
-			// to call synchronously from WriteEntry.
 			hub.Broadcast(webapi.NewEvent(webapi.EventLogEntry, map[string]any{
 				"severity":             entry.Severity.String(),
 				"scope":                string(entry.Scope),
@@ -215,56 +245,58 @@ func run() int {
 		}),
 	)
 
-	logger = logging.New(logging.Options{
-		Level:   configuredLevel,
-		Writers: []logging.Writer{stdoutWriter, dbWriter},
+	app.logger = logging.New(logging.Options{
+		Level:   app.configuredLevel,
+		Writers: []logging.Writer{app.stdoutWriter, dbWriter},
 	})
-	startup = logger.WithScope(logging.ScopeStartup)
-	startup.Debug("database log writer attached")
+	app.startup = app.logger.WithScope(logging.ScopeStartup)
+	app.startup.Debug("database log writer attached")
+}
 
-	// -------------------------------------------------------------------
-	// Migrations — prefer embedded SQL files baked into the binary;
-	// fall back to a directory on disk when -migrations-dir is given or
-	// the migrations/ directory exists alongside the binary/working dir.
-	// -------------------------------------------------------------------
-	ctx := context.Background()
+// ---------------------------------------------------------------------------
+// Phase: run database migrations.
+// ---------------------------------------------------------------------------
 
+func (app *serverApp) runMigrations(ctx context.Context, migrationsDir string) error {
 	var applied int
+	var err error
 	if migrationsDir != "" {
-		// Explicit disk path requested via flag — honour it.
 		migDir := resolveMigrationsDir(migrationsDir)
 		if migDir == "" {
-			startup.Error("migrations directory not found — pass a valid -migrations-dir path")
-			return 1
+			app.startup.Error("migrations directory not found — pass a valid -migrations-dir path")
+			return fmt.Errorf("migrations directory not found")
 		}
-		startup.Info(fmt.Sprintf("using disk migrations from %s", migDir))
-		applied, err = db.MigrateUp(ctx, migDir)
+		app.startup.Info(fmt.Sprintf("using disk migrations from %s", migDir))
+		applied, err = app.db.MigrateUp(ctx, migDir)
 	} else {
-		// Use embedded migrations compiled into the binary.
-		startup.Info("using embedded migrations")
-		applied, err = db.MigrateUpFS(ctx, migrations.FS())
+		app.startup.Info("using embedded migrations")
+		applied, err = app.db.MigrateUpFS(ctx, migrations.FS())
 	}
 	if err != nil {
-		startup.Error(fmt.Sprintf("running database migrations: %v", err))
-		return 1
+		app.startup.Error(fmt.Sprintf("running database migrations: %v", err))
+		return err
 	}
 	if applied > 0 {
-		startup.Info(fmt.Sprintf("applied %d database migration(s)", applied))
+		app.startup.Info(fmt.Sprintf("applied %d database migration(s)", applied))
 	} else {
-		startup.Info("database schema is up to date")
+		app.startup.Info("database schema is up to date")
 	}
 
-	ver, err := db.MigrationVersion(ctx)
-	if err != nil {
-		startup.Warn(fmt.Sprintf("could not read migration version: %v", err))
+	ver, verErr := app.db.MigrationVersion(ctx)
+	if verErr != nil {
+		app.startup.Warn(fmt.Sprintf("could not read migration version: %v", verErr))
 	} else {
-		startup.Info(fmt.Sprintf("database schema version: %d", ver))
+		app.startup.Info(fmt.Sprintf("database schema version: %d", ver))
 	}
+	return nil
+}
 
-	// -------------------------------------------------------------------
-	// Authentication: local authenticator, session manager, middleware
-	// -------------------------------------------------------------------
-	authLog := logger.WithScope(logging.ScopeAuth)
+// ---------------------------------------------------------------------------
+// Phase: authentication setup (local auth, sessions, middleware, admin seed).
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) setupAuth(ctx context.Context) error {
+	authLog := app.logger.WithScope(logging.ScopeAuth)
 	authLogFn := func(level, msg string) {
 		switch level {
 		case "DEBUG":
@@ -278,211 +310,218 @@ func run() int {
 		}
 	}
 
-	sessionLifetime := auth.ParseDuration(cfg.Auth.SessionExpiry, 8*time.Hour)
+	sessionLifetime := auth.ParseDuration(app.cfg.Auth.SessionExpiry, 8*time.Hour)
 
-	sessionMgr := auth.NewSessionManager(db, sessionLifetime,
+	app.sessionMgr = auth.NewSessionManager(app.db, sessionLifetime,
 		auth.WithSessionLogger(authLogFn),
 	)
 
-	localAuth := auth.NewLocalAuthenticator(db, cfg.Auth.LockoutAttempts,
+	app.localAuth = auth.NewLocalAuthenticator(app.db, app.cfg.Auth.LockoutAttempts,
 		auth.WithLocalAuthLogger(authLogFn),
 	)
 
-	authMiddleware := auth.NewMiddleware(sessionMgr,
+	app.authMiddleware = auth.NewMiddleware(app.sessionMgr,
 		auth.WithMiddlewareLogger(authLogFn),
 	)
 
-	startup.Info(fmt.Sprintf("authentication configured: session_expiry=%s, lockout_attempts=%d, min_password_length=%d",
-		sessionLifetime, cfg.Auth.LockoutAttempts, cfg.Auth.MinPasswordLength))
+	app.startup.Info(fmt.Sprintf("authentication configured: session_expiry=%s, lockout_attempts=%d, min_password_length=%d",
+		sessionLifetime, app.cfg.Auth.LockoutAttempts, app.cfg.Auth.MinPasswordLength))
 
-	// Seed default admin user if no users exist yet. The default password
-	// is "ChefMigrate1" — operators MUST change it on first login.
+	// Seed default admin user if no users exist yet.
 	defaultAdminPassword := os.Getenv("CMM_DEFAULT_ADMIN_PASSWORD")
 	if defaultAdminPassword == "" {
 		defaultAdminPassword = "ChefMigrate1"
 	}
 	defaultAdminHash, err := auth.HashPassword(defaultAdminPassword)
 	if err != nil {
-		startup.Error(fmt.Sprintf("hashing default admin password: %v", err))
-		return 1
+		app.startup.Error(fmt.Sprintf("hashing default admin password: %v", err))
+		return err
 	}
-	seeded, err := db.EnsureDefaultAdmin(ctx, defaultAdminHash)
+	seeded, err := app.db.EnsureDefaultAdmin(ctx, defaultAdminHash)
 	if err != nil {
-		startup.Error(fmt.Sprintf("seeding default admin user: %v", err))
-		return 1
+		app.startup.Error(fmt.Sprintf("seeding default admin user: %v", err))
+		return err
 	}
 	if seeded {
-		startup.Info("default admin user created (username: admin) — change the password immediately")
+		app.startup.Info("default admin user created (username: admin) — change the password immediately")
 	} else {
-		startup.Debug("admin user already exists — skipping seed")
+		app.startup.Debug("admin user already exists — skipping seed")
 	}
 
 	// Start periodic expired session cleanup (runs immediately, then hourly).
-	auth.StartSessionCleanup(ctx, sessionMgr)
-	startup.Info("session cleanup started (interval: 1h)")
+	auth.StartSessionCleanup(ctx, app.sessionMgr)
+	app.startup.Info("session cleanup started (interval: 1h)")
+	return nil
+}
 
-	// -------------------------------------------------------------------
-	// Mark interrupted collection runs from previous process
-	// -------------------------------------------------------------------
-	staleRuns, err := db.GetRunningCollectionRuns(ctx)
+// ---------------------------------------------------------------------------
+// Phase: mark interrupted collection runs from previous process.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) markInterruptedRuns(ctx context.Context) {
+	staleRuns, err := app.db.GetRunningCollectionRuns(ctx)
 	if err != nil {
-		startup.Warn(fmt.Sprintf("could not check for interrupted collection runs: %v", err))
-	} else if len(staleRuns) > 0 {
-		for _, r := range staleRuns {
-			if _, err := db.InterruptCollectionRun(ctx, r.ID); err != nil {
-				startup.Warn(fmt.Sprintf("could not mark collection run %s as interrupted: %v", r.ID, err))
-			} else {
-				startup.Info(fmt.Sprintf("marked stale collection run %s (org %s) as interrupted", r.ID, r.OrganisationID))
-			}
+		app.startup.Warn(fmt.Sprintf("could not check for interrupted collection runs: %v", err))
+		return
+	}
+	for _, r := range staleRuns {
+		if _, err := app.db.InterruptCollectionRun(ctx, r.ID); err != nil {
+			app.startup.Warn(fmt.Sprintf("could not mark collection run %s as interrupted: %v", r.ID, err))
+		} else {
+			app.startup.Info(fmt.Sprintf("marked stale collection run %s (org %s) as interrupted", r.ID, r.OrganisationID))
 		}
 	}
+}
 
-	// -------------------------------------------------------------------
-	// Secrets: master key validation and credential store setup
-	// -------------------------------------------------------------------
-	secretsLog := logger.WithScope(logging.ScopeSecrets)
+// ---------------------------------------------------------------------------
+// Phase: secrets — master key, credential store, rotation, validation.
+// ---------------------------------------------------------------------------
 
-	// Determine the env var name for the master encryption key. The config
-	// field allows operators to override the default variable name.
-	masterKeyEnvName := cfg.CredentialEncryptionKeyEnv
+func (app *serverApp) setupSecrets(ctx context.Context) error {
+	secretsLog := app.logger.WithScope(logging.ScopeSecrets)
+
+	masterKeyEnvName := app.cfg.CredentialEncryptionKeyEnv
 	if masterKeyEnvName == "" {
 		masterKeyEnvName = "CMM_CREDENTIAL_ENCRYPTION_KEY"
 	}
 
-	// Build the credential store and (optionally) the encryptor. The
-	// encryptor is nil when no master key is configured — this is fine as
-	// long as no credentials are stored in the database.
-	var encryptor *secrets.Encryptor
-	var credStore *secrets.DBCredentialStore
-
 	masterKeyBase64 := os.Getenv(masterKeyEnvName)
 	if masterKeyBase64 != "" {
-		var mkErr error
-		encryptor, mkErr = secrets.NewEncryptor(masterKeyBase64)
+		enc, mkErr := secrets.NewEncryptor(masterKeyBase64)
 		if mkErr != nil {
 			secretsLog.Error(fmt.Sprintf("master encryption key from %s is invalid: %v", masterKeyEnvName, mkErr))
-			return 1
+			return mkErr
 		}
-		defer encryptor.Close()
+		app.encryptor = enc
 		secretsLog.Info(fmt.Sprintf("master encryption key loaded from %s", masterKeyEnvName))
 	}
 
-	credStore = secrets.NewDBCredentialStore(db.Pool(), encryptor)
+	app.credStore = secrets.NewDBCredentialStore(app.db.Pool(), app.encryptor)
 
-	// Check whether stored credentials exist. If they do but no master key
-	// is configured, we cannot decrypt them — warn loudly.
-	credCount, credCountErr := credStore.CredentialCount(ctx)
+	credCount, credCountErr := app.credStore.CredentialCount(ctx)
 	if credCountErr != nil {
 		secretsLog.Warn(fmt.Sprintf("could not count stored credentials: %v", credCountErr))
-	} else if credCount > 0 && encryptor == nil {
+	} else if credCount > 0 && app.encryptor == nil {
 		secretsLog.Error(fmt.Sprintf(
 			"%d credential(s) are stored in the database but no master encryption key is configured (set %s)",
 			credCount, masterKeyEnvName,
 		))
-		return 1
+		return fmt.Errorf("credentials exist but no master key configured")
 	} else if credCount > 0 {
 		secretsLog.Info(fmt.Sprintf("%d stored credential(s) found; master key is configured", credCount))
 	} else {
 		secretsLog.Debug("no stored credentials — master key validation skipped")
 	}
 
-	// -------------------------------------------------------------------
-	// Secrets: master key rotation (if previous key is provided)
-	// -------------------------------------------------------------------
-	if secrets.NeedsRotation(os.LookupEnv) {
-		if encryptor == nil {
-			secretsLog.Error("CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS is set but no current master key is configured — cannot rotate")
-			return 1
-		}
+	// Master key rotation (if previous key is provided).
+	if err := app.rotateSecrets(ctx, secretsLog); err != nil {
+		return err
+	}
 
-		prevKeyBase64, _ := os.LookupEnv("CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS")
-		prevEncryptor, prevErr := secrets.NewEncryptor(prevKeyBase64)
-		if prevErr != nil {
-			secretsLog.Error(fmt.Sprintf("previous master encryption key is invalid: %v", prevErr))
-			return 1
-		}
-		defer prevEncryptor.Close()
+	// Validate all stored credentials can be decrypted.
+	if credCount > 0 && app.encryptor != nil {
+		app.validateCredentials(ctx, secretsLog)
+	}
 
-		secretsLog.Info("master key rotation requested — re-encrypting stored credentials")
+	// Warn on overly permissive key file permissions.
+	app.checkKeyFilePermissions(secretsLog)
 
-		rotationRows, rrErr := credStore.ListRotationRows(ctx)
-		if rrErr != nil {
-			secretsLog.Error(fmt.Sprintf("failed to read credentials for rotation: %v", rrErr))
-			return 1
-		}
+	app.credResolver = secrets.NewCredentialResolver(app.credStore)
+	return nil
+}
 
-		rotationWriter := func(wCtx context.Context, row secrets.RotatedRow) error {
-			return credStore.UpdateEncryptedValueRaw(wCtx, row.Name, row.NewEncryptedValue)
-		}
+func (app *serverApp) rotateSecrets(ctx context.Context, secretsLog *logging.ScopedLogger) error {
+	if !secrets.NeedsRotation(os.LookupEnv) {
+		return nil
+	}
 
-		result, rotErr := secrets.RotateMasterKey(ctx, rotationRows, encryptor, prevEncryptor, rotationWriter)
-		if rotErr != nil {
-			secretsLog.Error(fmt.Sprintf("master key rotation failed: %v", rotErr))
-			return 1
-		}
+	if app.encryptor == nil {
+		secretsLog.Error("CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS is set but no current master key is configured — cannot rotate")
+		return fmt.Errorf("previous key set without current key")
+	}
 
-		secretsLog.Info(fmt.Sprintf(
-			"master key rotation complete in %s: %d total, %d re-encrypted, %d already rotated, %d failed",
-			result.Duration.Round(time.Millisecond), result.TotalCredentials,
-			result.ReEncrypted, result.AlreadyRotated, result.Failed,
+	prevKeyBase64, _ := os.LookupEnv("CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS")
+	prevEncryptor, prevErr := secrets.NewEncryptor(prevKeyBase64)
+	if prevErr != nil {
+		secretsLog.Error(fmt.Sprintf("previous master encryption key is invalid: %v", prevErr))
+		return prevErr
+	}
+	defer prevEncryptor.Close()
+
+	secretsLog.Info("master key rotation requested — re-encrypting stored credentials")
+
+	rotationRows, rrErr := app.credStore.ListRotationRows(ctx)
+	if rrErr != nil {
+		secretsLog.Error(fmt.Sprintf("failed to read credentials for rotation: %v", rrErr))
+		return rrErr
+	}
+
+	rotationWriter := func(wCtx context.Context, row secrets.RotatedRow) error {
+		return app.credStore.UpdateEncryptedValueRaw(wCtx, row.Name, row.NewEncryptedValue)
+	}
+
+	result, rotErr := secrets.RotateMasterKey(ctx, rotationRows, app.encryptor, prevEncryptor, rotationWriter)
+	if rotErr != nil {
+		secretsLog.Error(fmt.Sprintf("master key rotation failed: %v", rotErr))
+		return rotErr
+	}
+
+	secretsLog.Info(fmt.Sprintf(
+		"master key rotation complete in %s: %d total, %d re-encrypted, %d already rotated, %d failed",
+		result.Duration.Round(time.Millisecond), result.TotalCredentials,
+		result.ReEncrypted, result.AlreadyRotated, result.Failed,
+	))
+
+	for name, rotItemErr := range result.Errors {
+		secretsLog.Error(fmt.Sprintf("credential %q could not be rotated: %v", name, rotItemErr))
+	}
+
+	if result.Failed > 0 {
+		secretsLog.Warn(fmt.Sprintf(
+			"%d credential(s) failed rotation — they may be undecryptable. "+
+				"Remove CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS to skip rotation on next startup.",
+			result.Failed,
 		))
-
-		for name, rotItemErr := range result.Errors {
-			secretsLog.Error(fmt.Sprintf("credential %q could not be rotated: %v", name, rotItemErr))
-		}
-
-		if result.Failed > 0 {
-			secretsLog.Warn(fmt.Sprintf(
-				"%d credential(s) failed rotation — they may be undecryptable. "+
-					"Remove CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS to skip rotation on next startup.",
-				result.Failed,
-			))
-		}
 	}
+	return nil
+}
 
-	// -------------------------------------------------------------------
-	// Secrets: validate all stored credentials can be decrypted
-	// -------------------------------------------------------------------
-	if credCount > 0 && encryptor != nil {
-		rotationRows, rrErr := credStore.ListRotationRows(ctx)
-		if rrErr != nil {
-			secretsLog.Warn(fmt.Sprintf("could not validate stored credentials: %v", rrErr))
-		} else {
-			decryptFailures := 0
-			for _, row := range rotationRows {
-				aad, aadErr := secrets.BuildAAD(row.CredentialType, row.Name)
-				if aadErr != nil {
-					secretsLog.Error(fmt.Sprintf("credential %q: failed to build AAD: %v", row.Name, aadErr))
-					decryptFailures++
-					continue
-				}
-				plaintext, decErr := encryptor.Decrypt(row.EncryptedValue, aad)
-				if decErr != nil {
-					secretsLog.Error(fmt.Sprintf("credential %q: decryption failed (wrong key or corrupted data)", row.Name))
-					decryptFailures++
-					continue
-				}
-				secrets.ZeroBytes(plaintext)
-			}
-			if decryptFailures > 0 {
-				secretsLog.Warn(fmt.Sprintf("%d of %d credential(s) failed decryption validation", decryptFailures, len(rotationRows)))
-			} else if len(rotationRows) > 0 {
-				secretsLog.Info(fmt.Sprintf("all %d credential(s) passed decryption validation", len(rotationRows)))
-			}
-		}
+func (app *serverApp) validateCredentials(ctx context.Context, secretsLog *logging.ScopedLogger) {
+	rotationRows, rrErr := app.credStore.ListRotationRows(ctx)
+	if rrErr != nil {
+		secretsLog.Warn(fmt.Sprintf("could not validate stored credentials: %v", rrErr))
+		return
 	}
+	decryptFailures := 0
+	for _, row := range rotationRows {
+		aad, aadErr := secrets.BuildAAD(row.CredentialType, row.Name)
+		if aadErr != nil {
+			secretsLog.Error(fmt.Sprintf("credential %q: failed to build AAD: %v", row.Name, aadErr))
+			decryptFailures++
+			continue
+		}
+		plaintext, decErr := app.encryptor.Decrypt(row.EncryptedValue, aad)
+		if decErr != nil {
+			secretsLog.Error(fmt.Sprintf("credential %q: decryption failed (wrong key or corrupted data)", row.Name))
+			decryptFailures++
+			continue
+		}
+		secrets.ZeroBytes(plaintext)
+	}
+	if decryptFailures > 0 {
+		secretsLog.Warn(fmt.Sprintf("%d of %d credential(s) failed decryption validation", decryptFailures, len(rotationRows)))
+	} else if len(rotationRows) > 0 {
+		secretsLog.Info(fmt.Sprintf("all %d credential(s) passed decryption validation", len(rotationRows)))
+	}
+}
 
-	// -------------------------------------------------------------------
-	// Secrets: warn on overly permissive key file permissions
-	// -------------------------------------------------------------------
-	for _, org := range cfg.Organisations {
+func (app *serverApp) checkKeyFilePermissions(secretsLog *logging.ScopedLogger) {
+	for _, org := range app.cfg.Organisations {
 		if org.ClientKeyPath == "" {
 			continue
 		}
 		info, statErr := os.Stat(org.ClientKeyPath)
 		if statErr != nil {
-			// File may not exist yet or may be resolved at collection
-			// time — don't treat as fatal, just skip the permission check.
 			continue
 		}
 		perm := info.Mode().Perm()
@@ -493,242 +532,247 @@ func run() int {
 			))
 		}
 	}
+}
 
-	// Build the credential resolver for use by downstream components
-	// (collector, notifications, etc.).
-	credResolver := secrets.NewCredentialResolver(credStore)
+// ---------------------------------------------------------------------------
+// Phase: sync organisations from configuration.
+// ---------------------------------------------------------------------------
 
-	// -------------------------------------------------------------------
-	// Sync organisations from configuration
-	// -------------------------------------------------------------------
-	orgParams := make([]datastore.UpsertOrganisationParams, 0, len(cfg.Organisations))
-	for _, org := range cfg.Organisations {
+func (app *serverApp) syncOrganisations(ctx context.Context) error {
+	orgParams := make([]datastore.UpsertOrganisationParams, 0, len(app.cfg.Organisations))
+	for _, org := range app.cfg.Organisations {
 		orgParams = append(orgParams, datastore.UpsertOrganisationParams{
 			Name:          org.Name,
 			ChefServerURL: org.ChefServerURL,
 			OrgName:       org.OrgName,
 			ClientName:    org.ClientName,
-			// ClientKeyCredentialID is resolved later by the secrets package
 		})
 	}
 
-	orgs, err := db.SyncOrganisationsFromConfig(ctx, orgParams)
+	orgs, err := app.db.SyncOrganisationsFromConfig(ctx, orgParams)
 	if err != nil {
-		startup.Error(fmt.Sprintf("syncing organisations from config: %v", err))
-		return 1
+		app.startup.Error(fmt.Sprintf("syncing organisations from config: %v", err))
+		return err
 	}
-	startup.Info(fmt.Sprintf("%d organisation(s) synced from configuration", len(orgs)))
+	app.startup.Info(fmt.Sprintf("%d organisation(s) synced from configuration", len(orgs)))
 	for _, org := range orgs {
-		startup.Info(fmt.Sprintf("  - %s (%s)", org.Name, org.ChefServerURL))
+		app.startup.Info(fmt.Sprintf("  - %s (%s)", org.Name, org.ChefServerURL))
 	}
+	return nil
+}
 
-	// -------------------------------------------------------------------
-	// Analysis pipeline: resolve external tools
-	// -------------------------------------------------------------------
-	toolResolver := embedded.NewResolver(cfg.AnalysisTools.EmbeddedBinDir)
+// ---------------------------------------------------------------------------
+// Phase: analysis pipeline and collector setup.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) setupCollector(ctx context.Context) error {
+	toolResolver := embedded.NewResolver(app.cfg.AnalysisTools.EmbeddedBinDir)
 	toolResult := toolResolver.ValidateAll(ctx)
 
-	// Log tool availability — these are informational; only git is mandatory.
 	if toolResult.Git.Available {
-		startup.Info(fmt.Sprintf("git available: %s (version %s)", toolResult.Git.Path, toolResult.Git.Version))
+		app.startup.Info(fmt.Sprintf("git available: %s (version %s)", toolResult.Git.Path, toolResult.Git.Version))
 	} else {
-		startup.Warn(fmt.Sprintf("git not available: %s — git cookbook fetching will fail", toolResult.Git.Error))
+		app.startup.Warn(fmt.Sprintf("git not available: %s — git cookbook fetching will fail", toolResult.Git.Error))
 	}
 	if toolResult.Cookstyle.Available {
-		startup.Info(fmt.Sprintf("cookstyle available: %s (version %s)", toolResult.Cookstyle.Path, toolResult.Cookstyle.Version))
+		app.startup.Info(fmt.Sprintf("cookstyle available: %s (version %s)", toolResult.Cookstyle.Path, toolResult.Cookstyle.Version))
 	} else {
-		startup.Info(fmt.Sprintf("cookstyle not available: %s — CookStyle scanning disabled", toolResult.Cookstyle.Error))
+		app.startup.Info(fmt.Sprintf("cookstyle not available: %s — CookStyle scanning disabled", toolResult.Cookstyle.Error))
 	}
 	if toolResult.Kitchen.Available {
-		startup.Info(fmt.Sprintf("kitchen available: %s (version %s)", toolResult.Kitchen.Path, toolResult.Kitchen.Version))
+		app.startup.Info(fmt.Sprintf("kitchen available: %s (version %s)", toolResult.Kitchen.Path, toolResult.Kitchen.Version))
 	} else {
-		startup.Info(fmt.Sprintf("kitchen not available: %s — Test Kitchen testing disabled", toolResult.Kitchen.Error))
+		app.startup.Info(fmt.Sprintf("kitchen not available: %s — Test Kitchen testing disabled", toolResult.Kitchen.Error))
 	}
 	if toolResult.Docker.Available {
-		startup.Info(fmt.Sprintf("docker available: %s (version %s)", toolResult.Docker.Path, toolResult.Docker.Version))
+		app.startup.Info(fmt.Sprintf("docker available: %s (version %s)", toolResult.Docker.Path, toolResult.Docker.Version))
 	} else {
-		startup.Info(fmt.Sprintf("docker not available: %s — Test Kitchen testing disabled", toolResult.Docker.Error))
+		app.startup.Info(fmt.Sprintf("docker not available: %s — Test Kitchen testing disabled", toolResult.Docker.Error))
 	}
-
 	if !toolResult.CookstyleEnabled && !toolResult.KitchenEnabled {
-		startup.Warn("neither CookStyle nor Test Kitchen available — no cookbook compatibility testing will be performed")
+		app.startup.Warn("neither CookStyle nor Test Kitchen available — no cookbook compatibility testing will be performed")
 	}
 
-	// Construct available analysis pipeline components.
 	var collOpts []collector.Option
 
-	// CookStyle scanner + autocorrect preview generator (both require cookstyle).
-	if toolResult.CookstyleEnabled && cfg.AnalysisTools.IsCookstyleEnabled() {
+	if toolResult.CookstyleEnabled && app.cfg.AnalysisTools.IsCookstyleEnabled() {
 		csScanner := analysis.NewCookstyleScanner(
-			db, logger, toolResult.Cookstyle.Path,
-			cfg.Concurrency.CookstyleScan,
-			cfg.AnalysisTools.CookstyleTimeoutMinutes,
+			app.db, app.logger, toolResult.Cookstyle.Path,
+			app.cfg.Concurrency.CookstyleScan,
+			app.cfg.AnalysisTools.CookstyleTimeoutMinutes,
 		)
 		collOpts = append(collOpts, collector.WithCookstyleScanner(csScanner))
-		startup.Info("CookStyle scanner enabled")
+		app.startup.Info("CookStyle scanner enabled")
 
 		acGen := remediation.NewAutocorrectGenerator(
-			db, logger, toolResult.Cookstyle.Path,
-			cfg.AnalysisTools.CookstyleTimeoutMinutes,
+			app.db, app.logger, toolResult.Cookstyle.Path,
+			app.cfg.AnalysisTools.CookstyleTimeoutMinutes,
 		)
 		collOpts = append(collOpts, collector.WithAutocorrectGenerator(acGen))
-		startup.Info("autocorrect preview generator enabled")
-	} else if toolResult.CookstyleEnabled && !cfg.AnalysisTools.IsCookstyleEnabled() {
-		startup.Info("CookStyle disabled via configuration (analysis_tools.cookstyle_enabled: false)")
+		app.startup.Info("autocorrect preview generator enabled")
+	} else if toolResult.CookstyleEnabled && !app.cfg.AnalysisTools.IsCookstyleEnabled() {
+		app.startup.Info("CookStyle disabled via configuration (analysis_tools.cookstyle_enabled: false)")
 	}
 
-	// Test Kitchen scanner (requires both kitchen and docker, and config enabled).
-	if toolResult.KitchenEnabled && cfg.AnalysisTools.TestKitchen.IsEnabled() {
+	if toolResult.KitchenEnabled && app.cfg.AnalysisTools.TestKitchen.IsEnabled() {
 		tkScanner := analysis.NewKitchenScanner(
-			db, logger, toolResult.Kitchen.Path,
-			cfg.Concurrency.TestKitchenRun,
-			cfg.AnalysisTools.TestKitchenTimeoutMinutes,
-			cfg.AnalysisTools.TestKitchen,
+			app.db, app.logger, toolResult.Kitchen.Path,
+			app.cfg.Concurrency.TestKitchenRun,
+			app.cfg.AnalysisTools.TestKitchenTimeoutMinutes,
+			app.cfg.AnalysisTools.TestKitchen,
 		)
 		collOpts = append(collOpts, collector.WithKitchenScanner(tkScanner))
-		startup.Info("Test Kitchen scanner enabled")
-	} else if toolResult.KitchenEnabled && !cfg.AnalysisTools.TestKitchen.IsEnabled() {
-		startup.Info("Test Kitchen disabled via configuration (analysis_tools.test_kitchen.enabled: false)")
+		app.startup.Info("Test Kitchen scanner enabled")
+	} else if toolResult.KitchenEnabled && !app.cfg.AnalysisTools.TestKitchen.IsEnabled() {
+		app.startup.Info("Test Kitchen disabled via configuration (analysis_tools.test_kitchen.enabled: false)")
 	}
 
-	// Complexity scorer — always available (reads from DB, no external tool).
-	cxScorer := remediation.NewComplexityScorer(db, logger)
+	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)
 	collOpts = append(collOpts, collector.WithComplexityScorer(cxScorer))
 
-	// Readiness evaluator — always available (reads from DB, no external tool).
 	readinessEval := analysis.NewReadinessEvaluator(
-		db, logger,
-		cfg.Concurrency.ReadinessEvaluation,
-		cfg.Readiness.MinFreeDiskMB,
+		app.db, app.logger,
+		app.cfg.Concurrency.ReadinessEvaluation,
+		app.cfg.Readiness.MinFreeDiskMB,
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
 
-	// Ownership evaluator — always available (reads from DB, no external tool).
-	// Auto-derivation rules are evaluated after each collection run when
-	// ownership tracking is enabled.
-	if cfg.Ownership.Enabled {
-		ownershipEval := collector.NewOwnershipEvaluator(db, cfg.Ownership, logger)
+	if app.cfg.Ownership.Enabled {
+		ownershipEval := collector.NewOwnershipEvaluator(app.db, app.cfg.Ownership, app.logger)
 		collOpts = append(collOpts, collector.WithOwnershipEvaluator(ownershipEval))
-		startup.Info("ownership evaluator enabled")
+		app.startup.Info("ownership evaluator enabled")
 	}
 
-	// Ensure storage directories exist. These are the persistent locations
-	// for cookbook files, git clones, and other application data. Creating
-	// them at startup avoids scattered MkdirAll calls throughout the code.
+	// Ensure storage directories exist.
+	if err := app.ensureStorageDirs(); err != nil {
+		return err
+	}
+
+	// Cookbook directory resolvers.
+	collOpts = append(collOpts, app.cookbookDirOpts()...)
+
+	app.startup.Info("analysis pipeline configured: complexity scorer and readiness evaluator always enabled")
+
+	app.coll = collector.New(app.db, app.cfg, app.logger, app.credResolver, collOpts...)
+	return nil
+}
+
+func (app *serverApp) ensureStorageDirs() error {
 	for _, dir := range []struct{ name, path string }{
-		{"data_dir", cfg.Storage.DataDir},
-		{"cookbook_cache_dir", cfg.Storage.CookbookCacheDir},
-		{"git_cookbook_dir", cfg.Storage.GitCookbookDir},
+		{"data_dir", app.cfg.Storage.DataDir},
+		{"cookbook_cache_dir", app.cfg.Storage.CookbookCacheDir},
+		{"git_cookbook_dir", app.cfg.Storage.GitCookbookDir},
 	} {
 		if err := os.MkdirAll(dir.path, 0o750); err != nil {
-			startup.Error(fmt.Sprintf("creating %s %s: %v", dir.name, dir.path, err))
-			return 1
+			app.startup.Error(fmt.Sprintf("creating %s %s: %v", dir.name, dir.path, err))
+			return err
 		}
 	}
+	return nil
+}
 
-	// Cookbook directory resolver. Git cookbooks are cloned under the git
-	// cookbook directory and persist on disk for rescanning when HEAD changes.
-	// Server cookbooks are retained in the cache directory by default
-	// (delete_server_cookbooks_after_scan: false) so they can be re-scanned
-	// when CookStyle is upgraded without re-downloading from the Chef Server.
-	gitCookbookDir := cfg.Storage.GitCookbookDir
-	cookbookCacheDir := cfg.Storage.CookbookCacheDir
-	deleteAfterScan := cfg.Collection.DeleteServerCookbooksAfterScanEnabled()
-	collOpts = append(collOpts, collector.WithCookbookCacheDir(cookbookCacheDir))
-	collOpts = append(collOpts, collector.WithGitCookbookDir(gitCookbookDir))
-	collOpts = append(collOpts, collector.WithServerCookbookDirFn(func(sc datastore.ServerCookbook) string {
-		if deleteAfterScan {
-			// Files are removed after scanning — not available on disk.
-			return ""
-		}
-		// Files are retained in the persistent cache directory.
-		return filepath.Join(cookbookCacheDir, sc.OrganisationID, sc.Name, sc.Version)
-	}))
-	collOpts = append(collOpts, collector.WithGitRepoDirFn(func(repo datastore.GitRepo) string {
-		return filepath.Join(gitCookbookDir, repo.Name)
-	}))
+func (app *serverApp) cookbookDirOpts() []collector.Option {
+	gitCookbookDir := app.cfg.Storage.GitCookbookDir
+	cookbookCacheDir := app.cfg.Storage.CookbookCacheDir
+	deleteAfterScan := app.cfg.Collection.DeleteServerCookbooksAfterScanEnabled()
 
-	startup.Info(fmt.Sprintf("storage paths: data_dir=%s, cookbook_cache=%s, git_cookbooks=%s",
-		cfg.Storage.DataDir, cookbookCacheDir, gitCookbookDir))
+	opts := []collector.Option{
+		collector.WithCookbookCacheDir(cookbookCacheDir),
+		collector.WithGitCookbookDir(gitCookbookDir),
+		collector.WithServerCookbookDirFn(func(sc datastore.ServerCookbook) string {
+			if deleteAfterScan {
+				return ""
+			}
+			return filepath.Join(cookbookCacheDir, sc.OrganisationID, sc.Name, sc.Version)
+		}),
+		collector.WithGitRepoDirFn(func(repo datastore.GitRepo) string {
+			return filepath.Join(gitCookbookDir, repo.Name)
+		}),
+	}
+
+	app.startup.Info(fmt.Sprintf("storage paths: data_dir=%s, cookbook_cache=%s, git_cookbooks=%s",
+		app.cfg.Storage.DataDir, cookbookCacheDir, gitCookbookDir))
 	if deleteAfterScan {
-		startup.Info("server cookbook files will be deleted after scanning (delete_server_cookbooks_after_scan: true)")
+		app.startup.Info("server cookbook files will be deleted after scanning (delete_server_cookbooks_after_scan: true)")
 	} else {
-		startup.Info(fmt.Sprintf("server cookbook files will be retained in %s for re-scanning", cookbookCacheDir))
+		app.startup.Info(fmt.Sprintf("server cookbook files will be retained in %s for re-scanning", cookbookCacheDir))
 	}
-	startup.Info("analysis pipeline configured: complexity scorer and readiness evaluator always enabled")
+	return opts
+}
 
-	// -------------------------------------------------------------------
-	// Data collection scheduler
-	// -------------------------------------------------------------------
-	coll := collector.New(db, cfg, logger, credResolver, collOpts...)
+// ---------------------------------------------------------------------------
+// Phase: ownership startup tasks.
+// ---------------------------------------------------------------------------
 
-	// -------------------------------------------------------------------
-	// Ownership startup tasks
-	// -------------------------------------------------------------------
-	if cfg.Ownership.Enabled {
-		// Remove assignments from auto-rules that have been deleted from config.
-		if err := collector.CleanupRemovedAutoRules(ctx, db, cfg.Ownership, logger); err != nil {
-			startup.Warn(fmt.Sprintf("ownership auto-rule cleanup failed: %v", err))
-		}
-
-		// Start daily audit log purge (runs immediately once, then every 24h).
-		collector.StartAuditLogPurge(ctx, db, cfg.Ownership.AuditLog.RetentionDays, logger)
-		startup.Info(fmt.Sprintf("ownership audit log purge enabled (retention: %d days)", cfg.Ownership.AuditLog.RetentionDays))
+func (app *serverApp) setupOwnership(ctx context.Context) {
+	if !app.cfg.Ownership.Enabled {
+		return
 	}
+	if err := collector.CleanupRemovedAutoRules(ctx, app.db, app.cfg.Ownership, app.logger); err != nil {
+		app.startup.Warn(fmt.Sprintf("ownership auto-rule cleanup failed: %v", err))
+	}
+	collector.StartAuditLogPurge(ctx, app.db, app.cfg.Ownership.AuditLog.RetentionDays, app.logger)
+	app.startup.Info(fmt.Sprintf("ownership audit log purge enabled (retention: %d days)", app.cfg.Ownership.AuditLog.RetentionDays))
+}
 
-	// -------------------------------------------------------------------
-	// Resume interrupted collection runs from previous process
-	// -------------------------------------------------------------------
-	resumeResult, resumeErr := coll.ResumeInterruptedRuns(ctx)
+// ---------------------------------------------------------------------------
+// Phase: resume interrupted runs and start collection scheduler.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) startScheduler(ctx context.Context) error {
+	resumeResult, resumeErr := app.coll.ResumeInterruptedRuns(ctx)
 	if resumeErr != nil {
-		startup.Warn(fmt.Sprintf("failed to resume interrupted collection runs: %v", resumeErr))
+		app.startup.Warn(fmt.Sprintf("failed to resume interrupted collection runs: %v", resumeErr))
 	} else if resumeResult != nil && resumeResult.Evaluated > 0 {
-		startup.Info(fmt.Sprintf(
+		app.startup.Info(fmt.Sprintf(
 			"interrupted run evaluation: %d evaluated, %d resumed, %d abandoned",
 			resumeResult.Evaluated, resumeResult.Resumed, resumeResult.Abandoned,
 		))
 		if resumeResult.ResumedRunResult != nil {
 			rr := resumeResult.ResumedRunResult
-			startup.Info(fmt.Sprintf(
+			app.startup.Info(fmt.Sprintf(
 				"resumed collection completed: %d/%d orgs succeeded, %d nodes, %d cookbook versions in %s",
 				rr.SucceededOrgs, rr.TotalOrgs, rr.TotalNodes, rr.TotalCookbooks,
 				rr.Duration.Round(time.Millisecond),
 			))
 		}
 		for runID, runErr := range resumeResult.Errors {
-			startup.Warn(fmt.Sprintf("resume error for run %s: %v", runID, runErr))
+			app.startup.Warn(fmt.Sprintf("resume error for run %s: %v", runID, runErr))
 		}
 	}
 
-	schedule, schedErr := collector.ParseSchedule(cfg.Collection.Schedule)
+	schedule, schedErr := collector.ParseSchedule(app.cfg.Collection.Schedule)
 	if schedErr != nil {
-		startup.Error(fmt.Sprintf("invalid collection schedule %q: %v", cfg.Collection.Schedule, schedErr))
-		return 1
+		app.startup.Error(fmt.Sprintf("invalid collection schedule %q: %v", app.cfg.Collection.Schedule, schedErr))
+		return schedErr
 	}
 
-	sched := collector.NewScheduler(coll, schedule, logger)
-	if err := sched.Start(); err != nil {
-		startup.Error(fmt.Sprintf("starting collection scheduler: %v", err))
-		return 1
+	app.sched = collector.NewScheduler(app.coll, schedule, app.logger)
+	if err := app.sched.Start(); err != nil {
+		app.startup.Error(fmt.Sprintf("starting collection scheduler: %v", err))
+		return err
 	}
-	defer sched.Stop()
-	startup.Info(fmt.Sprintf("collection scheduler started (schedule: %s)", cfg.Collection.Schedule))
+	app.startup.Info(fmt.Sprintf("collection scheduler started (schedule: %s)", app.cfg.Collection.Schedule))
+	return nil
+}
 
-	// -------------------------------------------------------------------
-	// Export output directory and cleanup ticker
-	// -------------------------------------------------------------------
-	exportOutputDir := cfg.Exports.OutputDirectory
+// ---------------------------------------------------------------------------
+// Phase: export output directory and cleanup ticker.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) setupExports() error {
+	exportOutputDir := app.cfg.Exports.OutputDirectory
 	if exportOutputDir == "" {
 		exportOutputDir = "/var/lib/chef-migration-metrics/exports"
 	}
 	if err := os.MkdirAll(exportOutputDir, 0o750); err != nil {
-		startup.Error(fmt.Sprintf("creating export output directory %s: %v", exportOutputDir, err))
-		return 1
+		app.startup.Error(fmt.Sprintf("creating export output directory %s: %v", exportOutputDir, err))
+		return err
 	}
-	startup.Info(fmt.Sprintf("export output directory: %s", exportOutputDir))
+	app.startup.Info(fmt.Sprintf("export output directory: %s", exportOutputDir))
 
 	exportCleanupLog := func(level, msg string) {
-		scoped := logger.WithScope(logging.ScopeExportJob)
+		scoped := app.logger.WithScope(logging.ScopeExportJob)
 		switch level {
 		case "DEBUG":
 			scoped.Debug(msg)
@@ -740,37 +784,38 @@ func run() int {
 			scoped.Info(msg)
 		}
 	}
-	stopExportCleanup := export.StartCleanupTicker(db, exportOutputDir, 1*time.Hour, exportCleanupLog)
-	defer stopExportCleanup()
-	startup.Info("export cleanup ticker started (interval: 1h)")
+	app.stopExportCleanup = export.StartCleanupTicker(app.db, exportOutputDir, 1*time.Hour, exportCleanupLog)
+	app.startup.Info("export cleanup ticker started (interval: 1h)")
+	return nil
+}
 
-	// -------------------------------------------------------------------
-	// HTTP server — wire up the webapi.Router which owns all API routes,
-	// WebSocket endpoint, health/version endpoints, and SPA fallback.
-	// -------------------------------------------------------------------
-	// EventHub was created earlier (before DBWriter) so the broadcast
-	// callback could capture it. It is already running.
+// ---------------------------------------------------------------------------
+// Phase: HTTP server setup and serve.
+// ---------------------------------------------------------------------------
 
-	// Performance instrumentation — create the in-memory request latency
-	// recorder when the performance section is enabled. The recorder is
-	// passed to the router which installs the timing middleware.
+type serverResult struct {
+	errCh       <-chan error
+	tlsListener *apptls.Listener
+	plainSrv    *http.Server
+}
+
+func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	var recorder *perf.Recorder
-	if cfg.Performance.IsEnabled() {
-		windowSec := cfg.Performance.WindowSeconds
+	if app.cfg.Performance.IsEnabled() {
+		windowSec := app.cfg.Performance.WindowSeconds
 		if windowSec <= 0 {
 			windowSec = 300
 		}
 		recorder = perf.NewRecorder(time.Duration(windowSec)*time.Second, 200, 1000)
-		startup.Info(fmt.Sprintf("performance instrumentation enabled (window=%ds)", windowSec))
-		if cfg.Performance.PprofEnabled {
-			startup.Warn("pprof endpoints enabled — do not use in production without auth")
+		app.startup.Info(fmt.Sprintf("performance instrumentation enabled (window=%ds)", windowSec))
+		if app.cfg.Performance.PprofEnabled {
+			app.startup.Warn("pprof endpoints enabled — do not use in production without auth")
 		}
 	}
 
-	// Attempt to load the built React frontend assets from disk.
-	// The Vite build outputs to frontend/dist/. In Docker this is at
-	// /src/frontend/dist during the build stage; at runtime, the binary
-	// and assets are both in the image so we check the default path.
+	coll := app.coll
+	sched := app.sched
+	logger := app.logger
 	routerOpts := []webapi.RouterOption{
 		webapi.WithVersion(version),
 		webapi.WithLogger(func(level, msg string) {
@@ -785,7 +830,7 @@ func run() int {
 				logger.WithScope(logging.ScopeWebAPI).Info(msg)
 			}
 		}),
-		webapi.WithAuth(localAuth, sessionMgr, authMiddleware, db),
+		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
 		webapi.WithCollectionTrigger(func(ctx context.Context) error {
 			if coll.IsRunning() {
 				return fmt.Errorf("a collection run is already in progress")
@@ -808,24 +853,22 @@ func run() int {
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
 		routerOpts = append(routerOpts, webapi.WithFrontendFS(frontendFS))
 		if frontend.HasEmbed() {
-			startup.Info("frontend SPA assets loaded from embedded binary")
+			app.startup.Info("frontend SPA assets loaded from embedded binary")
 		} else {
-			startup.Info(fmt.Sprintf("frontend SPA assets loaded from disk: %s", frontend.DistDir))
+			app.startup.Info(fmt.Sprintf("frontend SPA assets loaded from disk: %s", frontend.DistDir))
 		}
 	} else {
-		startup.Info(fmt.Sprintf("frontend SPA assets not found (checked embedded binary and %s) — serving plain-text placeholder", frontend.DistDir))
+		app.startup.Info(fmt.Sprintf("frontend SPA assets not found (checked embedded binary and %s) — serving plain-text placeholder", frontend.DistDir))
 	}
 
-	apiRouter := webapi.NewRouter(db, cfg, hub, routerOpts...)
-	startup.Info("webapi router initialised with all API routes")
+	apiRouter := webapi.NewRouter(app.db, app.cfg, app.hub, routerOpts...)
+	app.startup.Info("webapi router initialised with all API routes")
 
-	shutdownTimeout := time.Duration(cfg.Server.GracefulShutdownSeconds) * time.Second
+	shutdownTimeout := time.Duration(app.cfg.Server.GracefulShutdownSeconds) * time.Second
 	if shutdownTimeout <= 0 {
 		shutdownTimeout = 15 * time.Second
 	}
 
-	// tlsLog bridges the internal/tls package's LogFunc to the structured
-	// logger using the ScopeTLS scope.
 	tlsLog := func(level, msg string) {
 		scoped := logger.WithScope(logging.ScopeTLS)
 		switch level {
@@ -840,76 +883,77 @@ func run() int {
 		}
 	}
 
-	// -------------------------------------------------------------------
-	// Server start — TLS-aware listener selection
-	// -------------------------------------------------------------------
-	var errCh <-chan error
-	var tlsListener *apptls.Listener // non-nil only in TLS mode
-	var plainSrv *http.Server        // non-nil only in plain HTTP mode
+	var res serverResult
 
-	switch cfg.Server.TLS.Mode {
+	switch app.cfg.Server.TLS.Mode {
 	case "static":
-		startup.Info("TLS mode: static (operator-managed certificate)")
+		app.startup.Info("TLS mode: static (operator-managed certificate)")
 
-		var tlsErr error
-		tlsListener, tlsErr = apptls.NewListener(apiRouter, apptls.ListenerConfig{
-			ListenAddress:           cfg.Server.ListenAddress,
-			Port:                    cfg.Server.Port,
-			CertPath:                cfg.Server.TLS.CertPath,
-			KeyPath:                 cfg.Server.TLS.KeyPath,
-			CAPath:                  cfg.Server.TLS.CAPath,
-			MinVersion:              cfg.Server.TLS.MinVersion,
-			HTTPRedirectPort:        cfg.Server.TLS.HTTPRedirectPort,
+		tlsListener, tlsErr := apptls.NewListener(apiRouter, apptls.ListenerConfig{
+			ListenAddress:           app.cfg.Server.ListenAddress,
+			Port:                    app.cfg.Server.Port,
+			CertPath:                app.cfg.Server.TLS.CertPath,
+			KeyPath:                 app.cfg.Server.TLS.KeyPath,
+			CAPath:                  app.cfg.Server.TLS.CAPath,
+			MinVersion:              app.cfg.Server.TLS.MinVersion,
+			HTTPRedirectPort:        app.cfg.Server.TLS.HTTPRedirectPort,
 			GracefulShutdownTimeout: shutdownTimeout,
 		}, tlsLog)
 		if tlsErr != nil {
-			startup.Error(fmt.Sprintf("TLS listener setup failed: %v", tlsErr))
-			return 1
+			app.startup.Error(fmt.Sprintf("TLS listener setup failed: %v", tlsErr))
+			return res, tlsErr
 		}
 
-		startup.Info(fmt.Sprintf("TLS certificate: %s", tlsListener.CertSummary()))
-		startup.Info(fmt.Sprintf("TLS min version: %s", tlsListener.MinTLSVersionString()))
+		app.startup.Info(fmt.Sprintf("TLS certificate: %s", tlsListener.CertSummary()))
+		app.startup.Info(fmt.Sprintf("TLS min version: %s", tlsListener.MinTLSVersionString()))
 		if tlsListener.IsMTLSEnabled() {
-			startup.Info("mutual TLS (mTLS) enabled — client certificates required")
+			app.startup.Info("mutual TLS (mTLS) enabled — client certificates required")
 		}
 
-		// Start filesystem watcher for automatic certificate reload
-		// (e.g. cert-manager in Kubernetes). Poll every 30 seconds.
 		tlsListener.CertManager().WatchForChanges(30 * time.Second)
-
-		errCh = tlsListener.Serve()
+		res.errCh = tlsListener.Serve()
+		res.tlsListener = tlsListener
 
 	case "acme":
-		startup.Error("TLS mode 'acme' is not yet implemented")
-		return 1
+		app.startup.Error("TLS mode 'acme' is not yet implemented")
+		return res, fmt.Errorf("TLS mode 'acme' is not yet implemented")
 
 	default:
-		// mode: off — plain HTTP
-		listenAddr := cfg.Server.ListenAddress
+		listenAddr := app.cfg.Server.ListenAddress
 		if listenAddr == "" {
 			listenAddr = "0.0.0.0"
 		}
-		port := cfg.Server.Port
+		port := app.cfg.Server.Port
 		if port == 0 {
 			port = 8080
 		}
 
-		plainSrv = apptls.NewPlainListener(apiRouter, listenAddr, port)
-
+		plainSrv := apptls.NewPlainListener(apiRouter, listenAddr, port)
 		plainErrCh := make(chan error, 1)
 		go func() {
-			startup.Info(fmt.Sprintf("HTTP server listening on %s", plainSrv.Addr))
+			app.startup.Info(fmt.Sprintf("HTTP server listening on %s", plainSrv.Addr))
 			if err := plainSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				plainErrCh <- err
 			}
 			close(plainErrCh)
 		}()
-		errCh = plainErrCh
+		res.errCh = plainErrCh
+		res.plainSrv = plainSrv
 	}
 
-	// -------------------------------------------------------------------
-	// Signal handling — SIGINT/SIGTERM for shutdown, SIGHUP for cert reload
-	// -------------------------------------------------------------------
+	return res, nil
+}
+
+// ---------------------------------------------------------------------------
+// Phase: signal handling loop and graceful shutdown.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) awaitShutdown(srv serverResult) int {
+	shutdownTimeout := time.Duration(app.cfg.Server.GracefulShutdownSeconds) * time.Second
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = 15 * time.Second
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
@@ -919,23 +963,23 @@ func run() int {
 		case sig := <-sigCh:
 			switch sig {
 			case syscall.SIGHUP:
-				if tlsListener != nil {
-					startup.Info("received SIGHUP — reloading TLS certificate")
-					if reloadErr := tlsListener.CertManager().Reload(); reloadErr != nil {
-						startup.Error(fmt.Sprintf("TLS certificate reload failed: %v", reloadErr))
+				if srv.tlsListener != nil {
+					app.startup.Info("received SIGHUP — reloading TLS certificate")
+					if reloadErr := srv.tlsListener.CertManager().Reload(); reloadErr != nil {
+						app.startup.Error(fmt.Sprintf("TLS certificate reload failed: %v", reloadErr))
 					} else {
-						startup.Info(fmt.Sprintf("TLS certificate reloaded: %s", tlsListener.CertSummary()))
+						app.startup.Info(fmt.Sprintf("TLS certificate reloaded: %s", srv.tlsListener.CertSummary()))
 					}
 				} else {
-					startup.Info("received SIGHUP — no TLS certificate to reload in plain HTTP mode")
+					app.startup.Info("received SIGHUP — no TLS certificate to reload in plain HTTP mode")
 				}
 			default:
-				startup.Info(fmt.Sprintf("received signal %s, shutting down gracefully...", sig))
+				app.startup.Info(fmt.Sprintf("received signal %s, shutting down gracefully...", sig))
 				running = false
 			}
-		case err := <-errCh:
+		case err := <-srv.errCh:
 			if err != nil {
-				startup.Error(fmt.Sprintf("server failed: %v", err))
+				app.startup.Error(fmt.Sprintf("server failed: %v", err))
 				return 1
 			}
 			running = false
@@ -944,79 +988,167 @@ func run() int {
 
 	// Graceful shutdown — stop the scheduler first so no new collection
 	// runs start, then shut down the HTTP server.
-	startup.Info("stopping collection scheduler...")
-	sched.Stop()
-	startup.Info("collection scheduler stopped")
+	app.startup.Info("stopping collection scheduler...")
+	app.sched.Stop()
+	app.startup.Info("collection scheduler stopped")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	if tlsListener != nil {
-		if err := tlsListener.Shutdown(shutdownCtx); err != nil {
-			startup.Error(fmt.Sprintf("TLS server shutdown: %v", err))
+	if srv.tlsListener != nil {
+		if err := srv.tlsListener.Shutdown(shutdownCtx); err != nil {
+			app.startup.Error(fmt.Sprintf("TLS server shutdown: %v", err))
 			return 1
 		}
-	} else if plainSrv != nil {
-		if err := plainSrv.Shutdown(shutdownCtx); err != nil {
-			startup.Error(fmt.Sprintf("HTTP server shutdown: %v", err))
+	} else if srv.plainSrv != nil {
+		if err := srv.plainSrv.Shutdown(shutdownCtx); err != nil {
+			app.startup.Error(fmt.Sprintf("HTTP server shutdown: %v", err))
 			return 1
 		}
 	}
 
-	startup.Info("server stopped cleanly")
+	app.startup.Info("server stopped cleanly")
 	return 0
 }
 
-// resolveMigrationsDir finds the migrations directory. It checks, in order:
-//  1. The explicit path passed via -migrations-dir flag
-//  2. ./migrations (relative to working directory)
-//  3. The directory containing the executable + /migrations
-//  4. /usr/share/chef-migration-metrics/migrations (installed package path)
-func resolveMigrationsDir(explicit string) string {
-	candidates := []string{explicit}
+// ---------------------------------------------------------------------------
+// run orchestrates all startup phases in order.
+// ---------------------------------------------------------------------------
 
-	// Relative to working directory.
-	candidates = append(candidates, "migrations")
+func run() int {
+	flags := parseCLI()
 
-	// Relative to the executable.
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "migrations"))
+	if flags.showVersion {
+		fmt.Println("chef-migration-metrics", version)
+		return 0
 	}
 
-	// Installed package location.
+	if flags.healthcheck {
+		return runHealthcheck(flags.healthcheckURL)
+	}
+
+	app := &serverApp{}
+
+	// Phase 1: bootstrap logger.
+	app.setupBootstrapLogger()
+
+	// Phase 2: load configuration.
+	if err := app.loadConfig(flags.configPath); err != nil {
+		return 1
+	}
+
+	// Phase 3: database connection.
+	if err := app.setupDatabase(); err != nil {
+		return 1
+	}
+	defer app.db.Close()
+
+	// Phase 4: attach DB log writer.
+	app.attachDBWriter()
+
+	// Phase 5: run migrations.
+	ctx := context.Background()
+	if err := app.runMigrations(ctx, flags.migrationsDir); err != nil {
+		return 1
+	}
+
+	// Phase 6: authentication.
+	if err := app.setupAuth(ctx); err != nil {
+		return 1
+	}
+
+	// Phase 7: mark interrupted collection runs.
+	app.markInterruptedRuns(ctx)
+
+	// Phase 8: secrets.
+	if err := app.setupSecrets(ctx); err != nil {
+		return 1
+	}
+	if app.encryptor != nil {
+		defer app.encryptor.Close()
+	}
+
+	// Phase 9: sync organisations.
+	if err := app.syncOrganisations(ctx); err != nil {
+		return 1
+	}
+
+	// Phase 10: analysis pipeline and collector.
+	if err := app.setupCollector(ctx); err != nil {
+		return 1
+	}
+
+	// Phase 11: ownership startup tasks.
+	app.setupOwnership(ctx)
+
+	// Phase 12: collection scheduler.
+	if err := app.startScheduler(ctx); err != nil {
+		return 1
+	}
+	defer app.sched.Stop()
+
+	// Phase 13: exports.
+	if err := app.setupExports(); err != nil {
+		return 1
+	}
+	defer app.stopExportCleanup()
+
+	// Phase 14: HTTP server.
+	srv, err := app.setupAndServeHTTP()
+	if err != nil {
+		return 1
+	}
+
+	// Phase 15: signal handling and graceful shutdown.
+	return app.awaitShutdown(srv)
+}
+
+// resolveMigrationsDir finds the migrations directory. It checks, in order:
+// 1. The exact path given.
+// 2. ./migrations relative to the current working directory.
+// 3. /usr/share/chef-migration-metrics/migrations (Linux package install).
+// Returns "" if no valid directory is found.
+func resolveMigrationsDir(hint string) string {
+	candidates := []string{hint}
+	if hint != "migrations" {
+		candidates = append(candidates, "migrations")
+	}
 	candidates = append(candidates, "/usr/share/chef-migration-metrics/migrations")
 
 	for _, dir := range candidates {
-		if dir == "" {
-			continue
-		}
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		info, err := os.Stat(dir)
+		if err == nil && info.IsDir() {
+			abs, absErr := filepath.Abs(dir)
+			if absErr == nil {
+				return abs
+			}
 			return dir
 		}
 	}
 	return ""
 }
 
-// runHealthcheck performs an HTTP GET against the health endpoint and exits
-// with 0 on success or 1 on failure. Used by container HEALTHCHECK.
-func runHealthcheck(url string) int {
-	if url == "" {
-		url = "http://localhost:8080/api/v1/health"
+// runHealthcheck performs a health check against a running instance and exits
+// with code 0 (healthy) or 1 (unhealthy). When healthcheckURL is empty, it
+// defaults to http://localhost:8080/api/v1/health.
+func runHealthcheck(healthcheckURL string) int {
+	if healthcheckURL == "" {
+		healthcheckURL = "http://localhost:8080/api/v1/health"
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := client.Get(healthcheckURL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "healthcheck failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 		return 1
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "healthcheck failed: HTTP %d\n", resp.StatusCode)
-		return 1
+	if resp.StatusCode == http.StatusOK {
+		fmt.Println("healthy")
+		return 0
 	}
 
-	fmt.Println("healthy")
-	return 0
+	fmt.Fprintf(os.Stderr, "health check failed: HTTP %d\n", resp.StatusCode)
+	return 1
 }
