@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 )
@@ -288,14 +287,7 @@ func TestCleanLegacyCookbookCache_EmptyCacheDir_NoPanic(t *testing.T) {
 func TestDownloadCookbook_SignatureCompiles(t *testing.T) {
 	// Compile-time check that downloadCookbook accepts 6 parameters:
 	// (ctx, client, db, cookbook, cookbookCacheDir, deleteAfterScan).
-	var _ func(
-		ctx context.Context,
-		client *chefapi.Client,
-		db *datastore.DB,
-		cb datastore.ServerCookbook,
-		cookbookCacheDir string,
-		deleteAfterScan bool,
-	) (string, error) = downloadCookbook
+	var _ = downloadCookbook
 	_ = t
 }
 
@@ -316,8 +308,8 @@ func TestDownloadCookbook_UsesCacheDir_WhenRetaining(t *testing.T) {
 	// nil client panics in the Chef API layer, but the cache directory
 	// is created before the manifest fetch attempt.
 	func() {
-		defer func() { recover() }()
-		downloadCookbook(context.Background(), nil, nil, cb, cacheDir, false)
+		defer func() { _ = recover() }()
+		_, _ = downloadCookbook(context.Background(), nil, nil, cb, cacheDir, false)
 	}()
 
 	expected := filepath.Join(cacheDir, "org-abc", "nginx", "5.1.0")
@@ -341,8 +333,8 @@ func TestDownloadCookbook_UsesTempDir_WhenDeleting(t *testing.T) {
 
 	// nil client panics, but we only care about which directory was used.
 	func() {
-		defer func() { recover() }()
-		downloadCookbook(context.Background(), nil, nil, cb, cacheDir, true)
+		defer func() { _ = recover() }()
+		_, _ = downloadCookbook(context.Background(), nil, nil, cb, cacheDir, true)
 	}()
 
 	// The cache directory should NOT have been populated.
@@ -363,8 +355,8 @@ func TestDownloadCookbook_UsesTempDir_WhenCacheDirEmpty(t *testing.T) {
 	// Empty cookbookCacheDir with deleteAfterScan=false should still
 	// fall back to os.MkdirTemp rather than panicking on directory creation.
 	func() {
-		defer func() { recover() }()
-		downloadCookbook(context.Background(), nil, nil, cb, "", false)
+		defer func() { _ = recover() }()
+		_, _ = downloadCookbook(context.Background(), nil, nil, cb, "", false)
 	}()
 	// Success = no panic from directory creation (the client panic is recovered).
 }

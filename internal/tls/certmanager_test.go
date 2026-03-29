@@ -274,7 +274,7 @@ func TestNewCertManager_ValidCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	if cm.CertPath() != tc.CertPath {
 		t.Errorf("CertPath() = %q, want %q", cm.CertPath(), tc.CertPath)
@@ -312,7 +312,7 @@ func TestNewCertManager_ExpiredCert_WarnsButSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected success for expired cert, got error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	if !logs.Contains("EXPIRED") {
 		t.Errorf("expected EXPIRED warning in logs, got: %v", logs.Snapshot())
@@ -332,7 +332,7 @@ func TestNewCertManager_NearExpiryCert_Warns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	if !logs.Contains("expires soon") {
 		t.Errorf("expected 'expires soon' warning in logs, got: %v", logs.Snapshot())
@@ -357,7 +357,7 @@ func TestNewCertManager_KeyPermissionsWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	if !logs.Contains("permissions") {
 		t.Errorf("expected key permissions warning in logs, got: %v", logs.Snapshot())
@@ -385,7 +385,7 @@ func TestNewCertManager_WithCAPath_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	// Verify TLSConfig enables mTLS.
 	tlsCfg := cm.TLSConfig("1.2")
@@ -450,7 +450,7 @@ func TestNewCertManager_WithoutCAPath_NoMTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	tlsCfg := cm.TLSConfig("1.2")
 	if tlsCfg.ClientAuth != tls.NoClientCert {
@@ -478,7 +478,7 @@ func TestCertManager_Reload_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	// Overwrite the cert/key with a new one (same filenames).
 	tc2 := generateTestCert(t, dir, "reload-v2",
@@ -521,7 +521,7 @@ func TestCertManager_Reload_FailureKeepsPrevious(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	originalLeaf := cm.LeafCert()
 
@@ -563,7 +563,7 @@ func TestTLSConfig_MinVersion12(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("1.2")
 	if cfg.MinVersion != tls.VersionTLS12 {
@@ -582,7 +582,7 @@ func TestTLSConfig_MinVersion13(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("1.3")
 	if cfg.MinVersion != tls.VersionTLS13 {
@@ -601,7 +601,7 @@ func TestTLSConfig_InvalidMinVersionDefaultsTo12(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("banana")
 	if cfg.MinVersion != tls.VersionTLS12 {
@@ -620,7 +620,7 @@ func TestTLSConfig_GetCertificateCallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("1.2")
 	if cfg.GetCertificate == nil {
@@ -653,7 +653,7 @@ func TestTLSConfig_CipherSuites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("1.2")
 
@@ -686,7 +686,7 @@ func TestGetCertificate_ReflectsReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("1.2")
 
@@ -730,7 +730,7 @@ func TestCurrentCert_ReturnsNonNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cert := cm.CurrentCert()
 	if cert == nil {
@@ -750,7 +750,7 @@ func TestLeafCert_SubjectAndDNSNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	leaf := cm.LeafCert()
 	if leaf == nil {
@@ -810,7 +810,7 @@ func TestWatchForChanges_DetectsFileChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	// Use a very short poll interval for the test.
 	cm.WatchForChanges(500 * time.Millisecond)
@@ -862,7 +862,7 @@ func TestWatchForChanges_StopsOnClose(t *testing.T) {
 	cm.WatchForChanges(200 * time.Millisecond)
 	time.Sleep(100 * time.Millisecond)
 
-	cm.Close()
+	_ = cm.Close()
 	time.Sleep(500 * time.Millisecond)
 
 	if !logs.Contains("watcher stopped") {
@@ -884,7 +884,7 @@ func TestWatchForChanges_DefaultPollInterval(t *testing.T) {
 	}
 
 	cm.WatchForChanges(0) // should default to 30s
-	cm.Close()            // stop immediately
+	_ = cm.Close()        // stop immediately
 }
 
 // ---------------------------------------------------------------------------
@@ -903,7 +903,7 @@ func TestCertManager_ConcurrentReloadAndGetCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("1.2")
 
@@ -1096,7 +1096,7 @@ func TestNewCertManager_NilLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	// Reload should also work without a logger.
 	if err := cm.Reload(); err != nil {
