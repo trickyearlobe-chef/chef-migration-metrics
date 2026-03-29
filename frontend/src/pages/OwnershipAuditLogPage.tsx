@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
+import { FilterInput, FilterSelect } from "../components/FilterInputs";
 import { fetchAuditLog, type AuditLogFilterQuery } from "../api";
-import type { OwnershipAuditEntry, Pagination as PaginationType } from "../types";
+import type {
+  OwnershipAuditEntry,
+  Pagination as PaginationType,
+} from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 
@@ -101,42 +105,27 @@ export function OwnershipAuditLogPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Action</label>
-          <select
-            value={action}
-            onChange={(e) => setAction(e.target.value)}
-            className="block w-48 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            {ACTION_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <FilterSelect
+          label="Action"
+          value={action}
+          onChange={setAction}
+          options={ACTION_OPTIONS}
+          wide
+        />
 
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Owner Name</label>
-          <input
-            type="text"
-            value={ownerName}
-            onChange={(e) => setOwnerName(e.target.value)}
-            placeholder="Filter by owner"
-            className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
+        <FilterInput
+          label="Owner Name"
+          value={ownerName}
+          onChange={setOwnerName}
+          placeholder="Filter by owner"
+        />
 
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Actor</label>
-          <input
-            type="text"
-            value={actor}
-            onChange={(e) => setActor(e.target.value)}
-            placeholder="Filter by actor"
-            className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
+        <FilterInput
+          label="Actor"
+          value={actor}
+          onChange={setActor}
+          placeholder="Filter by actor"
+        />
 
         {activeFilterCount > 0 && (
           <button

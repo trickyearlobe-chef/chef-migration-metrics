@@ -5,6 +5,7 @@ import { useOrg } from "../context/OrgContext";
 import { useSort } from "../hooks/useSort";
 import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
+import { FilterInput, FilterSelect } from "../components/FilterInputs";
 import { fetchCookbooks, type CookbookFilterQuery } from "../api";
 import type { CookbookListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
@@ -180,62 +181,45 @@ export function CookbooksPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Name
-          </label>
-          <input
-            type="text"
-            value={nameFilter}
-            onChange={(e) => setNameFilter(e.target.value)}
-            placeholder="Filter by name"
-            className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Active
-          </label>
-          <select
-            value={active}
-            onChange={(e) => setActive(e.target.value)}
-            className="block w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Compatibility
-          </label>
-          <select
-            value={compatibility}
-            onChange={(e) => setCompatibility(e.target.value)}
-            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="compatible">Compatible</option>
-            <option value="incompatible">Incompatible</option>
-            <option value="untested">Untested</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Download
-          </label>
-          <select
-            value={downloadStatus}
-            onChange={(e) => setDownloadStatus(e.target.value)}
-            className="block w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="ok">OK</option>
-            <option value="pending">Pending</option>
-            <option value="failed">Failed</option>
-          </select>
-        </div>
+        <FilterInput
+          label="Name"
+          value={nameFilter}
+          onChange={setNameFilter}
+          placeholder="Filter by name"
+        />
+        <FilterSelect
+          label="Active"
+          value={active}
+          onChange={setActive}
+          options={[
+            { value: "", label: "All" },
+            { value: "true", label: "Active" },
+            { value: "false", label: "Inactive" },
+          ]}
+        />
+        <FilterSelect
+          label="Compatibility"
+          value={compatibility}
+          onChange={setCompatibility}
+          options={[
+            { value: "", label: "All" },
+            { value: "compatible", label: "Compatible" },
+            { value: "incompatible", label: "Incompatible" },
+            { value: "untested", label: "Untested" },
+          ]}
+          wide
+        />
+        <FilterSelect
+          label="Download"
+          value={downloadStatus}
+          onChange={setDownloadStatus}
+          options={[
+            { value: "", label: "All" },
+            { value: "ok", label: "OK" },
+            { value: "pending", label: "Pending" },
+            { value: "failed", label: "Failed" },
+          ]}
+        />
         {targetVersions.length > 1 && (
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">
