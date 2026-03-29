@@ -371,6 +371,153 @@ createdb chef_migration_metrics
 
 The application runs database migrations automatically on startup — no manual schema setup is required.
 
+### Test Kitchen Driver Configuration
+
+The Test Kitchen driver is configured under `analysis_tools.test_kitchen` in the YAML config file. The default driver is `dokken` (Docker-based, zero-config). Non-dokken drivers require additional settings.
+
+**Minimal config (dokken):**
+
+```yaml
+analysis_tools:
+  test_kitchen:
+    enabled: true
+    driver: dokken
+    timeout_minutes: 30
+```
+
+**Non-dokken config (e.g. vCenter, EC2, vRA):**
+
+```yaml
+analysis_tools:
+  test_kitchen:
+    enabled: true
+    driver: vcenter
+    timeout_minutes: 60
+    driver_settings:
+      vcenter_host: vcenter.example.com
+      vcenter_username: user@vsphere.local
+    driver_secrets:
+      vcenter_password: vcenter-password
+    platform_map:
+      - kitchen_name: ubuntu-22.04
+        image: tmpl-ubuntu-2204-base
+        transport:
+          username: kitchen
+          password_credential: kitchen-vm-password
+      - kitchen_name: centos-7
+        image: tmpl-centos-7-base
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `driver` | `dokken` | Built-in profiles: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, or `custom` |
+| `timeout_minutes` | `30` | Maximum time per Test Kitchen run |
+| `driver_settings` | empty | Plaintext driver connection settings |
+| `driver_secrets` | empty | Credential names resolved at runtime from the credential store |
+| `image_field_name` | auto | Set automatically by built-in profiles; required for `custom` |
+| `platform_map` | empty | Maps kitchen platform names to VM/AMI images |
+
+Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are stored via `POST /api/v1/admin/credentials` and resolved at test runtime. Plaintext is zeroed from memory after use.
+
+See the [Test Kitchen Driver specification](.claude/specifications/test-kitchen-drivers.md) for full details.
+
+### vCenter Platform Map Setup
+
+When using the `vcenter` driver, each platform in the `platform_map` maps a Test Kitchen platform name to a vSphere VM template. The application generates a `.kitchen.local.yml` overlay that references these templates with ERB credential injection.
+
+**Step 1:** Store credentials via the admin API:
+
+```bash
+# vCenter connection password
+curl -X POST http://localhost:8080/api/v1/admin/credentials \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "vcenter-password", "credential_type": "generic", "value": "<password>"}'
+
+# VM transport password (for SSH/WinRM into test VMs)
+curl -X POST http://localhost:8080/api/v1/admin/credentials \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "kitchen-vm-password", "credential_type": "generic", "value": "<password>"}'
+```
+
+**Step 2:** Configure the driver in the YAML config:
+
+```yaml
+analysis_tools:
+  test_kitchen:
+    driver: vcenter
+    driver_settings:
+      vcenter_host: vcenter.example.com
+      vcenter_username: user@vsphere.local
+      vcenter_disable_ssl_verify: false
+      clone_type: full
+      datacenter: "Datacenter"
+    driver_secrets:
+      vcenter_password: vcenter-password
+    platform_map:
+      - kitchen_name: ubuntu-22.04
+        image: tmpl-ubuntu-2204-base
+        driver_settings:
+          cluster: "Cluster-01"
+          resource_pool: "Kitchen"
+          folder: "kitchen-vms"
+        transport:
+          username: kitchen
+          password_credential: kitchen-vm-password
+      - kitchen_name: windows-2022
+        image: tmpl-win2022-base
+        driver_settings:
+          vm_customization:
+            numCPUs: 4
+            memoryMB: 4096
+        transport:
+          username: Administrator
+          password_credential: kitchen-win-password
+```
+
+**Step 3:** Restart the application. At startup, the driver validates that all referenced credentials exist and decrypt successfully.
+
+Per-platform `driver_settings` are merged with the top-level defaults. Platform entries not found in the map are skipped with a warning.
+
+### Driver Migration Procedure
+
+Switching drivers is a config-only operation — no code changes required. The platform map structure and transport credentials are driver-independent.
+
+**Example: vCenter → vRA**
+
+1. **Store new credentials:**
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/admin/credentials \
+     -H 'Content-Type: application/json' \
+     -d '{"name": "vra-password", "credential_type": "generic", "value": "<password>"}'
+   ```
+
+2. **Update the config:**
+   ```yaml
+   analysis_tools:
+     test_kitchen:
+       driver: vra                        # changed
+       driver_settings:                    # changed
+         base_url: https://vra.example.com
+         username: user@example.com
+         tenant: "my-tenant"
+       driver_secrets:
+         password: vra-password            # changed
+       platform_map:
+         - kitchen_name: ubuntu-22.04
+           image: ubuntu-22.04-catalog     # changed (vRA catalog item)
+           transport:                       # unchanged
+             username: kitchen
+             password_credential: kitchen-vm-password
+         - kitchen_name: centos-7
+           image: centos-7-catalog         # changed
+   ```
+
+3. **Restart the application.** The startup validator checks the new credentials and platform map.
+
+**What changes:** `driver`, `driver_settings`, `driver_secrets`, and `image` values in the platform map.
+
+**What stays the same:** Platform map structure, `transport` blocks, application code, and test results schema.
+
 ## Authentication
 
 The web UI currently supports **local accounts** with bcrypt password hashing, session-based authentication, and role-based access control with **Admin** and **Viewer** roles.
