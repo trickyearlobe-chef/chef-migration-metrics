@@ -457,6 +457,31 @@ type DataStore interface {
 	// DatabaseTableSizes returns per-table disk usage for all user tables
 	// in the public schema, ordered by total size descending.
 	DatabaseTableSizes(ctx context.Context) ([]datastore.TableSize, error)
+
+	// -----------------------------------------------------------------
+	// PostgreSQL performance stats
+	// -----------------------------------------------------------------
+
+	// PgStatStatementsAvailable returns true if the pg_stat_statements
+	// extension is installed and queryable.
+	PgStatStatementsAvailable(ctx context.Context) bool
+
+	// TopQueryStats returns the top N queries by total execution time
+	// from pg_stat_statements. Returns nil, nil if extension unavailable.
+	TopQueryStats(ctx context.Context, limit int) ([]datastore.TopQueryStat, error)
+
+	// TableStats returns per-table statistics from pg_stat_user_tables.
+	TableStats(ctx context.Context) ([]datastore.TableStat, error)
+
+	// IndexStats returns per-index statistics from pg_stat_user_indexes.
+	IndexStats(ctx context.Context) ([]datastore.IndexStat, error)
+
+	// ActiveQueries returns currently running queries from pg_stat_activity.
+	ActiveQueries(ctx context.Context) ([]datastore.ActiveQuery, error)
+
+	// ResetPgStats calls pg_stat_statements_reset() (if available) and
+	// pg_stat_reset() to clear cumulative PostgreSQL statistics.
+	ResetPgStats(ctx context.Context) error
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.
