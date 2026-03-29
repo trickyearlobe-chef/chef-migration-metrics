@@ -34,6 +34,7 @@ type mockStore struct {
 	GetNodeSnapshotByNameFn                             func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
 	ListNodeReadinessForSnapshotFn                      func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error)
 	ListNodeReadinessByNodeNameFn                       func(ctx context.Context, organisationID, nodeName string) ([]datastore.NodeReadiness, error)
+	BulkListNodeReadinessByNodeNamesFn                  func(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error)
 	CountNodeReadinessFn                                func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error)
 	ListServerCookbooksByOrganisationFn                 func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
 	ListServerCookbooksByNameFn                         func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
@@ -246,6 +247,13 @@ func (m *mockStore) ListNodeReadinessForSnapshot(ctx context.Context, nodeSnapsh
 func (m *mockStore) ListNodeReadinessByNodeName(ctx context.Context, organisationID, nodeName string) ([]datastore.NodeReadiness, error) {
 	if m.ListNodeReadinessByNodeNameFn != nil {
 		return m.ListNodeReadinessByNodeNameFn(ctx, organisationID, nodeName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) BulkListNodeReadinessByNodeNames(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error) {
+	if m.BulkListNodeReadinessByNodeNamesFn != nil {
+		return m.BulkListNodeReadinessByNodeNamesFn(ctx, organisationID, nodeNames)
 	}
 	return nil, nil
 }

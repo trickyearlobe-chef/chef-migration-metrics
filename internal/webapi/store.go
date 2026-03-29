@@ -117,6 +117,11 @@ type DataStore interface {
 	// (organisation_id, node_name) rather than node_snapshot_id.
 	ListNodeReadinessByNodeName(ctx context.Context, organisationID, nodeName string) ([]datastore.NodeReadiness, error)
 
+	// BulkListNodeReadinessByNodeNames returns the latest readiness records
+	// for multiple nodes within the specified organisation in a single query.
+	// Results are returned as a map keyed by node_name.
+	BulkListNodeReadinessByNodeNames(ctx context.Context, organisationID string, nodeNames []string) (map[string][]datastore.NodeReadiness, error)
+
 	// CountNodeReadiness returns the total, ready, and blocked counts for
 	// the given organisation and target Chef version.
 	CountNodeReadiness(ctx context.Context, organisationID, targetChefVersion string) (total, ready, blocked int, err error)
