@@ -169,14 +169,6 @@ progress can be tracked over time.
   inline anonymous type for its filter query instead of a named interface in
   `api.ts` like `CookbookFilterQuery` and `NodeFilterQuery`.
 
-- [ ] **F10 — Remove unused `_currentOrder` prop** — `SortableHeader` in
-  `DependencyGraphPage.tsx` L1360 accepts `currentOrder` but immediately
-  discards it as `_currentOrder`. Remove the prop or use it.
-
-- [ ] **F11 — Remove unused `_jobId` state** — `ExportButton.tsx` L70 has
-  `const [_jobId, setJobId] = useState(...)` where the state value is never
-  read. The job ID is already captured in a closure.
-
 - [ ] **F12 — Centralise `perPage` constants** — Hardcoded `50` appears in 7
   files and `25` in 3 files. Define `DEFAULT_PAGE_SIZE` and `SMALL_PAGE_SIZE`
   in a shared constants file.
@@ -197,15 +189,6 @@ progress can be tracked over time.
   `ConnMaxIdleTime(1m)`. These should be configurable via `DatastoreConfig`.
 
 ### Project
-
-- [ ] **P5 — Add ACME patterns to `.helmignore`** — `.gitignore` and
-  `.dockerignore` include `acme/`, `.lego/`, `.certmagic/` patterns, but
-  `.helmignore` does not. Keep consistent even though ACME is not yet
-  implemented.
-
-- [ ] **P6 — Add frontend build artifacts to `.gitignore`** —
-  `tsconfig.tsbuildinfo`, `tsconfig.node.tsbuildinfo`, and `vite.config.d.ts`
-  are generated files that should be ignored.
 
 - [ ] **P7 — Split `handle_dashboard.go`** — At 1,597 lines with 12
   independent endpoint handlers, this should be split into focused files like
