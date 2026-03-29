@@ -31,6 +31,7 @@ import type {
   NodesByCookbookResponse,
   CookbookListResponse,
   CookbookDetailResponse,
+  CookbookPlatformCoverage,
   RemediationPriorityResponse,
   RemediationSummaryResponse,
   FilterStringResponse,
@@ -425,6 +426,14 @@ export function fetchCookbookDetail(
 ): Promise<CookbookDetailResponse> {
   return apiFetch<CookbookDetailResponse>(
     buildUrl(`/cookbooks/${encodeURIComponent(name)}`),
+  );
+}
+
+export function fetchCookbookPlatformCoverage(
+  name: string,
+): Promise<CookbookPlatformCoverage> {
+  return apiFetch<CookbookPlatformCoverage>(
+    buildUrl(`/cookbooks/${encodeURIComponent(name)}/platform-coverage`),
   );
 }
 

@@ -114,9 +114,9 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Dashboard
 
-- [ ] Add platform coverage summary to cookbook detail page
-- [ ] Highlight coverage gaps (in production but untested)
-- [ ] Show node counts per platform in coverage display
+- [x] Add platform coverage summary to cookbook detail page
+- [x] Highlight coverage gaps (in production but untested)
+- [x] Show node counts per platform in coverage display
 
 ## Documentation
 
