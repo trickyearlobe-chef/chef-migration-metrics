@@ -116,12 +116,13 @@ func ResolveKitchenCredentials(
 // environment. It also strips any pre-existing CMM_TK_* variables from
 // the base environment to avoid leaking stale credentials.
 func InjectCredentialEnvVars(baseEnv []string, creds *KitchenCredentials) []string {
-	if creds == nil || len(creds.EnvVars) == 0 {
-		return baseEnv
+	// Always filter out any existing CMM_TK_* vars from base to avoid
+	// leaking stale credentials, even when creds is nil or empty.
+	credCount := 0
+	if creds != nil {
+		credCount = len(creds.EnvVars)
 	}
-
-	// Filter out any existing CMM_TK_* vars from base.
-	out := make([]string, 0, len(baseEnv)+len(creds.EnvVars))
+	out := make([]string, 0, len(baseEnv)+credCount)
 	for _, kv := range baseEnv {
 		if idx := strings.IndexByte(kv, '='); idx > 0 {
 			key := kv[:idx]
@@ -130,6 +131,10 @@ func InjectCredentialEnvVars(baseEnv []string, creds *KitchenCredentials) []stri
 			}
 		}
 		out = append(out, kv)
+	}
+
+	if creds == nil || len(creds.EnvVars) == 0 {
+		return out
 	}
 
 	// Append credential env vars.
@@ -156,9 +161,12 @@ func ValidateDriverCredentials(
 
 	// Check driver secrets.
 	for key, credName := range tkConfig.DriverSecrets {
-		_, err := resolver.Resolve(ctx, secrets.CredentialSource{
+		resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
 			CredentialName: credName,
 		})
+		if resolved != nil {
+			secrets.ZeroBytes(resolved.Plaintext)
+		}
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("driver_secrets[%q] → credential %q: %v", key, credName, err))
 		}
@@ -170,18 +178,24 @@ func ValidateDriverCredentials(
 			continue
 		}
 		if entry.Transport.PasswordCredential != "" {
-			_, err := resolver.Resolve(ctx, secrets.CredentialSource{
+			resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
 				CredentialName: entry.Transport.PasswordCredential,
 			})
+			if resolved != nil {
+				secrets.ZeroBytes(resolved.Plaintext)
+			}
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("platform %q transport password → credential %q: %v",
 					entry.KitchenName, entry.Transport.PasswordCredential, err))
 			}
 		}
 		if entry.Transport.SSHKeyCredential != "" {
-			_, err := resolver.Resolve(ctx, secrets.CredentialSource{
+			resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
 				CredentialName: entry.Transport.SSHKeyCredential,
 			})
+			if resolved != nil {
+				secrets.ZeroBytes(resolved.Plaintext)
+			}
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("platform %q transport SSH key → credential %q: %v",
 					entry.KitchenName, entry.Transport.SSHKeyCredential, err))
