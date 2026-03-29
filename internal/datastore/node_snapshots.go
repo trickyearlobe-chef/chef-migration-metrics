@@ -497,36 +497,6 @@ func (db *DB) DeleteOrphanedNodeSnapshots(ctx context.Context, organisationID st
 	return int(n), nil
 }
 
-// CountChefVersionsByCollectionRun returns a map of chef_version -> count
-// for all node snapshots in the given collection run. This is dramatically
-// more efficient than loading full node snapshot rows when only version
-// counts are needed (e.g. version distribution trend).
-func (db *DB) CountChefVersionsByCollectionRun(ctx context.Context, collectionRunID string) (map[string]int, error) {
-	const query = `
-		SELECT COALESCE(NULLIF(chef_version, ''), 'unknown') AS version,
-		       COUNT(*) AS cnt
-		  FROM node_snapshots
-		 WHERE collection_run_id = $1
-		 GROUP BY version
-	`
-	rows, err := db.pool.QueryContext(ctx, query, collectionRunID)
-	if err != nil {
-		return nil, fmt.Errorf("datastore: counting chef versions by collection run: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[string]int)
-	for rows.Next() {
-		var version string
-		var count int
-		if err := rows.Scan(&version, &count); err != nil {
-			return nil, fmt.Errorf("datastore: scanning chef version count: %w", err)
-		}
-		result[version] = count
-	}
-	return result, rows.Err()
-}
-
 // CountStaleFreshByCollectionRun returns total, stale, and fresh node counts
 // for the given collection run without loading full node snapshot rows.
 func (db *DB) CountStaleFreshByCollectionRun(ctx context.Context, collectionRunID string) (total, stale, fresh int, err error) {
@@ -542,45 +512,6 @@ func (db *DB) CountStaleFreshByCollectionRun(ctx context.Context, collectionRunI
 		err = fmt.Errorf("datastore: counting stale/fresh by collection run: %w", err)
 	}
 	return
-}
-
-// CountChefVersionsByCollectionRunFiltered returns chef_version -> count
-// for node snapshots in the given collection run, filtered to only include
-// nodes whose names are in the allowedNodes set. Pass nil to include all nodes.
-func (db *DB) CountChefVersionsByCollectionRunFiltered(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error) {
-	var query string
-	var args []interface{}
-
-	if len(allowedNodes) == 0 {
-		return db.CountChefVersionsByCollectionRun(ctx, collectionRunID)
-	}
-
-	query = `
-		SELECT COALESCE(NULLIF(chef_version, ''), 'unknown') AS version,
-		       COUNT(*) AS cnt
-		  FROM node_snapshots
-		 WHERE collection_run_id = $1
-		   AND node_name = ANY($2)
-		 GROUP BY version
-	`
-	args = []interface{}{collectionRunID, pq.Array(allowedNodes)}
-
-	rows, err := db.pool.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("datastore: counting filtered chef versions: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[string]int)
-	for rows.Next() {
-		var version string
-		var count int
-		if err := rows.Scan(&version, &count); err != nil {
-			return nil, fmt.Errorf("datastore: scanning filtered chef version count: %w", err)
-		}
-		result[version] = count
-	}
-	return result, rows.Err()
 }
 
 // ---------------------------------------------------------------------------
