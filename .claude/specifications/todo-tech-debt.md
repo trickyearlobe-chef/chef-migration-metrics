@@ -19,13 +19,6 @@ progress can be tracked over time.
   `AdminSystemStatsPage`, `DependencyGraphPage`, `OwnersPage`,
   `NodeDiskDetailPage`, `CookbookCommittersPage`.
 
-- [ ] **F2 — Add React Error Boundary** — No error boundary exists anywhere in
-  the application. Any rendering exception (bad API data, null reference)
-  white-screens the entire app. Add a top-level `ErrorBoundary` in `App.tsx`
-  wrapping the route tree, and consider a per-page boundary around
-  `DependencyGraphPage`'s `ForceGraph` component (650 lines of physics
-  simulation / SVG rendering — highest crash risk).
-
 ### Backend
 
 - [ ] **B0 — Replace UUIDs with natural keys** — Every table uses synthetic
@@ -84,15 +77,6 @@ progress can be tracked over time.
   Files: `handle_dashboard.go` `handleDashboardReadinessTrend`,
   `collector.go` `recordMetricSnapshots`.
 
-- [ ] **B4b — Remove dead CountChefVersionsByCollectionRun calls** —
-  `CountChefVersionsByCollectionRun` and `CountChefVersionsByCollectionRunFiltered`
-  are no longer called from trend handlers after the collection-dashboard
-  isolation fix. Verify no other callers remain, then remove from
-  `node_snapshots.go`, `store.go` interface, and mock. Low priority — dead
-  code but not harmful.
-  Files: `internal/datastore/node_snapshots.go`,
-  `internal/webapi/store.go`, `internal/webapi/store_mock_test.go`.
-
 - [ ] **B4 — Extract ownership filter helper** — The same ~25-line ownership
   resolution pattern (parse filter → check `Unowned` → call
   `resolveAllOwnedEntityKeys` or `resolveOwnedEntityKeys` → in-memory filter)
@@ -106,24 +90,6 @@ progress can be tracked over time.
   Only `datastore_test.go`, `export_jobs_test.go`, and
   `node_snapshot_filter_test.go` currently exist.
   Directory: `internal/datastore/`.
-
-- [ ] **B16 — Credential string copies cannot be zeroed in Go** —
-  `kitchen_credentials.go` converts `[]byte` plaintext to `string` for env var
-  values via `string(resolved.Plaintext)`. Go strings are immutable so the
-  copies in `KitchenCredentials.EnvVars` persist in heap until GC, even after
-  `Cleanup()` zeros the original `[]byte` slices. Strategic fix: store
-  `[]byte` values in `EnvVars` instead of `string` and build `key=value`
-  strings only at injection time, or accept the risk and document it.
-  File: `internal/analysis/kitchen_credentials.go` L72, L84, L95.
-
-- [ ] **B17 — Raw datastore struct leaked to coverage API response** —
-  `handle_cookbook_coverage.go` serialises the full
-  `datastore.CookbookPlatformCoverage` struct including internal fields (`id`,
-  `created_at`, `updated_at`). The `coverage_data` JSONB field deserialises
-  integers as `float64` via `json.Unmarshal` into `any`, so `node_count: 12`
-  becomes `12.0` in the JSON response. Add an API-specific response type that
-  flattens or curates the coverage payload.
-  File: `internal/webapi/handle_cookbook_coverage.go` L48.
 
 ### Project
 
@@ -166,33 +132,15 @@ progress can be tracked over time.
 
 ### Backend
 
-- [ ] **B6 — Deduplicate `nodeResp` struct** — Defined identically twice in
-  the same file (`handle_nodes.go` L102–118 and L247–263). Promote to a
-  package-level type.
-
-- [ ] **B7 — Extract generic `PaginateSlice[T]` helper** — The same 6-line
-  in-memory pagination pattern (compute start/end from offset and limit, clamp
-  to slice bounds) is duplicated in `handle_cookbooks.go`,
-  `handle_git_repos.go`, `handle_logs.go`, and `handle_nodes.go`.
-
 - [ ] **B8 — Deduplicate log entry filter building** — `ListLogEntries` and
   `CountLogEntries` in `log_entries.go` duplicate the entire WHERE clause
   construction. Extract a `buildLogEntryFilterQuery` helper, mirroring the
   pattern used for node snapshots.
 
-- [ ] **B9 — Log swallowed error in `WriteJSON`** — `response.go` L138–139
-  discards JSON encoding errors with `_ = err`. At minimum, log the error so
-  corrupted responses are detectable.
-
 - [ ] **B10 — Add SQL push-down for collection runs** —
   `handleCollectionRuns` loads ALL historical runs across all orgs into memory,
   then paginates. For long-running installations this grows unboundedly.
   File: `handle_logs.go` L142–146.
-
-- [ ] **B11 — Reconcile `operator` role** — `handle_ownership.go` L123
-  references an `operator` role, but `handle_admin_users.go` L125 only allows
-  creating `admin` and `viewer` roles. Either add `operator` to the admin
-  validation or remove the dead code path.
 
 ### Project
 
@@ -238,10 +186,6 @@ progress can be tracked over time.
 - [ ] **B12 — Remove deprecated `filterNodes` function** —
   `handle_nodes.go` L590–602 is explicitly marked deprecated in its docstring.
   Verify the export system no longer uses it, then remove.
-
-- [ ] **B13 — Remove useless compile-time check** — `handle_cookbooks.go`
-  L488 has `var _ = errors.Is(nil, datastore.ErrNotFound)` which verifies
-  nothing useful (always returns `false`).
 
 - [ ] **B14 — Add timeout bounds to background contexts** —
   `handle_admin_rescan_all.go` and `handle_exports.go` use

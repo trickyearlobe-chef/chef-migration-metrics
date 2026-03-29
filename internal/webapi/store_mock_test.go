@@ -27,8 +27,6 @@ type mockStore struct {
 	ListDistinctNodeValuesFn                            func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error)
 	ListDistinctNodeRolesFn                             func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error)
 	ListNodeSnapshotsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
-	CountChefVersionsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) (map[string]int, error)
-	CountChefVersionsByCollectionRunFilteredFn          func(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error)
 	CountStaleFreshByCollectionRunFn                    func(ctx context.Context, collectionRunID string) (int, int, int, error)
 	ListMetricSnapshotsByOrganisationFn                 func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
 	GetNodeSnapshotByNameFn                             func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
@@ -197,20 +195,6 @@ func (m *mockStore) ListDistinctNodeRoles(ctx context.Context, f datastore.NodeS
 func (m *mockStore) ListNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error) {
 	if m.ListNodeSnapshotsByCollectionRunFn != nil {
 		return m.ListNodeSnapshotsByCollectionRunFn(ctx, collectionRunID)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) CountChefVersionsByCollectionRun(ctx context.Context, collectionRunID string) (map[string]int, error) {
-	if m.CountChefVersionsByCollectionRunFn != nil {
-		return m.CountChefVersionsByCollectionRunFn(ctx, collectionRunID)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) CountChefVersionsByCollectionRunFiltered(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error) {
-	if m.CountChefVersionsByCollectionRunFilteredFn != nil {
-		return m.CountChefVersionsByCollectionRunFilteredFn(ctx, collectionRunID, allowedNodes)
 	}
 	return nil, nil
 }
