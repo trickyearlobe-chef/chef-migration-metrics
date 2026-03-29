@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { OrgProvider } from "./context/OrgContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppLayout } from "./components/AppLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -103,107 +104,112 @@ function LoginRoute() {
 
 export function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          {/* Public route: login */}
-          <Route path="/login" element={<LoginRoute />} />
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            {/* Public route: login */}
+            <Route path="/login" element={<LoginRoute />} />
 
-          {/* Protected routes */}
-          <Route
-            element={
-              <RequireAuth>
-                <OrgProvider>
-                  <AppLayout />
-                </OrgProvider>
-              </RequireAuth>
-            }
-          >
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/nodes" element={<NodesPage />} />
-            <Route path="/nodes/:org/:name" element={<NodeDetailPage />} />
+            {/* Protected routes */}
             <Route
-              path="/nodes/:org/:name/disks"
-              element={<NodeDiskDetailPage />}
-            />
-            <Route path="/cookbooks" element={<CookbooksPage />} />
-            <Route path="/cookbooks/:name" element={<CookbookDetailPage />} />
-            <Route
-              path="/cookbooks/:name/committers"
-              element={<CookbookCommittersPage />}
-            />
-            <Route
-              path="/cookbooks/:name/:version/remediation"
-              element={<CookbookRemediationPage />}
-            />
-            <Route path="/git-repos" element={<GitReposPage />} />
-            <Route path="/git-repos/:name" element={<GitRepoDetailPage />} />
-            <Route
-              path="/git-repos/:name/committers"
-              element={<CookbookCommittersPage />}
-            />
-            <Route
-              path="/git-repos/:name/:version/remediation"
-              element={<GitRepoRemediationPage />}
-            />
-            <Route path="/remediation" element={<RemediationPage />} />
-            <Route path="/ownership" element={<OwnersPage />} />
-            <Route
-              path="/ownership/audit-log"
-              element={<OwnershipAuditLogPage />}
-            />
-            <Route path="/ownership/import" element={<OwnershipImportPage />} />
-            <Route path="/ownership/:name" element={<OwnerDetailPage />} />
-            <Route path="/dependencies" element={<DependencyGraphPage />} />
-            <Route path="/logs" element={<LogsPage />} />
+              element={
+                <RequireAuth>
+                  <OrgProvider>
+                    <AppLayout />
+                  </OrgProvider>
+                </RequireAuth>
+              }
+            >
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/nodes" element={<NodesPage />} />
+              <Route path="/nodes/:org/:name" element={<NodeDetailPage />} />
+              <Route
+                path="/nodes/:org/:name/disks"
+                element={<NodeDiskDetailPage />}
+              />
+              <Route path="/cookbooks" element={<CookbooksPage />} />
+              <Route path="/cookbooks/:name" element={<CookbookDetailPage />} />
+              <Route
+                path="/cookbooks/:name/committers"
+                element={<CookbookCommittersPage />}
+              />
+              <Route
+                path="/cookbooks/:name/:version/remediation"
+                element={<CookbookRemediationPage />}
+              />
+              <Route path="/git-repos" element={<GitReposPage />} />
+              <Route path="/git-repos/:name" element={<GitRepoDetailPage />} />
+              <Route
+                path="/git-repos/:name/committers"
+                element={<CookbookCommittersPage />}
+              />
+              <Route
+                path="/git-repos/:name/:version/remediation"
+                element={<GitRepoRemediationPage />}
+              />
+              <Route path="/remediation" element={<RemediationPage />} />
+              <Route path="/ownership" element={<OwnersPage />} />
+              <Route
+                path="/ownership/audit-log"
+                element={<OwnershipAuditLogPage />}
+              />
+              <Route
+                path="/ownership/import"
+                element={<OwnershipImportPage />}
+              />
+              <Route path="/ownership/:name" element={<OwnerDetailPage />} />
+              <Route path="/dependencies" element={<DependencyGraphPage />} />
+              <Route path="/logs" element={<LogsPage />} />
 
-            {/* Admin-only routes */}
-            <Route
-              path="/admin/users"
-              element={
-                <RequireAdmin>
-                  <AdminUsersPage />
-                </RequireAdmin>
-              }
-            />
-            <Route
-              path="/admin/actions"
-              element={
-                <RequireAdmin>
-                  <AdminActionsPage />
-                </RequireAdmin>
-              }
-            />
-            <Route
-              path="/admin/system-stats"
-              element={
-                <RequireAdmin>
-                  <AdminSystemStatsPage />
-                </RequireAdmin>
-              }
-            />
-            <Route
-              path="/admin/credentials"
-              element={
-                <RequireAdmin>
-                  <AdminCredentialsPage />
-                </RequireAdmin>
-              }
-            />
-            <Route
-              path="/admin/performance"
-              element={
-                <RequireAdmin>
-                  <AdminPerformancePage />
-                </RequireAdmin>
-              }
-            />
-          </Route>
+              {/* Admin-only routes */}
+              <Route
+                path="/admin/users"
+                element={
+                  <RequireAdmin>
+                    <AdminUsersPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/actions"
+                element={
+                  <RequireAdmin>
+                    <AdminActionsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/system-stats"
+                element={
+                  <RequireAdmin>
+                    <AdminSystemStatsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/credentials"
+                element={
+                  <RequireAdmin>
+                    <AdminCredentialsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/performance"
+                element={
+                  <RequireAdmin>
+                    <AdminPerformancePage />
+                  </RequireAdmin>
+                }
+              />
+            </Route>
 
-          {/* Catch-all — redirect to dashboard */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+            {/* Catch-all — redirect to dashboard */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
