@@ -10,7 +10,7 @@ progress can be tracked over time.
 
 ### Frontend
 
-- [ ] **F1 — Extract shared sort logic** — 7+ separate implementations of
+- [x] **F1 — Extract shared sort logic** — 7+ separate implementations of
   `handleSort` / `sortIndicator` / `SortHeader` / `SortableHeader` /
   `SortableColHeader` exist across page files, each slightly different.
   Extract a shared `useSort` hook (`frontend/src/hooks/useSort.ts`) and a
@@ -43,7 +43,7 @@ progress can be tracked over time.
   `internal/datastore/`, all handlers in `internal/webapi/`, readiness
   evaluator in `internal/analysis/`, collector in `internal/collector/`.
 
-- [ ] **B2 — Push cookbook-by-node filtering into SQL** —
+- [x] **B2 — Push cookbook-by-node filtering into SQL** —
   `handleNodesByCookbook` loads every node's full JSON (`IncludeHeavyJSON:
   true`) into memory then does `strings.Contains` substring matching, which can
   false-positive (e.g. `"apt"` matches `"apt-repo"`). Replace with a SQL JSONB
@@ -60,7 +60,7 @@ progress can be tracked over time.
   Files: `handle_dashboard.go` `handleDashboardReadinessTrend`,
   `collector.go` `recordMetricSnapshots`.
 
-- [ ] **B4 — Extract ownership filter helper** — The same ~25-line ownership
+- [x] **B4 — Extract ownership filter helper** — The same ~25-line ownership
   resolution pattern (parse filter → check `Unowned` → call
   `resolveAllOwnedEntityKeys` or `resolveOwnedEntityKeys` → in-memory filter)
   is copy-pasted across ~10 handlers. Extract a single
@@ -86,7 +86,7 @@ progress can be tracked over time.
 
 ### Frontend
 
-- [ ] **F3 — Unify sort indicator visuals** — Some pages use ↕/↑/↓ text
+- [x] **F3 — Unify sort indicator visuals** — Some pages use ↕/↑/↓ text
   arrows, `OwnersPage` uses SVG chevrons, `DependencyGraphPage` shows nothing
   for inactive columns. Standardise when extracting the shared sort component
   (F1). Affected: 8 page files.
@@ -97,7 +97,7 @@ progress can be tracked over time.
   `<select>` is copy-pasted across 6 other pages. Move to
   `frontend/src/components/`.
 
-- [ ] **F5 — Extract `useTargetChefVersion` hook** — The same
+- [x] **F5 — Extract `useTargetChefVersion` hook** — The same
   load-versions-and-pick-highest pattern is repeated in `NodesPage`,
   `CookbooksPage`, `GitReposPage`, and `RemediationPage`.
 
@@ -114,12 +114,12 @@ progress can be tracked over time.
 
 ### Project
 
-- [ ] **P2 — Populate or remove `internal/models/`** — CLAUDE.md specifies
+- [x] **P2 — Populate or remove `internal/models/`** — CLAUDE.md specifies
   that shared domain types live in `internal/models/`, but the directory is
   empty. Types are currently scattered across `internal/datastore/` and handler
   files.
 
-- [ ] **P3 — Implement or descope `internal/notify/`** — Webhook and email
+- [x] **P3 — Implement or descope `internal/notify/`** — Webhook and email
   notification channels are referenced in `secrets-storage.md` and
   `todo-visualisation.md`, but no code exists. Either build the package or
   update the specs to remove the references.

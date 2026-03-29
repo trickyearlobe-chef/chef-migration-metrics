@@ -89,6 +89,27 @@ func TestNodeUsesCookbook_PartialNameNoFalsePositive(t *testing.T) {
 	}
 }
 
+func TestNodeUsesCookbook_NameInValueNoFalsePositive(t *testing.T) {
+	// The cookbook name "apt" appears as a value (inside "source") but is
+	// NOT a top-level key. A substring-based check would false-positive;
+	// the JSON-parse approach should not.
+	n := datastore.NodeSnapshot{
+		Cookbooks: json.RawMessage(`{"some_cookbook":{"version":"1.0.0","source":"apt"}}`),
+	}
+	if nodeUsesCookbook(n, "apt") {
+		t.Error("expected nodeUsesCookbook to return false — 'apt' is a value, not a key")
+	}
+}
+
+func TestNodeUsesCookbook_InvalidJSON(t *testing.T) {
+	n := datastore.NodeSnapshot{
+		Cookbooks: json.RawMessage(`{not valid json`),
+	}
+	if nodeUsesCookbook(n, "apt") {
+		t.Error("expected nodeUsesCookbook to return false for invalid JSON")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Route wiring tests — verify method checks and 404s
 // ---------------------------------------------------------------------------

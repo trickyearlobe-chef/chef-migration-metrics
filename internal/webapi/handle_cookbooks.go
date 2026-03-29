@@ -55,26 +55,11 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Resolve owned cookbook keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	if of.Active && r.cfg.Ownership.Enabled {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned cookbook keys: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "cookbook")
-			if err != nil {
-				r.logf("ERROR", "resolving owned cookbook keys: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "cookbook")
+	if err != nil {
+		r.logf("ERROR", "resolving cookbook ownership filter: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
 
 	orgs, err := r.resolveOrganisationFilter(req)
@@ -154,26 +139,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Apply owner filter if active and ownership is enabled.
-	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
-		if of.Unowned {
-			filtered := rows[:0]
-			for _, cb := range rows {
-				if !ownedKeys[cb.Name] {
-					filtered = append(filtered, cb)
-				}
-			}
-			rows = filtered
-		} else {
-			filtered := rows[:0]
-			for _, cb := range rows {
-				if ownedKeys[cb.Name] {
-					filtered = append(filtered, cb)
-				}
-			}
-			rows = filtered
-		}
-	}
+	rows = filterByOwnershipKey(rows, ownedKeys, of, func(cb cookbookRow) string { return cb.Name })
 
 	// Apply compatibility filter if specified.
 	compatFilter := req.URL.Query().Get("compatibility")

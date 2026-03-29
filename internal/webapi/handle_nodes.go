@@ -140,24 +140,11 @@ func (r *Router) handleNodesWithOwnerFilter(
 ) {
 	ctx := req.Context()
 
-	// Resolve owned node keys.
-	var ownedKeys map[string]bool
-	if of.Unowned {
-		keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-		if err != nil {
-			r.logf("ERROR", "resolving all owned node keys: %v", err)
-			WriteInternalError(w, "Failed to resolve ownership filter.")
-			return
-		}
-		ownedKeys = keys
-	} else if len(of.OwnerNames) > 0 {
-		keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-		if err != nil {
-			r.logf("ERROR", "resolving owned node keys: %v", err)
-			WriteInternalError(w, "Failed to resolve ownership filter.")
-			return
-		}
-		ownedKeys = keys
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "node")
+	if err != nil {
+		r.logf("ERROR", "resolving node ownership filter: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
 
 	// Use SQL push-down for node-level filters but without pagination
@@ -169,33 +156,15 @@ func (r *Router) handleNodesWithOwnerFilter(
 	f := nodeSnapshotFilterFromRequest(req, orgIDs)
 	// No limit/offset — we need all matching nodes for ownership filtering.
 
-	allNodes, _, err := r.db.ListNodeSnapshotsFiltered(ctx, f)
-	if err != nil {
-		r.logf("ERROR", "listing filtered nodes for owner filter: %v", err)
+	allNodes, _, err2 := r.db.ListNodeSnapshotsFiltered(ctx, f)
+	if err2 != nil {
+		r.logf("ERROR", "listing filtered nodes for owner filter: %v", err2)
 		WriteInternalError(w, "Failed to list nodes.")
 		return
 	}
 
 	// Apply ownership filter in memory.
-	if ownedKeys != nil {
-		if of.Unowned {
-			filtered := allNodes[:0]
-			for _, n := range allNodes {
-				if !ownedKeys[n.NodeName] {
-					filtered = append(filtered, n)
-				}
-			}
-			allNodes = filtered
-		} else {
-			filtered := allNodes[:0]
-			for _, n := range allNodes {
-				if ownedKeys[n.NodeName] {
-					filtered = append(filtered, n)
-				}
-			}
-			allNodes = filtered
-		}
-	}
+	allNodes = filterByOwnershipKey(allNodes, ownedKeys, of, func(n datastore.NodeSnapshot) string { return n.NodeName })
 
 	// Paginate the ownership-filtered results.
 	pageNodes, total := PaginateSlice(allNodes, pg)
@@ -438,45 +407,15 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 	}
 
 	// Apply owner filter if active and ownership is enabled.
-	if of.Active && r.cfg.Ownership.Enabled {
-		var ownedKeys map[string]bool
-		ctx := req.Context()
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned node keys: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving owned node keys: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
+	// Apply owner filter if active and ownership is enabled.
+	{
+		ownedKeys, oErr := r.resolveOwnershipFilter(req.Context(), of, "node")
+		if oErr != nil {
+			r.logf("ERROR", "resolving node ownership filter: %v", oErr)
+			WriteInternalError(w, "Failed to resolve ownership filter.")
+			return
 		}
-		if ownedKeys != nil {
-			if of.Unowned {
-				filtered := matched[:0]
-				for _, n := range matched {
-					if !ownedKeys[n.Node.NodeName] {
-						filtered = append(filtered, n)
-					}
-				}
-				matched = filtered
-			} else {
-				filtered := matched[:0]
-				for _, n := range matched {
-					if ownedKeys[n.Node.NodeName] {
-						filtered = append(filtered, n)
-					}
-				}
-				matched = filtered
-			}
-		}
+		matched = filterByOwnershipKey(matched, ownedKeys, of, func(n nodeWithOrg) string { return n.Node.NodeName })
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{
@@ -529,44 +468,12 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string) datastore
 // when ownership is active. It resolves ownership keys and filters in memory.
 // Returns the original slice unmodified when ownership is not active.
 func applyOwnerFilter(ctx context.Context, r *Router, nodes []datastore.NodeSnapshot, of ownerFilter) []datastore.NodeSnapshot {
-	if !of.Active || !r.cfg.Ownership.Enabled {
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "node")
+	if err != nil {
+		r.logf("WARN", "resolving node ownership filter: %v", err)
 		return nodes
 	}
-
-	var ownedKeys map[string]bool
-	if of.Unowned {
-		keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-		if err != nil {
-			r.logf("WARN", "resolving all owned node keys: %v", err)
-			return nodes
-		}
-		ownedKeys = keys
-	} else if len(of.OwnerNames) > 0 {
-		keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-		if err != nil {
-			r.logf("WARN", "resolving owned node keys: %v", err)
-			return nodes
-		}
-		ownedKeys = keys
-	}
-
-	if ownedKeys == nil {
-		return nodes
-	}
-
-	filtered := nodes[:0]
-	for _, n := range nodes {
-		if of.Unowned {
-			if !ownedKeys[n.NodeName] {
-				filtered = append(filtered, n)
-			}
-		} else {
-			if ownedKeys[n.NodeName] {
-				filtered = append(filtered, n)
-			}
-		}
-	}
-	return filtered
+	return filterByOwnershipKey(nodes, ownedKeys, of, func(n datastore.NodeSnapshot) string { return n.NodeName })
 }
 
 // bulkLoadReadiness loads readiness data for a slice of node snapshots using
@@ -610,7 +517,14 @@ func nodeUsesCookbook(n datastore.NodeSnapshot, cookbookName string) bool {
 	if len(n.Cookbooks) == 0 {
 		return false
 	}
-	// Quick substring check before full parse — the cookbook name will
-	// appear as a JSON key in the form `"cookbook_name":`.
-	return strings.Contains(string(n.Cookbooks), fmt.Sprintf("%q", cookbookName))
+	// Parse the JSONB and check for an exact top-level key match.
+	// The old substring approach could false-positive when a cookbook name
+	// appeared inside a value or when names were prefixes of other names
+	// in certain JSON layouts.
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(n.Cookbooks, &m); err != nil {
+		return false
+	}
+	_, ok := m[cookbookName]
+	return ok
 }
