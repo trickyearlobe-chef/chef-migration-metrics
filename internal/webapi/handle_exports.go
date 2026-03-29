@@ -193,7 +193,8 @@ func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, bod
 // runAsyncExport is launched as a goroutine to generate an export file in
 // the background. It updates the export_jobs table with progress and results.
 func (r *Router) runAsyncExport(jobID string, body exportRequest, maxRows int) {
-	ctx := r.asyncContext()
+	ctx, cancel := context.WithTimeout(r.asyncContext(), 1*time.Hour)
+	defer cancel()
 
 	// Update status to processing.
 	if err := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusProcessing, 0, "", 0, ""); err != nil {

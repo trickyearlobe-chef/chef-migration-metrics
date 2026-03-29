@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
@@ -60,7 +61,7 @@ export function RemediationPage() {
   const [sortField, setSortField] = useState<string>("priority_score");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const perPage = DEFAULT_PAGE_SIZE;
 
   // -----------------------------------------------------------------------
   // Load available target Chef versions and complexity labels on mount

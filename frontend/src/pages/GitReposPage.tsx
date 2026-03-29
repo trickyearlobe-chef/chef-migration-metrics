@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { fetchGitRepos, fetchFilterTargetChefVersions } from "../api";
 import type { GitRepoListItem, Pagination as PaginationType } from "../types";
@@ -71,7 +72,7 @@ export function GitReposPage() {
   const [tkStatus, setTkStatus] = useState(searchParams.get("tk_status") || "");
   const [cloneStatus, setCloneStatus] = useState(searchParams.get("clone_status") || "");
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to name ascending.
   const [sortField, setSortField] = useState("name");

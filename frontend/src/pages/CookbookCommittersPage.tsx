@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { SMALL_PAGE_SIZE } from "../constants";
 import { useParams, Link } from "react-router-dom";
 import {
   fetchCookbookCommitters,
@@ -70,7 +71,7 @@ export function CookbookCommittersPage() {
 
   // Filters & sorting
   const [page, setPage] = useState(1);
-  const perPage = 25;
+  const perPage = SMALL_PAGE_SIZE;
   const [sort, setSort] = useState("last_commit_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [sinceMonths, setSinceMonths] = useState<number | null>(null);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { SMALL_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import {
@@ -1278,7 +1279,7 @@ function TableView({ organisation }: { organisation: string }) {
   const [sortField, setSortField] = useState<string>("total_dependencies");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
-  const perPage = 25;
+  const perPage = SMALL_PAGE_SIZE;
 
   // Expanded row
   const [expandedRole, setExpandedRole] = useState<string | null>(null);

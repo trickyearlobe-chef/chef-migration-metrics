@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { DEFAULT_PAGE_SIZE, SMALL_PAGE_SIZE } from "../constants";
 import { useOrg } from "../context/OrgContext";
 import {
   fetchLogs,
@@ -155,7 +156,7 @@ function LogsTab() {
   const [minSeverity, setMinSeverity] = useState("INFO");
   const [scope, setScope] = useState("");
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const perPage = DEFAULT_PAGE_SIZE;
 
   // Track live (WebSocket-streamed) entries separately so they can be
   // discarded on page change without affecting the REST-fetched data.
@@ -501,7 +502,7 @@ function CollectionRunsTab() {
 
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
-  const perPage = 25;
+  const perPage = SMALL_PAGE_SIZE;
 
   const load = useCallback(() => {
     setLoading(true);
