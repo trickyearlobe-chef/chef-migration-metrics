@@ -120,6 +120,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Documentation
 
-- [ ] Add Test Kitchen driver configuration section to top-level `README.md`
-- [ ] Document platform map setup for vCenter deployment
-- [ ] Document driver migration procedure (vCenter → vRA example)
+- [x] Add Test Kitchen driver configuration section to top-level `README.md`
+- [x] Document platform map setup for vCenter deployment
+- [x] Document driver migration procedure (vCenter → vRA example)
