@@ -145,8 +145,7 @@ func TestHandleCookbookPlatformCoverage_MethodNotAllowed(t *testing.T) {
 
 	r.ServeHTTP(rec, req)
 
-	// POST should be rejected — either 405 or some error status.
-	if rec.Code == http.StatusOK {
-		t.Fatal("expected non-200 for POST request")
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 Method Not Allowed for POST request, got %d", rec.Code)
 	}
 }
