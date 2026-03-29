@@ -1442,6 +1442,12 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				"node readiness evaluation complete: %d evaluated, %d ready, %d blocked",
 				len(readinessResults), readyCount, blockedCount),
 				logging.WithCollectionRunID(run.ID))
+
+			// Step 14b: Record readiness metric snapshots for trend charts.
+			// These pre-aggregated snapshots allow the dashboard to show
+			// historical readiness trends without querying live
+			// node_readiness rows.
+			c.recordReadinessSnapshots(ctx, log, run.ID, org.ID, readinessResults, c.cfg.TargetChefVersions)
 		}
 	}
 
@@ -1641,5 +1647,102 @@ func (c *Collector) recordMetricSnapshots(
 	}); msErr != nil {
 		log.Warn(fmt.Sprintf("failed to record chef_version_distribution metric: %v", msErr),
 			logging.WithCollectionRunID(collectionRunID))
+	}
+}
+
+// readinessNodeEntry is a single node's readiness status, included in the
+// readiness_summary metric snapshot payload to support ownership-filtered
+// readiness trend queries.
+type readinessNodeEntry struct {
+	Name    string `json:"name"`
+	IsReady bool   `json:"is_ready"`
+}
+
+// buildReadinessSnapshotPayload builds the JSONB payload for a
+// readiness_summary metric snapshot from in-memory readiness results.
+// The payload includes per-node data (name + is_ready) so that
+// ownership-filtered trend queries can be served from metric_snapshots.
+//
+// For organisations exceeding maxNodesInMetricSnapshot nodes, per-node
+// data is omitted and nodes_omitted is set to true.
+func buildReadinessSnapshotPayload(results []analysis.ReadinessResult) (json.RawMessage, error) {
+	var ready, blocked int
+
+	omitNodes := len(results) > maxNodesInMetricSnapshot
+	var nodes []readinessNodeEntry
+	if !omitNodes {
+		nodes = make([]readinessNodeEntry, 0, len(results))
+	}
+
+	for _, r := range results {
+		if r.IsReady {
+			ready++
+		} else {
+			blocked++
+		}
+		if !omitNodes {
+			nodes = append(nodes, readinessNodeEntry{Name: r.NodeName, IsReady: r.IsReady})
+		}
+	}
+
+	payload := map[string]interface{}{
+		"total_nodes":   len(results),
+		"ready":         ready,
+		"blocked":       blocked,
+		"nodes_omitted": omitNodes,
+	}
+	if omitNodes {
+		// Explicitly omit the nodes key to save space.
+	} else {
+		payload["nodes"] = nodes
+	}
+
+	return json.Marshal(payload)
+}
+
+// recordReadinessSnapshots persists pre-aggregated readiness metric snapshots
+// for each target Chef version so that the readiness trend chart can display
+// historical data without querying live node_readiness rows.
+func (c *Collector) recordReadinessSnapshots(
+	ctx context.Context,
+	log *logging.ScopedLogger,
+	collectionRunID string,
+	organisationID string,
+	readinessResults []analysis.ReadinessResult,
+	targetVersions []string,
+) {
+	now := time.Now().UTC()
+
+	// Group results by target version.
+	byVersion := make(map[string][]analysis.ReadinessResult, len(targetVersions))
+	for i := range readinessResults {
+		tv := readinessResults[i].TargetChefVersion
+		byVersion[tv] = append(byVersion[tv], readinessResults[i])
+	}
+
+	for _, tv := range targetVersions {
+		results := byVersion[tv]
+		if len(results) == 0 {
+			continue
+		}
+
+		payload, err := buildReadinessSnapshotPayload(results)
+		if err != nil {
+			log.Warn(fmt.Sprintf("failed to marshal readiness_summary metric for version %s: %v", tv, err),
+				logging.WithCollectionRunID(collectionRunID))
+			continue
+		}
+
+		if _, msErr := c.db.InsertMetricSnapshot(ctx, datastore.InsertMetricSnapshotParams{
+			CollectionRunID:   collectionRunID,
+			OrganisationID:    organisationID,
+			SnapshotType:      "readiness_summary",
+			TargetChefVersion: tv,
+			Data:              payload,
+			SnapshotAt:        now,
+		}); msErr != nil {
+			log.Warn(fmt.Sprintf("failed to record readiness_summary metric for version %s: %v", tv, msErr),
+				logging.WithCollectionRunID(collectionRunID))
+		}
 	}
 }

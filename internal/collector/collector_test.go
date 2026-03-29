@@ -2296,3 +2296,187 @@ func TestBuildVersionDistributionPayload_LargeOrgOmitsNodes(t *testing.T) {
 		t.Errorf("distribution[18.0.0] = %d, want 50001", got.Distribution["18.0.0"])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// buildReadinessSnapshotPayload tests
+// ---------------------------------------------------------------------------
+
+// readinessSnapshotPayload mirrors the JSON structure returned by
+// buildReadinessSnapshotPayload so we can unmarshal and assert.
+type readinessSnapshotPayload struct {
+	TotalNodes   int `json:"total_nodes"`
+	Ready        int `json:"ready"`
+	Blocked      int `json:"blocked"`
+	Nodes        []struct {
+		Name    string `json:"name"`
+		IsReady bool   `json:"is_ready"`
+	} `json:"nodes"`
+	NodesOmitted bool `json:"nodes_omitted"`
+}
+
+func TestBuildReadinessSnapshotPayload_BasicCounts(t *testing.T) {
+	results := []analysis.ReadinessResult{
+		{NodeName: "web01", TargetChefVersion: "18.0", IsReady: true},
+		{NodeName: "web02", TargetChefVersion: "18.0", IsReady: true},
+		{NodeName: "db01", TargetChefVersion: "18.0", IsReady: false},
+	}
+
+	raw, err := buildReadinessSnapshotPayload(results)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got readinessSnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.TotalNodes != 3 {
+		t.Errorf("total_nodes = %d, want 3", got.TotalNodes)
+	}
+	if got.Ready != 2 {
+		t.Errorf("ready = %d, want 2", got.Ready)
+	}
+	if got.Blocked != 1 {
+		t.Errorf("blocked = %d, want 1", got.Blocked)
+	}
+	if got.NodesOmitted {
+		t.Error("nodes_omitted should be false for small input")
+	}
+	if len(got.Nodes) != 3 {
+		t.Fatalf("len(nodes) = %d, want 3", len(got.Nodes))
+	}
+
+	nodeMap := make(map[string]bool, len(got.Nodes))
+	for _, n := range got.Nodes {
+		nodeMap[n.Name] = n.IsReady
+	}
+	if !nodeMap["web01"] {
+		t.Error("web01 should be ready")
+	}
+	if !nodeMap["web02"] {
+		t.Error("web02 should be ready")
+	}
+	if nodeMap["db01"] {
+		t.Error("db01 should be blocked")
+	}
+}
+
+func TestBuildReadinessSnapshotPayload_Empty(t *testing.T) {
+	raw, err := buildReadinessSnapshotPayload([]analysis.ReadinessResult{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got readinessSnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.TotalNodes != 0 {
+		t.Errorf("total_nodes = %d, want 0", got.TotalNodes)
+	}
+	if got.Ready != 0 {
+		t.Errorf("ready = %d, want 0", got.Ready)
+	}
+	if got.Blocked != 0 {
+		t.Errorf("blocked = %d, want 0", got.Blocked)
+	}
+	if got.Nodes == nil {
+		t.Error("nodes should be an empty array, not nil")
+	}
+	if len(got.Nodes) != 0 {
+		t.Errorf("len(nodes) = %d, want 0", len(got.Nodes))
+	}
+	if got.NodesOmitted {
+		t.Error("nodes_omitted should be false for empty input")
+	}
+}
+
+func TestBuildReadinessSnapshotPayload_LargeOrgOmitsNodes(t *testing.T) {
+	results := make([]analysis.ReadinessResult, maxNodesInMetricSnapshot+1)
+	for i := range results {
+		results[i] = analysis.ReadinessResult{
+			NodeName:          fmt.Sprintf("node-%05d", i),
+			TargetChefVersion: "18.0",
+			IsReady:           i%2 == 0,
+		}
+	}
+
+	raw, err := buildReadinessSnapshotPayload(results)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got readinessSnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if !got.NodesOmitted {
+		t.Error("nodes_omitted should be true for large input")
+	}
+	if got.Nodes != nil {
+		t.Errorf("nodes should be nil when omitted, got %d entries", len(got.Nodes))
+	}
+	if got.TotalNodes != maxNodesInMetricSnapshot+1 {
+		t.Errorf("total_nodes = %d, want %d", got.TotalNodes, maxNodesInMetricSnapshot+1)
+	}
+	// Half ready (even indices) — 25001 ready, 25000 blocked
+	expectedReady := (maxNodesInMetricSnapshot + 1 + 1) / 2
+	expectedBlocked := maxNodesInMetricSnapshot + 1 - expectedReady
+	if got.Ready != expectedReady {
+		t.Errorf("ready = %d, want %d", got.Ready, expectedReady)
+	}
+	if got.Blocked != expectedBlocked {
+		t.Errorf("blocked = %d, want %d", got.Blocked, expectedBlocked)
+	}
+}
+
+func TestBuildReadinessSnapshotPayload_AllReady(t *testing.T) {
+	results := []analysis.ReadinessResult{
+		{NodeName: "a", TargetChefVersion: "18.0", IsReady: true},
+		{NodeName: "b", TargetChefVersion: "18.0", IsReady: true},
+	}
+
+	raw, err := buildReadinessSnapshotPayload(results)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got readinessSnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.Ready != 2 {
+		t.Errorf("ready = %d, want 2", got.Ready)
+	}
+	if got.Blocked != 0 {
+		t.Errorf("blocked = %d, want 0", got.Blocked)
+	}
+}
+
+func TestBuildReadinessSnapshotPayload_AllBlocked(t *testing.T) {
+	results := []analysis.ReadinessResult{
+		{NodeName: "a", TargetChefVersion: "18.0", IsReady: false},
+		{NodeName: "b", TargetChefVersion: "18.0", IsReady: false},
+	}
+
+	raw, err := buildReadinessSnapshotPayload(results)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got readinessSnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.Ready != 0 {
+		t.Errorf("ready = %d, want 0", got.Ready)
+	}
+	if got.Blocked != 2 {
+		t.Errorf("blocked = %d, want 2", got.Blocked)
+	}
+}
