@@ -93,7 +93,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [x] Add `platform_name` column (TEXT, nullable) to `git_repo_test_kitchen_results`
 - [x] Create `cookbook_platform_coverage` table with JSONB `coverage_data`
 - [x] Write migration up and down scripts
-- [ ] Write functional tests for new columns and table (build-tagged `//go:build functional`)
+- [x] Write functional tests for new columns and table (build-tagged `//go:build functional`)
 
 ## Configuration
 
