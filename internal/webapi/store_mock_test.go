@@ -105,6 +105,12 @@ type mockStore struct {
 	ListAuditLogFn                                      func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 	DatabaseSizeFn                                      func(ctx context.Context) (int64, error)
 	DatabaseTableSizesFn                                func(ctx context.Context) ([]datastore.TableSize, error)
+	PgStatStatementsAvailableFn                         func(ctx context.Context) bool
+	TopQueryStatsFn                                     func(ctx context.Context, limit int) ([]datastore.TopQueryStat, error)
+	TableStatsFn                                        func(ctx context.Context) ([]datastore.TableStat, error)
+	IndexStatsFn                                        func(ctx context.Context) ([]datastore.IndexStat, error)
+	ActiveQueriesFn                                     func(ctx context.Context) ([]datastore.ActiveQuery, error)
+	ResetPgStatsFn                                      func(ctx context.Context) error
 }
 
 // compile-time check
@@ -790,6 +796,52 @@ func (m *mockStore) DatabaseTableSizes(ctx context.Context) ([]datastore.TableSi
 		return m.DatabaseTableSizesFn(ctx)
 	}
 	return nil, nil
+}
+
+// -----------------------------------------------------------------
+// PostgreSQL performance stats
+// -----------------------------------------------------------------
+
+func (m *mockStore) PgStatStatementsAvailable(ctx context.Context) bool {
+	if m.PgStatStatementsAvailableFn != nil {
+		return m.PgStatStatementsAvailableFn(ctx)
+	}
+	return false
+}
+
+func (m *mockStore) TopQueryStats(ctx context.Context, limit int) ([]datastore.TopQueryStat, error) {
+	if m.TopQueryStatsFn != nil {
+		return m.TopQueryStatsFn(ctx, limit)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) TableStats(ctx context.Context) ([]datastore.TableStat, error) {
+	if m.TableStatsFn != nil {
+		return m.TableStatsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) IndexStats(ctx context.Context) ([]datastore.IndexStat, error) {
+	if m.IndexStatsFn != nil {
+		return m.IndexStatsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ActiveQueries(ctx context.Context) ([]datastore.ActiveQuery, error) {
+	if m.ActiveQueriesFn != nil {
+		return m.ActiveQueriesFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ResetPgStats(ctx context.Context) error {
+	if m.ResetPgStatsFn != nil {
+		return m.ResetPgStatsFn(ctx)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

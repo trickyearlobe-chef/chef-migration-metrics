@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/http/pprof"
 	"path"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 )
 
 // CollectionTriggerFunc is a function that triggers an immediate collection
@@ -69,6 +71,17 @@ type Router struct {
 	// is requested. Nil when not wired up — rescan handlers fall back to
 	// the "will run on next collection cycle" behaviour.
 	triggerCollection CollectionTriggerFunc
+
+	// recorder holds the in-memory request latency circular buffer used
+	// by the timing middleware and the GET /api/v1/admin/performance
+	// endpoint. Nil when performance instrumentation is disabled.
+	recorder *perf.Recorder
+
+	// timingHandler wraps the mux with the request timing middleware.
+	// Populated by NewRouter when a recorder is configured. Nil when
+	// performance instrumentation is disabled (requests go directly
+	// through r.mux).
+	timingHandler http.Handler
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -164,12 +177,27 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 	}
 
 	r.registerRoutes()
+
+	// Wrap the entire mux with the timing middleware when a recorder is
+	// present. This captures latency for all routes (protect + adminOnly)
+	// while excluding nothing — the overhead is <1µs per request.
+	if r.recorder != nil && r.cfg.Performance.Enabled {
+		mw := perf.NewMiddleware(r.recorder)
+		r.timingHandler = mw.Wrap(r.mux)
+	}
+
 	return r
 }
 
 // ServeHTTP implements http.Handler, delegating to the internal ServeMux.
+// When a perf.Recorder is configured, every request is wrapped by the
+// timing middleware so that latency is captured for all mux-routed paths.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.mux.ServeHTTP(w, req)
+	if r.timingHandler != nil {
+		r.timingHandler.ServeHTTP(w, req)
+	} else {
+		r.mux.ServeHTTP(w, req)
+	}
 }
 
 // Hub returns the EventHub so callers (main, collector, etc.) can broadcast
@@ -355,6 +383,32 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
+
+	// Performance diagnostics (admin-only, gated on config + recorder).
+	if r.cfg.Performance.Enabled && r.recorder != nil {
+		r.adminOnly("/api/v1/admin/performance", r.handlePerformance)
+		r.adminOnly("/api/v1/admin/performance/db", r.handlePerformanceDB)
+	}
+
+	// pprof endpoints (admin-only, only registered when explicitly enabled).
+	if r.cfg.Performance.PprofEnabled {
+		r.adminOnly("/debug/pprof/", func(w http.ResponseWriter, req *http.Request) {
+			pprof.Index(w, req)
+		})
+		r.adminOnly("/debug/pprof/cmdline", func(w http.ResponseWriter, req *http.Request) {
+			pprof.Cmdline(w, req)
+		})
+		r.adminOnly("/debug/pprof/profile", func(w http.ResponseWriter, req *http.Request) {
+			pprof.Profile(w, req)
+		})
+		r.adminOnly("/debug/pprof/symbol", func(w http.ResponseWriter, req *http.Request) {
+			pprof.Symbol(w, req)
+		})
+		r.adminOnly("/debug/pprof/trace", func(w http.ResponseWriter, req *http.Request) {
+			pprof.Trace(w, req)
+		})
+		r.logf("WARN", "pprof endpoints enabled at /debug/pprof/ — do not use in production without auth")
+	}
 
 	// -----------------------------------------------------------------
 	// Frontend SPA fallback — serves index.html for client-side routing.

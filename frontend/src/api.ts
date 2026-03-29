@@ -63,6 +63,8 @@ import type {
   GitRepoListResponse,
   GitRepoDetailResponse,
   GitRepoRemediationResponse,
+  PerformanceResponse,
+  PerformanceDBResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -116,10 +118,14 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   if (!res.ok && res.status !== 503) {
     // If the session has expired or is invalid, redirect to login
     // immediately rather than showing cryptic errors in the UI.
-    if (res.status === 401 && !url.includes("/auth/login") && !url.includes("/auth/me")) {
+    if (
+      res.status === 401 &&
+      !url.includes("/auth/login") &&
+      !url.includes("/auth/me")
+    ) {
       window.location.href = "/login";
       // Return a never-resolving promise so callers don't continue.
-      return new Promise<T>(() => { });
+      return new Promise<T>(() => {});
     }
 
     let code = "unknown";
@@ -285,6 +291,56 @@ export function fetchSystemHealth(): Promise<SystemHealthResponse> {
 }
 
 // ---------------------------------------------------------------------------
+// Performance diagnostics (admin)
+// ---------------------------------------------------------------------------
+
+export function fetchPerformanceStats(): Promise<PerformanceResponse> {
+  return apiFetch<PerformanceResponse>(buildUrl("/admin/performance"));
+}
+
+export async function resetPerformanceStats(): Promise<void> {
+  const res = await fetch(buildUrl("/admin/performance"), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      code = body.error ?? code;
+      message = body.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+}
+
+export function fetchPerformanceDB(): Promise<PerformanceDBResponse> {
+  return apiFetch<PerformanceDBResponse>(buildUrl("/admin/performance/db"));
+}
+
+export async function resetPerformanceDB(): Promise<void> {
+  const res = await fetch(buildUrl("/admin/performance/db"), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let code = "unknown";
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      code = body.error ?? code;
+      message = body.message ?? message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new ApiError(res.status, code, message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Nodes
 // ---------------------------------------------------------------------------
 
@@ -301,7 +357,9 @@ export function fetchNodeDetail(
   name: string,
 ): Promise<NodeDetailResponse> {
   return apiFetch<NodeDetailResponse>(
-    buildUrl(`/nodes/${encodeURIComponent(organisation)}/${encodeURIComponent(name)}`),
+    buildUrl(
+      `/nodes/${encodeURIComponent(organisation)}/${encodeURIComponent(name)}`,
+    ),
   );
 }
 
@@ -311,9 +369,12 @@ export function fetchNodeDisks(
   showAll?: boolean,
 ): Promise<NodeDiskDetailResponse> {
   return apiFetch<NodeDiskDetailResponse>(
-    buildUrl(`/nodes/disks/${encodeURIComponent(organisation)}/${encodeURIComponent(name)}`, {
-      show_all: showAll ? "true" : undefined,
-    }),
+    buildUrl(
+      `/nodes/disks/${encodeURIComponent(organisation)}/${encodeURIComponent(name)}`,
+      {
+        show_all: showAll ? "true" : undefined,
+      },
+    ),
   );
 }
 
@@ -364,18 +425,20 @@ export function fetchCookbookDetail(
 
 export function requestCookbookRescan(
   name: string,
-): Promise<{ cookbook_name: string; versions_invalidated: number; message: string }> {
-  return apiFetch(
-    `/api/v1/cookbooks/${encodeURIComponent(name)}/rescan`,
-    { method: "POST" },
-  );
+): Promise<{
+  cookbook_name: string;
+  versions_invalidated: number;
+  message: string;
+}> {
+  return apiFetch(`/api/v1/cookbooks/${encodeURIComponent(name)}/rescan`, {
+    method: "POST",
+  });
 }
 
 export function rescanAllCookstyle(): Promise<{ message: string }> {
-  return apiFetch<{ message: string }>(
-    "/api/v1/admin/rescan-all-cookstyle",
-    { method: "POST" },
-  );
+  return apiFetch<{ message: string }>("/api/v1/admin/rescan-all-cookstyle", {
+    method: "POST",
+  });
 }
 
 export function resetGitCookbook(
@@ -404,11 +467,20 @@ export function fetchCookbookRemediation(
 // Git Repos
 // ---------------------------------------------------------------------------
 
-export function fetchGitRepos(
-  filters?: { name?: string; compatibility?: string; tk_status?: string; clone_status?: string; target_chef_version?: string; page?: number; per_page?: number },
-): Promise<GitRepoListResponse> {
+export function fetchGitRepos(filters?: {
+  name?: string;
+  compatibility?: string;
+  tk_status?: string;
+  clone_status?: string;
+  target_chef_version?: string;
+  page?: number;
+  per_page?: number;
+}): Promise<GitRepoListResponse> {
   return apiFetch<GitRepoListResponse>(
-    buildUrl("/git-repos", filters as Record<string, string | number | undefined>),
+    buildUrl(
+      "/git-repos",
+      filters as Record<string, string | number | undefined>,
+    ),
   );
 }
 
@@ -422,16 +494,17 @@ export function fetchGitRepoDetail(
 
 export function requestGitRepoRescan(
   name: string,
-): Promise<{ git_repo_name: string; repos_invalidated: number; message: string }> {
-  return apiFetch(
-    `/api/v1/git-repos/${encodeURIComponent(name)}/rescan`,
-    { method: "POST" },
-  );
+): Promise<{
+  git_repo_name: string;
+  repos_invalidated: number;
+  message: string;
+}> {
+  return apiFetch(`/api/v1/git-repos/${encodeURIComponent(name)}/rescan`, {
+    method: "POST",
+  });
 }
 
-export function resetGitRepo(
-  name: string,
-): Promise<ResetGitCookbookResponse> {
+export function resetGitRepo(name: string): Promise<ResetGitCookbookResponse> {
   return apiFetch<ResetGitCookbookResponse>(
     `/api/v1/git-repos/${encodeURIComponent(name)}/reset`,
     { method: "POST" },
@@ -515,9 +588,10 @@ export function fetchRemediationPriority(
   );
 }
 
-export function fetchRemediationSummary(
-  params?: { organisation?: string; target_chef_version?: string },
-): Promise<RemediationSummaryResponse> {
+export function fetchRemediationSummary(params?: {
+  organisation?: string;
+  target_chef_version?: string;
+}): Promise<RemediationSummaryResponse> {
   return apiFetch<RemediationSummaryResponse>(
     buildUrl("/remediation/summary", params),
   );
@@ -574,9 +648,7 @@ export function fetchFilterTargetChefVersions(): Promise<FilterStringResponse> {
 }
 
 export function fetchFilterComplexityLabels(): Promise<FilterStringResponse> {
-  return apiFetch<FilterStringResponse>(
-    buildUrl("/filters/complexity-labels"),
-  );
+  return apiFetch<FilterStringResponse>(buildUrl("/filters/complexity-labels"));
 }
 
 // ---------------------------------------------------------------------------
@@ -601,9 +673,7 @@ export function fetchLogs(filters?: LogFilterQuery): Promise<LogListResponse> {
 }
 
 export function fetchLogDetail(id: string): Promise<LogEntry> {
-  return apiFetch<LogEntry>(
-    buildUrl(`/logs/${encodeURIComponent(id)}`),
-  );
+  return apiFetch<LogEntry>(buildUrl(`/logs/${encodeURIComponent(id)}`));
 }
 
 export interface CollectionRunFilterQuery extends PaginationQuery {
@@ -688,7 +758,9 @@ export async function createExport(
     // Trigger a browser download from the response blob.
     const disposition = res.headers.get("Content-Disposition") ?? "";
     const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
-    const filename = filenameMatch?.[1] ?? `export.${body.format === "json" ? "json" : body.format === "chef_search_query" ? "txt" : "csv"}`;
+    const filename =
+      filenameMatch?.[1] ??
+      `export.${body.format === "json" ? "json" : body.format === "chef_search_query" ? "txt" : "csv"}`;
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -799,11 +871,15 @@ export function fetchMe(): Promise<MeResponse> {
 // ---------------------------------------------------------------------------
 
 /** GET /api/v1/admin/users — list all users (admin only). */
-export function fetchAdminUsers(
-  params?: { page?: number; per_page?: number },
-): Promise<AdminUserListResponse> {
+export function fetchAdminUsers(params?: {
+  page?: number;
+  per_page?: number;
+}): Promise<AdminUserListResponse> {
   return apiFetch<AdminUserListResponse>(
-    buildUrl("/admin/users", params as Record<string, string | number | undefined>),
+    buildUrl(
+      "/admin/users",
+      params as Record<string, string | number | undefined>,
+    ),
   );
 }
 
@@ -871,9 +947,7 @@ export async function resetUserPassword(
   username: string,
   body: ResetPasswordRequest,
 ): Promise<void> {
-  const url = buildUrl(
-    `/admin/users/${encodeURIComponent(username)}/password`,
-  );
+  const url = buildUrl(`/admin/users/${encodeURIComponent(username)}/password`);
   const res = await fetch(url, {
     method: "PUT",
     headers: {
