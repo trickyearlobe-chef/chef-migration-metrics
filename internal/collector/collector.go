@@ -1210,6 +1210,29 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				logging.WithCollectionRunID(run.OrganisationName))
 		}
 
+		// Load runtime Test Kitchen config from database (admin UI overrides).
+		if c.kitchenScanner != nil {
+			dbSetting, dbErr := c.db.GetRuntimeSetting(ctx, "test_kitchen")
+			if dbErr != nil {
+				log.Warn(fmt.Sprintf("failed to load runtime Test Kitchen config: %v", dbErr),
+					logging.WithCollectionRunID(run.OrganisationName))
+			} else if dbSetting != nil {
+				var dbTKConfig config.TestKitchenConfig
+				if unmarshalErr := json.Unmarshal(dbSetting.Value, &dbTKConfig); unmarshalErr != nil {
+					log.Warn(fmt.Sprintf("failed to parse runtime Test Kitchen config: %v", unmarshalErr),
+						logging.WithCollectionRunID(run.OrganisationName))
+				} else {
+					c.kitchenScanner.SetTestKitchenConfig(dbTKConfig)
+					log.Info(fmt.Sprintf("loaded Test Kitchen config from database (driver=%s, %d platform mappings, saved by %s at %s)",
+						dbTKConfig.EffectiveDriver(), len(dbTKConfig.PlatformMap), dbSetting.UpdatedBy, dbSetting.UpdatedAt.Format(time.RFC3339)),
+						logging.WithCollectionRunID(run.OrganisationName))
+				}
+			} else {
+				// No DB override — ensure we're using the file config.
+				c.kitchenScanner.SetTestKitchenConfig(c.cfg.AnalysisTools.TestKitchen)
+			}
+		}
+
 		// B.4: Test Kitchen for git repos with test suites.
 		if c.kitchenScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
 			log.Info("running Test Kitchen",
