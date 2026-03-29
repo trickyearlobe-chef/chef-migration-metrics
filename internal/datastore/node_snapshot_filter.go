@@ -102,106 +102,8 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		cols = heavyCols
 	}
 
-	// CTE: select nodes from the latest completed collection run per org.
-	// The correlated subquery picks the max started_at per organisation,
-	// so this works correctly across multiple orgs in a single query.
-	cte := `WITH completed_nodes AS (
-		SELECT ns.id, ns.collection_run_id, ns.organisation_id, ns.node_name,
-		       ns.chef_environment, ns.chef_version,
-		       ns.platform, ns.platform_version, ns.platform_family,
-		       ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
-		       ns.policy_name, ns.policy_group,
-		       ns.ohai_time, ns.custom_attributes,
-		       ns.is_stale, ns.collected_at, ns.created_at
-		  FROM node_snapshots ns
-		 INNER JOIN collection_runs cr ON cr.id = ns.collection_run_id
-		 WHERE cr.status = 'completed'
-		   AND cr.started_at = (
-		         SELECT MAX(cr2.started_at)
-		           FROM collection_runs cr2
-		          WHERE cr2.organisation_id = ns.organisation_id
-		            AND cr2.status = 'completed'
-		       )
-	)`
-
-	// Dynamic WHERE clause builder following the ListLogEntries pattern.
-	where := " WHERE 1=1"
-	args = []interface{}{}
-	argN := 0
-
-	nextArg := func() string {
-		argN++
-		return fmt.Sprintf("$%d", argN)
-	}
-
-	// Organisation filter.
-	if len(f.OrganisationIDs) > 0 {
-		where += " AND cn.organisation_id = ANY(" + nextArg() + ")"
-		args = append(args, pq.Array(f.OrganisationIDs))
-	}
-
-	// Node name filter (case-insensitive substring).
-	if f.NodeName != "" {
-		where += " AND LOWER(cn.node_name) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
-		args = append(args, f.NodeName)
-	}
-
-	// Environment filter (case-insensitive substring).
-	if f.Environment != "" {
-		where += " AND LOWER(cn.chef_environment) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
-		args = append(args, f.Environment)
-	}
-
-	// Platform filter — special case: "unknown" matches nodes with NULL or
-	// empty platform, mirroring the CASE WHEN cn.platform IS NULL OR
-	// cn.platform = '' THEN 'unknown' used in the dashboard platform
-	// distribution aggregation.
-	if strings.EqualFold(f.Platform, "unknown") {
-		where += " AND (cn.platform IS NULL OR cn.platform = '')"
-	} else if f.Platform != "" {
-		where += " AND LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, '')) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
-		args = append(args, f.Platform)
-	}
-
-	// Chef version filter — exact match takes precedence over substring.
-	// Special case: "unknown" matches nodes with NULL or empty chef_version,
-	// mirroring the COALESCE(NULLIF(chef_version, ''), 'unknown') used in
-	// the dashboard version distribution aggregation.
-	if f.ChefVersionExact != "" {
-		where += " AND cn.chef_version = " + nextArg()
-		args = append(args, f.ChefVersionExact)
-	} else if strings.EqualFold(f.ChefVersion, "unknown") {
-		where += " AND (cn.chef_version IS NULL OR cn.chef_version = '')"
-	} else if f.ChefVersion != "" {
-		where += " AND LOWER(cn.chef_version) LIKE LOWER(" + nextArg() + ") || '%'"
-		args = append(args, f.ChefVersion)
-	}
-
-	// Policy name filter (case-insensitive substring).
-	if f.PolicyName != "" {
-		where += " AND LOWER(cn.policy_name) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
-		args = append(args, f.PolicyName)
-	}
-
-	// Policy group filter (case-insensitive substring).
-	if f.PolicyGroup != "" {
-		where += " AND LOWER(cn.policy_group) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
-		args = append(args, f.PolicyGroup)
-	}
-
-	// Role filter (case-insensitive substring match on any role in the JSONB array).
-	// Guard against JSONB null values (jsonb_typeof = 'null') which cause
-	// jsonb_array_elements_text to error with "cannot extract elements from a scalar".
-	if f.Role != "" {
-		where += " AND jsonb_typeof(cn.roles) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE LOWER(r) LIKE '%' || LOWER(" + nextArg() + ") || '%')"
-		args = append(args, f.Role)
-	}
-
-	// Stale filter (exact boolean match).
-	if f.Stale != nil {
-		where += " AND cn.is_stale = " + nextArg()
-		args = append(args, *f.Stale)
-	}
+	// Reuse the shared CTE + WHERE clause builder.
+	cte, where, args := buildNodeSnapshotFilterParts(f)
 
 	// Build the full query with COUNT(*) OVER() for total count.
 	var sb strings.Builder
@@ -210,6 +112,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	sb.WriteString(cols)
 	sb.WriteString(", COUNT(*) OVER () AS total_count\n  FROM completed_nodes cn")
 	sb.WriteString(where)
+
 	// Dynamic sort column with whitelist validation.
 	sortCol := "cn.node_name"
 	switch f.Sort {
@@ -230,7 +133,14 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	}
 	sb.WriteString("\n ORDER BY " + sortCol + " " + sortDir)
 
-	// Pagination.
+	// Pagination — argument numbering continues from where
+	// buildNodeSnapshotFilterParts left off.
+	argN := len(args)
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
+	}
+
 	if f.Limit > 0 {
 		sb.WriteString("\n LIMIT " + nextArg())
 		args = append(args, f.Limit)
