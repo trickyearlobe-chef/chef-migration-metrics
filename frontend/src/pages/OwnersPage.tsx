@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { fetchOwners, createOwner, type OwnerFilterQuery } from "../api";
 import type { Owner, Pagination as PaginationType } from "../types";
@@ -151,7 +152,7 @@ export function OwnersPage() {
   const [search, setSearch] = useState("");
   const [ownerType, setOwnerType] = useState("");
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to blocked descending to surface remediation work
   const [sortField, setSortField] = useState<SortField>("blocked");
