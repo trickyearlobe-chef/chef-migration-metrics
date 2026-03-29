@@ -77,14 +77,6 @@ type DataStore interface {
 	// during the given collection run.
 	ListNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
 
-	// CountChefVersionsByCollectionRun returns a map of chef_version → count
-	// for all node snapshots in the given collection run.
-	CountChefVersionsByCollectionRun(ctx context.Context, collectionRunID string) (map[string]int, error)
-
-	// CountChefVersionsByCollectionRunFiltered returns a map of chef_version → count
-	// for node snapshots in the given collection run whose node_name is in allowedNodes.
-	CountChefVersionsByCollectionRunFiltered(ctx context.Context, collectionRunID string, allowedNodes []string) (map[string]int, error)
-
 	// CountStaleFreshByCollectionRun returns the total, stale, and fresh
 	// node counts for the given collection run.
 	CountStaleFreshByCollectionRun(ctx context.Context, collectionRunID string) (total, stale, fresh int, err error)

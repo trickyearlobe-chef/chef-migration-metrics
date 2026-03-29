@@ -69,18 +69,8 @@ func (r *Router) handleAdminListUsers(w http.ResponseWriter, req *http.Request) 
 	// Use simple pagination over the full list. The user table is expected
 	// to be small (tens to low hundreds) so in-memory pagination is fine.
 	pg := ParsePagination(req)
-	total := len(data)
-
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
-
-	WritePaginated(w, data[start:end], pg, total)
+	page, total := PaginateSlice(data, pg)
+	WritePaginated(w, page, pg, total)
 }
 
 // ---------------------------------------------------------------------------
@@ -122,9 +112,9 @@ func (r *Router) handleAdminCreateUser(w http.ResponseWriter, req *http.Request)
 	if body.Role == "" {
 		body.Role = "viewer"
 	}
-	if body.Role != "admin" && body.Role != "viewer" {
+	if body.Role != "admin" && body.Role != "operator" && body.Role != "viewer" {
 		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-			fmt.Sprintf("Invalid role %q. Must be \"admin\" or \"viewer\".", body.Role))
+			fmt.Sprintf("Invalid role %q. Must be \"admin\", \"operator\", or \"viewer\".", body.Role))
 		return
 	}
 
@@ -219,9 +209,9 @@ func (r *Router) handleAdminUpdateUser(w http.ResponseWriter, req *http.Request)
 	}
 
 	// Validate role if provided.
-	if body.Role != nil && *body.Role != "admin" && *body.Role != "viewer" {
+	if body.Role != nil && *body.Role != "admin" && *body.Role != "operator" && *body.Role != "viewer" {
 		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-			fmt.Sprintf("Invalid role %q. Must be \"admin\" or \"viewer\".", *body.Role))
+			fmt.Sprintf("Invalid role %q. Must be \"admin\", \"operator\", or \"viewer\".", *body.Role))
 		return
 	}
 

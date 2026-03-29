@@ -129,18 +129,9 @@ func (r *Router) handleListCredentials(w http.ResponseWriter, req *http.Request)
 
 	// In-memory pagination — the credential table is expected to be small.
 	pg := ParsePagination(req)
-	total := len(data)
+	page, total := PaginateSlice(data, pg)
 
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
-
-	WritePaginated(w, data[start:end], pg, total)
+	WritePaginated(w, page, pg, total)
 }
 
 // ---------------------------------------------------------------------------

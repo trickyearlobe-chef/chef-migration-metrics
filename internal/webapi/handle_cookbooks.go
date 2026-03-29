@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -207,15 +206,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	// Paginate the results.
 	pg := ParsePagination(req)
-	total := len(rows)
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
+	pageRows, total := PaginateSlice(rows, pg)
 
 	type cookbookResp struct {
 		ID                string `json:"id"`
@@ -231,8 +222,8 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
-	result := make([]cookbookResp, 0, end-start)
-	for _, cb := range rows[start:end] {
+	result := make([]cookbookResp, 0, len(pageRows))
+	for _, cb := range pageRows {
 		resp := cookbookResp{
 			ID:                cb.ID,
 			OrganisationID:    cb.OrganisationID,
@@ -419,9 +410,6 @@ func filterCookbookRows(req *http.Request, rows []cookbookRow) []cookbookRow {
 	}
 	return filtered
 }
-
-// Ensure datastore.ErrNotFound is used (compile-time check).
-var _ = errors.Is(nil, datastore.ErrNotFound)
 
 // sortCookbookRows sorts the cookbook list in-place by the given field and
 // order ("asc" or "desc"). Supported fields: "name" (default), "version",

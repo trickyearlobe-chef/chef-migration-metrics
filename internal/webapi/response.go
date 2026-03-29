@@ -6,6 +6,7 @@ package webapi
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -89,6 +90,26 @@ func NewPaginationResponse(params PaginationParams, totalItems int) PaginationRe
 }
 
 // ---------------------------------------------------------------------------
+// In-memory slice pagination
+// ---------------------------------------------------------------------------
+
+// PaginateSlice returns the sub-slice of items corresponding to the given
+// pagination parameters, along with the total count. It clamps start/end to
+// the slice bounds so callers don't need to do bounds checking.
+func PaginateSlice[T any](items []T, pg PaginationParams) (page []T, total int) {
+	total = len(items)
+	start := pg.Offset()
+	if start > total {
+		start = total
+	}
+	end := start + pg.Limit()
+	if end > total {
+		end = total
+	}
+	return items[start:end], total
+}
+
+// ---------------------------------------------------------------------------
 // Paginated response envelope
 // ---------------------------------------------------------------------------
 
@@ -134,9 +155,9 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		// At this point headers are already sent — the best we can do is
-		// log. The caller's logger middleware should catch this.
-		_ = err
+		// Headers are already sent so we cannot change the status code.
+		// Log so corrupted responses are detectable in server logs.
+		slog.Error("WriteJSON: failed to encode response", "error", err, "status", status)
 	}
 }
 
