@@ -1170,9 +1170,14 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	}
 
 	// Platform map validation.
+	seenKitchenNames := make(map[string]int, len(tk.PlatformMap))
 	for i, entry := range tk.PlatformMap {
 		if entry.KitchenName == "" {
 			ve.addf("analysis_tools.test_kitchen.platform_map[%d].kitchen_name is required", i)
+		} else if prev, ok := seenKitchenNames[entry.KitchenName]; ok {
+			ve.addf("analysis_tools.test_kitchen.platform_map[%d].kitchen_name %q duplicates entry [%d]", i, entry.KitchenName, prev)
+		} else {
+			seenKitchenNames[entry.KitchenName] = i
 		}
 		if entry.Image == "" && driver != "dokken" {
 			w.addf("analysis_tools.test_kitchen.platform_map[%d].image is empty; platform %q will be skipped", i, entry.KitchenName)
