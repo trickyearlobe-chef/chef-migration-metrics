@@ -2090,3 +2090,209 @@ func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 		t.Error("analyser should still be set")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// buildVersionDistributionPayload tests
+// ---------------------------------------------------------------------------
+
+// versionDistPayload mirrors the JSON structure returned by
+// buildVersionDistributionPayload so we can unmarshal and assert.
+type versionDistPayload struct {
+	Distribution map[string]int `json:"distribution"`
+	TotalNodes   int            `json:"total_nodes"`
+	StaleNodes   int            `json:"stale_nodes"`
+	FreshNodes   int            `json:"fresh_nodes"`
+	Nodes        []struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	} `json:"nodes"`
+	NodesOmitted bool `json:"nodes_omitted"`
+}
+
+// makeNodeParams generates n InsertNodeSnapshotParams with sequential names
+// and a fixed chef version.
+func makeNodeParams(n int) []datastore.InsertNodeSnapshotParams {
+	params := make([]datastore.InsertNodeSnapshotParams, n)
+	for i := range params {
+		params[i] = datastore.InsertNodeSnapshotParams{
+			NodeName:    fmt.Sprintf("node-%05d", i),
+			ChefVersion: "18.0.0",
+		}
+	}
+	return params
+}
+
+func TestBuildVersionDistributionPayload_BasicDistribution(t *testing.T) {
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "web01", ChefVersion: "18.5.0", IsStale: false},
+		{NodeName: "web02", ChefVersion: "18.5.0", IsStale: false},
+		{NodeName: "db01", ChefVersion: "17.0.0", IsStale: true},
+	}
+
+	raw, err := buildVersionDistributionPayload(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got versionDistPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	if got.TotalNodes != 3 {
+		t.Errorf("total_nodes = %d, want 3", got.TotalNodes)
+	}
+	if got.StaleNodes != 1 {
+		t.Errorf("stale_nodes = %d, want 1", got.StaleNodes)
+	}
+	if got.FreshNodes != 2 {
+		t.Errorf("fresh_nodes = %d, want 2", got.FreshNodes)
+	}
+
+	if got.Distribution["18.5.0"] != 2 {
+		t.Errorf("distribution[18.5.0] = %d, want 2", got.Distribution["18.5.0"])
+	}
+	if got.Distribution["17.0.0"] != 1 {
+		t.Errorf("distribution[17.0.0] = %d, want 1", got.Distribution["17.0.0"])
+	}
+	if len(got.Distribution) != 2 {
+		t.Errorf("len(distribution) = %d, want 2", len(got.Distribution))
+	}
+
+	if len(got.Nodes) != 3 {
+		t.Errorf("len(nodes) = %d, want 3", len(got.Nodes))
+	}
+	if got.NodesOmitted {
+		t.Error("nodes_omitted should be false for small input")
+	}
+}
+
+func TestBuildVersionDistributionPayload_EmptyVersion(t *testing.T) {
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "node-no-version", ChefVersion: "", IsStale: false},
+	}
+
+	raw, err := buildVersionDistributionPayload(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got versionDistPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	if got.Distribution["unknown"] != 1 {
+		t.Errorf("distribution[unknown] = %d, want 1", got.Distribution["unknown"])
+	}
+	if _, exists := got.Distribution[""]; exists {
+		t.Error("distribution should not contain an empty-string key")
+	}
+
+	if len(got.Nodes) != 1 {
+		t.Fatalf("len(nodes) = %d, want 1", len(got.Nodes))
+	}
+	if got.Nodes[0].Version != "unknown" {
+		t.Errorf("nodes[0].version = %q, want %q", got.Nodes[0].Version, "unknown")
+	}
+}
+
+func TestBuildVersionDistributionPayload_NoNodes(t *testing.T) {
+	raw, err := buildVersionDistributionPayload([]datastore.InsertNodeSnapshotParams{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got versionDistPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	if got.TotalNodes != 0 {
+		t.Errorf("total_nodes = %d, want 0", got.TotalNodes)
+	}
+	if got.StaleNodes != 0 {
+		t.Errorf("stale_nodes = %d, want 0", got.StaleNodes)
+	}
+	if got.FreshNodes != 0 {
+		t.Errorf("fresh_nodes = %d, want 0", got.FreshNodes)
+	}
+	if len(got.Distribution) != 0 {
+		t.Errorf("len(distribution) = %d, want 0", len(got.Distribution))
+	}
+	if got.Nodes == nil {
+		t.Error("nodes should be an empty array, not nil")
+	}
+	if len(got.Nodes) != 0 {
+		t.Errorf("len(nodes) = %d, want 0", len(got.Nodes))
+	}
+	if got.NodesOmitted {
+		t.Error("nodes_omitted should be false for empty input")
+	}
+}
+
+func TestBuildVersionDistributionPayload_NodesArray(t *testing.T) {
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "app01", ChefVersion: "18.5.0", IsStale: false},
+		{NodeName: "app02", ChefVersion: "17.0.0", IsStale: true},
+	}
+
+	raw, err := buildVersionDistributionPayload(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got versionDistPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	if len(got.Nodes) != 2 {
+		t.Fatalf("len(nodes) = %d, want 2", len(got.Nodes))
+	}
+
+	// Build a lookup for order-independent assertions.
+	nodeMap := make(map[string]string, len(got.Nodes))
+	for _, n := range got.Nodes {
+		nodeMap[n.Name] = n.Version
+	}
+
+	if v, ok := nodeMap["app01"]; !ok {
+		t.Error("nodes missing entry for app01")
+	} else if v != "18.5.0" {
+		t.Errorf("app01 version = %q, want %q", v, "18.5.0")
+	}
+
+	if v, ok := nodeMap["app02"]; !ok {
+		t.Error("nodes missing entry for app02")
+	} else if v != "17.0.0" {
+		t.Errorf("app02 version = %q, want %q", v, "17.0.0")
+	}
+}
+
+func TestBuildVersionDistributionPayload_LargeOrgOmitsNodes(t *testing.T) {
+	params := makeNodeParams(50001)
+
+	raw, err := buildVersionDistributionPayload(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got versionDistPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal payload: %v", err)
+	}
+
+	if !got.NodesOmitted {
+		t.Error("nodes_omitted should be true when node count exceeds 50000")
+	}
+	if got.Nodes != nil {
+		t.Errorf("nodes should be nil when omitted, got %d entries", len(got.Nodes))
+	}
+	if got.TotalNodes != 50001 {
+		t.Errorf("total_nodes = %d, want 50001", got.TotalNodes)
+	}
+	if got.Distribution["18.0.0"] != 50001 {
+		t.Errorf("distribution[18.0.0] = %d, want 50001", got.Distribution["18.0.0"])
+	}
+}
