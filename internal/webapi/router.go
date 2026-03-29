@@ -181,7 +181,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 	// Wrap the entire mux with the timing middleware when a recorder is
 	// present. This captures latency for all routes (protect + adminOnly)
 	// while excluding nothing — the overhead is <1µs per request.
-	if r.recorder != nil && r.cfg.Performance.Enabled {
+	if r.recorder != nil && r.cfg.Performance.IsEnabled() {
 		mw := perf.NewMiddleware(r.recorder)
 		r.timingHandler = mw.Wrap(r.mux)
 	}
@@ -385,7 +385,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
 
 	// Performance diagnostics (admin-only, gated on config + recorder).
-	if r.cfg.Performance.Enabled && r.recorder != nil {
+	if r.cfg.Performance.IsEnabled() && r.recorder != nil {
 		r.adminOnly("/api/v1/admin/performance", r.handlePerformance)
 		r.adminOnly("/api/v1/admin/performance/db", r.handlePerformanceDB)
 	}
