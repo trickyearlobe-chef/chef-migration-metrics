@@ -37,8 +37,8 @@ func (f *fakeStore) ListNodeSnapshotsByOrganisation(_ context.Context, orgID str
 	return f.nodesByOrg[orgID], nil
 }
 
-func (f *fakeStore) ListNodeReadinessForSnapshot(_ context.Context, snapID string) ([]datastore.NodeReadiness, error) {
-	return f.readiness[snapID], nil
+func (f *fakeStore) ListNodeReadinessByNodeName(_ context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
+	return f.readiness[orgName+"/"+nodeName], nil
 }
 
 func (f *fakeStore) ListServerCookbooksByOrganisation(_ context.Context, orgID string) ([]datastore.ServerCookbook, error) {
@@ -69,72 +69,63 @@ var _ DataStore = (*fakeStore)(nil)
 // ---------------------------------------------------------------------------
 
 func testStore() *fakeStore {
-	org := datastore.Organisation{ID: "org-1", Name: "prod-org"}
+	org := datastore.Organisation{Name: "prod-org"}
 
 	nodes := []datastore.NodeSnapshot{
 		{
-			ID:              "snap-1",
-			OrganisationID:  "org-1",
-			NodeName:        "web01",
-			ChefEnvironment: "production",
-			ChefVersion:     "16.0.0",
-			Platform:        "ubuntu",
-			PlatformVersion: "20.04",
-			PolicyName:      "web",
-			PolicyGroup:     "prod",
-			Roles:           json.RawMessage(`["base","webserver"]`),
-			CollectedAt:     time.Now(),
+			OrganisationName: "prod-org",
+			NodeName:         "web01",
+			ChefEnvironment:  "production",
+			ChefVersion:      "16.0.0",
+			Platform:         "ubuntu",
+			PlatformVersion:  "20.04",
+			PolicyName:       "web",
+			PolicyGroup:      "prod",
+			Roles:            json.RawMessage(`["base","webserver"]`),
+			CollectedAt:      time.Now(),
 		},
 		{
-			ID:              "snap-2",
-			OrganisationID:  "org-1",
-			NodeName:        "db01",
-			ChefEnvironment: "production",
-			ChefVersion:     "15.0.0",
-			Platform:        "centos",
-			PlatformVersion: "7",
-			PolicyName:      "",
-			PolicyGroup:     "",
-			Roles:           json.RawMessage(`["base","database"]`),
-			CollectedAt:     time.Now(),
+			OrganisationName: "prod-org",
+			NodeName:         "db01",
+			ChefEnvironment:  "production",
+			ChefVersion:      "15.0.0",
+			Platform:         "centos",
+			PlatformVersion:  "7",
+			PolicyName:       "",
+			PolicyGroup:      "",
+			Roles:            json.RawMessage(`["base","database"]`),
+			CollectedAt:      time.Now(),
 		},
 		{
-			ID:              "snap-3",
-			OrganisationID:  "org-1",
-			NodeName:        "staging01",
-			ChefEnvironment: "staging",
-			ChefVersion:     "17.0.0",
-			Platform:        "ubuntu",
-			PlatformVersion: "22.04",
-			Roles:           json.RawMessage(`["base"]`),
-			CollectedAt:     time.Now(),
+			OrganisationName: "prod-org",
+			NodeName:         "staging01",
+			ChefEnvironment:  "staging",
+			ChefVersion:      "17.0.0",
+			Platform:         "ubuntu",
+			PlatformVersion:  "22.04",
+			Roles:            json.RawMessage(`["base"]`),
+			CollectedAt:      time.Now(),
 		},
 	}
 
 	readiness := map[string][]datastore.NodeReadiness{
-		"snap-1": {{
-			ID:                     "nr-1",
-			NodeSnapshotID:         "snap-1",
-			OrganisationID:         "org-1",
+		"prod-org/web01": {{
+			OrganisationName:       "prod-org",
 			NodeName:               "web01",
 			TargetChefVersion:      "18.0.0",
 			IsReady:                true,
 			AllCookbooksCompatible: true,
 		}},
-		"snap-2": {{
-			ID:                     "nr-2",
-			NodeSnapshotID:         "snap-2",
-			OrganisationID:         "org-1",
+		"prod-org/db01": {{
+			OrganisationName:       "prod-org",
 			NodeName:               "db01",
 			TargetChefVersion:      "18.0.0",
 			IsReady:                false,
 			AllCookbooksCompatible: false,
 			BlockingCookbooks:      json.RawMessage(`["legacy-db"]`),
 		}},
-		"snap-3": {{
-			ID:                     "nr-3",
-			NodeSnapshotID:         "snap-3",
-			OrganisationID:         "org-1",
+		"prod-org/staging01": {{
+			OrganisationName:       "prod-org",
 			NodeName:               "staging01",
 			TargetChefVersion:      "18.0.0",
 			IsReady:                true,
@@ -143,17 +134,18 @@ func testStore() *fakeStore {
 	}
 
 	cookbooks := map[string][]datastore.ServerCookbook{
-		"org-1": {
-			{ID: "cb-1", OrganisationID: "org-1", Name: "legacy-db", Version: "1.0.0"},
-			{ID: "cb-2", OrganisationID: "org-1", Name: "webserver", Version: "2.0.0"},
+		"prod-org": {
+			{OrganisationName: "prod-org", Name: "legacy-db", Version: "1.0.0"},
+			{OrganisationName: "prod-org", Name: "webserver", Version: "2.0.0"},
 		},
 	}
 
 	complexities := map[string][]datastore.ServerCookbookComplexity{
-		"org-1": {
+		"prod-org": {
 			{
-				ID:                   "cc-1",
-				ServerCookbookID:     "cb-1",
+				OrganisationName:     "prod-org",
+				CookbookName:         "legacy-db",
+				CookbookVersion:      "1.0.0",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      75,
 				ComplexityLabel:      "high",
@@ -165,8 +157,9 @@ func testStore() *fakeStore {
 				ErrorCount:           1,
 			},
 			{
-				ID:                   "cc-2",
-				ServerCookbookID:     "cb-2",
+				OrganisationName:     "prod-org",
+				CookbookName:         "webserver",
+				CookbookVersion:      "2.0.0",
 				TargetChefVersion:    "18.0.0",
 				ComplexityScore:      10,
 				ComplexityLabel:      "low",
@@ -182,12 +175,12 @@ func testStore() *fakeStore {
 
 	return &fakeStore{
 		orgs:         []datastore.Organisation{org},
-		nodesByOrg:   map[string][]datastore.NodeSnapshot{"org-1": nodes},
+		nodesByOrg:   map[string][]datastore.NodeSnapshot{"prod-org": nodes},
 		readiness:    readiness,
 		cookbooks:    cookbooks,
 		complexities: complexities,
 		countReady: map[string][3]int{
-			"org-1+18.0.0": {3, 2, 1},
+			"prod-org+18.0.0": {3, 2, 1},
 		},
 	}
 }
@@ -550,7 +543,7 @@ func TestGenerateCookbookRemediationExport_ChefSearchQueryRejected(t *testing.T)
 // ---------------------------------------------------------------------------
 
 func TestFilterNodes_Environment(t *testing.T) {
-	nodes := testStore().nodesByOrg["org-1"]
+	nodes := testStore().nodesByOrg["prod-org"]
 	filtered := FilterNodes(nodes, Filters{Environment: "staging"})
 	if len(filtered) != 1 {
 		t.Errorf("got %d nodes, want 1 (staging only)", len(filtered))
@@ -561,7 +554,7 @@ func TestFilterNodes_Environment(t *testing.T) {
 }
 
 func TestFilterNodes_Platform(t *testing.T) {
-	nodes := testStore().nodesByOrg["org-1"]
+	nodes := testStore().nodesByOrg["prod-org"]
 	filtered := FilterNodes(nodes, Filters{Platform: "centos"})
 	if len(filtered) != 1 {
 		t.Errorf("got %d nodes, want 1 (centos only)", len(filtered))
@@ -569,7 +562,7 @@ func TestFilterNodes_Platform(t *testing.T) {
 }
 
 func TestFilterNodes_Role(t *testing.T) {
-	nodes := testStore().nodesByOrg["org-1"]
+	nodes := testStore().nodesByOrg["prod-org"]
 	filtered := FilterNodes(nodes, Filters{Role: "webserver"})
 	if len(filtered) != 1 {
 		t.Errorf("got %d nodes, want 1 (webserver role)", len(filtered))
@@ -577,7 +570,7 @@ func TestFilterNodes_Role(t *testing.T) {
 }
 
 func TestFilterNodes_PartialMatch(t *testing.T) {
-	nodes := testStore().nodesByOrg["org-1"]
+	nodes := testStore().nodesByOrg["prod-org"]
 
 	// "prod" is a substring of "production" — should match web01 and db01.
 	filtered := FilterNodes(nodes, Filters{Environment: "prod"})
@@ -611,7 +604,7 @@ func TestFilterNodes_PartialMatch(t *testing.T) {
 }
 
 func TestFilterNodes_CaseInsensitive(t *testing.T) {
-	nodes := testStore().nodesByOrg["org-1"]
+	nodes := testStore().nodesByOrg["prod-org"]
 
 	// Upper-case "STAGING" should match "staging" environment.
 	filtered := FilterNodes(nodes, Filters{Environment: "STAGING"})
@@ -648,7 +641,7 @@ func TestFilterNodes_CaseInsensitive(t *testing.T) {
 }
 
 func TestFilterNodes_NodeName(t *testing.T) {
-	nodes := testStore().nodesByOrg["org-1"]
+	nodes := testStore().nodesByOrg["prod-org"]
 	filtered := FilterNodes(nodes, Filters{NodeName: "web"})
 	if len(filtered) != 1 {
 		t.Errorf("got %d nodes, want 1 (web01 only)", len(filtered))
@@ -656,7 +649,7 @@ func TestFilterNodes_NodeName(t *testing.T) {
 }
 
 func TestFilterNodes_NoFilter(t *testing.T) {
-	nodes := testStore().nodesByOrg["org-1"]
+	nodes := testStore().nodesByOrg["prod-org"]
 	filtered := FilterNodes(nodes, Filters{})
 	if len(filtered) != 3 {
 		t.Errorf("got %d nodes, want 3 (no filter)", len(filtered))
@@ -682,7 +675,7 @@ func TestFilterOrganisations(t *testing.T) {
 }
 
 func TestFilterComplexities(t *testing.T) {
-	cc := testStore().complexities["org-1"]
+	cc := testStore().complexities["prod-org"]
 
 	filtered := FilterComplexities(cc, "18.0.0", "")
 	if len(filtered) != 2 {

@@ -13,7 +13,7 @@ import (
 
 // OwnershipAuditEntry represents a row in the ownership_audit_log table.
 type OwnershipAuditEntry struct {
-	ID           string          `json:"id"`
+	ID           int64           `json:"id"`
 	Timestamp    time.Time       `json:"timestamp"`
 	Action       string          `json:"action"`
 	Actor        string          `json:"actor"`

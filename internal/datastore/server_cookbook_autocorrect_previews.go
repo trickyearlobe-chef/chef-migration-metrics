@@ -13,9 +13,10 @@ import (
 // ServerCookbookAutocorrectPreview represents a row in the
 // server_cookbook_autocorrect_previews table.
 type ServerCookbookAutocorrectPreview struct {
-	ID                  string
-	ServerCookbookID    string
-	CookstyleResultID   string
+	OrganisationName    string
+	CookbookName        string
+	CookbookVersion     string
+	TargetChefVersion   string
 	TotalOffenses       int
 	CorrectableOffenses int
 	RemainingOffenses   int
@@ -27,10 +28,12 @@ type ServerCookbookAutocorrectPreview struct {
 
 // UpsertServerCookbookAutocorrectPreviewParams contains the fields needed to
 // insert or update a server_cookbook_autocorrect_previews row. The unique
-// constraint is (cookstyle_result_id).
+// constraint is (organisation_name, cookbook_name, cookbook_version, target_chef_version).
 type UpsertServerCookbookAutocorrectPreviewParams struct {
-	ServerCookbookID    string
-	CookstyleResultID   string
+	OrganisationName    string
+	CookbookName        string
+	CookbookVersion     string
+	TargetChefVersion   string
 	TotalOffenses       int
 	CorrectableOffenses int
 	RemainingOffenses   int
@@ -43,7 +46,7 @@ type UpsertServerCookbookAutocorrectPreviewParams struct {
 // Column list — shared across all queries
 // ---------------------------------------------------------------------------
 
-const scacpColumns = `id, server_cookbook_id, cookstyle_result_id,
+const scacpColumns = `organisation_name, cookbook_name, cookbook_version, target_chef_version,
        total_offenses, correctable_offenses, remaining_offenses,
        files_modified, diff_output, generated_at, created_at`
 
@@ -52,19 +55,23 @@ const scacpColumns = `id, server_cookbook_id, cookstyle_result_id,
 // ---------------------------------------------------------------------------
 
 // GetServerCookbookAutocorrectPreview returns the autocorrect preview for the
-// given cookstyle result ID. Returns (nil, nil) if no preview exists.
-func (db *DB) GetServerCookbookAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*ServerCookbookAutocorrectPreview, error) {
-	return db.getServerCookbookAutocorrectPreview(ctx, db.q(), cookstyleResultID)
+// given organisation, cookbook, and target Chef version. Returns (nil, nil) if
+// no preview exists.
+func (db *DB) GetServerCookbookAutocorrectPreview(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*ServerCookbookAutocorrectPreview, error) {
+	return db.getServerCookbookAutocorrectPreview(ctx, db.q(), orgName, cookbookName, cookbookVersion, targetChefVersion)
 }
 
-func (db *DB) getServerCookbookAutocorrectPreview(ctx context.Context, q queryable, cookstyleResultID string) (*ServerCookbookAutocorrectPreview, error) {
+func (db *DB) getServerCookbookAutocorrectPreview(ctx context.Context, q queryable, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*ServerCookbookAutocorrectPreview, error) {
 	query := `
 		SELECT ` + scacpColumns + `
 		  FROM server_cookbook_autocorrect_previews
-		 WHERE cookstyle_result_id = $1
+		 WHERE organisation_name = $1
+		   AND cookbook_name = $2
+		   AND cookbook_version = $3
+		   AND target_chef_version = $4
 	`
 
-	r, err := scanServerCookbookAutocorrectPreview(q.QueryRowContext(ctx, query, cookstyleResultID))
+	r, err := scanServerCookbookAutocorrectPreview(q.QueryRowContext(ctx, query, orgName, cookbookName, cookbookVersion, targetChefVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -74,56 +81,36 @@ func (db *DB) getServerCookbookAutocorrectPreview(ctx context.Context, q queryab
 	return &r, nil
 }
 
-// GetServerCookbookAutocorrectPreviewByID returns a single autocorrect
-// preview by its primary key. Returns ErrNotFound if no preview exists.
-func (db *DB) GetServerCookbookAutocorrectPreviewByID(ctx context.Context, id string) (*ServerCookbookAutocorrectPreview, error) {
-	query := `
-		SELECT ` + scacpColumns + `
-		  FROM server_cookbook_autocorrect_previews
-		 WHERE id = $1
-	`
-
-	r, err := scanServerCookbookAutocorrectPreview(db.q().QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting server cookbook autocorrect preview by id: %w", err)
-	}
-	return &r, nil
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
 // ListServerCookbookAutocorrectPreviewsByCookbook returns all autocorrect
-// previews for the given server cookbook ID, ordered by generated_at
-// descending.
-func (db *DB) ListServerCookbookAutocorrectPreviewsByCookbook(ctx context.Context, serverCookbookID string) ([]ServerCookbookAutocorrectPreview, error) {
+// previews for the given organisation, cookbook name, and cookbook version,
+// ordered by generated_at descending.
+func (db *DB) ListServerCookbookAutocorrectPreviewsByCookbook(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]ServerCookbookAutocorrectPreview, error) {
 	query := `
 		SELECT ` + scacpColumns + `
 		  FROM server_cookbook_autocorrect_previews
-		 WHERE server_cookbook_id = $1
+		 WHERE organisation_name = $1
+		   AND cookbook_name = $2
+		   AND cookbook_version = $3
 		 ORDER BY generated_at DESC
 	`
-	return db.scanServerCookbookAutocorrectPreviews(ctx, query, serverCookbookID)
+	return db.scanServerCookbookAutocorrectPreviews(ctx, query, orgName, cookbookName, cookbookVersion)
 }
 
 // ListServerCookbookAutocorrectPreviewsByOrganisation returns all autocorrect
 // previews for server cookbooks belonging to the given organisation, ordered
 // by cookbook name, version, and generated_at descending.
-func (db *DB) ListServerCookbookAutocorrectPreviewsByOrganisation(ctx context.Context, organisationID string) ([]ServerCookbookAutocorrectPreview, error) {
+func (db *DB) ListServerCookbookAutocorrectPreviewsByOrganisation(ctx context.Context, orgName string) ([]ServerCookbookAutocorrectPreview, error) {
 	query := `
-		SELECT ap.id, ap.server_cookbook_id, ap.cookstyle_result_id,
-		       ap.total_offenses, ap.correctable_offenses, ap.remaining_offenses,
-		       ap.files_modified, ap.diff_output, ap.generated_at, ap.created_at
-		  FROM server_cookbook_autocorrect_previews ap
-		  JOIN server_cookbooks sc ON sc.id = ap.server_cookbook_id
-		 WHERE sc.organisation_id = $1
-		 ORDER BY sc.name, sc.version, ap.generated_at DESC
+		SELECT ` + scacpColumns + `
+		  FROM server_cookbook_autocorrect_previews
+		 WHERE organisation_name = $1
+		 ORDER BY cookbook_name, cookbook_version, generated_at DESC
 	`
-	return db.scanServerCookbookAutocorrectPreviews(ctx, query, organisationID)
+	return db.scanServerCookbookAutocorrectPreviews(ctx, query, orgName)
 }
 
 // ---------------------------------------------------------------------------
@@ -131,29 +118,31 @@ func (db *DB) ListServerCookbookAutocorrectPreviewsByOrganisation(ctx context.Co
 // ---------------------------------------------------------------------------
 
 // UpsertServerCookbookAutocorrectPreview inserts a new autocorrect preview or
-// updates the existing one for the same cookstyle_result_id. Returns the
-// resulting row.
+// updates the existing one for the same (organisation_name, cookbook_name,
+// cookbook_version, target_chef_version). Returns the resulting row.
 func (db *DB) UpsertServerCookbookAutocorrectPreview(ctx context.Context, p UpsertServerCookbookAutocorrectPreviewParams) (*ServerCookbookAutocorrectPreview, error) {
 	return db.upsertServerCookbookAutocorrectPreview(ctx, db.q(), p)
 }
 
 func (db *DB) upsertServerCookbookAutocorrectPreview(ctx context.Context, q queryable, p UpsertServerCookbookAutocorrectPreviewParams) (*ServerCookbookAutocorrectPreview, error) {
-	if p.ServerCookbookID == "" {
-		return nil, fmt.Errorf("datastore: server_cookbook_id is required")
+	if p.OrganisationName == "" {
+		return nil, fmt.Errorf("datastore: organisation_name is required")
 	}
-	if p.CookstyleResultID == "" {
-		return nil, fmt.Errorf("datastore: cookstyle_result_id is required")
+	if p.CookbookName == "" {
+		return nil, fmt.Errorf("datastore: cookbook_name is required")
+	}
+	if p.TargetChefVersion == "" {
+		return nil, fmt.Errorf("datastore: target_chef_version is required")
 	}
 
 	query := `
 		INSERT INTO server_cookbook_autocorrect_previews (
-			server_cookbook_id, cookstyle_result_id,
+			organisation_name, cookbook_name, cookbook_version, target_chef_version,
 			total_offenses, correctable_offenses, remaining_offenses,
 			files_modified, diff_output, generated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (cookstyle_result_id)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (organisation_name, cookbook_name, cookbook_version, target_chef_version)
 		DO UPDATE SET
-			server_cookbook_id    = EXCLUDED.server_cookbook_id,
 			total_offenses       = EXCLUDED.total_offenses,
 			correctable_offenses = EXCLUDED.correctable_offenses,
 			remaining_offenses   = EXCLUDED.remaining_offenses,
@@ -164,8 +153,10 @@ func (db *DB) upsertServerCookbookAutocorrectPreview(ctx context.Context, q quer
 	`
 
 	r, err := scanServerCookbookAutocorrectPreview(q.QueryRowContext(ctx, query,
-		p.ServerCookbookID,
-		p.CookstyleResultID,
+		p.OrganisationName,
+		p.CookbookName,
+		p.CookbookVersion,
+		p.TargetChefVersion,
 		p.TotalOffenses,
 		p.CorrectableOffenses,
 		p.RemainingOffenses,
@@ -190,12 +181,12 @@ func (db *DB) UpsertServerCookbookAutocorrectPreviewTx(ctx context.Context, tx *
 // ---------------------------------------------------------------------------
 
 // DeleteServerCookbookAutocorrectPreviewsByCookbook removes all autocorrect
-// previews for the given server cookbook ID.
-func (db *DB) DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx context.Context, serverCookbookID string) error {
-	const query = `DELETE FROM server_cookbook_autocorrect_previews WHERE server_cookbook_id = $1`
-	_, err := db.pool.ExecContext(ctx, query, serverCookbookID)
+// previews for the given organisation, cookbook name, and cookbook version.
+func (db *DB) DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx context.Context, orgName, cookbookName, cookbookVersion string) error {
+	const query = `DELETE FROM server_cookbook_autocorrect_previews WHERE organisation_name = $1 AND cookbook_name = $2 AND cookbook_version = $3`
+	_, err := db.pool.ExecContext(ctx, query, orgName, cookbookName, cookbookVersion)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting server cookbook autocorrect previews for cookbook %s: %w", serverCookbookID, err)
+		return fmt.Errorf("datastore: deleting server cookbook autocorrect previews for cookbook %s/%s@%s: %w", orgName, cookbookName, cookbookVersion, err)
 	}
 	return nil
 }
@@ -203,16 +194,11 @@ func (db *DB) DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx context.Cont
 // DeleteServerCookbookAutocorrectPreviewsByOrganisation removes all
 // autocorrect previews for server cookbooks belonging to the given
 // organisation.
-func (db *DB) DeleteServerCookbookAutocorrectPreviewsByOrganisation(ctx context.Context, organisationID string) error {
-	const query = `
-		DELETE FROM server_cookbook_autocorrect_previews
-		 WHERE server_cookbook_id IN (
-			SELECT id FROM server_cookbooks WHERE organisation_id = $1
-		 )
-	`
-	_, err := db.pool.ExecContext(ctx, query, organisationID)
+func (db *DB) DeleteServerCookbookAutocorrectPreviewsByOrganisation(ctx context.Context, orgName string) error {
+	const query = `DELETE FROM server_cookbook_autocorrect_previews WHERE organisation_name = $1`
+	_, err := db.pool.ExecContext(ctx, query, orgName)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting server cookbook autocorrect previews for organisation %s: %w", organisationID, err)
+		return fmt.Errorf("datastore: deleting server cookbook autocorrect previews for organisation %s: %w", orgName, err)
 	}
 	return nil
 }
@@ -237,9 +223,10 @@ func scanServerCookbookAutocorrectPreview(row interface{ Scan(dest ...any) error
 	var diffOutput sql.NullString
 
 	err := row.Scan(
-		&r.ID,
-		&r.ServerCookbookID,
-		&r.CookstyleResultID,
+		&r.OrganisationName,
+		&r.CookbookName,
+		&r.CookbookVersion,
+		&r.TargetChefVersion,
 		&r.TotalOffenses,
 		&r.CorrectableOffenses,
 		&r.RemainingOffenses,
@@ -269,9 +256,10 @@ func (db *DB) scanServerCookbookAutocorrectPreviews(ctx context.Context, query s
 		var diffOutput sql.NullString
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.ServerCookbookID,
-			&r.CookstyleResultID,
+			&r.OrganisationName,
+			&r.CookbookName,
+			&r.CookbookVersion,
+			&r.TargetChefVersion,
 			&r.TotalOffenses,
 			&r.CorrectableOffenses,
 			&r.RemainingOffenses,

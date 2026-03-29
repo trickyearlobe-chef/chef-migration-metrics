@@ -466,8 +466,7 @@ func (s *DBCredentialStore) referencedByInternal(ctx context.Context, name strin
 	query := `
 		SELECT o.name
 		FROM organisations o
-		JOIN credentials c ON o.client_key_credential_id = c.id
-		WHERE c.name = $1
+		WHERE o.client_key_credential_name = $1
 		ORDER BY o.name`
 
 	rows, err := s.db.QueryContext(ctx, query, name)

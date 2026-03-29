@@ -14,13 +14,12 @@ import (
 // RoleDependency represents a row in the role_dependencies table. Each row
 // records that a role depends on either another role or a cookbook.
 type RoleDependency struct {
-	ID             string    `json:"id"`
-	OrganisationID string    `json:"organisation_id"`
-	RoleName       string    `json:"role_name"`
-	DependencyType string    `json:"dependency_type"` // "role" or "cookbook"
-	DependencyName string    `json:"dependency_name"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	OrganisationName string    `json:"organisation_name"`
+	RoleName         string    `json:"role_name"`
+	DependencyType   string    `json:"dependency_type"` // "role" or "cookbook"
+	DependencyName   string    `json:"dependency_name"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // MarshalJSON implements json.Marshaler for RoleDependency.
@@ -36,10 +35,10 @@ func (rd RoleDependency) MarshalJSON() ([]byte, error) {
 // InsertRoleDependencyParams holds the fields required to insert a single
 // role dependency record.
 type InsertRoleDependencyParams struct {
-	OrganisationID string
-	RoleName       string
-	DependencyType string // "role" or "cookbook"
-	DependencyName string
+	OrganisationName string
+	RoleName         string
+	DependencyType   string // "role" or "cookbook"
+	DependencyName   string
 }
 
 // InsertRoleDependency inserts a single role dependency and returns the
@@ -54,15 +53,15 @@ func (db *DB) insertRoleDependency(ctx context.Context, q queryable, p InsertRol
 	}
 
 	const query = `
-		INSERT INTO role_dependencies (organisation_id, role_name, dependency_type, dependency_name)
+		INSERT INTO role_dependencies (organisation_name, role_name, dependency_type, dependency_name)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT ON CONSTRAINT uq_role_dependencies DO UPDATE
 			SET updated_at = now()
-		RETURNING id, organisation_id, role_name, dependency_type, dependency_name, created_at, updated_at
+		RETURNING organisation_name, role_name, dependency_type, dependency_name, created_at, updated_at
 	`
 
 	return scanRoleDependency(q.QueryRowContext(ctx, query,
-		p.OrganisationID,
+		p.OrganisationName,
 		p.RoleName,
 		p.DependencyType,
 		p.DependencyName,
@@ -75,7 +74,7 @@ func (db *DB) insertRoleDependency(ctx context.Context, q queryable, p InsertRol
 
 // BulkUpsertRoleDependencies upserts multiple role dependency records within
 // a single transaction. Existing rows (matched by the unique constraint on
-// organisation_id, role_name, dependency_type, dependency_name) have their
+// organisation_name, role_name, dependency_type, dependency_name) have their
 // updated_at timestamp refreshed. Returns the count of rows upserted.
 func (db *DB) BulkUpsertRoleDependencies(ctx context.Context, params []InsertRoleDependencyParams) (int, error) {
 	if len(params) == 0 {
@@ -85,7 +84,7 @@ func (db *DB) BulkUpsertRoleDependencies(ctx context.Context, params []InsertRol
 	upserted := 0
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
 		const query = `
-			INSERT INTO role_dependencies (organisation_id, role_name, dependency_type, dependency_name)
+			INSERT INTO role_dependencies (organisation_name, role_name, dependency_type, dependency_name)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT ON CONSTRAINT uq_role_dependencies DO UPDATE
 				SET updated_at = now()
@@ -103,7 +102,7 @@ func (db *DB) BulkUpsertRoleDependencies(ctx context.Context, params []InsertRol
 			}
 
 			_, err := stmt.ExecContext(ctx,
-				p.OrganisationID,
+				p.OrganisationName,
 				p.RoleName,
 				p.DependencyType,
 				p.DependencyName,
@@ -134,17 +133,17 @@ func (db *DB) BulkUpsertRoleDependencies(ctx context.Context, params []InsertRol
 // The operation runs within a single transaction: all existing rows for the
 // organisation are deleted, then the new set is bulk-inserted. Returns the
 // count of rows inserted.
-func (db *DB) ReplaceRoleDependenciesForOrg(ctx context.Context, organisationID string, params []InsertRoleDependencyParams) (int, error) {
-	if organisationID == "" {
-		return 0, fmt.Errorf("datastore: organisation ID is required for role dependency replacement")
+func (db *DB) ReplaceRoleDependenciesForOrg(ctx context.Context, organisationName string, params []InsertRoleDependencyParams) (int, error) {
+	if organisationName == "" {
+		return 0, fmt.Errorf("datastore: organisation name is required for role dependency replacement")
 	}
 
 	inserted := 0
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
 		// Delete all existing dependencies for this organisation.
 		_, err := tx.ExecContext(ctx,
-			`DELETE FROM role_dependencies WHERE organisation_id = $1`,
-			organisationID,
+			`DELETE FROM role_dependencies WHERE organisation_name = $1`,
+			organisationName,
 		)
 		if err != nil {
 			return fmt.Errorf("datastore: deleting role dependencies for org: %w", err)
@@ -155,7 +154,7 @@ func (db *DB) ReplaceRoleDependenciesForOrg(ctx context.Context, organisationID 
 		}
 
 		const insertQuery = `
-			INSERT INTO role_dependencies (organisation_id, role_name, dependency_type, dependency_name)
+			INSERT INTO role_dependencies (organisation_name, role_name, dependency_type, dependency_name)
 			VALUES ($1, $2, $3, $4)
 		`
 
@@ -170,9 +169,9 @@ func (db *DB) ReplaceRoleDependenciesForOrg(ctx context.Context, organisationID 
 				return fmt.Errorf("row %d: %w", i, err)
 			}
 
-			// Override organisation ID to ensure consistency.
+			// Override organisation name to ensure consistency.
 			_, err := stmt.ExecContext(ctx,
-				organisationID,
+				organisationName,
 				p.RoleName,
 				p.DependencyType,
 				p.DependencyName,
@@ -197,10 +196,10 @@ func (db *DB) ReplaceRoleDependenciesForOrg(ctx context.Context, organisationID 
 
 // DeleteRoleDependenciesByOrg removes all role dependency records for the
 // given organisation. Returns the number of rows deleted.
-func (db *DB) DeleteRoleDependenciesByOrg(ctx context.Context, organisationID string) (int, error) {
+func (db *DB) DeleteRoleDependenciesByOrg(ctx context.Context, organisationName string) (int, error) {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM role_dependencies WHERE organisation_id = $1`,
-		organisationID,
+		`DELETE FROM role_dependencies WHERE organisation_name = $1`,
+		organisationName,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: deleting role dependencies by org: %w", err)
@@ -214,10 +213,10 @@ func (db *DB) DeleteRoleDependenciesByOrg(ctx context.Context, organisationID st
 
 // DeleteRoleDependenciesByRole removes all dependency records for a specific
 // role within an organisation. Returns the number of rows deleted.
-func (db *DB) DeleteRoleDependenciesByRole(ctx context.Context, organisationID, roleName string) (int, error) {
+func (db *DB) DeleteRoleDependenciesByRole(ctx context.Context, organisationName, roleName string) (int, error) {
 	res, err := db.pool.ExecContext(ctx,
-		`DELETE FROM role_dependencies WHERE organisation_id = $1 AND role_name = $2`,
-		organisationID,
+		`DELETE FROM role_dependencies WHERE organisation_name = $1 AND role_name = $2`,
+		organisationName,
 		roleName,
 	)
 	if err != nil {
@@ -237,64 +236,64 @@ func (db *DB) DeleteRoleDependenciesByRole(ctx context.Context, organisationID, 
 // ListRoleDependenciesByOrg returns all role dependency records for the
 // given organisation, ordered by role_name then dependency_type then
 // dependency_name.
-func (db *DB) ListRoleDependenciesByOrg(ctx context.Context, organisationID string) ([]RoleDependency, error) {
-	return db.listRoleDependenciesByOrg(ctx, db.q(), organisationID)
+func (db *DB) ListRoleDependenciesByOrg(ctx context.Context, organisationName string) ([]RoleDependency, error) {
+	return db.listRoleDependenciesByOrg(ctx, db.q(), organisationName)
 }
 
-func (db *DB) listRoleDependenciesByOrg(ctx context.Context, q queryable, organisationID string) ([]RoleDependency, error) {
+func (db *DB) listRoleDependenciesByOrg(ctx context.Context, q queryable, organisationName string) ([]RoleDependency, error) {
 	const query = `
-		SELECT id, organisation_id, role_name, dependency_type, dependency_name, created_at, updated_at
+		SELECT organisation_name, role_name, dependency_type, dependency_name, created_at, updated_at
 		FROM role_dependencies
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		ORDER BY role_name, dependency_type, dependency_name
 	`
-	return scanRoleDependencies(q.QueryContext(ctx, query, organisationID))
+	return scanRoleDependencies(q.QueryContext(ctx, query, organisationName))
 }
 
 // ListRoleDependenciesByRole returns all dependency records for a specific
 // role within an organisation, ordered by dependency_type then
 // dependency_name.
-func (db *DB) ListRoleDependenciesByRole(ctx context.Context, organisationID, roleName string) ([]RoleDependency, error) {
-	return db.listRoleDependenciesByRole(ctx, db.q(), organisationID, roleName)
+func (db *DB) ListRoleDependenciesByRole(ctx context.Context, organisationName, roleName string) ([]RoleDependency, error) {
+	return db.listRoleDependenciesByRole(ctx, db.q(), organisationName, roleName)
 }
 
-func (db *DB) listRoleDependenciesByRole(ctx context.Context, q queryable, organisationID, roleName string) ([]RoleDependency, error) {
+func (db *DB) listRoleDependenciesByRole(ctx context.Context, q queryable, organisationName, roleName string) ([]RoleDependency, error) {
 	const query = `
-		SELECT id, organisation_id, role_name, dependency_type, dependency_name, created_at, updated_at
+		SELECT organisation_name, role_name, dependency_type, dependency_name, created_at, updated_at
 		FROM role_dependencies
-		WHERE organisation_id = $1 AND role_name = $2
+		WHERE organisation_name = $1 AND role_name = $2
 		ORDER BY dependency_type, dependency_name
 	`
-	return scanRoleDependencies(q.QueryContext(ctx, query, organisationID, roleName))
+	return scanRoleDependencies(q.QueryContext(ctx, query, organisationName, roleName))
 }
 
 // ListRoleDependenciesByType returns all dependency records of a specific
 // type (either "role" or "cookbook") for the given organisation.
-func (db *DB) ListRoleDependenciesByType(ctx context.Context, organisationID, dependencyType string) ([]RoleDependency, error) {
-	return db.listRoleDependenciesByType(ctx, db.q(), organisationID, dependencyType)
+func (db *DB) ListRoleDependenciesByType(ctx context.Context, organisationName, dependencyType string) ([]RoleDependency, error) {
+	return db.listRoleDependenciesByType(ctx, db.q(), organisationName, dependencyType)
 }
 
-func (db *DB) listRoleDependenciesByType(ctx context.Context, q queryable, organisationID, dependencyType string) ([]RoleDependency, error) {
+func (db *DB) listRoleDependenciesByType(ctx context.Context, q queryable, organisationName, dependencyType string) ([]RoleDependency, error) {
 	const query = `
-		SELECT id, organisation_id, role_name, dependency_type, dependency_name, created_at, updated_at
+		SELECT organisation_name, role_name, dependency_type, dependency_name, created_at, updated_at
 		FROM role_dependencies
-		WHERE organisation_id = $1 AND dependency_type = $2
+		WHERE organisation_name = $1 AND dependency_type = $2
 		ORDER BY role_name, dependency_name
 	`
-	return scanRoleDependencies(q.QueryContext(ctx, query, organisationID, dependencyType))
+	return scanRoleDependencies(q.QueryContext(ctx, query, organisationName, dependencyType))
 }
 
 // ListRolesDependingOnCookbook returns all role names that depend on the
 // given cookbook name within the given organisation.
-func (db *DB) ListRolesDependingOnCookbook(ctx context.Context, organisationID, cookbookName string) ([]string, error) {
+func (db *DB) ListRolesDependingOnCookbook(ctx context.Context, organisationName, cookbookName string) ([]string, error) {
 	const query = `
 		SELECT DISTINCT role_name
 		FROM role_dependencies
-		WHERE organisation_id = $1 AND dependency_type = 'cookbook' AND dependency_name = $2
+		WHERE organisation_name = $1 AND dependency_type = 'cookbook' AND dependency_name = $2
 		ORDER BY role_name
 	`
 
-	rows, err := db.pool.QueryContext(ctx, query, organisationID, cookbookName)
+	rows, err := db.pool.QueryContext(ctx, query, organisationName, cookbookName)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: listing roles depending on cookbook: %w", err)
 	}
@@ -317,15 +316,15 @@ func (db *DB) ListRolesDependingOnCookbook(ctx context.Context, organisationID, 
 // ListRolesDependingOnRole returns all role names that depend on the given
 // role (i.e. roles that include role[target] in their run_list) within the
 // given organisation.
-func (db *DB) ListRolesDependingOnRole(ctx context.Context, organisationID, targetRoleName string) ([]string, error) {
+func (db *DB) ListRolesDependingOnRole(ctx context.Context, organisationName, targetRoleName string) ([]string, error) {
 	const query = `
 		SELECT DISTINCT role_name
 		FROM role_dependencies
-		WHERE organisation_id = $1 AND dependency_type = 'role' AND dependency_name = $2
+		WHERE organisation_name = $1 AND dependency_type = 'role' AND dependency_name = $2
 		ORDER BY role_name
 	`
 
-	rows, err := db.pool.QueryContext(ctx, query, organisationID, targetRoleName)
+	rows, err := db.pool.QueryContext(ctx, query, organisationName, targetRoleName)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: listing roles depending on role: %w", err)
 	}
@@ -360,7 +359,7 @@ type RoleDependencyCount struct {
 // CountDependenciesByRole returns the number of cookbook and role dependencies
 // for each role in the given organisation, ordered by total dependency count
 // descending.
-func (db *DB) CountDependenciesByRole(ctx context.Context, organisationID string) ([]RoleDependencyCount, error) {
+func (db *DB) CountDependenciesByRole(ctx context.Context, organisationName string) ([]RoleDependencyCount, error) {
 	const query = `
 		SELECT
 			role_name,
@@ -368,12 +367,12 @@ func (db *DB) CountDependenciesByRole(ctx context.Context, organisationID string
 			COUNT(*) FILTER (WHERE dependency_type = 'role') AS role_count,
 			COUNT(*) AS total_dependency_count
 		FROM role_dependencies
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		GROUP BY role_name
 		ORDER BY total_dependency_count DESC, role_name
 	`
 
-	rows, err := db.pool.QueryContext(ctx, query, organisationID)
+	rows, err := db.pool.QueryContext(ctx, query, organisationName)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: counting dependencies by role: %w", err)
 	}
@@ -400,16 +399,16 @@ type CookbookRoleCount struct {
 	RoleCount    int    `json:"role_count"`
 }
 
-func (db *DB) CountRolesPerCookbook(ctx context.Context, organisationID string) ([]CookbookRoleCount, error) {
+func (db *DB) CountRolesPerCookbook(ctx context.Context, organisationName string) ([]CookbookRoleCount, error) {
 	const query = `
 		SELECT dependency_name AS cookbook_name, COUNT(DISTINCT role_name) AS role_count
 		FROM role_dependencies
-		WHERE organisation_id = $1 AND dependency_type = 'cookbook'
+		WHERE organisation_name = $1 AND dependency_type = 'cookbook'
 		GROUP BY dependency_name
 		ORDER BY role_count DESC, dependency_name
 	`
 
-	rows, err := db.pool.QueryContext(ctx, query, organisationID)
+	rows, err := db.pool.QueryContext(ctx, query, organisationName)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: counting roles per cookbook: %w", err)
 	}
@@ -434,8 +433,8 @@ func (db *DB) CountRolesPerCookbook(ctx context.Context, organisationID string) 
 // ---------------------------------------------------------------------------
 
 func validateRoleDependencyParams(p InsertRoleDependencyParams) error {
-	if p.OrganisationID == "" {
-		return fmt.Errorf("datastore: organisation ID is required for role dependency")
+	if p.OrganisationName == "" {
+		return fmt.Errorf("datastore: organisation name is required for role dependency")
 	}
 	if p.RoleName == "" {
 		return fmt.Errorf("datastore: role name is required for role dependency")
@@ -456,8 +455,7 @@ func validateRoleDependencyParams(p InsertRoleDependencyParams) error {
 func scanRoleDependency(row *sql.Row) (RoleDependency, error) {
 	var rd RoleDependency
 	err := row.Scan(
-		&rd.ID,
-		&rd.OrganisationID,
+		&rd.OrganisationName,
 		&rd.RoleName,
 		&rd.DependencyType,
 		&rd.DependencyName,
@@ -483,8 +481,7 @@ func scanRoleDependencies(rows *sql.Rows, err error) ([]RoleDependency, error) {
 	for rows.Next() {
 		var rd RoleDependency
 		if err := rows.Scan(
-			&rd.ID,
-			&rd.OrganisationID,
+			&rd.OrganisationName,
 			&rd.RoleName,
 			&rd.DependencyType,
 			&rd.DependencyName,

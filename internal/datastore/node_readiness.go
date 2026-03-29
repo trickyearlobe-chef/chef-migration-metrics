@@ -17,9 +17,7 @@ import (
 // captures whether a specific node is ready for upgrade to a specific target
 // Chef Client version.
 type NodeReadiness struct {
-	ID                     string          `json:"id"`
-	NodeSnapshotID         string          `json:"node_snapshot_id"`
-	OrganisationID         string          `json:"organisation_id"`
+	OrganisationName       string          `json:"organisation_name"`
 	NodeName               string          `json:"node_name"`
 	TargetChefVersion      string          `json:"target_chef_version"`
 	IsReady                bool            `json:"is_ready"`
@@ -36,10 +34,9 @@ type NodeReadiness struct {
 
 // UpsertNodeReadinessParams contains the fields needed to insert or update
 // a node_readiness row. The unique constraint is
-// (node_snapshot_id, target_chef_version).
+// (organisation_name, node_name, target_chef_version).
 type UpsertNodeReadinessParams struct {
-	NodeSnapshotID         string
-	OrganisationID         string
+	OrganisationName       string
 	NodeName               string
 	TargetChefVersion      string
 	IsReady                bool
@@ -56,7 +53,7 @@ type UpsertNodeReadinessParams struct {
 // Column list — shared across all queries
 // ---------------------------------------------------------------------------
 
-const nrColumns = `id, node_snapshot_id, organisation_id, node_name,
+const nrColumns = `organisation_name, node_name,
        target_chef_version, is_ready, all_cookbooks_compatible,
        sufficient_disk_space, blocking_cookbooks, available_disk_mb,
        required_disk_mb, stale_data, evaluated_at, created_at, updated_at`
@@ -64,17 +61,13 @@ const nrColumns = `id, node_snapshot_id, organisation_id, node_name,
 // latestReadinessForOrg returns a SQL fragment that restricts results to the
 // single most recent node_readiness row for each (node_name, target_chef_version)
 // combination within the specified organisation. The orgParam argument is the
-// SQL parameter placeholder for the organisation_id (e.g. "$1").
-//
-// By scoping the inner DISTINCT ON to a single organisation, the query can
-// satisfy the ORDER BY via the idx_node_readiness_latest covering index
-// without scanning rows for other organisations.
+// SQL parameter placeholder for the organisation_name (e.g. "$1").
 func latestReadinessForOrg(orgParam string) string {
-	return fmt.Sprintf(`id IN (
-        SELECT DISTINCT ON (node_name, target_chef_version) id
+	return fmt.Sprintf(`(organisation_name, node_name, target_chef_version, evaluated_at) IN (
+        SELECT organisation_name, node_name, target_chef_version, MAX(evaluated_at)
           FROM node_readiness
-         WHERE organisation_id = %s
-         ORDER BY node_name, target_chef_version, evaluated_at DESC
+         WHERE organisation_name = %s
+         GROUP BY organisation_name, node_name, target_chef_version
     )`, orgParam)
 }
 
@@ -82,21 +75,22 @@ func latestReadinessForOrg(orgParam string) string {
 // Get
 // ---------------------------------------------------------------------------
 
-// GetNodeReadiness returns the readiness record for the given node snapshot
-// and target Chef version. Returns (nil, nil) if no record exists.
-func (db *DB) GetNodeReadiness(ctx context.Context, nodeSnapshotID, targetChefVersion string) (*NodeReadiness, error) {
-	return db.getNodeReadiness(ctx, db.q(), nodeSnapshotID, targetChefVersion)
+// GetNodeReadiness returns the readiness record for the given organisation,
+// node, and target Chef version. Returns (nil, nil) if no record exists.
+func (db *DB) GetNodeReadiness(ctx context.Context, orgName, nodeName, targetChefVersion string) (*NodeReadiness, error) {
+	return db.getNodeReadiness(ctx, db.q(), orgName, nodeName, targetChefVersion)
 }
 
-func (db *DB) getNodeReadiness(ctx context.Context, q queryable, nodeSnapshotID, targetChefVersion string) (*NodeReadiness, error) {
+func (db *DB) getNodeReadiness(ctx context.Context, q queryable, orgName, nodeName, targetChefVersion string) (*NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE node_snapshot_id = $1
-		   AND target_chef_version = $2
+		 WHERE organisation_name = $1
+		   AND node_name = $2
+		   AND target_chef_version = $3
 	`
 
-	r, err := scanNodeReadiness(q.QueryRowContext(ctx, query, nodeSnapshotID, targetChefVersion))
+	r, err := scanNodeReadiness(q.QueryRowContext(ctx, query, orgName, nodeName, targetChefVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -106,62 +100,44 @@ func (db *DB) getNodeReadiness(ctx context.Context, q queryable, nodeSnapshotID,
 	return &r, nil
 }
 
-// GetNodeReadinessByID returns a single readiness record by its primary key.
-// Returns ErrNotFound if no record exists.
-func (db *DB) GetNodeReadinessByID(ctx context.Context, id string) (*NodeReadiness, error) {
-	query := `
-		SELECT ` + nrColumns + `
-		  FROM node_readiness
-		 WHERE id = $1
-	`
-
-	r, err := scanNodeReadiness(db.q().QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting node readiness by id: %w", err)
-	}
-	return &r, nil
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
 // ListNodeReadinessForSnapshot returns all readiness records for the given
-// node snapshot, ordered by target_chef_version.
-func (db *DB) ListNodeReadinessForSnapshot(ctx context.Context, nodeSnapshotID string) ([]NodeReadiness, error) {
+// organisation and node, ordered by target_chef_version.
+func (db *DB) ListNodeReadinessForSnapshot(ctx context.Context, orgName, nodeName string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE node_snapshot_id = $1
+		 WHERE organisation_name = $1
+		   AND node_name = $2
 		 ORDER BY target_chef_version
 	`
-	return db.scanNodeReadinessRows(ctx, query, nodeSnapshotID)
+	return db.scanNodeReadinessRows(ctx, query, orgName, nodeName)
 }
 
 // ListNodeReadinessByNodeName returns the latest readiness records for the
 // given node within the specified organisation. This queries by
-// (organisation_id, node_name) rather than by node_snapshot_id, making it
-// resilient to snapshot ID changes across collection runs.
-func (db *DB) ListNodeReadinessByNodeName(ctx context.Context, organisationID, nodeName string) ([]NodeReadiness, error) {
+// (organisation_name, node_name), making it resilient to snapshot ID changes
+// across collection runs.
+func (db *DB) ListNodeReadinessByNodeName(ctx context.Context, orgName, nodeName string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND node_name = $2
 		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY target_chef_version
 	`
-	return db.scanNodeReadinessRows(ctx, query, organisationID, nodeName)
+	return db.scanNodeReadinessRows(ctx, query, orgName, nodeName)
 }
 
 // BulkListNodeReadinessByNodeNames returns the latest readiness records for
 // multiple nodes within the specified organisation in a single query. This
 // replaces the N+1 pattern of calling ListNodeReadinessByNodeName per node.
 // Results are returned as a map keyed by node_name for O(1) lookup.
-func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, organisationID string, nodeNames []string) (map[string][]NodeReadiness, error) {
+func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, orgName string, nodeNames []string) (map[string][]NodeReadiness, error) {
 	if len(nodeNames) == 0 {
 		return nil, nil
 	}
@@ -169,12 +145,12 @@ func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, organisation
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND node_name = ANY($2)
 		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name, target_chef_version
 	`
-	rows, err := db.pool.QueryContext(ctx, query, organisationID, pq.Array(nodeNames))
+	rows, err := db.pool.QueryContext(ctx, query, orgName, pq.Array(nodeNames))
 	if err != nil {
 		return nil, fmt.Errorf("datastore: bulk listing node readiness: %w", err)
 	}
@@ -188,9 +164,7 @@ func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, organisation
 		var blockingCookbooks []byte
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.NodeSnapshotID,
-			&r.OrganisationID,
+			&r.OrganisationName,
 			&r.NodeName,
 			&r.TargetChefVersion,
 			&r.IsReady,
@@ -232,77 +206,77 @@ func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, organisation
 // ListNodeReadinessForOrganisation returns all readiness records for the
 // given organisation from the latest completed collection run, ordered by
 // node_name then target_chef_version.
-func (db *DB) ListNodeReadinessForOrganisation(ctx context.Context, organisationID string) ([]NodeReadiness, error) {
+func (db *DB) ListNodeReadinessForOrganisation(ctx context.Context, orgName string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name, target_chef_version
 	`
-	return db.scanNodeReadinessRows(ctx, query, organisationID)
+	return db.scanNodeReadinessRows(ctx, query, orgName)
 }
 
 // ListNodeReadinessForOrganisationAndTarget returns all readiness records
 // for the given organisation and target Chef version from the latest
 // completed collection run, ordered by node name.
-func (db *DB) ListNodeReadinessForOrganisationAndTarget(ctx context.Context, organisationID, targetChefVersion string) ([]NodeReadiness, error) {
+func (db *DB) ListNodeReadinessForOrganisationAndTarget(ctx context.Context, orgName, targetChefVersion string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND target_chef_version = $2
 		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name
 	`
-	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
+	return db.scanNodeReadinessRows(ctx, query, orgName, targetChefVersion)
 }
 
 // ListReadyNodes returns all readiness records where is_ready = TRUE for
 // the given organisation and target Chef version, scoped to the latest
 // completed collection run.
-func (db *DB) ListReadyNodes(ctx context.Context, organisationID, targetChefVersion string) ([]NodeReadiness, error) {
+func (db *DB) ListReadyNodes(ctx context.Context, orgName, targetChefVersion string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND target_chef_version = $2
 		   AND is_ready = TRUE
 		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name
 	`
-	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
+	return db.scanNodeReadinessRows(ctx, query, orgName, targetChefVersion)
 }
 
 // ListBlockedNodes returns all readiness records where is_ready = FALSE for
 // the given organisation and target Chef version, scoped to the latest
 // completed collection run.
-func (db *DB) ListBlockedNodes(ctx context.Context, organisationID, targetChefVersion string) ([]NodeReadiness, error) {
+func (db *DB) ListBlockedNodes(ctx context.Context, orgName, targetChefVersion string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND target_chef_version = $2
 		   AND is_ready = FALSE
 		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name
 	`
-	return db.scanNodeReadinessRows(ctx, query, organisationID, targetChefVersion)
+	return db.scanNodeReadinessRows(ctx, query, orgName, targetChefVersion)
 }
 
 // ListStaleNodeReadiness returns all readiness records where stale_data = TRUE
 // for the given organisation from the latest completed collection run,
 // ordered by node name.
-func (db *DB) ListStaleNodeReadiness(ctx context.Context, organisationID string) ([]NodeReadiness, error) {
+func (db *DB) ListStaleNodeReadiness(ctx context.Context, orgName string) ([]NodeReadiness, error) {
 	query := `
 		SELECT ` + nrColumns + `
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND stale_data = TRUE
 		   AND ` + latestReadinessForOrg("$1") + `
 		 ORDER BY node_name, target_chef_version
 	`
-	return db.scanNodeReadinessRows(ctx, query, organisationID)
+	return db.scanNodeReadinessRows(ctx, query, orgName)
 }
 
 // ---------------------------------------------------------------------------
@@ -313,18 +287,18 @@ func (db *DB) ListStaleNodeReadiness(ctx context.Context, organisationID string)
 // given organisation and target Chef version, scoped to the latest completed
 // collection run. Without this scoping, every historical collection cycle's
 // readiness rows would be counted, inflating the totals.
-func (db *DB) CountNodeReadiness(ctx context.Context, organisationID, targetChefVersion string) (total, ready, blocked int, err error) {
+func (db *DB) CountNodeReadiness(ctx context.Context, orgName, targetChefVersion string) (total, ready, blocked int, err error) {
 	query := `
 		SELECT
 			COUNT(*),
 			COUNT(*) FILTER (WHERE is_ready = TRUE),
 			COUNT(*) FILTER (WHERE is_ready = FALSE)
 		  FROM node_readiness
-		 WHERE organisation_id = $1
+		 WHERE organisation_name = $1
 		   AND target_chef_version = $2
 		   AND ` + latestReadinessForOrg("$1") + `
 	`
-	err = db.pool.QueryRowContext(ctx, query, organisationID, targetChefVersion).Scan(&total, &ready, &blocked)
+	err = db.pool.QueryRowContext(ctx, query, orgName, targetChefVersion).Scan(&total, &ready, &blocked)
 	if err != nil {
 		err = fmt.Errorf("datastore: counting node readiness: %w", err)
 	}
@@ -336,8 +310,8 @@ func (db *DB) CountNodeReadiness(ctx context.Context, organisationID, targetChef
 // ---------------------------------------------------------------------------
 
 // UpsertNodeReadiness inserts a new readiness record or updates the existing
-// one for the same (node_snapshot_id, target_chef_version) combination.
-// Returns the resulting row.
+// one for the same (organisation_name, node_name, target_chef_version)
+// combination. Returns the resulting row.
 func (db *DB) UpsertNodeReadiness(ctx context.Context, p UpsertNodeReadinessParams) (*NodeReadiness, error) {
 	return db.upsertNodeReadiness(ctx, db.q(), p)
 }
@@ -348,11 +322,8 @@ func (db *DB) UpsertNodeReadinessTx(ctx context.Context, tx *sql.Tx, p UpsertNod
 }
 
 func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNodeReadinessParams) (*NodeReadiness, error) {
-	if p.NodeSnapshotID == "" {
-		return nil, fmt.Errorf("datastore: node_snapshot_id is required")
-	}
-	if p.OrganisationID == "" {
-		return nil, fmt.Errorf("datastore: organisation_id is required")
+	if p.OrganisationName == "" {
+		return nil, fmt.Errorf("datastore: organisation_name is required")
 	}
 	if p.NodeName == "" {
 		return nil, fmt.Errorf("datastore: node_name is required")
@@ -363,15 +334,13 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 
 	query := `
 		INSERT INTO node_readiness (
-			node_snapshot_id, organisation_id, node_name,
+			organisation_name, node_name,
 			target_chef_version, is_ready, all_cookbooks_compatible,
 			sufficient_disk_space, blocking_cookbooks, available_disk_mb,
 			required_disk_mb, stale_data, evaluated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		ON CONFLICT (node_snapshot_id, target_chef_version)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (organisation_name, node_name, target_chef_version)
 		DO UPDATE SET
-			organisation_id         = EXCLUDED.organisation_id,
-			node_name               = EXCLUDED.node_name,
 			is_ready                = EXCLUDED.is_ready,
 			all_cookbooks_compatible = EXCLUDED.all_cookbooks_compatible,
 			sufficient_disk_space   = EXCLUDED.sufficient_disk_space,
@@ -385,8 +354,7 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 	`
 
 	r, err := scanNodeReadiness(q.QueryRowContext(ctx, query,
-		p.NodeSnapshotID,
-		p.OrganisationID,
+		p.OrganisationName,
 		p.NodeName,
 		p.TargetChefVersion,
 		p.IsReady,
@@ -409,45 +377,44 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 // ---------------------------------------------------------------------------
 
 // DeleteNodeReadinessForSnapshot removes all readiness records for the given
-// node snapshot. Called when a new collection run replaces the snapshot.
-func (db *DB) DeleteNodeReadinessForSnapshot(ctx context.Context, nodeSnapshotID string) error {
-	const query = `DELETE FROM node_readiness WHERE node_snapshot_id = $1`
-	_, err := db.pool.ExecContext(ctx, query, nodeSnapshotID)
+// organisation and node. Called when a new collection run replaces the snapshot.
+func (db *DB) DeleteNodeReadinessForSnapshot(ctx context.Context, orgName, nodeName string) error {
+	const query = `DELETE FROM node_readiness WHERE organisation_name = $1 AND node_name = $2`
+	_, err := db.pool.ExecContext(ctx, query, orgName, nodeName)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting node readiness for snapshot %s: %w", nodeSnapshotID, err)
+		return fmt.Errorf("datastore: deleting node readiness for %s/%s: %w", orgName, nodeName, err)
 	}
 	return nil
 }
 
 // DeleteNodeReadinessForOrganisation removes all readiness records for the
 // given organisation. Forces a full re-evaluation on the next cycle.
-func (db *DB) DeleteNodeReadinessForOrganisation(ctx context.Context, organisationID string) error {
-	const query = `DELETE FROM node_readiness WHERE organisation_id = $1`
-	_, err := db.pool.ExecContext(ctx, query, organisationID)
+func (db *DB) DeleteNodeReadinessForOrganisation(ctx context.Context, orgName string) error {
+	const query = `DELETE FROM node_readiness WHERE organisation_name = $1`
+	_, err := db.pool.ExecContext(ctx, query, orgName)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting node readiness for organisation %s: %w", organisationID, err)
+		return fmt.Errorf("datastore: deleting node readiness for organisation %s: %w", orgName, err)
 	}
 	return nil
 }
 
 // DeleteNodeReadinessForOrganisationAndTarget removes all readiness records
 // for the given organisation and target Chef version.
-func (db *DB) DeleteNodeReadinessForOrganisationAndTarget(ctx context.Context, organisationID, targetChefVersion string) error {
-	const query = `DELETE FROM node_readiness WHERE organisation_id = $1 AND target_chef_version = $2`
-	_, err := db.pool.ExecContext(ctx, query, organisationID, targetChefVersion)
+func (db *DB) DeleteNodeReadinessForOrganisationAndTarget(ctx context.Context, orgName, targetChefVersion string) error {
+	const query = `DELETE FROM node_readiness WHERE organisation_name = $1 AND target_chef_version = $2`
+	_, err := db.pool.ExecContext(ctx, query, orgName, targetChefVersion)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting node readiness for organisation %s version %s: %w", organisationID, targetChefVersion, err)
+		return fmt.Errorf("datastore: deleting node readiness for organisation %s version %s: %w", orgName, targetChefVersion, err)
 	}
 	return nil
 }
 
-// DeleteNodeReadiness removes a single readiness record by ID.
-// Returns ErrNotFound if no such record exists.
-func (db *DB) DeleteNodeReadiness(ctx context.Context, id string) error {
-	const query = `DELETE FROM node_readiness WHERE id = $1`
-	res, err := db.pool.ExecContext(ctx, query, id)
+// DeleteNodeReadiness removes a single readiness record by its natural key.
+func (db *DB) DeleteNodeReadiness(ctx context.Context, orgName, nodeName, targetChefVersion string) error {
+	const query = `DELETE FROM node_readiness WHERE organisation_name = $1 AND node_name = $2 AND target_chef_version = $3`
+	res, err := db.pool.ExecContext(ctx, query, orgName, nodeName, targetChefVersion)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting node readiness %s: %w", id, err)
+		return fmt.Errorf("datastore: deleting node readiness %s/%s@%s: %w", orgName, nodeName, targetChefVersion, err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -467,9 +434,7 @@ func scanNodeReadiness(row interface{ Scan(dest ...any) error }) (NodeReadiness,
 	var blockingCookbooks []byte
 
 	err := row.Scan(
-		&r.ID,
-		&r.NodeSnapshotID,
-		&r.OrganisationID,
+		&r.OrganisationName,
 		&r.NodeName,
 		&r.TargetChefVersion,
 		&r.IsReady,
@@ -519,9 +484,7 @@ func (db *DB) scanNodeReadinessRows(ctx context.Context, query string, args ...a
 		var blockingCookbooks []byte
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.NodeSnapshotID,
-			&r.OrganisationID,
+			&r.OrganisationName,
 			&r.NodeName,
 			&r.TargetChefVersion,
 			&r.IsReady,

@@ -39,25 +39,23 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 	totalCookbooks := 0
 
 	type failedCookbook struct {
-		ID             string `json:"id"`
-		OrganisationID string `json:"organisation_id"`
-		OrgName        string `json:"organisation_name,omitempty"`
-		Name           string `json:"name"`
-		Version        string `json:"version"`
-		DownloadError  string `json:"download_error"`
-		IsActive       bool   `json:"is_active"`
+		OrganisationName string `json:"organisation_name"`
+		Name             string `json:"name"`
+		Version          string `json:"version"`
+		DownloadError    string `json:"download_error"`
+		IsActive         bool   `json:"is_active"`
 	}
 
 	var failedList []failedCookbook
 
-	// Build an org ID → name lookup for annotating failures.
+	// Build an org name lookup for annotating failures.
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
+		orgNameByID[org.Name] = org.Name
 	}
 
 	for _, org := range orgs {
-		serverCookbooks, cbErr := r.db.ListServerCookbooksByOrganisation(req.Context(), org.ID)
+		serverCookbooks, cbErr := r.db.ListServerCookbooksByOrganisation(req.Context(), org.Name)
 		if cbErr != nil {
 			r.logf("WARN", "listing server cookbooks for org %s in download status: %v", org.Name, cbErr)
 			continue
@@ -72,13 +70,11 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 
 			if status == "failed" {
 				failedList = append(failedList, failedCookbook{
-					ID:             sc.ID,
-					OrganisationID: sc.OrganisationID,
-					OrgName:        orgNameByID[sc.OrganisationID],
-					Name:           sc.Name,
-					Version:        sc.Version,
-					DownloadError:  sc.DownloadError,
-					IsActive:       sc.IsActive,
+					OrganisationName: sc.OrganisationName,
+					Name:             sc.Name,
+					Version:          sc.Version,
+					DownloadError:    sc.DownloadError,
+					IsActive:         sc.IsActive,
 				})
 			}
 		}

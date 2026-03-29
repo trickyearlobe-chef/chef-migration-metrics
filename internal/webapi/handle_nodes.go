@@ -18,8 +18,6 @@ import (
 // Defined at package level to avoid duplication across handleNodes and
 // handleNodesWithOwnerFilter.
 type nodeResp struct {
-	ID               string                      `json:"id"`
-	OrganisationID   string                      `json:"organisation_id"`
 	OrganisationName string                      `json:"organisation_name"`
 	NodeName         string                      `json:"node_name"`
 	ChefEnvironment  string                      `json:"chef_environment,omitempty"`
@@ -66,8 +64,8 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	orgNameByID := make(map[string]string, len(orgs))
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
-		orgIDs = append(orgIDs, org.ID)
+		orgNameByID[org.Name] = org.Name
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	pg := ParsePagination(req)
@@ -105,9 +103,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	result := make([]nodeResp, 0, len(nodes))
 	for _, n := range nodes {
 		result = append(result, nodeResp{
-			ID:               n.ID,
-			OrganisationID:   n.OrganisationID,
-			OrganisationName: orgNameByID[n.OrganisationID],
+			OrganisationName: n.OrganisationName,
 			NodeName:         n.NodeName,
 			ChefEnvironment:  n.ChefEnvironment,
 			ChefVersion:      n.ChefVersion,
@@ -151,7 +147,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 	// (we'll paginate after ownership filtering).
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 	f := nodeSnapshotFilterFromRequest(req, orgIDs)
 	// No limit/offset — we need all matching nodes for ownership filtering.
@@ -176,9 +172,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 	result := make([]nodeResp, 0, len(pageNodes))
 	for _, n := range pageNodes {
 		result = append(result, nodeResp{
-			ID:               n.ID,
-			OrganisationID:   n.OrganisationID,
-			OrganisationName: orgNameByID[n.OrganisationID],
+			OrganisationName: n.OrganisationName,
 			NodeName:         n.NodeName,
 			ChefEnvironment:  n.ChefEnvironment,
 			ChefVersion:      n.ChefVersion,
@@ -254,7 +248,7 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Get the most recent snapshot for this node.
-	snapshot, err := r.db.GetNodeSnapshotByName(req.Context(), org.ID, nodeName)
+	snapshot, err := r.db.GetNodeSnapshotByName(req.Context(), org.Name, nodeName)
 	if errors.Is(err, datastore.ErrNotFound) {
 		WriteNotFound(w, fmt.Sprintf("Node %q not found in organisation %q.", nodeName, orgName))
 		return
@@ -271,7 +265,7 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	// since been replaced by a newer collection run. Querying by name
 	// matches the same path the dashboard uses and is resilient to
 	// snapshot ID drift.
-	readiness, err := r.db.ListNodeReadinessByNodeName(req.Context(), org.ID, nodeName)
+	readiness, err := r.db.ListNodeReadinessByNodeName(req.Context(), org.Name, nodeName)
 	if err != nil {
 		r.logf("WARN", "listing readiness for node %s/%s: %v", orgName, nodeName, err)
 		// Non-fatal — we still return the snapshot.
@@ -314,13 +308,13 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
+		orgIDs = append(orgIDs, org.Name)
 	}
 
 	// Use SQL push-down with exact chef_version match.
 	f := datastore.NodeSnapshotFilter{
-		OrganisationIDs:  orgIDs,
-		ChefVersionExact: chefVersion,
+		OrganisationNames: orgIDs,
+		ChefVersionExact:  chefVersion,
 	}
 
 	matched, _, err := r.db.ListNodeSnapshotsFiltered(req.Context(), f)
@@ -373,15 +367,15 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 	orgIDs := make([]string, 0, len(orgs))
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgIDs = append(orgIDs, org.ID)
-		orgNameByID[org.ID] = org.Name
+		orgIDs = append(orgIDs, org.Name)
+		orgNameByID[org.Name] = org.Name
 	}
 
 	// Use SQL push-down for org filtering. We need the cookbooks JSONB
 	// for the in-memory cookbook check.
 	f := datastore.NodeSnapshotFilter{
-		OrganisationIDs:  orgIDs,
-		IncludeHeavyJSON: true,
+		OrganisationNames: orgIDs,
+		IncludeHeavyJSON:  true,
 	}
 
 	allNodes, _, err := r.db.ListNodeSnapshotsFiltered(req.Context(), f)
@@ -400,7 +394,7 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 	for _, n := range allNodes {
 		if nodeUsesCookbook(n, cookbookName) {
 			matched = append(matched, nodeWithOrg{
-				OrganisationName: orgNameByID[n.OrganisationID],
+				OrganisationName: n.OrganisationName,
 				Node:             n,
 			})
 		}
@@ -437,14 +431,14 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string) datastore
 	q := req.URL.Query()
 
 	f := datastore.NodeSnapshotFilter{
-		OrganisationIDs: orgIDs,
-		NodeName:        q.Get("node_name"),
-		Environment:     q.Get("environment"),
-		Platform:        q.Get("platform"),
-		ChefVersion:     q.Get("chef_version"),
-		PolicyName:      q.Get("policy_name"),
-		PolicyGroup:     q.Get("policy_group"),
-		Role:            q.Get("role"),
+		OrganisationNames: orgIDs,
+		NodeName:          q.Get("node_name"),
+		Environment:       q.Get("environment"),
+		Platform:          q.Get("platform"),
+		ChefVersion:       q.Get("chef_version"),
+		PolicyName:        q.Get("policy_name"),
+		PolicyGroup:       q.Get("policy_group"),
+		Role:              q.Get("role"),
 	}
 
 	// Sort parameters.
@@ -484,7 +478,7 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 	// Group node names by organisation ID.
 	namesByOrg := make(map[string][]string)
 	for _, n := range nodes {
-		namesByOrg[n.OrganisationID] = append(namesByOrg[n.OrganisationID], n.NodeName)
+		namesByOrg[n.OrganisationName] = append(namesByOrg[n.OrganisationName], n.NodeName)
 	}
 
 	result := make(map[string][]nodeReadinessSummaryEntry, len(nodes))

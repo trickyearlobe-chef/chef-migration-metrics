@@ -13,9 +13,9 @@ import (
 // GitRepoAutocorrectPreview represents a row in the
 // git_repo_autocorrect_previews table.
 type GitRepoAutocorrectPreview struct {
-	ID                  string
-	GitRepoID           string
-	CookstyleResultID   string
+	GitRepoName         string
+	GitRepoURL          string
+	TargetChefVersion   string
 	TotalOffenses       int
 	CorrectableOffenses int
 	RemainingOffenses   int
@@ -27,10 +27,11 @@ type GitRepoAutocorrectPreview struct {
 
 // UpsertGitRepoAutocorrectPreviewParams contains the fields needed to insert
 // or update a git_repo_autocorrect_previews row. The unique constraint is
-// (cookstyle_result_id).
+// (git_repo_name, git_repo_url, target_chef_version).
 type UpsertGitRepoAutocorrectPreviewParams struct {
-	GitRepoID           string
-	CookstyleResultID   string
+	GitRepoName         string
+	GitRepoURL          string
+	TargetChefVersion   string
 	TotalOffenses       int
 	CorrectableOffenses int
 	RemainingOffenses   int
@@ -43,7 +44,7 @@ type UpsertGitRepoAutocorrectPreviewParams struct {
 // Column list — shared across all queries
 // ---------------------------------------------------------------------------
 
-const grAcpColumns = `id, git_repo_id, cookstyle_result_id,
+const grAcpColumns = `git_repo_name, git_repo_url, target_chef_version,
        total_offenses, correctable_offenses, remaining_offenses,
        files_modified, diff_output, generated_at, created_at`
 
@@ -52,19 +53,22 @@ const grAcpColumns = `id, git_repo_id, cookstyle_result_id,
 // ---------------------------------------------------------------------------
 
 // GetGitRepoAutocorrectPreview returns the autocorrect preview for the given
-// cookstyle result ID. Returns (nil, nil) if no preview exists.
-func (db *DB) GetGitRepoAutocorrectPreview(ctx context.Context, cookstyleResultID string) (*GitRepoAutocorrectPreview, error) {
-	return db.getGitRepoAutocorrectPreview(ctx, db.q(), cookstyleResultID)
+// git repo name, URL, and target Chef version. Returns (nil, nil) if no
+// preview exists.
+func (db *DB) GetGitRepoAutocorrectPreview(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*GitRepoAutocorrectPreview, error) {
+	return db.getGitRepoAutocorrectPreview(ctx, db.q(), gitRepoName, gitRepoURL, targetChefVersion)
 }
 
-func (db *DB) getGitRepoAutocorrectPreview(ctx context.Context, q queryable, cookstyleResultID string) (*GitRepoAutocorrectPreview, error) {
+func (db *DB) getGitRepoAutocorrectPreview(ctx context.Context, q queryable, gitRepoName, gitRepoURL, targetChefVersion string) (*GitRepoAutocorrectPreview, error) {
 	query := `
 		SELECT ` + grAcpColumns + `
 		  FROM git_repo_autocorrect_previews
-		 WHERE cookstyle_result_id = $1
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
+		   AND target_chef_version = $3
 	`
 
-	r, err := scanGitRepoAutocorrectPreview(q.QueryRowContext(ctx, query, cookstyleResultID))
+	r, err := scanGitRepoAutocorrectPreview(q.QueryRowContext(ctx, query, gitRepoName, gitRepoURL, targetChefVersion))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -74,52 +78,31 @@ func (db *DB) getGitRepoAutocorrectPreview(ctx context.Context, q queryable, coo
 	return &r, nil
 }
 
-// GetGitRepoAutocorrectPreviewByID returns a single autocorrect preview by
-// its primary key. Returns ErrNotFound if no preview exists.
-func (db *DB) GetGitRepoAutocorrectPreviewByID(ctx context.Context, id string) (*GitRepoAutocorrectPreview, error) {
-	query := `
-		SELECT ` + grAcpColumns + `
-		  FROM git_repo_autocorrect_previews
-		 WHERE id = $1
-	`
-
-	r, err := scanGitRepoAutocorrectPreview(db.q().QueryRowContext(ctx, query, id))
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("datastore: getting git repo autocorrect preview by id: %w", err)
-	}
-	return &r, nil
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
 // ListGitRepoAutocorrectPreviewsByRepo returns all autocorrect previews for
-// the given git repo ID, ordered by generated_at descending.
-func (db *DB) ListGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoID string) ([]GitRepoAutocorrectPreview, error) {
+// the given git repo name and URL, ordered by generated_at descending.
+func (db *DB) ListGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) ([]GitRepoAutocorrectPreview, error) {
 	query := `
 		SELECT ` + grAcpColumns + `
 		  FROM git_repo_autocorrect_previews
-		 WHERE git_repo_id = $1
+		 WHERE git_repo_name = $1
+		   AND git_repo_url = $2
 		 ORDER BY generated_at DESC
 	`
-	return db.scanGitRepoAutocorrectPreviews(ctx, query, gitRepoID)
+	return db.scanGitRepoAutocorrectPreviews(ctx, query, gitRepoName, gitRepoURL)
 }
 
 // ListGitRepoAutocorrectPreviewsByName returns all autocorrect previews
 // for git repos with the given name, ordered by generated_at descending.
 func (db *DB) ListGitRepoAutocorrectPreviewsByName(ctx context.Context, name string) ([]GitRepoAutocorrectPreview, error) {
 	query := `
-		SELECT ap.id, ap.git_repo_id, ap.cookstyle_result_id,
-		       ap.total_offenses, ap.correctable_offenses, ap.remaining_offenses,
-		       ap.files_modified, ap.diff_output, ap.generated_at, ap.created_at
-		  FROM git_repo_autocorrect_previews ap
-		  JOIN git_repos gr ON gr.id = ap.git_repo_id
-		 WHERE gr.name = $1
-		 ORDER BY ap.generated_at DESC
+		SELECT ` + grAcpColumns + `
+		  FROM git_repo_autocorrect_previews
+		 WHERE git_repo_name = $1
+		 ORDER BY git_repo_url, generated_at DESC
 	`
 	return db.scanGitRepoAutocorrectPreviews(ctx, query, name)
 }
@@ -129,29 +112,31 @@ func (db *DB) ListGitRepoAutocorrectPreviewsByName(ctx context.Context, name str
 // ---------------------------------------------------------------------------
 
 // UpsertGitRepoAutocorrectPreview inserts a new autocorrect preview or
-// updates the existing one for the same cookstyle_result_id. Returns the
-// resulting row.
+// updates the existing one for the same (git_repo_name, git_repo_url,
+// target_chef_version). Returns the resulting row.
 func (db *DB) UpsertGitRepoAutocorrectPreview(ctx context.Context, p UpsertGitRepoAutocorrectPreviewParams) (*GitRepoAutocorrectPreview, error) {
 	return db.upsertGitRepoAutocorrectPreview(ctx, db.q(), p)
 }
 
 func (db *DB) upsertGitRepoAutocorrectPreview(ctx context.Context, q queryable, p UpsertGitRepoAutocorrectPreviewParams) (*GitRepoAutocorrectPreview, error) {
-	if p.GitRepoID == "" {
-		return nil, fmt.Errorf("datastore: git_repo_id is required")
+	if p.GitRepoName == "" {
+		return nil, fmt.Errorf("datastore: git_repo_name is required")
 	}
-	if p.CookstyleResultID == "" {
-		return nil, fmt.Errorf("datastore: cookstyle_result_id is required")
+	if p.GitRepoURL == "" {
+		return nil, fmt.Errorf("datastore: git_repo_url is required")
+	}
+	if p.TargetChefVersion == "" {
+		return nil, fmt.Errorf("datastore: target_chef_version is required")
 	}
 
 	query := `
 		INSERT INTO git_repo_autocorrect_previews (
-			git_repo_id, cookstyle_result_id,
+			git_repo_name, git_repo_url, target_chef_version,
 			total_offenses, correctable_offenses, remaining_offenses,
 			files_modified, diff_output, generated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (cookstyle_result_id)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (git_repo_name, git_repo_url, target_chef_version)
 		DO UPDATE SET
-			git_repo_id         = EXCLUDED.git_repo_id,
 			total_offenses      = EXCLUDED.total_offenses,
 			correctable_offenses = EXCLUDED.correctable_offenses,
 			remaining_offenses  = EXCLUDED.remaining_offenses,
@@ -162,8 +147,9 @@ func (db *DB) upsertGitRepoAutocorrectPreview(ctx context.Context, q queryable, 
 	`
 
 	r, err := scanGitRepoAutocorrectPreview(q.QueryRowContext(ctx, query,
-		p.GitRepoID,
-		p.CookstyleResultID,
+		p.GitRepoName,
+		p.GitRepoURL,
+		p.TargetChefVersion,
 		p.TotalOffenses,
 		p.CorrectableOffenses,
 		p.RemainingOffenses,
@@ -188,12 +174,12 @@ func (db *DB) UpsertGitRepoAutocorrectPreviewTx(ctx context.Context, tx *sql.Tx,
 // ---------------------------------------------------------------------------
 
 // DeleteGitRepoAutocorrectPreviewsByRepo removes all autocorrect previews
-// for the given git repo ID.
-func (db *DB) DeleteGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoID string) error {
-	const query = `DELETE FROM git_repo_autocorrect_previews WHERE git_repo_id = $1`
-	_, err := db.pool.ExecContext(ctx, query, gitRepoID)
+// for the given git repo name and URL.
+func (db *DB) DeleteGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error {
+	const query = `DELETE FROM git_repo_autocorrect_previews WHERE git_repo_name = $1 AND git_repo_url = $2`
+	_, err := db.pool.ExecContext(ctx, query, gitRepoName, gitRepoURL)
 	if err != nil {
-		return fmt.Errorf("datastore: deleting git repo autocorrect previews for repo %s: %w", gitRepoID, err)
+		return fmt.Errorf("datastore: deleting git repo autocorrect previews for repo %s (%s): %w", gitRepoName, gitRepoURL, err)
 	}
 	return nil
 }
@@ -218,9 +204,9 @@ func scanGitRepoAutocorrectPreview(row interface{ Scan(dest ...any) error }) (Gi
 	var diffOutput sql.NullString
 
 	err := row.Scan(
-		&r.ID,
-		&r.GitRepoID,
-		&r.CookstyleResultID,
+		&r.GitRepoName,
+		&r.GitRepoURL,
+		&r.TargetChefVersion,
 		&r.TotalOffenses,
 		&r.CorrectableOffenses,
 		&r.RemainingOffenses,
@@ -250,9 +236,9 @@ func (db *DB) scanGitRepoAutocorrectPreviews(ctx context.Context, query string, 
 		var diffOutput sql.NullString
 
 		if err := rows.Scan(
-			&r.ID,
-			&r.GitRepoID,
-			&r.CookstyleResultID,
+			&r.GitRepoName,
+			&r.GitRepoURL,
+			&r.TargetChefVersion,
 			&r.TotalOffenses,
 			&r.CorrectableOffenses,
 			&r.RemainingOffenses,

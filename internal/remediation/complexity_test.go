@@ -545,7 +545,6 @@ func TestCountJSONBStringArray_SingleElement(t *testing.T) {
 
 func TestComplexityResult_Fields(t *testing.T) {
 	r := ComplexityResult{
-		CookbookID:           "cb-1",
 		CookbookName:         "apache2",
 		CookbookVersion:      "5.2.1",
 		TargetChefVersion:    "18.0",
@@ -590,7 +589,6 @@ func TestComplexityResult_Skipped_PreventsFalseCompatible(t *testing.T) {
 	// prevents the cookbook list handler from seeing error_count=0
 	// and reporting "compatible" for an unscanned cookbook.
 	r := ComplexityResult{
-		CookbookID:        "cb-1",
 		CookbookName:      "unscanned",
 		CookbookVersion:   "1.0.0",
 		TargetChefVersion: "18.0",

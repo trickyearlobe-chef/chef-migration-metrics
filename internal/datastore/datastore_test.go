@@ -599,7 +599,6 @@ func TestServerCookbook_DownloadHelpers(t *testing.T) {
 
 func TestOrganisation_MarshalJSON(t *testing.T) {
 	org := Organisation{
-		ID:            "test-id",
 		Name:          "test-org",
 		ChefServerURL: "https://chef.example.com",
 		OrgName:       "myorg",
@@ -619,12 +618,11 @@ func TestOrganisation_MarshalJSON(t *testing.T) {
 
 func TestCollectionRun_MarshalJSON(t *testing.T) {
 	cr := CollectionRun{
-		ID:             "run-id",
-		OrganisationID: "org-id",
-		Status:         "running",
-		StartedAt:      time.Now(),
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		OrganisationName: "org-name",
+		Status:           "running",
+		StartedAt:        time.Now(),
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 	data, err := cr.MarshalJSON()
 	if err != nil {
@@ -637,13 +635,12 @@ func TestCollectionRun_MarshalJSON(t *testing.T) {
 
 func TestNodeSnapshot_MarshalJSON(t *testing.T) {
 	ns := NodeSnapshot{
-		ID:              "snap-id",
-		CollectionRunID: "run-id",
-		OrganisationID:  "org-id",
-		NodeName:        "node1.example.com",
-		ChefVersion:     "18.4.2",
-		CollectedAt:     time.Now(),
-		CreatedAt:       time.Now(),
+		CollectionRunOrg: "run-org",
+		OrganisationName: "org-name",
+		NodeName:         "node1.example.com",
+		ChefVersion:      "18.4.2",
+		CollectedAt:      time.Now(),
+		CreatedAt:        time.Now(),
 	}
 	data, err := ns.MarshalJSON()
 	if err != nil {
@@ -656,11 +653,10 @@ func TestNodeSnapshot_MarshalJSON(t *testing.T) {
 
 func TestServerCookbook_MarshalJSON(t *testing.T) {
 	sc := ServerCookbook{
-		ID:             "cb-id",
-		OrganisationID: "org-id",
-		Name:           "apache2",
-		Version:        "1.0.0",
-		DownloadStatus: DownloadStatusPending,
+		OrganisationName: "org-1",
+		Name:             "apache2",
+		Version:          "1.0.0",
+		DownloadStatus:   DownloadStatusPending,
 	}
 	data, err := sc.MarshalJSON()
 	if err != nil {
@@ -673,7 +669,6 @@ func TestServerCookbook_MarshalJSON(t *testing.T) {
 
 func TestGitRepo_MarshalJSON(t *testing.T) {
 	gr := GitRepo{
-		ID:         "gr-id",
 		Name:       "apache2",
 		GitRepoURL: "https://github.com/example/apache2",
 	}
@@ -795,7 +790,7 @@ func TestValidateLogEntryParams_WithAllOptionalFields(t *testing.T) {
 		CommitSHA:           "abc123",
 		ChefClientVersion:   "19.0",
 		ProcessOutput:       "line 1\nline 2",
-		CollectionRunID:     "run-1",
+		CollectionRunOrg:    "run-1",
 		NotificationChannel: "slack",
 		ExportJobID:         "exp-1",
 		TLSDomain:           "example.com",
@@ -877,27 +872,6 @@ func TestMinSeverityValues_Invalid(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// nullStringUUID tests
-// ---------------------------------------------------------------------------
-
-func TestNullStringUUID_Empty(t *testing.T) {
-	ns := nullStringUUID("")
-	if ns.Valid {
-		t.Error("nullStringUUID('') should be invalid")
-	}
-}
-
-func TestNullStringUUID_NonEmpty(t *testing.T) {
-	ns := nullStringUUID("abc-123")
-	if !ns.Valid {
-		t.Error("nullStringUUID('abc-123') should be valid")
-	}
-	if ns.String != "abc-123" {
-		t.Errorf("nullStringUUID('abc-123').String = %q, want 'abc-123'", ns.String)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // stringArray / joinQuoted tests
 // ---------------------------------------------------------------------------
 
@@ -964,7 +938,7 @@ func TestJoinQuoted_Multiple(t *testing.T) {
 
 func TestLogEntry_MarshalJSON(t *testing.T) {
 	le := LogEntry{
-		ID:           "test-id",
+		ID:           1,
 		Timestamp:    time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 		Severity:     "WARN",
 		Scope:        "collection_run",
@@ -1000,7 +974,7 @@ func TestLogEntry_MarshalJSON(t *testing.T) {
 
 func TestLogEntry_MarshalJSON_EmptyOptionalFields(t *testing.T) {
 	le := LogEntry{
-		ID:        "test-id",
+		ID:        1,
 		Timestamp: time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 		Severity:  "INFO",
 		Scope:     "startup",
@@ -1020,7 +994,7 @@ func TestLogEntry_MarshalJSON_EmptyOptionalFields(t *testing.T) {
 	// Optional fields with omitempty should be absent when empty.
 	for _, field := range []string{
 		"cookbook_name", "cookbook_version", "commit_sha",
-		"chef_client_version", "process_output", "collection_run_id",
+		"chef_client_version", "process_output", "collection_run_org",
 		"notification_channel", "export_job_id", "tls_domain",
 	} {
 		if _, exists := decoded[field]; exists {
@@ -1031,7 +1005,7 @@ func TestLogEntry_MarshalJSON_EmptyOptionalFields(t *testing.T) {
 
 func TestLogEntry_MarshalJSON_AllFields(t *testing.T) {
 	le := LogEntry{
-		ID:                  "id-1",
+		ID:                  1,
 		Timestamp:           time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 		Severity:            "ERROR",
 		Scope:               "notification_dispatch",
@@ -1042,7 +1016,7 @@ func TestLogEntry_MarshalJSON_AllFields(t *testing.T) {
 		CommitSHA:           "deadbeef",
 		ChefClientVersion:   "19.4.0",
 		ProcessOutput:       "error output",
-		CollectionRunID:     "run-1",
+		CollectionRunOrg:    "run-1",
 		NotificationChannel: "slack-ops",
 		ExportJobID:         "exp-42",
 		TLSDomain:           "api.example.com",
@@ -1058,8 +1032,14 @@ func TestLogEntry_MarshalJSON_AllFields(t *testing.T) {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 
+	// Check numeric ID field separately (int64 serialises as a JSON number).
+	if gotID, ok := decoded["id"].(float64); !ok {
+		t.Errorf("field \"id\" not found or not a number in JSON")
+	} else if gotID != 1 {
+		t.Errorf("field \"id\" = %v, want 1", gotID)
+	}
+
 	checks := map[string]string{
-		"id":                   "id-1",
 		"severity":             "ERROR",
 		"scope":                "notification_dispatch",
 		"message":              "delivery failed",
@@ -1069,7 +1049,7 @@ func TestLogEntry_MarshalJSON_AllFields(t *testing.T) {
 		"commit_sha":           "deadbeef",
 		"chef_client_version":  "19.4.0",
 		"process_output":       "error output",
-		"collection_run_id":    "run-1",
+		"collection_run_org":   "run-1",
 		"notification_channel": "slack-ops",
 		"export_job_id":        "exp-42",
 		"tls_domain":           "api.example.com",
@@ -1103,15 +1083,15 @@ func TestLogEntryFilter_AllFieldsSet(t *testing.T) {
 	since := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	until := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
 	f := LogEntryFilter{
-		Scope:           "collection_run",
-		Severity:        "ERROR",
-		Organisation:    "prod",
-		CookbookName:    "nginx",
-		CollectionRunID: "run-1",
-		Since:           since,
-		Until:           until,
-		Limit:           100,
-		Offset:          50,
+		Scope:            "collection_run",
+		Severity:         "ERROR",
+		Organisation:     "prod",
+		CookbookName:     "nginx",
+		CollectionRunOrg: "run-1",
+		Since:            since,
+		Until:            until,
+		Limit:            100,
+		Offset:           50,
 	}
 	if f.Scope != "collection_run" {
 		t.Errorf("Scope = %q, want collection_run", f.Scope)
@@ -1157,34 +1137,34 @@ func TestPurgeLogEntriesBefore_ZeroTime(t *testing.T) {
 
 func TestGetLogEntry_EmptyID(t *testing.T) {
 	db := &DB{pool: nil}
-	_, err := db.GetLogEntry(context.Background(), "")
+	_, err := db.GetLogEntry(context.Background(), 0)
 	if err == nil {
-		t.Fatal("expected error for empty ID")
+		t.Fatal("expected error for zero ID")
 	}
 	if !strings.Contains(err.Error(), "log entry ID is required") {
 		t.Errorf("error %q should mention log entry ID", err.Error())
 	}
 }
 
-func TestListLogEntriesByCollectionRun_EmptyID(t *testing.T) {
+func TestListLogEntriesByCollectionRun_EmptyOrgName(t *testing.T) {
 	db := &DB{pool: nil}
 	_, err := db.ListLogEntriesByCollectionRun(context.Background(), "")
 	if err == nil {
-		t.Fatal("expected error for empty collection run ID")
+		t.Fatal("expected error for empty org name")
 	}
-	if !strings.Contains(err.Error(), "collection run ID is required") {
-		t.Errorf("error %q should mention collection run ID", err.Error())
+	if !strings.Contains(err.Error(), "collection run org name is required") {
+		t.Errorf("error %q should mention collection run org name", err.Error())
 	}
 }
 
-func TestDeleteLogEntriesByCollectionRun_EmptyID(t *testing.T) {
+func TestDeleteLogEntriesByCollectionRun_EmptyOrgName(t *testing.T) {
 	db := &DB{pool: nil}
 	_, err := db.DeleteLogEntriesByCollectionRun(context.Background(), "")
 	if err == nil {
-		t.Fatal("expected error for empty collection run ID")
+		t.Fatal("expected error for empty org name")
 	}
-	if !strings.Contains(err.Error(), "collection run ID is required") {
-		t.Errorf("error %q should mention collection run ID", err.Error())
+	if !strings.Contains(err.Error(), "collection run org name is required") {
+		t.Errorf("error %q should mention collection run org name", err.Error())
 	}
 }
 

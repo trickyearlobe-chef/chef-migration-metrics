@@ -1,23 +1,21 @@
 # Tech Debt — Tracking List
 
-This file tracks identified technical debt across the Chef Migration Metrics
-codebase. Items are grouped by priority and area. Each item has a checkbox so
-progress can be tracked over time.
+All items resolved. This file is kept for reference.
 
 ---
 
-## 🔴 High Priority
+## ✅ Resolved
 
 ### Backend
 
-- [ ] **B0 — Replace UUIDs with natural keys** — Every table uses synthetic
-  UUIDs as primary keys and foreign keys, but every entity has a stable natural
-  key. The UUIDs add a fragile layer of indirection — when a UUID changes
-  (snapshot re-collection, git repo URL change, DISTINCT ON picking a different
-  row), all joins break silently. Migrate to natural composite keys as primary
-  keys and foreign keys. This is XL — requires its own specification and phased
-  migration plan. Affected: all tables, all queries, all handlers, all API
-  responses.
+- [x] **B0 — Replace UUIDs with natural keys** — Migration 0009 converts
+  all 26 tables from synthetic UUID PKs to composite natural keys. Go
+  structs, datastore methods, collector pipeline, analysis, export,
+  remediation, webapi handlers, and all tests updated. Tables keeping
+  non-natural PKs: sessions (UUID auth token), export_jobs (UUID download
+  token), log_entries/metric_snapshots/ownership_audit_log (BIGSERIAL),
+  ownership_assignments (BIGSERIAL due to nullable org). See
+  `specifications/natural-keys-migration.md`.
 
 - [x] **B4a — Enrich readiness trend with metric snapshots** — Added
   `buildReadinessSnapshotPayload` and `recordReadinessSnapshots` to collector
@@ -36,10 +34,6 @@ progress can be tracked over time.
 - [x] **P1 — Create CHANGELOG.md** — Generated from git tag history. Covers
   all 46 releases (v0.0.1 → v2.2.8) in Keep a Changelog format.
 
----
-
-## 🟡 Medium Priority
-
 ### Frontend
 
 - [x] **F4 — Extract shared filter input components** — `FilterInput`,
@@ -53,12 +47,6 @@ progress can be tracked over time.
 
 - [x] **F7 — Add frontend tests** — Vitest + Testing Library installed.
   `npm test` runs 39 real tests: 13 semver, 8 useSort hook, 18 FilterInputs.
-
----
-
-## 🟢 Low Priority
-
-### Project
 
 - [x] **P8 — Fix errcheck linter violations** — Re-enabled errcheck in
   `.golangci.yml` with `exclude-functions` for fire-and-forget patterns

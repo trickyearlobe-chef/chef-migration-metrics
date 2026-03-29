@@ -71,28 +71,29 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 	}
 
 	for _, sc := range serverCookbooks {
-		csErr := r.db.DeleteServerCookbookCookstyleResultsByCookbook(ctx, sc.ID)
+		scKey := sc.OrganisationName + "/" + sc.Name + "/" + sc.Version
+		csErr := r.db.DeleteServerCookbookCookstyleResultsByCookbook(ctx, sc.OrganisationName, sc.Name, sc.Version)
 		if csErr != nil {
-			r.logf("WARN", "deleting cookstyle results for server cookbook %s (%s): %v", sc.ID, sc.Name, csErr)
+			r.logf("WARN", "deleting cookstyle results for server cookbook %s: %v", scKey, csErr)
 			lastErr = csErr
 		}
 
-		cxErr := r.db.DeleteServerCookbookComplexitiesByCookbook(ctx, sc.ID)
+		cxErr := r.db.DeleteServerCookbookComplexitiesByCookbook(ctx, sc.OrganisationName, sc.Name, sc.Version)
 		if cxErr != nil {
-			r.logf("WARN", "deleting complexity records for server cookbook %s (%s): %v", sc.ID, sc.Name, cxErr)
+			r.logf("WARN", "deleting complexity records for server cookbook %s: %v", scKey, cxErr)
 			lastErr = cxErr
 		}
 
-		acErr := r.db.DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx, sc.ID)
+		acErr := r.db.DeleteServerCookbookAutocorrectPreviewsByCookbook(ctx, sc.OrganisationName, sc.Name, sc.Version)
 		if acErr != nil {
-			r.logf("WARN", "deleting autocorrect previews for server cookbook %s (%s): %v", sc.ID, sc.Name, acErr)
+			r.logf("WARN", "deleting autocorrect previews for server cookbook %s: %v", scKey, acErr)
 			lastErr = acErr
 		}
 
 		// Reset download_status to 'pending' so the streaming pipeline
 		// re-downloads and re-scans the files on the next collection cycle.
-		if _, dlErr := r.db.ResetServerCookbookDownloadStatus(ctx, sc.ID); dlErr != nil {
-			r.logf("WARN", "resetting download status for server cookbook %s (%s): %v", sc.ID, sc.Name, dlErr)
+		if _, dlErr := r.db.ResetServerCookbookDownloadStatus(ctx, sc.OrganisationName, sc.Name, sc.Version); dlErr != nil {
+			r.logf("WARN", "resetting download status for server cookbook %s: %v", scKey, dlErr)
 			lastErr = dlErr
 		}
 
@@ -107,21 +108,21 @@ func (r *Router) handleCookbookRescan(w http.ResponseWriter, req *http.Request) 
 		r.logf("WARN", "listing git repos for rescan %s: %v", cookbookName, err)
 	} else {
 		for _, gr := range gitRepos {
-			csErr := r.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gr.ID)
+			csErr := r.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gr.Name, gr.GitRepoURL)
 			if csErr != nil {
-				r.logf("WARN", "deleting cookstyle results for git repo %s (%s): %v", gr.ID, gr.Name, csErr)
+				r.logf("WARN", "deleting cookstyle results for git repo %s (%s): %v", gr.Name, gr.GitRepoURL, csErr)
 				lastErr = csErr
 			}
 
-			cxErr := r.db.DeleteGitRepoComplexitiesByRepo(ctx, gr.ID)
+			cxErr := r.db.DeleteGitRepoComplexitiesByRepo(ctx, gr.Name, gr.GitRepoURL)
 			if cxErr != nil {
-				r.logf("WARN", "deleting complexity records for git repo %s (%s): %v", gr.ID, gr.Name, cxErr)
+				r.logf("WARN", "deleting complexity records for git repo %s (%s): %v", gr.Name, gr.GitRepoURL, cxErr)
 				lastErr = cxErr
 			}
 
-			acErr := r.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, gr.ID)
+			acErr := r.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, gr.Name, gr.GitRepoURL)
 			if acErr != nil {
-				r.logf("WARN", "deleting autocorrect previews for git repo %s (%s): %v", gr.ID, gr.Name, acErr)
+				r.logf("WARN", "deleting autocorrect previews for git repo %s (%s): %v", gr.Name, gr.GitRepoURL, acErr)
 				lastErr = acErr
 			}
 

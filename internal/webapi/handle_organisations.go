@@ -42,10 +42,10 @@ func (r *Router) handleOrganisations(w http.ResponseWriter, req *http.Request) {
 			Source:           org.Source,
 			CredentialSource: "config",
 		}
-		if org.ClientKeyCredentialID != "" {
+		if org.ClientKeyCredentialName != "" {
 			item.CredentialSource = "secrets_store"
 		}
-		latest, latestErr := r.db.GetLatestCollectionRun(req.Context(), org.ID)
+		latest, latestErr := r.db.GetLatestCollectionRun(req.Context(), org.Name)
 		if latestErr == nil {
 			item.LastCollectionStatus = latest.Status
 			if !latest.CompletedAt.IsZero() {

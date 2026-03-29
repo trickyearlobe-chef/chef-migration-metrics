@@ -47,10 +47,10 @@ type CookbookFetchResult struct {
 
 // CookbookFetchError records a single cookbook version download failure.
 type CookbookFetchError struct {
-	CookbookID string
-	Name       string
-	Version    string
-	Err        error
+	OrganisationName string
+	Name             string
+	Version          string
+	Err              error
 }
 
 func (e CookbookFetchError) Error() string {
@@ -92,7 +92,7 @@ func fetchCookbooks( //nolint:unused // complete feature, not yet wired into col
 	}
 
 	// Find all active cookbook versions that need downloading.
-	cookbooks, err := db.ListActiveServerCookbooksNeedingDownload(ctx, org.ID)
+	cookbooks, err := db.ListActiveServerCookbooksNeedingDownload(ctx, org.Name)
 	if err != nil {
 		log.Error(fmt.Sprintf("failed to list cookbooks needing download: %v", err))
 		return CookbookFetchResult{
@@ -146,10 +146,10 @@ func fetchCookbooks( //nolint:unused // complete feature, not yet wired into col
 			if fetchErr != nil {
 				result.Failed++
 				cfe := CookbookFetchError{
-					CookbookID: cb.ID,
-					Name:       cb.Name,
-					Version:    cb.Version,
-					Err:        fetchErr,
+					OrganisationName: cb.OrganisationName,
+					Name:             cb.Name,
+					Version:          cb.Version,
+					Err:              fetchErr,
 				}
 				result.Errors = append(result.Errors, cfe)
 				log.Warn(fmt.Sprintf("cookbook download failed: %s", cfe.Error()))
@@ -194,28 +194,28 @@ func downloadCookbookVersion( //nolint:unused // called by fetchCookbooks which 
 	// Fetch the cookbook version manifest from the Chef server.
 	manifest, err := client.GetCookbookVersionManifest(ctx, cb.Name, cb.Version)
 	if err != nil {
-		markDownloadFailed(ctx, db, cb.ID, err)
+		markDownloadFailed(ctx, db, cb.OrganisationName, cb.Name, cb.Version, err)
 		return 0, err
 	}
 
 	// Extract all files to disk if a cache directory is configured.
 	filesWritten := 0
 	if cookbookCacheDir != "" {
-		destDir := filepath.Join(cookbookCacheDir, cb.OrganisationID, cb.Name, cb.Version)
+		destDir := filepath.Join(cookbookCacheDir, cb.OrganisationName, cb.Name, cb.Version)
 
 		written, extractErr := extractCookbookFiles(ctx, client, manifest, destDir)
 		if extractErr != nil {
 			// Clean up partial download — remove the destination directory
 			// so the next retry starts fresh.
 			_ = os.RemoveAll(destDir)
-			markDownloadFailed(ctx, db, cb.ID, extractErr)
+			markDownloadFailed(ctx, db, cb.OrganisationName, cb.Name, cb.Version, extractErr)
 			return 0, extractErr
 		}
 		filesWritten = written
 	}
 
 	// Download succeeded — mark as 'ok'.
-	if _, markErr := db.MarkServerCookbookDownloadOK(ctx, cb.ID); markErr != nil {
+	if _, markErr := db.MarkServerCookbookDownloadOK(ctx, cb.OrganisationName, cb.Name, cb.Version); markErr != nil {
 		return filesWritten, fmt.Errorf("downloaded successfully but failed to update status: %w", markErr)
 	}
 
@@ -370,7 +370,7 @@ func isSubPath(parent, child string) bool {
 // markDownloadFailed records a download failure in the database. It uses a
 // background context with a short timeout if the original context has been
 // cancelled, to ensure the failure is recorded even during shutdown.
-func markDownloadFailed(ctx context.Context, db *datastore.DB, cookbookID string, dlErr error) {
+func markDownloadFailed(ctx context.Context, db *datastore.DB, organisationName, name, version string, dlErr error) {
 	errStr := formatDownloadError(dlErr)
 	dbCtx := ctx
 	if ctx.Err() != nil {
@@ -380,7 +380,7 @@ func markDownloadFailed(ctx context.Context, db *datastore.DB, cookbookID string
 	}
 	// Best-effort — if this also fails, the cookbook remains in its current
 	// status (pending or failed) and will be retried on the next run.
-	_, _ = db.MarkServerCookbookDownloadFailed(dbCtx, cookbookID, errStr)
+	_, _ = db.MarkServerCookbookDownloadFailed(dbCtx, organisationName, name, version, errStr)
 }
 
 // formatDownloadError produces a human-readable error string suitable for

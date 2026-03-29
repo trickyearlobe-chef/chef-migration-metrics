@@ -487,7 +487,7 @@ func TestHandleExports_Async_LargeEstimate(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "production"},
+				{Name: "production"},
 			}, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
@@ -518,7 +518,7 @@ func TestHandleExports_Async_LargeEstimate(t *testing.T) {
 		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
 			return nil, nil
 		},
-		ListNodeReadinessForSnapshotFn: func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error) {
+		ListNodeReadinessForSnapshotFn: func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
 			return nil, nil
 		},
 	}
@@ -562,7 +562,7 @@ func TestHandleExports_Async_InsertJobError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "production"},
+				{Name: "production"},
 			}, nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
@@ -1237,54 +1237,52 @@ func exportTestConfig() *config.Config {
 // sync export tests. It provides one organisation with two nodes (one ready,
 // one blocked) and two cookbooks with complexity records.
 func newExportMockStore() *mockStore {
-	org := datastore.Organisation{ID: "org-1", Name: "production"}
+	org := datastore.Organisation{Name: "production"}
 
 	nodes := []datastore.NodeSnapshot{
 		{
-			ID:              "snap-1",
-			OrganisationID:  "org-1",
-			NodeName:        "web1",
-			ChefEnvironment: "prod",
-			ChefVersion:     "17.10.0",
-			Platform:        "ubuntu",
-			PlatformVersion: "22.04",
-			PolicyName:      "webserver",
-			PolicyGroup:     "prod",
-			IsStale:         false,
-			Cookbooks:       json.RawMessage(`{"apt":{"version":"7.4.0"}}`),
-			Roles:           json.RawMessage(`["base","webserver"]`),
-			CollectedAt:     time.Now().UTC(),
+			OrganisationName: "production",
+			NodeName:         "web1",
+			ChefEnvironment:  "prod",
+			ChefVersion:      "17.10.0",
+			Platform:         "ubuntu",
+			PlatformVersion:  "22.04",
+			PolicyName:       "webserver",
+			PolicyGroup:      "prod",
+			IsStale:          false,
+			Cookbooks:        json.RawMessage(`{"apt":{"version":"7.4.0"}}`),
+			Roles:            json.RawMessage(`["base","webserver"]`),
+			CollectedAt:      time.Now().UTC(),
 		},
 		{
-			ID:              "snap-2",
-			OrganisationID:  "org-1",
-			NodeName:        "db1",
-			ChefEnvironment: "prod",
-			ChefVersion:     "16.0.0",
-			Platform:        "centos",
-			PlatformVersion: "7.9",
-			PolicyName:      "",
-			PolicyGroup:     "",
-			IsStale:         false,
-			Cookbooks:       json.RawMessage(`{"mysql":{"version":"8.0.0"}}`),
-			Roles:           json.RawMessage(`["base","database"]`),
-			CollectedAt:     time.Now().UTC(),
+			OrganisationName: "production",
+			NodeName:         "db1",
+			ChefEnvironment:  "prod",
+			ChefVersion:      "16.0.0",
+			Platform:         "centos",
+			PlatformVersion:  "7.9",
+			PolicyName:       "",
+			PolicyGroup:      "",
+			IsStale:          false,
+			Cookbooks:        json.RawMessage(`{"mysql":{"version":"8.0.0"}}`),
+			Roles:            json.RawMessage(`["base","database"]`),
+			CollectedAt:      time.Now().UTC(),
 		},
 	}
 
 	readiness := map[string][]datastore.NodeReadiness{
-		"snap-1": {
+		"production/web1": {
 			{
-				ID:                "nr-1",
-				NodeSnapshotID:    "snap-1",
+				OrganisationName:  "production",
+				NodeName:          "web1",
 				TargetChefVersion: "18.0.0",
 				IsReady:           true,
 			},
 		},
-		"snap-2": {
+		"production/db1": {
 			{
-				ID:                "nr-2",
-				NodeSnapshotID:    "snap-2",
+				OrganisationName:  "production",
+				NodeName:          "db1",
 				TargetChefVersion: "18.0.0",
 				IsReady:           false,
 				BlockingCookbooks: json.RawMessage(`["mysql"]`),
@@ -1294,30 +1292,30 @@ func newExportMockStore() *mockStore {
 
 	cookbooks := []datastore.ServerCookbook{
 		{
-			ID:             "cb-1",
-			OrganisationID: "org-1",
-			Name:           "apt",
-			Version:        "7.4.0",
+			OrganisationName: "production",
+			Name:             "apt",
+			Version:          "7.4.0",
 		},
 		{
-			ID:             "cb-2",
-			OrganisationID: "org-1",
-			Name:           "mysql",
-			Version:        "8.0.0",
+			OrganisationName: "production",
+			Name:             "mysql",
+			Version:          "8.0.0",
 		},
 	}
 
 	complexities := []datastore.ServerCookbookComplexity{
 		{
-			ID:                "cc-1",
-			ServerCookbookID:  "cb-1",
+			OrganisationName:  "production",
+			CookbookName:      "apt",
+			CookbookVersion:   "7.4.0",
 			TargetChefVersion: "18.0.0",
 			ComplexityScore:   5,
 			ComplexityLabel:   "trivial",
 		},
 		{
-			ID:                "cc-2",
-			ServerCookbookID:  "cb-2",
+			OrganisationName:  "production",
+			CookbookName:      "mysql",
+			CookbookVersion:   "8.0.0",
 			TargetChefVersion: "18.0.0",
 			ComplexityScore:   42,
 			ComplexityLabel:   "moderate",
@@ -1329,26 +1327,26 @@ func newExportMockStore() *mockStore {
 			return []datastore.Organisation{org}, nil
 		},
 		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
-			if organisationID == "org-1" {
+			if organisationID == "production" {
 				return nodes, nil
 			}
 			return nil, nil
 		},
-		ListNodeReadinessForSnapshotFn: func(ctx context.Context, nodeSnapshotID string) ([]datastore.NodeReadiness, error) {
-			return readiness[nodeSnapshotID], nil
+		ListNodeReadinessByNodeNameFn: func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
+			return readiness[orgName+"/"+nodeName], nil
 		},
 		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
 			// 2 total, 1 ready, 1 blocked
 			return 2, 1, 1, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
-			if organisationID == "org-1" {
+			if organisationID == "production" {
 				return cookbooks, nil
 			}
 			return nil, nil
 		},
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
-			if organisationID == "org-1" {
+			if organisationID == "production" {
 				return complexities, nil
 			}
 			return nil, nil

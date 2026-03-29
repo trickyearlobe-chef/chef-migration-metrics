@@ -109,13 +109,13 @@ func collectBlockedNodes(ctx context.Context, db DataStore, params BlockedNodeEx
 
 	orgNameByID := make(map[string]string, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.ID] = org.Name
+		orgNameByID[org.Name] = org.Name
 	}
 
 	var results []blockedNodeRow
 
 	for _, org := range orgs {
-		nodes, err := db.ListNodeSnapshotsByOrganisation(ctx, org.ID)
+		nodes, err := db.ListNodeSnapshotsByOrganisation(ctx, org.Name)
 		if err != nil {
 			continue
 		}
@@ -125,7 +125,7 @@ func collectBlockedNodes(ctx context.Context, db DataStore, params BlockedNodeEx
 
 		// Pre-load complexity scores for this organisation so we can look
 		// them up by cookbook ID without repeated DB calls.
-		complexities, err := db.ListServerCookbookComplexitiesByOrganisation(ctx, org.ID)
+		complexities, err := db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)
 		if err != nil {
 			// Non-fatal — complexity scores will be zero.
 			complexities = nil
@@ -136,20 +136,20 @@ func collectBlockedNodes(ctx context.Context, db DataStore, params BlockedNodeEx
 
 		// Also build a map from cookbook name to cookbook ID so we can resolve
 		// blocking cookbook names to complexity scores.
-		cookbooks, err := db.ListServerCookbooksByOrganisation(ctx, org.ID)
+		cookbooks, err := db.ListServerCookbooksByOrganisation(ctx, org.Name)
 		if err != nil {
 			cookbooks = nil
 		}
 		cookbookIDByName := make(map[string]string, len(cookbooks))
 		for _, cb := range cookbooks {
-			// If there are multiple versions of the same cookbook, any ID
+			// If there are multiple versions of the same cookbook, any key
 			// will do — complexity is per-cookbook-version but the blocking
 			// cookbooks list typically uses just the name.
-			cookbookIDByName[cb.Name] = cb.ID
+			cookbookIDByName[cb.Name] = cb.OrganisationName + "/" + cb.Name + "/" + cb.Version
 		}
 
 		for _, node := range nodes {
-			readinessRecords, err := db.ListNodeReadinessForSnapshot(ctx, node.ID)
+			readinessRecords, err := db.ListNodeReadinessByNodeName(ctx, node.OrganisationName, node.NodeName)
 			if err != nil {
 				continue
 			}
@@ -160,7 +160,7 @@ func collectBlockedNodes(ctx context.Context, db DataStore, params BlockedNodeEx
 				}
 				if !nr.IsReady {
 					row := buildBlockedNodeRow(
-						node, nr, orgNameByID[node.OrganisationID],
+						node, nr, orgNameByID[node.OrganisationName],
 						params.TargetChefVersion,
 						complexityByCookbookID, cookbookIDByName,
 					)
@@ -185,7 +185,7 @@ func buildComplexityMap(complexities []datastore.ServerCookbookComplexity, targe
 	m := make(map[string]int, len(complexities))
 	for _, cc := range complexities {
 		if cc.TargetChefVersion == targetVersion {
-			m[cc.ServerCookbookID] = cc.ComplexityScore
+			m[cc.OrganisationName+"/"+cc.CookbookName+"/"+cc.CookbookVersion] = cc.ComplexityScore
 		}
 	}
 	return m

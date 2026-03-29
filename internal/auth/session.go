@@ -20,7 +20,6 @@ type SessionStore interface {
 	InsertSession(ctx context.Context, p datastore.InsertSessionParams) (datastore.Session, error)
 	GetValidSession(ctx context.Context, id string) (datastore.Session, error)
 	DeleteSession(ctx context.Context, id string) error
-	DeleteSessionsByUserID(ctx context.Context, userID string) (int, error)
 	DeleteSessionsByUsername(ctx context.Context, username string) (int, error)
 	DeleteExpiredSessions(ctx context.Context) (int, error)
 }
@@ -30,7 +29,6 @@ type SessionStore interface {
 // middleware so that downstream handlers can inspect the caller's identity.
 type SessionInfo struct {
 	SessionID    string
-	UserID       string
 	Username     string
 	AuthProvider string
 	Role         string
@@ -109,11 +107,10 @@ func (m *SessionManager) Lifetime() time.Duration {
 
 // CreateSession creates a new session for the given user and returns it. The
 // session expiry is set to now + lifetime.
-func (m *SessionManager) CreateSession(ctx context.Context, userID, username, authProvider, role string) (datastore.Session, error) {
+func (m *SessionManager) CreateSession(ctx context.Context, username, authProvider, role string) (datastore.Session, error) {
 	expiresAt := time.Now().Add(m.lifetime)
 
 	sess, err := m.store.InsertSession(ctx, datastore.InsertSessionParams{
-		UserID:       userID,
 		Username:     username,
 		AuthProvider: authProvider,
 		Role:         role,
@@ -146,7 +143,6 @@ func (m *SessionManager) ValidateSession(ctx context.Context, token string) (*Se
 
 	return &SessionInfo{
 		SessionID:    sess.ID,
-		UserID:       sess.UserID,
 		Username:     sess.Username,
 		AuthProvider: sess.AuthProvider,
 		Role:         sess.Role,
@@ -175,16 +171,16 @@ func (m *SessionManager) InvalidateSession(ctx context.Context, token string) er
 	return nil
 }
 
-// InvalidateUserSessions removes all sessions for the given user ID. This is
+// InvalidateUserSessions removes all sessions for the given username. This is
 // used when locking an account, changing a password, or deleting a user.
 // Returns the number of sessions removed.
-func (m *SessionManager) InvalidateUserSessions(ctx context.Context, userID string) (int, error) {
-	n, err := m.store.DeleteSessionsByUserID(ctx, userID)
+func (m *SessionManager) InvalidateUserSessions(ctx context.Context, username string) (int, error) {
+	n, err := m.store.DeleteSessionsByUsername(ctx, username)
 	if err != nil {
 		return 0, fmt.Errorf("auth: invalidating user sessions: %w", err)
 	}
 	if n > 0 {
-		m.logf("INFO", "invalidated %d session(s) for user_id %s", n, userID)
+		m.logf("INFO", "invalidated %d session(s) for username %q", n, username)
 	}
 	return n, nil
 }

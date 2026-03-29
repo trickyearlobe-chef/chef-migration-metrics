@@ -227,12 +227,12 @@ func TestHandleNodes_HappyPath_WithNodes(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			return []datastore.NodeSnapshot{
-				{ID: "n1", OrganisationID: "org-1", NodeName: "web1", ChefVersion: "18.0.0", CollectedAt: now},
-				{ID: "n2", OrganisationID: "org-1", NodeName: "web2", ChefVersion: "17.0.0", CollectedAt: now},
+				{OrganisationName: "org-1", NodeName: "web1", ChefVersion: "18.0.0", CollectedAt: now},
+				{OrganisationName: "org-1", NodeName: "web2", ChefVersion: "17.0.0", CollectedAt: now},
 			}, 2, nil
 		},
 	}
@@ -277,10 +277,10 @@ func TestHandleNodeDetail_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
-			return datastore.NodeSnapshot{ID: "snap-1", NodeName: "web1", OrganisationID: "org-1", CollectedAt: now}, nil
+			return datastore.NodeSnapshot{NodeName: "web1", OrganisationName: "org-1", CollectedAt: now}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -327,7 +327,7 @@ func TestHandleNodeDetail_OrgNotFound(t *testing.T) {
 func TestHandleNodeDetail_NodeNotFound(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
-			return datastore.Organisation{ID: "org-1", Name: "prod"}, nil
+			return datastore.Organisation{Name: "prod"}, nil
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{}, datastore.ErrNotFound
@@ -367,13 +367,13 @@ func TestHandleNodesByVersion_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			// The handler sets ChefVersionExact, so only matching nodes returned.
 			if f.ChefVersionExact == "18.0.0" {
 				return []datastore.NodeSnapshot{
-					{ID: "n1", NodeName: "web1", ChefVersion: "18.0.0", CollectedAt: now},
+					{NodeName: "web1", ChefVersion: "18.0.0", CollectedAt: now},
 				}, 1, nil
 			}
 			return nil, 0, nil
@@ -422,12 +422,12 @@ func TestHandleNodesByCookbook_HappyPath(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
 			return []datastore.NodeSnapshot{
-				{ID: "n1", OrganisationID: "org-1", NodeName: "web1", Cookbooks: json.RawMessage(`{"apt":{"version":"7.0"}}`), CollectedAt: now},
-				{ID: "n2", OrganisationID: "org-1", NodeName: "web2", Cookbooks: json.RawMessage(`{"nginx":{"version":"2.0"}}`), CollectedAt: now},
+				{OrganisationName: "org-1", NodeName: "web1", Cookbooks: json.RawMessage(`{"apt":{"version":"7.0"}}`), CollectedAt: now},
+				{OrganisationName: "org-1", NodeName: "web2", Cookbooks: json.RawMessage(`{"nginx":{"version":"2.0"}}`), CollectedAt: now},
 			}, 2, nil
 		},
 	}
@@ -490,8 +490,8 @@ func TestBulkLoadReadiness_SingleOrg(t *testing.T) {
 
 	r := newTestRouterWithMock(store)
 	nodes := []datastore.NodeSnapshot{
-		{ID: "n1", OrganisationID: "org-1", NodeName: "web1"},
-		{ID: "n2", OrganisationID: "org-1", NodeName: "web2"},
+		{OrganisationName: "org-1", NodeName: "web1"},
+		{OrganisationName: "org-1", NodeName: "web2"},
 	}
 
 	result := bulkLoadReadiness(context.Background(), store, nodes, r)
@@ -530,9 +530,9 @@ func TestBulkLoadReadiness_MultipleOrgs(t *testing.T) {
 
 	r := newTestRouterWithMock(store)
 	nodes := []datastore.NodeSnapshot{
-		{ID: "n1", OrganisationID: "org-1", NodeName: "web1"},
-		{ID: "n2", OrganisationID: "org-2", NodeName: "db1"},
-		{ID: "n3", OrganisationID: "org-1", NodeName: "web2"},
+		{OrganisationName: "org-1", NodeName: "web1"},
+		{OrganisationName: "org-2", NodeName: "db1"},
+		{OrganisationName: "org-1", NodeName: "web2"},
 	}
 
 	result := bulkLoadReadiness(context.Background(), store, nodes, r)
@@ -584,7 +584,7 @@ func TestBulkLoadReadiness_DBErrorNonFatal(t *testing.T) {
 
 	r := newTestRouterWithMock(store)
 	nodes := []datastore.NodeSnapshot{
-		{ID: "n1", OrganisationID: "org-1", NodeName: "web1"},
+		{OrganisationName: "org-1", NodeName: "web1"},
 	}
 
 	// Should not panic — DB errors are non-fatal.

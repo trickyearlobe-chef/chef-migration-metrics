@@ -266,13 +266,13 @@ func TestHandleCookbooks_HappyPath_Empty(t *testing.T) {
 func TestHandleCookbooks_HappyPath_EachVersionIsARow(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{ID: "cb-2", Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "pending"},
-				{ID: "cb-3", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "pending"},
+				{Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
 			}, nil
 		},
 	}
@@ -287,7 +287,6 @@ func TestHandleCookbooks_HappyPath_EachVersionIsARow(t *testing.T) {
 
 	var body struct {
 		Data []struct {
-			ID             string `json:"id"`
 			Name           string `json:"name"`
 			Version        string `json:"version"`
 			DownloadStatus string `json:"download_status"`
@@ -309,21 +308,15 @@ func TestHandleCookbooks_HappyPath_EachVersionIsARow(t *testing.T) {
 	}
 
 	// Verify each row has its own version and download status.
-	byID := make(map[string]struct {
-		Version        string
-		DownloadStatus string
-	})
+	byVersion := make(map[string]string) // version → download_status
 	for _, cb := range body.Data {
-		byID[cb.ID] = struct {
-			Version        string
-			DownloadStatus string
-		}{cb.Version, cb.DownloadStatus}
+		byVersion[cb.Version] = cb.DownloadStatus
 	}
-	if byID["cb-1"].Version != "1.0.0" {
-		t.Errorf("cb-1 version = %q, want 1.0.0", byID["cb-1"].Version)
+	if byVersion["1.0.0"] != "ok" {
+		t.Errorf("1.0.0 download_status = %q, want ok", byVersion["1.0.0"])
 	}
-	if byID["cb-2"].DownloadStatus != "pending" {
-		t.Errorf("cb-2 download_status = %q, want pending", byID["cb-2"].DownloadStatus)
+	if byVersion["2.0.0"] != "pending" {
+		t.Errorf("2.0.0 download_status = %q, want pending", byVersion["2.0.0"])
 	}
 }
 
@@ -331,18 +324,18 @@ func TestHandleCookbooks_HappyPath_MultiOrg_EachRowDistinct(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "prod"},
-				{ID: "org-2", Name: "staging"},
+				{Name: "prod"},
+				{Name: "staging"},
 			}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			if orgID == "org-1" {
+			if orgID == "prod" {
 				return []datastore.ServerCookbook{
-					{ID: "cb-1", OrganisationID: "org-1", Name: "apt", Version: "7.2.0", IsActive: true, DownloadStatus: "ok"},
+					{OrganisationName: "prod", Name: "apt", Version: "7.2.0", IsActive: true, DownloadStatus: "ok"},
 				}, nil
 			}
 			return []datastore.ServerCookbook{
-				{ID: "cb-2", OrganisationID: "org-2", Name: "apt", Version: "7.2.0", IsActive: true, DownloadStatus: "pending"},
+				{OrganisationName: "staging", Name: "apt", Version: "7.2.0", IsActive: true, DownloadStatus: "pending"},
 			}, nil
 		},
 	}
@@ -392,11 +385,11 @@ func TestHandleCookbooks_HappyPath_MultiOrg_EachRowDistinct(t *testing.T) {
 func TestHandleCookbooks_HappyPath_VersionFieldInResponse(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "7.2.0", IsActive: true},
+				{Name: "apt", Version: "7.2.0", IsActive: true},
 			}, nil
 		},
 	}
@@ -429,12 +422,12 @@ func TestHandleCookbooks_HappyPath_NoVersionCountField(t *testing.T) {
 	// The response must not include the old version_count field.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true},
-				{ID: "cb-2", Name: "apt", Version: "2.0.0", IsActive: true},
+				{Name: "apt", Version: "1.0.0", IsActive: true},
+				{Name: "apt", Version: "2.0.0", IsActive: true},
 			}, nil
 		},
 	}
@@ -469,13 +462,13 @@ func TestHandleCookbooks_HappyPath_NoVersionCountField(t *testing.T) {
 func TestHandleCookbooks_FilterByDownloadStatus(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{ID: "cb-2", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
-				{ID: "cb-3", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "failed"},
+				{Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
+				{Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "failed"},
 			}, nil
 		},
 	}
@@ -536,13 +529,13 @@ func TestHandleCookbookDetail_HappyPath(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "7.2.0"},
+				{Name: "apt", Version: "7.2.0"},
 			}, nil
 		},
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return nil, nil
 		},
-		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, id string) ([]datastore.ServerCookbookCookstyleResult, error) {
+		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return nil, nil
 		},
 	}
@@ -597,21 +590,21 @@ func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
 	store := &mockStore{
 		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "sc-1", Name: "myapp", Version: "1.0.0"},
+				{Name: "myapp", Version: "1.0.0"},
 			}, nil
 		},
 		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
-				{ID: "gr-1", Name: "myapp"},
+				{Name: "myapp"},
 			}, nil
 		},
-		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, id string) ([]datastore.ServerCookbookCookstyleResult, error) {
+		ListServerCookbookCookstyleResultsFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return nil, nil
 		},
-		ListGitRepoCookstyleResultsFn: func(ctx context.Context, id string) ([]datastore.GitRepoCookstyleResult, error) {
+		ListGitRepoCookstyleResultsFn: func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoCookstyleResult, error) {
 			return nil, nil
 		},
-		ListGitRepoTestKitchenResultsFn: func(ctx context.Context, id string) ([]datastore.GitRepoTestKitchenResult, error) {
+		ListGitRepoTestKitchenResultsFn: func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoTestKitchenResult, error) {
 			return nil, nil
 		},
 	}
@@ -627,23 +620,23 @@ func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
 	var body struct {
 		ServerCookbooks []struct {
 			Cookbook struct {
-				ID string `json:"id"`
+				Name string `json:"name"`
 			} `json:"cookbook"`
 		} `json:"server_cookbooks"`
 		GitRepos []struct {
 			GitRepo struct {
-				ID string `json:"id"`
+				Name string `json:"name"`
 			} `json:"git_repo"`
 		} `json:"git_repos"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(body.ServerCookbooks) != 1 || body.ServerCookbooks[0].Cookbook.ID != "sc-1" {
-		t.Errorf("expected 1 server cookbook with id sc-1")
+	if len(body.ServerCookbooks) != 1 || body.ServerCookbooks[0].Cookbook.Name != "myapp" {
+		t.Errorf("expected 1 server cookbook with name myapp")
 	}
-	if len(body.GitRepos) != 1 || body.GitRepos[0].GitRepo.ID != "gr-1" {
-		t.Errorf("expected 1 git repo with id gr-1")
+	if len(body.GitRepos) != 1 || body.GitRepos[0].GitRepo.Name != "myapp" {
+		t.Errorf("expected 1 git repo with name myapp")
 	}
 }
 
@@ -655,12 +648,12 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 	// When no cookstyle results exist, every cookbook must show as "untested".
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{ID: "cb-2", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
+				{Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
 			}, nil
 		},
 	}
@@ -679,7 +672,6 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 
 	var body struct {
 		Data []struct {
-			ID            string `json:"id"`
 			Name          string `json:"name"`
 			Compatibility string `json:"compatibility"`
 		} `json:"data"`
@@ -690,8 +682,8 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 
 	for _, cb := range body.Data {
 		if cb.Compatibility != "untested" {
-			t.Errorf("cookbook %q (id=%s) compatibility = %q, want %q (no scan results exist)",
-				cb.Name, cb.ID, cb.Compatibility, "untested")
+			t.Errorf("cookbook %q compatibility = %q, want %q (no scan results exist)",
+				cb.Name, cb.Compatibility, "untested")
 		}
 	}
 }
@@ -701,24 +693,24 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 	// version gets its own compatibility status from its cookstyle result.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{ID: "cb-1", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{ID: "cb-2", Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "ok"},
-				{ID: "cb-3", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{ID: "cb-4", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
 			}, nil
 		},
 		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return []datastore.ServerCookbookCookstyleResult{
 				// apt 1.0.0: passed
-				{ID: "cs-1", ServerCookbookID: "cb-1", TargetChefVersion: "18.0", Passed: true, OffenceCount: 0},
+				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0", Passed: true, OffenceCount: 0},
 				// apt 2.0.0: failed (different version of same cookbook can differ)
-				{ID: "cs-2", ServerCookbookID: "cb-2", TargetChefVersion: "18.0", Passed: false, OffenceCount: 5},
+				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "2.0.0", TargetChefVersion: "18.0", Passed: false, OffenceCount: 5},
 				// nginx: failed
-				{ID: "cs-3", ServerCookbookID: "cb-3", TargetChefVersion: "18.0", Passed: false, OffenceCount: 3},
+				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0", Passed: false, OffenceCount: 3},
 				// mysql: no cookstyle result → untested
 			}, nil
 		},
@@ -738,7 +730,6 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 
 	var body struct {
 		Data []struct {
-			ID            string `json:"id"`
 			Name          string `json:"name"`
 			Version       string `json:"version"`
 			Compatibility string `json:"compatibility"`
@@ -749,19 +740,20 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"cb-1": "compatible",   // apt 1.0.0 passed
-		"cb-2": "incompatible", // apt 2.0.0 failed
-		"cb-3": "incompatible", // nginx failed
-		"cb-4": "untested",     // mysql no result
+		"apt:1.0.0":   "compatible",   // apt 1.0.0 passed
+		"apt:2.0.0":   "incompatible", // apt 2.0.0 failed
+		"nginx:1.0.0": "incompatible", // nginx failed
+		"mysql:1.0.0": "untested",     // mysql no result
 	}
 	for _, cb := range body.Data {
-		expected, ok := want[cb.ID]
+		key := cb.Name + ":" + cb.Version
+		expected, ok := want[key]
 		if !ok {
 			continue
 		}
 		if cb.Compatibility != expected {
-			t.Errorf("cookbook %q version %s (id=%s) compatibility = %q, want %q",
-				cb.Name, cb.Version, cb.ID, cb.Compatibility, expected)
+			t.Errorf("cookbook %q version %s compatibility = %q, want %q",
+				cb.Name, cb.Version, cb.Compatibility, expected)
 		}
 	}
 }

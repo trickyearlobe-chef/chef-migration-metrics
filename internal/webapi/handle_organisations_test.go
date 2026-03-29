@@ -79,12 +79,12 @@ func TestHandleOrganisations_HappyPath_WithOrgs(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
-				{ID: "org-1", Name: "prod", ChefServerURL: "https://chef.example.com", OrgName: "production", ClientName: "admin", Source: "config"},
-				{ID: "org-2", Name: "staging", ChefServerURL: "https://chef-stg.example.com", OrgName: "staging", ClientName: "admin", ClientKeyCredentialID: "cred-123", Source: "config"},
+				{Name: "prod", ChefServerURL: "https://chef.example.com", OrgName: "production", ClientName: "admin", Source: "config"},
+				{Name: "staging", ChefServerURL: "https://chef-stg.example.com", OrgName: "staging", ClientName: "admin", ClientKeyCredentialName: "cred-123", Source: "config"},
 			}, nil
 		},
-		GetLatestCollectionRunFn: func(ctx context.Context, orgID string) (datastore.CollectionRun, error) {
-			if orgID == "org-1" {
+		GetLatestCollectionRunFn: func(ctx context.Context, orgName string) (datastore.CollectionRun, error) {
+			if orgName == "prod" {
 				return datastore.CollectionRun{Status: "completed", NodesCollected: 42, CompletedAt: now}, nil
 			}
 			return datastore.CollectionRun{}, datastore.ErrNotFound
@@ -137,9 +137,9 @@ func TestHandleOrganisations_HappyPath_RunningUsesStartedAt(t *testing.T) {
 	started := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "dev", Source: "config", ClientName: "c", ChefServerURL: "u", OrgName: "o"}}, nil
+			return []datastore.Organisation{{Name: "dev", Source: "config", ClientName: "c", ChefServerURL: "u", OrgName: "o"}}, nil
 		},
-		GetLatestCollectionRunFn: func(ctx context.Context, orgID string) (datastore.CollectionRun, error) {
+		GetLatestCollectionRunFn: func(ctx context.Context, orgName string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{Status: "running", StartedAt: started}, nil
 		},
 	}
@@ -187,9 +187,9 @@ func TestHandleOrganisations_DBError_ListOrganisations(t *testing.T) {
 func TestHandleOrganisations_DBError_LatestRunNonFatal(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod", Source: "config", ClientName: "c", ChefServerURL: "u", OrgName: "o"}}, nil
+			return []datastore.Organisation{{Name: "prod", Source: "config", ClientName: "c", ChefServerURL: "u", OrgName: "o"}}, nil
 		},
-		GetLatestCollectionRunFn: func(ctx context.Context, orgID string) (datastore.CollectionRun, error) {
+		GetLatestCollectionRunFn: func(ctx context.Context, orgName string) (datastore.CollectionRun, error) {
 			return datastore.CollectionRun{}, errors.New("timeout")
 		},
 	}
@@ -245,7 +245,7 @@ func TestHandleOrganisationDetail_HappyPath(t *testing.T) {
 	store := &mockStore{
 		GetOrganisationByNameFn: func(ctx context.Context, name string) (datastore.Organisation, error) {
 			if name == "prod" {
-				return datastore.Organisation{ID: "org-1", Name: "prod", ChefServerURL: "https://chef.example.com", OrgName: "production", ClientName: "admin", Source: "config"}, nil
+				return datastore.Organisation{Name: "prod", ChefServerURL: "https://chef.example.com", OrgName: "production", ClientName: "admin", Source: "config"}, nil
 			}
 			return datastore.Organisation{}, datastore.ErrNotFound
 		},

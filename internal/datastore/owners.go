@@ -14,7 +14,6 @@ import (
 
 // Owner represents a row in the owners table.
 type Owner struct {
-	ID             string          `json:"id"`
 	Name           string          `json:"name"`
 	DisplayName    string          `json:"display_name,omitempty"`
 	ContactEmail   string          `json:"contact_email,omitempty"`
@@ -72,7 +71,7 @@ func (db *DB) insertOwner(ctx context.Context, q queryable, p InsertOwnerParams)
 	const query = `
 		INSERT INTO owners (name, display_name, contact_email, contact_channel, owner_type, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, display_name, contact_email, contact_channel,
+		RETURNING name, display_name, contact_email, contact_channel,
 		          owner_type, metadata, created_at, updated_at
 	`
 
@@ -106,28 +105,12 @@ func (db *DB) GetOwnerByName(ctx context.Context, name string) (Owner, error) {
 
 func (db *DB) getOwnerByName(ctx context.Context, q queryable, name string) (Owner, error) {
 	const query = `
-		SELECT id, name, display_name, contact_email, contact_channel,
+		SELECT name, display_name, contact_email, contact_channel,
 		       owner_type, metadata, created_at, updated_at
 		FROM owners
 		WHERE name = $1
 	`
 	return scanOwner(q.QueryRowContext(ctx, query, name))
-}
-
-// GetOwner returns the owner with the given UUID. Returns ErrNotFound if no
-// such owner exists.
-func (db *DB) GetOwner(ctx context.Context, id string) (Owner, error) {
-	return db.getOwner(ctx, db.q(), id)
-}
-
-func (db *DB) getOwner(ctx context.Context, q queryable, id string) (Owner, error) {
-	const query = `
-		SELECT id, name, display_name, contact_email, contact_channel,
-		       owner_type, metadata, created_at, updated_at
-		FROM owners
-		WHERE id = $1
-	`
-	return scanOwner(q.QueryRowContext(ctx, query, id))
 }
 
 // ListOwners returns owners matching the given filter, ordered by name.
@@ -180,7 +163,7 @@ func (db *DB) listOwners(ctx context.Context, q queryable, f OwnerListFilter) ([
 	}
 
 	dataQuery := fmt.Sprintf(`
-		SELECT id, name, display_name, contact_email, contact_channel,
+		SELECT name, display_name, contact_email, contact_channel,
 		       owner_type, metadata, created_at, updated_at
 		FROM owners
 		%s
@@ -323,34 +306,34 @@ func (db *DB) listOwnersWithSummary(ctx context.Context, q queryable, f OwnerLis
 		WITH
 		counts AS (
 			SELECT
-				oa.owner_id,
+				oa.owner_name,
 				COUNT(*) FILTER (WHERE oa.entity_type = 'node')     AS node_count,
 				COUNT(*) FILTER (WHERE oa.entity_type = 'cookbook')  AS cookbook_count,
 				COUNT(*) FILTER (WHERE oa.entity_type = 'git_repo') AS git_repo_count,
 				COUNT(*) FILTER (WHERE oa.entity_type = 'role')     AS role_count,
 				COUNT(*) FILTER (WHERE oa.entity_type = 'policy')   AS policy_count
 			FROM ownership_assignments oa
-			GROUP BY oa.owner_id
+			GROUP BY oa.owner_name
 		),
 		node_keys AS (
-			SELECT oa.owner_id, oa.entity_key
+			SELECT oa.owner_name, oa.entity_key
 			FROM ownership_assignments oa
 			WHERE oa.entity_type = 'node'
 		),
 		%s,
 		owner_readiness AS (
 			SELECT
-				nk.owner_id,
+				nk.owner_name,
 				COUNT(*)                              AS total_nodes,
 				COUNT(*) FILTER (WHERE r.is_ready AND NOT r.stale_data)  AS ready_nodes,
 				COUNT(*) FILTER (WHERE NOT r.is_ready AND NOT r.stale_data) AS blocked_nodes,
 				COUNT(*) FILTER (WHERE r.stale_data)  AS stale_nodes
 			FROM node_keys nk
 			LEFT JOIN readiness r ON r.entity_key = nk.entity_key
-			GROUP BY nk.owner_id
+			GROUP BY nk.owner_name
 		)
 		SELECT
-			o.id, o.name, o.display_name, o.contact_email, o.contact_channel,
+			o.name, o.display_name, o.contact_email, o.contact_channel,
 			o.owner_type, o.metadata, o.created_at, o.updated_at,
 			COALESCE(c.node_count, 0),
 			COALESCE(c.cookbook_count, 0),
@@ -362,8 +345,8 @@ func (db *DB) listOwnersWithSummary(ctx context.Context, q queryable, f OwnerLis
 			COALESCE(orr.stale_nodes, 0),
 			COALESCE(orr.total_nodes, 0)
 		FROM owners o
-		LEFT JOIN counts c ON c.owner_id = o.id
-		LEFT JOIN owner_readiness orr ON orr.owner_id = o.id
+		LEFT JOIN counts c ON c.owner_name = o.name
+		LEFT JOIN owner_readiness orr ON orr.owner_name = o.name
 		%s
 		ORDER BY %s %s, o.name ASC
 		LIMIT %s OFFSET %s
@@ -382,7 +365,6 @@ func (db *DB) listOwnersWithSummary(ctx context.Context, q queryable, f OwnerLis
 		var metadata []byte
 
 		if err := rows.Scan(
-			&o.ID,
 			&o.Name,
 			&displayName,
 			&contactEmail,
@@ -465,7 +447,7 @@ func (db *DB) updateOwner(ctx context.Context, q queryable, name string, p Updat
 	query := fmt.Sprintf(`
 		UPDATE owners SET %s
 		WHERE name = $%d
-		RETURNING id, name, display_name, contact_email, contact_channel,
+		RETURNING name, display_name, contact_email, contact_channel,
 		          owner_type, metadata, created_at, updated_at
 	`, joinStrings(setClauses, ", "), argN)
 	args = append(args, name)
@@ -488,7 +470,7 @@ func (db *DB) deleteOwner(ctx context.Context, q queryable, name string) (int, e
 	// Count assignments that will be cascaded.
 	var assignmentCount int
 	err := q.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM ownership_assignments WHERE owner_id = (SELECT id FROM owners WHERE name = $1)`,
+		`SELECT COUNT(*) FROM ownership_assignments WHERE owner_name = $1`,
 		name,
 	).Scan(&assignmentCount)
 	if err != nil {
@@ -519,8 +501,7 @@ func (db *DB) countAssignmentsByOwner(ctx context.Context, q queryable, ownerNam
 	const query = `
 		SELECT oa.entity_type, COUNT(*)
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
-		WHERE o.name = $1
+		WHERE oa.owner_name = $1
 		GROUP BY oa.entity_type
 	`
 	rows, err := q.QueryContext(ctx, query, ownerName)
@@ -629,8 +610,7 @@ func (db *DB) getOwnerReadinessSummary(ctx context.Context, q queryable, ownerNa
 	const nodeKeysQuery = `
 		SELECT oa.entity_key
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
-		WHERE o.name = $1 AND oa.entity_type = 'node'
+		WHERE oa.owner_name = $1 AND oa.entity_type = 'node'
 	`
 	rows, err := q.QueryContext(ctx, nodeKeysQuery, ownerName)
 	if err != nil {
@@ -770,8 +750,7 @@ func (db *DB) getOwnerCookbookSummary(ctx context.Context, q queryable, ownerNam
 	const cbKeysQuery = `
 		SELECT oa.entity_key
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
-		WHERE o.name = $1 AND oa.entity_type = 'cookbook'
+		WHERE oa.owner_name = $1 AND oa.entity_type = 'cookbook'
 	`
 	rows, err := q.QueryContext(ctx, cbKeysQuery, ownerName)
 	if err != nil {
@@ -841,8 +820,7 @@ func (db *DB) getOwnerGitRepoSummary(ctx context.Context, q queryable, ownerName
 	const repoKeysQuery = `
 		SELECT oa.entity_key
 		FROM ownership_assignments oa
-		JOIN owners o ON o.id = oa.owner_id
-		WHERE o.name = $1 AND oa.entity_type = 'git_repo'
+		WHERE oa.owner_name = $1 AND oa.entity_type = 'git_repo'
 	`
 	rows, err := q.QueryContext(ctx, repoKeysQuery, ownerName)
 	if err != nil {
@@ -960,7 +938,6 @@ func scanOwner(row *sql.Row) (Owner, error) {
 	var metadata []byte
 
 	err := row.Scan(
-		&o.ID,
 		&o.Name,
 		&displayName,
 		&contactEmail,
@@ -994,7 +971,6 @@ func scanOwners(rows *sql.Rows) ([]Owner, error) {
 		var metadata []byte
 
 		if err := rows.Scan(
-			&o.ID,
 			&o.Name,
 			&displayName,
 			&contactEmail,

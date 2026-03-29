@@ -12,19 +12,19 @@ import (
 )
 
 // CollectionRun represents a row in the collection_runs table. Each run
-// tracks a single data collection cycle for one organisation.
+// tracks a single data collection cycle for one organisation. The primary
+// key is organisation_name (natural key).
 type CollectionRun struct {
-	ID              string    `json:"id"`
-	OrganisationID  string    `json:"organisation_id"`
-	Status          string    `json:"status"` // "running", "completed", "failed", "interrupted"
-	StartedAt       time.Time `json:"started_at"`
-	CompletedAt     time.Time `json:"completed_at,omitempty"`
-	TotalNodes      int       `json:"total_nodes,omitempty"`
-	NodesCollected  int       `json:"nodes_collected,omitempty"`
-	CheckpointStart int       `json:"checkpoint_start,omitempty"`
-	ErrorMessage    string    `json:"error_message,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	OrganisationName string    `json:"organisation_name"`
+	Status           string    `json:"status"` // "running", "completed", "failed", "interrupted"
+	StartedAt        time.Time `json:"started_at"`
+	CompletedAt      time.Time `json:"completed_at,omitempty"`
+	TotalNodes       int       `json:"total_nodes,omitempty"`
+	NodesCollected   int       `json:"nodes_collected,omitempty"`
+	CheckpointStart  int       `json:"checkpoint_start,omitempty"`
+	ErrorMessage     string    `json:"error_message,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // MarshalJSON implements json.Marshaler for CollectionRun.
@@ -46,14 +46,14 @@ func (cr CollectionRun) IsTerminal() bool {
 // CreateCollectionRunParams holds the fields required to start a new
 // collection run.
 type CreateCollectionRunParams struct {
-	OrganisationID string
+	OrganisationName string
 }
 
 // CreateCollectionRun upserts a collection run for the given organisation,
 // resetting it to "running" status with the current time as started_at.
-// With the UNIQUE constraint on organisation_id, each
+// With the UNIQUE constraint on organisation_name, each
 // organisation has at most one collection_runs row. Subsequent calls for
-// the same organisation update the existing row in place — the row ID is
+// the same organisation update the existing row in place — the row is
 // stable across runs, which keeps foreign-key references (node_snapshots,
 // cookbook_usage_analysis, metric_snapshots, log_entries) intact.
 func (db *DB) CreateCollectionRun(ctx context.Context, p CreateCollectionRunParams) (CollectionRun, error) {
@@ -61,14 +61,14 @@ func (db *DB) CreateCollectionRun(ctx context.Context, p CreateCollectionRunPara
 }
 
 func (db *DB) createCollectionRun(ctx context.Context, q queryable, p CreateCollectionRunParams) (CollectionRun, error) {
-	if p.OrganisationID == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: organisation ID is required to create a collection run")
+	if p.OrganisationName == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to create a collection run")
 	}
 
 	const query = `
-		INSERT INTO collection_runs (organisation_id, status, started_at)
+		INSERT INTO collection_runs (organisation_name, status, started_at)
 		VALUES ($1, 'running', now())
-		ON CONFLICT (organisation_id)
+		ON CONFLICT (organisation_name)
 		DO UPDATE SET
 			status           = 'running',
 			started_at       = now(),
@@ -78,12 +78,12 @@ func (db *DB) createCollectionRun(ctx context.Context, q queryable, p CreateColl
 			checkpoint_start = NULL,
 			error_message    = NULL,
 			updated_at       = now()
-		RETURNING id, organisation_id, status, started_at, completed_at,
+		RETURNING organisation_name, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
 	`
 
-	return scanCollectionRun(q.QueryRowContext(ctx, query, p.OrganisationID))
+	return scanCollectionRun(q.QueryRowContext(ctx, query, p.OrganisationName))
 }
 
 // ---------------------------------------------------------------------------
@@ -93,10 +93,10 @@ func (db *DB) createCollectionRun(ctx context.Context, q queryable, p CreateColl
 // UpdateCollectionRunProgressParams holds the fields for updating the
 // progress of a running collection.
 type UpdateCollectionRunProgressParams struct {
-	ID              string
-	TotalNodes      int
-	NodesCollected  int
-	CheckpointStart int
+	OrganisationName string
+	TotalNodes       int
+	NodesCollected   int
+	CheckpointStart  int
 }
 
 // UpdateCollectionRunProgress updates the node counts and checkpoint
@@ -107,8 +107,8 @@ func (db *DB) UpdateCollectionRunProgress(ctx context.Context, p UpdateCollectio
 }
 
 func (db *DB) updateCollectionRunProgress(ctx context.Context, q queryable, p UpdateCollectionRunProgressParams) (CollectionRun, error) {
-	if p.ID == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to update progress")
+	if p.OrganisationName == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to update progress")
 	}
 
 	const query = `
@@ -117,14 +117,14 @@ func (db *DB) updateCollectionRunProgress(ctx context.Context, q queryable, p Up
 		    nodes_collected  = $3,
 		    checkpoint_start = $4,
 		    updated_at       = now()
-		WHERE id = $1
-		RETURNING id, organisation_id, status, started_at, completed_at,
+		WHERE organisation_name = $1
+		RETURNING organisation_name, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
 	`
 
 	run, err := scanCollectionRun(q.QueryRowContext(ctx, query,
-		p.ID, p.TotalNodes, p.NodesCollected, p.CheckpointStart,
+		p.OrganisationName, p.TotalNodes, p.NodesCollected, p.CheckpointStart,
 	))
 	if err != nil {
 		return CollectionRun{}, fmt.Errorf("datastore: updating collection run progress: %w", err)
@@ -138,13 +138,13 @@ func (db *DB) updateCollectionRunProgress(ctx context.Context, q queryable, p Up
 
 // CompleteCollectionRun marks a collection run as "completed" with the final
 // node counts and the current time as completed_at.
-func (db *DB) CompleteCollectionRun(ctx context.Context, id string, totalNodes, nodesCollected int) (CollectionRun, error) {
-	return db.completeCollectionRun(ctx, db.q(), id, totalNodes, nodesCollected)
+func (db *DB) CompleteCollectionRun(ctx context.Context, organisationName string, totalNodes, nodesCollected int) (CollectionRun, error) {
+	return db.completeCollectionRun(ctx, db.q(), organisationName, totalNodes, nodesCollected)
 }
 
-func (db *DB) completeCollectionRun(ctx context.Context, q queryable, id string, totalNodes, nodesCollected int) (CollectionRun, error) {
-	if id == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to complete")
+func (db *DB) completeCollectionRun(ctx context.Context, q queryable, organisationName string, totalNodes, nodesCollected int) (CollectionRun, error) {
+	if organisationName == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to complete")
 	}
 
 	const query = `
@@ -154,14 +154,14 @@ func (db *DB) completeCollectionRun(ctx context.Context, q queryable, id string,
 		    nodes_collected = $3,
 		    completed_at    = now(),
 		    updated_at      = now()
-		WHERE id = $1
-		RETURNING id, organisation_id, status, started_at, completed_at,
+		WHERE organisation_name = $1
+		RETURNING organisation_name, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
 	`
 
 	run, err := scanCollectionRun(q.QueryRowContext(ctx, query,
-		id, totalNodes, nodesCollected,
+		organisationName, totalNodes, nodesCollected,
 	))
 	if err != nil {
 		return CollectionRun{}, fmt.Errorf("datastore: completing collection run: %w", err)
@@ -171,13 +171,13 @@ func (db *DB) completeCollectionRun(ctx context.Context, q queryable, id string,
 
 // FailCollectionRun marks a collection run as "failed" with the given error
 // message and the current time as completed_at.
-func (db *DB) FailCollectionRun(ctx context.Context, id string, errMsg string) (CollectionRun, error) {
-	return db.failCollectionRun(ctx, db.q(), id, errMsg)
+func (db *DB) FailCollectionRun(ctx context.Context, organisationName string, errMsg string) (CollectionRun, error) {
+	return db.failCollectionRun(ctx, db.q(), organisationName, errMsg)
 }
 
-func (db *DB) failCollectionRun(ctx context.Context, q queryable, id string, errMsg string) (CollectionRun, error) {
-	if id == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to fail")
+func (db *DB) failCollectionRun(ctx context.Context, q queryable, organisationName string, errMsg string) (CollectionRun, error) {
+	if organisationName == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to fail")
 	}
 
 	const query = `
@@ -186,13 +186,13 @@ func (db *DB) failCollectionRun(ctx context.Context, q queryable, id string, err
 		    error_message = $2,
 		    completed_at  = now(),
 		    updated_at    = now()
-		WHERE id = $1
-		RETURNING id, organisation_id, status, started_at, completed_at,
+		WHERE organisation_name = $1
+		RETURNING organisation_name, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
 	`
 
-	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, id, errMsg))
+	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, organisationName, errMsg))
 	if err != nil {
 		return CollectionRun{}, fmt.Errorf("datastore: failing collection run: %w", err)
 	}
@@ -203,13 +203,13 @@ func (db *DB) failCollectionRun(ctx context.Context, q queryable, id string, err
 // used during graceful shutdown to record runs that were in progress when
 // the application stopped. The checkpoint_start value is preserved so that
 // the run can be resumed later.
-func (db *DB) InterruptCollectionRun(ctx context.Context, id string) (CollectionRun, error) {
-	return db.interruptCollectionRun(ctx, db.q(), id)
+func (db *DB) InterruptCollectionRun(ctx context.Context, organisationName string) (CollectionRun, error) {
+	return db.interruptCollectionRun(ctx, db.q(), organisationName)
 }
 
-func (db *DB) interruptCollectionRun(ctx context.Context, q queryable, id string) (CollectionRun, error) {
-	if id == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to interrupt")
+func (db *DB) interruptCollectionRun(ctx context.Context, q queryable, organisationName string) (CollectionRun, error) {
+	if organisationName == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to interrupt")
 	}
 
 	const query = `
@@ -217,13 +217,13 @@ func (db *DB) interruptCollectionRun(ctx context.Context, q queryable, id string
 		SET status       = 'interrupted',
 		    completed_at = now(),
 		    updated_at   = now()
-		WHERE id = $1
-		RETURNING id, organisation_id, status, started_at, completed_at,
+		WHERE organisation_name = $1
+		RETURNING organisation_name, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
 	`
 
-	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, id))
+	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, organisationName))
 	if err != nil {
 		return CollectionRun{}, fmt.Errorf("datastore: interrupting collection run: %w", err)
 	}
@@ -239,7 +239,7 @@ func (db *DB) interruptCollectionRun(ctx context.Context, q queryable, id string
 // to evaluate which interrupted runs should be resumed vs. abandoned.
 func (db *DB) GetInterruptedCollectionRuns(ctx context.Context) ([]CollectionRun, error) {
 	const query = `
-		SELECT id, organisation_id, status, started_at, completed_at,
+		SELECT organisation_name, status, started_at, completed_at,
 		       total_nodes, nodes_collected, checkpoint_start,
 		       error_message, created_at, updated_at
 		FROM collection_runs
@@ -252,13 +252,13 @@ func (db *DB) GetInterruptedCollectionRuns(ctx context.Context) ([]CollectionRun
 // AbandonCollectionRun marks an interrupted collection run as "failed" with
 // an error message indicating it was abandoned due to age. This is used
 // during startup recovery when an interrupted run is too old to resume.
-func (db *DB) AbandonCollectionRun(ctx context.Context, id string, reason string) (CollectionRun, error) {
-	return db.abandonCollectionRun(ctx, db.q(), id, reason)
+func (db *DB) AbandonCollectionRun(ctx context.Context, organisationName string, reason string) (CollectionRun, error) {
+	return db.abandonCollectionRun(ctx, db.q(), organisationName, reason)
 }
 
-func (db *DB) abandonCollectionRun(ctx context.Context, q queryable, id string, reason string) (CollectionRun, error) {
-	if id == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to abandon")
+func (db *DB) abandonCollectionRun(ctx context.Context, q queryable, organisationName string, reason string) (CollectionRun, error) {
+	if organisationName == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to abandon")
 	}
 	if reason == "" {
 		reason = "abandoned: interrupted run too old to resume"
@@ -270,13 +270,13 @@ func (db *DB) abandonCollectionRun(ctx context.Context, q queryable, id string, 
 		    error_message = $2,
 		    completed_at  = now(),
 		    updated_at    = now()
-		WHERE id = $1 AND status = 'interrupted'
-		RETURNING id, organisation_id, status, started_at, completed_at,
+		WHERE organisation_name = $1 AND status = 'interrupted'
+		RETURNING organisation_name, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
 	`
 
-	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, id, reason))
+	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, organisationName, reason))
 	if err != nil {
 		return CollectionRun{}, fmt.Errorf("datastore: abandoning collection run: %w", err)
 	}
@@ -286,139 +286,122 @@ func (db *DB) abandonCollectionRun(ctx context.Context, q queryable, id string, 
 // ResumeCollectionRun resets an interrupted collection run back to "running"
 // status so that the collector can continue from the checkpoint. The
 // checkpoint_start value is preserved.
-func (db *DB) ResumeCollectionRun(ctx context.Context, id string) (CollectionRun, error) {
-	return db.resumeCollectionRun(ctx, db.q(), id)
+func (db *DB) ResumeCollectionRun(ctx context.Context, organisationName string) (CollectionRun, error) {
+	return db.resumeCollectionRun(ctx, db.q(), organisationName)
 }
 
-func (db *DB) resumeCollectionRun(ctx context.Context, q queryable, id string) (CollectionRun, error) {
-	if id == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: collection run ID is required to resume")
+func (db *DB) resumeCollectionRun(ctx context.Context, q queryable, organisationName string) (CollectionRun, error) {
+	if organisationName == "" {
+		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to resume")
 	}
 
 	const query = `
 		UPDATE collection_runs
 		SET status     = 'running',
 		    updated_at = now()
-		WHERE id = $1 AND status = 'interrupted'
-		RETURNING id, organisation_id, status, started_at, completed_at,
+		WHERE organisation_name = $1 AND status = 'interrupted'
+		RETURNING organisation_name, status, started_at, completed_at,
 		          total_nodes, nodes_collected, checkpoint_start,
 		          error_message, created_at, updated_at
 	`
 
-	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, id))
+	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, organisationName))
 	if err != nil {
 		return CollectionRun{}, fmt.Errorf("datastore: resuming collection run: %w", err)
 	}
 	return run, nil
 }
 
-// ListCompletedRunsForOrganisation returns all completed collection run IDs
+// ListCompletedRunsForOrganisation returns all completed collection run rows
 // for the given organisation since the given time. This is used during
 // checkpoint/resume to determine which organisations have already been
 // collected within the scope of an interrupted run.
-func (db *DB) ListCompletedRunsForOrganisation(ctx context.Context, organisationID string, since time.Time) ([]CollectionRun, error) {
+func (db *DB) ListCompletedRunsForOrganisation(ctx context.Context, organisationName string, since time.Time) ([]CollectionRun, error) {
 	const query = `
-		SELECT id, organisation_id, status, started_at, completed_at,
+		SELECT organisation_name, status, started_at, completed_at,
 		       total_nodes, nodes_collected, checkpoint_start,
 		       error_message, created_at, updated_at
 		FROM collection_runs
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		  AND status = 'completed'
 		  AND started_at >= $2
 		ORDER BY started_at DESC
 	`
-	return scanCollectionRuns(db.q().QueryContext(ctx, query, organisationID, since))
-}
-
-// GetCollectionRun returns the collection run with the given UUID. Returns
-// ErrNotFound if no such run exists.
-func (db *DB) GetCollectionRun(ctx context.Context, id string) (CollectionRun, error) {
-	return db.getCollectionRun(ctx, db.q(), id)
-}
-
-func (db *DB) getCollectionRun(ctx context.Context, q queryable, id string) (CollectionRun, error) {
-	const query = `
-		SELECT id, organisation_id, status, started_at, completed_at,
-		       total_nodes, nodes_collected, checkpoint_start,
-		       error_message, created_at, updated_at
-		FROM collection_runs
-		WHERE id = $1
-	`
-	return scanCollectionRun(q.QueryRowContext(ctx, query, id))
+	return scanCollectionRuns(db.q().QueryContext(ctx, query, organisationName, since))
 }
 
 // GetLatestCollectionRun returns the most recent collection run for the
 // given organisation (by started_at descending). Returns ErrNotFound if no
 // runs exist for the organisation.
-func (db *DB) GetLatestCollectionRun(ctx context.Context, organisationID string) (CollectionRun, error) {
-	return db.getLatestCollectionRun(ctx, db.q(), organisationID)
+func (db *DB) GetLatestCollectionRun(ctx context.Context, organisationName string) (CollectionRun, error) {
+	return db.getLatestCollectionRun(ctx, db.q(), organisationName)
 }
 
-func (db *DB) getLatestCollectionRun(ctx context.Context, q queryable, organisationID string) (CollectionRun, error) {
+func (db *DB) getLatestCollectionRun(ctx context.Context, q queryable, organisationName string) (CollectionRun, error) {
 	const query = `
-		SELECT id, organisation_id, status, started_at, completed_at,
+		SELECT organisation_name, status, started_at, completed_at,
 		       total_nodes, nodes_collected, checkpoint_start,
 		       error_message, created_at, updated_at
 		FROM collection_runs
-		WHERE organisation_id = $1
+		WHERE organisation_name = $1
 		ORDER BY started_at DESC
 		LIMIT 1
 	`
-	return scanCollectionRun(q.QueryRowContext(ctx, query, organisationID))
+	return scanCollectionRun(q.QueryRowContext(ctx, query, organisationName))
 }
 
 // GetLatestCompletedCollectionRun returns the most recent completed
 // collection run for the given organisation. Returns ErrNotFound if no
 // completed runs exist.
-func (db *DB) GetLatestCompletedCollectionRun(ctx context.Context, organisationID string) (CollectionRun, error) {
-	return db.getLatestCompletedCollectionRun(ctx, db.q(), organisationID)
+func (db *DB) GetLatestCompletedCollectionRun(ctx context.Context, organisationName string) (CollectionRun, error) {
+	return db.getLatestCompletedCollectionRun(ctx, db.q(), organisationName)
 }
 
-func (db *DB) getLatestCompletedCollectionRun(ctx context.Context, q queryable, organisationID string) (CollectionRun, error) {
+func (db *DB) getLatestCompletedCollectionRun(ctx context.Context, q queryable, organisationName string) (CollectionRun, error) {
 	const query = `
-		SELECT id, organisation_id, status, started_at, completed_at,
+		SELECT organisation_name, status, started_at, completed_at,
 		       total_nodes, nodes_collected, checkpoint_start,
 		       error_message, created_at, updated_at
 		FROM collection_runs
-		WHERE organisation_id = $1 AND status = 'completed'
+		WHERE organisation_name = $1 AND status = 'completed'
 		ORDER BY started_at DESC
 		LIMIT 1
 	`
-	return scanCollectionRun(q.QueryRowContext(ctx, query, organisationID))
+	return scanCollectionRun(q.QueryRowContext(ctx, query, organisationName))
 }
 
 // ListCollectionRuns returns all collection runs for the given organisation,
 // ordered by started_at descending (most recent first). If limit is > 0,
 // at most limit rows are returned.
-func (db *DB) ListCollectionRuns(ctx context.Context, organisationID string, limit int) ([]CollectionRun, error) {
-	return db.listCollectionRuns(ctx, db.q(), organisationID, limit)
+func (db *DB) ListCollectionRuns(ctx context.Context, organisationName string, limit int) ([]CollectionRun, error) {
+	return db.listCollectionRuns(ctx, db.q(), organisationName, limit)
 }
 
-func (db *DB) listCollectionRuns(ctx context.Context, q queryable, organisationID string, limit int) ([]CollectionRun, error) {
+func (db *DB) listCollectionRuns(ctx context.Context, q queryable, organisationName string, limit int) ([]CollectionRun, error) {
 	var query string
 	var args []any
 
 	if limit > 0 {
 		query = `
-			SELECT id, organisation_id, status, started_at, completed_at,
+			SELECT organisation_name, status, started_at, completed_at,
 			       total_nodes, nodes_collected, checkpoint_start,
 			       error_message, created_at, updated_at
 			FROM collection_runs
-			WHERE organisation_id = $1
+			WHERE organisation_name = $1
 			ORDER BY started_at DESC
 			LIMIT $2
 		`
-		args = []any{organisationID, limit}
+		args = []any{organisationName, limit}
 	} else {
 		query = `
-			SELECT id, organisation_id, status, started_at, completed_at,
+			SELECT organisation_name, status, started_at, completed_at,
 			       total_nodes, nodes_collected, checkpoint_start,
 			       error_message, created_at, updated_at
 			FROM collection_runs
-			WHERE organisation_id = $1
+			WHERE organisation_name = $1
 			ORDER BY started_at DESC
 		`
-		args = []any{organisationID}
+		args = []any{organisationName}
 	}
 
 	return scanCollectionRuns(q.QueryContext(ctx, query, args...))
@@ -429,7 +412,7 @@ func (db *DB) listCollectionRuns(ctx context.Context, q queryable, organisationI
 // to detect and mark interrupted runs from a previous process.
 func (db *DB) GetRunningCollectionRuns(ctx context.Context) ([]CollectionRun, error) {
 	const query = `
-		SELECT id, organisation_id, status, started_at, completed_at,
+		SELECT organisation_name, status, started_at, completed_at,
 		       total_nodes, nodes_collected, checkpoint_start,
 		       error_message, created_at, updated_at
 		FROM collection_runs
@@ -457,8 +440,7 @@ func scanCollectionRun(row *sql.Row) (CollectionRun, error) {
 	var errorMessage sql.NullString
 
 	err := row.Scan(
-		&cr.ID,
-		&cr.OrganisationID,
+		&cr.OrganisationName,
 		&cr.Status,
 		&cr.StartedAt,
 		&completedAt,
@@ -532,7 +514,7 @@ func buildCollectionRunFilterQuery(f CollectionRunFilter) (where string, args []
 
 // collectionRunJoinColumns is the SELECT column list for filtered collection
 // run queries that join with the organisations table.
-const collectionRunJoinColumns = `cr.id, cr.organisation_id, o.name, cr.status, cr.started_at, cr.completed_at,
+const collectionRunJoinColumns = `cr.organisation_name, o.name, cr.status, cr.started_at, cr.completed_at,
        cr.total_nodes, cr.nodes_collected, cr.checkpoint_start,
        cr.error_message, cr.created_at, cr.updated_at`
 
@@ -551,7 +533,7 @@ func (db *DB) ListCollectionRunsFiltered(ctx context.Context, f CollectionRunFil
 
 	query := `SELECT ` + collectionRunJoinColumns + `
 		FROM collection_runs cr
-		INNER JOIN organisations o ON o.id = cr.organisation_id` + where +
+		INNER JOIN organisations o ON o.name = cr.organisation_name` + where +
 		` ORDER BY cr.started_at DESC`
 
 	argN := len(args)
@@ -578,7 +560,7 @@ func (db *DB) CountCollectionRunsFiltered(ctx context.Context, f CollectionRunFi
 	where, args := buildCollectionRunFilterQuery(f)
 
 	query := `SELECT COUNT(*) FROM collection_runs cr
-		INNER JOIN organisations o ON o.id = cr.organisation_id` + where
+		INNER JOIN organisations o ON o.name = cr.organisation_name` + where
 
 	var count int
 	if err := db.q().QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
@@ -606,8 +588,7 @@ func (db *DB) scanCollectionRunsWithOrg(ctx context.Context, query string, args 
 		var errorMessage sql.NullString
 
 		if err := rows.Scan(
-			&cr.ID,
-			&cr.OrganisationID,
+			&cr.OrganisationName,
 			&orgName,
 			&cr.Status,
 			&cr.StartedAt,
@@ -652,8 +633,7 @@ func scanCollectionRuns(rows *sql.Rows, err error) ([]CollectionRun, error) {
 		var errorMessage sql.NullString
 
 		if err := rows.Scan(
-			&cr.ID,
-			&cr.OrganisationID,
+			&cr.OrganisationName,
 			&cr.Status,
 			&cr.StartedAt,
 			&completedAt,

@@ -110,7 +110,7 @@ type phaseResult struct {
 // KitchenRunResult holds the outcome of a single Test Kitchen run for one
 // cookbook against one target Chef Client version.
 type KitchenRunResult struct {
-	CookbookID        string
+	GitRepoURL        string
 	CookbookName      string
 	TargetChefVersion string
 	CommitSHA         string
@@ -298,7 +298,7 @@ func (s *KitchenScanner) TestGitRepos(
 				defer func() { <-sem }()
 			case <-ctx.Done():
 				resultsCh <- KitchenRunResult{
-					CookbookID:        wi.Repo.ID,
+					GitRepoURL:        wi.Repo.GitRepoURL,
 					CookbookName:      wi.Repo.Name,
 					TargetChefVersion: wi.TargetVersion,
 					CommitSHA:         wi.Repo.HeadCommitSHA,
@@ -357,7 +357,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		logging.WithOrganisation(gr.Name))
 
 	result := KitchenRunResult{
-		CookbookID:        gr.ID,
+		GitRepoURL:        gr.GitRepoURL,
 		CookbookName:      gr.Name,
 		TargetChefVersion: targetVersion,
 		CommitSHA:         gr.HeadCommitSHA,
@@ -373,7 +373,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 
 	// Step 1: Check skip condition — if a result exists for this commit SHA,
 	// skip the run.
-	existing, err := s.db.GetLatestGitRepoTestKitchenResult(ctx, gr.ID, targetVersion)
+	existing, err := s.db.GetLatestGitRepoTestKitchenResult(ctx, gr.Name, gr.GitRepoURL, targetVersion)
 	if err != nil {
 		result.Error = fmt.Errorf("checking existing result: %w", err)
 		return result
@@ -796,7 +796,8 @@ func (s *KitchenScanner) persistResult(ctx context.Context, gr datastore.GitRepo
 	}
 
 	params := datastore.UpsertGitRepoTestKitchenResultParams{
-		GitRepoID:         gr.ID,
+		GitRepoName:       gr.Name,
+		GitRepoURL:        gr.GitRepoURL,
 		TargetChefVersion: rr.TargetChefVersion,
 		CommitSHA:         rr.CommitSHA,
 		ConvergePassed:    rr.ConvergePassed,
@@ -825,8 +826,8 @@ func (s *KitchenScanner) persistResult(ctx context.Context, gr datastore.GitRepo
 
 // ResetResults deletes all test kitchen results for the given cookbook,
 // forcing a full retest on the next analysis cycle regardless of commit SHA.
-func (s *KitchenScanner) ResetResults(gitRepoID string) error {
-	return s.db.DeleteGitRepoTestKitchenResultsByRepo(context.Background(), gitRepoID)
+func (s *KitchenScanner) ResetResults(gitRepoName, gitRepoURL string) error {
+	return s.db.DeleteGitRepoTestKitchenResultsByRepo(context.Background(), gitRepoName, gitRepoURL)
 }
 
 // ResetAllResults deletes all test kitchen results for all git repos.

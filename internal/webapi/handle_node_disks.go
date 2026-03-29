@@ -107,7 +107,7 @@ func (r *Router) handleNodeDisks(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Get the most recent snapshot for this node.
-	snapshot, err := r.db.GetNodeSnapshotByName(req.Context(), org.ID, nodeName)
+	snapshot, err := r.db.GetNodeSnapshotByName(req.Context(), org.Name, nodeName)
 	if errors.Is(err, datastore.ErrNotFound) {
 		WriteNotFound(w, fmt.Sprintf("Node %q not found in organisation %q.", nodeName, orgName))
 		return

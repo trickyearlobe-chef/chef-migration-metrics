@@ -77,15 +77,15 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	gitRepoID := gitRepos[0].ID
+	gitRepoURL := gitRepos[0].GitRepoURL
 
 	// Fetch cookstyle result.
 	var cookstyleOffences []byte
 	var cookstylePassed *bool
 	var cookstyleScannedAt string
-	var cookstyleResultID string
+	var hasCookstyleResult bool
 
-	csResult, csErr := r.db.GetGitRepoCookstyleResult(ctx, gitRepoID, targetVersion)
+	csResult, csErr := r.db.GetGitRepoCookstyleResult(ctx, repoName, gitRepoURL, targetVersion)
 	if csErr != nil {
 		r.logf("ERROR", "getting cookstyle result for git repo %s target %s: %v", repoName, targetVersion, csErr)
 		WriteInternalError(w, "Failed to fetch cookstyle results.")
@@ -96,7 +96,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		p := csResult.Passed
 		cookstylePassed = &p
 		cookstyleScannedAt = csResult.ScannedAt.Format("2006-01-02T15:04:05Z")
-		cookstyleResultID = csResult.ID
+		hasCookstyleResult = true
 	}
 
 	// Fetch complexity records for summary stats.
@@ -107,9 +107,9 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	var deprecationCount int
 	var errorCount int
 
-	complexities, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, gitRepoID)
+	complexities, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, repoName, gitRepoURL)
 	if cxErr != nil {
-		r.logf("WARN", "listing complexity for git repo %s: %v", gitRepoID, cxErr)
+		r.logf("WARN", "listing complexity for git repo %s: %v", repoName, cxErr)
 	}
 	for _, cc := range complexities {
 		if cc.TargetChefVersion == targetVersion {
@@ -299,10 +299,10 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 
 	acPreview := autocorrectPreviewResp{Available: false}
 
-	if cookstyleResultID != "" {
-		preview, acErr := r.db.GetGitRepoAutocorrectPreview(ctx, cookstyleResultID)
+	if hasCookstyleResult {
+		preview, acErr := r.db.GetGitRepoAutocorrectPreview(ctx, repoName, gitRepoURL, targetVersion)
 		if acErr != nil {
-			r.logf("WARN", "getting git repo autocorrect preview for cookstyle result %s: %v", cookstyleResultID, acErr)
+			r.logf("WARN", "getting git repo autocorrect preview for %s target %s: %v", repoName, targetVersion, acErr)
 		} else if preview != nil {
 			acPreview = autocorrectPreviewResp{
 				Available:           true,

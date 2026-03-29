@@ -75,7 +75,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 	// Build repo-name-by-ID lookup. One git repo per cookbook name.
 	repoNameByID := make(map[string]string, len(repos))
 	for _, gr := range repos {
-		repoNameByID[gr.ID] = gr.Name
+		repoNameByID[gr.Name] = gr.Name
 	}
 
 	// Build compatibility map from CookStyle results directly.
@@ -91,7 +91,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 				if cs.TargetChefVersion != targetChefVersion {
 					continue
 				}
-				name := repoNameByID[cs.GitRepoID]
+				name := repoNameByID[cs.GitRepoName]
 				if name == "" {
 					continue
 				}
@@ -120,7 +120,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 				if tk.TargetChefVersion != targetChefVersion {
 					continue
 				}
-				name := repoNameByID[tk.GitRepoID]
+				name := repoNameByID[tk.GitRepoName]
 				if name == "" {
 					continue
 				}
@@ -230,7 +230,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			tkSt = "untested"
 		}
 		resp := gitRepoResp{
-			ID:                gr.ID,
+			ID:                gr.Name,
 			Name:              gr.Name,
 			GitRepoURL:        gr.GitRepoURL,
 			HeadCommitSHA:     gr.HeadCommitSHA,
@@ -356,23 +356,23 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 	for _, gr := range gitRepos {
 		detail := gitRepoDetailEntry{GitRepo: gr}
 
-		cookstyle, csErr := r.db.ListGitRepoCookstyleResults(ctx, gr.ID)
+		cookstyle, csErr := r.db.ListGitRepoCookstyleResults(ctx, gr.Name, gr.GitRepoURL)
 		if csErr != nil {
-			r.logf("WARN", "listing cookstyle results for git repo %s: %v", gr.ID, csErr)
+			r.logf("WARN", "listing cookstyle results for git repo %s: %v", gr.Name, csErr)
 		} else {
 			detail.Cookstyle = cookstyle
 		}
 
-		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.ID)
+		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.Name, gr.GitRepoURL)
 		if tkErr != nil {
-			r.logf("WARN", "listing test kitchen results for git repo %s: %v", gr.ID, tkErr)
+			r.logf("WARN", "listing test kitchen results for git repo %s: %v", gr.Name, tkErr)
 		} else {
 			detail.TestKitchen = tk
 		}
 
-		complexity, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, gr.ID)
+		complexity, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, gr.Name, gr.GitRepoURL)
 		if cxErr != nil {
-			r.logf("WARN", "listing complexity for git repo %s: %v", gr.ID, cxErr)
+			r.logf("WARN", "listing complexity for git repo %s: %v", gr.Name, cxErr)
 		} else {
 			detail.Complexity = complexity
 		}
@@ -430,21 +430,21 @@ func (r *Router) handleGitRepoRescan(w http.ResponseWriter, req *http.Request) {
 	var lastErr error
 
 	for _, gr := range gitRepos {
-		csErr := r.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gr.ID)
+		csErr := r.db.DeleteGitRepoCookstyleResultsByRepo(ctx, gr.Name, gr.GitRepoURL)
 		if csErr != nil {
-			r.logf("WARN", "deleting cookstyle results for git repo %s (%s): %v", gr.ID, gr.Name, csErr)
+			r.logf("WARN", "deleting cookstyle results for git repo %s (%s): %v", gr.Name, gr.Name, csErr)
 			lastErr = csErr
 		}
 
-		cxErr := r.db.DeleteGitRepoComplexitiesByRepo(ctx, gr.ID)
+		cxErr := r.db.DeleteGitRepoComplexitiesByRepo(ctx, gr.Name, gr.GitRepoURL)
 		if cxErr != nil {
-			r.logf("WARN", "deleting complexity records for git repo %s (%s): %v", gr.ID, gr.Name, cxErr)
+			r.logf("WARN", "deleting complexity records for git repo %s (%s): %v", gr.Name, gr.Name, cxErr)
 			lastErr = cxErr
 		}
 
-		acErr := r.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, gr.ID)
+		acErr := r.db.DeleteGitRepoAutocorrectPreviewsByRepo(ctx, gr.Name, gr.GitRepoURL)
 		if acErr != nil {
-			r.logf("WARN", "deleting autocorrect previews for git repo %s (%s): %v", gr.ID, gr.Name, acErr)
+			r.logf("WARN", "deleting autocorrect previews for git repo %s (%s): %v", gr.Name, gr.Name, acErr)
 			lastErr = acErr
 		}
 
