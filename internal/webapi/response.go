@@ -6,6 +6,7 @@ package webapi
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -134,9 +135,9 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		// At this point headers are already sent — the best we can do is
-		// log. The caller's logger middleware should catch this.
-		_ = err
+		// Headers are already sent so we cannot change the status code.
+		// Log so corrupted responses are detectable in server logs.
+		slog.Error("WriteJSON: failed to encode response", "error", err, "status", status)
 	}
 }
 
