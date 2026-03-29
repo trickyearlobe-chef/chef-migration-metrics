@@ -395,38 +395,43 @@ func TestBuildOverlay_TargetVersionOnly_Vagrant(t *testing.T) {
 func TestBuildOverlay_TargetVersionOnly_UnknownDriver(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
 	got := s.buildOverlay("18.0.0", "")
-	// Unknown driver should use product_version.
-	if !strings.Contains(got, "product_version") {
-		t.Errorf("expected product_version for unknown driver, got:\n%s", got)
+	// No configured driver + empty detected → effectiveDriver returns "dokken",
+	// so provisioner uses chef_version.
+	if !strings.Contains(got, "chef_version") {
+		t.Errorf("expected chef_version for default dokken driver, got:\n%s", got)
 	}
 }
 
 func TestBuildOverlay_DriverOverride(t *testing.T) {
+	// Non-dokken driver emits a driver block.
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "dokken",
+		Driver: "vcenter",
 	})
 	got := s.buildOverlay("18.0.0", "vagrant")
 	if !strings.Contains(got, "driver:") {
 		t.Error("expected driver section")
 	}
-	if !strings.Contains(got, "name: dokken") {
-		t.Errorf("expected driver name dokken, got:\n%s", got)
+	if !strings.Contains(got, "name: vcenter") {
+		t.Errorf("expected driver name vcenter, got:\n%s", got)
 	}
-	// Since override is dokken, provisioner should use chef_version.
-	if !strings.Contains(got, "chef_version") {
-		t.Errorf("expected chef_version for overridden dokken driver, got:\n%s", got)
+	// vcenter is not dokken, so provisioner should use product_version.
+	if !strings.Contains(got, "product_version") {
+		t.Errorf("expected product_version for non-dokken driver, got:\n%s", got)
 	}
 }
 
 func TestBuildOverlay_DriverConfig(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "dokken",
-		DriverConfig: map[string]string{
+		Driver: "vcenter",
+		DriverSettings: map[string]string{
 			"privileged": "true",
 			"network":    "host",
 		},
 	})
 	got := s.buildOverlay("", "dokken")
+	if !strings.Contains(got, "name: vcenter") {
+		t.Errorf("expected driver name vcenter, got:\n%s", got)
+	}
 	if !strings.Contains(got, "privileged: true") {
 		t.Errorf("expected privileged in driver config, got:\n%s", got)
 	}
@@ -436,35 +441,31 @@ func TestBuildOverlay_DriverConfig(t *testing.T) {
 }
 
 func TestBuildOverlay_DriverConfigWithoutDriverOverride(t *testing.T) {
+	// Driver: "dokken" (explicit) with DriverSettings — dokken emits no
+	// driver block, so DriverSettings are silently ignored.
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverConfig: map[string]string{
+		Driver: "dokken",
+		DriverSettings: map[string]string{
 			"privileged": "true",
 		},
 	})
 	got := s.buildOverlay("", "vagrant")
-	if !strings.Contains(got, "driver:") {
-		t.Error("expected driver section even without driver override")
+	// Dokken does not emit a driver block.
+	if strings.Contains(got, "driver:") {
+		t.Error("dokken should not emit driver section")
 	}
-	if !strings.Contains(got, "privileged: true") {
-		t.Errorf("expected driver_config merged, got:\n%s", got)
-	}
-	// Should NOT contain a name: key since no override.
-	if strings.Contains(got, "name:") {
-		t.Error("should not set driver name without override")
+	if strings.Contains(got, "privileged") {
+		t.Error("dokken should not emit driver settings")
 	}
 }
 
 func TestBuildOverlay_PlatformOverrides(t *testing.T) {
+	// Platform map only emits for non-dokken drivers.
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{
-				Name:   "ubuntu-22.04",
-				Driver: map[string]string{"image": "dokken/ubuntu-22.04"},
-			},
-			{
-				Name:   "centos-8",
-				Driver: map[string]string{"image": "dokken/centos-8"},
-			},
+		Driver: "vcenter",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
+			{KitchenName: "centos-8", Image: "tmpl-centos-8"},
 		},
 	})
 	got := s.buildOverlay("", "dokken")
@@ -477,69 +478,52 @@ func TestBuildOverlay_PlatformOverrides(t *testing.T) {
 	if !strings.Contains(got, "- name: centos-8") {
 		t.Errorf("expected centos platform, got:\n%s", got)
 	}
-	if !strings.Contains(got, "image: dokken/ubuntu-22.04") {
-		t.Errorf("expected ubuntu image, got:\n%s", got)
-	}
-}
-
-func TestBuildOverlay_ExtraYAML(t *testing.T) {
-	extra := "transport:\n  name: ssh\nverifier:\n  name: inspec\n"
-	s := newScannerWithConfig(config.TestKitchenConfig{
-		ExtraYAML: extra,
-	})
-	got := s.buildOverlay("", "")
-	if !strings.Contains(got, "transport:") {
-		t.Errorf("expected extra YAML, got:\n%s", got)
-	}
-	if !strings.Contains(got, "verifier:") {
-		t.Errorf("expected extra YAML verifier, got:\n%s", got)
-	}
-}
-
-func TestBuildOverlay_ExtraYAMLWithoutNewline(t *testing.T) {
-	extra := "transport:\n  name: ssh"
-	s := newScannerWithConfig(config.TestKitchenConfig{
-		ExtraYAML: extra,
-	})
-	got := s.buildOverlay("", "")
-	if !strings.HasSuffix(got, "\n") {
-		t.Error("expected overlay to end with newline")
+	// vcenter profile uses "template" as the image field name.
+	if !strings.Contains(got, "template: tmpl-ubuntu-2204") {
+		t.Errorf("expected ubuntu image via template field, got:\n%s", got)
 	}
 }
 
 func TestBuildOverlay_AllOverridesCombined(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "ec2",
-		DriverConfig: map[string]string{
+		Driver: "ec2",
+		DriverSettings: map[string]string{
 			"instance_type": "t3.medium",
 		},
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "rhel-9", Driver: map[string]string{"image_id": "ami-12345"}},
+		DriverSecrets: map[string]string{
+			"aws_secret_access_key": "aws-cred",
 		},
-		ExtraYAML: "lifecycle:\n  pre_converge:\n    - remote: yum update -y\n",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "ami-12345"},
+		},
 	})
 	got := s.buildOverlay("18.5.0", "vagrant")
 	if !strings.Contains(got, "name: ec2") {
 		t.Error("expected driver override")
 	}
 	if !strings.Contains(got, "instance_type: t3.medium") {
-		t.Error("expected driver config")
+		t.Error("expected driver settings")
+	}
+	if !strings.Contains(got, "CMM_TK_SECRET_AWS_SECRET_ACCESS_KEY") {
+		t.Error("expected driver secret ERB reference")
 	}
 	if !strings.Contains(got, "product_version") {
 		// ec2 is not dokken, should use product_version.
 		t.Error("expected product_version for non-dokken driver")
 	}
 	if !strings.Contains(got, "- name: rhel-9") {
-		t.Error("expected platform override")
+		t.Error("expected platform map entry")
 	}
-	if !strings.Contains(got, "lifecycle:") {
-		t.Error("expected extra YAML")
+	// ec2 profile uses "ami" as image field.
+	if !strings.Contains(got, "ami: ami-12345") {
+		t.Error("expected ami image field for ec2 profile")
 	}
 }
 
 func TestBuildOverlay_Header(t *testing.T) {
+	// Use a non-dokken driver so the overlay has content (driver block).
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "dokken",
+		Driver: "vcenter",
 	})
 	got := s.buildOverlay("", "")
 	if !strings.HasPrefix(got, "# .kitchen.local.yml") {
@@ -555,7 +539,7 @@ func TestBuildOverlay_Header(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEffectiveDriver_Override(t *testing.T) {
-	s := newScannerWithConfig(config.TestKitchenConfig{DriverOverride: "ec2"})
+	s := newScannerWithConfig(config.TestKitchenConfig{Driver: "ec2"})
 	got := s.effectiveDriver("dokken")
 	if got != "ec2" {
 		t.Errorf("effectiveDriver() = %q, want %q", got, "ec2")
@@ -573,8 +557,8 @@ func TestEffectiveDriver_Detected(t *testing.T) {
 func TestEffectiveDriver_Unknown(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
 	got := s.effectiveDriver("")
-	if got != "unknown" {
-		t.Errorf("effectiveDriver() = %q, want %q", got, "unknown")
+	if got != "dokken" {
+		t.Errorf("effectiveDriver() = %q, want %q", got, "dokken")
 	}
 }
 
@@ -592,9 +576,9 @@ func TestEffectivePlatformSummary_Default(t *testing.T) {
 
 func TestEffectivePlatformSummary_Overrides(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "ubuntu-22.04"},
-			{Name: "centos-8"},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04"},
+			{KitchenName: "centos-8"},
 		},
 	})
 	got := s.effectivePlatformSummary()
@@ -1134,7 +1118,7 @@ func TestOverlayFileCreatedAndCleaned(t *testing.T) {
 	overlayPath := filepath.Join(dir, ".kitchen.local.yml")
 
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "vagrant",
+		Driver: "vagrant",
 	})
 
 	overlay := s.buildOverlay("18.0.0", "dokken")
@@ -1250,15 +1234,15 @@ func TestNewKitchenScanner_Defaults(t *testing.T) {
 
 func TestNewKitchenScanner_CustomValues(t *testing.T) {
 	s := NewKitchenScanner(nil, testLogger(), "/opt/embedded/bin/kitchen", 8, 60,
-		config.TestKitchenConfig{DriverOverride: "ec2"})
+		config.TestKitchenConfig{Driver: "ec2"})
 	if s.concurrency != 8 {
 		t.Errorf("expected concurrency 8, got %d", s.concurrency)
 	}
 	if s.timeout != 60*time.Minute {
 		t.Errorf("expected 60m timeout, got %s", s.timeout)
 	}
-	if s.tkConfig.DriverOverride != "ec2" {
-		t.Errorf("expected driver override ec2, got %q", s.tkConfig.DriverOverride)
+	if s.tkConfig.Driver != "ec2" {
+		t.Errorf("expected driver ec2, got %q", s.tkConfig.Driver)
 	}
 }
 
@@ -1336,23 +1320,22 @@ var _ = bytes.Buffer{}
 
 func TestConfigValidation_ValidPlatformOverrides(t *testing.T) {
 	tkc := config.TestKitchenConfig{
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "ubuntu-22.04", Driver: map[string]string{"image": "dokken/ubuntu-22.04"}},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
 		},
 	}
-	// Just verify the struct is valid — actual validation happens in config.Validate.
-	if tkc.PlatformOverrides[0].Name != "ubuntu-22.04" {
+	if tkc.PlatformMap[0].KitchenName != "ubuntu-22.04" {
 		t.Error("expected platform name")
 	}
 }
 
 func TestConfigValidation_EmptyPlatformName(t *testing.T) {
 	tkc := config.TestKitchenConfig{
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "", Driver: map[string]string{"image": "dokken/ubuntu-22.04"}},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "", Image: "tmpl-ubuntu-2204"},
 		},
 	}
-	if tkc.PlatformOverrides[0].Name != "" {
+	if tkc.PlatformMap[0].KitchenName != "" {
 		t.Error("expected empty name")
 	}
 }
@@ -1360,19 +1343,10 @@ func TestConfigValidation_EmptyPlatformName(t *testing.T) {
 func TestConfigValidation_DriverOverrideValues(t *testing.T) {
 	drivers := []string{"dokken", "vagrant", "ec2", "azurerm", "gce", "docker"}
 	for _, d := range drivers {
-		tkc := config.TestKitchenConfig{DriverOverride: d}
-		if tkc.DriverOverride != d {
-			t.Errorf("expected %q, got %q", d, tkc.DriverOverride)
+		tkc := config.TestKitchenConfig{Driver: d}
+		if tkc.Driver != d {
+			t.Errorf("expected %q, got %q", d, tkc.Driver)
 		}
-	}
-}
-
-func TestConfigValidation_ExtraYAML(t *testing.T) {
-	tkc := config.TestKitchenConfig{
-		ExtraYAML: "transport:\n  name: ssh\n",
-	}
-	if tkc.ExtraYAML == "" {
-		t.Error("expected extra YAML to be set")
 	}
 }
 
@@ -1532,9 +1506,9 @@ func TestDetectDriver_OnlyComments(t *testing.T) {
 func TestBuildOverlay_DokkenToVagrant(t *testing.T) {
 	// Scenario: cookbook uses dokken, operator wants to test with vagrant instead.
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "vagrant",
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "ubuntu-22.04", Driver: map[string]string{"box": "bento/ubuntu-22.04"}},
+		Driver: "vagrant",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "bento/ubuntu-22.04"},
 		},
 	})
 	got := s.buildOverlay("18.5.0", "dokken")
@@ -1542,50 +1516,55 @@ func TestBuildOverlay_DokkenToVagrant(t *testing.T) {
 	if !strings.Contains(got, "name: vagrant") {
 		t.Error("expected vagrant driver override")
 	}
-	// Since override is vagrant (not dokken), should use product_version.
+	// Since driver is vagrant (not dokken), should use product_version.
 	if !strings.Contains(got, "product_version") {
 		t.Error("expected product_version for vagrant")
 	}
 	if strings.Contains(got, "chef_version") {
 		t.Error("should not use chef_version for vagrant driver")
 	}
+	// vagrant profile uses "box" as image field.
 	if !strings.Contains(got, "box: bento/ubuntu-22.04") {
-		t.Error("expected vagrant box in platform override")
+		t.Error("expected vagrant box in platform map")
 	}
 }
 
 func TestBuildOverlay_VagrantToDokken(t *testing.T) {
-	// Scenario: cookbook uses vagrant, operator wants to test with dokken.
+	// Scenario: cookbook uses vagrant, operator configures dokken.
+	// Dokken + platform map → platform map is NOT emitted (dokken passthrough).
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "dokken",
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "ubuntu-22.04", Driver: map[string]string{"image": "dokken/ubuntu-22.04"}},
+		Driver: "dokken",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "dokken/ubuntu-22.04"},
 		},
 	})
 	got := s.buildOverlay("17.10.0", "vagrant")
 
-	if !strings.Contains(got, "name: dokken") {
-		t.Error("expected dokken driver override")
-	}
+	// Dokken should use chef_version in provisioner.
 	if !strings.Contains(got, "chef_version") {
 		t.Error("expected chef_version for dokken")
 	}
-	if !strings.Contains(got, "image: dokken/ubuntu-22.04") {
-		t.Error("expected dokken image in platform override")
+	// Dokken does not emit a driver block.
+	if strings.Contains(got, "name: dokken") {
+		t.Error("dokken should not emit a driver name block")
+	}
+	// Dokken does not emit platforms.
+	if strings.Contains(got, "platforms:") {
+		t.Error("dokken should not emit platform map")
 	}
 }
 
 func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 	// Scenario: test on real AWS instances.
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		DriverOverride: "ec2",
-		DriverConfig: map[string]string{
+		Driver: "ec2",
+		DriverSettings: map[string]string{
 			"region":        "us-east-1",
 			"instance_type": "t3.large",
 		},
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "rhel-8", Driver: map[string]string{"image_id": "ami-0abcdef1234567890"}},
-			{Name: "amazon-2", Driver: map[string]string{"image_id": "ami-0fedcba9876543210"}},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-8", Image: "ami-0abcdef1234567890"},
+			{KitchenName: "amazon-2", Image: "ami-0fedcba9876543210"},
 		},
 	})
 	got := s.buildOverlay("18.0.0", "vagrant")
@@ -1594,10 +1573,10 @@ func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 		t.Error("expected ec2 driver")
 	}
 	if !strings.Contains(got, "region: us-east-1") {
-		t.Error("expected region in driver config")
+		t.Error("expected region in driver settings")
 	}
 	if !strings.Contains(got, "instance_type: t3.large") {
-		t.Error("expected instance_type in driver config")
+		t.Error("expected instance_type in driver settings")
 	}
 	if !strings.Contains(got, "- name: rhel-8") {
 		t.Error("expected rhel-8 platform")
@@ -1605,24 +1584,177 @@ func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 	if !strings.Contains(got, "- name: amazon-2") {
 		t.Error("expected amazon-2 platform")
 	}
+	// ec2 profile uses "ami" as image field.
+	if !strings.Contains(got, "ami: ami-0abcdef1234567890") {
+		t.Error("expected ami image field for ec2 profile")
+	}
 }
 
 func TestBuildOverlay_ProductionPlatformAlignment(t *testing.T) {
-	// Scenario: operator aligns test platforms with production fleet.
-	// Production runs Ubuntu 20.04, 22.04, and RHEL 8.
+	// Scenario: no driver configured (dokken default) with PlatformMap.
+	// Dokken passthrough: platform map is NOT emitted.
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		PlatformOverrides: []config.TestKitchenPlatform{
-			{Name: "ubuntu-20.04", Driver: map[string]string{"image": "dokken/ubuntu-20.04"}},
-			{Name: "ubuntu-22.04", Driver: map[string]string{"image": "dokken/ubuntu-22.04"}},
-			{Name: "rhel-8", Driver: map[string]string{"image": "dokken/centos-8"}},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-20.04", Image: "dokken/ubuntu-20.04"},
+			{KitchenName: "ubuntu-22.04", Image: "dokken/ubuntu-22.04"},
+			{KitchenName: "rhel-8", Image: "dokken/centos-8"},
 		},
 	})
 	got := s.buildOverlay("18.5.0", "dokken")
 
-	// Should have 3 platforms.
-	count := strings.Count(got, "- name:")
-	if count != 3 {
-		t.Errorf("expected 3 platforms, found %d in:\n%s", count, got)
+	// Dokken does not emit platforms.
+	if strings.Contains(got, "platforms:") {
+		t.Error("dokken should not emit platform map")
+	}
+	// But should still emit provisioner with chef_version.
+	if !strings.Contains(got, "chef_version") {
+		t.Errorf("expected chef_version in provisioner, got:\n%s", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests: new overlay generation scenarios
+// ---------------------------------------------------------------------------
+
+func TestBuildOverlay_VCenterWithCredentials(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver:         "vcenter",
+		DriverSettings: map[string]string{"vcenter_host": "vcenter.example.com"},
+		DriverSecrets:  map[string]string{"vcenter_password": "vcenter-cred"},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
+		},
+	})
+	got := s.buildOverlay("", "")
+
+	if !strings.Contains(got, "vcenter_host: vcenter.example.com") {
+		t.Errorf("expected vcenter_host setting, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMM_TK_SECRET_VCENTER_PASSWORD") {
+		t.Errorf("expected vcenter_password secret ERB ref, got:\n%s", got)
+	}
+	// vcenter profile: image field is "template".
+	if !strings.Contains(got, "template: tmpl-ubuntu-2204") {
+		t.Errorf("expected template image field, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_TransportCredentials(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "vcenter",
+		PlatformMap: []config.PlatformMapEntry{
+			{
+				KitchenName: "ubuntu-22.04",
+				Image:       "tmpl-ubuntu-2204",
+				Transport: &config.PlatformMapTransport{
+					Username:           "kitchen",
+					PasswordCredential: "vm-pass",
+				},
+			},
+		},
+	})
+	got := s.buildOverlay("", "")
+
+	if !strings.Contains(got, "transport:") {
+		t.Errorf("expected transport block, got:\n%s", got)
+	}
+	if !strings.Contains(got, "username: kitchen") {
+		t.Errorf("expected transport username, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMM_TK_TRANSPORT_UBUNTU_22_04") {
+		t.Errorf("expected transport password ERB ref, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_TransportSSHKey(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "ec2",
+		PlatformMap: []config.PlatformMapEntry{
+			{
+				KitchenName: "rhel-9",
+				Image:       "ami-12345",
+				Transport: &config.PlatformMapTransport{
+					Username:         "ec2-user",
+					SSHKeyCredential: "ec2-ssh-key",
+				},
+			},
+		},
+	})
+	got := s.buildOverlay("", "")
+
+	if !strings.Contains(got, "transport:") {
+		t.Errorf("expected transport block, got:\n%s", got)
+	}
+	if !strings.Contains(got, "username: ec2-user") {
+		t.Errorf("expected transport username, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMM_TK_KEY_RHEL_9") {
+		t.Errorf("expected transport SSH key ERB ref, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_DokkenDefault(t *testing.T) {
+	// Empty config (all defaults) with no target version → empty overlay.
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("", "dokken")
+	if got != "" {
+		t.Errorf("expected empty overlay for dokken defaults, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_DokkenWithTargetVersion(t *testing.T) {
+	// Empty Driver field + targetVersion → provisioner with chef_version.
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("18.3.0", "dokken")
+	if !strings.Contains(got, "provisioner:") {
+		t.Error("expected provisioner section")
+	}
+	if !strings.Contains(got, `chef_version: "18.3.0"`) {
+		t.Errorf("expected chef_version, got:\n%s", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests: credential environment variable helpers
+// ---------------------------------------------------------------------------
+
+func TestDriverSecretEnvVar(t *testing.T) {
+	got := driverSecretEnvVar("vcenter_password")
+	if got != "CMM_TK_SECRET_VCENTER_PASSWORD" {
+		t.Errorf("driverSecretEnvVar() = %q, want %q", got, "CMM_TK_SECRET_VCENTER_PASSWORD")
+	}
+}
+
+func TestTransportPasswordEnvVar(t *testing.T) {
+	got := transportPasswordEnvVar("ubuntu-22.04")
+	if got != "CMM_TK_TRANSPORT_UBUNTU_22_04" {
+		t.Errorf("transportPasswordEnvVar() = %q, want %q", got, "CMM_TK_TRANSPORT_UBUNTU_22_04")
+	}
+}
+
+func TestTransportKeyEnvVar(t *testing.T) {
+	got := transportKeyEnvVar("ubuntu-22.04")
+	if got != "CMM_TK_KEY_UBUNTU_22_04" {
+		t.Errorf("transportKeyEnvVar() = %q, want %q", got, "CMM_TK_KEY_UBUNTU_22_04")
+	}
+}
+
+func TestNormalizeEnvVarSuffix(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"vcenter_password", "VCENTER_PASSWORD"},
+		{"ubuntu-22.04", "UBUNTU_22_04"},
+		{"ALREADY-UPPER", "ALREADY_UPPER"},
+		{"mixed.Case-name", "MIXED_CASE_NAME"},
+		{"simple", "SIMPLE"},
+	}
+	for _, tc := range cases {
+		got := normalizeEnvVarSuffix(tc.input)
+		if got != tc.want {
+			t.Errorf("normalizeEnvVarSuffix(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
 
