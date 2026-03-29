@@ -200,7 +200,7 @@ type TestKitchenConfig struct {
 	// key-value pairs. Keys are driver-specific (e.g. vcenter_host,
 	// region). These are serialised into the top-level driver: block of
 	// the generated .kitchen.local.yml overlay.
-	DriverSettings map[string]string `yaml:"driver_settings"`
+	DriverSettings map[string]any `yaml:"driver_settings"`
 
 	// DriverSecrets maps driver setting names to credential names from
 	// the credentials table. At runtime each secret is resolved via the
@@ -237,7 +237,7 @@ type PlatformMapEntry struct {
 	// DriverSettings contains per-platform driver settings (datacenter,
 	// cluster, resource pool, subnet, etc.). Merged on top of the
 	// top-level DriverSettings.
-	DriverSettings map[string]string `yaml:"driver_settings"`
+	DriverSettings map[string]any `yaml:"driver_settings"`
 
 	// Transport contains optional transport override for connecting to
 	// provisioned instances (SSH/WinRM credentials).
@@ -1165,7 +1165,7 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	}
 
 	// Custom profile requires image_field_name.
-	if driver == "custom" && tk.ImageFieldName == "" {
+	if (driver == "custom" || !knownDrivers[driver]) && tk.ImageFieldName == "" {
 		ve.add("analysis_tools.test_kitchen.image_field_name is required when driver is \"custom\"")
 	}
 

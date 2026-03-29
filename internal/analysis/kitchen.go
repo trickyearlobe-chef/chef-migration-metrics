@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -630,11 +631,13 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 		buf.WriteString("\ndriver:\n")
 		fmt.Fprintf(&buf, "  name: %s\n", s.tkConfig.Driver)
 		// Plaintext driver settings.
-		for k, v := range s.tkConfig.DriverSettings {
-			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlScalar(v))
+		dsKeys := sortedKeys(s.tkConfig.DriverSettings)
+		for _, k := range dsKeys {
+			writeDriverSetting(&buf, k, s.tkConfig.DriverSettings[k], 2)
 		}
 		// Secret driver settings — referenced via ERB env vars.
-		for k := range s.tkConfig.DriverSecrets {
+		secretKeys := sortedStringKeys(s.tkConfig.DriverSecrets)
+		for _, k := range secretKeys {
 			envName := driverSecretEnvVar(k)
 			fmt.Fprintf(&buf, "  %s: <%%= ENV['%s'] %%>\n", k, envName)
 		}
@@ -661,8 +664,9 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 			// Image field mapped through the profile.
 			fmt.Fprintf(&buf, "      %s: %s\n", profile.ImageFieldName, yamlScalar(entry.Image))
 			// Per-platform driver settings merged on top of top-level.
-			for k, v := range entry.DriverSettings {
-				fmt.Fprintf(&buf, "      %s: %s\n", k, yamlScalar(v))
+			pdsKeys := sortedKeys(entry.DriverSettings)
+			for _, k := range pdsKeys {
+				writeDriverSetting(&buf, k, entry.DriverSettings[k], 6)
 			}
 			// Transport block.
 			if entry.Transport != nil {
@@ -740,13 +744,26 @@ func transportKeyEnvVar(kitchenName string) string {
 	return "CMM_TK_KEY_" + normalizeEnvVarSuffix(kitchenName)
 }
 
-// normalizeEnvVarSuffix uppercases and replaces hyphens and dots with
-// underscores for use in environment variable names.
+// normalizeEnvVarSuffix uppercases and replaces any character that is not
+// alphanumeric or underscore with an underscore, for use in environment
+// variable names.
 func normalizeEnvVarSuffix(s string) string {
 	s = strings.ToUpper(s)
-	s = strings.ReplaceAll(s, "-", "_")
-	s = strings.ReplaceAll(s, ".", "_")
-	return s
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, ch := range s {
+		switch {
+		case ch >= 'A' && ch <= 'Z':
+			b.WriteRune(ch)
+		case ch >= '0' && ch <= '9':
+			b.WriteRune(ch)
+		case ch == '_':
+			b.WriteRune(ch)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -947,7 +964,13 @@ func yamlScalar(v string) string {
 // parameter is the number of leading spaces for each key.
 func writeAttributes(buf *bytes.Buffer, attrs map[string]interface{}, indent int) {
 	prefix := strings.Repeat(" ", indent)
-	for k, v := range attrs {
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := attrs[k]
 		switch val := v.(type) {
 		case map[string]interface{}:
 			fmt.Fprintf(buf, "%s%s:\n", prefix, k)
@@ -956,6 +979,40 @@ func writeAttributes(buf *bytes.Buffer, attrs map[string]interface{}, indent int
 			fmt.Fprintf(buf, "%s%s: %s\n", prefix, k, yamlScalar(fmt.Sprintf("%v", val)))
 		}
 	}
+}
+
+// writeDriverSetting writes a single driver setting key/value pair to buf.
+// Scalar values (string, int, float, bool) are written as "key: value".
+// Nested maps are written recursively using writeAttributes.
+func writeDriverSetting(buf *bytes.Buffer, key string, value any, indent int) {
+	prefix := strings.Repeat(" ", indent)
+	switch v := value.(type) {
+	case map[string]any:
+		fmt.Fprintf(buf, "%s%s:\n", prefix, key)
+		writeAttributes(buf, v, indent+2)
+	default:
+		fmt.Fprintf(buf, "%s%s: %s\n", prefix, key, yamlScalar(fmt.Sprintf("%v", v)))
+	}
+}
+
+// sortedKeys returns the keys of a map[string]any in sorted order.
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// sortedStringKeys returns the keys of a map[string]string in sorted order.
+func sortedStringKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // truncSHA returns the first 8 characters of a SHA string for log messages.
