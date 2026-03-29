@@ -839,7 +839,7 @@ func TestListener_ServeAndShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTTPS GET error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "OK" {
@@ -865,7 +865,7 @@ func TestListener_ServeAndShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTTP redirect GET error: %v", err)
 	}
-	defer redirectResp.Body.Close()
+	defer func() { _ = redirectResp.Body.Close() }()
 
 	if redirectResp.StatusCode != http.StatusMovedPermanently {
 		t.Errorf("redirect status = %d, want %d", redirectResp.StatusCode, http.StatusMovedPermanently)
@@ -950,7 +950,7 @@ func TestListener_ServeWithoutRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTTPS GET error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "secure" {
@@ -959,7 +959,7 @@ func TestListener_ServeWithoutRedirect(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	l.Shutdown(ctx)
+	_ = l.Shutdown(ctx)
 }
 
 func TestListener_ShutdownTimesOut(t *testing.T) {
@@ -1012,7 +1012,7 @@ func TestListener_ShutdownTimesOut(t *testing.T) {
 			Timeout: 30 * time.Second,
 		}
 		// We don't care about the response — the request will be killed.
-		client.Get(fmt.Sprintf("https://localhost:%d/block", httpsPort))
+		_, _ = client.Get(fmt.Sprintf("https://localhost:%d/block", httpsPort))
 	}()
 
 	// Wait for the handler to start processing.
@@ -1085,7 +1085,7 @@ func TestListener_ServesReloadedCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initial HTTPS GET error: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Generate a new cert and overwrite the files.
 	tc2 := generateTestCert(t, dir, "reload-serve-v2",
@@ -1110,7 +1110,7 @@ func TestListener_ServesReloadedCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HTTPS GET after reload error: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	if resp2.TLS == nil {
 		t.Fatal("TLS connection state is nil after reload")
@@ -1125,7 +1125,7 @@ func TestListener_ServesReloadedCert(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	l.Shutdown(ctx)
+	_ = l.Shutdown(ctx)
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,6 +1140,6 @@ func freePort(t *testing.T) int {
 		t.Fatalf("could not find free port: %v", err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 	return port
 }

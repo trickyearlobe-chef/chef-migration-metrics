@@ -1041,7 +1041,7 @@ func run() int {
 	if err := app.setupDatabase(); err != nil {
 		return 1
 	}
-	defer app.db.Close()
+	defer func() { _ = app.db.Close() }()
 
 	// Phase 4: attach DB log writer.
 	app.attachDBWriter()

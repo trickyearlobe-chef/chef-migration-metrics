@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useSort } from "../hooks/useSort";
 import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
+import { FilterInput, FilterSelect } from "../components/FilterInputs";
 import { fetchGitRepos } from "../api";
 import type { GitRepoListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
@@ -196,64 +197,49 @@ export function GitReposPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Name
-          </label>
-          <input
-            type="text"
-            value={nameFilter}
-            onChange={(e) => setNameFilter(e.target.value)}
-            placeholder="Filter by name"
-            className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Compatibility
-          </label>
-          <select
-            value={compatibility}
-            onChange={(e) => setCompatibility(e.target.value)}
-            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="compatible">Compatible</option>
-            <option value="incompatible">Incompatible</option>
-            <option value="untested">Untested</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            TK Status
-          </label>
-          <select
-            value={tkStatus}
-            onChange={(e) => setTkStatus(e.target.value)}
-            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="passed">Passed</option>
-            <option value="failed">Failed</option>
-            <option value="timed_out">Timed Out</option>
-            <option value="untested">Untested</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Clone Status
-          </label>
-          <select
-            value={cloneStatus}
-            onChange={(e) => setCloneStatus(e.target.value)}
-            className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="ok">Cloned</option>
-            <option value="failed">Failed</option>
-            <option value="pending">Pending</option>
-          </select>
-        </div>
+        <FilterInput
+          label="Name"
+          value={nameFilter}
+          onChange={setNameFilter}
+          placeholder="Filter by name"
+        />
+        <FilterSelect
+          label="Compatibility"
+          value={compatibility}
+          onChange={setCompatibility}
+          options={[
+            { value: "", label: "All" },
+            { value: "compatible", label: "Compatible" },
+            { value: "incompatible", label: "Incompatible" },
+            { value: "untested", label: "Untested" },
+          ]}
+          wide
+        />
+        <FilterSelect
+          label="TK Status"
+          value={tkStatus}
+          onChange={setTkStatus}
+          options={[
+            { value: "", label: "All" },
+            { value: "passed", label: "Passed" },
+            { value: "failed", label: "Failed" },
+            { value: "timed_out", label: "Timed Out" },
+            { value: "untested", label: "Untested" },
+          ]}
+          wide
+        />
+        <FilterSelect
+          label="Clone Status"
+          value={cloneStatus}
+          onChange={setCloneStatus}
+          options={[
+            { value: "", label: "All" },
+            { value: "ok", label: "Cloned" },
+            { value: "failed", label: "Failed" },
+            { value: "pending", label: "Pending" },
+          ]}
+          wide
+        />
         {targetVersions.length > 1 && (
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">

@@ -64,7 +64,7 @@ func Open(url string) (*DB, error) {
 	defer cancel()
 
 	if err := pool.PingContext(ctx); err != nil {
-		pool.Close()
+		_ = pool.Close()
 		return nil, fmt.Errorf("datastore: pinging database: %w", err)
 	}
 

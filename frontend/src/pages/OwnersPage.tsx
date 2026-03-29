@@ -3,6 +3,7 @@ import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { useSort } from "../hooks/useSort";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
+import { FilterInput, FilterSelect } from "../components/FilterInputs";
 import { fetchOwners, createOwner, type OwnerFilterQuery } from "../api";
 import type { Owner, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
@@ -325,35 +326,26 @@ export function OwnersPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Search
-          </label>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter by name"
-            className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Owner Type
-          </label>
-          <select
-            value={ownerType}
-            onChange={(e) => setOwnerType(e.target.value)}
-            className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All</option>
-            <option value="team">Team</option>
-            <option value="individual">Individual</option>
-            <option value="business_unit">Business Unit</option>
-            <option value="cost_centre">Cost Centre</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
+        <FilterInput
+          label="Search"
+          value={search}
+          onChange={setSearch}
+          placeholder="Filter by name"
+        />
+        <FilterSelect
+          label="Owner Type"
+          value={ownerType}
+          onChange={setOwnerType}
+          options={[
+            { value: "", label: "All" },
+            { value: "team", label: "Team" },
+            { value: "individual", label: "Individual" },
+            { value: "business_unit", label: "Business Unit" },
+            { value: "cost_centre", label: "Cost Centre" },
+            { value: "custom", label: "Custom" },
+          ]}
+          wide
+        />
         {activeFilterCount > 0 && (
           <button
             onClick={clearFilters}

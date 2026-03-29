@@ -288,7 +288,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body []byte
 	if err != nil {
 		return nil, fmt.Errorf("chefapi: executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -763,7 +763,7 @@ func (c *Client) DownloadFileContent(ctx context.Context, fileURL, checksum stri
 	if err != nil {
 		return nil, fmt.Errorf("chefapi: downloading file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
