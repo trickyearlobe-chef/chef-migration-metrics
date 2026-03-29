@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -51,6 +52,28 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 	if ownerFilterActive {
 		r.handleDashboardVersionDistributionWithOwnerFilter(w, req, orgs, of)
 		return
+	}
+
+	// Mid-collection guard: if any org has a running collection, serve
+	// from the latest completed metric_snapshots to avoid partial counts.
+	if r.anyOrgCollectionRunning(ctx, orgs) {
+		if counts, totalNodes, ok := r.versionDistFromMetricSnapshots(ctx, orgs); ok {
+			result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) versionDistEntry {
+				return versionDistEntry{Version: label, Count: count, Percent: pct}
+			})
+			sort.Slice(result, func(i, j int) bool {
+				if result[i].Count != result[j].Count {
+					return result[i].Count > result[j].Count
+				}
+				return result[i].Version < result[j].Version
+			})
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"total_nodes":  totalNodes,
+				"distribution": result,
+			})
+			return
+		}
+		// No metric snapshots available — fall through to live data.
 	}
 
 	// --- SQL aggregate push-down path ---
@@ -117,6 +140,29 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 		ownedKeys = keys
 	}
 
+	// Mid-collection guard: if any org has a running collection, serve
+	// from the latest completed metric_snapshots with ownership filtering
+	// applied to the per-node data in the JSONB payload.
+	if r.anyOrgCollectionRunning(ctx, orgs) {
+		if counts, totalNodes, ok := r.versionDistFromMetricSnapshotsOwnerFiltered(ctx, orgs, ownedKeys, of); ok {
+			result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) versionDistEntry {
+				return versionDistEntry{Version: label, Count: count, Percent: pct}
+			})
+			sort.Slice(result, func(i, j int) bool {
+				if result[i].Count != result[j].Count {
+					return result[i].Count > result[j].Count
+				}
+				return result[i].Version < result[j].Version
+			})
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"total_nodes":  totalNodes,
+				"distribution": result,
+			})
+			return
+		}
+		// No usable metric snapshots — fall through to live data.
+	}
+
 	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
 		orgIDs = append(orgIDs, org.ID)
@@ -168,6 +214,120 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 		"total_nodes":  totalNodes,
 		"distribution": result,
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Mid-collection guard helpers
+// ---------------------------------------------------------------------------
+
+// anyOrgCollectionRunning returns true if any of the given organisations
+// has a collection run currently in "running" status.
+func (r *Router) anyOrgCollectionRunning(ctx context.Context, orgs []datastore.Organisation) bool {
+	for _, org := range orgs {
+		run, err := r.db.GetLatestCollectionRun(ctx, org.ID)
+		if err != nil {
+			continue // no run or error — treat as not running
+		}
+		if run.Status == "running" {
+			return true
+		}
+	}
+	return false
+}
+
+// versionDistFromMetricSnapshots aggregates version distribution data from
+// the latest metric_snapshots for each org. Returns (counts, total, true)
+// on success. Returns (nil, 0, false) if no snapshots are available.
+func (r *Router) versionDistFromMetricSnapshots(
+	ctx context.Context,
+	orgs []datastore.Organisation,
+) (map[string]int, int, bool) {
+	counts := make(map[string]int)
+	totalNodes := 0
+	found := false
+
+	for _, org := range orgs {
+		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 1)
+		if err != nil || len(metrics) == 0 {
+			continue
+		}
+		var payload struct {
+			Distribution map[string]int `json:"distribution"`
+			TotalNodes   int            `json:"total_nodes"`
+		}
+		if err := json.Unmarshal(metrics[0].Data, &payload); err != nil {
+			r.logf("WARN", "unmarshalling metric snapshot %s for mid-collection guard: %v", metrics[0].ID, err)
+			continue
+		}
+		for v, cnt := range payload.Distribution {
+			counts[v] += cnt
+		}
+		totalNodes += payload.TotalNodes
+		found = true
+	}
+
+	if !found {
+		return nil, 0, false
+	}
+	return counts, totalNodes, true
+}
+
+// versionDistFromMetricSnapshotsOwnerFiltered aggregates version distribution
+// from the latest metric_snapshots, applying ownership filtering against the
+// per-node data in the JSONB payload. Returns (nil, 0, false) if no usable
+// snapshots are available (e.g. nodes_omitted or old format without nodes).
+func (r *Router) versionDistFromMetricSnapshotsOwnerFiltered(
+	ctx context.Context,
+	orgs []datastore.Organisation,
+	ownedKeys map[string]bool,
+	of ownerFilter,
+) (map[string]int, int, bool) {
+	counts := make(map[string]int)
+	totalNodes := 0
+	found := false
+
+	for _, org := range orgs {
+		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.ID, "chef_version_distribution", 1)
+		if err != nil || len(metrics) == 0 {
+			continue
+		}
+		var payload struct {
+			Nodes []struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"nodes"`
+			NodesOmitted bool `json:"nodes_omitted"`
+		}
+		if err := json.Unmarshal(metrics[0].Data, &payload); err != nil {
+			r.logf("WARN", "unmarshalling metric snapshot %s for mid-collection ownership guard: %v", metrics[0].ID, err)
+			continue
+		}
+		// Skip snapshots where per-node data is unavailable.
+		if payload.NodesOmitted || payload.Nodes == nil {
+			continue
+		}
+		for _, n := range payload.Nodes {
+			if ownedKeys != nil {
+				if of.Unowned {
+					if ownedKeys[n.Name] {
+						continue
+					}
+				} else {
+					if !ownedKeys[n.Name] {
+						continue
+					}
+				}
+			}
+			counts[n.Version]++
+			totalNodes++
+		}
+		found = true
+	}
+
+	if !found {
+		return nil, 0, false
+	}
+	return counts, totalNodes, true
 }
 
 // handleDashboardVersionDistributionTrend handles

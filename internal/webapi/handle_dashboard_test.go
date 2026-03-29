@@ -2590,5 +2590,269 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_BackwardCompa
 	}
 }
 
+// ---------------------------------------------------------------------------
+// handleDashboardVersionDistribution — mid-collection guard
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardVersionDistribution_MidCollectionGuard(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
+			return datastore.CollectionRun{
+				ID:             "run-1",
+				OrganisationID: "org-1",
+				Status:         "running",
+				StartedAt:      now,
+			}, nil
+		},
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:              "ms-1",
+					CollectionRunID: "run-0",
+					OrganisationID:  "org-1",
+					SnapshotType:    "chef_version_distribution",
+					Data:            json.RawMessage(`{"distribution":{"18.0.0":80,"17.0.0":20},"total_nodes":100,"stale_nodes":5,"fresh_nodes":95}`),
+					SnapshotAt:      now,
+				},
+			}, nil
+		},
+		// CountNodeVersionDistributionFn intentionally NOT set —
+		// the handler must not call it when collection is running.
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/version-distribution", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body struct {
+		TotalNodes   int `json:"total_nodes"`
+		Distribution []struct {
+			Version string  `json:"version"`
+			Count   int     `json:"count"`
+			Percent float64 `json:"percent"`
+		} `json:"distribution"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.TotalNodes != 100 {
+		t.Errorf("total_nodes = %d, want 100", body.TotalNodes)
+	}
+	found18 := false
+	found17 := false
+	for _, d := range body.Distribution {
+		switch d.Version {
+		case "18.0.0":
+			found18 = true
+			if d.Count != 80 {
+				t.Errorf("distribution[18.0.0] count = %d, want 80", d.Count)
+			}
+		case "17.0.0":
+			found17 = true
+			if d.Count != 20 {
+				t.Errorf("distribution[17.0.0] count = %d, want 20", d.Count)
+			}
+		}
+	}
+	if !found18 {
+		t.Error("distribution missing 18.0.0")
+	}
+	if !found17 {
+		t.Error("distribution missing 17.0.0")
+	}
+}
+
+func TestHandleDashboardVersionDistribution_NoRunningCollection_UsesLiveData(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
+			return datastore.CollectionRun{
+				ID:             "run-1",
+				OrganisationID: "org-1",
+				Status:         "completed",
+				StartedAt:      now,
+				CompletedAt:    now,
+			}, nil
+		},
+		CountNodeVersionDistributionFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+			return map[string]int{"18.0.0": 50}, 50, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/version-distribution", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body struct {
+		TotalNodes   int `json:"total_nodes"`
+		Distribution []struct {
+			Version string  `json:"version"`
+			Count   int     `json:"count"`
+			Percent float64 `json:"percent"`
+		} `json:"distribution"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.TotalNodes != 50 {
+		t.Errorf("total_nodes = %d, want 50", body.TotalNodes)
+	}
+	if len(body.Distribution) != 1 {
+		t.Fatalf("len(distribution) = %d, want 1", len(body.Distribution))
+	}
+	if body.Distribution[0].Version != "18.0.0" {
+		t.Errorf("distribution[0].version = %q, want %q", body.Distribution[0].Version, "18.0.0")
+	}
+	if body.Distribution[0].Count != 50 {
+		t.Errorf("distribution[0].count = %d, want 50", body.Distribution[0].Count)
+	}
+}
+
+func TestHandleDashboardVersionDistribution_MidCollectionGuard_NoMetricSnapshot(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
+			return datastore.CollectionRun{
+				ID:             "run-1",
+				OrganisationID: "org-1",
+				Status:         "running",
+				StartedAt:      now,
+			}, nil
+		},
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{}, nil
+		},
+		CountNodeVersionDistributionFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+			return map[string]int{"18.0.0": 30}, 30, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/version-distribution", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body struct {
+		TotalNodes   int `json:"total_nodes"`
+		Distribution []struct {
+			Version string  `json:"version"`
+			Count   int     `json:"count"`
+			Percent float64 `json:"percent"`
+		} `json:"distribution"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.TotalNodes != 30 {
+		t.Errorf("total_nodes = %d, want 30 (fallback to live data)", body.TotalNodes)
+	}
+	if len(body.Distribution) != 1 {
+		t.Fatalf("len(distribution) = %d, want 1", len(body.Distribution))
+	}
+	if body.Distribution[0].Version != "18.0.0" {
+		t.Errorf("distribution[0].version = %q, want %q", body.Distribution[0].Version, "18.0.0")
+	}
+	if body.Distribution[0].Count != 30 {
+		t.Errorf("distribution[0].count = %d, want 30", body.Distribution[0].Count)
+	}
+}
+
+func TestHandleDashboardVersionDistribution_MidCollectionGuard_WithOwnership(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		},
+		GetLatestCollectionRunFn: func(ctx context.Context, organisationID string) (datastore.CollectionRun, error) {
+			return datastore.CollectionRun{
+				ID:             "run-1",
+				OrganisationID: "org-1",
+				Status:         "running",
+				StartedAt:      now,
+			}, nil
+		},
+		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
+			return []datastore.OwnershipAssignment{
+				{EntityType: "node", EntityKey: "web01"},
+			}, 1, nil
+		},
+		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			return []datastore.MetricSnapshot{
+				{
+					ID:              "ms-1",
+					CollectionRunID: "run-0",
+					OrganisationID:  "org-1",
+					SnapshotType:    "chef_version_distribution",
+					Data: json.RawMessage(`{
+						"distribution":{"18.0.0":2,"17.0.0":1},
+						"total_nodes":3,
+						"nodes":[
+							{"name":"web01","version":"18.0.0"},
+							{"name":"web02","version":"18.0.0"},
+							{"name":"db01","version":"17.0.0"}
+						],
+						"nodes_omitted":false
+					}`),
+					SnapshotAt: now,
+				},
+			}, nil
+		},
+		// ListNodeSnapshotsFilteredFn intentionally NOT set —
+		// the handler must not use live data during a running collection.
+	}
+	cfg := testConfig()
+	cfg.Ownership.Enabled = true
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/version-distribution?owner=team-a", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body struct {
+		TotalNodes   int `json:"total_nodes"`
+		Distribution []struct {
+			Version string  `json:"version"`
+			Count   int     `json:"count"`
+			Percent float64 `json:"percent"`
+		} `json:"distribution"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.TotalNodes != 1 {
+		t.Errorf("total_nodes = %d, want 1 (only owned node web01)", body.TotalNodes)
+	}
+	if len(body.Distribution) != 1 {
+		t.Fatalf("len(distribution) = %d, want 1", len(body.Distribution))
+	}
+	if body.Distribution[0].Version != "18.0.0" {
+		t.Errorf("distribution[0].version = %q, want %q", body.Distribution[0].Version, "18.0.0")
+	}
+	if body.Distribution[0].Count != 1 {
+		t.Errorf("distribution[0].count = %d, want 1", body.Distribution[0].Count)
+	}
+}
+
 // Ensure the _ = fmt.Sprintf is used (keeps the import alive).
 var _ = fmt.Sprintf
