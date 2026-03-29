@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
+import { useSort } from "../hooks/useSort";
+import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import {
   fetchNodes,
   fetchFilterRoles,
@@ -9,20 +12,28 @@ import {
   fetchFilterPolicyGroups,
   fetchFilterEnvironments,
   fetchFilterPlatforms,
-  fetchFilterTargetChefVersions,
   type NodeFilterQuery,
 } from "../api";
-import type { NodeListItem, Pagination as PaginationType, ExportFilters } from "../types";
+import type {
+  NodeListItem,
+  Pagination as PaginationType,
+  ExportFilters,
+} from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StaleBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
-import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Readiness filter values
 // ---------------------------------------------------------------------------
-type ReadinessFilter = "" | "ready" | "blocked" | "cookbooks_blocked" | "disk_blocked" | "disk_unknown";
+type ReadinessFilter =
+  | ""
+  | "ready"
+  | "blocked"
+  | "cookbooks_blocked"
+  | "disk_blocked"
+  | "disk_unknown";
 
 function matchesReadinessFilter(
   node: NodeListItem,
@@ -51,7 +62,10 @@ function matchesReadinessFilter(
     case "disk_blocked":
       return entry.sufficient_disk_space === false;
     case "disk_unknown":
-      return entry.sufficient_disk_space === null || entry.sufficient_disk_space === undefined;
+      return (
+        entry.sufficient_disk_space === null ||
+        entry.sufficient_disk_space === undefined
+      );
     default:
       return true;
   }
@@ -88,7 +102,9 @@ export function NodesPage() {
   const [nodeName, setNodeName] = useState("");
   const [environment, setEnvironment] = useState("");
   const [platform, setPlatform] = useState(searchParams.get("platform") || "");
-  const [chefVersion, setChefVersion] = useState(searchParams.get("chef_version") || "");
+  const [chefVersion, setChefVersion] = useState(
+    searchParams.get("chef_version") || "",
+  );
   const [role, setRole] = useState("");
   const [policyName, setPolicyName] = useState("");
   const [policyGroup, setPolicyGroup] = useState("");
@@ -100,12 +116,26 @@ export function NodesPage() {
   const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to node_name ascending (backend default).
-  const [sortField, setSortField] = useState("node_name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const { sortField, sortOrder, handleSort } = useSort({
+    defaultField: "node_name",
+    defaultOrder: "asc",
+    descendingFields: [
+      "chef_version",
+      "platform",
+      "chef_environment",
+      "ohai_time",
+    ],
+  });
 
   // Target Chef version for readiness filter and exports (loaded from backend config)
-  const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>("");
+  const initialTargetVersion = searchParams.get("target_version") || "";
+  const {
+    targetVersions,
+    selectedVersion: selectedTargetVersion,
+    setSelectedVersion: setSelectedTargetVersion,
+  } = useTargetChefVersion({
+    initialVersion: initialTargetVersion || undefined,
+  });
 
   // Filter option values loaded from the backend
   const [roleOptions, setRoleOptions] = useState<string[]>([]);
@@ -114,27 +144,15 @@ export function NodesPage() {
   const [environmentOptions, setEnvironmentOptions] = useState<string[]>([]);
   const [platformOptions, setPlatformOptions] = useState<string[]>([]);
 
-  // Load target Chef versions once on mount. If a target_version query param
-  // is present (e.g. from a dashboard link), use it as the initial selection.
-  const initialTargetVersion = searchParams.get("target_version") || "";
-  useEffect(() => {
-    fetchFilterTargetChefVersions()
-      .then((res) => {
-        const versions = res.data ?? [];
-        setTargetVersions(versions);
-        if (initialTargetVersion && versions.includes(initialTargetVersion)) {
-          setSelectedTargetVersion(initialTargetVersion);
-        } else if (versions.length > 0 && !selectedTargetVersion) {
-          setSelectedTargetVersion(highestSemver(versions) ?? versions[0]);
-        }
-      })
-      .catch(() => setTargetVersions([]));
-  }, []); // intentionally run only on mount
-
   // Clear the search params after they have been consumed so the URL stays
   // clean and subsequent filter changes don't conflict with the initial params.
   useEffect(() => {
-    if (searchParams.has("readiness") || searchParams.has("target_version") || searchParams.has("chef_version") || searchParams.has("platform")) {
+    if (
+      searchParams.has("readiness") ||
+      searchParams.has("target_version") ||
+      searchParams.has("chef_version") ||
+      searchParams.has("platform")
+    ) {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
@@ -191,16 +209,55 @@ export function NodesPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, page, sortField, sortOrder]);
+  }, [
+    selectedOrg,
+    nodeName,
+    environment,
+    platform,
+    chefVersion,
+    role,
+    policyName,
+    policyGroup,
+    stale,
+    page,
+    sortField,
+    sortOrder,
+  ]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Reset to page 1 when filters change.
-  useEffect(() => { setPage(1); }, [selectedOrg, nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, sortField, sortOrder]);
+  useEffect(() => {
+    setPage(1);
+  }, [
+    selectedOrg,
+    nodeName,
+    environment,
+    platform,
+    chefVersion,
+    role,
+    policyName,
+    policyGroup,
+    stale,
+    sortField,
+    sortOrder,
+  ]);
 
   // Count active filters for the clear button.
   // Readiness filter is counted only when set (target version selector is not counted as a filter).
-  const activeFilterCount = [nodeName, environment, platform, chefVersion, role, policyName, policyGroup, stale, readinessFilter].filter(Boolean).length;
+  const activeFilterCount = [
+    nodeName,
+    environment,
+    platform,
+    chefVersion,
+    role,
+    policyName,
+    policyGroup,
+    stale,
+    readinessFilter,
+  ].filter(Boolean).length;
 
   const clearFilters = () => {
     setNodeName("");
@@ -214,28 +271,16 @@ export function NodesPage() {
     setReadinessFilter("");
   };
 
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      // Node name sorts ascending by default, everything else descending
-      setSortOrder(field === "node_name" ? "asc" : "desc");
-    }
-  };
-
-  const sortIndicator = (field: string) => {
-    if (sortField !== field) return " ↕";
-    return sortOrder === "asc" ? " ↑" : " ↓";
-  };
-
   // Apply client-side readiness filter. The backend doesn't support readiness
   // filtering directly, so we filter the already-fetched page of nodes.
   // This means the displayed count may be less than the page size when a
   // readiness filter is active, which is an acceptable trade-off for now.
-  const displayNodes = readinessFilter && selectedTargetVersion
-    ? nodes.filter((n) => matchesReadinessFilter(n, selectedTargetVersion, readinessFilter))
-    : nodes;
+  const displayNodes =
+    readinessFilter && selectedTargetVersion
+      ? nodes.filter((n) =>
+          matchesReadinessFilter(n, selectedTargetVersion, readinessFilter),
+        )
+      : nodes;
 
   // Build the current filter set for export buttons.
   const exportFilters: ExportFilters = {};
@@ -257,14 +302,18 @@ export function NodesPage() {
           {/* Target version selector for readiness filter + exports */}
           {targetVersions.length > 0 && (
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-gray-500">Target Version</label>
+              <label className="text-xs font-medium text-gray-500">
+                Target Version
+              </label>
               <select
                 value={selectedTargetVersion}
                 onChange={(e) => setSelectedTargetVersion(e.target.value)}
                 className="block w-28 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 {targetVersions.map((v) => (
-                  <option key={v} value={v}>{v}</option>
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
                 ))}
               </select>
             </div>
@@ -287,7 +336,12 @@ export function NodesPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
-        <FilterInput label="Node Name" value={nodeName} onChange={setNodeName} placeholder="Filter by name" />
+        <FilterInput
+          label="Node Name"
+          value={nodeName}
+          onChange={setNodeName}
+          placeholder="Filter by name"
+        />
         <FilterCombobox
           label="Environment"
           value={environment}
@@ -302,7 +356,12 @@ export function NodesPage() {
           options={platformOptions}
           placeholder="All platforms"
         />
-        <FilterInput label="Chef Version" value={chefVersion} onChange={setChefVersion} placeholder="e.g. 17.10.0" />
+        <FilterInput
+          label="Chef Version"
+          value={chefVersion}
+          onChange={setChefVersion}
+          placeholder="e.g. 17.10.0"
+        />
         <FilterCombobox
           label="Role"
           value={role}
@@ -365,29 +424,52 @@ export function NodesPage() {
       {!loading && !error && (
         <>
           {displayNodes.length === 0 ? (
-            <EmptyState title="No nodes found" description="Adjust filters or wait for data collection." />
+            <EmptyState
+              title="No nodes found"
+              description="Adjust filters or wait for data collection."
+            />
           ) : (
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("node_name")}>
-                      Node Name<span className="text-xs text-blue-500">{sortIndicator("node_name")}</span>
-                    </th>
+                    <SortableColumnHeader
+                      label="Node Name"
+                      field="node_name"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     <th>Organisation</th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("chef_environment")}>
-                      Environment<span className="text-xs text-blue-500">{sortIndicator("chef_environment")}</span>
-                    </th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("chef_version")}>
-                      Chef Version<span className="text-xs text-blue-500">{sortIndicator("chef_version")}</span>
-                    </th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("platform")}>
-                      Platform<span className="text-xs text-blue-500">{sortIndicator("platform")}</span>
-                    </th>
+                    <SortableColumnHeader
+                      label="Environment"
+                      field="chef_environment"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Chef Version"
+                      field="chef_version"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Platform"
+                      field="platform"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     <th>Status</th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("ohai_time")}>
-                      Ohai Time<span className="text-xs text-blue-500">{sortIndicator("ohai_time")}</span>
-                    </th>
+                    <SortableColumnHeader
+                      label="Ohai Time"
+                      field="ohai_time"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -457,7 +539,9 @@ function FilterInput({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-gray-500">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-gray-500">
+        {label}
+      </label>
       <input
         type="text"
         value={value}
@@ -484,14 +568,18 @@ function FilterSelect({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-gray-500">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-gray-500">
+        {label}
+      </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={`block rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${wide ? "w-48" : "w-32"}`}
       >
         {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
         ))}
       </select>
     </div>
@@ -531,7 +619,9 @@ function FilterCombobox({
 
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-gray-500">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-gray-500">
+        {label}
+      </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -539,7 +629,9 @@ function FilterCombobox({
       >
         <option value="">{placeholder || `All ${label.toLowerCase()}s`}</option>
         {options.map((opt) => (
-          <option key={opt} value={opt}>{opt}</option>
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
         ))}
       </select>
     </div>

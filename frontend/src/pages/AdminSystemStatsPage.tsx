@@ -3,15 +3,25 @@ import { fetchSystemHealth } from "../api";
 import type { SystemHealthResponse } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import type { TableSize } from "../types";
+import { useSort } from "../hooks/useSort";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
 
 // ---------------------------------------------------------------------------
 // DB table sort types & helpers
 // ---------------------------------------------------------------------------
 
-type TableSortField = "table_name" | "total_bytes" | "table_bytes" | "index_bytes" | "row_estimate";
-type SortOrder = "asc" | "desc";
+type TableSortField =
+  | "table_name"
+  | "total_bytes"
+  | "table_bytes"
+  | "index_bytes"
+  | "row_estimate";
 
-function compareTableSizes(a: TableSize, b: TableSize, field: TableSortField): number {
+function compareTableSizes(
+  a: TableSize,
+  b: TableSize,
+  field: TableSortField,
+): number {
   switch (field) {
     case "table_name":
       return a.table_name.localeCompare(b.table_name);
@@ -45,7 +55,11 @@ function formatBytes(bytes: number): string {
   return val.toFixed(i > 1 ? 1 : 0) + " " + units[i];
 }
 
-function percentColour(value: number, warning: number, critical: number): string {
+function percentColour(
+  value: number,
+  warning: number,
+  critical: number,
+): string {
   if (value >= critical) return "text-red-600";
   if (value >= warning) return "text-amber-600";
   return "text-green-600";
@@ -57,27 +71,44 @@ function barColour(value: number, warning: number, critical: number): string {
   return "bg-green-500";
 }
 
-function loadColour(loadPerCPU: number, warning: number, critical: number): string {
+function loadColour(
+  loadPerCPU: number,
+  warning: number,
+  critical: number,
+): string {
   if (loadPerCPU >= critical) return "text-red-600";
   if (loadPerCPU >= warning) return "text-amber-600";
   return "text-green-600";
 }
 
-function UsageBar({ percent, warning, critical, label }: {
-  percent: number; warning: number; critical: number; label: string;
+function UsageBar({
+  percent,
+  warning,
+  critical,
+  label,
+}: {
+  percent: number;
+  warning: number;
+  critical: number;
+  label: string;
 }) {
   const clamped = Math.min(Math.max(percent, 0), 100);
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
         <span>{label}</span>
-        <span className={"font-medium " + percentColour(percent, warning, critical)}>
+        <span
+          className={"font-medium " + percentColour(percent, warning, critical)}
+        >
           {percent.toFixed(1)}%
         </span>
       </div>
       <div className="h-3 w-full overflow-hidden rounded-full bg-gray-100">
         <div
-          className={"h-full rounded-full transition-all duration-700 " + barColour(percent, warning, critical)}
+          className={
+            "h-full rounded-full transition-all duration-700 " +
+            barColour(percent, warning, critical)
+          }
           style={{ width: clamped + "%" }}
         />
       </div>
@@ -90,12 +121,27 @@ export function AdminSystemStatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [tableSortField, setTableSortField] = useState<TableSortField>("total_bytes");
-  const [tableSortOrder, setTableSortOrder] = useState<SortOrder>("desc");
+  const {
+    sortField: tableSortField,
+    sortOrder: tableSortOrder,
+    handleSort: handleTableSort,
+  } = useSort<TableSortField>({
+    defaultField: "total_bytes",
+    defaultOrder: "desc",
+    descendingFields: [
+      "total_bytes",
+      "table_bytes",
+      "index_bytes",
+      "row_estimate",
+    ],
+  });
 
   const load = useCallback(() => {
     fetchSystemHealth()
-      .then((res) => { setData(res); setError(null); })
+      .then((res) => {
+        setData(res);
+        setError(null);
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -103,30 +149,12 @@ export function AdminSystemStatsPage() {
   useEffect(() => {
     load();
     intervalRef.current = setInterval(load, 10_000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [load]);
 
   const th = data?.thresholds;
-
-  const handleTableSort = useCallback(
-    (field: TableSortField) => {
-      if (field === tableSortField) {
-        setTableSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-      } else {
-        setTableSortField(field);
-        setTableSortOrder(field === "table_name" ? "asc" : "desc");
-      }
-    },
-    [tableSortField],
-  );
-
-  const tableSortIndicator = useCallback(
-    (field: TableSortField) => {
-      if (tableSortField !== field) return " ↕";
-      return tableSortOrder === "asc" ? " ↑" : " ↓";
-    },
-    [tableSortField, tableSortOrder],
-  );
 
   const sortedTableSizes = useMemo(() => {
     if (!data) return [];
@@ -162,14 +190,27 @@ export function AdminSystemStatsPage() {
           {/* ---- Collection paused banner ---- */}
           {data.collection_paused && (
             <div className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 p-4">
-              <svg className="mt-0.5 h-5 w-5 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
+              <svg
+                className="mt-0.5 h-5 w-5 shrink-0 text-red-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 5.25v13.5m-7.5-13.5v13.5"
+                />
               </svg>
               <div>
-                <p className="text-sm font-semibold text-red-800">Data collection paused</p>
+                <p className="text-sm font-semibold text-red-800">
+                  Data collection paused
+                </p>
                 <p className="mt-1 text-xs text-red-700">
-                  Collection has been automatically paused due to critical resource alerts.
-                  It will resume once resources return below critical thresholds.
+                  Collection has been automatically paused due to critical
+                  resource alerts. It will resume once resources return below
+                  critical thresholds.
                 </p>
               </div>
             </div>
@@ -188,8 +229,18 @@ export function AdminSystemStatsPage() {
                       : "border-amber-300 bg-amber-50 text-amber-800")
                   }
                 >
-                  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                  <svg
+                    className="h-4 w-4 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                    />
                   </svg>
                   <span className="font-medium capitalize">{a.level}:</span>
                   {a.message}
@@ -200,10 +251,21 @@ export function AdminSystemStatsPage() {
 
           {/* ---- Disk cards (one per unique filesystem) ---- */}
           {data.disks.length > 0 && (
-            <div className={"grid gap-6 " + (data.disks.length === 1 ? "lg:grid-cols-1 max-w-md" : data.disks.length === 2 ? "lg:grid-cols-2" : "lg:grid-cols-3")}>
+            <div
+              className={
+                "grid gap-6 " +
+                (data.disks.length === 1
+                  ? "lg:grid-cols-1 max-w-md"
+                  : data.disks.length === 2
+                    ? "lg:grid-cols-2"
+                    : "lg:grid-cols-3")
+              }
+            >
               {data.disks.map((disk, i) => (
                 <div key={disk.path} className="card">
-                  <h3 className="card-header">Disk Usage{data.disks.length > 1 ? ` (${i + 1})` : ""}</h3>
+                  <h3 className="card-header">
+                    Disk Usage{data.disks.length > 1 ? ` (${i + 1})` : ""}
+                  </h3>
                   <UsageBar
                     percent={disk.used_percent}
                     warning={th.disk_used_warning_percent}
@@ -211,9 +273,12 @@ export function AdminSystemStatsPage() {
                     label="Used"
                   />
                   <p className="mt-3 text-sm text-gray-600">
-                    {formatBytes(disk.free_bytes)} free of {formatBytes(disk.total_bytes)}
+                    {formatBytes(disk.free_bytes)} free of{" "}
+                    {formatBytes(disk.total_bytes)}
                   </p>
-                  <p className="mt-1 text-xs text-gray-400">Path: {disk.path}</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Path: {disk.path}
+                  </p>
                 </div>
               ))}
             </div>
@@ -225,7 +290,16 @@ export function AdminSystemStatsPage() {
             <div className="card">
               <h3 className="card-header">CPU Load</h3>
               <div className="flex items-baseline gap-2">
-                <span className={"text-3xl font-bold " + loadColour(data.load_per_cpu, th.cpu_load_warning_per_cpu, th.cpu_load_critical_per_cpu)}>
+                <span
+                  className={
+                    "text-3xl font-bold " +
+                    loadColour(
+                      data.load_per_cpu,
+                      th.cpu_load_warning_per_cpu,
+                      th.cpu_load_critical_per_cpu,
+                    )
+                  }
+                >
                   {data.load_avg_1.toFixed(2)}
                 </span>
                 <span className="text-sm text-gray-500">1-min avg</span>
@@ -233,7 +307,9 @@ export function AdminSystemStatsPage() {
               <p className="mt-3 text-sm text-gray-600">
                 {data.load_per_cpu.toFixed(2)} per CPU
               </p>
-              <p className="mt-1 text-xs text-gray-400">{data.cpu_count} CPUs</p>
+              <p className="mt-1 text-xs text-gray-400">
+                {data.cpu_count} CPUs
+              </p>
             </div>
 
             {/* Memory */}
@@ -246,7 +322,8 @@ export function AdminSystemStatsPage() {
                 label="Used"
               />
               <p className="mt-3 text-sm text-gray-600">
-                {formatBytes(data.mem_avail_bytes)} available of {formatBytes(data.mem_total_bytes)}
+                {formatBytes(data.mem_avail_bytes)} available of{" "}
+                {formatBytes(data.mem_total_bytes)}
               </p>
             </div>
           </div>
@@ -256,25 +333,34 @@ export function AdminSystemStatsPage() {
             <div className="card">
               <h3 className="card-header text-sm">Database Size</h3>
               <span className="text-2xl font-bold text-gray-700">
-                {data.database_size_bytes > 0 ? formatBytes(data.database_size_bytes) : "N/A"}
+                {data.database_size_bytes > 0
+                  ? formatBytes(data.database_size_bytes)
+                  : "N/A"}
               </span>
               {data.database_size_bytes > 0 && (
                 <p className="mt-1 text-xs text-gray-400">
-                  PostgreSQL &middot; {data.table_sizes.length} table{data.table_sizes.length !== 1 ? "s" : ""}
+                  PostgreSQL &middot; {data.table_sizes.length} table
+                  {data.table_sizes.length !== 1 ? "s" : ""}
                 </p>
               )}
             </div>
             <div className="card">
               <h3 className="card-header text-sm">Go Heap</h3>
-              <span className="text-2xl font-bold text-gray-700">{formatBytes(data.go_heap_bytes)}</span>
+              <span className="text-2xl font-bold text-gray-700">
+                {formatBytes(data.go_heap_bytes)}
+              </span>
             </div>
             <div className="card">
               <h3 className="card-header text-sm">Goroutines</h3>
-              <span className="text-2xl font-bold text-gray-700">{data.go_goroutines.toLocaleString()}</span>
+              <span className="text-2xl font-bold text-gray-700">
+                {data.go_goroutines.toLocaleString()}
+              </span>
             </div>
             <div className="card">
               <h3 className="card-header text-sm">Uptime</h3>
-              <span className="text-2xl font-bold text-gray-700">{data.uptime}</span>
+              <span className="text-2xl font-bold text-gray-700">
+                {data.uptime}
+              </span>
             </div>
           </div>
 
@@ -288,49 +374,78 @@ export function AdminSystemStatsPage() {
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 text-xs text-gray-500">
+                      <SortableColumnHeader
+                        label="Table"
+                        field="table_name"
+                        currentField={tableSortField}
+                        currentOrder={tableSortOrder}
+                        onSort={handleTableSort}
+                        className="pb-2 pr-4 font-medium"
+                      />
+                      <SortableColumnHeader
+                        label="Total"
+                        field="total_bytes"
+                        currentField={tableSortField}
+                        currentOrder={tableSortOrder}
+                        onSort={handleTableSort}
+                        className="pb-2 pr-4 font-medium text-right"
+                      />
+                      <SortableColumnHeader
+                        label="Data"
+                        field="table_bytes"
+                        currentField={tableSortField}
+                        currentOrder={tableSortOrder}
+                        onSort={handleTableSort}
+                        className="pb-2 pr-4 font-medium text-right"
+                      />
+                      <SortableColumnHeader
+                        label="Indexes"
+                        field="index_bytes"
+                        currentField={tableSortField}
+                        currentOrder={tableSortOrder}
+                        onSort={handleTableSort}
+                        className="pb-2 pr-4 font-medium text-right"
+                      />
+                      <SortableColumnHeader
+                        label="Rows (est.)"
+                        field="row_estimate"
+                        currentField={tableSortField}
+                        currentOrder={tableSortOrder}
+                        onSort={handleTableSort}
+                        className="pb-2 pr-4 font-medium text-right"
+                      />
                       <th
-                        className="cursor-pointer select-none pb-2 pr-4 font-medium hover:text-gray-700"
-                        onClick={() => handleTableSort("table_name")}
-                      >
-                        Table<span className="text-blue-500">{tableSortIndicator("table_name")}</span>
-                      </th>
-                      <th
-                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
-                        onClick={() => handleTableSort("total_bytes")}
-                      >
-                        Total<span className="text-blue-500">{tableSortIndicator("total_bytes")}</span>
-                      </th>
-                      <th
-                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
-                        onClick={() => handleTableSort("table_bytes")}
-                      >
-                        Data<span className="text-blue-500">{tableSortIndicator("table_bytes")}</span>
-                      </th>
-                      <th
-                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
-                        onClick={() => handleTableSort("index_bytes")}
-                      >
-                        Indexes<span className="text-blue-500">{tableSortIndicator("index_bytes")}</span>
-                      </th>
-                      <th
-                        className="cursor-pointer select-none pb-2 pr-4 font-medium text-right hover:text-gray-700"
-                        onClick={() => handleTableSort("row_estimate")}
-                      >
-                        Rows (est.)<span className="text-blue-500">{tableSortIndicator("row_estimate")}</span>
-                      </th>
-                      <th className="pb-2 font-medium" style={{ minWidth: "120px" }}></th>
+                        className="pb-2 font-medium"
+                        style={{ minWidth: "120px" }}
+                      ></th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedTableSizes.map((t) => {
-                      const pct = Math.max((t.total_bytes / maxTableBytes) * 100, 0.5);
+                      const pct = Math.max(
+                        (t.total_bytes / maxTableBytes) * 100,
+                        0.5,
+                      );
                       return (
-                        <tr key={t.table_name} className="border-b border-gray-100 last:border-0">
-                          <td className="py-2 pr-4 font-mono text-xs text-gray-700">{t.table_name}</td>
-                          <td className="py-2 pr-4 text-right text-xs text-gray-700">{formatBytes(t.total_bytes)}</td>
-                          <td className="py-2 pr-4 text-right text-xs text-gray-500">{formatBytes(t.table_bytes)}</td>
-                          <td className="py-2 pr-4 text-right text-xs text-gray-500">{formatBytes(t.index_bytes)}</td>
-                          <td className="py-2 pr-4 text-right text-xs text-gray-500">{t.row_estimate.toLocaleString()}</td>
+                        <tr
+                          key={t.table_name}
+                          className="border-b border-gray-100 last:border-0"
+                        >
+                          <td className="py-2 pr-4 font-mono text-xs text-gray-700">
+                            {t.table_name}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-700">
+                            {formatBytes(t.total_bytes)}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-500">
+                            {formatBytes(t.table_bytes)}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-500">
+                            {formatBytes(t.index_bytes)}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-xs text-gray-500">
+                            {t.row_estimate.toLocaleString()}
+                          </td>
                           <td className="py-2">
                             <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
                               <div

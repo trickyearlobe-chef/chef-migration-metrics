@@ -27,32 +27,16 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	// Resolve owned node keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
-	if ownerFilterActive {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned node keys for readiness: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving owned node keys for readiness: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "node")
+	if err != nil {
+		r.logf("ERROR", "resolving node ownership filter for readiness: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
 
-	orgs, err := r.resolveOrganisationFilter(req)
-	if err != nil {
-		r.logf("ERROR", "listing organisations for readiness: %v", err)
+	orgs, err2 := r.resolveOrganisationFilter(req)
+	if err2 != nil {
+		r.logf("ERROR", "listing organisations for readiness: %v", err2)
 		WriteInternalError(w, "Failed to compute readiness summary.")
 		return
 	}
@@ -70,7 +54,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 	// When owner filtering is active, collect allowed node names and count
 	// readiness by inspecting per-node readiness records. Otherwise, use
 	// the fast aggregate CountNodeReadiness path.
-	if ownerFilterActive && ownedKeys != nil {
+	if ownedKeys != nil {
 		// Build the set of allowed node names across all orgs.
 		allowedNodes := make(map[string]string) // node_name -> snapshot_id
 		for _, org := range orgs {
@@ -80,13 +64,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 				continue
 			}
 			for _, n := range nodes {
-				include := false
-				if of.Unowned {
-					include = !ownedKeys[n.NodeName]
-				} else {
-					include = ownedKeys[n.NodeName]
-				}
-				if include {
+				if ownershipInclude(n.NodeName, ownedKeys, of) {
 					allowedNodes[n.NodeName] = n.ID
 				}
 			}

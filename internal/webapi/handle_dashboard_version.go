@@ -119,23 +119,11 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 ) {
 	ctx := req.Context()
 
-	var ownedKeys map[string]bool
-	if of.Unowned {
-		keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-		if err != nil {
-			r.logf("ERROR", "resolving all owned node keys for version distribution: %v", err)
-			WriteInternalError(w, "Failed to resolve ownership filter.")
-			return
-		}
-		ownedKeys = keys
-	} else if len(of.OwnerNames) > 0 {
-		keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-		if err != nil {
-			r.logf("ERROR", "resolving owned node keys for version distribution: %v", err)
-			WriteInternalError(w, "Failed to resolve ownership filter.")
-			return
-		}
-		ownedKeys = keys
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "node")
+	if err != nil {
+		r.logf("ERROR", "resolving node ownership filter for version distribution: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
 	}
 
 	// Mid-collection guard: if any org has a running collection, serve
@@ -168,9 +156,9 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 
 	// Use SQL push-down for node-level filters, no pagination.
 	f := datastore.NodeSnapshotFilter{OrganisationIDs: orgIDs}
-	nodes, _, err := r.db.ListNodeSnapshotsFiltered(ctx, f)
-	if err != nil {
-		r.logf("ERROR", "listing nodes for version distribution owner filter: %v", err)
+	nodes, _, err2 := r.db.ListNodeSnapshotsFiltered(ctx, f)
+	if err2 != nil {
+		r.logf("ERROR", "listing nodes for version distribution owner filter: %v", err2)
 		WriteInternalError(w, "Failed to compute version distribution.")
 		return
 	}
@@ -178,16 +166,8 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 	counts := make(map[string]int)
 	totalNodes := 0
 	for _, n := range nodes {
-		if ownedKeys != nil {
-			if of.Unowned {
-				if ownedKeys[n.NodeName] {
-					continue
-				}
-			} else {
-				if !ownedKeys[n.NodeName] {
-					continue
-				}
-			}
+		if !ownershipInclude(n.NodeName, ownedKeys, of) {
+			continue
 		}
 		v := n.ChefVersion
 		if v == "" {
@@ -305,16 +285,8 @@ func (r *Router) versionDistFromMetricSnapshotsOwnerFiltered(
 			continue
 		}
 		for _, n := range payload.Nodes {
-			if ownedKeys != nil {
-				if of.Unowned {
-					if ownedKeys[n.Name] {
-						continue
-					}
-				} else {
-					if !ownedKeys[n.Name] {
-						continue
-					}
-				}
+			if !ownershipInclude(n.Name, ownedKeys, of) {
+				continue
 			}
 			counts[n.Version]++
 			totalNodes++
@@ -346,32 +318,17 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 		return
 	}
 
-	// Resolve owned node keys when ownership filtering is active.
-	var ownedKeys map[string]bool
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
-	if ownerFilterActive {
-		if of.Unowned {
-			keys, err := r.resolveAllOwnedEntityKeys(ctx, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving all owned node keys for version trend: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		} else if len(of.OwnerNames) > 0 {
-			keys, err := r.resolveOwnedEntityKeys(ctx, of.OwnerNames, "node")
-			if err != nil {
-				r.logf("ERROR", "resolving owned node keys for version trend: %v", err)
-				WriteInternalError(w, "Failed to resolve ownership filter.")
-				return
-			}
-			ownedKeys = keys
-		}
-	}
-
-	orgs, err := r.resolveOrganisationFilter(req)
+	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "node")
 	if err != nil {
-		r.logf("ERROR", "listing organisations for version trend: %v", err)
+		r.logf("ERROR", "resolving node ownership filter for version trend: %v", err)
+		WriteInternalError(w, "Failed to resolve ownership filter.")
+		return
+	}
+	ownerFilterActive := ownedKeys != nil
+
+	orgs, err2 := r.resolveOrganisationFilter(req)
+	if err2 != nil {
+		r.logf("ERROR", "listing organisations for version trend: %v", err2)
 		WriteInternalError(w, "Failed to compute version distribution trend.")
 		return
 	}
@@ -459,16 +416,8 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 			dist := make(map[string]int)
 			total := 0
 			for _, n := range payload.Nodes {
-				if ownedKeys != nil {
-					if of.Unowned {
-						if ownedKeys[n.Name] {
-							continue // skip owned nodes
-						}
-					} else {
-						if !ownedKeys[n.Name] {
-							continue // skip unowned nodes
-						}
-					}
+				if !ownershipInclude(n.Name, ownedKeys, of) {
+					continue
 				}
 				dist[n.Version]++
 				total++

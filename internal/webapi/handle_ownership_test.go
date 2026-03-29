@@ -2275,3 +2275,194 @@ func TestUpdateOwner_AuditLog(t *testing.T) {
 		t.Errorf("audit details should contain contact_email, got %s", auditDetails)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ownershipInclude
+// ---------------------------------------------------------------------------
+
+func TestOwnershipInclude_NilKeys(t *testing.T) {
+	of := ownerFilter{Active: true, Unowned: true}
+	if !ownershipInclude("anything", nil, of) {
+		t.Error("nil ownedKeys should include everything")
+	}
+}
+
+func TestOwnershipInclude_Unowned(t *testing.T) {
+	keys := map[string]bool{"web1": true, "web2": true}
+	of := ownerFilter{Active: true, Unowned: true}
+
+	if ownershipInclude("web1", keys, of) {
+		t.Error("owned key should be excluded when Unowned=true")
+	}
+	if !ownershipInclude("db1", keys, of) {
+		t.Error("unowned key should be included when Unowned=true")
+	}
+}
+
+func TestOwnershipInclude_ByOwner(t *testing.T) {
+	keys := map[string]bool{"web1": true, "web2": true}
+	of := ownerFilter{Active: true, OwnerNames: []string{"team-a"}}
+
+	if !ownershipInclude("web1", keys, of) {
+		t.Error("owned key should be included when filtering by owner")
+	}
+	if ownershipInclude("db1", keys, of) {
+		t.Error("unowned key should be excluded when filtering by owner")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// filterByOwnershipKey
+// ---------------------------------------------------------------------------
+
+func TestFilterByOwnershipKey_NilKeys(t *testing.T) {
+	items := []string{"a", "b", "c"}
+	of := ownerFilter{}
+	result := filterByOwnershipKey(items, nil, of, func(s string) string { return s })
+	if len(result) != 3 {
+		t.Errorf("nil keys should return all items, got %d", len(result))
+	}
+}
+
+func TestFilterByOwnershipKey_Unowned(t *testing.T) {
+	type named struct{ Name string }
+	items := []named{{Name: "web1"}, {Name: "db1"}, {Name: "web2"}}
+	keys := map[string]bool{"web1": true, "web2": true}
+	of := ownerFilter{Active: true, Unowned: true}
+
+	result := filterByOwnershipKey(items, keys, of, func(n named) string { return n.Name })
+	if len(result) != 1 {
+		t.Fatalf("expected 1 unowned item, got %d", len(result))
+	}
+	if result[0].Name != "db1" {
+		t.Errorf("expected db1, got %s", result[0].Name)
+	}
+}
+
+func TestFilterByOwnershipKey_ByOwner(t *testing.T) {
+	type named struct{ Name string }
+	items := []named{{Name: "web1"}, {Name: "db1"}, {Name: "web2"}}
+	keys := map[string]bool{"web1": true, "web2": true}
+	of := ownerFilter{Active: true, OwnerNames: []string{"team-a"}}
+
+	result := filterByOwnershipKey(items, keys, of, func(n named) string { return n.Name })
+	if len(result) != 2 {
+		t.Fatalf("expected 2 owned items, got %d", len(result))
+	}
+	if result[0].Name != "web1" || result[1].Name != "web2" {
+		t.Errorf("expected [web1, web2], got [%s, %s]", result[0].Name, result[1].Name)
+	}
+}
+
+func TestFilterByOwnershipKey_EmptySlice(t *testing.T) {
+	keys := map[string]bool{"web1": true}
+	of := ownerFilter{Active: true, OwnerNames: []string{"team-a"}}
+
+	var items []string
+	result := filterByOwnershipKey(items, keys, of, func(s string) string { return s })
+	if len(result) != 0 {
+		t.Errorf("expected 0 items, got %d", len(result))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// resolveOwnershipFilter
+// ---------------------------------------------------------------------------
+
+func TestResolveOwnershipFilter_Inactive(t *testing.T) {
+	r := ownershipTestConfig()
+	of := ownerFilter{Active: false}
+	keys, err := r.resolveOwnershipFilter(context.Background(), of, "node")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if keys != nil {
+		t.Error("inactive filter should return nil keys")
+	}
+}
+
+func TestResolveOwnershipFilter_OwnershipDisabled(t *testing.T) {
+	cfg := testConfig()
+	cfg.Ownership.Enabled = false
+	store := &mockStore{}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	of := ownerFilter{Active: true, OwnerNames: []string{"team-a"}}
+	keys, err := r.resolveOwnershipFilter(context.Background(), of, "node")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if keys != nil {
+		t.Error("disabled ownership should return nil keys")
+	}
+}
+
+func TestResolveOwnershipFilter_ByOwner(t *testing.T) {
+	store := &mockStore{
+		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
+			return []datastore.OwnershipAssignment{
+				{EntityKey: "web1", EntityType: "node"},
+				{EntityKey: "web2", EntityType: "node"},
+			}, 2, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.Ownership.Enabled = true
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	of := ownerFilter{Active: true, OwnerNames: []string{"team-a"}}
+	keys, err := r.resolveOwnershipFilter(context.Background(), of, "node")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if keys == nil {
+		t.Fatal("expected non-nil keys")
+	}
+	if !keys["web1"] || !keys["web2"] {
+		t.Errorf("expected web1 and web2 in keys, got %v", keys)
+	}
+}
+
+func TestResolveOwnershipFilter_Unowned(t *testing.T) {
+	store := &mockStore{
+		ListOwnersFn: func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error) {
+			return []datastore.Owner{{Name: "team-a"}}, 1, nil
+		},
+		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
+			return []datastore.OwnershipAssignment{
+				{EntityKey: "web1", EntityType: "node"},
+			}, 1, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.Ownership.Enabled = true
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	of := ownerFilter{Active: true, Unowned: true}
+	keys, err := r.resolveOwnershipFilter(context.Background(), of, "node")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if keys == nil {
+		t.Fatal("expected non-nil keys for unowned filter")
+	}
+	if !keys["web1"] {
+		t.Error("expected web1 to be in all-owned keys")
+	}
+}
+
+func TestResolveOwnershipFilter_ActiveButNoOwnerNamesOrUnowned(t *testing.T) {
+	cfg := testConfig()
+	cfg.Ownership.Enabled = true
+	store := &mockStore{}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	of := ownerFilter{Active: true}
+	keys, err := r.resolveOwnershipFilter(context.Background(), of, "node")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if keys != nil {
+		t.Error("active filter with no owner names and not unowned should return nil keys")
+	}
+}

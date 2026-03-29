@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { SMALL_PAGE_SIZE } from "../constants";
 import { useParams, Link } from "react-router-dom";
+import { useSort } from "../hooks/useSort";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import {
   fetchCookbookCommitters,
   assignCookbookCommitters,
@@ -33,29 +35,6 @@ function sinceDate(months: number | null): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Sort arrow indicator
-// ---------------------------------------------------------------------------
-
-function SortIndicator({
-  column,
-  activeSort,
-  activeOrder,
-}: {
-  column: string;
-  activeSort: string;
-  activeOrder: "asc" | "desc";
-}) {
-  if (column !== activeSort) {
-    return <span className="ml-1 text-gray-300">↕</span>;
-  }
-  return (
-    <span className="ml-1">
-      {activeOrder === "asc" ? "↑" : "↓"}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // CookbookCommittersPage
 // ---------------------------------------------------------------------------
 
@@ -72,8 +51,21 @@ export function CookbookCommittersPage() {
   // Filters & sorting
   const [page, setPage] = useState(1);
   const perPage = SMALL_PAGE_SIZE;
-  const [sort, setSort] = useState("last_commit_at");
-  const [order, setOrder] = useState<"asc" | "desc">("desc");
+  type CommitterSortField =
+    | "author_name"
+    | "author_email"
+    | "commit_count"
+    | "first_commit_at"
+    | "last_commit_at";
+  const {
+    sortField: sort,
+    sortOrder: order,
+    handleSort,
+  } = useSort<CommitterSortField>({
+    defaultField: "last_commit_at",
+    defaultOrder: "desc",
+    descendingFields: ["commit_count", "first_commit_at", "last_commit_at"],
+  });
   const [sinceMonths, setSinceMonths] = useState<number | null>(null);
 
   // Selection
@@ -125,19 +117,6 @@ export function CookbookCommittersPage() {
   useEffect(() => {
     setPage(1);
   }, [sort, order, sinceMonths]);
-
-  // -----------------------------------------------------------------------
-  // Sorting
-  // -----------------------------------------------------------------------
-
-  const handleSort = (column: string) => {
-    if (sort === column) {
-      setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSort(column);
-      setOrder("desc");
-    }
-  };
 
   // -----------------------------------------------------------------------
   // Selection
@@ -233,9 +212,7 @@ export function CookbookCommittersPage() {
 
       {/* Heading */}
       <div>
-        <h2 className="text-xl font-bold text-gray-800">
-          {name} — Committers
-        </h2>
+        <h2 className="text-xl font-bold text-gray-800">{name} — Committers</h2>
         {response?.git_repo_url && (
           <p className="mt-1 text-sm text-gray-500">
             Repository:{" "}
@@ -311,14 +288,10 @@ export function CookbookCommittersPage() {
       </div>
 
       {/* Loading overlay for refreshes */}
-      {loading && response && (
-        <LoadingSpinner message="Refreshing…" />
-      )}
+      {loading && response && <LoadingSpinner message="Refreshing…" />}
 
       {/* Error on refresh */}
-      {error && response && (
-        <ErrorAlert message={error} onRetry={load} />
-      )}
+      {error && response && <ErrorAlert message={error} onRetry={load} />}
 
       {/* Table */}
       {!loading && committers.length === 0 ? (
@@ -341,77 +314,42 @@ export function CookbookCommittersPage() {
                         className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                     </th>
-                    <th>
-                      <button
-                        type="button"
-                        className="inline-flex items-center font-semibold hover:text-blue-600"
-                        onClick={() => handleSort("author_name")}
-                      >
-                        Author Name
-                        <SortIndicator
-                          column="author_name"
-                          activeSort={sort}
-                          activeOrder={order}
-                        />
-                      </button>
-                    </th>
-                    <th>
-                      <button
-                        type="button"
-                        className="inline-flex items-center font-semibold hover:text-blue-600"
-                        onClick={() => handleSort("author_email")}
-                      >
-                        Email
-                        <SortIndicator
-                          column="author_email"
-                          activeSort={sort}
-                          activeOrder={order}
-                        />
-                      </button>
-                    </th>
+                    <SortableColumnHeader
+                      label="Author Name"
+                      field="author_name"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Email"
+                      field="author_email"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
                     <th>Owner</th>
-                    <th>
-                      <button
-                        type="button"
-                        className="inline-flex items-center font-semibold hover:text-blue-600"
-                        onClick={() => handleSort("commit_count")}
-                      >
-                        Commit Count
-                        <SortIndicator
-                          column="commit_count"
-                          activeSort={sort}
-                          activeOrder={order}
-                        />
-                      </button>
-                    </th>
-                    <th>
-                      <button
-                        type="button"
-                        className="inline-flex items-center font-semibold hover:text-blue-600"
-                        onClick={() => handleSort("first_commit_at")}
-                      >
-                        First Commit
-                        <SortIndicator
-                          column="first_commit_at"
-                          activeSort={sort}
-                          activeOrder={order}
-                        />
-                      </button>
-                    </th>
-                    <th>
-                      <button
-                        type="button"
-                        className="inline-flex items-center font-semibold hover:text-blue-600"
-                        onClick={() => handleSort("last_commit_at")}
-                      >
-                        Last Commit
-                        <SortIndicator
-                          column="last_commit_at"
-                          activeSort={sort}
-                          activeOrder={order}
-                        />
-                      </button>
-                    </th>
+                    <SortableColumnHeader
+                      label="Commit Count"
+                      field="commit_count"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="First Commit"
+                      field="first_commit_at"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Last Commit"
+                      field="last_commit_at"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -425,9 +363,7 @@ export function CookbookCommittersPage() {
                           className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </td>
-                      <td className="text-sm text-gray-800">
-                        {c.author_name}
-                      </td>
+                      <td className="text-sm text-gray-800">{c.author_name}</td>
                       <td className="text-sm text-gray-600">
                         {c.author_email}
                       </td>

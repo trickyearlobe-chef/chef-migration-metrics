@@ -2,16 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
-import {
-  fetchCookbooks,
-  fetchFilterTargetChefVersions,
-  type CookbookFilterQuery,
-} from "../api";
+import { useSort } from "../hooks/useSort";
+import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
+import { fetchCookbooks, type CookbookFilterQuery } from "../api";
 import type { CookbookListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
-import { highestSemver } from "../semver";
 
 /** Render a coloured download-status pill with optional error tooltip. */
 function DownloadStatusBadge({
@@ -80,14 +78,20 @@ export function CookbooksPage() {
   const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to name ascending.
-  const [sortField, setSortField] = useState("name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const { sortField, sortOrder, handleSort } = useSort({
+    defaultField: "name",
+    defaultOrder: "asc",
+    descendingFields: ["version", "compatibility", "active", "download_status"],
+  });
 
   // Target Chef versions loaded from backend config.
-  const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(
-    searchParams.get("target_chef_version") || "",
-  );
+  const {
+    targetVersions,
+    selectedVersion: selectedTargetVersion,
+    setSelectedVersion: setSelectedTargetVersion,
+  } = useTargetChefVersion({
+    initialVersion: searchParams.get("target_chef_version") || undefined,
+  });
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
@@ -101,19 +105,6 @@ export function CookbooksPage() {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
-
-  // Load target Chef versions once on mount.
-  useEffect(() => {
-    fetchFilterTargetChefVersions()
-      .then((res) => {
-        const versions = res.data ?? [];
-        setTargetVersions(versions);
-        if (versions.length > 0 && !selectedTargetVersion) {
-          setSelectedTargetVersion(highestSemver(versions) ?? versions[0]);
-        }
-      })
-      .catch(() => setTargetVersions([]));
-  }, []); // intentionally run only on mount
 
   const load = useCallback(() => {
     setLoading(true);
@@ -175,20 +166,6 @@ export function CookbooksPage() {
     compatibility,
     downloadStatus,
   ].filter(Boolean).length;
-
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortOrder(field === "name" ? "asc" : "desc");
-    }
-  };
-
-  const sortIndicator = (field: string) => {
-    if (sortField !== field) return " ↕";
-    return sortOrder === "asc" ? " ↑" : " ↓";
-  };
 
   const clearFilters = () => {
     setNameFilter("");
@@ -303,52 +280,42 @@ export function CookbooksPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th
-                      className="cursor-pointer select-none hover:text-gray-700"
-                      onClick={() => handleSort("name")}
-                    >
-                      Name
-                      <span className="text-xs text-blue-500">
-                        {sortIndicator("name")}
-                      </span>
-                    </th>
-                    <th
-                      className="cursor-pointer select-none hover:text-gray-700"
-                      onClick={() => handleSort("version")}
-                    >
-                      Version
-                      <span className="text-xs text-blue-500">
-                        {sortIndicator("version")}
-                      </span>
-                    </th>
+                    <SortableColumnHeader
+                      label="Name"
+                      field="name"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Version"
+                      field="version"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     {!selectedOrg && <th>Organisation</th>}
-                    <th
-                      className="cursor-pointer select-none hover:text-gray-700"
-                      onClick={() => handleSort("compatibility")}
-                    >
-                      Compatibility
-                      <span className="text-xs text-blue-500">
-                        {sortIndicator("compatibility")}
-                      </span>
-                    </th>
-                    <th
-                      className="cursor-pointer select-none hover:text-gray-700"
-                      onClick={() => handleSort("active")}
-                    >
-                      Status
-                      <span className="text-xs text-blue-500">
-                        {sortIndicator("active")}
-                      </span>
-                    </th>
-                    <th
-                      className="cursor-pointer select-none hover:text-gray-700"
-                      onClick={() => handleSort("download_status")}
-                    >
-                      Download
-                      <span className="text-xs text-blue-500">
-                        {sortIndicator("download_status")}
-                      </span>
-                    </th>
+                    <SortableColumnHeader
+                      label="Compatibility"
+                      field="compatibility"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Status"
+                      field="active"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Download"
+                      field="download_status"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                   </tr>
                 </thead>
                 <tbody>

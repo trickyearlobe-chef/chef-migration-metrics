@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
+import { useSort } from "../hooks/useSort";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { fetchOwners, createOwner, type OwnerFilterQuery } from "../api";
 import type { Owner, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
@@ -74,66 +76,8 @@ type SortField =
   | "blocked"
   | "created_at"
   | "updated_at";
-type SortDir = "asc" | "desc";
 
-function SortHeader({
-  label,
-  field,
-  currentField,
-  currentDir,
-  onSort,
-}: {
-  label: string;
-  field: SortField;
-  currentField: SortField;
-  currentDir: SortDir;
-  onSort: (field: SortField) => void;
-}) {
-  const active = field === currentField;
-  return (
-    <th
-      onClick={() => onSort(field)}
-      className="cursor-pointer select-none hover:text-blue-600"
-    >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        {active ? (
-          <svg
-            className="h-3.5 w-3.5 text-blue-600"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d={
-                currentDir === "asc"
-                  ? "M4.5 15.75l7.5-7.5 7.5 7.5"
-                  : "M19.5 8.25l-7.5 7.5-7.5-7.5"
-              }
-            />
-          </svg>
-        ) : (
-          <svg
-            className="h-3.5 w-3.5 text-gray-300"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
-            />
-          </svg>
-        )}
-      </span>
-    </th>
-  );
-}
+type SortDir = "asc" | "desc";
 
 // ---------------------------------------------------------------------------
 // Owners list page
@@ -155,8 +99,15 @@ export function OwnersPage() {
   const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to blocked descending to surface remediation work
-  const [sortField, setSortField] = useState<SortField>("blocked");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const {
+    sortField,
+    sortOrder: sortDir,
+    handleSort,
+  } = useSort<SortField>({
+    defaultField: "blocked",
+    defaultOrder: "desc",
+    descendingFields: ["nodes", "git_repos", "ready", "blocked"],
+  });
 
   // Create form state
   const [showCreate, setShowCreate] = useState(false);
@@ -176,7 +127,7 @@ export function OwnersPage() {
       page,
       per_page: perPage,
       sort: sortField,
-      order: sortDir,
+      order: sortDir as SortDir,
     };
     if (search) filters.search = search;
     if (ownerType) filters.owner_type = ownerType;
@@ -198,20 +149,6 @@ export function OwnersPage() {
   useEffect(() => {
     setPage(1);
   }, [search, ownerType, sortField, sortDir]);
-
-  const handleSort = useCallback(
-    (field: SortField) => {
-      if (field === sortField) {
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      } else {
-        setSortField(field);
-        // Numeric columns default to descending (biggest first), text to ascending.
-        const numericFields: SortField[] = ["nodes", "git_repos", "ready", "blocked"];
-        setSortDir(numericFields.includes(field) ? "desc" : "asc");
-      }
-    },
-    [sortField],
-  );
 
   // Check if any owner has readiness data.
   const showReadiness = useMemo(
@@ -297,13 +234,18 @@ export function OwnersPage() {
       {/* Inline create form */}
       {showCreate && (
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <h3 className="mb-3 text-sm font-semibold text-gray-700">Create Owner</h3>
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">
+            Create Owner
+          </h3>
           {createError && (
             <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {createError}
             </div>
           )}
-          <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+          <form
+            onSubmit={handleCreate}
+            className="flex flex-wrap items-end gap-3"
+          >
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-500">
                 Name <span className="text-red-500">*</span>
@@ -318,7 +260,9 @@ export function OwnersPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">Display Name</label>
+              <label className="mb-1 block text-xs font-medium text-gray-500">
+                Display Name
+              </label>
               <input
                 type="text"
                 value={createDisplayName}
@@ -345,7 +289,9 @@ export function OwnersPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">Contact Email</label>
+              <label className="mb-1 block text-xs font-medium text-gray-500">
+                Contact Email
+              </label>
               <input
                 type="text"
                 value={createEmail}
@@ -355,7 +301,9 @@ export function OwnersPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">Contact Channel</label>
+              <label className="mb-1 block text-xs font-medium text-gray-500">
+                Contact Channel
+              </label>
               <input
                 type="text"
                 value={createChannel}
@@ -378,7 +326,9 @@ export function OwnersPage() {
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Search</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Search
+          </label>
           <input
             type="text"
             value={search}
@@ -388,7 +338,9 @@ export function OwnersPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Owner Type</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Owner Type
+          </label>
           <select
             value={ownerType}
             onChange={(e) => setOwnerType(e.target.value)}
@@ -417,9 +369,18 @@ export function OwnersPage() {
       {showReadiness && (
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <span className="font-medium text-gray-600">Readiness:</span>
-          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" /> Ready</span>
-          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" /> Blocked</span>
-          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" /> Stale</span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />{" "}
+            Ready
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />{" "}
+            Blocked
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />{" "}
+            Stale
+          </span>
         </div>
       )}
 
@@ -429,25 +390,70 @@ export function OwnersPage() {
       {!loading && !error && (
         <>
           {owners.length === 0 ? (
-            <EmptyState title="No owners found" description="Adjust filters or create a new owner." />
+            <EmptyState
+              title="No owners found"
+              description="Adjust filters or create a new owner."
+            />
           ) : (
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
-                    <SortHeader label="Name" field="name" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                    <SortableColumnHeader
+                      label="Name"
+                      field="name"
+                      currentField={sortField}
+                      currentOrder={sortDir}
+                      onSort={handleSort}
+                    />
                     <th>Display Name</th>
-                    <SortHeader label="Type" field="owner_type" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Nodes" field="nodes" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Git Repos" field="git_repos" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                    <SortableColumnHeader
+                      label="Type"
+                      field="owner_type"
+                      currentField={sortField}
+                      currentOrder={sortDir}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Nodes"
+                      field="nodes"
+                      currentField={sortField}
+                      currentOrder={sortDir}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Git Repos"
+                      field="git_repos"
+                      currentField={sortField}
+                      currentOrder={sortDir}
+                      onSort={handleSort}
+                    />
                     {showReadiness && (
                       <>
-                        <SortHeader label="Ready" field="ready" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
-                        <SortHeader label="Blocked" field="blocked" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                        <SortableColumnHeader
+                          label="Ready"
+                          field="ready"
+                          currentField={sortField}
+                          currentOrder={sortDir}
+                          onSort={handleSort}
+                        />
+                        <SortableColumnHeader
+                          label="Blocked"
+                          field="blocked"
+                          currentField={sortField}
+                          currentOrder={sortDir}
+                          onSort={handleSort}
+                        />
                         <th>Readiness</th>
                       </>
                     )}
-                    <SortHeader label="Created" field="created_at" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                    <SortableColumnHeader
+                      label="Created"
+                      field="created_at"
+                      currentField={sortField}
+                      currentOrder={sortDir}
+                      onSort={handleSort}
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -492,7 +498,9 @@ export function OwnersPage() {
                                 total={owner.readiness.total_nodes}
                               />
                             ) : (
-                              <span className="text-xs text-gray-400">{"\u2014"}</span>
+                              <span className="text-xs text-gray-400">
+                                {"\u2014"}
+                              </span>
                             )}
                           </td>
                         </>

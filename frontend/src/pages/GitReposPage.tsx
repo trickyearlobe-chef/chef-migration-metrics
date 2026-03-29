@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
-import { fetchGitRepos, fetchFilterTargetChefVersions } from "../api";
+import { useSort } from "../hooks/useSort";
+import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
+import { fetchGitRepos } from "../api";
 import type { GitRepoListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
-import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Git Repos list page — paginated table from GET /api/v1/git-repos showing
@@ -20,7 +22,13 @@ function truncate(value: string, max: number): string {
 }
 
 /** Render a coloured clone-status pill with optional error tooltip. */
-function CloneStatusBadge({ status, error }: { status: string; error?: string }) {
+function CloneStatusBadge({
+  status,
+  error,
+}: {
+  status: string;
+  error?: string;
+}) {
   const styles: Record<string, string> = {
     ok: "bg-green-100 text-green-800 ring-green-600/20",
     failed: "bg-red-100 text-red-800 ring-red-600/20",
@@ -68,39 +76,44 @@ export function GitReposPage() {
 
   // Filters
   const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
-  const [compatibility, setCompatibility] = useState(searchParams.get("compatibility") || "");
+  const [compatibility, setCompatibility] = useState(
+    searchParams.get("compatibility") || "",
+  );
   const [tkStatus, setTkStatus] = useState(searchParams.get("tk_status") || "");
-  const [cloneStatus, setCloneStatus] = useState(searchParams.get("clone_status") || "");
+  const [cloneStatus, setCloneStatus] = useState(
+    searchParams.get("clone_status") || "",
+  );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to name ascending.
-  const [sortField, setSortField] = useState("name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const { sortField, sortOrder, handleSort } = useSort({
+    defaultField: "name",
+    defaultOrder: "asc",
+    descendingFields: ["has_test_suite"],
+  });
 
   // Target Chef versions loaded from backend config.
-  const [targetVersions, setTargetVersions] = useState<string[]>([]);
-  const [selectedTargetVersion, setSelectedTargetVersion] = useState<string>(searchParams.get("target_chef_version") || "");
+  const {
+    targetVersions,
+    selectedVersion: selectedTargetVersion,
+    setSelectedVersion: setSelectedTargetVersion,
+  } = useTargetChefVersion({
+    initialVersion: searchParams.get("target_chef_version") || undefined,
+  });
 
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
-    if (searchParams.has("compatibility") || searchParams.has("target_chef_version") || searchParams.has("name") || searchParams.has("tk_status") || searchParams.has("clone_status")) {
+    if (
+      searchParams.has("compatibility") ||
+      searchParams.has("target_chef_version") ||
+      searchParams.has("name") ||
+      searchParams.has("tk_status") ||
+      searchParams.has("clone_status")
+    ) {
       setSearchParams({}, { replace: true });
     }
   }, []); // run once on mount
-
-  // Load target Chef versions once on mount.
-  useEffect(() => {
-    fetchFilterTargetChefVersions()
-      .then((res) => {
-        const versions = res.data ?? [];
-        setTargetVersions(versions);
-        if (versions.length > 0 && !selectedTargetVersion) {
-          setSelectedTargetVersion(highestSemver(versions) ?? versions[0]);
-        }
-      })
-      .catch(() => setTargetVersions([]));
-  }, []); // intentionally run only on mount
 
   const load = useCallback(() => {
     setLoading(true);
@@ -124,7 +137,8 @@ export function GitReposPage() {
     if (compatibility) filters.compatibility = compatibility;
     if (tkStatus) filters.tk_status = tkStatus;
     if (cloneStatus) filters.clone_status = cloneStatus;
-    if (selectedTargetVersion) filters.target_chef_version = selectedTargetVersion;
+    if (selectedTargetVersion)
+      filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
     if (sortOrder) filters.order = sortOrder;
 
@@ -135,27 +149,39 @@ export function GitReposPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [nameFilter, compatibility, tkStatus, cloneStatus, selectedTargetVersion, page, sortField, sortOrder]);
+  }, [
+    nameFilter,
+    compatibility,
+    tkStatus,
+    cloneStatus,
+    selectedTargetVersion,
+    page,
+    sortField,
+    sortOrder,
+  ]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [nameFilter, compatibility, tkStatus, cloneStatus, selectedTargetVersion, sortField, sortOrder]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  useEffect(() => {
+    setPage(1);
+  }, [
+    nameFilter,
+    compatibility,
+    tkStatus,
+    cloneStatus,
+    selectedTargetVersion,
+    sortField,
+    sortOrder,
+  ]);
 
   // Count active filters for the clear button.
-  const activeFilterCount = [nameFilter, compatibility, tkStatus, cloneStatus].filter(Boolean).length;
-
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortOrder(field === "name" ? "asc" : "desc");
-    }
-  };
-
-  const sortIndicator = (field: string) => {
-    if (sortField !== field) return " ↕";
-    return sortOrder === "asc" ? " ↑" : " ↓";
-  };
+  const activeFilterCount = [
+    nameFilter,
+    compatibility,
+    tkStatus,
+    cloneStatus,
+  ].filter(Boolean).length;
 
   const clearFilters = () => {
     setNameFilter("");
@@ -171,7 +197,9 @@ export function GitReposPage() {
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Name</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Name
+          </label>
           <input
             type="text"
             value={nameFilter}
@@ -181,7 +209,9 @@ export function GitReposPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Compatibility</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Compatibility
+          </label>
           <select
             value={compatibility}
             onChange={(e) => setCompatibility(e.target.value)}
@@ -194,7 +224,9 @@ export function GitReposPage() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">TK Status</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            TK Status
+          </label>
           <select
             value={tkStatus}
             onChange={(e) => setTkStatus(e.target.value)}
@@ -208,7 +240,9 @@ export function GitReposPage() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Clone Status</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Clone Status
+          </label>
           <select
             value={cloneStatus}
             onChange={(e) => setCloneStatus(e.target.value)}
@@ -222,14 +256,18 @@ export function GitReposPage() {
         </div>
         {targetVersions.length > 1 && (
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">Target Version</label>
+            <label className="mb-1 block text-xs font-medium text-gray-500">
+              Target Version
+            </label>
             <select
               value={selectedTargetVersion}
               onChange={(e) => setSelectedTargetVersion(e.target.value)}
               className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               {targetVersions.map((v) => (
-                <option key={v} value={v}>{v}</option>
+                <option key={v} value={v}>
+                  {v}
+                </option>
               ))}
             </select>
           </div>
@@ -251,20 +289,31 @@ export function GitReposPage() {
       {!loading && !error && (
         <>
           {repos.length === 0 ? (
-            <EmptyState title="No git repos found" description="Adjust filters or wait for data collection." />
+            <EmptyState
+              title="No git repos found"
+              description="Adjust filters or wait for data collection."
+            />
           ) : (
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("name")}>
-                      Name<span className="text-xs text-blue-500">{sortIndicator("name")}</span>
-                    </th>
+                    <SortableColumnHeader
+                      label="Name"
+                      field="name"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     <th>Git URL</th>
                     <th>Clone</th>
-                    <th className="cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort("has_test_suite")}>
-                      Test Suite<span className="text-xs text-blue-500">{sortIndicator("has_test_suite")}</span>
-                    </th>
+                    <SortableColumnHeader
+                      label="Test Suite"
+                      field="has_test_suite"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     <th>Compatibility</th>
                     <th>TK Status</th>
                     <th>Head Commit</th>
@@ -292,13 +341,24 @@ export function GitReposPage() {
                         </span>
                       </td>
                       <td>
-                        <CloneStatusBadge status={repo.clone_status} error={repo.clone_error} />
+                        <CloneStatusBadge
+                          status={repo.clone_status}
+                          error={repo.clone_error}
+                        />
                       </td>
                       <td>
                         {repo.has_test_suite ? (
-                          <StatusBadge variant="compatible" label="Yes" size="sm" />
+                          <StatusBadge
+                            variant="compatible"
+                            label="Yes"
+                            size="sm"
+                          />
                         ) : (
-                          <StatusBadge variant="untested" label="No" size="sm" />
+                          <StatusBadge
+                            variant="untested"
+                            label="No"
+                            size="sm"
+                          />
                         )}
                       </td>
                       <td>
@@ -309,8 +369,20 @@ export function GitReposPage() {
                       </td>
                       <td>
                         <StatusBadge
-                          variant={repo.tk_status === "passed" ? "compatible" : repo.tk_status === "failed" ? "incompatible" : repo.tk_status === "timed_out" ? "incompatible" : "untested"}
-                          label={repo.tk_status === "timed_out" ? "Timed Out" : (repo.tk_status ?? "untested")}
+                          variant={
+                            repo.tk_status === "passed"
+                              ? "compatible"
+                              : repo.tk_status === "failed"
+                                ? "incompatible"
+                                : repo.tk_status === "timed_out"
+                                  ? "incompatible"
+                                  : "untested"
+                          }
+                          label={
+                            repo.tk_status === "timed_out"
+                              ? "Timed Out"
+                              : (repo.tk_status ?? "untested")
+                          }
                           size="sm"
                         />
                       </td>

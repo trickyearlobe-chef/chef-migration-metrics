@@ -98,6 +98,57 @@ func (r *Router) resolveAllOwnedEntityKeys(ctx context.Context, entityType strin
 	return keys, nil
 }
 
+// ---------------------------------------------------------------------------
+// Consolidated ownership helpers — used by handlers to avoid duplicating the
+// resolve-then-filter pattern. See tech debt item B4.
+// ---------------------------------------------------------------------------
+
+// resolveOwnershipFilter resolves ownership keys for the given entity type
+// based on the parsed ownerFilter. Returns nil keys (no filtering needed)
+// when ownership is not active or not enabled. The caller should treat a nil
+// return as "no ownership filtering — include everything".
+func (r *Router) resolveOwnershipFilter(ctx context.Context, of ownerFilter, entityType string) (map[string]bool, error) {
+	if !of.Active || !r.cfg.Ownership.Enabled {
+		return nil, nil
+	}
+	if of.Unowned {
+		return r.resolveAllOwnedEntityKeys(ctx, entityType)
+	}
+	if len(of.OwnerNames) > 0 {
+		return r.resolveOwnedEntityKeys(ctx, of.OwnerNames, entityType)
+	}
+	return nil, nil
+}
+
+// ownershipInclude reports whether an entity with the given key should be
+// included given the resolved ownedKeys and the ownerFilter. When ownedKeys
+// is nil (no filtering), every entity is included.
+func ownershipInclude(key string, ownedKeys map[string]bool, of ownerFilter) bool {
+	if ownedKeys == nil {
+		return true
+	}
+	if of.Unowned {
+		return !ownedKeys[key]
+	}
+	return ownedKeys[key]
+}
+
+// filterByOwnershipKey filters a slice in place, keeping only entries whose
+// key (extracted by keyFn) passes the ownership check. Returns the filtered
+// slice. When ownedKeys is nil, the original slice is returned unmodified.
+func filterByOwnershipKey[T any](items []T, ownedKeys map[string]bool, of ownerFilter, keyFn func(T) string) []T {
+	if ownedKeys == nil {
+		return items
+	}
+	filtered := items[:0]
+	for _, item := range items {
+		if ownershipInclude(keyFn(item), ownedKeys, of) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
 // ownerNameRe validates owner names: lowercase alphanumeric, dots,
 // underscores, hyphens; must start with alphanumeric.
 var ownerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
