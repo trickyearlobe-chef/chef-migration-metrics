@@ -248,15 +248,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 
 	// Paginate.
 	pg := ParsePagination(req)
-	total := len(items)
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
+	page, total := PaginateSlice(items, pg)
 
 	// Compute summary stats across *all* items (before pagination).
 	totalAutoCorrectable := 0
@@ -277,7 +269,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		"total_manual_fix":       totalManualFix,
 		"total_deprecations":     totalDeprecations,
 		"total_errors":           totalErrors,
-		"data":                   items[start:end],
+		"data":                   page,
 		"pagination":             NewPaginationResponse(pg, total),
 	})
 }

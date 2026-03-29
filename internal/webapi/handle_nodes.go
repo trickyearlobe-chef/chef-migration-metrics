@@ -218,17 +218,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 	}
 
 	// Paginate the ownership-filtered results.
-	total := len(allNodes)
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
-
-	pageNodes := allNodes[start:end]
+	pageNodes, total := PaginateSlice(allNodes, pg)
 
 	// Pre-load readiness data for the page. Query by (organisation_id,
 	// node_name) rather than snapshot ID — see comment in handleNodes.

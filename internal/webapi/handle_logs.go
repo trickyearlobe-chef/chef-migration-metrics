@@ -161,19 +161,10 @@ func (r *Router) handleCollectionRuns(w http.ResponseWriter, req *http.Request) 
 
 	// Paginate the combined results.
 	pg := ParsePagination(req)
-	total := len(allRuns)
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
-
 	if allRuns == nil {
 		allRuns = []runWithOrg{}
 	}
+	page, total := PaginateSlice(allRuns, pg)
 
-	WritePaginated(w, allRuns[start:end], pg, total)
+	WritePaginated(w, page, pg, total)
 }

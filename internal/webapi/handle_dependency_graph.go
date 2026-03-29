@@ -391,15 +391,7 @@ func (r *Router) handleDependencyGraphTable(w http.ResponseWriter, req *http.Req
 
 	// Paginate.
 	pg := ParsePagination(req)
-	total := len(rows)
-	start := pg.Offset()
-	if start > total {
-		start = total
-	}
-	end := start + pg.Limit()
-	if end > total {
-		end = total
-	}
+	page, total := PaginateSlice(rows, pg)
 
 	// Also fetch cookbook-to-role counts for a summary.
 	cbRoleCounts, err := r.db.CountRolesPerCookbook(ctx, org.ID)
@@ -432,7 +424,7 @@ func (r *Router) handleDependencyGraphTable(w http.ResponseWriter, req *http.Req
 		"organisation":     orgName,
 		"total_roles":      total,
 		"shared_cookbooks": topShared,
-		"data":             rows[start:end],
+		"data":             page,
 		"pagination":       NewPaginationResponse(pg, total),
 	})
 }
