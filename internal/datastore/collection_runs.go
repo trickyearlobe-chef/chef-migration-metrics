@@ -484,6 +484,160 @@ func scanCollectionRun(row *sql.Row) (CollectionRun, error) {
 	return cr, nil
 }
 
+// ---------------------------------------------------------------------------
+// Filtered listing with SQL push-down
+// ---------------------------------------------------------------------------
+
+// CollectionRunFilter holds optional filter criteria for listing collection
+// runs across all organisations with SQL WHERE clause push-down.
+type CollectionRunFilter struct {
+	// Organisation filters by exact organisation name (joined via organisations table).
+	Organisation string
+
+	// Status filters by exact collection run status.
+	Status string
+
+	// Limit caps the number of returned rows. 0 means no limit.
+	Limit int
+
+	// Offset is the number of rows to skip (for pagination).
+	Offset int
+}
+
+// buildCollectionRunFilterQuery returns the WHERE clause (starting with
+// " WHERE 1=1") and positional args for a CollectionRunFilter. The query
+// assumes the collection_runs table is aliased as "cr" and the organisations
+// table is aliased as "o".
+func buildCollectionRunFilterQuery(f CollectionRunFilter) (where string, args []interface{}) {
+	where = " WHERE 1=1"
+	args = []interface{}{}
+	argN := 0
+
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
+	}
+
+	if f.Organisation != "" {
+		where += " AND o.name = " + nextArg()
+		args = append(args, f.Organisation)
+	}
+	if f.Status != "" {
+		where += " AND cr.status = " + nextArg()
+		args = append(args, f.Status)
+	}
+
+	return where, args
+}
+
+// collectionRunJoinColumns is the SELECT column list for filtered collection
+// run queries that join with the organisations table.
+const collectionRunJoinColumns = `cr.id, cr.organisation_id, o.name, cr.status, cr.started_at, cr.completed_at,
+       cr.total_nodes, cr.nodes_collected, cr.checkpoint_start,
+       cr.error_message, cr.created_at, cr.updated_at`
+
+// CollectionRunWithOrg is a CollectionRun enriched with the human-readable
+// organisation name from the joined organisations table.
+type CollectionRunWithOrg struct {
+	OrganisationName string        `json:"organisation_name"`
+	Run              CollectionRun `json:"run"`
+}
+
+// ListCollectionRunsFiltered returns collection runs across all organisations
+// matching the given filter, ordered by started_at descending. Results are
+// paginated via Limit/Offset.
+func (db *DB) ListCollectionRunsFiltered(ctx context.Context, f CollectionRunFilter) ([]CollectionRunWithOrg, error) {
+	where, args := buildCollectionRunFilterQuery(f)
+
+	query := `SELECT ` + collectionRunJoinColumns + `
+		FROM collection_runs cr
+		INNER JOIN organisations o ON o.id = cr.organisation_id` + where +
+		` ORDER BY cr.started_at DESC`
+
+	argN := len(args)
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
+	}
+
+	if f.Limit > 0 {
+		query += " LIMIT " + nextArg()
+		args = append(args, f.Limit)
+	}
+	if f.Offset > 0 {
+		query += " OFFSET " + nextArg()
+		args = append(args, f.Offset)
+	}
+
+	return db.scanCollectionRunsWithOrg(ctx, query, args...)
+}
+
+// CountCollectionRunsFiltered returns the total number of collection runs
+// matching the given filter (ignoring Limit and Offset).
+func (db *DB) CountCollectionRunsFiltered(ctx context.Context, f CollectionRunFilter) (int, error) {
+	where, args := buildCollectionRunFilterQuery(f)
+
+	query := `SELECT COUNT(*) FROM collection_runs cr
+		INNER JOIN organisations o ON o.id = cr.organisation_id` + where
+
+	var count int
+	if err := db.q().QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("datastore: counting filtered collection runs: %w", err)
+	}
+	return count, nil
+}
+
+// scanCollectionRunsWithOrg executes a query that returns collection run
+// rows joined with the organisation name column, and scans them into
+// CollectionRunWithOrg structs.
+func (db *DB) scanCollectionRunsWithOrg(ctx context.Context, query string, args ...interface{}) ([]CollectionRunWithOrg, error) {
+	rows, err := db.q().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: querying filtered collection runs: %w", err)
+	}
+	defer rows.Close()
+
+	var results []CollectionRunWithOrg
+	for rows.Next() {
+		var cr CollectionRun
+		var orgName string
+		var completedAt sql.NullTime
+		var totalNodes, nodesCollected, checkpointStart sql.NullInt64
+		var errorMessage sql.NullString
+
+		if err := rows.Scan(
+			&cr.ID,
+			&cr.OrganisationID,
+			&orgName,
+			&cr.Status,
+			&cr.StartedAt,
+			&completedAt,
+			&totalNodes,
+			&nodesCollected,
+			&checkpointStart,
+			&errorMessage,
+			&cr.CreatedAt,
+			&cr.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("datastore: scanning filtered collection run row: %w", err)
+		}
+
+		cr.CompletedAt = timeFromNull(completedAt)
+		cr.TotalNodes = intFromNull(totalNodes)
+		cr.NodesCollected = intFromNull(nodesCollected)
+		cr.CheckpointStart = intFromNull(checkpointStart)
+		cr.ErrorMessage = stringFromNull(errorMessage)
+		results = append(results, CollectionRunWithOrg{
+			OrganisationName: orgName,
+			Run:              cr,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("datastore: iterating filtered collection run rows: %w", err)
+	}
+	return results, nil
+}
+
 func scanCollectionRuns(rows *sql.Rows, err error) ([]CollectionRun, error) {
 	if err != nil {
 		return nil, fmt.Errorf("datastore: querying collection runs: %w", err)

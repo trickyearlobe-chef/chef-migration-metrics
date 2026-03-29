@@ -44,6 +44,15 @@ type DataStore interface {
 	// by started_at descending. If limit > 0 at most limit rows are returned.
 	ListCollectionRuns(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
 
+	// ListCollectionRunsFiltered returns collection runs across all
+	// organisations matching the given filter, joined with org name,
+	// ordered by started_at descending.
+	ListCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error)
+
+	// CountCollectionRunsFiltered returns the total number of collection
+	// runs matching the given filter (ignoring Limit and Offset).
+	CountCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
+
 	// -----------------------------------------------------------------
 	// Node snapshots
 	// -----------------------------------------------------------------

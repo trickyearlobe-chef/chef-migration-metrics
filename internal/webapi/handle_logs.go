@@ -115,56 +115,40 @@ func (r *Router) handleLogDetail(w http.ResponseWriter, req *http.Request) {
 // handleCollectionRuns handles GET /api/v1/logs/collection-runs — lists
 // collection runs across all organisations, optionally filtered by
 // organisation and status. Results are ordered by started_at descending.
+// Filtering and pagination are pushed down to SQL to avoid loading all
+// historical runs into memory.
 func (r *Router) handleCollectionRuns(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
 	}
 
-	orgs, err := r.db.ListOrganisations(req.Context())
+	pg := ParsePagination(req)
+	q := req.URL.Query()
+
+	filter := datastore.CollectionRunFilter{
+		Organisation: q.Get("organisation"),
+		Status:       q.Get("status"),
+		Limit:        pg.Limit(),
+		Offset:       pg.Offset(),
+	}
+
+	total, err := r.db.CountCollectionRunsFiltered(req.Context(), filter)
 	if err != nil {
-		r.logf("ERROR", "listing organisations for collection runs: %v", err)
+		r.logf("ERROR", "counting collection runs: %v", err)
+		WriteInternalError(w, "Failed to count collection runs.")
+		return
+	}
+
+	runs, err := r.db.ListCollectionRunsFiltered(req.Context(), filter)
+	if err != nil {
+		r.logf("ERROR", "listing collection runs: %v", err)
 		WriteInternalError(w, "Failed to list collection runs.")
 		return
 	}
 
-	q := req.URL.Query()
-	orgFilter := q.Get("organisation")
-	statusFilter := q.Get("status")
-	limitParam := 0 // 0 = no limit from the datastore method
-
-	type runWithOrg struct {
-		OrganisationName string                  `json:"organisation_name"`
-		Run              datastore.CollectionRun `json:"run"`
+	if runs == nil {
+		runs = []datastore.CollectionRunWithOrg{}
 	}
 
-	var allRuns []runWithOrg
-	for _, org := range orgs {
-		if orgFilter != "" && org.Name != orgFilter {
-			continue
-		}
-
-		runs, err := r.db.ListCollectionRuns(req.Context(), org.ID, limitParam)
-		if err != nil {
-			r.logf("WARN", "listing collection runs for org %s: %v", org.Name, err)
-			continue
-		}
-		for _, run := range runs {
-			if statusFilter != "" && run.Status != statusFilter {
-				continue
-			}
-			allRuns = append(allRuns, runWithOrg{
-				OrganisationName: org.Name,
-				Run:              run,
-			})
-		}
-	}
-
-	// Paginate the combined results.
-	pg := ParsePagination(req)
-	if allRuns == nil {
-		allRuns = []runWithOrg{}
-	}
-	page, total := PaginateSlice(allRuns, pg)
-
-	WritePaginated(w, page, pg, total)
+	WritePaginated(w, runs, pg, total)
 }

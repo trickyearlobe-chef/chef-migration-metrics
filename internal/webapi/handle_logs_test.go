@@ -515,12 +515,12 @@ func TestHandleCollectionRuns_HappyPath_Empty(t *testing.T) {
 func TestHandleCollectionRuns_HappyPath_WithRuns(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{{ID: "org-1", Name: "prod"}}, nil
+		CountCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) (int, error) {
+			return 1, nil
 		},
-		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
-			return []datastore.CollectionRun{
-				{ID: "run-1", OrganisationID: "org-1", Status: "completed", StartedAt: now, CompletedAt: now},
+		ListCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
+			return []datastore.CollectionRunWithOrg{
+				{OrganisationName: "prod", Run: datastore.CollectionRun{ID: "run-1", OrganisationID: "org-1", Status: "completed", StartedAt: now, CompletedAt: now}},
 			}, nil
 		},
 	}
@@ -544,15 +544,18 @@ func TestHandleCollectionRuns_HappyPath_WithRuns(t *testing.T) {
 func TestHandleCollectionRuns_HappyPath_FilterByOrg(t *testing.T) {
 	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{
-				{ID: "org-1", Name: "prod"},
-				{ID: "org-2", Name: "staging"},
-			}, nil
+		CountCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) (int, error) {
+			if f.Organisation != "prod" {
+				t.Errorf("filter.Organisation = %q, want %q", f.Organisation, "prod")
+			}
+			return 1, nil
 		},
-		ListCollectionRunsFn: func(ctx context.Context, orgID string, limit int) ([]datastore.CollectionRun, error) {
-			return []datastore.CollectionRun{
-				{ID: "run-" + orgID, OrganisationID: orgID, Status: "completed", StartedAt: now},
+		ListCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
+			if f.Organisation != "prod" {
+				t.Errorf("filter.Organisation = %q, want %q", f.Organisation, "prod")
+			}
+			return []datastore.CollectionRunWithOrg{
+				{OrganisationName: "prod", Run: datastore.CollectionRun{ID: "run-1", OrganisationID: "org-1", Status: "completed", StartedAt: now}},
 			}, nil
 		},
 	}
@@ -573,10 +576,61 @@ func TestHandleCollectionRuns_HappyPath_FilterByOrg(t *testing.T) {
 	}
 }
 
-func TestHandleCollectionRuns_DBError_ListOrganisations(t *testing.T) {
+func TestHandleCollectionRuns_HappyPath_FilterByStatus(t *testing.T) {
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return nil, errors.New("connection refused")
+		CountCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) (int, error) {
+			if f.Status != "completed" {
+				t.Errorf("filter.Status = %q, want %q", f.Status, "completed")
+			}
+			return 1, nil
+		},
+		ListCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
+			return []datastore.CollectionRunWithOrg{
+				{OrganisationName: "prod", Run: datastore.CollectionRun{ID: "run-1", Status: "completed", StartedAt: now}},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/collection-runs?status=completed", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body PaginatedResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Pagination.TotalItems != 1 {
+		t.Errorf("total_items = %d, want 1", body.Pagination.TotalItems)
+	}
+}
+
+func TestHandleCollectionRuns_DBError_Count(t *testing.T) {
+	store := &mockStore{
+		CountCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) (int, error) {
+			return 0, errors.New("connection refused")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs/collection-runs", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleCollectionRuns_DBError_List(t *testing.T) {
+	store := &mockStore{
+		CountCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) (int, error) {
+			return 5, nil
+		},
+		ListCollectionRunsFilteredFn: func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
+			return nil, errors.New("timeout")
 		},
 	}
 	r := newTestRouterWithMock(store)

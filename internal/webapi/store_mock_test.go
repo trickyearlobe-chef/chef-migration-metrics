@@ -20,6 +20,8 @@ type mockStore struct {
 	GetOrganisationByNameFn                             func(ctx context.Context, name string) (datastore.Organisation, error)
 	GetLatestCollectionRunFn                            func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
 	ListCollectionRunsFn                                func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
+	ListCollectionRunsFilteredFn                        func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error)
+	CountCollectionRunsFilteredFn                       func(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
 	ListNodeSnapshotsByOrganisationFn                   func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 	ListNodeSnapshotsFilteredFn                         func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
 	CountNodeVersionDistributionFn                      func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
@@ -148,6 +150,20 @@ func (m *mockStore) ListCollectionRuns(ctx context.Context, organisationID strin
 		return m.ListCollectionRunsFn(ctx, organisationID, limit)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) ListCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {
+	if m.ListCollectionRunsFilteredFn != nil {
+		return m.ListCollectionRunsFilteredFn(ctx, f)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CountCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) (int, error) {
+	if m.CountCollectionRunsFilteredFn != nil {
+		return m.CountCollectionRunsFilteredFn(ctx, f)
+	}
+	return 0, nil
 }
 
 func (m *mockStore) ListNodeSnapshotsByOrganisation(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
