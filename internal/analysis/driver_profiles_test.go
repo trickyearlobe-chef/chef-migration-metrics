@@ -77,6 +77,27 @@ func TestLookupProfile_UnknownWithoutOverride(t *testing.T) {
 	}
 }
 
+func TestLookupProfile_BuiltinIgnoresOverride(t *testing.T) {
+	// Built-in profiles must ignore the imageFieldNameOverride parameter.
+	builtins := map[string]string{
+		"vcenter":   "template",
+		"ec2":       "ami",
+		"dokken":    "docker_image",
+		"azurerm":   "image_urn",
+		"google":    "image_family",
+		"vagrant":   "box",
+		"openstack": "image_ref",
+		"vra":       "image_mapping",
+	}
+	for driver, expectedField := range builtins {
+		p := LookupProfile(driver, "my_custom_override")
+		if p.ImageFieldName != expectedField {
+			t.Errorf("LookupProfile(%q, \"my_custom_override\"): expected ImageFieldName %q, got %q — override should be ignored for built-in drivers",
+				driver, expectedField, p.ImageFieldName)
+		}
+	}
+}
+
 func TestIsBuiltinDriver_Known(t *testing.T) {
 	known := []string{"dokken", "vcenter", "ec2", "azurerm", "vagrant"}
 	for _, name := range known {

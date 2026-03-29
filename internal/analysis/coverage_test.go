@@ -433,3 +433,42 @@ platforms:
 		t.Errorf("platforms[1]: got %q, want %q", platforms[1], "centos-7")
 	}
 }
+
+func TestComputeCoverage_EmptyKitchenWithProduction(t *testing.T) {
+	// Empty kitchen list with real production platforms should yield 0% coverage
+	// and all production platforms reported as gaps.
+	prod := []ProductionPlatform{
+		{Platform: "ubuntu", PlatformVersion: "22.04", PlatformFamily: "debian", NodeCount: 50},
+		{Platform: "centos", PlatformVersion: "7.9.2009", PlatformFamily: "rhel", NodeCount: 30},
+	}
+
+	r := ComputeCoverage([]string{}, prod)
+
+	if r.CoveragePercentage != 0 {
+		t.Errorf("coverage: got %.1f, want 0", r.CoveragePercentage)
+	}
+	if len(r.TestedAndInProd) != 0 {
+		t.Errorf("tested_and_in_prod: got %d, want 0", len(r.TestedAndInProd))
+	}
+	if len(r.TestedNotInProd) != 0 {
+		t.Errorf("tested_not_in_prod: got %d, want 0", len(r.TestedNotInProd))
+	}
+	if len(r.InProdNotTested) != 2 {
+		t.Fatalf("in_prod_not_tested: got %d, want 2", len(r.InProdNotTested))
+	}
+	if r.GapCount != 2 {
+		t.Errorf("gap_count: got %d, want 2", r.GapCount)
+	}
+	if r.TotalProductionNodes != 80 {
+		t.Errorf("total_production_nodes: got %d, want 80", r.TotalProductionNodes)
+	}
+	if r.CoveredNodeCount != 0 {
+		t.Errorf("covered_node_count: got %d, want 0", r.CoveredNodeCount)
+	}
+	if len(r.KitchenPlatforms) != 0 {
+		t.Errorf("kitchen_platforms: got %d, want 0", len(r.KitchenPlatforms))
+	}
+	if len(r.ProductionPlatforms) != 2 {
+		t.Errorf("production_platforms: got %d, want 2", len(r.ProductionPlatforms))
+	}
+}
