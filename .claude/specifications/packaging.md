@@ -331,6 +331,7 @@ RUN mkdir -p $GEM_HOME && \
         kitchen-openstack:6.2.1 \
         kitchen-digitalocean:0.16.1 && \
     gem install --no-document specific_install && \
+    gem specific_install -l https://github.com/trickyearlobe-chef/kitchen-proxmox.git -b main && \
     gem specific_install -l https://github.com/Stromweld/kitchen-dokken.git -b main
 
 # Create wrapper binstubs that use the embedded Ruby
@@ -468,6 +469,7 @@ The following Test Kitchen drivers are shipped:
 | `kitchen-vcenter` | 2.12.2 | Modern vSphere/vCenter driver (replaces kitchen-vsphere) |
 | `kitchen-vra` | 3.3.3 | |
 | `kitchen-openstack` | 6.2.1 | |
+| `kitchen-proxmox` | latest | Installed from GitHub (trickyearlobe-chef/kitchen-proxmox) |
 | `kitchen-digitalocean` | 0.16.1 | |
 
 The primary verifier is `kitchen-inspec` (3.1.0) backed by `inspec-bin` / `inspec-core` (5.24.7).
