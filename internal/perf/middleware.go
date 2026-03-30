@@ -4,6 +4,9 @@
 package perf
 
 import (
+	"bufio"
+	"fmt"
+	"net"
 	"net/http"
 	"time"
 )
@@ -17,6 +20,25 @@ type statusRecorder struct {
 func (sr *statusRecorder) WriteHeader(code int) {
 	sr.status = code
 	sr.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack implements http.Hijacker by delegating to the underlying
+// ResponseWriter. This is required for WebSocket upgrades which call
+// w.(http.Hijacker) to take over the raw TCP connection.
+func (sr *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := sr.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+}
+
+// Flush implements http.Flusher by delegating to the underlying
+// ResponseWriter. This is used by streaming responses (e.g. SSE) that
+// need to push partial data to the client.
+func (sr *statusRecorder) Flush() {
+	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // Middleware records request latency to a Recorder.
