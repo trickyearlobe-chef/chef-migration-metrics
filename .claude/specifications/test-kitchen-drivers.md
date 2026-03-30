@@ -6,7 +6,7 @@ Generalises Test Kitchen compatibility testing from a Docker-only (`kitchen-dokk
 
 ## Overview
 
-The existing analysis component (analysis.md §2) hardcodes `kitchen-dokken` as the sole Test Kitchen driver. Packaging already ships 10 drivers including `kitchen-vcenter`, `kitchen-vra`, `kitchen-ec2`, `kitchen-azurerm`, `kitchen-google`, and others (packaging.md §4.5). This spec adds:
+The existing analysis component (analysis.md §2) hardcodes `kitchen-dokken` as the sole Test Kitchen driver. Packaging already ships 11 drivers including `kitchen-vcenter`, `kitchen-vra`, `kitchen-ec2`, `kitchen-azurerm`, `kitchen-google`, `kitchen-proxmox`, and others (packaging.md §4.5). This spec adds:
 
 1. **Driver override** — generate `.kitchen.local.yml` overlays that replace the driver block for any supported driver, so existing cookbook repos need no reconfiguration.
 2. **Credential injection** — driver passwords, access keys, and transport secrets come from the encrypted credentials table, never hardcoded.
@@ -42,6 +42,7 @@ To reduce configuration burden, the application ships built-in profiles for comm
 | `google` | kitchen-google | `image_family` | `service_account_json` |
 | `vagrant` | kitchen-vagrant | `box` | None |
 | `openstack` | kitchen-openstack | `image_ref` | `os_password` |
+| `proxmox` | kitchen-proxmox | `template` | `proxmox_password` |
 | `custom` | any | configurable | configurable |
 
 The `custom` profile allows any driver gem shipped in the embedded Ruby environment to be used without a built-in profile. The operator supplies all field mappings in config.
