@@ -2,15 +2,52 @@
 
 ## TL;DR
 
-Generalises Test Kitchen compatibility testing from a Docker-only (`kitchen-dokken`) model to a pluggable driver architecture. Cookbook repos keep their existing `.kitchen.yml` (LibVirt, Vagrant, or whatever they have today) untouched — the application generates a `.kitchen.local.yml` overlay that overrides the driver, injects credentials from the encrypted secret store, and remaps platform names to driver-specific images. A platform coverage analysis compares kitchen-tested platforms against actual production node data to flag untested gaps. Adding a new driver (vCenter today, vRA tomorrow, EC2 next quarter) is a configuration change, not a code change.
+Generalises Test Kitchen compatibility testing from a Docker-only (`kitchen-dokken`) model to a pluggable driver architecture. Test Kitchen runs on the CMM host and provisions the test targets — containers for dokken, real VMs for vCenter/EC2/vRA/etc. The application controls what Test Kitchen does by generating a `.kitchen.local.yml` overlay that overrides the driver, remaps platform names to available images (VM templates, AMIs, etc.) via a configurable lookup table, and injects credentials from the encrypted secret store. Cookbook repos keep their existing `.kitchen.yml` untouched. Adding a new driver (vCenter today, vRA tomorrow, EC2 next quarter) is a configuration change, not a code change.
 
 ## Overview
 
-The existing analysis component (analysis.md §2) hardcodes `kitchen-dokken` as the sole Test Kitchen driver. Packaging already ships 11 drivers including `kitchen-vcenter`, `kitchen-vra`, `kitchen-ec2`, `kitchen-azurerm`, `kitchen-google`, `kitchen-proxmox`, and others (packaging.md §4.5). This spec adds:
+The existing analysis component (analysis.md §2) hardcodes `kitchen-dokken` as the sole Test Kitchen driver. Packaging already ships 11 drivers including `kitchen-vcenter`, `kitchen-vra`, `kitchen-ec2`, `kitchen-azurerm`, `kitchen-google`, `kitchen-proxmox`, and others (packaging.md §4.5).
+
+### Execution Model
+
+Test Kitchen runs on the CMM host as a child process. It is Test Kitchen — not the application — that provisions test targets, converges cookbooks, runs verification, and destroys everything afterwards. The application's role is to generate the `.kitchen.local.yml` overlay, inject credentials, invoke `kitchen`, and record results. This is the same regardless of driver.
+
+The end-to-end flow:
+
+1. **The application generates a `.kitchen.local.yml` overlay** — overrides the cookbook's `.kitchen.yml` with the configured driver, remaps platforms to available images via the lookup table, and wires in credentials.
+2. **Test Kitchen provisions the test target** — depending on the driver, this is a Docker container (dokken), a vSphere VM cloned from a template (vcenter), an EC2 instance launched from an AMI (ec2), a vRA catalog deployment (vra), etc. Test Kitchen handles all provisioning through the driver plugin.
+3. **Test Kitchen converges the cookbook** — connects to the target over SSH (Linux) or WinRM (Windows), installs the target Chef Client version, and runs the cookbook's run list.
+4. **Test Kitchen runs verification** — InSpec tests execute against the live target.
+5. **Test Kitchen destroys the target** — container deleted, VM terminated, instance destroyed. Ephemeral — nothing persists between runs.
+6. **The application records the result** — exit codes, captured output, timing, driver, and platform name are persisted.
+
+What changes between drivers is what Test Kitchen provisions and how it connects:
+
+| Driver | Target | Provisioned From | Transport |
+|--------|--------|-----------------|-----------|
+| `dokken` | Docker container on local host | Docker image | Docker exec |
+| `vcenter` | VM on vSphere | VM template | SSH / WinRM |
+| `proxmox` | VM on Proxmox VE | VM template | SSH |
+| `ec2` | EC2 instance on AWS | AMI | SSH |
+| `vra` | VM via vRealize Automation | Catalog item | SSH / WinRM |
+| `azurerm` | VM on Azure | Image URN | SSH / WinRM |
+| `google` | Instance on GCP | Image family | SSH |
+| `openstack` | Instance on OpenStack | Image ref | SSH |
+
+### Non-Dokken Prerequisites
+
+These apply to any non-dokken driver (vCenter, EC2, vRA, Azure, GCP, OpenStack, Proxmox, etc.). Docker is **not** required and the Docker startup check is skipped.
+
+- **Images or templates** in the target infrastructure for each platform in the platform map. Linux images need SSH configured; Windows images need WinRM configured.
+- **Service account or API credentials** with permissions to create, connect to, and destroy machines.
+- **Network access** from the CMM host to the infrastructure API and to the provisioned machines (SSH port 22 / WinRM port 5985–5986).
+- **`kitchen` binary and the relevant driver gem** available on the CMM host (via embedded dir, Chef Workstation, or standalone gem install).
+
+### What This Spec Adds
 
 1. **Driver override** — generate `.kitchen.local.yml` overlays that replace the driver block for any supported driver, so existing cookbook repos need no reconfiguration.
 2. **Credential injection** — driver passwords, access keys, and transport secrets come from the encrypted credentials table, never hardcoded.
-3. **Platform image mapping** — translates kitchen platform names to driver-specific image identifiers (vSphere templates, AMI IDs, Azure images, etc.).
+3. **Platform image mapping** — a lookup table that translates kitchen platform names (e.g. `ubuntu-22.04`) to driver-specific image identifiers (vSphere template names, AMI IDs, Azure images, etc.) available in the target infrastructure.
 4. **Platform coverage analysis** — cross-references kitchen platforms against production node data to find untested gaps.
 5. **Driver migration path** — switching drivers (e.g. vCenter → vRA, or vCenter → EC2) is a YAML config change with no code modifications.
 
@@ -345,7 +382,7 @@ This is a template description, not literal code. The overlay is a YAML document
 | `driver: custom` | `image_field_name` is configured | Disable TK, `ERROR` log |
 | Transport secrets | Each referenced `password_credential` or `ssh_key_credential` exists and decrypts | `WARN` per entry; platform still usable if auth uses other methods |
 
-When a non-dokken driver is configured, the Docker startup check is skipped (Docker is not required).
+When a non-dokken driver is configured, the Docker startup check is skipped — Test Kitchen provisions real VMs via the driver's API, not containers (see § Execution Model).
 
 ## Database Changes
 
@@ -403,9 +440,16 @@ The existing unique constraint `(git_repo_id, target_chef_version, commit_sha)` 
 }
 ```
 
-## Immediate Deployment: VMware vCenter
+## Deployment Reference: VMware vCenter
 
-The first non-dokken deployment uses `kitchen-vcenter`. This section documents the specific config for that deployment as a reference, not as a spec constraint.
+The first non-dokken deployment uses `kitchen-vcenter`. The execution model is the same as any non-dokken driver (see § Execution Model): Test Kitchen runs on the CMM host, provisions real VMs by cloning vSphere templates, converges cookbooks on those VMs, and destroys them afterwards. An EC2 deployment would be identical except `driver_settings` point to AWS, `image` values are AMI IDs, and the driver gem is `kitchen-ec2`. Same for vRA, Azure, GCP, etc.
+
+### vCenter-Specific Prerequisites
+
+In addition to the general non-dokken prerequisites (§ Non-Dokken Prerequisites):
+
+- VM templates must have **VMware Tools** installed (required by `kitchen-vcenter` to detect the VM's IP address after boot).
+- A **resource pool and folder** are recommended to isolate ephemeral Kitchen VMs from production infrastructure.
 
 ### vCenter Config Example
 
@@ -461,8 +505,8 @@ POST /api/v1/admin/credentials
 When the VMware team transitions from vCenter to vRA, the operator:
 
 1. Stores the vRA password: `POST /api/v1/admin/credentials` with name `vra-password`.
-2. Updates config: `driver: vra`, replaces `driver_settings` and `driver_secrets`, updates `image` values in the platform map.
-3. Restarts the application. No code changes.
+2. Updates config: `driver: vra`, replaces `driver_settings` and `driver_secrets`, updates `image` values in the platform map to vRA catalog item names.
+3. Restarts the application. No code changes — the execution model is the same for all non-dokken drivers.
 
 ## Related Specifications
 

@@ -401,6 +401,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.adminOnly("/api/v1/admin/credentials", r.handleCredentials)
 	r.adminOnly("/api/v1/admin/credentials/", r.handleCredentials)
+	r.adminOnly("/api/v1/admin/test-kitchen/config", r.handleTestKitchenConfig)
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
 		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers)
