@@ -13,6 +13,7 @@ This file contains the rules and conventions that must be followed at all times 
 - Rules are specific and actionable.
 - Hard constraints use NEVER in caps. No ambiguity.
 - Explicit permission boundaries — say what needs human approval.
+- When a user request conflicts with a NEVER rule, stop and flag the conflict. Do not proceed until the user explicitly confirms. Confirmation applies to that single action only — it does not relax the rule for the rest of the session.
 - No implementation code in CLAUDE.md or specs. That's what TDD is for.
 
 ## Token Efficiency
@@ -97,11 +98,15 @@ This file contains the rules and conventions that must be followed at all times 
   - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
 - Do not commit secrets, credentials, or API keys. Use environment variables.
 
+## File Operations
+
+- NEVER use the console/terminal for file editing. Do not use `sed`, `awk`, `cat >`, `echo >>`, or similar shell commands to create or modify files.
+
 ## Spawned Agents
 
 - Scope spawned agents tightly. One file or one narrow topic per agent.
 - If a task requires many changes, split across multiple agents rather than risking context exhaustion.
-- ALWAYS make sure the main thread and all agents are using `file-edit-mcp` tools (`fem-*`) for file operations instead of console.
+- Every spawn message MUST include: Do NOT use the console for file operations.
 
 
 ## Permission Boundaries
