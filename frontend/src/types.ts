@@ -1182,7 +1182,6 @@ export interface ImportError {
 }
 
 export interface GitRepoCommitter {
-  id: string;
   git_repo_url: string;
   author_name: string;
   author_email: string;
