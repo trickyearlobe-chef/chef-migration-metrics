@@ -287,13 +287,7 @@ func (db *DB) listOwnersWithSummary(ctx context.Context, q queryable, f OwnerLis
 			SELECT nr.node_name AS entity_key, nr.is_ready, nr.stale_data
 			FROM node_readiness nr
 			WHERE nr.target_chef_version = %s
-			  AND nr.id IN (
-				SELECT DISTINCT ON (nr2.node_name) nr2.id
-				FROM node_readiness nr2
-				WHERE nr2.target_chef_version = %s
-				ORDER BY nr2.node_name, nr2.evaluated_at DESC
-			  )
-		)`, tvParam, tvParam)
+		)`, tvParam)
 	}
 
 	limitParam := fmt.Sprintf("$%d", argN)
