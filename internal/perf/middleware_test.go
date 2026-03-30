@@ -4,11 +4,84 @@
 package perf
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+// ---------------------------------------------------------------------------
+// Test helpers — mock ResponseWriters with optional interface support
+// ---------------------------------------------------------------------------
+
+// hijackableRecorder embeds httptest.ResponseRecorder and adds Hijack support
+// so we can test that statusRecorder forwards the interface.
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+}
+
+func (hr *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hr.hijacked = true
+	return nil, nil, nil
+}
+
+// flushableRecorder embeds httptest.ResponseRecorder and adds an explicit
+// Flush that tracks whether it was called.
+type flushableRecorder struct {
+	*httptest.ResponseRecorder
+	flushed bool
+}
+
+func (fr *flushableRecorder) Flush() {
+	fr.flushed = true
+}
+
+// hijackFlushRecorder implements both http.Hijacker and http.Flusher.
+type hijackFlushRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+	flushed  bool
+}
+
+func (hfr *hijackFlushRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hfr.hijacked = true
+	return nil, nil, nil
+}
+
+func (hfr *hijackFlushRecorder) Flush() {
+	hfr.flushed = true
+}
+
+// plainResponseWriter is a minimal http.ResponseWriter that does NOT
+// implement http.Hijacker or http.Flusher.
+type plainResponseWriter struct {
+	code int
+}
+
+func (pw *plainResponseWriter) Header() http.Header         { return http.Header{} }
+func (pw *plainResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (pw *plainResponseWriter) WriteHeader(code int)        { pw.code = code }
+
+// Compile-time check: plainResponseWriter is an http.ResponseWriter.
+var _ http.ResponseWriter = (*plainResponseWriter)(nil)
+
+func init() {
+	// Runtime guard: plainResponseWriter must NOT satisfy the optional interfaces.
+	var w http.ResponseWriter = &plainResponseWriter{}
+	if _, ok := w.(http.Hijacker); ok {
+		panic("plainResponseWriter must not implement http.Hijacker")
+	}
+	if _, ok := w.(http.Flusher); ok {
+		panic("plainResponseWriter must not implement http.Flusher")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Existing latency / key / error recording tests
+// ---------------------------------------------------------------------------
 
 func TestMiddleware_RecordsLatency(t *testing.T) {
 	rec := NewRecorder(5*time.Minute, 100, 1000)
@@ -143,5 +216,145 @@ func TestMiddleware_MultipleRequests(t *testing.T) {
 	}
 	if counts["GET /api/v1/cookbooks"] != 2 {
 		t.Fatalf("expected 2 requests for cookbooks, got %d", counts["GET /api/v1/cookbooks"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Hijacker forwarding tests
+// ---------------------------------------------------------------------------
+
+func TestStatusRecorder_HijackDelegatesToUnderlyingWriter(t *testing.T) {
+	inner := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	var w http.ResponseWriter = &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		t.Fatal("statusRecorder wrapping a Hijacker should implement http.Hijacker")
+	}
+
+	_, _, err := hj.Hijack()
+	if err != nil {
+		t.Fatalf("unexpected error from Hijack: %v", err)
+	}
+	if !inner.hijacked {
+		t.Fatal("expected Hijack to delegate to the underlying writer")
+	}
+}
+
+func TestStatusRecorder_HijackFailsWhenUnderlyingDoesNotSupport(t *testing.T) {
+	inner := &plainResponseWriter{}
+	var w http.ResponseWriter = &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		t.Fatal("statusRecorder should always implement http.Hijacker")
+	}
+
+	_, _, err := hj.Hijack()
+	if err == nil {
+		t.Fatal("expected error when underlying writer does not support Hijack")
+	}
+}
+
+func TestMiddleware_HijackerPassesThroughWrap(t *testing.T) {
+	rec := NewRecorder(5*time.Minute, 100, 1000)
+	mw := NewMiddleware(rec)
+
+	var sawHijacker bool
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, sawHijacker = w.(http.Hijacker)
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	})
+
+	wrapped := mw.Wrap(handler)
+	inner := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest("GET", "/api/v1/ws", nil)
+	wrapped.ServeHTTP(inner, req)
+
+	if !sawHijacker {
+		t.Fatal("handler should see http.Hijacker when underlying writer supports it")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Flusher forwarding tests
+// ---------------------------------------------------------------------------
+
+func TestStatusRecorder_FlushDelegatesToUnderlyingWriter(t *testing.T) {
+	inner := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	var w http.ResponseWriter = &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		t.Fatal("statusRecorder wrapping a Flusher should implement http.Flusher")
+	}
+
+	f.Flush()
+	if !inner.flushed {
+		t.Fatal("expected Flush to delegate to the underlying writer")
+	}
+}
+
+func TestStatusRecorder_FlushNoOpWhenUnderlyingDoesNotSupport(t *testing.T) {
+	inner := &plainResponseWriter{}
+	var w http.ResponseWriter = &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		t.Fatal("statusRecorder should always implement http.Flusher")
+	}
+
+	// Should not panic.
+	f.Flush()
+}
+
+func TestMiddleware_FlusherPassesThroughWrap(t *testing.T) {
+	rec := NewRecorder(5*time.Minute, 100, 1000)
+	mw := NewMiddleware(rec)
+
+	var sawFlusher bool
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, sawFlusher = w.(http.Flusher)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrapped := mw.Wrap(handler)
+	inner := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest("GET", "/api/v1/nodes", nil)
+	wrapped.ServeHTTP(inner, req)
+
+	if !sawFlusher {
+		t.Fatal("handler should see http.Flusher when underlying writer supports it")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Combined Hijacker + Flusher test
+// ---------------------------------------------------------------------------
+
+func TestStatusRecorder_BothHijackerAndFlusher(t *testing.T) {
+	inner := &hijackFlushRecorder{ResponseRecorder: httptest.NewRecorder()}
+	var w http.ResponseWriter = &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		t.Fatal("statusRecorder should implement http.Hijacker")
+	}
+
+	f, ok := w.(http.Flusher)
+	if !ok {
+		t.Fatal("statusRecorder should implement http.Flusher")
+	}
+
+	if _, _, err := hj.Hijack(); err != nil {
+		t.Fatalf("unexpected Hijack error: %v", err)
+	}
+	f.Flush()
+
+	if !inner.hijacked {
+		t.Fatal("expected Hijack to delegate")
+	}
+	if !inner.flushed {
+		t.Fatal("expected Flush to delegate")
 	}
 }
