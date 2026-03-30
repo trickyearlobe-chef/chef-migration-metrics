@@ -5,6 +5,7 @@ package webapi
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -113,6 +114,9 @@ type mockStore struct {
 	ActiveQueriesFn                                     func(ctx context.Context) ([]datastore.ActiveQuery, error)
 	ResetPgStatsFn                                      func(ctx context.Context) error
 	GetCookbookPlatformCoverageFn                       func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
+	GetRuntimeSettingFn                                 func(ctx context.Context, key string) (*datastore.RuntimeSetting, error)
+	SetRuntimeSettingFn                                 func(ctx context.Context, key string, value json.RawMessage, updatedBy string) error
+	DeleteRuntimeSettingFn                              func(ctx context.Context, key string) error
 }
 
 // compile-time check
@@ -858,6 +862,27 @@ func (m *mockStore) GetCookbookPlatformCoverage(ctx context.Context, cookbookNam
 		return m.GetCookbookPlatformCoverageFn(ctx, cookbookName)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) GetRuntimeSetting(ctx context.Context, key string) (*datastore.RuntimeSetting, error) {
+	if m.GetRuntimeSettingFn != nil {
+		return m.GetRuntimeSettingFn(ctx, key)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) SetRuntimeSetting(ctx context.Context, key string, value json.RawMessage, updatedBy string) error {
+	if m.SetRuntimeSettingFn != nil {
+		return m.SetRuntimeSettingFn(ctx, key, value, updatedBy)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteRuntimeSetting(ctx context.Context, key string) error {
+	if m.DeleteRuntimeSettingFn != nil {
+		return m.DeleteRuntimeSettingFn(ctx, key)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

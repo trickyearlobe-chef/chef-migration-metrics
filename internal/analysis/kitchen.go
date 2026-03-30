@@ -218,6 +218,13 @@ func NewKitchenScanner(
 	return s
 }
 
+// SetTestKitchenConfig replaces the scanner's driver and platform
+// configuration. This must only be called between collection runs (not
+// while a scan is in progress). The collector's run mutex guarantees this.
+func (s *KitchenScanner) SetTestKitchenConfig(cfg config.TestKitchenConfig) {
+	s.tkConfig = cfg
+}
+
 // ---------------------------------------------------------------------------
 // Batch execution
 // ---------------------------------------------------------------------------

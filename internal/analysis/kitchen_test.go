@@ -1266,6 +1266,34 @@ func TestNewKitchenScanner_NegativeValues(t *testing.T) {
 	}
 }
 
+func TestSetTestKitchenConfig_UpdatesOverlay(t *testing.T) {
+	t.Parallel()
+
+	// Start with dokken config.
+	scanner := NewKitchenScanner(nil, nil, "/usr/bin/kitchen", 1, 30,
+		config.TestKitchenConfig{Driver: "dokken"})
+
+	// Swap to vcenter config with a platform map.
+	scanner.SetTestKitchenConfig(config.TestKitchenConfig{
+		Driver: "vcenter",
+		DriverSettings: map[string]any{
+			"vcenter_host": "vcenter.example.com",
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
+		},
+	})
+
+	// Build overlay — should use the new vcenter config.
+	overlay := scanner.buildOverlay("18.5.0", "vcenter")
+	if !strings.Contains(overlay, "name: vcenter") {
+		t.Errorf("overlay should use vcenter driver after SetTestKitchenConfig, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "vcenter_host") {
+		t.Errorf("overlay should contain vcenter_host from new config, got:\n%s", overlay)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Tests: writeAttributes
 // ---------------------------------------------------------------------------
