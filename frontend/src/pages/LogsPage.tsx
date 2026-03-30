@@ -257,7 +257,7 @@ function LogsTab() {
     if (selectedOrg) filters.organisation = selectedOrg;
     fetchLogs(filters)
       .then((res) => {
-        setLogs(res.data ?? []);
+        setLogs((res.data ?? []).map((e) => ({ ...e, id: String(e.id) })));
         setPagination(res.pagination);
       })
       .catch((e: Error) => setError(e.message))
@@ -285,7 +285,7 @@ function LogsTab() {
       setDetailEntry(null);
       setDetailLoading(true);
       fetchLogDetail(id)
-        .then((entry) => setDetailEntry(entry))
+        .then((entry) => setDetailEntry({ ...entry, id: String(entry.id) }))
         .catch(() => {
           const fallback = logs.find((l) => l.id === id) ?? null;
           setDetailEntry(fallback);
@@ -412,7 +412,7 @@ function LogsTab() {
                       detailLoading={
                         expandedId === entry.id ? detailLoading : false
                       }
-                      isLive={entry.id.startsWith("live-")}
+                      isLive={String(entry.id).startsWith("live-")}
                     />
                   ))}
                 </tbody>
