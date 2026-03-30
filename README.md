@@ -410,7 +410,7 @@ analysis_tools:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `driver` | `dokken` | Built-in profiles: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, or `custom` |
+| `driver` | `dokken` | Built-in profiles: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, `proxmox`, or `custom` |
 | `timeout_minutes` | `30` | Maximum time per Test Kitchen run |
 | `driver_settings` | empty | Plaintext driver connection settings |
 | `driver_secrets` | empty | Credential names resolved at runtime from the credential store |
@@ -517,6 +517,50 @@ Switching drivers is a config-only operation — no code changes required. The p
 **What changes:** `driver`, `driver_settings`, `driver_secrets`, and `image` values in the platform map.
 
 **What stays the same:** Platform map structure, `transport` blocks, application code, and test results schema.
+
+### Proxmox Platform Map Setup
+
+When using the `proxmox` driver, each platform in the `platform_map` maps a Test Kitchen platform name to a Proxmox VM template. The application generates a `.kitchen.local.yml` overlay that references these templates with ERB credential injection.
+
+**Step 1:** Store credentials via the admin API:
+
+```bash
+# Proxmox connection password
+curl -X POST http://localhost:8080/api/v1/admin/credentials \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "proxmox-password", "credential_type": "generic", "value": "<password>"}'
+
+# VM transport password (for SSH into test VMs)
+curl -X POST http://localhost:8080/api/v1/admin/credentials \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "kitchen-vm-password", "credential_type": "generic", "value": "<password>"}'
+```
+
+**Step 2:** Configure the driver in the YAML config:
+
+```yaml
+analysis_tools:
+  test_kitchen:
+    driver: proxmox
+    driver_settings:
+      proxmox_url: "https://pve.example.com:8006"
+      proxmox_username: "user@pam"
+      proxmox_node: "pve1"
+    driver_secrets:
+      proxmox_password: proxmox-password
+    platform_map:
+      - kitchen_name: ubuntu-22.04
+        image: tmpl-ubuntu-2204
+        transport:
+          username: kitchen
+          password_credential: kitchen-vm-password
+      - kitchen_name: centos-7
+        image: tmpl-centos-7
+```
+
+**Step 3:** Restart the application. At startup, the driver validates that all referenced credentials exist and decrypt successfully.
+
+Per-platform `driver_settings` are merged with the top-level defaults. Platform entries not found in the map are skipped with a warning.
 
 ## Authentication
 
