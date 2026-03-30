@@ -850,6 +850,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))
 	}
 
+	if app.credStore != nil {
+		routerOpts = append(routerOpts, webapi.WithCredentialStore(app.credStore))
+	}
+
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
 		routerOpts = append(routerOpts, webapi.WithFrontendFS(frontendFS))
 		if frontend.HasEmbed() {

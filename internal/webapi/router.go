@@ -191,6 +191,19 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 		opt(r)
 	}
 
+	// Log which optional components are wired in. This makes it obvious
+	// from startup output when a component was defined but never passed
+	// to NewRouter — the most common class of silent wiring bug with
+	// functional options.
+	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t perf=%t collection_trigger=%t",
+		r.logger != nil,
+		r.frontendFS != nil,
+		r.authMiddleware != nil,
+		r.credentialStore != nil,
+		r.recorder != nil,
+		r.triggerCollection != nil,
+	)
+
 	r.registerRoutes()
 
 	// Wrap the entire mux with the timing middleware when a recorder is
