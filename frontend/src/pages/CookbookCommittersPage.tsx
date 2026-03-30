@@ -70,6 +70,7 @@ export function CookbookCommittersPage() {
 
   // Selection
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const key = (c: GitRepoCommitter) => c.author_email;
 
   // Assign action
   const [assigning, setAssigning] = useState(false);
@@ -101,7 +102,7 @@ export function CookbookCommittersPage() {
         setResponse(res);
         // Pre-select committers that are already owners.
         const ownerIds = new Set(
-          (res.data ?? []).filter((c) => c.is_owner).map((c) => c.id),
+          (res.data ?? []).filter((c) => c.is_owner).map((c) => key(c)),
         );
         setSelected(ownerIds);
       })
@@ -123,23 +124,24 @@ export function CookbookCommittersPage() {
   // -----------------------------------------------------------------------
 
   const allSelected =
-    committers.length > 0 && committers.every((c) => selected.has(c.id));
+    committers.length > 0 && committers.every((c) => selected.has(key(c)));
 
   const toggleAll = () => {
     if (allSelected) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(committers.map((c) => c.id)));
+      setSelected(new Set(committers.map((c) => key(c))));
     }
   };
 
-  const toggleOne = (id: string) => {
+  const toggleOne = (c: GitRepoCommitter) => {
+    const k = key(c);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
+      if (next.has(k)) {
+        next.delete(k);
       } else {
-        next.add(id);
+        next.add(k);
       }
       return next;
     });
@@ -155,7 +157,7 @@ export function CookbookCommittersPage() {
     setAssignError(null);
     setSuccessMsg(null);
 
-    const selectedCommitters = committers.filter((c) => selected.has(c.id));
+    const selectedCommitters = committers.filter((c) => selected.has(key(c)));
     const body = {
       committers: selectedCommitters.map((c) => ({
         author_email: c.author_email,
@@ -354,12 +356,12 @@ export function CookbookCommittersPage() {
                 </thead>
                 <tbody>
                   {committers.map((c) => (
-                    <tr key={c.id} className={c.is_owner ? "bg-blue-50" : ""}>
+                    <tr key={key(c)} className={c.is_owner ? "bg-blue-50" : ""}>
                       <td>
                         <input
                           type="checkbox"
-                          checked={selected.has(c.id)}
-                          onChange={() => toggleOne(c.id)}
+                          checked={selected.has(key(c))}
+                          onChange={() => toggleOne(c)}
                           className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </td>
