@@ -574,3 +574,157 @@ func TestMergeReadinessTrendSnapshots_DifferentHours_Sorted(t *testing.T) {
 		t.Errorf("got[1].CompletedAt = %q, want %q", got[1].CompletedAt, "2025-06-15T16:00:00Z")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Deduplication tests — same org, two snapshots in same hour bucket.
+// Only the latest snapshot per org should be used.
+// ---------------------------------------------------------------------------
+
+func TestMergeVersionDistributionSnapshots_DedupSameOrgSameHour(t *testing.T) {
+	points := []versionDistTrendPoint{
+		{
+			OrganisationName: "org-a",
+			CollectionRunOrg: "org-a",
+			CompletedAt:      "2025-06-15T10:05:00Z",
+			TotalNodes:       100,
+			Distribution:     map[string]int{"18.0.0": 60, "17.0.0": 40},
+		},
+		{
+			OrganisationName: "org-a",
+			CollectionRunOrg: "org-a",
+			CompletedAt:      "2025-06-15T10:45:00Z", // later — should win
+			TotalNodes:       105,
+			Distribution:     map[string]int{"18.0.0": 65, "17.0.0": 40},
+		},
+		{
+			OrganisationName: "org-b",
+			CollectionRunOrg: "org-b",
+			CompletedAt:      "2025-06-15T10:10:00Z",
+			TotalNodes:       50,
+			Distribution:     map[string]int{"18.0.0": 50},
+		},
+	}
+
+	got := mergeVersionDistributionSnapshots(points)
+
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	// org-a latest (105) + org-b (50) = 155
+	if got[0].TotalNodes != 155 {
+		t.Errorf("TotalNodes = %d, want 155", got[0].TotalNodes)
+	}
+	// 18.0.0: org-a latest 65 + org-b 50 = 115
+	if got[0].Distribution["18.0.0"] != 115 {
+		t.Errorf("Distribution[18.0.0] = %d, want 115", got[0].Distribution["18.0.0"])
+	}
+	// 17.0.0: only org-a latest = 40
+	if got[0].Distribution["17.0.0"] != 40 {
+		t.Errorf("Distribution[17.0.0] = %d, want 40", got[0].Distribution["17.0.0"])
+	}
+}
+
+func TestMergeStaleTrendSnapshots_DedupSameOrgSameHour(t *testing.T) {
+	points := []staleTrendPoint{
+		{
+			OrganisationName: "org-a",
+			CollectionRunOrg: "org-a",
+			CompletedAt:      "2025-06-15T10:05:00Z",
+			TotalNodes:       100,
+			StaleNodes:       20,
+			FreshNodes:       80,
+		},
+		{
+			OrganisationName: "org-a",
+			CollectionRunOrg: "org-a",
+			CompletedAt:      "2025-06-15T10:45:00Z", // later — should win
+			TotalNodes:       100,
+			StaleNodes:       18,
+			FreshNodes:       82,
+		},
+		{
+			OrganisationName: "org-b",
+			CollectionRunOrg: "org-b",
+			CompletedAt:      "2025-06-15T10:10:00Z",
+			TotalNodes:       50,
+			StaleNodes:       5,
+			FreshNodes:       45,
+		},
+	}
+
+	got := mergeStaleTrendSnapshots(points)
+
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	// org-a latest (100) + org-b (50) = 150
+	if got[0].TotalNodes != 150 {
+		t.Errorf("TotalNodes = %d, want 150", got[0].TotalNodes)
+	}
+	// stale: org-a latest 18 + org-b 5 = 23
+	if got[0].StaleNodes != 23 {
+		t.Errorf("StaleNodes = %d, want 23", got[0].StaleNodes)
+	}
+	// fresh: org-a latest 82 + org-b 45 = 127
+	if got[0].FreshNodes != 127 {
+		t.Errorf("FreshNodes = %d, want 127", got[0].FreshNodes)
+	}
+}
+
+func TestMergeReadinessTrendSnapshots_DedupSameOrgSameHour(t *testing.T) {
+	points := []readinessTrendPoint{
+		{
+			OrganisationName:  "org-a",
+			CollectionRunOrg:  "org-a",
+			CompletedAt:       "2025-06-15T10:05:00Z",
+			TargetChefVersion: "18.4.2",
+			TotalNodes:        100,
+			ReadyNodes:        40,
+			BlockedNodes:      60,
+			ReadyPercent:      40.0,
+		},
+		{
+			OrganisationName:  "org-a",
+			CollectionRunOrg:  "org-a",
+			CompletedAt:       "2025-06-15T10:45:00Z", // later — should win
+			TargetChefVersion: "18.4.2",
+			TotalNodes:        100,
+			ReadyNodes:        45,
+			BlockedNodes:      55,
+			ReadyPercent:      45.0,
+		},
+		{
+			OrganisationName:  "org-b",
+			CollectionRunOrg:  "org-b",
+			CompletedAt:       "2025-06-15T10:10:00Z",
+			TargetChefVersion: "18.4.2",
+			TotalNodes:        50,
+			ReadyNodes:        25,
+			BlockedNodes:      25,
+			ReadyPercent:      50.0,
+		},
+	}
+
+	got := mergeReadinessTrendSnapshots(points)
+
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	// org-a latest (100) + org-b (50) = 150
+	if got[0].TotalNodes != 150 {
+		t.Errorf("TotalNodes = %d, want 150", got[0].TotalNodes)
+	}
+	// ready: org-a latest 45 + org-b 25 = 70
+	if got[0].ReadyNodes != 70 {
+		t.Errorf("ReadyNodes = %d, want 70", got[0].ReadyNodes)
+	}
+	// blocked: org-a latest 55 + org-b 25 = 80
+	if got[0].BlockedNodes != 80 {
+		t.Errorf("BlockedNodes = %d, want 80", got[0].BlockedNodes)
+	}
+	// percent: 70/150 * 100 = 46.666...
+	wantPct := float64(70) / float64(150) * 100
+	if got[0].ReadyPercent != wantPct {
+		t.Errorf("ReadyPercent = %f, want %f", got[0].ReadyPercent, wantPct)
+	}
+}
