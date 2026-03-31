@@ -333,15 +333,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 		return
 	}
 
-	type trendPoint struct {
-		OrganisationName string         `json:"organisation_name"`
-		CollectionRunOrg string         `json:"collection_run_org"`
-		CompletedAt      string         `json:"completed_at"`
-		TotalNodes       int            `json:"total_nodes"`
-		Distribution     map[string]int `json:"distribution"`
-	}
-
-	var points []trendPoint
+	var points []versionDistTrendPoint
 
 	// When no ownership filter is active, read from pre-aggregated
 	// metric_snapshots. This avoids scanning the (now current-state-only)
@@ -363,18 +355,25 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 					r.logf("WARN", "unmarshalling metric snapshot %d: %v", ms.ID, err)
 					continue
 				}
-				points = append(points, trendPoint{
+				points = append(points, versionDistTrendPoint{
 					OrganisationName: org.Name,
 					CollectionRunOrg: ms.CollectionRunOrg,
-					CompletedAt:      ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
+					CompletedAt:      ms.SnapshotAt.Format(trendTimestampFormat),
 					TotalNodes:       payload.TotalNodes,
 					Distribution:     payload.Distribution,
 				})
 			}
 		}
 
+		// When multiple orgs are in scope, merge per-org snapshots
+		// from the same collection cycle into a single data point to
+		// avoid sawtooth patterns in the chart.
+		if len(orgs) > 1 {
+			points = mergeVersionDistributionSnapshots(points)
+		}
+
 		if points == nil {
-			points = []trendPoint{}
+			points = []versionDistTrendPoint{}
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"data": points})
 		return
@@ -423,10 +422,10 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 				total++
 			}
 
-			points = append(points, trendPoint{
+			points = append(points, versionDistTrendPoint{
 				OrganisationName: org.Name,
 				CollectionRunOrg: ms.CollectionRunOrg,
-				CompletedAt:      ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
+				CompletedAt:      ms.SnapshotAt.Format(trendTimestampFormat),
 				TotalNodes:       total,
 				Distribution:     dist,
 			})
@@ -434,7 +433,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 	}
 
 	if points == nil {
-		points = []trendPoint{}
+		points = []versionDistTrendPoint{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": points})

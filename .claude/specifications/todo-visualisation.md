@@ -7,6 +7,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 ## Next Up
 
 - [ ] Distinguish CookStyle scan errors from genuine pass/fail on git repo detail page — when CookStyle exits non-zero but produces no parsed results (e.g. due to corrupt `.rubocop_todo.yml`), show "Scan Error" with the stderr reason instead of "Failed" with "Offences: 0 | Deprecations: 0", which falsely implies a clean scan. The log entry `process_output` already captures the CookStyle stderr; surface it in the UI.
+- [x] Fix sawtooth pattern on trend charts when viewing all orgs — backend now merges per-org metric snapshots by hour bucket before returning, so one data point per collection cycle instead of one per (org, snapshot_time).
 
 ## Dashboard
 
@@ -39,7 +40,8 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Historical Trending
 
-- [ ] Store timestamped metric snapshots during each collection run
+- [x] Store timestamped metric snapshots during each collection run
+- [x] Aggregate per-org snapshots into single data points per collection cycle for all-orgs view
 
 ## Log Viewer
 
