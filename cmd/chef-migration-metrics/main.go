@@ -611,6 +611,9 @@ func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
 	if result.GitRepoTestKitchenResults > 0 {
 		app.startup.Info(fmt.Sprintf("  - git_repo_test_kitchen_results: %d", result.GitRepoTestKitchenResults))
 	}
+	if result.MetricSnapshots > 0 {
+		app.startup.Info(fmt.Sprintf("  - metric_snapshots: %d", result.MetricSnapshots))
+	}
 }
 
 // ---------------------------------------------------------------------------
