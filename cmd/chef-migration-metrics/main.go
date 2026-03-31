@@ -562,6 +562,58 @@ func (app *serverApp) syncOrganisations(ctx context.Context) error {
 }
 
 // ---------------------------------------------------------------------------
+// Phase: reconcile stale target version data.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
+	versions := app.cfg.TargetChefVersions
+	if len(versions) == 0 {
+		app.startup.Warn("no target_chef_versions configured — skipping stale version reconciliation")
+		return
+	}
+
+	result, err := app.db.PurgeStaleTargetVersionData(ctx, versions)
+	if err != nil {
+		app.startup.Warn(fmt.Sprintf("failed to purge stale target version data: %v", err))
+		return
+	}
+
+	if result.Total() == 0 {
+		app.startup.Info("target version reconciliation: no stale data found")
+		return
+	}
+
+	app.startup.Info(fmt.Sprintf(
+		"target version reconciliation: purged %d stale record(s) for versions not in %v",
+		result.Total(), versions))
+
+	if result.NodeReadiness > 0 {
+		app.startup.Info(fmt.Sprintf("  - node_readiness: %d", result.NodeReadiness))
+	}
+	if result.ServerCookbookCookstyleResults > 0 {
+		app.startup.Info(fmt.Sprintf("  - server_cookbook_cookstyle_results: %d", result.ServerCookbookCookstyleResults))
+	}
+	if result.ServerCookbookComplexity > 0 {
+		app.startup.Info(fmt.Sprintf("  - server_cookbook_complexity: %d", result.ServerCookbookComplexity))
+	}
+	if result.ServerCookbookAutocorrectPreviews > 0 {
+		app.startup.Info(fmt.Sprintf("  - server_cookbook_autocorrect_previews: %d", result.ServerCookbookAutocorrectPreviews))
+	}
+	if result.GitRepoCookstyleResults > 0 {
+		app.startup.Info(fmt.Sprintf("  - git_repo_cookstyle_results: %d", result.GitRepoCookstyleResults))
+	}
+	if result.GitRepoComplexity > 0 {
+		app.startup.Info(fmt.Sprintf("  - git_repo_complexity: %d", result.GitRepoComplexity))
+	}
+	if result.GitRepoAutocorrectPreviews > 0 {
+		app.startup.Info(fmt.Sprintf("  - git_repo_autocorrect_previews: %d", result.GitRepoAutocorrectPreviews))
+	}
+	if result.GitRepoTestKitchenResults > 0 {
+		app.startup.Info(fmt.Sprintf("  - git_repo_test_kitchen_results: %d", result.GitRepoTestKitchenResults))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Phase: analysis pipeline and collector setup.
 // ---------------------------------------------------------------------------
 
@@ -1077,33 +1129,36 @@ func run() int {
 		return 1
 	}
 
-	// Phase 10: analysis pipeline and collector.
+	// Phase 10: reconcile stale target version data.
+	app.reconcileTargetVersions(ctx)
+
+	// Phase 11: analysis pipeline and collector.
 	if err := app.setupCollector(ctx); err != nil {
 		return 1
 	}
 
-	// Phase 11: ownership startup tasks.
+	// Phase 12: ownership startup tasks.
 	app.setupOwnership(ctx)
 
-	// Phase 12: collection scheduler.
+	// Phase 13: collection scheduler.
 	if err := app.startScheduler(ctx); err != nil {
 		return 1
 	}
 	defer app.sched.Stop()
 
-	// Phase 13: exports.
+	// Phase 14: exports.
 	if err := app.setupExports(); err != nil {
 		return 1
 	}
 	defer app.stopExportCleanup()
 
-	// Phase 14: HTTP server.
+	// Phase 15: HTTP server.
 	srv, err := app.setupAndServeHTTP()
 	if err != nil {
 		return 1
 	}
 
-	// Phase 15: signal handling and graceful shutdown.
+	// Phase 16: signal handling and graceful shutdown.
 	return app.awaitShutdown(srv)
 }
 
