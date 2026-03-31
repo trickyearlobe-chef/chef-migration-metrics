@@ -183,18 +183,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 
 	targetVersions := r.cfg.TargetChefVersions
 
-	type trendPoint struct {
-		OrganisationName  string  `json:"organisation_name"`
-		CollectionRunOrg  string  `json:"collection_run_org"`
-		CompletedAt       string  `json:"completed_at"`
-		TargetChefVersion string  `json:"target_chef_version"`
-		TotalNodes        int     `json:"total_nodes"`
-		ReadyNodes        int     `json:"ready_nodes"`
-		BlockedNodes      int     `json:"blocked_nodes"`
-		ReadyPercent      float64 `json:"ready_percent"`
-	}
-
-	var points []trendPoint
+	var points []readinessTrendPoint
 
 	// Try snapshot-based path first (preferred).
 	snapshotFound := false
@@ -255,10 +244,10 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 				}
 				pct := float64(ready) / float64(total) * 100
 
-				points = append(points, trendPoint{
+				points = append(points, readinessTrendPoint{
 					OrganisationName:  org.Name,
 					CollectionRunOrg:  ms.CollectionRunOrg,
-					CompletedAt:       ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
+					CompletedAt:       ms.SnapshotAt.Format(trendTimestampFormat),
 					TargetChefVersion: tv,
 					TotalNodes:        total,
 					ReadyNodes:        ready,
@@ -284,7 +273,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 					continue
 				}
 				pct := float64(ready) / float64(total) * 100
-				points = append(points, trendPoint{
+				points = append(points, readinessTrendPoint{
 					OrganisationName:  org.Name,
 					TargetChefVersion: tv,
 					TotalNodes:        total,
@@ -296,8 +285,15 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 		}
 	}
 
+	// When multiple orgs are in scope, merge per-org snapshots
+	// from the same collection cycle into a single data point to
+	// avoid sawtooth patterns in the chart.
+	if len(orgs) > 1 {
+		points = mergeReadinessTrendSnapshots(points)
+	}
+
 	if points == nil {
-		points = []trendPoint{}
+		points = []readinessTrendPoint{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": points})

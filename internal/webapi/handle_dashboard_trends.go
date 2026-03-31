@@ -113,17 +113,8 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	type trendPoint struct {
-		OrganisationName string `json:"organisation_name"`
-		CollectionRunOrg string `json:"collection_run_org"`
-		CompletedAt      string `json:"completed_at"`
-		TotalNodes       int    `json:"total_nodes"`
-		StaleNodes       int    `json:"stale_nodes"`
-		FreshNodes       int    `json:"fresh_nodes"`
-	}
-
 	ctx := req.Context()
-	var points []trendPoint
+	var points []staleTrendPoint
 
 	// Read from pre-aggregated metric_snapshots. The
 	// chef_version_distribution snapshots contain stale/fresh counts
@@ -144,10 +135,10 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 				r.logf("WARN", "unmarshalling metric snapshot %d for stale trend: %v", ms.ID, err)
 				continue
 			}
-			points = append(points, trendPoint{
+			points = append(points, staleTrendPoint{
 				OrganisationName: org.Name,
 				CollectionRunOrg: ms.CollectionRunOrg,
-				CompletedAt:      ms.SnapshotAt.Format("2006-01-02T15:04:05Z"),
+				CompletedAt:      ms.SnapshotAt.Format(trendTimestampFormat),
 				TotalNodes:       payload.TotalNodes,
 				StaleNodes:       payload.StaleNodes,
 				FreshNodes:       payload.FreshNodes,
@@ -155,8 +146,15 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
+	// When multiple orgs are in scope, merge per-org snapshots
+	// from the same collection cycle into a single data point to
+	// avoid sawtooth patterns in the chart.
+	if len(orgs) > 1 {
+		points = mergeStaleTrendSnapshots(points)
+	}
+
 	if points == nil {
-		points = []trendPoint{}
+		points = []staleTrendPoint{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": points})
