@@ -1,6 +1,6 @@
 # Encrypted Config Store — ToDo
 
-Status key: [ ] Not started | [~] In progress | [x] Done
+Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 
 ---
 
@@ -70,13 +70,13 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ### YAML Auto-Migration
 
-- [~] `MigrateFromYAML()` in `internal/configstore/yaml_migrate.go` — `ConfigToSections()` done, file ops pending
-- [ ] Detect full YAML (presence of `organisations` key)
-- [ ] Serialise each config section to JSON and encrypt into DB
-- [ ] Rename `config.yml` to `config.yml.migrated`
-- [ ] Write bootstrap `config.yml` with only `database_url`, `listen_address`, `listen_port`
-- [ ] Skip if `config_store` already has entries (log warning)
-- [ ] Unit tests: migration, idempotency, file rename, bootstrap content
+- [x] `MigrateFromYAML()` in `internal/configstore/yaml_migrate.go`
+- [x] `IsFullYAML()` detection (presence of `organisations` key)
+- [x] Serialise each config section to JSON and encrypt into DB via `ConfigToSections()`
+- [x] Rename `config.yml` to `config.yml.migrated` (preserves existing backup)
+- [x] Write bootstrap `config.yml` with only `database_url`, `listen_address`, `listen_port` (0600 permissions)
+- [x] Skip if `config_store` already has entries (log warning)
+- [x] Unit tests: migration, idempotency, file rename, bootstrap content, round-trip assembly, permissions, error propagation
 
 ### Config Assembly
 
@@ -96,13 +96,18 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ### Startup Integration
 
-- [ ] Update `loadConfig()` to detect bootstrap vs full YAML
-- [ ] Add `migrateConfigStore()` phase after migrations and secrets setup
-- [ ] Add `assembleConfig()` — load from DB if populated, else YAML (backward compat)
-- [ ] Create `ConfigHolder`, pass to collector and HTTP handlers
-- [ ] Wire `CredentialStoreAdapter` in place of `DBCredentialStore`
-- [ ] Verify existing credential API and UI still work
-- [ ] `CMM_CREDENTIAL_ENCRYPTION_KEY` mandatory from first startup
+- [x] Update `loadConfig()` to detect bootstrap vs full YAML via `IsFullYAML()`
+- [x] Add `setupConfigStore()` phase after migrations and secrets setup
+- [x] Run `MigrateFromLegacy()` for credential + runtime_settings migration
+- [x] Run `MigrateFromYAML()` when full YAML detected
+- [x] `AssembleConfig()` — load from DB if populated, else YAML (backward compat)
+- [x] Carry over bootstrap values (database_url, listen_address, listen_port) from YAML
+- [x] Create `ConfigHolder` with assembled config and store
+- [x] Wire `CredentialStoreAdapter` in place of `DBCredentialStore` with `dbRefChecker`
+- [x] `CMM_CREDENTIAL_ENCRYPTION_KEY` mandatory from first startup (fatal if missing)
+- [x] Preserve legacy `DBCredentialStore` for key rotation and validation before migration
+- [x] All 18 test packages pass with `-race`, zero existing test breakage
+- [ ] Verify existing credential API and UI still work (requires manual/functional testing)
 
 ## Phase 2: API Endpoints
 
