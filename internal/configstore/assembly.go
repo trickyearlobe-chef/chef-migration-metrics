@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 // ConfigSectionKey constants define the config_store keys for each
@@ -74,6 +75,10 @@ func AllConfigKeys() []string {
 // Config field. After assembly, defaults are applied and the config is
 // validated using the same rules as the YAML loading path.
 //
+// The config structs use `yaml` struct tags (not `json`), so we use YAML
+// unmarshal for the JSON→struct step. JSON is a subset of YAML so this
+// works correctly and honours the snake_case field names.
+//
 // Bootstrap values (database_url, listen_address, listen_port) are NOT
 // populated by this function — they come from the bootstrap YAML file and
 // must be set on the returned Config by the caller.
@@ -119,6 +124,10 @@ func AssembleConfigRaw(values map[string]json.RawMessage) (*config.Config, error
 
 // assembleFields unmarshals each known config key from the values map into
 // the corresponding field on cfg. Unknown keys are silently ignored.
+//
+// We use yaml.Unmarshal because the config structs have `yaml` struct tags
+// (e.g. `yaml:"chef_server_url"`) rather than `json` tags. Since JSON is
+// valid YAML, the stored JSON values unmarshal correctly via the YAML decoder.
 func assembleFields(cfg *config.Config, values map[string]json.RawMessage) error {
 	for key, raw := range values {
 		if err := assembleOneField(cfg, key, raw); err != nil {
@@ -133,49 +142,49 @@ func assembleFields(cfg *config.Config, values map[string]json.RawMessage) error
 func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error {
 	switch key {
 	case KeyOrganisations:
-		return unmarshalInto(&cfg.Organisations, raw, key)
+		return yamlUnmarshalInto(&cfg.Organisations, raw, key)
 	case KeyTargetChefVersions:
-		return unmarshalInto(&cfg.TargetChefVersions, raw, key)
+		return yamlUnmarshalInto(&cfg.TargetChefVersions, raw, key)
 	case KeyGitBaseURLs:
-		return unmarshalInto(&cfg.GitBaseURLs, raw, key)
+		return yamlUnmarshalInto(&cfg.GitBaseURLs, raw, key)
 	case KeyCollection:
-		return unmarshalInto(&cfg.Collection, raw, key)
+		return yamlUnmarshalInto(&cfg.Collection, raw, key)
 	case KeyConcurrency:
-		return unmarshalInto(&cfg.Concurrency, raw, key)
+		return yamlUnmarshalInto(&cfg.Concurrency, raw, key)
 	case KeyAnalysisTools:
-		return unmarshalInto(&cfg.AnalysisTools, raw, key)
+		return yamlUnmarshalInto(&cfg.AnalysisTools, raw, key)
 	case KeyReadiness:
-		return unmarshalInto(&cfg.Readiness, raw, key)
+		return yamlUnmarshalInto(&cfg.Readiness, raw, key)
 	case KeyNotifications:
-		return unmarshalInto(&cfg.Notifications, raw, key)
+		return yamlUnmarshalInto(&cfg.Notifications, raw, key)
 	case KeySMTP:
-		return unmarshalInto(&cfg.SMTP, raw, key)
+		return yamlUnmarshalInto(&cfg.SMTP, raw, key)
 	case KeyExports:
-		return unmarshalInto(&cfg.Exports, raw, key)
+		return yamlUnmarshalInto(&cfg.Exports, raw, key)
 	case KeyElasticsearch:
-		return unmarshalInto(&cfg.Elasticsearch, raw, key)
+		return yamlUnmarshalInto(&cfg.Elasticsearch, raw, key)
 	case KeyServerTLS:
-		return unmarshalInto(&cfg.Server.TLS, raw, key)
+		return yamlUnmarshalInto(&cfg.Server.TLS, raw, key)
 	case KeyServerWebSocket:
-		return unmarshalInto(&cfg.Server.WebSocket, raw, key)
+		return yamlUnmarshalInto(&cfg.Server.WebSocket, raw, key)
 	case KeyServerGracefulShutdown:
-		return unmarshalInto(&cfg.Server.GracefulShutdownSeconds, raw, key)
+		return yamlUnmarshalInto(&cfg.Server.GracefulShutdownSeconds, raw, key)
 	case KeyFrontend:
-		return unmarshalInto(&cfg.Frontend, raw, key)
+		return yamlUnmarshalInto(&cfg.Frontend, raw, key)
 	case KeyLogging:
-		return unmarshalInto(&cfg.Logging, raw, key)
+		return yamlUnmarshalInto(&cfg.Logging, raw, key)
 	case KeyAuth:
-		return unmarshalInto(&cfg.Auth, raw, key)
+		return yamlUnmarshalInto(&cfg.Auth, raw, key)
 	case KeyOwnership:
-		return unmarshalInto(&cfg.Ownership, raw, key)
+		return yamlUnmarshalInto(&cfg.Ownership, raw, key)
 	case KeyStorage:
-		return unmarshalInto(&cfg.Storage, raw, key)
+		return yamlUnmarshalInto(&cfg.Storage, raw, key)
 	case KeySystemHealth:
-		return unmarshalInto(&cfg.SystemHealth, raw, key)
+		return yamlUnmarshalInto(&cfg.SystemHealth, raw, key)
 	case KeyPerformance:
-		return unmarshalInto(&cfg.Performance, raw, key)
+		return yamlUnmarshalInto(&cfg.Performance, raw, key)
 	case KeyCredentialEncryptionKeyEnv:
-		return unmarshalInto(&cfg.CredentialEncryptionKeyEnv, raw, key)
+		return yamlUnmarshalInto(&cfg.CredentialEncryptionKeyEnv, raw, key)
 	default:
 		// Unknown key — silently ignore. This allows forward compatibility
 		// when new config sections are added.
@@ -183,10 +192,11 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 	}
 }
 
-// unmarshalInto is a typed helper that unmarshals JSON into a target pointer,
-// wrapping the error with the config key name for diagnostics.
-func unmarshalInto[T any](target *T, raw json.RawMessage, key string) error {
-	if err := json.Unmarshal(raw, target); err != nil {
+// yamlUnmarshalInto unmarshals a JSON value into a target pointer using the
+// YAML decoder. This is necessary because config structs use `yaml` struct
+// tags. JSON is a subset of YAML so the YAML decoder handles it correctly.
+func yamlUnmarshalInto[T any](target *T, raw json.RawMessage, key string) error {
+	if err := yaml.Unmarshal(raw, target); err != nil {
 		return fmt.Errorf("unmarshal %q: %w", key, err)
 	}
 	return nil
@@ -196,6 +206,12 @@ func unmarshalInto[T any](target *T, raw json.RawMessage, key string) error {
 // store key → JSON value. This is the inverse of assembleFields and is used
 // during YAML auto-migration to populate the config store from a parsed
 // Config struct.
+//
+// We serialise via JSON (not YAML) because the stored values in config_store
+// are JSON. The config structs have `yaml` tags but json.Marshal falls back
+// to using field names when no `json` tag is present. To get consistent
+// snake_case keys, we round-trip through YAML marshal → JSON-compatible map
+// via yamlToJSON.
 //
 // Bootstrap-only fields (Datastore.URL, Server.ListenAddress, Server.Port)
 // are excluded — they remain in the bootstrap YAML file.
@@ -232,7 +248,7 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 
 	result := make(map[string]json.RawMessage, len(sections))
 	for key, value := range sections {
-		data, err := json.Marshal(value)
+		data, err := yamlToJSON(value)
 		if err != nil {
 			return nil, fmt.Errorf("configstore: marshal section %q: %w", key, err)
 		}
@@ -240,4 +256,27 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 	}
 
 	return result, nil
+}
+
+// yamlToJSON serialises a value to JSON by first marshalling to YAML (which
+// uses the struct's yaml tags for field names), then unmarshalling to a
+// generic interface, then marshalling to JSON. This ensures the JSON output
+// uses the snake_case field names from yaml tags rather than Go PascalCase.
+func yamlToJSON(v any) ([]byte, error) {
+	yamlBytes, err := yaml.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("yaml marshal: %w", err)
+	}
+
+	var generic any
+	if err := yaml.Unmarshal(yamlBytes, &generic); err != nil {
+		return nil, fmt.Errorf("yaml unmarshal to generic: %w", err)
+	}
+
+	jsonBytes, err := json.Marshal(generic)
+	if err != nil {
+		return nil, fmt.Errorf("json marshal: %w", err)
+	}
+
+	return jsonBytes, nil
 }
