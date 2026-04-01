@@ -8,69 +8,69 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ### Migration
 
-- [ ] Create `0011_config_store.up.sql` — `config_store` table (key TEXT PK, encrypted_value BYTEA, nonce BYTEA, secret BOOLEAN, updated_at TIMESTAMPTZ, updated_by TEXT)
-- [ ] Create `0011_config_store.down.sql` — drop `config_store` table
-- [ ] Verify migration runs cleanly up and down
+- [x] Create `0011_config_store.up.sql` — `config_store` table (key TEXT PK, encrypted_value BYTEA, nonce BYTEA, secret BOOLEAN, updated_at TIMESTAMPTZ, updated_by TEXT)
+- [x] Create `0011_config_store.down.sql` — drop `config_store` table
+- [ ] Verify migration runs cleanly up and down (requires functional test DB)
 
 ### Datastore CRUD
 
-- [ ] `ConfigEntry` struct in `internal/datastore/config_store.go`
-- [ ] `GetConfigEntry(ctx, key)` — single row by PK
-- [ ] `SetConfigEntry(ctx, entry)` — upsert via INSERT ON CONFLICT
-- [ ] `DeleteConfigEntry(ctx, key)` — hard delete, idempotent
-- [ ] `ListConfigEntries(ctx)` — all rows ordered by key
-- [ ] `ListConfigEntriesByPrefix(ctx, prefix)` — WHERE key LIKE prefix%
-- [ ] `CountConfigEntries(ctx)` — row count
-- [ ] `ConfigStoreIsEmpty(ctx)` — convenience bool
-- [ ] Functional tests for all CRUD methods (`//go:build functional`)
+- [x] `ConfigEntry` struct in `internal/datastore/config_store.go`
+- [x] `GetConfigEntry(ctx, key)` — single row by PK
+- [x] `SetConfigEntry(ctx, entry)` — upsert via INSERT ON CONFLICT
+- [x] `DeleteConfigEntry(ctx, key)` — hard delete, idempotent
+- [x] `ListConfigEntries(ctx)` — all rows ordered by key
+- [x] `ListConfigEntriesByPrefix(ctx, prefix)` — WHERE key LIKE prefix%
+- [x] `CountConfigEntries(ctx)` — row count
+- [x] `ConfigStoreIsEmpty(ctx)` — convenience bool
+- [x] Functional tests for all CRUD methods (`//go:build functional`)
 
 ### Encryption Layer
 
-- [ ] New package `internal/configstore/`
-- [ ] `Store` struct wrapping `*datastore.DB` + `*secrets.Encryptor`
-- [ ] `Get(ctx, key)` — decrypt, return `json.RawMessage`
-- [ ] `GetSecret(ctx, key)` — decrypt secret-flagged entries only
-- [ ] `Set(ctx, key, value, secret, updatedBy)` — encrypt JSON, generate nonce, upsert
-- [ ] `Delete(ctx, key)` — passthrough
-- [ ] `List(ctx)` — metadata only (no decrypted values)
-- [ ] `ListByPrefix(ctx, prefix)` — metadata only
-- [ ] `GetAll(ctx)` — decrypt all non-secret entries for config assembly
-- [ ] `IsEmpty(ctx)` — convenience
-- [ ] Raw AES-256-GCM with separate nonce column (not hex-encoded string format)
-- [ ] AAD bound to key name: `[]byte(key)`
-- [ ] Unit tests for encrypt/decrypt round-trip, AAD mismatch, secret flag filtering
+- [x] New package `internal/configstore/`
+- [x] `Store` struct wrapping `*datastore.DB` + `*secrets.Encryptor`
+- [x] `Get(ctx, key)` — decrypt, return `json.RawMessage`
+- [x] `GetSecret(ctx, key)` — decrypt secret-flagged entries only
+- [x] `Set(ctx, key, value, secret, updatedBy)` — encrypt JSON, generate nonce, upsert
+- [x] `Delete(ctx, key)` — passthrough
+- [x] `List(ctx)` — metadata only (no decrypted values)
+- [x] `ListByPrefix(ctx, prefix)` — metadata only
+- [x] `GetAll(ctx)` — decrypt all non-secret entries for config assembly
+- [x] `IsEmpty(ctx)` — convenience
+- [x] Raw AES-256-GCM with separate nonce column (not hex-encoded string format)
+- [x] AAD bound to key name: `[]byte(key)`
+- [x] Unit tests for encrypt/decrypt round-trip, AAD mismatch, secret flag filtering
 
 ### Credential Store Adapter
 
-- [ ] `CredentialStoreAdapter` in `internal/configstore/credential_adapter.go`
-- [ ] Implements `secrets.CredentialStore` interface
-- [ ] Maps credential name `foo` → config store key `credentials/foo`
-- [ ] All entries stored with `secret=true`
-- [ ] `Create` — validate, encrypt, set
-- [ ] `Get` — decrypt, deserialise to `secrets.Credential`
-- [ ] `GetMetadata` — metadata without plaintext
-- [ ] `Update` — validate, re-encrypt, set
-- [ ] `Delete` — delete with reference check
-- [ ] `List` — list by prefix `credentials/`
-- [ ] `ListByType` — list by prefix + filter by type
-- [ ] `Test` — get + validate
-- [ ] `ReferencedBy` — query orgs, auth, notifications for references
-- [ ] Unit tests for interface compliance
+- [x] `CredentialStoreAdapter` in `internal/configstore/credential_adapter.go`
+- [x] Implements `secrets.CredentialStore` interface
+- [x] Maps credential name `foo` → config store key `credentials/foo`
+- [x] All entries stored with `secret=true`
+- [x] `Create` — validate, encrypt, set
+- [x] `Get` — decrypt, deserialise to `secrets.Credential`
+- [x] `GetMetadata` — metadata without plaintext
+- [x] `Update` — validate, re-encrypt, set
+- [x] `Delete` — delete with reference check
+- [x] `List` — list by prefix `credentials/`
+- [x] `ListByType` — list by prefix + filter by type
+- [x] `Test` — get + validate
+- [x] `ReferencedBy` — query orgs, auth, notifications for references
+- [x] Unit tests for interface compliance
 - [ ] Functional tests for round-trip through real DB
 
 ### Legacy Data Migration
 
-- [ ] `MigrateFromLegacy()` in `internal/configstore/migrate.go`
-- [ ] Re-encrypt `credentials` rows under new AAD scheme as `credentials/<name>`
-- [ ] Migrate `runtime_settings` rows as non-secret entries
-- [ ] Idempotent — skip if `config_store` already has entries
-- [ ] Log migration counts
-- [ ] Unit tests with mock DB
+- [x] `MigrateFromLegacy()` in `internal/configstore/migrate.go`
+- [x] Re-encrypt `credentials` rows under new AAD scheme as `credentials/<name>`
+- [x] Migrate `runtime_settings` rows as non-secret entries
+- [x] Idempotent — skip if `config_store` already has entries
+- [x] Log migration counts
+- [x] Unit tests with mock DB
 - [ ] Functional test: insert legacy rows, migrate, verify decrypt
 
 ### YAML Auto-Migration
 
-- [ ] `MigrateFromYAML()` in `internal/configstore/yaml_migrate.go`
+- [~] `MigrateFromYAML()` in `internal/configstore/yaml_migrate.go` — `ConfigToSections()` done, file ops pending
 - [ ] Detect full YAML (presence of `organisations` key)
 - [ ] Serialise each config section to JSON and encrypt into DB
 - [ ] Rename `config.yml` to `config.yml.migrated`
@@ -80,19 +80,19 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ### Config Assembly
 
-- [ ] `AssembleConfig()` in `internal/configstore/assembly.go`
-- [ ] Decrypt all non-secret config entries
-- [ ] Unmarshal JSON into `config.Config` fields per key naming convention
-- [ ] Apply defaults and validate (same rules as YAML path)
-- [ ] Unit tests: assemble from known JSON, validation errors, missing optional sections
+- [x] `AssembleConfig()` in `internal/configstore/assembly.go`
+- [x] Decrypt all non-secret config entries
+- [x] Unmarshal JSON into `config.Config` fields per key naming convention (via YAML decoder)
+- [x] Apply defaults and validate (same rules as YAML path)
+- [x] Unit tests: assemble from known JSON, validation errors, missing optional sections
 
 ### Config Reload
 
-- [ ] `ConfigHolder` in `internal/configstore/reloader.go`
-- [ ] `Get()` — read lock, return `*config.Config` pointer
-- [ ] `Reload(ctx)` — write lock, re-assemble from DB, swap pointer
-- [ ] `Set(cfg)` — write lock, replace (initial load)
-- [ ] Unit tests: concurrent read/write safety, reload replaces config
+- [x] `ConfigHolder` in `internal/configstore/reloader.go`
+- [x] `Get()` — read lock, return `*config.Config` pointer
+- [x] `Reload(ctx)` — write lock, re-assemble from DB, swap pointer
+- [x] `Set(cfg)` — write lock, replace (initial load)
+- [x] Unit tests: concurrent read/write safety, reload replaces config (with -race)
 
 ### Startup Integration
 
