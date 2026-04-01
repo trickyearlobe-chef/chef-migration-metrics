@@ -4,6 +4,7 @@
 .local/
 .samples/
 deploy/pkg/config.yml
+deploy/pkg/config.yml.migrated
 
 # =============================================================================
 # Build Output
