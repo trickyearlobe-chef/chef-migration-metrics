@@ -34,12 +34,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Verify Debian-convention environment file path (`/etc/default/`)
 - [ ] Verify preinst uses `adduser --system` for service account creation
 
-## Container Image
-
-- [ ] Build and test container image (`make package-docker`)
-- [ ] Verify embedded `cookstyle`, `kitchen`, and `inspec` work inside the container — build-time sanity checks assert exact versions (cookstyle 7.32.8, test-kitchen 3.9.1, inspec-core 5.24.7, kitchen-inspec 3.1.0, ffi 1.16.3) and require-test all kitchen drivers
-- [ ] Implement container image tagging strategy (semver, major, minor, latest, commit SHA)
-
 ## Docker Compose
 
 - [ ] Verify `docker compose up -d` brings up a working stack from scratch
@@ -54,37 +48,3 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Verify `docker compose down -v` cleanly removes all ELK resources
 - [ ] Keep Logstash pipeline definition up to date when document types change
 
-## Helm Chart
-
-- [ ] Create `deploy/helm/chef-migration-metrics/Chart.yaml`
-- [ ] Create `deploy/helm/chef-migration-metrics/values.yaml` with full default values
-- [ ] Create `deploy/helm/chef-migration-metrics/README.md` with usage instructions
-- [ ] Implement `templates/_helpers.tpl` with standard label and name helpers
-- [ ] Implement `templates/deployment.yaml` with config mount, secret env injection, PVC mount, probes
-- [ ] Implement `templates/service.yaml`
-- [ ] Implement `templates/ingress.yaml` (conditional on `ingress.enabled`)
-- [ ] Implement `templates/configmap.yaml` to render application config from values
-- [ ] Implement `templates/secret.yaml` for database URL, LDAP password, and Chef API keys
-- [ ] Implement `templates/serviceaccount.yaml`
-- [ ] Implement `templates/hpa.yaml` (conditional on `autoscaling.enabled`)
-- [ ] Implement `templates/pvc.yaml` for persistent git working directory
-- [ ] Implement `templates/NOTES.txt` with post-install usage instructions
-- [ ] Implement `templates/tests/test-connection.yaml` Helm test
-- [ ] Add Bitnami PostgreSQL subchart dependency (`condition: postgresql.enabled`)
-- [ ] Run `helm dependency build` and verify subchart is pulled
-- [ ] Run `helm lint` and fix any issues
-- [ ] Run `helm template` and verify rendered manifests
-- [ ] Test `helm install` against a local or test Kubernetes cluster
-- [ ] Verify auto-constructed `DATABASE_URL` when using the PostgreSQL subchart
-- [ ] Verify `existingSecret` and `existingConfigMap` overrides work
-- [ ] Verify `chefKeys.existingSecret` mounts correctly
-- [ ] Verify advisory lock prevents duplicate collection runs with `replicaCount > 1`
-- [ ] Package chart with `helm package` for distribution
-- [ ] Implement `tlsSecret` support in Deployment template — mount `existingSecret` or chart-managed TLS Secret to `/etc/chef-migration-metrics/tls/`
-- [ ] Implement chart-managed TLS Secret from inline `tlsSecret.cert` and `tlsSecret.key` values
-- [ ] Implement ACME storage PVC template (conditional on `server.tls.mode == acme`)
-- [ ] Mount ACME storage PVC at `acme.storage_path` in Deployment when ACME mode is active
-- [ ] Update liveness/readiness probes to use HTTPS scheme when `server.tls.mode` is `static` or `acme`
-- [ ] Verify Helm chart renders correctly with `tls.mode: off` (default — no TLS resources created)
-- [ ] Verify Helm chart renders correctly with `tls.mode: static` and `tlsSecret.existingSecret`
-- [ ] Verify Helm chart renders correctly with `tls.mode: acme` and ACME storage PVC

@@ -349,22 +349,13 @@ When TLS is active, the HTTP redirect listener (if enabled) must **not** serve a
 The health check endpoint (`/api/v1/admin/status`) is served on the main listener. When TLS is active:
 
 - Kubernetes liveness/readiness probes must be configured to use HTTPS, or the probe must skip TLS verification (`scheme: HTTPS` in the probe definition).
-- The Helm chart's probe configuration must be updated to support both HTTP and HTTPS based on the TLS settings.
 - The `healthcheck` CLI subcommand (used by the Docker `HEALTHCHECK` instruction) must support connecting over HTTPS with optional TLS verification skip via a `--insecure` flag.
 
-### 5.3 Helm Chart
-
-When deploying with the Helm chart:
-
-- Static mode: TLS certificate and key can be provided via a Kubernetes Secret and mounted into the pod. The chart should support `server.tls.cert_secret_name` and `server.tls.cert_secret_keys` values for this purpose.
-- ACME mode: The `storage_path` must be backed by a PVC for persistence. The chart should include an additional PVC for ACME storage when `server.tls.mode` is `acme`.
-- In Kubernetes, it is common to terminate TLS at the Ingress controller or service mesh level and leave `server.tls.mode: off`. The application's native TLS support is most useful for non-Kubernetes deployments, Docker Compose, or when end-to-end encryption to the pod is required.
-
-### 5.4 Docker Compose
+### 5.3 Docker Compose
 
 The Docker Compose example should include a commented-out TLS configuration showing both static and ACME modes. For ACME, the compose file should map port 80 (for HTTP-01 challenges) and port 443 (for HTTPS), and mount a named volume for `storage_path`.
 
-### 5.5 Logging
+### 5.4 Logging
 
 TLS-related events must be logged with the `tls` scope:
 
@@ -383,7 +374,7 @@ TLS-related events must be logged with the `tls` scope:
 | HTTP redirect listener started | `INFO` | "HTTP-to-HTTPS redirect listener started on :80" |
 | mTLS enabled | `INFO` | "Mutual TLS enabled: client certificates validated against <ca_path>" |
 
-### 5.6 Notifications
+### 5.5 Notifications
 
 When notifications are enabled, the following TLS-related notification event is available:
 
@@ -597,5 +588,5 @@ DNS provider credentials for ACME DNS-01 challenges should be scoped to the mini
 - [Configuration Specification](../configuration/Specification.md) — overall configuration schema and validation rules
 - [Web API Specification](../web-api/Specification.md) — HTTP endpoints served over the TLS listener
 - [Authentication and Authorisation](../auth/Specification.md) — requires HTTPS for login flows
-- [Packaging Specification](../packaging/Specification.md) — Dockerfile, Helm chart, and Docker Compose TLS integration
+- [Packaging Specification](../packaging/Specification.md) — Docker Compose TLS integration, RPM/DEB packaging
 - [Logging Specification](../logging/Specification.md) — log scopes and severity levels for TLS events

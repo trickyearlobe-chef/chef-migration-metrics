@@ -31,4 +31,4 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Verify DEB installs, starts, and runs on a fresh Debian/Ubuntu system (with embedded tools)
 - [ ] Verify Docker Compose stack starts and passes health checks
 - [ ] Verify ELK testing stack starts and Logstash indexes test data into Elasticsearch
-- [ ] Verify Helm chart deploys and passes `helm test`
+

@@ -57,9 +57,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Add `bind_password_credential` field to LDAP auth config schema
 - [ ] Add `password_credential` field to SMTP config schema
 - [ ] *(deferred — `internal/notify/` not yet implemented)* Add `url_credential` field to notification channel config schema
-- [ ] Add `secrets.credentialEncryptionKey` to Helm `values.yaml`
-- [ ] Add `secrets.smtpPassword` to Helm `values.yaml`
-- [ ] Update Helm `secret.yaml` template to include `CMM_CREDENTIAL_ENCRYPTION_KEY` and `SMTP_PASSWORD`
 - [ ] Validate credential resolution on startup (at least one source configured per org)
 - [ ] Write unit tests for config parsing of new credential reference fields
 - [ ] Write unit tests for config validation of credential resolution
@@ -86,7 +83,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Verify DEB `postinstall.sh` sets env file to `0640` — `deploy/pkg/` does not exist yet
 - [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to `deploy/pkg/env-file` — `deploy/pkg/` does not exist yet
 - [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to Docker Compose `.env.example` — app Docker Compose does not exist yet
-- [ ] Document key generation command in Helm chart `README.md` — Helm chart not yet created beyond `.helmignore`
 - [ ] Document key generation command in Docker Compose `README.md` — app Docker Compose does not exist yet
 
 ## Documentation

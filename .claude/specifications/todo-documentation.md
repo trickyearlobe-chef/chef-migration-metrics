@@ -7,9 +7,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Document installation and deployment
 - [ ] Document installation via RPM package
 - [ ] Document installation via DEB package
-- [ ] Document installation via container image (Docker)
 - [ ] Document local development with Docker Compose
-- [ ] Document Kubernetes deployment with Helm chart
 - [ ] Document configuration reference
 - [ ] Document Chef server API credentials setup
 - [ ] Document git repository URL configuration

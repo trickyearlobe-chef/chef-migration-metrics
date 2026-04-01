@@ -9,7 +9,7 @@
 #   make build             — compile Go binary for the host platform
 #   make test              — run all unit tests
 #   make lint              — run all linters
-#   make package-all       — build RPM, DEB, and container image
+#   make package-all       — build RPM, DEB, and distribution archives
 #   make bump-patch        — bump patch version and tag
 #   make functional-test   — run against real Chef Server orgs from knife creds
 # =============================================================================
@@ -50,11 +50,6 @@ LDFLAGS := -X main.version=$(VERSION_FULL) \
 HOST_OS   := $(shell go env GOOS 2>/dev/null || echo linux)
 HOST_ARCH := $(shell go env GOARCH 2>/dev/null || echo amd64)
 
-# Container image
-REGISTRY   := ghcr.io
-IMAGE_NAME := $(REGISTRY)/trickyearlobe-chef/chef-migration-metrics
-IMAGE_TAG  := $(subst +,-,$(VERSION_FULL))
-
 # Ruby build image for embedded environment
 RUBY_BUILD_IMAGE := ruby:3.1-bookworm
 EMBEDDED_PREFIX  := /opt/chef-migration-metrics/embedded
@@ -67,9 +62,6 @@ CHEF_CREDENTIALS_FILE ?= $(HOME)/.chef/credentials
 CHEF_CONFIG_RB        ?= $(HOME)/.chef/config.rb
 CHEF_PROFILE          ?= $(shell cat $(HOME)/.chef/context 2>/dev/null || echo "default")
 FUNCTIONAL_TEST_TAGS  := functional
-
-# Helm chart
-HELM_CHART_DIR := deploy/helm/chef-migration-metrics
 
 # Colour helpers (disabled when not a terminal)
 ifneq ($(TERM),)
@@ -426,7 +418,7 @@ _resolve-chef-creds:
 # =============================================================================
 
 .PHONY: lint
-lint: lint-go lint-frontend lint-helm ## Run all linters
+lint: lint-go lint-frontend ## Run all linters
 
 .PHONY: lint-go
 lint-go: ## Run golangci-lint on Go source
@@ -442,15 +434,6 @@ lint-frontend: ## Run frontend linter
 		echo "$(YELLOW)Skipping frontend lint — $(FRONTEND_DIR)/ not found$(RESET)"; \
 	fi
 
-.PHONY: lint-helm
-lint-helm: ## Run helm lint on the Helm chart
-	@if [ -d "$(HELM_CHART_DIR)" ]; then \
-		echo "$(GREEN)Running helm lint...$(RESET)"; \
-		helm lint $(HELM_CHART_DIR); \
-	else \
-		echo "$(YELLOW)Skipping helm lint — $(HELM_CHART_DIR)/ not found$(RESET)"; \
-	fi
-
 .PHONY: fmt
 fmt: ## Format Go source code
 	@echo "$(GREEN)Formatting Go source...$(RESET)"
@@ -464,87 +447,6 @@ vet: ## Run go vet
 # =============================================================================
 # Packaging
 # =============================================================================
-
-.PHONY: package-docker
-package-docker: ## Build the multi-stage container image
-	@echo "$(GREEN)Building container image $(IMAGE_NAME):$(IMAGE_TAG)...$(RESET)"
-	docker build \
-		--build-arg VERSION=$(VERSION_FULL) \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t $(IMAGE_NAME):$(IMAGE_TAG) \
-		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
-		-t $(IMAGE_NAME):latest \
-		.
-	@echo "$(GREEN)Image: $(IMAGE_NAME):$(IMAGE_TAG)$(RESET)"
-
-.PHONY: package-docker-multiarch
-package-docker-multiarch: ## Build multi-arch container image (amd64 + arm64)
-	@echo "$(GREEN)Building multi-arch container image $(IMAGE_NAME):$(IMAGE_TAG)...$(RESET)"
-	docker buildx build \
-		--platform linux/amd64,linux/arm64 \
-		--build-arg VERSION=$(VERSION_FULL) \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t $(IMAGE_NAME):$(IMAGE_TAG) \
-		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
-		-t $(IMAGE_NAME):latest \
-		.
-	@echo "$(GREEN)Multi-arch image: $(IMAGE_NAME):$(IMAGE_TAG)$(RESET)"
-
-.PHONY: package-docker-export
-package-docker-export: ## Build and export multi-arch + per-arch container tarballs for airgap environments
-	@echo "$(GREEN)Building and exporting container images for airgap...$(RESET)"
-	@mkdir -p $(BUILD_DIR)
-	@# --- Multi-arch image (linux/amd64 + linux/arm64) ---
-	@echo "$(CYAN)  -> multi-arch (amd64 + arm64)...$(RESET)"
-	docker buildx build \
-		--platform linux/amd64,linux/arm64 \
-		--build-arg VERSION=$(VERSION_FULL) \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t $(IMAGE_NAME):$(IMAGE_TAG) \
-		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
-		-t $(IMAGE_NAME):latest \
-		--output type=oci,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-multiarch.tar \
-		.
-	@# --- linux/amd64 only (Docker format for docker load compatibility) ---
-	@echo "$(CYAN)  -> linux/amd64...$(RESET)"
-	docker buildx build \
-		--platform linux/amd64 \
-		--build-arg VERSION=$(VERSION_FULL) \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t $(IMAGE_NAME):$(IMAGE_TAG) \
-		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
-		-t $(IMAGE_NAME):latest \
-		--output type=docker,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-amd64.tar \
-		.
-	@# --- linux/arm64 only (Docker format for docker load compatibility) ---
-	@echo "$(CYAN)  -> linux/arm64...$(RESET)"
-	docker buildx build \
-		--platform linux/arm64 \
-		--build-arg VERSION=$(VERSION_FULL) \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t $(IMAGE_NAME):$(IMAGE_TAG) \
-		-t $(IMAGE_NAME):$(GIT_COMMIT_SHORT) \
-		-t $(IMAGE_NAME):latest \
-		--output type=docker,dest=$(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-arm64.tar \
-		.
-	@echo ""
-	@echo "$(GREEN)Exported images:$(RESET)"
-	@ls -lh $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-docker-*.tar
-	@echo ""
-	@echo "$(GREEN)To load per-arch images on an airgap host (docker load):$(RESET)"
-	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-amd64.tar       $(CYAN)# x86_64 only$(RESET)"
-	@echo "  docker load -i $(BINARY_NAME)-$(VERSION)-docker-arm64.tar       $(CYAN)# ARM64 only$(RESET)"
-	@echo ""
-	@echo "$(GREEN)To load the multi-arch image (OCI format — requires skopeo or crane):$(RESET)"
-	@echo "  skopeo copy oci-archive:$(BINARY_NAME)-$(VERSION)-docker-multiarch.tar docker-daemon:$(IMAGE_NAME):$(IMAGE_TAG)"
-	@echo "  $(CYAN)# or push directly to a private registry:$(RESET)"
-	@echo "  skopeo copy oci-archive:$(BINARY_NAME)-$(VERSION)-docker-multiarch.tar docker://registry.example.com/$(IMAGE_NAME):$(IMAGE_TAG)"
-	@echo ""
 
 .PHONY: _check-nfpm
 _check-nfpm:
@@ -624,7 +526,7 @@ package-archives: build-all ## Build distribution archives (tar.gz / zip) for al
 	@echo ""
 
 .PHONY: package-all
-package-all: package-rpm package-deb package-docker package-archives ## Build RPM, DEB, container image, and distribution archives
+package-all: package-rpm package-deb package-archives ## Build RPM, DEB, and distribution archives
 
 # =============================================================================
 # Semver Version Management
@@ -917,24 +819,6 @@ elk-down: ## Stop the ELK testing stack
 .PHONY: elk-down-volumes
 elk-down-volumes: ## Stop the ELK stack and remove all volumes
 	docker compose -f deploy/elk/docker-compose.yml down -v
-
-# =============================================================================
-# Helm
-# =============================================================================
-
-.PHONY: helm-deps
-helm-deps: ## Build Helm chart dependencies
-	@echo "$(GREEN)Building Helm chart dependencies...$(RESET)"
-	helm dependency build $(HELM_CHART_DIR)
-
-.PHONY: helm-template
-helm-template: ## Render Helm chart templates locally
-	helm template chef-migration-metrics $(HELM_CHART_DIR)
-
-.PHONY: helm-package
-helm-package: ## Package the Helm chart
-	@echo "$(GREEN)Packaging Helm chart...$(RESET)"
-	helm package $(HELM_CHART_DIR) --destination $(BUILD_DIR)/
 
 # =============================================================================
 # Clean

@@ -9,22 +9,20 @@
 
 This spec covers how the application is packaged and deployed across all supported formats. Key points:
 
-- **Packaging formats:** RPM, DEB, and container image — all built from the same Go binary + embedded frontend assets.
+- **Packaging formats:** RPM, DEB, and distribution archives — all built from the same Go binary + embedded frontend assets.
 - **Embedded Ruby:** All packages ship a self-contained Ruby runtime under `/opt/chef-migration-metrics/embedded/` with CookStyle, Test Kitchen, and kitchen-dokken pre-installed. No external Ruby or Chef Workstation required.
-- **Container image:** Multi-stage Dockerfile — Go build stage, Ruby build stage, runtime stage (Debian slim). Multi-arch (amd64/arm64).
 - **Systemd integration:** RPM/DEB packages include a systemd unit file, pre/post install scripts, and environment file.
 - **Docker Compose:** Local dev stack with app + PostgreSQL (`deploy/docker-compose/`).
 - **ELK testing stack:** Elasticsearch + Logstash + Kibana for testing NDJSON export (`deploy/elk/`).
-- **Helm chart:** Full Kubernetes deployment at `deploy/helm/chef-migration-metrics/` with PostgreSQL subchart, TLS Secret support, ACME storage PVC, ingress, HPA, and PVC for git working directory.
-- **CI/CD:** GitHub Actions workflows for CI (`ci.yml`) and release (`release.yml`) — lint, test, build, package, publish to GHCR.
+- **CI/CD:** GitHub Actions workflows for CI (`ci.yml`) and release (`release.yml`) — lint, test, build, package.
 
 ---
 
 ## Overview
 
-Chef Migration Metrics must be distributable as native Linux packages (RPM and DEB) and as a container image. Containerised deployments must be supported both locally via Docker Compose and in Kubernetes via a Helm chart.
+Chef Migration Metrics is distributed as native Linux packages (RPM and DEB) and as pre-built distribution archives. Docker Compose is used for local development (database, ELK stack) but the application itself is not published as a container image.
 
-All packaging artifacts are built from the same Go binary and embedded frontend assets. The packaging layer adds platform-specific integration (systemd, file layout, default configuration) or container runtime scaffolding (image, orchestration) around the single compiled binary.
+All packaging artifacts are built from the same Go binary and embedded frontend assets. The packaging layer adds platform-specific integration (systemd, file layout, default configuration) around the single compiled binary.
 
 All packaging formats **embed** CookStyle, Test Kitchen, and a self-contained Ruby runtime so that cookbook compatibility testing works out of the box with no external dependencies on Chef Workstation or system Ruby. The embedded tools are installed under `/opt/chef-migration-metrics/embedded/` and are isolated from any other Ruby installation on the host.
 
@@ -58,8 +56,7 @@ A `Makefile` (or equivalent task runner) must provide targets for:
 | `lint` | Run `golangci-lint` and `cookstyle --format json` |
 | `package-rpm` | Build the RPM package (includes embedded Ruby environment) |
 | `package-deb` | Build the DEB package (includes embedded Ruby environment) |
-| `package-docker` | Build the container image (Ruby build stage is part of the multi-stage Dockerfile) |
-| `package-all` | Build RPM, DEB, and container image |
+| `package-all` | Build RPM and DEB packages |
 
 ### 1.2 Version Injection
 
@@ -73,7 +70,7 @@ The version string is used in:
 
 - The `User-Agent` header for Chef API requests (see [Chef API specification](../chef-api/Specification.md))
 - The `/api/v1/admin/status` endpoint response
-- Package metadata (RPM, DEB, container image labels)
+- Package metadata (RPM, DEB)
 - The `--version` CLI flag
 
 ---
@@ -255,286 +252,13 @@ The DEB package uses `preinst`, `postinst`, and `prerm` scripts that are functio
 
 ---
 
-## 4. Container Image
+## 4. Docker Compose
 
-### 4.1 Base Image
+### 4.1 Purpose
 
-The container image uses a multi-stage build:
+The Docker Compose file starts a PostgreSQL database for local development. The application runs on the host via `make run` or `make dev`.
 
-1. **Build stage** — `golang:1.22-bookworm` (or later) to compile the binary and build the frontend.
-2. **Ruby build stage** — `ruby:3.2-bookworm` to install CookStyle, Test Kitchen, and their gem dependencies into a self-contained directory.
-3. **Runtime stage** — `debian:bookworm-slim` as the minimal runtime base.
-
-`debian:bookworm-slim` is chosen over `scratch` or `alpine` because the application shells out to external tools (`git`, `kitchen`, `cookstyle`) that require a C library and a shell. The image includes `git` and the embedded Ruby environment with CookStyle and Test Kitchen pre-installed.
-
-### 4.2 Dockerfile
-
-```dockerfile
-# --- Unified build stage (Ruby 3.1 base + Go toolchain) ---
-# Ruby 3.1 matches Chef Workstation 25.13.7 (ships Ruby 3.1.7).
-# Using 3.2+ causes gem conflicts — nokogiri >= 1.19.1 requires Ruby >= 3.2
-# and ffi is capped at <= 1.16.3 (mixlib-log requires ffi < 1.17.0).
-FROM ruby:3.1-bookworm AS builder
-
-# Install Go toolchain
-ARG GO_VERSION=1.24.4
-RUN arch="$(dpkg --print-architecture)" && \
-    case "${arch}" in amd64) goarch=amd64 ;; arm64) goarch=arm64 ;; esac && \
-    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" \
-        | tar -C /usr/local -xz
-ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
-
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-
-# Build the React frontend (optional — skipped if frontend/ does not exist)
-RUN if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends nodejs npm && \
-        rm -rf /var/lib/apt/lists/* && \
-        cd frontend && npm ci --prefer-offline && npm run build; \
-    else echo "INFO: frontend/ not found — skipping SPA build"; fi
-
-# Build the Go binary with embedded assets
-ARG VERSION=dev
-ARG GIT_COMMIT=unknown
-ARG BUILD_DATE=unknown
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
-    -o /build/chef-migration-metrics ./cmd/chef-migration-metrics
-
-# --- Embedded Ruby environment ---
-# Gem versions pinned to Chef Workstation 25.13.7
-# Source: https://github.com/chef/chef-workstation/blob/main/components/gems/Gemfile.lock
-ENV EMBEDDED_PREFIX=/opt/chef-migration-metrics/embedded
-ENV GEM_HOME=${EMBEDDED_PREFIX}/lib/ruby/gems/3.1.0
-ENV GEM_PATH=$GEM_HOME
-
-# Install git (needed for kitchen-dokken from git source)
-RUN apt-get update && apt-get install -y --no-install-recommends git && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p $GEM_HOME && \
-    gem install --no-document ffi:1.16.3 && \
-    gem install --no-document cookstyle:7.32.8 test-kitchen:3.9.1 && \
-    gem install --no-document inspec-bin:5.24.7 && \
-    gem install --no-document \
-        kitchen-inspec:3.1.0 \
-        kitchen-vagrant:2.2.0 \
-        kitchen-ec2:3.22.1 \
-        kitchen-azurerm:1.13.6 \
-        kitchen-google:2.6.1 \
-        kitchen-hyperv:0.10.3 \
-        kitchen-vcenter:2.12.2 \
-        kitchen-vra:3.3.3 \
-        kitchen-openstack:6.2.1 \
-        kitchen-digitalocean:0.16.1 && \
-    gem install --no-document specific_install && \
-    gem specific_install -l https://github.com/trickyearlobe-chef/kitchen-proxmox.git -b main && \
-    gem specific_install -l https://github.com/Stromweld/kitchen-dokken.git -b main
-
-# Create wrapper binstubs that use the embedded Ruby
-RUN mkdir -p ${EMBEDDED_PREFIX}/bin && \
-    cp $(which ruby) ${EMBEDDED_PREFIX}/bin/ruby && \
-    for cmd in cookstyle kitchen inspec; do \
-        printf '#!/opt/chef-migration-metrics/embedded/bin/ruby\n' > ${EMBEDDED_PREFIX}/bin/$cmd && \
-        cat $(gem environment gemdir)/bin/$cmd >> ${EMBEDDED_PREFIX}/bin/$cmd && \
-        chmod 0755 ${EMBEDDED_PREFIX}/bin/$cmd; \
-    done
-
-# Copy the Ruby shared libraries needed at runtime
-RUN mkdir -p ${EMBEDDED_PREFIX}/lib && \
-    cp -a /usr/local/lib/libruby* ${EMBEDDED_PREFIX}/lib/ 2>/dev/null || true && \
-    cp -a /usr/local/lib/ruby ${EMBEDDED_PREFIX}/lib/ruby/ 2>/dev/null || true
-
-# --- Runtime stage ---
-FROM debian:bookworm-slim
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        git \
-        openssh-client \
-        libyaml-0-2 \
-        libffi8 \
-        libgmp10 \
-        zlib1g \
-        libxml2 \
-        libxslt1.1 \
-        libssl3 \
-        libgcc-s1 \
-        libreadline8 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN groupadd -r chef-migration-metrics && \
-    useradd -r -g chef-migration-metrics -d /var/lib/chef-migration-metrics \
-    -s /usr/sbin/nologin chef-migration-metrics
-
-# Filesystem layout matching native packages
-RUN mkdir -p /etc/chef-migration-metrics/keys \
-             /etc/chef-migration-metrics/tls \
-             /var/lib/chef-migration-metrics \
-             /var/lib/chef-migration-metrics/acme \
-             /var/log/chef-migration-metrics && \
-    chown -R chef-migration-metrics:chef-migration-metrics \
-             /etc/chef-migration-metrics \
-             /var/lib/chef-migration-metrics \
-             /var/log/chef-migration-metrics
-
-COPY --from=builder /build/chef-migration-metrics /usr/bin/chef-migration-metrics
-COPY --from=builder /opt/chef-migration-metrics/embedded /opt/chef-migration-metrics/embedded
-
-# Register embedded Ruby shared libs with the dynamic linker
-RUN echo "/opt/chef-migration-metrics/embedded/lib" \
-        > /etc/ld.so.conf.d/chef-migration-metrics-embedded.conf && \
-    ldconfig
-
-USER chef-migration-metrics
-WORKDIR /var/lib/chef-migration-metrics
-
-EXPOSE 8080
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD ["/usr/bin/chef-migration-metrics", "healthcheck"]
-
-ENTRYPOINT ["/usr/bin/chef-migration-metrics"]
-CMD ["--config", "/etc/chef-migration-metrics/config.yml"]
-```
-
-### 4.3 Image Labels
-
-The image must include OCI-standard labels for traceability:
-
-```dockerfile
-LABEL org.opencontainers.image.title="chef-migration-metrics"
-LABEL org.opencontainers.image.description="Tool for planning and tracking Chef Client upgrade projects"
-LABEL org.opencontainers.image.version="${VERSION}"
-LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
-LABEL org.opencontainers.image.created="${BUILD_DATE}"
-LABEL org.opencontainers.image.source="https://github.com/trickyearlobe-chef/chef-migration-metrics"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
-```
-
-### 4.4 Image Tags
-
-| Tag | Purpose |
-|-----|---------|
-| `<version>` (e.g. `1.2.0`) | Immutable release tag |
-| `<major>.<minor>` (e.g. `1.2`) | Floating minor tag, updated on each patch release |
-| `<major>` (e.g. `1`) | Floating major tag |
-| `latest` | Points to the most recent stable release |
-| `<commit-sha>` | Every CI build, for traceability |
-
-> **Note:** There is only one image — all tags refer to the same image that includes the embedded Ruby environment with CookStyle and Test Kitchen. The previous `<tag>-analysis` variant has been removed.
-
-### 4.5 Analysis Tools (Embedded)
-
-CookStyle, Test Kitchen, InSpec, and their Ruby runtime are embedded directly in the base container image via the Ruby build stage (see section 4.2). There is no separate extension image — all containers ship with full analysis capability.
-
-The `Dockerfile.analysis` file is **removed**. The previous two-image approach (base image + analysis extension) is replaced by a single image that always includes the embedded tools.
-
-> **Rationale:** Embedding the analysis tools eliminates a common deployment pitfall where the base image was used accidentally, resulting in all cookbooks being reported as `untested`. A single image with everything included reduces support burden and simplifies documentation.
-
-If a deployment does not need cookbook compatibility testing (e.g. a read-only dashboard replica), the tools are simply unused — they add approximately 80–120 MB to the image size but have no runtime overhead when not invoked.
-
-#### Gem Version Pinning
-
-All gem versions are pinned to match **Chef Workstation 25.13.7**. The canonical source is `components/gems/Gemfile.lock` in the `chef/chef-workstation` repository:
-
-  https://github.com/chef/chef-workstation/blob/main/components/gems/Gemfile.lock
-
-Key constraints from the Chef ecosystem:
-
-| Constraint | Reason |
-|------------|--------|
-| `ffi <= 1.16.3` | `mixlib-log` requires `ffi < 1.17.0` |
-| `nokogiri < 1.19.1` | 1.19.1+ requires Ruby >= 3.2; we use 3.1 |
-| `rubocop = 1.25.1` | `cookstyle` 7.32.8 hard-pins this exact version |
-| `train-core = 3.16.1` | `inspec-core` and kitchen drivers depend on this |
-
-#### Kitchen Drivers and Verifiers
-
-The following Test Kitchen drivers are shipped:
-
-| Gem | Version | Notes |
-|-----|---------|-------|
-| `kitchen-dokken` | 2.22.2 | Installed from Stromweld fork (matches CW 25.x) |
-| `kitchen-vagrant` | 2.2.0 | |
-| `kitchen-ec2` | 3.22.1 | |
-| `kitchen-azurerm` | 1.13.6 | |
-| `kitchen-google` | 2.6.1 | |
-| `kitchen-hyperv` | 0.10.3 | |
-| `kitchen-vcenter` | 2.12.2 | Modern vSphere/vCenter driver (replaces kitchen-vsphere) |
-| `kitchen-vra` | 3.3.3 | |
-| `kitchen-openstack` | 6.2.1 | |
-| `kitchen-proxmox` | latest | Installed from GitHub (trickyearlobe-chef/kitchen-proxmox) |
-| `kitchen-digitalocean` | 0.16.1 | |
-
-The primary verifier is `kitchen-inspec` (3.1.0) backed by `inspec-bin` / `inspec-core` (5.24.7).
-
-#### Legacy Busser Verifier
-
-For older cookbook repos that still use busser-based test suites, the following gems are also shipped:
-
-| Gem | Version | Notes |
-|-----|---------|-------|
-| `busser` | 0.8.0 | Installed with `--force` (see below) |
-| `busser-serverspec` | 0.6.3 | Serverspec runner plugin |
-| `busser-bats` | 0.5.0 | Bats runner plugin |
-
-> **Why `--force`?** `busser` 0.8.0 has a hard runtime dependency on `thor <= 0.19.0`, which conflicts with `thor` 1.4.0 required by test-kitchen, inspec, cookstyle, and most of the Chef gem ecosystem. Chef Workstation does not ship busser for this reason. The `--force` flag overrides the dependency check during installation. This is safe because busser uses thor only for its own CLI argument parsing, and during Test Kitchen runs the busser verifier plugin manages busser's lifecycle internally without invoking the busser CLI directly. The busser gems are never loaded in the same Ruby process as test-kitchen or inspec — they run on the test instance, not the workstation.
-
-> **Note on kitchen-vsphere:** The rubygems `kitchen-vsphere` gem (0.2.0, 2015) requires `test-kitchen ~> 1.0` and is incompatible with TK 3.x at both the dependency and API level. `kitchen-vcenter` is the maintained replacement using `rbvmomi2` and the vSphere REST API.
-
-### 4.6 Container Configuration
-
-Inside a container, configuration is supplied via:
-
-1. **Mounted config file** — Mount a `config.yml` to `/etc/chef-migration-metrics/config.yml`.
-2. **Environment variables** — All configuration values support environment variable overrides (see [Configuration specification](../configuration/Specification.md)).
-3. **Mounted secrets** — Chef API private keys are mounted into `/etc/chef-migration-metrics/keys/`. TLS certificate and key files (for `static` mode) are mounted into `/etc/chef-migration-metrics/tls/`.
-
-The container must not require any writable volumes to start for basic operation. Git clone working directories (`/var/lib/chef-migration-metrics`) should be backed by a persistent volume if cookbook repositories are large or if the container is ephemeral. When using ACME mode for TLS, the `acme.storage_path` (`/var/lib/chef-migration-metrics/acme`) **must** be backed by a persistent volume to preserve ACME account keys and certificates across restarts and avoid hitting CA rate limits.
-
-### 4.6.1 Embedded Ruby Environment
-
-The Ruby build stage in the Dockerfile produces a self-contained tree under `/opt/chef-migration-metrics/embedded/` that includes:
-
-| Path | Contents |
-|------|----------|
-| `bin/ruby` | Ruby 3.1 interpreter (copied from the build stage) |
-| `bin/cookstyle` | CookStyle binstub using the embedded Ruby |
-| `bin/kitchen` | Test Kitchen binstub using the embedded Ruby |
-| `bin/inspec` | InSpec binstub using the embedded Ruby |
-| `lib/libruby*` | Ruby shared libraries |
-| `lib/ruby/` | Ruby standard library |
-| `lib/ruby/gems/3.1.0/` | Installed gems (cookstyle, test-kitchen, inspec, kitchen drivers, and dependencies) |
-| `env.sh` | Shell snippet exporting `RUBYLIB`, `GEM_HOME`, `GEM_PATH` for the embedded tree |
-
-The binstubs are shell wrappers that source `env.sh` and exec the embedded Ruby interpreter with the gem's entry-point. They are fully independent of any system Ruby. The application resolves tool paths from this directory by default (see the `embedded_bin_dir` configuration setting in the [Configuration Specification](../configuration/Specification.md)).
-
-### 4.7 Health Check
-
-The Dockerfile includes a `HEALTHCHECK` instruction:
-
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD ["/usr/bin/chef-migration-metrics", "healthcheck"]
-```
-
-The `healthcheck` subcommand performs a lightweight HTTP GET against the application's health endpoint (`/api/v1/admin/status`) from inside the container and exits 0 if the response status is 200 with `"status": "healthy"`.
-
----
-
-## 5. Docker Compose
-
-### 5.1 Purpose
-
-The Docker Compose file provides a single-command local development and evaluation environment. It starts the application, a PostgreSQL database, and optionally a reverse proxy, all pre-wired together.
-
-### 5.2 File Location
+### 4.2 File Location
 
 ```
 deploy/
@@ -545,19 +269,7 @@ deploy/
     └── README.md                   # Quick-start instructions
 ```
 
-### 5.3 Services
-
-#### `app` — Chef Migration Metrics
-
-| Property | Value |
-|----------|-------|
-| Image | `chef-migration-metrics:latest` (or build from local Dockerfile) |
-| Ports | `8080:8080` |
-| Config mount | `./config.yml:/etc/chef-migration-metrics/config.yml:ro` |
-| Keys mount | `./keys/:/etc/chef-migration-metrics/keys/:ro` |
-| Depends on | `db` (with health check condition) |
-| Restart | `unless-stopped` |
-| Environment | `DATABASE_URL` pointing to the `db` service |
+### 4.3 Services
 
 #### `db` — PostgreSQL
 
@@ -569,15 +281,14 @@ deploy/
 | Environment | `POSTGRES_DB=chef_migration_metrics`, `POSTGRES_USER`, `POSTGRES_PASSWORD` from `.env` |
 | Health check | `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB` |
 
-### 5.4 docker-compose.yml
+### 4.4 docker-compose.yml
 
 ```yaml
-version: "3.9"
-
 services:
   db:
     image: postgres:16-bookworm
     restart: unless-stopped
+    command: ["-c", "shared_preload_libraries=pg_stat_statements"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-chef_migration_metrics}
       POSTGRES_USER: ${POSTGRES_USER:-chef_migration_metrics}
@@ -592,37 +303,12 @@ services:
       timeout: 3s
       retries: 10
 
-  app:
-    image: ${APP_IMAGE:-chef-migration-metrics:latest}
-    build:
-      context: ../../
-      dockerfile: Dockerfile
-      args:
-        VERSION: ${VERSION:-dev}
-        GIT_COMMIT: ${GIT_COMMIT:-unknown}
-        BUILD_DATE: ${BUILD_DATE:-unknown}
-    restart: unless-stopped
-    ports:
-      - "${APP_PORT:-8080}:8080"
-    environment:
-      DATABASE_URL: "postgres://${POSTGRES_USER:-chef_migration_metrics}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-chef_migration_metrics}?sslmode=disable"
-      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
-    volumes:
-      - ./config.yml:/etc/chef-migration-metrics/config.yml:ro
-      - ./keys/:/etc/chef-migration-metrics/keys/:ro
-      - cookbook_data:/var/lib/chef-migration-metrics
-    depends_on:
-      db:
-        condition: service_healthy
-
 volumes:
   pgdata:
     driver: local
-  cookbook_data:
-    driver: local
 ```
 
-### 5.5 Environment File
+### 4.5 Environment File
 
 The `.env.example` file documents all configurable environment variables:
 
@@ -632,30 +318,20 @@ POSTGRES_DB=chef_migration_metrics
 POSTGRES_USER=chef_migration_metrics
 POSTGRES_PASSWORD=changeme
 POSTGRES_PORT=5432
-
-# Application
-APP_IMAGE=chef-migration-metrics:latest
-APP_PORT=8080
-VERSION=dev
-GIT_COMMIT=unknown
-BUILD_DATE=unknown
-
-# Secrets (optional — override config file values)
-LDAP_BIND_PASSWORD=
 ```
 
-### 5.6 Usage
+### 4.6 Usage
 
 ```bash
 cd deploy/docker-compose
 cp .env.example .env
-# Edit .env and config.yml for your environment
-# Place Chef API keys in ./keys/
+# Edit .env — at minimum set POSTGRES_PASSWORD
 
-docker compose up -d
+docker compose up -d    # start PostgreSQL
+make run                # start the app on the host
 
-# View logs
-docker compose logs -f app
+# View DB logs
+docker compose logs -f db
 
 # Stop
 docker compose down
@@ -666,498 +342,29 @@ docker compose down -v
 
 ---
 
-## 6. Helm Chart
+## 5. CI/CD Integration
 
-### 6.1 Purpose
-
-The Helm chart provides a production-grade Kubernetes deployment for Chef Migration Metrics. It supports flexible configuration, secret management, persistent storage, ingress, and horizontal scaling considerations.
-
-### 6.2 Chart Location
-
-```
-deploy/
-└── helm/
-    └── chef-migration-metrics/
-        ├── Chart.yaml
-        ├── values.yaml
-        ├── templates/
-        │   ├── _helpers.tpl
-        │   ├── deployment.yaml
-        │   ├── service.yaml
-        │   ├── ingress.yaml
-        │   ├── configmap.yaml
-        │   ├── secret.yaml
-        │   ├── serviceaccount.yaml
-        │   ├── hpa.yaml
-        │   ├── pvc.yaml
-        │   ├── NOTES.txt
-        │   └── tests/
-        │       └── test-connection.yaml
-        └── README.md
-```
-
-### 6.3 Chart.yaml
-
-```yaml
-apiVersion: v2
-name: chef-migration-metrics
-description: A Helm chart for deploying Chef Migration Metrics on Kubernetes
-type: application
-version: 0.1.0            # Chart version — incremented independently of app version
-appVersion: "1.0.0"       # Application version — matches the container image tag
-home: https://github.com/trickyearlobe-chef/chef-migration-metrics
-sources:
-  - https://github.com/trickyearlobe-chef/chef-migration-metrics
-maintainers:
-  - name: trickyearlobe
-keywords:
-  - chef
-  - migration
-  - metrics
-  - upgrade
-```
-
-### 6.4 values.yaml
-
-```yaml
-# -- Number of application replicas.
-# NOTE: The background collection job includes a single-run constraint
-# (see data-collection specification). When running multiple replicas,
-# only one replica will execute collection/analysis jobs at a time.
-# Additional replicas serve dashboard traffic and API requests.
-replicaCount: 1
-
-image:
-  # -- Container image repository
-  repository: ghcr.io/trickyearlobe-chef/chef-migration-metrics
-  # -- Image pull policy
-  pullPolicy: IfNotPresent
-  # -- Image tag (defaults to chart appVersion)
-  tag: ""
-
-imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
-
-serviceAccount:
-  # -- Create a ServiceAccount
-  create: true
-  # -- Annotations for the ServiceAccount
-  annotations: {}
-  # -- ServiceAccount name (auto-generated if not set)
-  name: ""
-
-podAnnotations: {}
-
-podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  runAsGroup: 1000
-  fsGroup: 1000
-
-securityContext:
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false    # git operations require writable fs
-  capabilities:
-    drop:
-      - ALL
-
-# -- Application configuration (rendered into a ConfigMap and mounted as config.yml)
-config:
-  organisations: []
-  #   - name: myorg-production
-  #     chef_server_url: https://chef.example.com
-  #     org_name: myorg-production
-  #     client_name: chef-migration-metrics
-  #     client_key_path: /etc/chef-migration-metrics/keys/myorg-production.pem
-
-  target_chef_versions: []
-  #   - "18.5.0"
-  #   - "19.0.0"
-
-  git_base_urls: []
-  #   - https://github.com/myorg
-
-  collection:
-    schedule: "0 * * * *"
-
-  concurrency:
-    organisation_collection: 5
-    node_page_fetching: 10
-    git_pull: 10
-    cookstyle_scan: 8
-    test_kitchen_run: 4
-    readiness_evaluation: 20
-
-  readiness:
-    min_free_disk_mb: 2048
-
-  server:
-    listen_address: "0.0.0.0"
-    port: 8080
-    tls:
-      mode: "off"               # "off" | "static" | "acme"
-      # --- Static certificate settings (mode: static) ---
-      cert_path: ""
-      key_path: ""
-      ca_path: ""               # Optional: CA bundle for mutual TLS (mTLS)
-      min_version: "1.2"        # Minimum TLS version: "1.2" or "1.3"
-      http_redirect_port: 0     # Optional: HTTP-to-HTTPS redirect listener port
-      # --- ACME settings (mode: acme) ---
-      acme:
-        domains: []
-        email: ""
-        ca_url: "https://acme-v02.api.letsencrypt.org/directory"
-        challenge: "http-01"    # "http-01" | "tls-alpn-01" | "dns-01"
-        dns_provider: ""
-        dns_provider_config: {}
-        storage_path: "/var/lib/chef-migration-metrics/acme"
-        renew_before_days: 30
-        agree_to_tos: false
-        trusted_roots: ""
-    graceful_shutdown_seconds: 30
-
-  frontend:
-    base_path: "/"
-
-  logging:
-    level: INFO
-    retention_days: 90
-
-  auth:
-    providers:
-      - type: local
-
-# -- Existing ConfigMap name to use instead of the chart-managed one.
-# When set, the chart does not create a ConfigMap and mounts this one instead.
-existingConfigMap: ""
-
-# -- Database connection URL. Overrides config.datastore.url via DATABASE_URL env var.
-# If using the bundled PostgreSQL subchart, this is auto-configured.
-databaseUrl: ""
-
-# -- Existing Kubernetes Secret containing sensitive environment variables.
-# The secret should contain keys such as DATABASE_URL, LDAP_BIND_PASSWORD, etc.
-existingSecret: ""
-
-# -- Inline secret values (only used if existingSecret is not set).
-# These are rendered into a chart-managed Secret.
-secrets:
-  databaseUrl: ""
-  ldapBindPassword: ""
-
-# -- Chef API private keys. Each key maps to a file in /etc/chef-migration-metrics/keys/.
-# Provide either inline PEM content or reference an existing secret.
-chefKeys:
-  # -- Existing Kubernetes Secret containing Chef API private keys.
-  # Each key in the secret becomes a file in the keys directory.
-  existingSecret: ""
-  # -- Inline key data (only used if existingSecret is not set).
-  # keys:
-  #   myorg-production.pem: |
-  #     -----BEGIN RSA PRIVATE KEY-----
-  #     ...
-  #     -----END RSA PRIVATE KEY-----
-  keys: {}
-
-service:
-  # -- Service type
-  type: ClusterIP
-  # -- Service port
-  port: 80
-  # -- Target port on the container
-  targetPort: 8080
-
-ingress:
-  # -- Enable Ingress
-  enabled: false
-  # -- Ingress class name
-  className: ""
-  # -- Ingress annotations
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # cert-manager.io/cluster-issuer: letsencrypt-prod
-  hosts:
-    - host: chef-migration-metrics.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
-  #  - secretName: chef-migration-metrics-tls
-  #    hosts:
-  #      - chef-migration-metrics.local
-
-# -- TLS certificate Secret for native TLS (server.tls.mode: static).
-# Not needed when TLS is terminated at the Ingress or when using ACME mode.
-tlsSecret:
-  # -- Existing Kubernetes TLS Secret (e.g. managed by cert-manager).
-  # Must contain tls.crt and tls.key. Mounted to /etc/chef-migration-metrics/tls/.
-  existingSecret: ""
-  # -- Inline PEM certificate and key (only used if existingSecret is not set).
-  # For production, use existingSecret instead.
-  cert: ""
-  key: ""
-
-# -- ACME certificate storage (server.tls.mode: acme).
-# Persistent volume for ACME account keys, issued certificates, and metadata.
-# Only used when server.tls.mode is "acme".
-acmeStorage:
-  # -- Storage class for the ACME PVC
-  storageClass: ""
-  # -- Access modes
-  accessModes:
-    - ReadWriteOnce
-  # -- Volume size (ACME data is small — 64Mi is typically sufficient)
-  size: 64Mi
-  # -- Use an existing PVC
-  existingClaim: ""
-
-# -- Persistent volume for git clones and cookbook downloads
-persistence:
-  # -- Enable persistent storage
-  enabled: true
-  # -- Storage class (empty string uses the cluster default)
-  storageClass: ""
-  # -- Access mode
-  accessModes:
-    - ReadWriteOnce
-  # -- Volume size
-  size: 10Gi
-  # -- Existing PVC name (overrides chart-managed PVC)
-  existingClaim: ""
-
-resources:
-  requests:
-    cpu: 250m
-    memory: 256Mi
-  limits:
-    cpu: "2"
-    memory: 1Gi
-
-# -- Horizontal Pod Autoscaler
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 80
-  targetMemoryUtilizationPercentage: 80
-
-# -- Liveness probe
-livenessProbe:
-  httpGet:
-    path: /api/v1/admin/status
-    port: http
-  initialDelaySeconds: 60
-  periodSeconds: 30
-  timeoutSeconds: 5
-  failureThreshold: 3
-
-# -- Readiness probe
-readinessProbe:
-  httpGet:
-    path: /api/v1/admin/status
-    port: http
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 3
-  failureThreshold: 3
-
-# -- Node selector
-nodeSelector: {}
-
-# -- Tolerations
-tolerations: []
-
-# -- Affinity rules
-affinity: {}
-
-# -- PostgreSQL subchart (Bitnami). Enable to deploy PostgreSQL alongside the application.
-postgresql:
-  # -- Deploy PostgreSQL as a subchart
-  enabled: true
-  auth:
-    # -- PostgreSQL database name
-    database: chef_migration_metrics
-    # -- PostgreSQL username
-    username: chef_migration_metrics
-    # -- PostgreSQL password (use existingSecret in production)
-    password: ""
-    # -- Existing secret containing the PostgreSQL password (key: password)
-    existingSecret: ""
-  primary:
-    persistence:
-      enabled: true
-      size: 20Gi
-```
-
-### 6.5 Key Templates
-
-#### Deployment
-
-The Deployment template renders the application container with:
-
-- Config file mounted from ConfigMap at `/etc/chef-migration-metrics/config.yml`
-- Chef API keys mounted from Secret at `/etc/chef-migration-metrics/keys/`
-- Sensitive environment variables (`DATABASE_URL`, `LDAP_BIND_PASSWORD`) injected from Secret via `envFrom` or individual `env` entries
-- Persistent volume mounted at `/var/lib/chef-migration-metrics` for git working directories
-- Liveness and readiness probes against the health endpoint
-- Security context enforcing non-root execution
-
-When the PostgreSQL subchart is enabled and no explicit `databaseUrl` is provided, the chart auto-constructs the `DATABASE_URL` from the subchart's service name and credentials.
-
-#### ConfigMap
-
-The ConfigMap renders `values.config` as a YAML config file. The `datastore.url` field is omitted from the ConfigMap because it is injected via the `DATABASE_URL` environment variable from a Secret.
-
-#### Secret
-
-The chart-managed Secret stores:
-
-- `DATABASE_URL` (from `secrets.databaseUrl` or auto-constructed from the PostgreSQL subchart)
-- `LDAP_BIND_PASSWORD` (from `secrets.ldapBindPassword`)
-- Chef API private keys (from `chefKeys.keys`, unless `chefKeys.existingSecret` is set)
-
-In production, operators should use `existingSecret` and `chefKeys.existingSecret` to reference secrets managed externally (e.g. via Sealed Secrets, External Secrets Operator, or Vault).
-
-#### Ingress
-
-The Ingress template is conditionally rendered when `ingress.enabled` is `true`. It supports:
-
-- Any Ingress class (nginx, traefik, ALB, etc.) via `className` and `annotations`
-- TLS termination via `tls` block with cert-manager integration
-- Multiple host rules and path configurations
-
-> **Note on TLS in Kubernetes:** When deploying behind an Ingress controller, TLS is typically terminated at the Ingress level and the application runs with `server.tls.mode: off`. The application's native TLS support (`static` or `acme` mode) is most useful for non-Kubernetes deployments, Docker Compose, or when end-to-end encryption to the pod is required. If native TLS is used, the Deployment template must mount the certificate files (for `static` mode) or provide a persistent volume for the ACME storage directory (for `acme` mode).
-
-#### HPA
-
-The HorizontalPodAutoscaler is conditionally rendered when `autoscaling.enabled` is `true`. It scales based on CPU and/or memory utilisation.
-
-> **Note on replicas and the collection job:** The background collection job has a single-run constraint enforced via a database-level advisory lock. When multiple replicas are running, only one will execute the collection/analysis pipeline. The remaining replicas serve dashboard and API traffic. This makes horizontal scaling safe for the read path while ensuring data collection remains serialised.
-
-#### PVC
-
-The PersistentVolumeClaim provides durable storage for git clones and cookbook downloads at `/var/lib/chef-migration-metrics`. Without persistence, these are re-cloned on every pod restart.
-
-When `persistence.existingClaim` is set, the chart uses the referenced PVC instead of creating a new one.
-
-#### TLS Secret (static mode)
-
-When `server.tls.mode` is `static`, the certificate and key must be made available to the pod. The chart supports two approaches:
-
-1. **`tlsSecret.existingSecret`** — reference an existing Kubernetes TLS Secret (e.g. one managed by cert-manager). The Secret's `tls.crt` and `tls.key` are mounted into `/etc/chef-migration-metrics/tls/`.
-2. **`tlsSecret.cert` / `tlsSecret.key`** — inline PEM content rendered into a chart-managed Secret. For production, `existingSecret` is recommended.
-
-#### ACME Storage PVC
-
-When `server.tls.mode` is `acme`, a separate PVC is created for the ACME storage directory (`acme.storage_path`). This PVC stores ACME account registrations, issued certificates, and private keys. It must survive pod restarts to avoid re-registration and CA rate limit exhaustion. The PVC is conditionally rendered only when ACME mode is active.
-
-### 6.6 PostgreSQL Subchart
-
-The chart includes the [Bitnami PostgreSQL chart](https://github.com/bitnami/charts/tree/main/bitnami/postgresql) as an optional dependency declared in `Chart.yaml`:
-
-```yaml
-dependencies:
-  - name: postgresql
-    version: "~15"
-    repository: https://charts.bitnami.com/bitnami
-    condition: postgresql.enabled
-```
-
-When `postgresql.enabled` is `true` (the default), a PostgreSQL instance is deployed alongside the application. For production, operators may disable the subchart and point `databaseUrl` or `secrets.databaseUrl` at an externally managed PostgreSQL instance (e.g. RDS, Cloud SQL, or an existing cluster database).
-
-### 6.7 Usage
-
-```bash
-# Add the Bitnami repository for the PostgreSQL dependency
-helm repo add bitnami https://charts.bitnami.com/bitnami
-
-# Build chart dependencies
-cd deploy/helm/chef-migration-metrics
-helm dependency build
-
-# Install with default values (bundled PostgreSQL, local auth)
-helm install chef-migration-metrics . \
-  --namespace chef-migration-metrics \
-  --create-namespace \
-  --set postgresql.auth.password=changeme
-
-# Install with custom values file
-helm install chef-migration-metrics . \
-  --namespace chef-migration-metrics \
-  --create-namespace \
-  -f my-values.yaml
-
-# Upgrade
-helm upgrade chef-migration-metrics . \
-  --namespace chef-migration-metrics \
-  -f my-values.yaml
-
-# Uninstall
-helm uninstall chef-migration-metrics --namespace chef-migration-metrics
-```
-
-### 6.8 Helm Tests
-
-The chart includes a test pod (`templates/tests/test-connection.yaml`) that performs a basic HTTP GET against the application's health endpoint to verify the deployment is functional:
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: "{{ include "chef-migration-metrics.fullname" . }}-test-connection"
-  annotations:
-    "helm.sh/hook": test
-spec:
-  containers:
-    - name: wget
-      image: busybox:latest
-      command: ['wget']
-      args: ['--spider', '--timeout=5', 'http://{{ include "chef-migration-metrics.fullname" . }}:{{ .Values.service.port }}/api/v1/admin/status']
-  restartPolicy: Never
-```
-
----
-
-## 7. Multi-Replica Considerations
-
-When deploying multiple replicas (via `replicaCount` > 1 or HPA), the following constraints apply:
-
-| Concern | Approach |
-|---------|----------|
-| **Collection job serialisation** | The background collection job acquires a PostgreSQL advisory lock before starting. Only one replica can hold the lock at a time. Other replicas skip the collection tick gracefully. |
-| **Git working directory** | With `ReadWriteOnce` PVC, only one pod can mount the volume. For multi-replica deployments needing shared git state, use a `ReadWriteMany` storage class or run git operations only on a single designated replica (e.g. via a separate Deployment or CronJob). |
-| **Session affinity** | Sessions are stored server-side in PostgreSQL, so any replica can serve any authenticated request. No sticky sessions are required. |
-| **Database migrations** | Migrations use a database-level lock (`golang-migrate/migrate` advisory lock). Only one replica runs migrations on startup; others wait or skip. |
-
----
-
-## 8. CI/CD Integration
-
-### 8.1 Build Pipeline
+### 5.1 Build Pipeline
 
 The CI pipeline (e.g. GitHub Actions) should include the following stages:
 
 | Stage | Steps |
 |-------|-------|
-| **Lint** | `golangci-lint`, `npm run lint` (frontend), `helm lint` |
+| **Lint** | `golangci-lint`, `npm run lint` (frontend) |
 | **Test** | Go unit tests, frontend unit tests |
 | **Build** | Compile binary, build frontend, embed assets |
-| **Package** | Build RPM (`make package-rpm`), DEB (`make package-deb`), container image (`make package-docker`) |
-| **Publish** | Push container image to registry, upload RPM/DEB to release artifacts |
-| **Helm** | Package Helm chart (`helm package`), push to chart repository or OCI registry |
+| **Package** | Build RPM (`make package-rpm`), DEB (`make package-deb`) |
+| **Publish** | Upload RPM/DEB to release artifacts |
 
-### 8.2 Release Workflow
+### 5.2 Release Workflow
 
 - Releases are triggered by pushing a git tag matching `v*` (e.g. `v1.2.0`).
-- The version is extracted from the tag and injected into the binary, package metadata, container image labels, and Helm chart `appVersion`.
+- The version is extracted from the tag and injected into the binary and package metadata.
 - RPM and DEB packages are attached to the GitHub Release as assets.
-- The container image is pushed to the container registry with appropriate tags (see section 4.4).
-- The Helm chart is packaged and published to a chart repository or OCI-compatible registry.
 
 ---
 
-## 9. nFPM Configuration
+## 6. nFPM Configuration
 
 The `nfpm.yaml` file at the repository root configures both RPM and DEB package builds:
 
@@ -1243,7 +450,7 @@ deb:
     - adduser
 ```
 
-### 9.1 Building the Embedded Ruby Environment
+### 6.1 Building the Embedded Ruby Environment
 
 The embedded Ruby environment is built during the `make build-embedded` step (or as part of `make package-all`) into `./build/embedded/`. The build process:
 
@@ -1265,7 +472,7 @@ This produces a platform-specific artifact — the `ARCH` and `GOOS` of the Ruby
 
 ---
 
-## 10. Repository Layout for Packaging Files
+## 7. Repository Layout for Packaging Files
 
 ```
 deploy/
@@ -1274,24 +481,6 @@ deploy/
 │   ├── config.yml
 │   ├── .env.example
 │   └── README.md
-├── helm/
-│   └── chef-migration-metrics/
-│       ├── Chart.yaml
-│       ├── values.yaml
-│       ├── README.md
-│       └── templates/
-│           ├── _helpers.tpl
-│           ├── deployment.yaml
-│           ├── service.yaml
-│           ├── ingress.yaml
-│           ├── configmap.yaml
-│           ├── secret.yaml
-│           ├── serviceaccount.yaml
-│           ├── hpa.yaml
-│           ├── pvc.yaml
-│           ├── NOTES.txt
-│           └── tests/
-│               └── test-connection.yaml
 └── pkg/
     ├── config.yml                          # Default config file shipped in RPM/DEB
     ├── env-file                            # Default environment file for systemd
@@ -1313,12 +502,11 @@ build/
     │   └── ruby/                           # Ruby stdlib and installed gems
     └── ...
 
-Dockerfile                                  # Multi-stage build with embedded Ruby (root of repository)
 Makefile                                    # Build, test, lint, and package targets
 nfpm.yaml                                   # nFPM configuration for RPM and DEB builds
 ```
 
-> **Note:** `Dockerfile.analysis` has been removed. The base `Dockerfile` now includes a Ruby build stage that embeds CookStyle and Test Kitchen directly. All images ship with full analysis capability.
+> **Note:** The application is not containerised. Docker Compose is used only for local development services (PostgreSQL, ELK stack). The `deploy/docker-compose/` directory contains Compose files for these supporting services.
 
 ---
 
@@ -1328,5 +516,5 @@ nfpm.yaml                                   # nFPM configuration for RPM and DEB
 - [Configuration Specification](../configuration/Specification.md)
 - [Analysis Specification](../analysis/Specification.md) — startup validation for external tools
 - [Data Collection Specification](../data-collection/Specification.md) — background job serialisation
-- [Web API Specification](../web-api/Specification.md) — health endpoint used by probes
-- [Datastore Specification](../datastore/Specification.md) — advisory locks for multi-replica
+- [Web API Specification](../web-api/Specification.md) — health endpoint used by status checks
+- [Datastore Specification](../datastore/Specification.md) — advisory locks for collection serialisation

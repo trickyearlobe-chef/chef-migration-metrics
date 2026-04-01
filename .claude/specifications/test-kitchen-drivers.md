@@ -490,8 +490,9 @@ analysis_tools:
 
 ### vCenter Credential Setup
 
+Credentials are managed via the **Admin → Credentials** page in the web UI, or programmatically via the API:
+
 ```
-# Store the vCenter password via the admin API
 POST /api/v1/admin/credentials
 {
   "name": "vcenter-password",
@@ -504,7 +505,7 @@ POST /api/v1/admin/credentials
 
 When the VMware team transitions from vCenter to vRA, the operator:
 
-1. Stores the vRA password: `POST /api/v1/admin/credentials` with name `vra-password`.
+1. Stores the vRA password via **Admin → Credentials** (or `POST /api/v1/admin/credentials`) with name `vra-password`.
 2. Updates config: `driver: vra`, replaces `driver_settings` and `driver_secrets`, updates `image` values in the platform map to vRA catalog item names.
 3. Restarts the application. No code changes — the execution model is the same for all non-dokken drivers.
 

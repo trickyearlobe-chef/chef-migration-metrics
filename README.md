@@ -108,27 +108,16 @@ Chef Migration Metrics is a Go application with an embedded React frontend. Cook
 
 The application looks for `cookstyle` and `kitchen` binaries in a configurable directory first (see `analysis_tools.embedded_bin_dir` in the configuration), then falls back to searching `PATH`. If neither is found, cookbook analysis is skipped gracefully — data collection and the dashboard still work.
 
-For **Kubernetes** deployments, the Helm chart includes an optional init container that copies Chef Workstation tools into a shared volume at pod startup (see Option 5 below).
-
-For **standalone Docker** usage, mount a Chef Workstation installation into the container:
-
-```
-docker run \
-  -v /opt/chef-workstation/bin:/opt/chef-tools/bin:ro \
-  -v /opt/chef-workstation/embedded:/opt/chef-tools/embedded:ro \
-  ghcr.io/trickyearlobe-chef/chef-migration-metrics:latest
-```
-
 ### Building from Source
 
 - **Go** 1.25 or later
 - **Node.js** 20 or later and **npm** (for building the React frontend)
 - **nFPM** (for building RPM and DEB packages)
-- **Docker** (for building container images)
+- **Docker** (for building the embedded Ruby environment)
 
 ## Installation
 
-Chef Migration Metrics can be installed via RPM, DEB, container image, Docker Compose, or Helm chart. Choose the method that best fits your environment.
+Chef Migration Metrics can be installed via RPM, DEB, distribution archive, or Docker Compose. Choose the method that best fits your environment.
 
 ### Option 1: RPM Package (RHEL, CentOS, Fedora, Amazon Linux)
 
@@ -224,93 +213,7 @@ docker compose down -v
 
 See [`deploy/docker-compose/README.md`](deploy/docker-compose/README.md) for full details.
 
-### Option 4: Container Image (Standalone)
-
-Pull the image:
-
-```
-docker pull ghcr.io/trickyearlobe-chef/chef-migration-metrics:<version>
-```
-
-Run with a mounted configuration file, keys, and a connection to an external PostgreSQL instance:
-
-```
-docker run -d \
-  --name chef-migration-metrics \
-  -p 8080:8080 \
-  -v /path/to/config.yml:/etc/chef-migration-metrics/config.yml:ro \
-  -v /path/to/keys/:/etc/chef-migration-metrics/keys/:ro \
-  -v chef-data:/var/lib/chef-migration-metrics \
-  -e DATABASE_URL="postgres://user:pass@db-host:5432/chef_migration_metrics" \
-  ghcr.io/trickyearlobe-chef/chef-migration-metrics:<version>
-```
-
-The container image includes only Git and the Go binary — **CookStyle and Test Kitchen are not included**. To enable cookbook compatibility testing, mount a Chef Workstation installation into the container (see Prerequisites above).
-
-### Option 5: Kubernetes with Helm
-
-The Helm chart deploys Chef Migration Metrics with an optional bundled PostgreSQL instance, Ingress, TLS, persistent storage, and horizontal pod autoscaling.
-
-```
-# Add the Bitnami repo (for the PostgreSQL subchart dependency)
-helm repo add bitnami https://charts.bitnami.com/bitnami
-
-# Build chart dependencies
-cd deploy/helm/chef-migration-metrics
-helm dependency build
-
-# Install with default values (bundled PostgreSQL, local auth)
-helm install chef-migration-metrics . \
-  --namespace chef-migration-metrics \
-  --create-namespace \
-  --set postgresql.auth.password=changeme
-
-# Install with a custom values file
-helm install chef-migration-metrics . \
-  --namespace chef-migration-metrics \
-  --create-namespace \
-  -f my-values.yaml
-```
-
-Key Helm values:
-
-| Value | Description |
-|-------|-------------|
-| `replicaCount` | Number of application pods (background jobs are serialised via a database lock) |
-| `image.repository` | Container image repository |
-| `image.tag` | Image tag (defaults to chart `appVersion`) |
-| `config.*` | Application configuration (rendered into a ConfigMap) |
-| `secrets.databaseUrl` | PostgreSQL connection string (stored in a Secret) |
-| `chefKeys.keys` | Inline Chef API private keys (or use `chefKeys.existingSecret`) |
-| `chefWorkstation.enabled` | Enable init container that copies CookStyle/Kitchen from `chef/chef-workstation` image (default: `false`) |
-| `ingress.enabled` | Enable Kubernetes Ingress |
-| `postgresql.enabled` | Deploy bundled PostgreSQL (disable to use an external database) |
-| `persistence.enabled` | Enable PVC for git clone working directory |
-| `autoscaling.enabled` | Enable HPA for read-path scaling |
-
-Upgrade an existing release:
-
-```
-helm upgrade chef-migration-metrics . \
-  --namespace chef-migration-metrics \
-  -f my-values.yaml
-```
-
-Uninstall:
-
-```
-helm uninstall chef-migration-metrics --namespace chef-migration-metrics
-```
-
-Run Helm tests to verify connectivity:
-
-```
-helm test chef-migration-metrics --namespace chef-migration-metrics
-```
-
-See [`deploy/helm/chef-migration-metrics/README.md`](deploy/helm/chef-migration-metrics/README.md) for the full values reference.
-
-### Option 6: Build from Source
+### Option 4: Build from Source
 
 ```
 git clone https://github.com/trickyearlobe-chef/chef-migration-metrics.git
@@ -325,8 +228,7 @@ make build
 # Or build packages
 make package-rpm      # produces build/chef-migration-metrics-<version>.x86_64.rpm
 make package-deb      # produces build/chef-migration-metrics_<version>_amd64.deb
-make package-docker   # builds the container image locally
-make package-all      # all of the above
+make package-all      # RPM + DEB + distribution archives
 ```
 
 When running from source, CookStyle and Test Kitchen are resolved from `PATH`. Install [Chef Workstation](https://docs.chef.io/workstation/install/) or `gem install cookstyle test-kitchen` to make them available.
@@ -363,7 +265,7 @@ Grant the client read access to nodes, cookbooks, roles, and environments. See t
 
 ### Database Setup
 
-If not using Docker Compose or the Helm PostgreSQL subchart, create a PostgreSQL database manually:
+If not using Docker Compose, create a PostgreSQL database manually:
 
 ```
 createdb chef_migration_metrics
@@ -417,7 +319,7 @@ analysis_tools:
 | `image_field_name` | auto | Set automatically by built-in profiles; required for `custom` |
 | `platform_map` | empty | Maps kitchen platform names to VM/AMI images |
 
-Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are stored via `POST /api/v1/admin/credentials` and resolved at test runtime. Plaintext is zeroed from memory after use.
+Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are managed via the **Admin → Credentials** page in the web UI and resolved at test runtime. Plaintext is zeroed from memory after use.
 
 See the [Test Kitchen Driver specification](.claude/specifications/test-kitchen-drivers.md) for full details.
 
@@ -425,19 +327,10 @@ See the [Test Kitchen Driver specification](.claude/specifications/test-kitchen-
 
 When using the `vcenter` driver, each platform in the `platform_map` maps a Test Kitchen platform name to a vSphere VM template. The application generates a `.kitchen.local.yml` overlay that references these templates with ERB credential injection.
 
-**Step 1:** Store credentials via the admin API:
+**Step 1:** Store credentials via **Admin → Credentials** in the web UI:
 
-```bash
-# vCenter connection password
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "vcenter-password", "credential_type": "generic", "value": "<password>"}'
-
-# VM transport password (for SSH/WinRM into test VMs)
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "kitchen-vm-password", "credential_type": "generic", "value": "<password>"}'
-```
+- Create a credential named `vcenter-password` (type: `generic`) with the vCenter connection password.
+- Create a credential named `kitchen-vm-password` (type: `generic`) with the VM transport password (for SSH/WinRM into test VMs).
 
 **Step 2:** Configure the driver in the YAML config:
 
@@ -484,12 +377,7 @@ Switching drivers is a config-only operation — no code changes required. The p
 
 **Example: vCenter → vRA**
 
-1. **Store new credentials:**
-   ```bash
-   curl -X POST http://localhost:8080/api/v1/admin/credentials \
-     -H 'Content-Type: application/json' \
-     -d '{"name": "vra-password", "credential_type": "generic", "value": "<password>"}'
-   ```
+1. **Store new credentials** via **Admin → Credentials** in the web UI (e.g. create `vra-password` of type `generic`).
 
 2. **Update the config:**
    ```yaml
@@ -522,19 +410,10 @@ Switching drivers is a config-only operation — no code changes required. The p
 
 When using the `proxmox` driver, each platform in the `platform_map` maps a Test Kitchen platform name to a Proxmox VM template. The application generates a `.kitchen.local.yml` overlay that references these templates with ERB credential injection.
 
-**Step 1:** Store credentials via the admin API:
+**Step 1:** Store credentials via **Admin → Credentials** in the web UI:
 
-```bash
-# Proxmox connection password
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "proxmox-password", "credential_type": "generic", "value": "<password>"}'
-
-# VM transport password (for SSH into test VMs)
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "kitchen-vm-password", "credential_type": "generic", "value": "<password>"}'
-```
+- Create a credential named `proxmox-password` (type: `generic`) with the Proxmox connection password.
+- Create a credential named `kitchen-vm-password` (type: `generic`) with the VM transport password (for SSH into test VMs).
 
 **Step 2:** Configure the driver in the YAML config:
 
@@ -592,7 +471,7 @@ GitHub's built-in secret scanning provides an additional layer of protection at 
 
 ### .gitignore Protection
 
-The `.gitignore` file excludes common secret file types (`*.pem`, `*.key`, `.env`, `keys/`, `acme/`). The `.dockerignore` and `.helmignore` files mirror these patterns to prevent secrets from leaking into container images or Helm chart archives.
+The `.gitignore` file excludes common secret file types (`*.pem`, `*.key`, `.env`, `keys/`, `acme/`). The `.dockerignore` mirrors these patterns to prevent secrets from leaking into Docker build contexts.
 
 ### Credential Management
 
@@ -625,7 +504,7 @@ Detailed specifications for every component are maintained under `.claude/specif
 | [Chef API](.claude/specifications/chef-api/Specification.md) | Chef Infra Server API endpoints and signing protocol |
 | [Datastore](.claude/specifications/datastore/Specification.md) | Database schema, tables, indexes, relationships — server cookbooks, git repos, split analysis result tables, remediation, complexity, dependency graph, notifications, and exports |
 | [Web API](.claude/specifications/web-api/Specification.md) | HTTP API endpoints between backend and frontend (including remediation, dependency graph, exports, and notifications) |
-| [Packaging](.claude/specifications/packaging/Specification.md) | RPM, DEB, container image, Docker Compose, and Helm chart |
+| [Packaging](.claude/specifications/packaging/Specification.md) | RPM, DEB, distribution archives, and Docker Compose |
 | [Ownership](.claude/specifications/ownership/Specification.md) | Ownership tracking for nodes, roles, policyfiles, cookbooks, and git repositories — owner model, auto-derivation rules, bulk import, owner-scoped views and exports |
 
 ## License

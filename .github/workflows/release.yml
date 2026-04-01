@@ -1,34 +1,17 @@
 # =============================================================================
-# Release — Build, Tag, and Publish Container Images & Packages
+# Release — Build and Publish Native Packages & Distribution Archives
 # =============================================================================
 # Triggered when a git tag matching `v*` (e.g. v1.2.0) is pushed. Builds
-# distribution archives, RPM/DEB packages, and the Helm chart. Optionally
-# builds the multi-arch container image and pushes it to GitHub Container
-# Registry (ghcr.io) with semantic version tags.
+# RPM/DEB packages and distribution archives for multiple platforms.
 #
 # Repository variables (Settings → Secrets and variables → Actions → Variables):
-#   BUILD_CONTAINER_IMAGE  "true" to build/push the Docker image (default: skip)
-#   BUILD_ARM64            "true" to include arm64 packages/archives (default: skip)
+#   BUILD_ARM64  "true" to include arm64 packages/archives (default: skip)
 #
 # Job dependency graph:
 #
 #   extract-version (instant)
-#     ├── build-image-amd64 (optional) ──┐
-#     ├── build-image-arm64 (optional) ──┼── merge-image-manifest (optional) ─┐
-#     ├── package-helm (optional) ───────┤                                     │
-#     ├── build-packages ────────────────┼── release                           │
-#     └── build-archives ────────────────┼─────────────────────────────────────┘
-#
-# Container image builds run natively on each architecture (no QEMU emulation)
-# then merge into a single multi-arch manifest. All other build jobs use Go
-# cross-compilation and run on x86_64 runners.
-#
-# Image tag strategy (for a tag like v1.2.3, when image build is enabled):
-#   - 1.2.3       immutable release tag
-#   - 1.2         floating minor tag, updated on each patch release
-#   - 1           floating major tag
-#   - latest      most recent stable release
-#   - <commit-sha> full commit SHA for traceability
+#     ├── build-packages ────────┐
+#     └── build-archives ────────┼── release
 # =============================================================================
 
 name: Release
@@ -43,14 +26,8 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 permissions:
   contents: write
-  packages: write
-  id-token: write
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -61,7 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      build_image: ${{ steps.flags.outputs.build_image }}
       build_arm64: ${{ steps.flags.outputs.build_arm64 }}
       package_archs: ${{ steps.flags.outputs.package_archs }}
       archive_matrix: ${{ steps.flags.outputs.archive_matrix }}
@@ -77,15 +53,6 @@ jobs:
       - name: Evaluate build flags
         id: flags
         run: |
-          BUILD_IMAGE="${{ vars.BUILD_CONTAINER_IMAGE }}"
-          if [ "${BUILD_IMAGE}" = "true" ]; then
-            echo "build_image=true" >> "$GITHUB_OUTPUT"
-            echo "Container image build: ENABLED"
-          else
-            echo "build_image=false" >> "$GITHUB_OUTPUT"
-            echo "Container image build: SKIPPED (set BUILD_CONTAINER_IMAGE=true to enable)"
-          fi
-
           BUILD_ARM64="${{ vars.BUILD_ARM64 }}"
           if [ "${BUILD_ARM64}" = "true" ]; then
             echo "build_arm64=true" >> "$GITHUB_OUTPUT"
@@ -98,203 +65,6 @@ jobs:
             echo 'archive_matrix=[{"goos":"linux","goarch":"amd64","archive":"tar.gz"},{"goos":"darwin","goarch":"amd64","archive":"tar.gz"},{"goos":"darwin","goarch":"arm64","archive":"tar.gz"},{"goos":"windows","goarch":"amd64","archive":"zip"}]' >> "$GITHUB_OUTPUT"
             echo "ARM64 builds: SKIPPED (set BUILD_ARM64=true to enable)"
           fi
-
-  # ---------------------------------------------------------------------------
-  # Build Container Image — amd64 (native on x86_64 runner)
-  # ---------------------------------------------------------------------------
-  build-image-amd64:
-    name: Build Container Image (amd64)
-    runs-on: ubuntu-latest
-    needs: [extract-version]
-    if: needs.extract-version.outputs.build_image == 'true'
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ""
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true
-          build-args: |
-            VERSION=${{ needs.extract-version.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          cache-from: type=gha,scope=image-amd64
-          cache-to: type=gha,scope=image-amd64,mode=max
-
-      - name: Export digest
-        run: |
-          echo "Digest: ${{ steps.build.outputs.digest }}"
-
-  # ---------------------------------------------------------------------------
-  # Build Container Image — arm64 (native on ARM runner — no QEMU!)
-  # ---------------------------------------------------------------------------
-  build-image-arm64:
-    name: Build Container Image (arm64)
-    runs-on: ubuntu-24.04-arm
-    needs: [extract-version]
-    if: needs.extract-version.outputs.build_image == 'true'
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: ""
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true
-          build-args: |
-            VERSION=${{ needs.extract-version.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          cache-from: type=gha,scope=image-arm64
-          cache-to: type=gha,scope=image-arm64,mode=max
-
-      - name: Export digest
-        run: |
-          echo "Digest: ${{ steps.build.outputs.digest }}"
-
-  # ---------------------------------------------------------------------------
-  # Merge Multi-Arch Manifest
-  # ---------------------------------------------------------------------------
-  # Combines the per-platform digests from the native builds into a single
-  # multi-arch manifest list tagged with all the semantic version tags.
-  # ---------------------------------------------------------------------------
-  merge-image-manifest:
-    name: Merge Multi-Arch Manifest
-    runs-on: ubuntu-latest
-    needs: [extract-version, build-image-amd64, build-image-arm64]
-    if: needs.extract-version.outputs.build_image == 'true'
-    outputs:
-      digest: ${{ steps.inspect.outputs.digest }}
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            # Immutable version tag: 1.2.3
-            type=semver,pattern={{version}}
-            # Floating minor tag: 1.2
-            type=semver,pattern={{major}}.{{minor}}
-            # Floating major tag: 1
-            type=semver,pattern={{major}}
-            # latest
-            type=raw,value=latest
-            # Full commit SHA for traceability
-            type=sha,prefix=,format=long
-
-      - name: Create multi-arch manifest
-        run: |
-          # Build the tag arguments for imagetools create
-          TAGS=$(echo "${{ steps.meta.outputs.tags }}" | tr '\n' ' ' | sed 's/ *$//')
-          TAG_ARGS=""
-          for tag in ${TAGS}; do
-            TAG_ARGS="${TAG_ARGS} --tag ${tag}"
-          done
-
-          docker buildx imagetools create \
-            ${TAG_ARGS} \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-image-amd64.outputs.digest }}" \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-image-arm64.outputs.digest }}"
-
-      - name: Inspect manifest
-        id: inspect
-        run: |
-          VERSION="${{ needs.extract-version.outputs.version }}"
-          docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
-
-          # Capture the manifest list digest for release notes
-          DIGEST=$(docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}" --format '{{.Manifest.Digest}}')
-          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "Multi-arch manifest digest: ${DIGEST}"
-
-  # ---------------------------------------------------------------------------
-  # Package Helm Chart
-  # ---------------------------------------------------------------------------
-  package-helm:
-    name: Package Helm Chart
-    runs-on: ubuntu-latest
-    needs: [extract-version]
-    if: needs.extract-version.outputs.build_image == 'true'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Update Chart appVersion
-        run: |
-          VERSION="${{ needs.extract-version.outputs.version }}"
-          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" deploy/helm/chef-migration-metrics/Chart.yaml
-          echo "Updated Chart.yaml appVersion to ${VERSION}"
-          cat deploy/helm/chef-migration-metrics/Chart.yaml
-
-      - name: Build Helm dependencies
-        run: |
-          helm dependency build deploy/helm/chef-migration-metrics
-
-      - name: Package Helm chart
-        run: |
-          helm package deploy/helm/chef-migration-metrics --destination .helm-packages/
-
-      - name: Log in to GHCR for Helm OCI
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
-
-      - name: Push Helm chart to OCI registry
-        run: |
-          for chart in .helm-packages/*.tgz; do
-            helm push "$chart" "oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts"
-          done
-
-      - name: Upload Helm chart as artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: helm-chart
-          path: .helm-packages/*.tgz
 
   # ---------------------------------------------------------------------------
   # Build Native Packages (RPM / DEB)
@@ -441,21 +211,10 @@ jobs:
   # ---------------------------------------------------------------------------
   # Create GitHub Release
   # ---------------------------------------------------------------------------
-  # The merge-image-manifest dependency uses always() so this job runs even
-  # when the image build is skipped. The if condition ensures we still fail if
-  # any required job actually failed (as opposed to being skipped).
-  # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [extract-version, merge-image-manifest, build-packages, build-archives, package-helm]
-    if: |
-      always() &&
-      needs.extract-version.result == 'success' &&
-      needs.build-packages.result == 'success' &&
-      needs.build-archives.result == 'success' &&
-      (needs.package-helm.result == 'success' || needs.package-helm.result == 'skipped') &&
-      (needs.merge-image-manifest.result == 'success' || needs.merge-image-manifest.result == 'skipped')
+    needs: [extract-version, build-packages, build-archives]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -480,63 +239,15 @@ jobs:
           find release-assets -name '*.tar.gz' -o -name '*.zip' | while read f; do
             cp "$f" release-files/
           done
-          # Collect Helm chart archives
-          find release-assets -name '*.tgz' | while read f; do
-            cp "$f" release-files/
-          done
           echo "Collected release files:"
           ls -la release-files/
 
       - name: Generate release notes
         id: notes
-        env:
-          BUILD_IMAGE: ${{ needs.extract-version.outputs.build_image }}
         run: |
           VERSION="${{ needs.extract-version.outputs.version }}"
           cat <<'HEADER' > release-notes.md
           HEADER
-
-          # Container image section (only when image was built)
-          if [ "${BUILD_IMAGE}" = "true" ]; then
-            DIGEST="${{ needs.merge-image-manifest.outputs.digest }}"
-            cat <<EOF >> release-notes.md
-          ## Container Image
-
-          \`\`\`
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
-          \`\`\`
-
-          **Digest:** \`${DIGEST}\`
-
-          **Supported platforms:** \`linux/amd64\`, \`linux/arm64\`
-
-          ### Available Tags
-
-          | Tag | Value |
-          |-----|-------|
-          | Version | \`${VERSION}\` |
-          | Commit | \`${{ github.sha }}\` |
-          | Latest | \`latest\` |
-
-          EOF
-          else
-            cat <<EOF >> release-notes.md
-          > **Note:** Container image was not built for this release.
-          > Set the \`BUILD_CONTAINER_IMAGE\` repository variable to \`true\` and re-tag to include it.
-
-          EOF
-          fi
-
-          if [ "${BUILD_IMAGE}" = "true" ]; then
-            cat <<EOF >> release-notes.md
-          ## Helm Chart
-
-          \`\`\`bash
-          helm install chef-migration-metrics oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/chef-migration-metrics --version ${VERSION}
-          \`\`\`
-
-          EOF
-          fi
 
           cat <<EOF >> release-notes.md
           ## Distribution Archives

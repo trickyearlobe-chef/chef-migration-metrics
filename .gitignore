@@ -2,6 +2,7 @@
 # Local Development Runtime Data
 # =============================================================================
 .local/
+.samples/
 deploy/pkg/config.yml
 
 # =============================================================================
@@ -198,9 +199,3 @@ docker-compose.override.yaml
 # CI artifacts
 junit.xml
 test-results/
-
-# =============================================================================
-# Helm Chart Dependencies (rebuilt by helm dependency build)
-# =============================================================================
-deploy/helm/*/charts/
-deploy/helm/*/Chart.lock
