@@ -115,6 +115,19 @@ func NewEncryptor(masterKeyBase64 string) (*Encryptor, error) {
 	return &Encryptor{derivedKey: derivedKey}, nil
 }
 
+// DerivedKey returns a reference to the derived encryption key held by the
+// Encryptor. This is used by the configstore package which performs its own
+// AES-256-GCM operations with separate nonce storage (rather than the
+// hex-encoded string format used by Encrypt/Decrypt). The returned slice
+// MUST NOT be modified or zeroed by the caller — it is owned by the
+// Encryptor and will be zeroed when Close is called.
+func (e *Encryptor) DerivedKey() []byte {
+	if e == nil {
+		return nil
+	}
+	return e.derivedKey
+}
+
 // Close zeros the derived key material held in memory. The Encryptor must
 // not be used after Close is called.
 func (e *Encryptor) Close() {
