@@ -319,7 +319,7 @@ analysis_tools:
 | `image_field_name` | auto | Set automatically by built-in profiles; required for `custom` |
 | `platform_map` | empty | Maps kitchen platform names to VM/AMI images |
 
-Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are stored via `POST /api/v1/admin/credentials` and resolved at test runtime. Plaintext is zeroed from memory after use.
+Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are managed via the **Admin → Credentials** page in the web UI and resolved at test runtime. Plaintext is zeroed from memory after use.
 
 See the [Test Kitchen Driver specification](.claude/specifications/test-kitchen-drivers.md) for full details.
 
@@ -327,19 +327,10 @@ See the [Test Kitchen Driver specification](.claude/specifications/test-kitchen-
 
 When using the `vcenter` driver, each platform in the `platform_map` maps a Test Kitchen platform name to a vSphere VM template. The application generates a `.kitchen.local.yml` overlay that references these templates with ERB credential injection.
 
-**Step 1:** Store credentials via the admin API:
+**Step 1:** Store credentials via **Admin → Credentials** in the web UI:
 
-```bash
-# vCenter connection password
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "vcenter-password", "credential_type": "generic", "value": "<password>"}'
-
-# VM transport password (for SSH/WinRM into test VMs)
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "kitchen-vm-password", "credential_type": "generic", "value": "<password>"}'
-```
+- Create a credential named `vcenter-password` (type: `generic`) with the vCenter connection password.
+- Create a credential named `kitchen-vm-password` (type: `generic`) with the VM transport password (for SSH/WinRM into test VMs).
 
 **Step 2:** Configure the driver in the YAML config:
 
@@ -386,12 +377,7 @@ Switching drivers is a config-only operation — no code changes required. The p
 
 **Example: vCenter → vRA**
 
-1. **Store new credentials:**
-   ```bash
-   curl -X POST http://localhost:8080/api/v1/admin/credentials \
-     -H 'Content-Type: application/json' \
-     -d '{"name": "vra-password", "credential_type": "generic", "value": "<password>"}'
-   ```
+1. **Store new credentials** via **Admin → Credentials** in the web UI (e.g. create `vra-password` of type `generic`).
 
 2. **Update the config:**
    ```yaml
@@ -424,19 +410,10 @@ Switching drivers is a config-only operation — no code changes required. The p
 
 When using the `proxmox` driver, each platform in the `platform_map` maps a Test Kitchen platform name to a Proxmox VM template. The application generates a `.kitchen.local.yml` overlay that references these templates with ERB credential injection.
 
-**Step 1:** Store credentials via the admin API:
+**Step 1:** Store credentials via **Admin → Credentials** in the web UI:
 
-```bash
-# Proxmox connection password
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "proxmox-password", "credential_type": "generic", "value": "<password>"}'
-
-# VM transport password (for SSH into test VMs)
-curl -X POST http://localhost:8080/api/v1/admin/credentials \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "kitchen-vm-password", "credential_type": "generic", "value": "<password>"}'
-```
+- Create a credential named `proxmox-password` (type: `generic`) with the Proxmox connection password.
+- Create a credential named `kitchen-vm-password` (type: `generic`) with the VM transport password (for SSH into test VMs).
 
 **Step 2:** Configure the driver in the YAML config:
 
