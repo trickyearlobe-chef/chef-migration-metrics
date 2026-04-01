@@ -26,6 +26,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
@@ -82,15 +83,22 @@ type serverApp struct {
 	db              *datastore.DB
 	hub             *webapi.EventHub
 
+	// Config store components.
+	configPath   string // path to the YAML config file
+	isFullYAML   bool   // true when the loaded YAML has organisations (not bootstrap-only)
+	cfgStore     *configstore.Store
+	configHolder *configstore.ConfigHolder
+
 	// Auth components.
 	localAuth      *auth.LocalAuthenticator
 	sessionMgr     *auth.SessionManager
 	authMiddleware *auth.Middleware
 
 	// Secrets components.
-	encryptor    *secrets.Encryptor
-	credStore    *secrets.DBCredentialStore
-	credResolver *secrets.CredentialResolver
+	encryptor       *secrets.Encryptor
+	legacyCredStore *secrets.DBCredentialStore
+	credStore       secrets.CredentialStore
+	credResolver    *secrets.CredentialResolver
 
 	// Collector components.
 	coll  *collector.Collector
@@ -98,6 +106,43 @@ type serverApp struct {
 
 	// Export cleanup stop function.
 	stopExportCleanup func()
+}
+
+// dbRefChecker implements configstore.CredentialReferenceChecker by querying
+// the organisations table for credentials referenced via client_key_credential_name.
+type dbRefChecker struct {
+	db *datastore.DB
+}
+
+func (r *dbRefChecker) CheckCredentialReferences(ctx context.Context, name string) ([]secrets.CredentialReference, error) {
+	query := `
+		SELECT o.name
+		FROM organisations o
+		WHERE o.client_key_credential_name = $1
+		ORDER BY o.name`
+
+	rows, err := r.db.Pool().QueryContext(ctx, query, name)
+	if err != nil {
+		return nil, fmt.Errorf("check credential references for %q: %w", name, err)
+	}
+	defer rows.Close()
+
+	var refs []secrets.CredentialReference
+	for rows.Next() {
+		var orgName string
+		if err := rows.Scan(&orgName); err != nil {
+			return nil, fmt.Errorf("scan credential reference: %w", err)
+		}
+		refs = append(refs, secrets.CredentialReference{
+			EntityType: "organisation",
+			EntityName: orgName,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate credential references: %w", err)
+	}
+
+	return refs, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +163,13 @@ func (app *serverApp) setupBootstrapLogger() {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) loadConfig(configPath string) error {
+	// Resolve the config path the same way config.Load does, so we can
+	// store it for the YAML auto-migration phase later.
+	if configPath == "" {
+		configPath = os.Getenv("CHEF_MIGRATION_METRICS_CONFIG")
+	}
+	app.configPath = configPath
+
 	cfg, warnings, err := config.Load(configPath)
 	if err != nil {
 		app.startup.Error(fmt.Sprintf("loading configuration: %v", err))
@@ -142,7 +194,15 @@ func (app *serverApp) loadConfig(configPath string) error {
 		Writers: []logging.Writer{app.stdoutWriter},
 	})
 	app.startup = app.logger.WithScope(logging.ScopeStartup)
-	app.startup.Info("configuration loaded successfully")
+
+	// Detect whether the YAML is a full config (has organisations) or
+	// bootstrap-only. This determines whether YAML auto-migration runs.
+	app.isFullYAML = configstore.IsFullYAML(cfg)
+	if app.isFullYAML {
+		app.startup.Info("configuration loaded successfully (full YAML detected)")
+	} else {
+		app.startup.Info("configuration loaded successfully (bootstrap YAML detected)")
+	}
 
 	app.cfg = cfg
 	return nil
@@ -386,47 +446,123 @@ func (app *serverApp) setupSecrets(ctx context.Context) error {
 	}
 
 	masterKeyBase64 := os.Getenv(masterKeyEnvName)
-	if masterKeyBase64 != "" {
-		enc, mkErr := secrets.NewEncryptor(masterKeyBase64)
-		if mkErr != nil {
-			secretsLog.Error(fmt.Sprintf("master encryption key from %s is invalid: %v", masterKeyEnvName, mkErr))
-			return mkErr
-		}
-		app.encryptor = enc
-		secretsLog.Info(fmt.Sprintf("master encryption key loaded from %s", masterKeyEnvName))
+	if masterKeyBase64 == "" {
+		secretsLog.Error(fmt.Sprintf("%s environment variable is required but not set", masterKeyEnvName))
+		return fmt.Errorf("encryption key %s is required", masterKeyEnvName)
 	}
 
-	app.credStore = secrets.NewDBCredentialStore(app.db.Pool(), app.encryptor)
+	enc, mkErr := secrets.NewEncryptor(masterKeyBase64)
+	if mkErr != nil {
+		secretsLog.Error(fmt.Sprintf("master encryption key from %s is invalid: %v", masterKeyEnvName, mkErr))
+		return mkErr
+	}
+	app.encryptor = enc
+	secretsLog.Info(fmt.Sprintf("master encryption key loaded from %s", masterKeyEnvName))
 
-	credCount, credCountErr := app.credStore.CredentialCount(ctx)
+	// Create the config store backed by the database and encryptor.
+	app.cfgStore = configstore.NewStore(app.db, app.encryptor)
+
+	// Create a legacy DBCredentialStore — used for rotation and validation
+	// of credentials that have not yet been migrated to config_store.
+	app.legacyCredStore = secrets.NewDBCredentialStore(app.db.Pool(), app.encryptor)
+
+	credCount, credCountErr := app.legacyCredStore.CredentialCount(ctx)
 	if credCountErr != nil {
 		secretsLog.Warn(fmt.Sprintf("could not count stored credentials: %v", credCountErr))
-	} else if credCount > 0 && app.encryptor == nil {
-		secretsLog.Error(fmt.Sprintf(
-			"%d credential(s) are stored in the database but no master encryption key is configured (set %s)",
-			credCount, masterKeyEnvName,
-		))
-		return fmt.Errorf("credentials exist but no master key configured")
 	} else if credCount > 0 {
-		secretsLog.Info(fmt.Sprintf("%d stored credential(s) found; master key is configured", credCount))
-	} else {
-		secretsLog.Debug("no stored credentials — master key validation skipped")
+		secretsLog.Info(fmt.Sprintf("%d stored credential(s) found in legacy table", credCount))
 	}
 
-	// Master key rotation (if previous key is provided).
+	// Master key rotation on legacy credentials (if previous key is provided).
+	// Rotation must happen before MigrateFromLegacy re-encrypts them.
 	if err := app.rotateSecrets(ctx, secretsLog); err != nil {
 		return err
 	}
 
 	// Validate all stored credentials can be decrypted.
-	if credCount > 0 && app.encryptor != nil {
+	if credCount > 0 {
 		app.validateCredentials(ctx, secretsLog)
 	}
 
 	// Warn on overly permissive key file permissions.
 	app.checkKeyFilePermissions(secretsLog)
 
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Phase: config store migration and assembly.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) setupConfigStore(ctx context.Context) error {
+	csLog := app.logger.WithScope(logging.ScopeStartup)
+
+	// Run legacy data migration (credentials + runtime_settings → config_store).
+	migrateResult, err := configstore.MigrateFromLegacy(ctx, app.db.Pool(), app.cfgStore, app.encryptor)
+	if err != nil {
+		csLog.Error(fmt.Sprintf("legacy data migration failed: %v", err))
+		return err
+	}
+	if migrateResult.Skipped {
+		csLog.Info(fmt.Sprintf("legacy data migration skipped: %s", migrateResult.SkipReason))
+	} else {
+		csLog.Info(fmt.Sprintf("legacy data migration complete: %d credential(s), %d runtime setting(s) migrated",
+			migrateResult.CredentialsMigrated, migrateResult.RuntimeSettingsMigrated))
+	}
+
+	// Run YAML auto-migration if a full YAML was detected.
+	if app.isFullYAML {
+		yamlResult, yamlErr := configstore.MigrateFromYAML(ctx, app.cfgStore, app.cfg, app.configPath)
+		if yamlErr != nil {
+			csLog.Error(fmt.Sprintf("YAML auto-migration failed: %v", yamlErr))
+			return yamlErr
+		}
+		if yamlResult.Skipped {
+			csLog.Warn(fmt.Sprintf("YAML config file contains settings beyond bootstrap values — these are ignored; config is managed in the database (%s)", yamlResult.SkipReason))
+		} else {
+			csLog.Info(fmt.Sprintf("configuration migrated to database: %d section(s). Original saved as %s.migrated",
+				yamlResult.SectionsMigrated, app.configPath))
+		}
+	}
+
+	// Assemble config from DB if config_store has entries.
+	empty, emptyErr := app.cfgStore.IsEmpty(ctx)
+	if emptyErr != nil {
+		csLog.Error(fmt.Sprintf("checking config_store: %v", emptyErr))
+		return emptyErr
+	}
+
+	if !empty {
+		assembled, warnings, assembleErr := configstore.AssembleConfig(ctx, app.cfgStore)
+		if assembleErr != nil {
+			csLog.Error(fmt.Sprintf("assembling config from database: %v", assembleErr))
+			return assembleErr
+		}
+		if warnings != nil {
+			for _, w := range warnings.Messages {
+				csLog.Warn(fmt.Sprintf("config (from DB): %s", w))
+			}
+		}
+
+		// Carry over bootstrap values from the YAML-loaded config.
+		assembled.Datastore.URL = app.cfg.Datastore.URL
+		assembled.Server.ListenAddress = app.cfg.Server.ListenAddress
+		assembled.Server.Port = app.cfg.Server.Port
+
+		app.cfg = assembled
+		csLog.Info("configuration assembled from database")
+	} else {
+		csLog.Info("config_store is empty — using YAML configuration")
+	}
+
+	// Wire up the CredentialStoreAdapter to replace the legacy DBCredentialStore.
+	app.credStore = configstore.NewCredentialStoreAdapter(app.cfgStore, &dbRefChecker{db: app.db})
 	app.credResolver = secrets.NewCredentialResolver(app.credStore)
+	csLog.Info("credential store adapter configured (backed by config_store)")
+
+	// Create the ConfigHolder for concurrent-safe config access.
+	app.configHolder = configstore.NewConfigHolder(app.cfg, app.cfgStore)
+
 	return nil
 }
 
@@ -450,14 +586,14 @@ func (app *serverApp) rotateSecrets(ctx context.Context, secretsLog *logging.Sco
 
 	secretsLog.Info("master key rotation requested — re-encrypting stored credentials")
 
-	rotationRows, rrErr := app.credStore.ListRotationRows(ctx)
+	rotationRows, rrErr := app.legacyCredStore.ListRotationRows(ctx)
 	if rrErr != nil {
 		secretsLog.Error(fmt.Sprintf("failed to read credentials for rotation: %v", rrErr))
 		return rrErr
 	}
 
 	rotationWriter := func(wCtx context.Context, row secrets.RotatedRow) error {
-		return app.credStore.UpdateEncryptedValueRaw(wCtx, row.Name, row.NewEncryptedValue)
+		return app.legacyCredStore.UpdateEncryptedValueRaw(wCtx, row.Name, row.NewEncryptedValue)
 	}
 
 	result, rotErr := secrets.RotateMasterKey(ctx, rotationRows, app.encryptor, prevEncryptor, rotationWriter)
@@ -487,7 +623,7 @@ func (app *serverApp) rotateSecrets(ctx context.Context, secretsLog *logging.Sco
 }
 
 func (app *serverApp) validateCredentials(ctx context.Context, secretsLog *logging.ScopedLogger) {
-	rotationRows, rrErr := app.credStore.ListRotationRows(ctx)
+	rotationRows, rrErr := app.legacyCredStore.ListRotationRows(ctx)
 	if rrErr != nil {
 		secretsLog.Warn(fmt.Sprintf("could not validate stored credentials: %v", rrErr))
 		return
@@ -1091,7 +1227,7 @@ func run() int {
 	// Phase 1: bootstrap logger.
 	app.setupBootstrapLogger()
 
-	// Phase 2: load configuration.
+	// Phase 2: load configuration (full or bootstrap YAML).
 	if err := app.loadConfig(flags.configPath); err != nil {
 		return 1
 	}
@@ -1119,49 +1255,53 @@ func run() int {
 	// Phase 7: mark interrupted collection runs.
 	app.markInterruptedRuns(ctx)
 
-	// Phase 8: secrets.
+	// Phase 8: secrets and encryption key (mandatory).
 	if err := app.setupSecrets(ctx); err != nil {
 		return 1
 	}
-	if app.encryptor != nil {
-		defer app.encryptor.Close()
+	defer app.encryptor.Close()
+
+	// Phase 9: config store — migrate legacy data, migrate YAML, assemble
+	// config from DB, wire credential adapter and config holder.
+	if err := app.setupConfigStore(ctx); err != nil {
+		return 1
 	}
 
-	// Phase 9: sync organisations.
+	// Phase 10: sync organisations.
 	if err := app.syncOrganisations(ctx); err != nil {
 		return 1
 	}
 
-	// Phase 10: reconcile stale target version data.
+	// Phase 11: reconcile stale target version data.
 	app.reconcileTargetVersions(ctx)
 
-	// Phase 11: analysis pipeline and collector.
+	// Phase 12: analysis pipeline and collector.
 	if err := app.setupCollector(ctx); err != nil {
 		return 1
 	}
 
-	// Phase 12: ownership startup tasks.
+	// Phase 13: ownership startup tasks.
 	app.setupOwnership(ctx)
 
-	// Phase 13: collection scheduler.
+	// Phase 14: collection scheduler.
 	if err := app.startScheduler(ctx); err != nil {
 		return 1
 	}
 	defer app.sched.Stop()
 
-	// Phase 14: exports.
+	// Phase 15: exports.
 	if err := app.setupExports(); err != nil {
 		return 1
 	}
 	defer app.stopExportCleanup()
 
-	// Phase 15: HTTP server.
+	// Phase 16: HTTP server.
 	srv, err := app.setupAndServeHTTP()
 	if err != nil {
 		return 1
 	}
 
-	// Phase 16: signal handling and graceful shutdown.
+	// Phase 17: signal handling and graceful shutdown.
 	return app.awaitShutdown(srv)
 }
 
