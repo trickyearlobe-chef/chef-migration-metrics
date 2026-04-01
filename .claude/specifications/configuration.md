@@ -159,7 +159,7 @@ concurrency:
 
 Controls the location and behaviour of the embedded CookStyle and Test Kitchen tools used for cookbook compatibility testing.
 
-All packaging formats (RPM, DEB, container image) ship with a self-contained Ruby environment under `/opt/chef-migration-metrics/embedded/` that includes CookStyle, Test Kitchen, the `kitchen-dokken` driver, and their gem dependencies. This eliminates external dependencies on Chef Workstation or system Ruby. See the [Packaging Specification](../packaging/Specification.md) for the embedded environment build and layout.
+All packaging formats (RPM, DEB) ship with a self-contained Ruby environment under `/opt/chef-migration-metrics/embedded/` that includes CookStyle, Test Kitchen, the `kitchen-dokken` driver, and their gem dependencies. This eliminates external dependencies on Chef Workstation or system Ruby. See the [Packaging Specification](../packaging/Specification.md) for the embedded environment build and layout.
 
 ```yaml
 analysis_tools:

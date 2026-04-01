@@ -18,7 +18,7 @@ This specification is the authoritative reference for secrets management. The fo
 | [`datastore/Specification.md`](../datastore/Specification.md) | § `credentials` table, § Credential Storage Security |
 | [`web-api/Specification.md`](../web-api/Specification.md) | § Credential Management (Admin Endpoints) |
 | [`chef-api/Specification.md`](../chef-api/Specification.md) | § Credentials Security |
-| [`packaging/Specification.md`](../packaging/Specification.md) | § Helm Secret, § Container Configuration, § Environment File |
+| [`packaging/Specification.md`](../packaging/Specification.md) | § Docker Compose Configuration, § Environment File |
 | [`tls/Specification.md`](../tls/Specification.md) | § Static certificate key files, § ACME storage |
 | [`auth/Specification.md`](../auth/Specification.md) | § LDAP bind credentials, § Local account password hashing |
 
@@ -192,8 +192,6 @@ The master key is the root of trust for all database-stored credentials. It requ
 
 | Deployment | Recommended key source |
 |------------|----------------------|
-| Kubernetes (Helm) | Kubernetes Secret (referenced via `existingSecret` in Helm values), External Secrets Operator, Sealed Secrets, or HashiCorp Vault CSI |
-| Kubernetes (external secrets) | HashiCorp Vault Agent Injector, AWS Secrets Manager via External Secrets Operator, GCP Secret Manager |
 | Docker Compose | Docker secret or `.env` file (development only — not for production) |
 | RPM / DEB (systemd) | `EnvironmentFile` at `/etc/sysconfig/chef-migration-metrics` (RPM) or `/etc/default/chef-migration-metrics` (DEB) with `0640` permissions |
 | Manual / development | Shell environment variable |
@@ -293,7 +291,7 @@ When credentials are stored as files on disk (Chef API PEM keys, TLS private key
 | **File permissions** | `0600` or `0400` (owner read/write or read-only). Log `WARN` on startup if more permissive. |
 | **Ownership** | Must be owned by the application's service account (`chef-migration-metrics` user created by package install scripts). |
 | **Directory permissions** | The `keys/` directory at `/etc/chef-migration-metrics/keys/` must be `0700`. |
-| **Ignore files** | `*.pem`, `*.key`, and `keys/` patterns must appear in `.gitignore`, `.dockerignore`, and `.helmignore`. |
+| **Ignore files** | `*.pem`, `*.key`, and `keys/` patterns must appear in `.gitignore` and `.dockerignore`. |
 | **Config file references** | The YAML config references keys by path, never by inline content. |
 
 ### Standard File Locations
@@ -307,64 +305,6 @@ When credentials are stored as files on disk (Chef API PEM keys, TLS private key
 | ACME storage | `/var/lib/chef-migration-metrics/acme/` | Auto-managed ACME account keys and certificates |
 | Environment file (RPM) | `/etc/sysconfig/chef-migration-metrics` | `0640`, contains env var overrides including secrets |
 | Environment file (DEB) | `/etc/default/chef-migration-metrics` | `0640`, contains env var overrides including secrets |
-
----
-
-## Kubernetes Secrets Integration
-
-### Helm Chart Secret Model
-
-The Helm chart provides three mechanisms for injecting secrets:
-
-#### 1. Chart-Managed Secret (`templates/secret.yaml`)
-
-Created when `existingSecret` is not set. Renders values from `secrets.*` and `chefKeys.keys` into a Kubernetes Secret resource. Suitable for development and evaluation. **Not recommended for production** because secret values appear in Helm values (which may be stored in source control or Helm release history).
-
-Contents:
-- `DATABASE_URL` — from `secrets.databaseUrl` or auto-constructed from PostgreSQL subchart credentials
-- `LDAP_BIND_PASSWORD` — from `secrets.ldapBindPassword`
-- `CMM_CREDENTIAL_ENCRYPTION_KEY` — from `secrets.credentialEncryptionKey`
-- `SMTP_PASSWORD` — from `secrets.smtpPassword`
-
-#### 2. Existing Secret Reference (`existingSecret`)
-
-When `existingSecret` is set, the chart does not create its own Secret. Instead, the Deployment references the named Secret via `envFrom`. The operator manages the Secret externally using Sealed Secrets, External Secrets Operator, Vault Agent, or `kubectl create secret`.
-
-Expected keys in the external Secret:
-
-| Key | Required | Description |
-|-----|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `CMM_CREDENTIAL_ENCRYPTION_KEY` | When DB credentials are used | Base64-encoded AES-256 master key |
-| `CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | During key rotation only | Previous master key |
-| `LDAP_BIND_PASSWORD` | When LDAP auth is configured | LDAP bind password |
-| `SMTP_PASSWORD` | When email notifications are configured | SMTP password |
-| `SMTP_USERNAME` | When email notifications are configured | SMTP username |
-
-#### 3. Chef API Key Secret (`chefKeys`)
-
-Chef API private keys are mounted as files (not env vars) because they can be multi-line PEM content.
-
-- `chefKeys.existingSecret` — references an existing Secret where each key is a filename (e.g. `myorg-production.pem`) and the value is the PEM content. Mounted at `/etc/chef-migration-metrics/keys/`.
-- `chefKeys.keys` — inline key data rendered into a chart-managed Secret. Not recommended for production.
-
-#### 4. TLS Secret (`tlsSecret`)
-
-For `server.tls.mode: static`:
-
-- `tlsSecret.existingSecret` — references an existing Kubernetes TLS Secret (e.g. managed by cert-manager). Must contain `tls.crt` and `tls.key`. Mounted at `/etc/chef-migration-metrics/tls/`.
-- `tlsSecret.cert` / `tlsSecret.key` — inline PEM content rendered into a chart-managed Secret. Not recommended for production.
-
-### External Secrets Operator Pattern
-
-For production Kubernetes deployments, the recommended pattern is:
-
-1. Store secrets in an external secrets manager (Vault, AWS Secrets Manager, GCP Secret Manager, Azure Key Vault).
-2. Deploy the External Secrets Operator (ESO) in the cluster.
-3. Create an `ExternalSecret` resource that syncs from the external store to a Kubernetes Secret.
-4. Reference that Kubernetes Secret via `existingSecret` and `chefKeys.existingSecret` in Helm values.
-
-This keeps secret values out of Helm values files, Helm release history, and source control.
 
 ---
 
@@ -444,10 +384,9 @@ The `GET /api/v1/admin/status` endpoint includes a `credential_storage` section:
 | **Database** | Standard PostgreSQL access controls; `encrypted_value` column contains only ciphertext; connection via TLS (`sslmode=verify-full` recommended) |
 | **Transport** | All external connections (PostgreSQL, LDAP, SMTP, Chef API, webhooks) should use TLS |
 | **Filesystem** | PEM files `0600`, key directories `0700`, env files `0640`; owned by service account |
-| **Kubernetes** | Secrets are opaque resources with RBAC; `existingSecret` avoids values in Helm history; ESO pattern recommended for production |
 | **Backups** | Database backups contain only ciphertext; restoring without the master key renders credentials unusable |
 | **Key management** | Master key is external to the database; key and encrypted data never in the same storage system |
-| **Source control** | `.gitignore`, `.dockerignore`, `.helmignore` all exclude `*.pem`, `*.key`, `.env`, `keys/` |
+| **Source control** | `.gitignore` and `.dockerignore` exclude `*.pem`, `*.key`, `.env`, `keys/` |
 | **Deletion** | Credential rows are hard-deleted immediately; aggressive `VACUUM` recommended for high-security environments |
 
 ---
@@ -623,7 +562,7 @@ No external cryptography libraries are required.
 | [`datastore/Specification.md`](../datastore/Specification.md) | `credentials` table schema, encryption model, retention, deletion |
 | [`web-api/Specification.md`](../web-api/Specification.md) | Admin credential CRUD + test endpoints |
 | [`chef-api/Specification.md`](../chef-api/Specification.md) | Chef API signing using resolved credentials |
-| [`packaging/Specification.md`](../packaging/Specification.md) | Helm Secret templates, container mounts, RPM/DEB env files |
+| [`packaging/Specification.md`](../packaging/Specification.md) | RPM/DEB env files, Docker Compose configuration |
 | [`tls/Specification.md`](../tls/Specification.md) | TLS key file handling, ACME storage |
 | [`auth/Specification.md`](../auth/Specification.md) | LDAP bind credential usage, local password hashing |
 | [`logging/Specification.md`](../logging/Specification.md) | `secrets` log scope definition |

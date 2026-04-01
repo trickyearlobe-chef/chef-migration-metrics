@@ -1,11 +1,11 @@
 # =============================================================================
-# Chef Migration Metrics — Example Configuration (Docker Compose)
+# Chef Migration Metrics — Example Configuration (Local Development)
 # =============================================================================
-# This file is mounted into the application container at
-# /etc/chef-migration-metrics/config.yml. Edit it for your environment.
+# Used when running the application on the host with `make run` or `make dev`.
+# The PostgreSQL database is started via Docker Compose (see docker-compose.yml).
 #
-# The DATABASE_URL is injected via environment variable by Docker Compose
-# (see docker-compose.yml), so no datastore section is needed here.
+# Set DATABASE_URL in your shell environment or uncomment the datastore section
+# below. The Docker Compose DB is at localhost:5432 by default.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -18,16 +18,16 @@ organisations:
     chef_server_url: https://chef.example.com
     org_name: my-org
     client_name: chef-migration-metrics
-    client_key_path: /etc/chef-migration-metrics/keys/my-org.pem
+    client_key_path: ./keys/my-org.pem
     # ssl_verify: true          # Set to false to skip TLS certificate verification
-                                 # (e.g. for self-signed certs). Default: true.
+    # (e.g. for self-signed certs). Default: true.
 
   # Additional organisations:
   # - name: my-other-org
   #   chef_server_url: https://chef.example.com
   #   org_name: my-other-org
   #   client_name: chef-migration-metrics
-  #   client_key_path: /etc/chef-migration-metrics/keys/my-other-org.pem
+  #   client_key_path: ./keys/my-other-org.pem
   #   ssl_verify: false          # Disable TLS verification for this org
 
   # Database-stored key (requires CMM_CREDENTIAL_ENCRYPTION_KEY env var):
@@ -86,13 +86,13 @@ readiness:
 # ---------------------------------------------------------------------------
 # Analysis Tools
 # ---------------------------------------------------------------------------
-# The container image ships CookStyle and Test Kitchen under the embedded
-# prefix. If you are running a locally-built binary outside Docker, point
-# this to your own embedded directory or leave it empty to use PATH lookup.
+# RPM/DEB packages ship CookStyle and Test Kitchen under the embedded prefix.
+# When running from source, leave embedded_bin_dir empty to use PATH lookup
+# (install Chef Workstation or `gem install cookstyle test-kitchen`).
 analysis_tools:
-  embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
+  # embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
   # cookstyle_enabled: true     # Set to false to disable CookStyle scanning
-                                 # even when the cookstyle binary is available.
+  # even when the cookstyle binary is available.
   cookstyle_timeout_minutes: 10
   test_kitchen_timeout_minutes: 30
 
@@ -100,7 +100,7 @@ analysis_tools:
 # Web Server
 # ---------------------------------------------------------------------------
 server:
-  listen_address: "0.0.0.0"
+  listen_address: "127.0.0.1"
   port: 8080
   tls:
     mode: "off"

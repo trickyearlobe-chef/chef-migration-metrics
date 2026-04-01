@@ -693,7 +693,7 @@ The analysis component must validate that required tools are available before ac
 
 If both `kitchen` and `cookstyle` are unavailable, the analysis component logs a `WARN` that no compatibility testing is possible. The application continues to run (data collection and dashboard still function) but all cookbooks will be reported as `untested`.
 
-> **Expected state:** In a standard installation (RPM, DEB, or container image), the embedded `kitchen` and `cookstyle` binaries are always present under `/opt/chef-migration-metrics/embedded/bin/` and startup validation will pass. The fallback to `PATH` lookup is provided for development environments and source builds where the embedded tree may not be present.
+> **Expected state:** In a standard installation (RPM or DEB package), the embedded `kitchen` and `cookstyle` binaries are always present under `/opt/chef-migration-metrics/embedded/bin/` and startup validation will pass. The fallback to `PATH` lookup is provided for development environments and source builds where the embedded tree may not be present.
 
 ---
 

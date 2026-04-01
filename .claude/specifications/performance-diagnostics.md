@@ -74,7 +74,7 @@ PostgreSQL already collects detailed performance statistics internally. Querying
 Two data sources:
 
 - **Built-in views** (`pg_stat_user_tables`, `pg_stat_user_indexes`) — always available, no setup, give table/index-level health.
-- **`pg_stat_statements` extension** — ships with PostgreSQL as a contrib module (included in the Docker `postgres` image). Gives per-query execution time, call counts, and rows. Requires a one-time `CREATE EXTENSION` (via migration) and a `shared_preload_libraries` config change (via Docker/Helm env var).
+- **`pg_stat_statements` extension** — ships with PostgreSQL as a contrib module (included in the Docker `postgres` image). Gives per-query execution time, call counts, and rows. Requires a one-time `CREATE EXTENSION` (via migration) and a `shared_preload_libraries` config change (via Docker Compose or PostgreSQL config).
 
 ### Migration: Enable `pg_stat_statements`
 
@@ -92,7 +92,7 @@ DROP EXTENSION IF EXISTS pg_stat_statements;
 
 The extension requires `shared_preload_libraries = 'pg_stat_statements'` in `postgresql.conf`. This is set via:
 - **Docker Compose:** add `-c shared_preload_libraries=pg_stat_statements` to the postgres command
-- **Helm:** add the same to the PostgreSQL container args or use a custom `postgresql.conf`
+- **RPM/DEB (standalone PostgreSQL):** add the same to `postgresql.conf`
 
 If the `shared_preload_libraries` config is missing, `CREATE EXTENSION` will fail. The migration must handle this gracefully — wrap in a `DO` block that catches the error and logs a notice. The endpoint will degrade: table/index stats are still available, but query-level stats return an empty array with a `pg_stat_statements_available: false` flag.
 

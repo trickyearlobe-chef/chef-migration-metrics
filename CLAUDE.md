@@ -117,9 +117,9 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Ignore Files
 
-- The project maintains ignore files for Git (`.gitignore`), Docker (`.dockerignore`), and Helm (`.helmignore`). These must be kept up to date.
+- The project maintains ignore files for Git (`.gitignore`) and Docker (`.dockerignore`). These must be kept up to date.
 - When a new file type, directory, build artifact, or secret pattern is introduced, all relevant ignore files must be reviewed and updated in the same change.
-- Secrets and credentials (`*.pem`, `*.key`, `.env`, `keys/`) must appear in **all** ignore files. Never rely on a single ignore file to prevent accidental exposure.
+- Secrets and credentials (`*.pem`, `*.key`, `.env`, `keys/`) must appear in **both** ignore files. Never rely on a single ignore file to prevent accidental exposure.
 
 ## Tech Debt
 

@@ -63,7 +63,7 @@ All items resolved. This file is kept for reference.
 - **Lean Go dependency tree** — only 4 direct dependencies.
 - **Migrations are clean** — sequential, paired up/down, correct FK ordering.
 - **CI/CD is comprehensive** — lint, test, security scan, multi-arch release,
-  Helm OCI packaging, Dependabot.
-- **Ignore files are well-maintained** — secrets covered in all three files.
-- **Good security posture** — `SECURITY.md`, `govulncheck` in CI, non-root
-  Docker user.
+  Dependabot.
+- **Ignore files are well-maintained** — secrets covered in `.gitignore` and
+  `.dockerignore`.
+- **Good security posture** — `SECURITY.md`, `govulncheck` in CI.
