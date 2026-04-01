@@ -74,7 +74,7 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Git
 
-- All work is local. NEVER push, create PRs, or interact with remotes.
+- All work is local. NEVER push, create GitHub issues, create GitHub PRs, or interact with remotes in any way.
 - Spawned agents NEVER run git commands (add, commit, push, status, etc.). Only the main Claude commits.
 - Every spawn message MUST include: Do NOT run any git commands (add, commit, push, etc.). Write files only — the caller handles git.
 - All tasks must be performed on a branch, never on `main`.
