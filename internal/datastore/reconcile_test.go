@@ -41,9 +41,10 @@ func TestPurgeStaleTargetVersionResult_Total(t *testing.T) {
 		GitRepoComplexity:                 2,
 		GitRepoAutocorrectPreviews:        1,
 		GitRepoTestKitchenResults:         4,
+		MetricSnapshots:                   6,
 	}
-	if r.Total() != 52 {
-		t.Errorf("expected total 52, got %d", r.Total())
+	if r.Total() != 58 {
+		t.Errorf("expected total 58, got %d", r.Total())
 	}
 }
 
