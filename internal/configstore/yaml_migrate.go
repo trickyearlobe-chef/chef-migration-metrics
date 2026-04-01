@@ -54,14 +54,17 @@ func MigrateFromYAML(ctx context.Context, store *Store, cfg *config.Config, yaml
 		return result, nil
 	}
 
-	// Check if config_store already has entries.
-	empty, err := store.IsEmpty(ctx)
+	// Check if config_store already has config section keys (not just
+	// credentials). MigrateFromLegacy may have stored credentials before
+	// this runs, but that doesn't mean the YAML config sections have been
+	// migrated yet. We check for any known config section key.
+	hasConfigSections, err := HasConfigSections(ctx, store)
 	if err != nil {
-		return nil, fmt.Errorf("yaml migrate: check config_store empty: %w", err)
+		return nil, fmt.Errorf("yaml migrate: check config sections: %w", err)
 	}
-	if !empty {
+	if hasConfigSections {
 		result.Skipped = true
-		result.SkipReason = "config_store already has entries; YAML config is ignored"
+		result.SkipReason = "config_store already has config sections; YAML config is ignored"
 		return result, nil
 	}
 
@@ -131,4 +134,30 @@ func writeBootstrapYAML(path string, cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+// HasConfigSections checks whether config_store contains at least one known
+// config section key (as opposed to only credential entries). This
+// distinguishes "legacy credentials were migrated but YAML config sections
+// haven't been stored yet" from "full YAML migration already ran".
+//
+// This is used by both MigrateFromYAML (to decide whether to skip) and by
+// the startup sequence (to decide whether to assemble config from DB).
+func HasConfigSections(ctx context.Context, store *Store) (bool, error) {
+	entries, err := store.List(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	known := make(map[string]bool, len(AllConfigKeys()))
+	for _, k := range AllConfigKeys() {
+		known[k] = true
+	}
+
+	for _, e := range entries {
+		if known[e.Key] {
+			return true, nil
+		}
+	}
+	return false, nil
 }

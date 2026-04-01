@@ -525,14 +525,16 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 		}
 	}
 
-	// Assemble config from DB if config_store has entries.
-	empty, emptyErr := app.cfgStore.IsEmpty(ctx)
-	if emptyErr != nil {
-		csLog.Error(fmt.Sprintf("checking config_store: %v", emptyErr))
-		return emptyErr
+	// Assemble config from DB if config_store has config section keys.
+	// Credential-only entries (from MigrateFromLegacy) don't count — we
+	// need actual config sections before we can replace the YAML config.
+	hasSections, hsErr := configstore.HasConfigSections(ctx, app.cfgStore)
+	if hsErr != nil {
+		csLog.Error(fmt.Sprintf("checking config_store sections: %v", hsErr))
+		return hsErr
 	}
 
-	if !empty {
+	if hasSections {
 		assembled, warnings, assembleErr := configstore.AssembleConfig(ctx, app.cfgStore)
 		if assembleErr != nil {
 			csLog.Error(fmt.Sprintf("assembling config from database: %v", assembleErr))

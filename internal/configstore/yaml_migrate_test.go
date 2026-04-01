@@ -87,13 +87,13 @@ func TestMigrateFromYAML_FullMigration(t *testing.T) {
 // MigrateFromYAML — skips when config store already has entries
 // ---------------------------------------------------------------------------
 
-func TestMigrateFromYAML_SkipsWhenNotEmpty(t *testing.T) {
+func TestMigrateFromYAML_SkipsWhenConfigSectionsExist(t *testing.T) {
 	ctx := context.Background()
 	db := newFakeDB()
 	store := mustNewStore(t, db)
 
-	// Pre-populate config store.
-	if err := store.Set(ctx, "existing_key", json.RawMessage(`"value"`), false, "test"); err != nil {
+	// Pre-populate config store with a known config section key.
+	if err := store.Set(ctx, KeyOrganisations, json.RawMessage(`[]`), false, "test"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestMigrateFromYAML_SkipsWhenNotEmpty(t *testing.T) {
 	}
 
 	if !result.Skipped {
-		t.Fatal("expected migration to be skipped when config store is not empty")
+		t.Fatal("expected migration to be skipped when config store has config sections")
 	}
 	if result.SkipReason == "" {
 		t.Fatal("expected skip reason to be set")
@@ -117,6 +117,38 @@ func TestMigrateFromYAML_SkipsWhenNotEmpty(t *testing.T) {
 	// Verify original file was NOT renamed.
 	if _, err := os.Stat(yamlPath + ".migrated"); !os.IsNotExist(err) {
 		t.Fatal("config.yml.migrated should not exist when migration was skipped")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MigrateFromYAML — credentials-only store does NOT skip migration
+// ---------------------------------------------------------------------------
+
+func TestMigrateFromYAML_RunsWhenOnlyCredentialsExist(t *testing.T) {
+	ctx := context.Background()
+	db := newFakeDB()
+	store := mustNewStore(t, db)
+
+	// Pre-populate config store with only a credential entry (no config sections).
+	if err := store.Set(ctx, "credentials/my-key", json.RawMessage(`{"credential_type":"chef_client_key"}`), true, "migration"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	cfg := minimalFullConfig()
+	yamlDir := t.TempDir()
+	yamlPath := filepath.Join(yamlDir, "config.yml")
+	writeYAML(t, yamlPath, fullYAMLContent())
+
+	result, err := MigrateFromYAML(ctx, store, cfg, yamlPath)
+	if err != nil {
+		t.Fatalf("MigrateFromYAML: %v", err)
+	}
+
+	if result.Skipped {
+		t.Fatalf("expected migration to run when only credentials exist, but it was skipped: %s", result.SkipReason)
+	}
+	if result.SectionsMigrated == 0 {
+		t.Fatal("expected sections to be migrated, got 0")
 	}
 }
 
@@ -148,7 +180,7 @@ func TestMigrateFromYAML_Idempotent(t *testing.T) {
 		t.Fatalf("Count: %v", err)
 	}
 
-	// Second call — config store is now populated, so it should skip.
+	// Second call — config store now has config sections, so it should skip.
 	// The original YAML was already renamed, so pass the bootstrap path.
 	result2, err := MigrateFromYAML(ctx, store, cfg, yamlPath)
 	if err != nil {
