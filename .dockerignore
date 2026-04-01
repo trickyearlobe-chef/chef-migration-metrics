@@ -127,6 +127,7 @@ test-results/
 # =============================================================================
 # Runtime Data (should never be in the source tree, but guard against it)
 # =============================================================================
+.samples/
 pgdata/
 cookbook_data/
 exports/

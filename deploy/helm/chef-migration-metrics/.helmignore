@@ -110,6 +110,11 @@ acme/
 .certmagic/
 
 # =============================================================================
+# Local Data (sample configs, scratch files — not part of the chart)
+# =============================================================================
+.samples/
+
+# =============================================================================
 # Helm chart dependency cache (rebuilt by helm dependency build)
 # =============================================================================
 # NOTE: charts/*.tgz is intentionally NOT ignored here. Helm v4 applies
