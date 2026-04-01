@@ -1,5 +1,7 @@
 # Node Kitchen Archive — Component Specification
 
+> **⛔ PARKED** — This feature is on hold. The Test Kitchen MVP (`test-kitchen-mvp.md`) focuses on validating overlay → converge → verify → destroy against real infrastructure (Proxmox, vSphere, EC2). Node Kitchen Archive may become a Test Kitchen plugin later. Do not start implementation work on this spec.
+
 > **Implementation language:** Go. See `../../Claude.md` for language and concurrency rules.
 
 > Component specification for the Node Kitchen Archive feature of Chef Migration Metrics.
