@@ -1571,6 +1571,39 @@ export async function deleteTestKitchenConfig(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Admin — Config sections
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/git-urls — list git base URLs (admin only). */
+export function fetchGitURLs(): Promise<string[]> {
+  return apiFetch<string[]>(buildUrl("/admin/config/git-urls"));
+}
+
+/** PUT /api/v1/admin/config/git-urls — save git base URLs (admin only). */
+export async function saveGitURLs(urls: string[]): Promise<string[]> {
+  const url = buildUrl("/admin/config/git-urls");
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(urls),
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      message = body.message ?? body.error ?? message;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return res.json() as Promise<string[]>;
+}
+
+// ---------------------------------------------------------------------------
 // Re-export Pagination type for convenience
 // ---------------------------------------------------------------------------
 

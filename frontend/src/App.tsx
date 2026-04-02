@@ -28,6 +28,7 @@ import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
 import { AdminPerformancePage } from "./pages/AdminPerformancePage";
 import { AdminCredentialsPage } from "./pages/credentials";
 import { AdminTestKitchenPage } from "./pages/AdminTestKitchenPage";
+import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -201,6 +202,14 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminTestKitchenPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/git-urls"
+                element={
+                  <RequireAdmin>
+                    <AdminGitURLsPage />
                   </RequireAdmin>
                 }
               />
