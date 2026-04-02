@@ -1610,3 +1610,64 @@ func Parse(data []byte) (*Config, *Warnings, error) {
 	}
 	return &cfg, warnings, nil
 }
+
+// ParseRaw unmarshals YAML bytes into a Config, applies defaults, and
+// applies environment variable overrides — but does NOT validate. This is
+// used when loading a bootstrap-only YAML file (after YAML-to-DB
+// migration); validation runs later on the assembled config from the
+// database.
+func ParseRaw(data []byte) (*Config, error) {
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing configuration YAML: %w", err)
+	}
+
+	// Also parse flat bootstrap keys written by writeBootstrapYAML
+	// (database_url, listen_address, listen_port). These don't map to
+	// Config's nested YAML structure so they are silently ignored by the
+	// unmarshal above; we apply them explicitly before setDefaults so
+	// that defaults don't clobber them and env overrides can still win.
+	var bootstrap struct {
+		DatabaseURL   string `yaml:"database_url"`
+		ListenAddress string `yaml:"listen_address"`
+		ListenPort    int    `yaml:"listen_port"`
+	}
+	if err := yaml.Unmarshal(data, &bootstrap); err == nil {
+		if cfg.Datastore.URL == "" && bootstrap.DatabaseURL != "" {
+			cfg.Datastore.URL = bootstrap.DatabaseURL
+		}
+		if cfg.Server.ListenAddress == "" && bootstrap.ListenAddress != "" {
+			cfg.Server.ListenAddress = bootstrap.ListenAddress
+		}
+		if cfg.Server.Port == 0 && bootstrap.ListenPort != 0 {
+			cfg.Server.Port = bootstrap.ListenPort
+		}
+	}
+
+	cfg.explicitExportsDir = cfg.Exports.OutputDirectory != ""
+	cfg.explicitESDir = cfg.Elasticsearch.OutputDirectory != ""
+
+	cfg.setDefaults()
+	cfg.applyEnvOverrides()
+
+	return &cfg, nil
+}
+
+// LoadRaw reads a YAML config file and parses it without validation.
+// This is the non-validating equivalent of Load, used for bootstrap
+// YAML files where validation happens later on the assembled config.
+func LoadRaw(path string) (*Config, error) {
+	if path == "" {
+		path = os.Getenv("CHEF_MIGRATION_METRICS_CONFIG")
+	}
+	if path == "" {
+		return nil, fmt.Errorf("no configuration file path provided (set CHEF_MIGRATION_METRICS_CONFIG or pass path to Load)")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading configuration file: %w", err)
+	}
+
+	return ParseRaw(data)
+}

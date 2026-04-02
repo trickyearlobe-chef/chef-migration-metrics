@@ -170,15 +170,16 @@ func (app *serverApp) loadConfig(configPath string) error {
 	}
 	app.configPath = configPath
 
-	cfg, warnings, err := config.Load(configPath)
+	// Use LoadRaw (no validation) first. Bootstrap YAML files written
+	// after YAML-to-DB migration contain only database_url,
+	// listen_address, listen_port and would fail full validation.
+	// Validation is deferred: full YAML is validated here; bootstrap
+	// YAML is validated later on the assembled-from-DB config in
+	// setupConfigStore → AssembleConfig.
+	cfg, err := config.LoadRaw(configPath)
 	if err != nil {
 		app.startup.Error(fmt.Sprintf("loading configuration: %v", err))
 		return err
-	}
-	if warnings != nil {
-		for _, w := range warnings.Messages {
-			app.startup.Warn(fmt.Sprintf("config: %s", w))
-		}
 	}
 
 	app.configuredLevel = logging.INFO
@@ -199,6 +200,19 @@ func (app *serverApp) loadConfig(configPath string) error {
 	// bootstrap-only. This determines whether YAML auto-migration runs.
 	app.isFullYAML = configstore.IsFullYAML(cfg)
 	if app.isFullYAML {
+		// Full YAML must be validated now — MigrateFromYAML expects a
+		// validated config, and this is the only config the app will use
+		// if config_store is empty.
+		warnings, valErr := cfg.Validate()
+		if valErr != nil {
+			app.startup.Error(fmt.Sprintf("loading configuration: %v", valErr))
+			return valErr
+		}
+		if warnings != nil {
+			for _, w := range warnings.Messages {
+				app.startup.Warn(fmt.Sprintf("config: %s", w))
+			}
+		}
 		app.startup.Info("configuration loaded successfully (full YAML detected)")
 	} else {
 		app.startup.Info("configuration loaded successfully (bootstrap YAML detected)")
@@ -1045,6 +1059,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 
 	if app.credStore != nil {
 		routerOpts = append(routerOpts, webapi.WithCredentialStore(app.credStore))
+	}
+
+	if app.cfgStore != nil && app.configHolder != nil {
+		routerOpts = append(routerOpts, webapi.WithConfigStore(app.cfgStore, app.configHolder))
 	}
 
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
