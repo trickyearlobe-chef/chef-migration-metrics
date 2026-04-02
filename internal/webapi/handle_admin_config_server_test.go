@@ -82,13 +82,16 @@ func TestAdminConfigServer_PUT_Success_TLSOff(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	restartRequired := decodePutValue(t, w, &got)
 	tls, ok := got["tls"].(map[string]any)
 	if !ok {
 		t.Fatalf("tls field missing or wrong type: %v", got["tls"])
 	}
 	if tls["mode"] != "off" {
 		t.Errorf("tls.mode = %v, want %q", tls["mode"], "off")
+	}
+	if !restartRequired {
+		t.Error("server PUT should set restart_required = true")
 	}
 
 	// Verify all three sub-keys were persisted.

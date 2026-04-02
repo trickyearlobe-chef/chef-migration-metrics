@@ -134,11 +134,11 @@ Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 - [x] `PUT /api/v1/admin/config/notifications` — update notifications
 - [x] `GET /api/v1/admin/config/logging` — logging settings
 - [x] `PUT /api/v1/admin/config/logging` — update logging
-- [ ] Validation per section (reuse existing `Validate` methods)
-- [ ] `restart_required` boolean in PUT responses
-- [ ] Secret field redaction in GET responses
-- [ ] Adapt credential API endpoints to `config_store` backend
-- [ ] Handler tests for each endpoint (success, validation errors, auth)
+- [x] Validation per section (inline in each PUT handler)
+- [x] `restart_required` boolean in PUT responses (`server` and `auth` return true; all others false)
+- [x] Secret field redaction in GET responses (N/A — config sections store credential names/references, not plaintext secrets; actual secrets live under `credentials/` keys with `secret=true`)
+- [x] Adapt credential API endpoints to `config_store` backend (already wired in `main.go` via `CredentialStoreAdapter`; handlers use `r.credentialStore` which is the adapter)
+- [x] Handler tests for each endpoint (success, validation errors, method-not-allowed)
 
 ## Phase 3: Admin UI Pages
 

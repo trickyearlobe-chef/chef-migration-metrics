@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,14 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 )
+
+// putConfigResponse is the standard JSON body for PUT admin config responses.
+// Value contains the stored section data; RestartRequired is true when the
+// change requires an application restart to take effect.
+type putConfigResponse struct {
+	Value           json.RawMessage `json:"value"`
+	RestartRequired bool            `json:"restart_required"`
+}
 
 // adminConfigCronRe matches a basic 5-field cron expression.
 var adminConfigCronRe = regexp.MustCompile(`^(\S+\s+){4}\S+$`)
@@ -68,7 +77,7 @@ func (r *Router) putAdminConfigCollection(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Collection: input}, configstore.KeyCollection)
+	r.storeAdminConfigSection(w, req, &config.Config{Collection: input}, configstore.KeyCollection, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +117,7 @@ func (r *Router) putAdminConfigTargetVersions(w http.ResponseWriter, req *http.R
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{TargetChefVersions: input}, configstore.KeyTargetChefVersions)
+	r.storeAdminConfigSection(w, req, &config.Config{TargetChefVersions: input}, configstore.KeyTargetChefVersions, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +149,7 @@ func (r *Router) putAdminConfigGitURLs(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{GitBaseURLs: input}, configstore.KeyGitBaseURLs)
+	r.storeAdminConfigSection(w, req, &config.Config{GitBaseURLs: input}, configstore.KeyGitBaseURLs, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -193,7 +202,7 @@ func (r *Router) putAdminConfigConcurrency(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency)
+	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +243,7 @@ func (r *Router) putAdminConfigLogging(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Logging: input}, configstore.KeyLogging)
+	r.storeAdminConfigSection(w, req, &config.Config{Logging: input}, configstore.KeyLogging, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +324,7 @@ func (r *Router) putAdminConfigOrganisations(w http.ResponseWriter, req *http.Re
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Organisations: input}, configstore.KeyOrganisations)
+	r.storeAdminConfigSection(w, req, &config.Config{Organisations: input}, configstore.KeyOrganisations, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +350,7 @@ func decodeAdminConfigBody(w http.ResponseWriter, req *http.Request, target any)
 // storeAdminConfigSection serialises the named key from partial via
 // ConfigToSections, writes it to the config store, optionally triggers a
 // ConfigHolder reload, and responds with the stored JSON on success.
-func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Request, partial *config.Config, key string) {
+func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Request, partial *config.Config, key string, restartRequired bool) {
 	sections, err := configstore.ConfigToSections(partial)
 	if err != nil {
 		r.logf("ERROR", "admin/config/%s: serialise: %v", key, err)
@@ -364,7 +373,7 @@ func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Reques
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, value)
+	WriteJSON(w, http.StatusOK, putConfigResponse{Value: value, RestartRequired: restartRequired})
 }
 
 // writeAdminConfigSection serialises the named key from partial and writes

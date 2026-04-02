@@ -105,5 +105,5 @@ func (r *Router) putAdminConfigNotifications(w http.ResponseWriter, req *http.Re
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Notifications: input}, configstore.KeyNotifications)
+	r.storeAdminConfigSection(w, req, &config.Config{Notifications: input}, configstore.KeyNotifications, false)
 }

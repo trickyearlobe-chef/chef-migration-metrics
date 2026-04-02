@@ -85,7 +85,7 @@ func TestAdminConfigAnalysisTools_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if got["cookstyle_timeout_minutes"] != float64(10) {
 		t.Errorf("cookstyle_timeout_minutes = %v, want 10", got["cookstyle_timeout_minutes"])
 	}
@@ -273,7 +273,7 @@ func TestAdminConfigTestKitchen_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if got["driver"] != "dokken" {
 		t.Errorf("driver = %v, want dokken", got["driver"])
 	}
@@ -387,7 +387,7 @@ func TestAdminConfigTestKitchen_DELETE_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 
 	// Verify KeyAnalysisTools entry still exists in store.
 	stored, err := store.Get(context.Background(), configstore.KeyAnalysisTools)

@@ -95,7 +95,7 @@ func TestAdminConfigAuth_PUT_Success_Local(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	restartRequired := decodePutValue(t, w, &got)
 	providers, ok := got["providers"].([]any)
 	if !ok || len(providers) == 0 {
 		t.Fatalf("expected providers in response: %v", got["providers"])
@@ -106,6 +106,9 @@ func TestAdminConfigAuth_PUT_Success_Local(t *testing.T) {
 	}
 	if first["type"] != "local" {
 		t.Errorf("provider type = %v, want \"local\"", first["type"])
+	}
+	if !restartRequired {
+		t.Error("auth PUT should set restart_required = true")
 	}
 }
 

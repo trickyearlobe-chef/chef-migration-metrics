@@ -74,5 +74,5 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Auth: input}, configstore.KeyAuth)
+	r.storeAdminConfigSection(w, req, &config.Config{Auth: input}, configstore.KeyAuth, true)
 }

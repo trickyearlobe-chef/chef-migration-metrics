@@ -69,7 +69,7 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{AnalysisTools: input}, configstore.KeyAnalysisTools)
+	r.storeAdminConfigSection(w, req, &config.Config{AnalysisTools: input}, configstore.KeyAnalysisTools, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ func (r *Router) putAdminConfigTestKitchen(w http.ResponseWriter, req *http.Requ
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, tkJSON)
+	WriteJSON(w, http.StatusOK, putConfigResponse{Value: tkJSON, RestartRequired: false})
 }
 
 func (r *Router) deleteAdminConfigTestKitchen(w http.ResponseWriter, req *http.Request) {
@@ -176,7 +176,7 @@ func (r *Router) deleteAdminConfigTestKitchen(w http.ResponseWriter, req *http.R
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, tkJSON)
+	WriteJSON(w, http.StatusOK, putConfigResponse{Value: tkJSON, RestartRequired: false})
 }
 
 // ---------------------------------------------------------------------------

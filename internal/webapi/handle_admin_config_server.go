@@ -188,5 +188,5 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, data)
+	WriteJSON(w, http.StatusOK, putConfigResponse{Value: data, RestartRequired: true})
 }

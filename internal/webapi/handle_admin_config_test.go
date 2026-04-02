@@ -137,6 +137,21 @@ func decodeBody(t *testing.T, r *httptest.ResponseRecorder, v any) {
 	}
 }
 
+// decodePutValue decodes the "value" field from a PUT response envelope into v
+// and returns the restart_required flag. v must be a pointer. Pass nil to skip
+// value decoding and only retrieve the flag.
+func decodePutValue(t *testing.T, w *httptest.ResponseRecorder, v any) bool {
+	t.Helper()
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if v != nil {
+		if err := json.Unmarshal(resp.Value, v); err != nil {
+			t.Fatalf("decodePutValue: unmarshal: %v\nvalue: %s", err, resp.Value)
+		}
+	}
+	return resp.RestartRequired
+}
+
 // assertStatus fails the test if the recorder's status code is not want.
 func assertStatus(t *testing.T, w *httptest.ResponseRecorder, want int) {
 	t.Helper()
@@ -234,7 +249,10 @@ func TestAdminConfigCollection_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	restartRequired := decodePutValue(t, w, &got)
+	if restartRequired {
+		t.Error("collection PUT should not require restart")
+	}
 	if got["schedule"] != "0 2 * * *" {
 		t.Errorf("schedule = %v, want %q", got["schedule"], "0 2 * * *")
 	}
@@ -392,7 +410,7 @@ func TestAdminConfigTargetVersions_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got []string
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if len(got) != 2 || got[0] != "15.3.0" {
 		t.Errorf("versions = %v, want [15.3.0 17.10.0]", got)
 	}
@@ -501,7 +519,7 @@ func TestAdminConfigGitURLs_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got []string
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if len(got) != 2 || got[0] != "https://github.com" {
 		t.Errorf("git_base_urls = %v", got)
 	}
@@ -608,7 +626,7 @@ func TestAdminConfigConcurrency_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if got["organisation_collection"] != float64(5) {
 		t.Errorf("organisation_collection = %v, want 5", got["organisation_collection"])
 	}
@@ -734,7 +752,7 @@ func TestAdminConfigLogging_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if got["level"] != "DEBUG" {
 		t.Errorf("level = %v, want DEBUG", got["level"])
 	}
@@ -908,7 +926,7 @@ func TestAdminConfigOrganisations_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got []map[string]any
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 organisation, got %d", len(got))
 	}
@@ -941,7 +959,7 @@ func TestAdminConfigOrganisations_PUT_Success_SSLVerifyFalse(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got []map[string]any
-	decodeBody(t, w, &got)
+	decodePutValue(t, w, &got)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 organisation, got %d", len(got))
 	}
