@@ -420,6 +420,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.adminOnly("/api/v1/admin/credentials", r.handleCredentials)
 	r.adminOnly("/api/v1/admin/credentials/", r.handleCredentials)
+	r.adminOnly("/api/v1/admin/config/organisations", r.handleAdminConfigOrganisations)
 	r.adminOnly("/api/v1/admin/config/collection", r.handleAdminConfigCollection)
 	r.adminOnly("/api/v1/admin/config/target-versions", r.handleAdminConfigTargetVersions)
 	r.adminOnly("/api/v1/admin/config/git-urls", r.handleAdminConfigGitURLs)

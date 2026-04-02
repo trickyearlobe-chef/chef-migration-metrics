@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -810,6 +812,306 @@ func TestAdminConfigLogging_PUT_405_WrongMethod(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/config/logging", nil)
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusMethodNotAllowed)
+	assertErrorCode(t, w, ErrCodeMethodNotAllowed)
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/admin/config/organisations
+// ---------------------------------------------------------------------------
+
+func TestAdminConfigOrganisations_GET(t *testing.T) {
+	cfg := testConfig()
+	cfg.Organisations = []config.Organisation{
+		{
+			Name:                "prod",
+			ChefServerURL:       "https://chef.example.com",
+			OrgName:             "prod",
+			ClientName:          "client",
+			ClientKeyCredential: "my-key",
+		},
+	}
+	r := newTestRouterForAdminConfig(cfg, nil, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/organisations", nil)
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodeBody(t, w, &got)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 organisation, got %d", len(got))
+	}
+	if got[0]["name"] != "prod" {
+		t.Errorf("name = %v, want %q", got[0]["name"], "prod")
+	}
+	if got[0]["chef_server_url"] != "https://chef.example.com" {
+		t.Errorf("chef_server_url = %v, want %q", got[0]["chef_server_url"], "https://chef.example.com")
+	}
+}
+
+func TestAdminConfigOrganisations_GET_NilStore(t *testing.T) {
+	r := newTestRouterForAdminConfig(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/organisations", nil)
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+}
+
+func TestAdminConfigOrganisations_GET_UsesHolder(t *testing.T) {
+	cfg := testConfig()
+	cfg.Organisations = []config.Organisation{
+		{
+			Name:                "holder-org",
+			ChefServerURL:       "https://chef.example.com",
+			OrgName:             "holder-org",
+			ClientName:          "client",
+			ClientKeyCredential: "my-key",
+		},
+	}
+	holder := configstore.NewConfigHolder(cfg, nil)
+	r := newTestRouterForAdminConfig(testConfig(), nil, holder)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/organisations", nil)
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodeBody(t, w, &got)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 organisation, got %d", len(got))
+	}
+	if got[0]["name"] != "holder-org" {
+		t.Errorf("name = %v, want %q", got[0]["name"], "holder-org")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/v1/admin/config/organisations
+// ---------------------------------------------------------------------------
+
+const validOrgBody = `[{"name":"prod","chef_server_url":"https://chef.example.com","org_name":"prod","client_name":"client","client_key_credential":"my-key"}]`
+
+func TestAdminConfigOrganisations_PUT_Success(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(validOrgBody))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodeBody(t, w, &got)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 organisation, got %d", len(got))
+	}
+	if got[0]["name"] != "prod" {
+		t.Errorf("name = %v, want %q", got[0]["name"], "prod")
+	}
+
+	// Verify value was persisted in the store.
+	stored, err := store.Get(context.Background(), configstore.KeyOrganisations)
+	if err != nil {
+		t.Fatalf("store.Get: %v", err)
+	}
+	var storedOrgs []map[string]any
+	if err := json.Unmarshal(stored, &storedOrgs); err != nil {
+		t.Fatalf("unmarshal stored: %v", err)
+	}
+	if len(storedOrgs) != 1 || storedOrgs[0]["name"] != "prod" {
+		t.Errorf("stored orgs = %v, want [{name:prod ...}]", storedOrgs)
+	}
+}
+
+func TestAdminConfigOrganisations_PUT_Success_SSLVerifyFalse(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"prod","chef_server_url":"https://chef.example.com","org_name":"prod","client_name":"client","client_key_credential":"my-key","ssl_verify":false}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodeBody(t, w, &got)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 organisation, got %d", len(got))
+	}
+	if got[0]["ssl_verify"] != false {
+		t.Errorf("ssl_verify = %v, want false", got[0]["ssl_verify"])
+	}
+}
+
+func TestAdminConfigOrganisations_PUT_Success_SSLVerifyOmitted(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	// ssl_verify omitted — null pointer is valid.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(validOrgBody))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+}
+
+func TestAdminConfigOrganisations_PUT_Success_ClientKeyPath(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	f, err := os.CreateTemp(t.TempDir(), "*.pem")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	f.Close()
+	keyPath := filepath.ToSlash(f.Name())
+
+	body := `[{"name":"prod","chef_server_url":"https://chef.example.com","org_name":"prod","client_name":"client","client_key_path":"` + keyPath + `"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+}
+
+func TestAdminConfigOrganisations_PUT_503_NilStore(t *testing.T) {
+	r := newTestRouterForAdminConfig(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(validOrgBody))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusServiceUnavailable)
+	assertErrorCode(t, w, ErrCodeServiceUnavailable)
+}
+
+func TestAdminConfigOrganisations_PUT_400_InvalidJSON(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader("{"))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusBadRequest)
+	assertErrorCode(t, w, ErrCodeBadRequest)
+}
+
+func TestAdminConfigOrganisations_PUT_422_EmptyList(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader("[]"))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_422_MissingName(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"chef_server_url":"https://chef.example.com","org_name":"prod","client_name":"client","client_key_credential":"k"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_422_DuplicateName(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"prod","chef_server_url":"https://chef.example.com","org_name":"prod","client_name":"client","client_key_credential":"k"},{"name":"prod","chef_server_url":"https://chef2.example.com","org_name":"prod2","client_name":"client","client_key_credential":"k2"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_422_MissingChefServerURL(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"prod","org_name":"prod","client_name":"client","client_key_credential":"k"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_422_MissingOrgName(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"prod","chef_server_url":"https://chef.example.com","client_name":"client","client_key_credential":"k"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_422_MissingClientName(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"prod","chef_server_url":"https://chef.example.com","org_name":"prod","client_key_credential":"k"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_422_NoKeyField(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"prod","chef_server_url":"https://chef.example.com","org_name":"prod","client_name":"client"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_422_ClientKeyPathNotFound(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"prod","chef_server_url":"https://chef.example.com","org_name":"prod","client_name":"client","client_key_path":"/nonexistent/path/key.pem"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigOrganisations_PUT_405_WrongMethod(t *testing.T) {
+	r := newTestRouterForAdminConfig(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/config/organisations", nil)
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusMethodNotAllowed)

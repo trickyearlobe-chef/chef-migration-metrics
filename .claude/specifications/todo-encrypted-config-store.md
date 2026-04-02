@@ -111,8 +111,8 @@ Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 
 ## Phase 2: API Endpoints
 
-- [ ] `GET /api/v1/admin/config/organisations` — list organisations
-- [ ] `PUT /api/v1/admin/config/organisations` — replace organisations
+- [x] `GET /api/v1/admin/config/organisations` — list organisations
+- [x] `PUT /api/v1/admin/config/organisations` — replace organisations
 - [x] `GET /api/v1/admin/config/collection` — collection settings
 - [x] `PUT /api/v1/admin/config/collection` — update collection
 - [x] `GET /api/v1/admin/config/target-versions` — target versions

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
@@ -234,6 +235,87 @@ func (r *Router) putAdminConfigLogging(w http.ResponseWriter, req *http.Request)
 	}
 
 	r.storeAdminConfigSection(w, req, &config.Config{Logging: input}, configstore.KeyLogging)
+}
+
+// ---------------------------------------------------------------------------
+// GET/PUT /api/v1/admin/config/organisations
+// ---------------------------------------------------------------------------
+
+func (r *Router) handleAdminConfigOrganisations(w http.ResponseWriter, req *http.Request) {
+	switch req.Method {
+	case http.MethodGet:
+		cfg := r.liveConfig()
+		r.writeAdminConfigSection(w, &config.Config{Organisations: cfg.Organisations}, configstore.KeyOrganisations)
+	case http.MethodPut:
+		r.putAdminConfigOrganisations(w, req)
+	default:
+		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
+			"This endpoint supports GET and PUT.")
+	}
+}
+
+func (r *Router) putAdminConfigOrganisations(w http.ResponseWriter, req *http.Request) {
+	if r.configStore == nil {
+		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
+			"Config storage is not configured. Set CMM_CREDENTIAL_ENCRYPTION_KEY to enable.")
+		return
+	}
+
+	var input []config.Organisation
+	if !decodeAdminConfigBody(w, req, &input) {
+		return
+	}
+
+	if len(input) == 0 {
+		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+			"at least one organisation must be configured.")
+		return
+	}
+
+	seen := make(map[string]bool)
+	for i, org := range input {
+		prefix := fmt.Sprintf("organisations[%d]", i)
+		if org.Name == "" {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("%s: name is required", prefix))
+			return
+		}
+		if seen[org.Name] {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("%s: duplicate organisation name %q", prefix, org.Name))
+			return
+		}
+		seen[org.Name] = true
+		if org.ChefServerURL == "" {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("%s: chef_server_url is required", prefix))
+			return
+		}
+		if org.OrgName == "" {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("%s: org_name is required", prefix))
+			return
+		}
+		if org.ClientName == "" {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("%s: client_name is required", prefix))
+			return
+		}
+		if org.ClientKeyPath == "" && org.ClientKeyCredential == "" {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("%s: one of client_key_path or client_key_credential is required", prefix))
+			return
+		}
+		if org.ClientKeyPath != "" {
+			if _, err := os.Stat(org.ClientKeyPath); err != nil {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: client_key_path %q: %v", prefix, org.ClientKeyPath, err))
+				return
+			}
+		}
+	}
+
+	r.storeAdminConfigSection(w, req, &config.Config{Organisations: input}, configstore.KeyOrganisations)
 }
 
 // ---------------------------------------------------------------------------
