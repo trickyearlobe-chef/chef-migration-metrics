@@ -63,7 +63,7 @@ export function AdminGitURLsPage() {
     setSuccess(false);
     const trimmed = urls.map((u) => u.trim()).filter(Boolean);
     try {
-      const updated = await saveGitURLs(trimmed);
+      const { value: updated } = await saveGitURLs(trimmed);
       setUrls(updated ?? trimmed);
       setSaved(updated ?? trimmed);
       setSuccess(true);

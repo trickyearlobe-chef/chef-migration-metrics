@@ -1574,22 +1574,25 @@ export async function deleteTestKitchenConfig(): Promise<void> {
 // Admin — Config sections
 // ---------------------------------------------------------------------------
 
-/** GET /api/v1/admin/config/git-urls — list git base URLs (admin only). */
-export function fetchGitURLs(): Promise<string[]> {
-  return apiFetch<string[]>(buildUrl("/admin/config/git-urls"));
+// ---------------------------------------------------------------------------
+// Admin config — shared types
+// ---------------------------------------------------------------------------
+
+/**
+ * Standard envelope returned by all PUT /api/v1/admin/config/* endpoints.
+ * `value` contains the stored section data (same shape as the GET response).
+ * `restartRequired` is true when the change requires an application restart
+ * (currently: server TLS settings, auth providers).
+ */
+export interface PutConfigResponse<T> {
+  value: T;
+  restartRequired: boolean;
 }
 
-/** PUT /api/v1/admin/config/git-urls — save git base URLs (admin only). */
-export async function saveGitURLs(urls: string[]): Promise<string[]> {
-  const url = buildUrl("/admin/config/git-urls");
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(urls),
-  });
+/** Decode a PUT config response envelope from a fetch Response. */
+async function decodePutConfigResponse<T>(
+  res: Response,
+): Promise<PutConfigResponse<T>> {
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
@@ -1600,7 +1603,28 @@ export async function saveGitURLs(urls: string[]): Promise<string[]> {
     }
     throw new Error(message);
   }
-  return res.json() as Promise<string[]>;
+  const envelope = (await res.json()) as {
+    value: T;
+    restart_required: boolean;
+  };
+  return { value: envelope.value, restartRequired: envelope.restart_required };
+}
+
+/** GET /api/v1/admin/config/git-urls — list git base URLs (admin only). */
+export function fetchGitURLs(): Promise<string[]> {
+  return apiFetch<string[]>(buildUrl("/admin/config/git-urls"));
+}
+
+/** PUT /api/v1/admin/config/git-urls — save git base URLs (admin only). */
+export async function saveGitURLs(
+  urls: string[],
+): Promise<PutConfigResponse<string[]>> {
+  const res = await fetch(buildUrl("/admin/config/git-urls"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(urls),
+  });
+  return decodePutConfigResponse<string[]>(res);
 }
 
 // ---------------------------------------------------------------------------
