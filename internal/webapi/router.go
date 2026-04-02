@@ -15,6 +15,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
@@ -89,6 +90,13 @@ type Router struct {
 	// key (CMM_CREDENTIAL_ENCRYPTION_KEY) is not configured — credential
 	// endpoints return 503.
 	credentialStore secrets.CredentialStore
+
+	// configStore provides encrypted config CRUD for the admin config
+	// section endpoints. Nil when CMM_CREDENTIAL_ENCRYPTION_KEY is not set.
+	configStore *configstore.Store
+	// configHolder provides live config access and reload for the admin
+	// config section endpoints. Nil when not wired up.
+	configHolder *configstore.ConfigHolder
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -174,6 +182,16 @@ func WithCredentialStore(store secrets.CredentialStore) RouterOption {
 	}
 }
 
+// WithConfigStore wires in the encrypted config store and config holder
+// used by the admin config section endpoints. When nil, config section
+// endpoints return 503 Service Unavailable.
+func WithConfigStore(store *configstore.Store, holder *configstore.ConfigHolder) RouterOption {
+	return func(r *Router) {
+		r.configStore = store
+		r.configHolder = holder
+	}
+}
+
 // NewRouter creates a new Router with all routes registered. The EventHub
 // must already be running (via go hub.Run()) before requests are served.
 //
@@ -195,11 +213,12 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 	// from startup output when a component was defined but never passed
 	// to NewRouter — the most common class of silent wiring bug with
 	// functional options.
-	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t perf=%t collection_trigger=%t",
+	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t",
 		r.logger != nil,
 		r.frontendFS != nil,
 		r.authMiddleware != nil,
 		r.credentialStore != nil,
+		r.configStore != nil,
 		r.recorder != nil,
 		r.triggerCollection != nil,
 	)
@@ -401,6 +420,11 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.adminOnly("/api/v1/admin/credentials", r.handleCredentials)
 	r.adminOnly("/api/v1/admin/credentials/", r.handleCredentials)
+	r.adminOnly("/api/v1/admin/config/collection", r.handleAdminConfigCollection)
+	r.adminOnly("/api/v1/admin/config/target-versions", r.handleAdminConfigTargetVersions)
+	r.adminOnly("/api/v1/admin/config/git-urls", r.handleAdminConfigGitURLs)
+	r.adminOnly("/api/v1/admin/config/concurrency", r.handleAdminConfigConcurrency)
+	r.adminOnly("/api/v1/admin/config/logging", r.handleAdminConfigLogging)
 	r.adminOnly("/api/v1/admin/test-kitchen/config", r.handleTestKitchenConfig)
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
@@ -570,6 +594,15 @@ func secondsToDuration(n int) time.Duration {
 		return 10 * time.Second
 	}
 	return time.Duration(n) * time.Second
+}
+
+// liveConfig returns the current live config from the ConfigHolder when
+// available, otherwise falls back to the static config set at construction.
+func (r *Router) liveConfig() *config.Config {
+	if r.configHolder != nil {
+		return r.configHolder.Get()
+	}
+	return r.cfg
 }
 
 // logf logs a formatted message if a logger is configured.
