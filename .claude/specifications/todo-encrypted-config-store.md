@@ -121,17 +121,17 @@ Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 - [x] `PUT /api/v1/admin/config/git-urls` — update git URLs
 - [x] `GET /api/v1/admin/config/concurrency` — concurrency settings
 - [x] `PUT /api/v1/admin/config/concurrency` — update concurrency
-- [ ] `GET /api/v1/admin/config/analysis-tools` — analysis tools config
-- [ ] `PUT /api/v1/admin/config/analysis-tools` — update analysis tools
-- [ ] `GET /api/v1/admin/config/test-kitchen` — test kitchen config
-- [ ] `PUT /api/v1/admin/config/test-kitchen` — update test kitchen
-- [ ] `DELETE /api/v1/admin/config/test-kitchen` — reset to defaults
-- [ ] `GET /api/v1/admin/config/server` — server settings
-- [ ] `PUT /api/v1/admin/config/server` — update server settings
-- [ ] `GET /api/v1/admin/config/auth` — auth config
-- [ ] `PUT /api/v1/admin/config/auth` — update auth
-- [ ] `GET /api/v1/admin/config/notifications` — notifications
-- [ ] `PUT /api/v1/admin/config/notifications` — update notifications
+- [x] `GET /api/v1/admin/config/analysis-tools` — analysis tools config
+- [x] `PUT /api/v1/admin/config/analysis-tools` — update analysis tools
+- [x] `GET /api/v1/admin/config/test-kitchen` — test kitchen config
+- [x] `PUT /api/v1/admin/config/test-kitchen` — update test kitchen
+- [x] `DELETE /api/v1/admin/config/test-kitchen` — reset to defaults
+- [x] `GET /api/v1/admin/config/server` — server settings
+- [x] `PUT /api/v1/admin/config/server` — update server settings
+- [x] `GET /api/v1/admin/config/auth` — auth config
+- [x] `PUT /api/v1/admin/config/auth` — update auth
+- [x] `GET /api/v1/admin/config/notifications` — notifications
+- [x] `PUT /api/v1/admin/config/notifications` — update notifications
 - [x] `GET /api/v1/admin/config/logging` — logging settings
 - [x] `PUT /api/v1/admin/config/logging` — update logging
 - [ ] Validation per section (reuse existing `Validate` methods)

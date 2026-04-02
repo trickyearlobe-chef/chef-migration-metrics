@@ -258,6 +258,18 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 	return result, nil
 }
 
+// SerializeValue serialises any config value to a JSON RawMessage using yaml
+// struct tags for field names (snake_case). Use this when you need to
+// serialise a config sub-struct (e.g. TestKitchenConfig, ServerConfig) to
+// JSON without going through ConfigToSections.
+func SerializeValue(v any) (json.RawMessage, error) {
+	data, err := yamlToJSON(v)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(data), nil
+}
+
 // yamlToJSON serialises a value to JSON by first marshalling to YAML (which
 // uses the struct's yaml tags for field names), then unmarshalling to a
 // generic interface, then marshalling to JSON. This ensures the JSON output

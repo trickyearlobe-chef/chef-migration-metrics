@@ -1,0 +1,78 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package webapi
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
+)
+
+// ---------------------------------------------------------------------------
+// GET/PUT /api/v1/admin/config/auth
+// ---------------------------------------------------------------------------
+
+func (r *Router) handleAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
+	switch req.Method {
+	case http.MethodGet:
+		cfg := r.liveConfig()
+		r.writeAdminConfigSection(w, &config.Config{Auth: cfg.Auth}, configstore.KeyAuth)
+	case http.MethodPut:
+		r.putAdminConfigAuth(w, req)
+	default:
+		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
+			"This endpoint supports GET and PUT.")
+	}
+}
+
+func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
+	if r.configStore == nil {
+		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
+			"Config storage is not configured. Set CMM_CREDENTIAL_ENCRYPTION_KEY to enable.")
+		return
+	}
+
+	var input config.AuthConfig
+	if !decodeAdminConfigBody(w, req, &input) {
+		return
+	}
+
+	for i, p := range input.Providers {
+		prefix := fmt.Sprintf("auth.providers[%d]", i)
+		switch p.Type {
+		case "local":
+			// no additional fields required
+		case "ldap":
+			if p.Host == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: host is required for ldap provider", prefix))
+				return
+			}
+			if p.BaseDN == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: base_dn is required for ldap provider", prefix))
+				return
+			}
+		case "saml":
+			if p.IDPMetadataURL == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: idp_metadata_url is required for saml provider", prefix))
+				return
+			}
+			if p.SPEntityID == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: sp_entity_id is required for saml provider", prefix))
+				return
+			}
+		default:
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("%s: unknown provider type %q (expected local, ldap, or saml).", prefix, p.Type))
+			return
+		}
+	}
+
+	r.storeAdminConfigSection(w, req, &config.Config{Auth: input}, configstore.KeyAuth)
+}

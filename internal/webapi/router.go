@@ -426,6 +426,11 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/git-urls", r.handleAdminConfigGitURLs)
 	r.adminOnly("/api/v1/admin/config/concurrency", r.handleAdminConfigConcurrency)
 	r.adminOnly("/api/v1/admin/config/logging", r.handleAdminConfigLogging)
+	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools)
+	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen)
+	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer)
+	r.adminOnly("/api/v1/admin/config/notifications", r.handleAdminConfigNotifications)
+	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/test-kitchen/config", r.handleTestKitchenConfig)
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
