@@ -113,14 +113,14 @@ Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 
 - [ ] `GET /api/v1/admin/config/organisations` — list organisations
 - [ ] `PUT /api/v1/admin/config/organisations` — replace organisations
-- [ ] `GET /api/v1/admin/config/collection` — collection settings
-- [ ] `PUT /api/v1/admin/config/collection` — update collection
-- [ ] `GET /api/v1/admin/config/target-versions` — target versions
-- [ ] `PUT /api/v1/admin/config/target-versions` — update target versions
-- [ ] `GET /api/v1/admin/config/git-urls` — git base URLs
-- [ ] `PUT /api/v1/admin/config/git-urls` — update git URLs
-- [ ] `GET /api/v1/admin/config/concurrency` — concurrency settings
-- [ ] `PUT /api/v1/admin/config/concurrency` — update concurrency
+- [x] `GET /api/v1/admin/config/collection` — collection settings
+- [x] `PUT /api/v1/admin/config/collection` — update collection
+- [x] `GET /api/v1/admin/config/target-versions` — target versions
+- [x] `PUT /api/v1/admin/config/target-versions` — update target versions
+- [x] `GET /api/v1/admin/config/git-urls` — git base URLs
+- [x] `PUT /api/v1/admin/config/git-urls` — update git URLs
+- [x] `GET /api/v1/admin/config/concurrency` — concurrency settings
+- [x] `PUT /api/v1/admin/config/concurrency` — update concurrency
 - [ ] `GET /api/v1/admin/config/analysis-tools` — analysis tools config
 - [ ] `PUT /api/v1/admin/config/analysis-tools` — update analysis tools
 - [ ] `GET /api/v1/admin/config/test-kitchen` — test kitchen config
@@ -132,8 +132,8 @@ Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 - [ ] `PUT /api/v1/admin/config/auth` — update auth
 - [ ] `GET /api/v1/admin/config/notifications` — notifications
 - [ ] `PUT /api/v1/admin/config/notifications` — update notifications
-- [ ] `GET /api/v1/admin/config/logging` — logging settings
-- [ ] `PUT /api/v1/admin/config/logging` — update logging
+- [x] `GET /api/v1/admin/config/logging` — logging settings
+- [x] `PUT /api/v1/admin/config/logging` — update logging
 - [ ] Validation per section (reuse existing `Validate` methods)
 - [ ] `restart_required` boolean in PUT responses
 - [ ] Secret field redaction in GET responses
