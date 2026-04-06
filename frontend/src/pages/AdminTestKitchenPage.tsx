@@ -88,7 +88,8 @@ function emptyConfig(): TestKitchenConfig {
 
 type KVPair = { key: string; value: string };
 
-function recordToKV(rec: Record<string, unknown>): KVPair[] {
+function recordToKV(rec: Record<string, unknown> | null | undefined): KVPair[] {
+  if (!rec) return [];
   return Object.entries(rec).map(([key, value]) => ({
     key,
     value: String(value ?? ""),

@@ -184,80 +184,80 @@ type TestKitchenConfig struct {
 	// available. When omitted or set to true (the default), Test Kitchen
 	// is enabled automatically if the kitchen binary is detected at startup
 	// (and Docker is available for dokken).
-	Enabled *bool `yaml:"enabled"`
+	Enabled *bool `yaml:"enabled" json:"enabled"`
 
 	// TimeoutMinutes is the maximum wall-clock time for a single Test
 	// Kitchen converge or verify step. Defaults to 30.
-	TimeoutMinutes int `yaml:"timeout_minutes"`
+	TimeoutMinutes int `yaml:"timeout_minutes" json:"timeout_minutes"`
 
 	// Driver selects the Test Kitchen driver profile. Built-in profiles:
 	// dokken, vcenter, vra, ec2, azurerm, google, vagrant, openstack, proxmox.
 	// Use "custom" for any driver gem not in the built-in list.
 	// Defaults to "dokken".
-	Driver string `yaml:"driver"`
+	Driver string `yaml:"driver" json:"driver"`
 
 	// DriverSettings contains plaintext driver connection settings as
 	// key-value pairs. Keys are driver-specific (e.g. vcenter_host,
 	// region). These are serialised into the top-level driver: block of
 	// the generated .kitchen.local.yml overlay.
-	DriverSettings map[string]any `yaml:"driver_settings"`
+	DriverSettings map[string]any `yaml:"driver_settings" json:"driver_settings"`
 
 	// DriverSecrets maps driver setting names to credential names from
 	// the credentials table. At runtime each secret is resolved via the
 	// credential resolver and injected as CMM_TK_SECRET_<UPPER_KEY>
 	// environment variables. The overlay references them via ERB.
-	DriverSecrets map[string]string `yaml:"driver_secrets"`
+	DriverSecrets map[string]string `yaml:"driver_secrets" json:"driver_secrets"`
 
 	// ImageFieldName is the YAML key used for the image identifier in
 	// platform map entries. Built-in profiles set this automatically
 	// (e.g. "template" for vcenter, "ami" for ec2). Required only for
 	// the "custom" profile.
-	ImageFieldName string `yaml:"image_field_name"`
+	ImageFieldName string `yaml:"image_field_name" json:"image_field_name"`
 
 	// PlatformMap is the alias table mapping cookbook platform names to
 	// image registry entries. Each entry maps a kitchen_name to an image
 	// name defined in the Images list.
 	// For dokken with an empty platform map, all platforms pass through
 	// unchanged (backward compatible).
-	PlatformMap []PlatformMapEntry `yaml:"platform_map"`
+	PlatformMap []PlatformMapEntry `yaml:"platform_map" json:"platform_map"`
 
 	// Images is the registry of infrastructure images available to the
 	// driver. Each entry defines the driver-specific image identifier,
 	// transport credentials, per-image driver settings, and per-version
 	// Chef package download URLs. Multiple platform map entries can
 	// reference the same image.
-	Images []ImageEntry `yaml:"images"`
+	Images []ImageEntry `yaml:"images" json:"images"`
 
 	// ChefLicenseKeyCredential is the credential name for the Chef
 	// license key. Used as fallback for versions that have no
 	// chef_download_urls entry in any image (public chef.io download).
-	ChefLicenseKeyCredential string `yaml:"chef_license_key_credential"`
+	ChefLicenseKeyCredential string `yaml:"chef_license_key_credential" json:"chef_license_key_credential"`
 }
 
 // ImageEntry defines a single infrastructure image in the image registry.
 type ImageEntry struct {
 	// Name is the operator-defined label for this image. Must be unique
 	// within the config. Used as the reference in platform_map[].image.
-	Name string `yaml:"name"`
+	Name string `yaml:"name" json:"name"`
 
 	// ID is the driver-specific image identifier: a Proxmox template ID,
 	// vCenter template name, AMI ID, Docker image, etc. The built-in
 	// driver profile determines which YAML key it maps to in the overlay.
-	ID string `yaml:"id"`
+	ID string `yaml:"id" json:"id"`
 
 	// DriverSettings contains per-image driver setting overrides merged
 	// on top of the top-level DriverSettings in the overlay.
-	DriverSettings map[string]any `yaml:"driver_settings"`
+	DriverSettings map[string]any `yaml:"driver_settings" json:"driver_settings"`
 
 	// Transport contains transport credentials for connecting to
 	// instances provisioned from this image (SSH/WinRM).
-	Transport *PlatformMapTransport `yaml:"transport"`
+	Transport *PlatformMapTransport `yaml:"transport" json:"transport"`
 
 	// ChefDownloadURLs maps Chef version strings to direct package
 	// download URLs for this image. When a URL is set for the target
 	// version, the overlay uses download_url instead of product_version.
 	// Platforms without an entry fall back to ChefLicenseKeyCredential.
-	ChefDownloadURLs map[string]string `yaml:"chef_download_urls"`
+	ChefDownloadURLs map[string]string `yaml:"chef_download_urls" json:"chef_download_urls"`
 }
 
 // PlatformMapEntry maps a single kitchen platform name to an image in
@@ -265,25 +265,25 @@ type ImageEntry struct {
 type PlatformMapEntry struct {
 	// KitchenName is the platform name as it appears in the cookbook's
 	// .kitchen.yml (e.g. "ubuntu-22.04", "centos-7", "windows-2022").
-	KitchenName string `yaml:"kitchen_name"`
+	KitchenName string `yaml:"kitchen_name" json:"kitchen_name"`
 
 	// Image is the name of an entry in the Images list.
-	Image string `yaml:"image"`
+	Image string `yaml:"image" json:"image"`
 }
 
 // PlatformMapTransport holds transport credentials for an image registry
 // entry. Credentials are resolved at runtime from the credentials table.
 type PlatformMapTransport struct {
 	// Username is the SSH/WinRM username for connecting to the instance.
-	Username string `yaml:"username"`
+	Username string `yaml:"username" json:"username"`
 
 	// PasswordCredential is the credential name for the SSH/WinRM password.
 	// Resolved at runtime and injected as CMM_TK_TRANSPORT_<UPPER_IMAGE_NAME>.
-	PasswordCredential string `yaml:"password_credential"`
+	PasswordCredential string `yaml:"password_credential" json:"password_credential"`
 
 	// SSHKeyCredential is the credential name for the SSH private key (PEM).
 	// Resolved at runtime and injected as CMM_TK_KEY_<UPPER_IMAGE_NAME>.
-	SSHKeyCredential string `yaml:"ssh_key_credential"`
+	SSHKeyCredential string `yaml:"ssh_key_credential" json:"ssh_key_credential"`
 }
 
 // IsEnabled returns true if Test Kitchen testing is enabled in the
