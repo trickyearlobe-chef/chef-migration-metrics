@@ -112,16 +112,10 @@ analysis_tools:
     driver_secrets:
       proxmox_token_secret: proxmox-kitchen-token
     platform_map:
-      - kitchen_name: ubuntu-22.04
+      - kitchen_name: almalinux-10
         image: 100
-        transport:
-          username: kitchen
-          password_credential: vm-ssh-password
-      - kitchen_name: rocky-9
+      - kitchen_name: ubuntu-22.04
         image: 101
-        transport:
-          username: kitchen
-          password_credential: vm-ssh-password
 ```
 
 ### Phase 2: vSphere Validation (P0 — own environment being stood up)
