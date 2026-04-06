@@ -73,10 +73,12 @@ function ChannelCard({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => onToggle(index)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(index); } }}
+        className="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
       >
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-900">
@@ -114,7 +116,7 @@ function ChannelCard({
             <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
           </svg>
         </div>
-      </button>
+      </div>
 
       {isOpen && (
         <div className="space-y-4 border-t border-gray-100 p-4">
