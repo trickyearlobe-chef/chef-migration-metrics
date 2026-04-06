@@ -68,7 +68,19 @@ func ResolveKitchenCredentials(
 		kc.EnvVars[envName] = resolved.Plaintext
 	}
 
-	// 2. Transport secrets (password and SSH key per platform).
+	// 2. Chef license key.
+	if tkConfig.ChefLicenseKeyCredential != "" {
+		resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
+			CredentialName: tkConfig.ChefLicenseKeyCredential,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("chef_license_key_credential (credential %q): %v", tkConfig.ChefLicenseKeyCredential, err))
+		} else {
+			kc.EnvVars["CMM_TK_CHEF_LICENSE_KEY"] = resolved.Plaintext
+		}
+	}
+
+	// 3. Transport secrets (password and SSH key per platform).
 	for _, entry := range tkConfig.PlatformMap {
 		if entry.Transport == nil {
 			continue
@@ -166,6 +178,19 @@ func ValidateDriverCredentials(
 		}
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("driver_secrets[%q] → credential %q: %v", key, credName, err))
+		}
+	}
+
+	// Check Chef license key credential.
+	if tkConfig.ChefLicenseKeyCredential != "" {
+		resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
+			CredentialName: tkConfig.ChefLicenseKeyCredential,
+		})
+		if resolved != nil {
+			secrets.ZeroBytes(resolved.Plaintext)
+		}
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("chef_license_key_credential → credential %q: %v", tkConfig.ChefLicenseKeyCredential, err))
 		}
 	}
 

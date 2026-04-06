@@ -644,3 +644,74 @@ func envVarKeys(m map[string][]byte) []string {
 	}
 	return keys
 }
+
+// ---------------------------------------------------------------------------
+// Tests: Chef license key credential resolution
+// ---------------------------------------------------------------------------
+
+func TestResolveKitchenCredentials_ChefLicenseKey(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{
+		"my-chef-license": []byte("ABCD-1234-EFGH-5678"),
+	})
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "my-chef-license",
+	}
+	kc, err := ResolveKitchenCredentials(context.Background(), resolver, tkConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val, ok := kc.EnvVars["CMM_TK_CHEF_LICENSE_KEY"]
+	if !ok {
+		t.Fatalf("expected CMM_TK_CHEF_LICENSE_KEY in env vars, got keys: %v", envVarKeys(kc.EnvVars))
+	}
+	if string(val) != "ABCD-1234-EFGH-5678" {
+		t.Errorf("expected license key value, got %q", string(val))
+	}
+}
+
+func TestResolveKitchenCredentials_NoLicenseKey_WhenNotConfigured(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{})
+	tkConfig := config.TestKitchenConfig{}
+	kc, err := ResolveKitchenCredentials(context.Background(), resolver, tkConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := kc.EnvVars["CMM_TK_CHEF_LICENSE_KEY"]; ok {
+		t.Error("should not inject CMM_TK_CHEF_LICENSE_KEY when credential not configured")
+	}
+}
+
+func TestResolveKitchenCredentials_ChefLicenseKey_MissingCredential(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{}) // credential not in store
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "missing-license",
+	}
+	_, err := ResolveKitchenCredentials(context.Background(), resolver, tkConfig)
+	if err == nil {
+		t.Fatal("expected error when license credential is missing, got nil")
+	}
+}
+
+func TestValidateDriverCredentials_ChefLicenseKey(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{
+		"my-chef-license": []byte("ABCD-1234"),
+	})
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "my-chef-license",
+	}
+	errs := ValidateDriverCredentials(context.Background(), resolver, tkConfig)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateDriverCredentials_ChefLicenseKey_Missing(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{})
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "missing-license",
+	}
+	errs := ValidateDriverCredentials(context.Background(), resolver, tkConfig)
+	if len(errs) == 0 {
+		t.Error("expected validation error for missing license credential")
+	}
+}
