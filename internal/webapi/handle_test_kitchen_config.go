@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 )
 
@@ -139,16 +138,9 @@ func (r *Router) handleDeleteTestKitchenConfig(w http.ResponseWriter, req *http.
 func validateTestKitchenConfig(cfg config.TestKitchenConfig) []string {
 	var problems []string
 
-	driver := cfg.EffectiveDriver()
-
-	// Non-dokken drivers need a platform map.
-	if !analysis.IsDokken(driver) && len(cfg.PlatformMap) == 0 {
-		problems = append(problems, "platform_map must have at least one entry when driver is not dokken")
-	}
-
-	// Custom driver needs image_field_name.
-	if driver == "custom" && cfg.ImageFieldName == "" {
-		problems = append(problems, "image_field_name is required when driver is 'custom'")
+	// A platform map is always required for VM-based drivers.
+	if len(cfg.PlatformMap) == 0 {
+		problems = append(problems, "platform_map must have at least one entry")
 	}
 
 	// Validate platform map entries.

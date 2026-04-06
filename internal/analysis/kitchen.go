@@ -631,14 +631,13 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	buf.WriteString("# DO NOT EDIT — this file is overwritten on each test run\n")
 
 	hasContent := false
-	driver := s.effectiveDriver(detectedDriver)
 	profile := LookupProfile(s.tkConfig.Driver, s.tkConfig.ImageFieldName)
 
 	// Build image registry lookup.
 	imageIndex := buildImageIndex(s.tkConfig.Images)
 
-	// --- Driver block (non-dokken only) ---
-	if !IsDokken(s.tkConfig.Driver) {
+	// --- Driver block ---
+	if s.tkConfig.Driver != "" {
 		buf.WriteString("\ndriver:\n")
 		fmt.Fprintf(&buf, "  name: %s\n", s.tkConfig.Driver)
 		// Plaintext driver settings.
@@ -662,13 +661,8 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 		if major >= 19 {
 			buf.WriteString("  name: chef_ice\n")
 		}
-		// Top-level provisioner: use product_version + license key as
-		// fallback. Per-platform download_url overrides happen below.
-		if driver == "dokken" {
-			fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
-		} else {
-			fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
-		}
+		// Always use product_version for package-based installation.
+		fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
 		if s.tkConfig.ChefLicenseKeyCredential != "" {
 			buf.WriteString("  chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>\n")
 		}
@@ -676,8 +670,8 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 		hasContent = true
 	}
 
-	// --- Platform map (non-dokken only) ---
-	if !IsDokken(s.tkConfig.Driver) && len(s.tkConfig.PlatformMap) > 0 {
+	// --- Platform map ---
+	if len(s.tkConfig.PlatformMap) > 0 {
 		buf.WriteString("\nplatforms:\n")
 		for _, entry := range s.tkConfig.PlatformMap {
 			img, ok := imageIndex[entry.Image]
@@ -740,16 +734,12 @@ func buildImageIndex(images []config.ImageEntry) map[string]config.ImageEntry {
 
 // effectiveDriver returns the driver that will actually be used, considering
 // the config. If the config specifies a driver, that is used. Otherwise
-// falls back to what was detected in the cookbook's .kitchen.yml, then to
-// "dokken" as the default.
+// falls back to what was detected in the cookbook's .kitchen.yml.
 func (s *KitchenScanner) effectiveDriver(detectedDriver string) string {
 	if s.tkConfig.Driver != "" {
 		return s.tkConfig.Driver
 	}
-	if detectedDriver != "" {
-		return detectedDriver
-	}
-	return "dokken"
+	return detectedDriver
 }
 
 // effectivePlatformSummary returns a short human-readable summary of the

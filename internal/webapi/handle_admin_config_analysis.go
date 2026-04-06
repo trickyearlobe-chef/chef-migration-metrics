@@ -13,16 +13,11 @@ import (
 
 // knownTKDrivers is the set of recognised Test Kitchen driver profile names.
 var knownTKDrivers = map[string]bool{
-	"dokken":    true,
-	"vcenter":   true,
-	"vra":       true,
-	"ec2":       true,
-	"azurerm":   true,
-	"google":    true,
-	"vagrant":   true,
-	"openstack": true,
-	"proxmox":   true,
-	"custom":    true,
+	"vcenter": true,
+	"vra":     true,
+	"ec2":     true,
+	"vagrant": true,
+	"proxmox": true,
 }
 
 // ---------------------------------------------------------------------------
@@ -193,12 +188,8 @@ func validateAdminTKConfig(tk config.TestKitchenConfig) string {
 	}
 
 	driver := tk.EffectiveDriver()
-	if !knownTKDrivers[driver] {
+	if driver != "" && !knownTKDrivers[driver] {
 		return fmt.Sprintf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile.", driver)
-	}
-
-	if driver == "custom" && tk.ImageFieldName == "" {
-		return "analysis_tools.test_kitchen.image_field_name is required when driver is \"custom\"."
 	}
 
 	// Validate images registry: unique names, non-empty ID.

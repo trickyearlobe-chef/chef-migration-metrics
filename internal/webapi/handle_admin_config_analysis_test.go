@@ -18,10 +18,10 @@ import (
 const validAnalysisToolsBody = `{
 	"cookstyle_timeout_minutes": 10,
 	"test_kitchen_timeout_minutes": 0,
-	"test_kitchen": {"timeout_minutes": 30, "driver": "dokken"}
+	"test_kitchen": {"timeout_minutes": 30, "driver": "vcenter"}
 }`
 
-const validTKBody = `{"timeout_minutes": 30, "driver": "dokken"}`
+const validTKBody = `{"timeout_minutes": 30, "driver": "vcenter"}`
 
 // ---------------------------------------------------------------------------
 // GET/PUT /api/v1/admin/config/analysis-tools
@@ -31,7 +31,7 @@ func TestAdminConfigAnalysisTools_GET(t *testing.T) {
 	cfg := testConfig()
 	cfg.AnalysisTools = config.AnalysisToolsConfig{
 		CookstyleTimeoutMinutes: 10,
-		TestKitchen:             config.TestKitchenConfig{Driver: "dokken"},
+		TestKitchen:             config.TestKitchenConfig{Driver: "vcenter"},
 	}
 	r := newTestRouterForAdminConfig(cfg, nil, nil)
 
@@ -129,7 +129,7 @@ func TestAdminConfigAnalysisTools_PUT_422_ZeroCookstyleTimeout(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 0, "test_kitchen": {"driver": "dokken"}}`
+	body := `{"cookstyle_timeout_minutes": 0, "test_kitchen": {"driver": "vcenter"}}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -142,7 +142,7 @@ func TestAdminConfigAnalysisTools_PUT_422_NegativeTKTimeout(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"timeout_minutes": -1, "driver": "dokken"}}`
+	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"timeout_minutes": -1, "driver": "vcenter"}}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -181,7 +181,7 @@ func TestAdminConfigAnalysisTools_PUT_422_PlatformMapMissingKitchenName(t *testi
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "dokken", "platform_map": [{"image": "ubuntu"}]}}`
+	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "platform_map": [{"image": "ubuntu"}]}}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -194,7 +194,7 @@ func TestAdminConfigAnalysisTools_PUT_422_PlatformMapDuplicateName(t *testing.T)
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "dokken", "platform_map": [{"kitchen_name": "ubuntu-22.04", "image": "ubuntu"}, {"kitchen_name": "ubuntu-22.04", "image": "ubuntu2"}]}}`
+	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "platform_map": [{"kitchen_name": "ubuntu-22.04", "image": "ubuntu"}, {"kitchen_name": "ubuntu-22.04", "image": "ubuntu2"}]}}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -274,8 +274,8 @@ func TestAdminConfigTestKitchen_PUT_Success(t *testing.T) {
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
 	decodePutValue(t, w, &got)
-	if got["driver"] != "dokken" {
-		t.Errorf("driver = %v, want dokken", got["driver"])
+	if got["driver"] != "vcenter" {
+		t.Errorf("driver = %v, want vcenter", got["driver"])
 	}
 
 	if _, err := store.Get(context.Background(), configstore.KeyAnalysisTools); err != nil {
@@ -334,7 +334,7 @@ func TestAdminConfigTestKitchen_PUT_422_NegativeTimeout(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"timeout_minutes": -1, "driver": "dokken"}`
+	body := `{"timeout_minutes": -1, "driver": "vcenter"}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -395,14 +395,14 @@ func TestAdminConfigTestKitchen_DELETE_Success(t *testing.T) {
 		t.Fatalf("KeyAnalysisTools not in store after DELETE: %v", err)
 	}
 
-	// Verify TK driver is empty or "dokken" (config has been zeroed).
+	// Verify TK driver is empty (config has been zeroed).
 	var storedMap map[string]any
 	if err := json.Unmarshal(stored, &storedMap); err != nil {
 		t.Fatalf("unmarshal stored: %v", err)
 	}
 	if tkSection, ok := storedMap["test_kitchen"].(map[string]any); ok {
-		if driver := tkSection["driver"]; driver != nil && driver != "" && driver != "dokken" {
-			t.Errorf("driver after DELETE = %v, want empty or dokken", driver)
+		if driver := tkSection["driver"]; driver != nil && driver != "" {
+			t.Errorf("driver after DELETE = %v, want empty", driver)
 		}
 	}
 }

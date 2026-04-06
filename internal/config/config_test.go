@@ -188,8 +188,8 @@ func TestDefaults_AnalysisTools(t *testing.T) {
 	if cfg.AnalysisTools.TestKitchen.TimeoutMinutes != 30 {
 		t.Errorf("expected test_kitchen.timeout_minutes 30, got %d", cfg.AnalysisTools.TestKitchen.TimeoutMinutes)
 	}
-	if cfg.AnalysisTools.TestKitchen.Driver != "dokken" {
-		t.Errorf("expected test_kitchen.driver dokken, got %q", cfg.AnalysisTools.TestKitchen.Driver)
+	if cfg.AnalysisTools.TestKitchen.Driver != "" {
+		t.Errorf("expected test_kitchen.driver empty, got %q", cfg.AnalysisTools.TestKitchen.Driver)
 	}
 }
 
@@ -2081,11 +2081,11 @@ analysis_tools:
 
 func TestDefaults_TestKitchenDriver(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
-	if cfg.AnalysisTools.TestKitchen.Driver != "dokken" {
-		t.Errorf("expected default driver dokken, got %q", cfg.AnalysisTools.TestKitchen.Driver)
+	if cfg.AnalysisTools.TestKitchen.Driver != "" {
+		t.Errorf("expected default driver empty, got %q", cfg.AnalysisTools.TestKitchen.Driver)
 	}
-	if cfg.AnalysisTools.TestKitchen.EffectiveDriver() != "dokken" {
-		t.Errorf("expected effective driver dokken, got %q", cfg.AnalysisTools.TestKitchen.EffectiveDriver())
+	if cfg.AnalysisTools.TestKitchen.EffectiveDriver() != "" {
+		t.Errorf("expected effective driver empty, got %q", cfg.AnalysisTools.TestKitchen.EffectiveDriver())
 	}
 }
 
@@ -2102,8 +2102,8 @@ func TestTestKitchenConfig_EffectiveTimeoutMinutes(t *testing.T) {
 
 func TestTestKitchenConfig_EffectiveDriver(t *testing.T) {
 	tk := TestKitchenConfig{}
-	if tk.EffectiveDriver() != "dokken" {
-		t.Errorf("expected default driver dokken, got %q", tk.EffectiveDriver())
+	if tk.EffectiveDriver() != "" {
+		t.Errorf("expected default driver empty, got %q", tk.EffectiveDriver())
 	}
 	tk.Driver = "vcenter"
 	if tk.EffectiveDriver() != "vcenter" {
@@ -2146,38 +2146,6 @@ analysis_tools:
 	if cfg.AnalysisTools.TestKitchen.TimeoutMinutes != 60 {
 		t.Errorf("expected nested timeout 60 to take precedence, got %d", cfg.AnalysisTools.TestKitchen.TimeoutMinutes)
 	}
-}
-
-func TestValidation_CustomDriverRequiresImageFieldName(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-analysis_tools:
-  test_kitchen:
-    driver: custom
-`
-	expectParseError(t, yaml, "image_field_name is required when driver is \"custom\"")
-}
-
-func TestValidation_UnknownDriverRequiresImageFieldName(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-analysis_tools:
-  test_kitchen:
-    driver: hyperv
-`
-	expectParseError(t, yaml, "image_field_name is required when driver is \"custom\"")
 }
 
 func TestValidation_PlatformMapKitchenNameRequired(t *testing.T) {

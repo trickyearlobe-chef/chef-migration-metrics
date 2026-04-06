@@ -328,7 +328,7 @@ func TestValidateAll_PopulatesAllFields(t *testing.T) {
 	r := NewResolver("", WithExecutor(fe))
 	result := r.ValidateAll(context.Background())
 
-	// Verify all four tool infos have the correct name.
+	// Verify tool infos have the correct name.
 	if result.Cookstyle.Name != "cookstyle" {
 		t.Errorf("Cookstyle.Name = %q, want cookstyle", result.Cookstyle.Name)
 	}
@@ -338,24 +338,14 @@ func TestValidateAll_PopulatesAllFields(t *testing.T) {
 	if result.Git.Name != "git" {
 		t.Errorf("Git.Name = %q, want git", result.Git.Name)
 	}
-	if result.Docker.Name != "docker" {
-		t.Errorf("Docker.Name = %q, want docker", result.Docker.Name)
-	}
 }
 
-func TestValidateAll_KitchenRequiresDocker(t *testing.T) {
-	// Even if kitchen is available, KitchenEnabled should be false
-	// when Docker is unavailable.
+func TestValidateAll_KitchenEnabledRequiresKitchen(t *testing.T) {
 	fe := newFakeExecutor()
 
 	r := NewResolver("", WithExecutor(fe))
 	result := r.ValidateAll(context.Background())
 
-	// Kitchen is almost certainly not on PATH in CI, but the key assertion
-	// is: KitchenEnabled requires BOTH kitchen and docker.
-	if result.KitchenEnabled && !result.Docker.Available {
-		t.Error("KitchenEnabled should be false when Docker is unavailable")
-	}
 	if result.KitchenEnabled && !result.Kitchen.Available {
 		t.Error("KitchenEnabled should be false when Kitchen is unavailable")
 	}

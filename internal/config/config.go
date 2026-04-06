@@ -182,8 +182,7 @@ type TestKitchenConfig struct {
 	// Enabled controls whether Test Kitchen testing is active. When set to
 	// false, Test Kitchen is disabled even if the kitchen binary is
 	// available. When omitted or set to true (the default), Test Kitchen
-	// is enabled automatically if the kitchen binary is detected at startup
-	// (and Docker is available for dokken).
+	// is enabled automatically if the kitchen binary is detected at startup.
 	Enabled *bool `yaml:"enabled" json:"enabled"`
 
 	// TimeoutMinutes is the maximum wall-clock time for a single Test
@@ -191,9 +190,7 @@ type TestKitchenConfig struct {
 	TimeoutMinutes int `yaml:"timeout_minutes" json:"timeout_minutes"`
 
 	// Driver selects the Test Kitchen driver profile. Built-in profiles:
-	// dokken, vcenter, vra, ec2, azurerm, google, vagrant, openstack, proxmox.
-	// Use "custom" for any driver gem not in the built-in list.
-	// Defaults to "dokken".
+	// vcenter, vra, ec2, vagrant, proxmox. Required.
 	Driver string `yaml:"driver" json:"driver"`
 
 	// DriverSettings contains plaintext driver connection settings as
@@ -295,11 +292,8 @@ func (tk *TestKitchenConfig) IsEnabled() bool {
 	return *tk.Enabled
 }
 
-// EffectiveDriver returns the configured driver, defaulting to "dokken".
+// EffectiveDriver returns the configured driver name.
 func (tk *TestKitchenConfig) EffectiveDriver() string {
-	if tk.Driver == "" {
-		return "dokken"
-	}
 	return tk.Driver
 }
 
@@ -702,9 +696,6 @@ func (c *Config) setDefaults() {
 	}
 
 	// Test Kitchen nested defaults.
-	if c.AnalysisTools.TestKitchen.Driver == "" {
-		c.AnalysisTools.TestKitchen.Driver = "dokken"
-	}
 	if c.AnalysisTools.TestKitchen.TimeoutMinutes == 0 {
 		c.AnalysisTools.TestKitchen.TimeoutMinutes = 30
 	}
@@ -1213,17 +1204,11 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	// Driver profile validation.
 	driver := tk.EffectiveDriver()
 	knownDrivers := map[string]bool{
-		"dokken": true, "vcenter": true, "vra": true, "ec2": true,
-		"azurerm": true, "google": true, "vagrant": true, "openstack": true,
-		"proxmox": true, "custom": true,
+		"vcenter": true, "vra": true, "ec2": true,
+		"vagrant": true, "proxmox": true,
 	}
-	if !knownDrivers[driver] {
-		w.addf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile; proceeding as custom", driver)
-	}
-
-	// Custom profile requires image_field_name.
-	if (driver == "custom" || !knownDrivers[driver]) && tk.ImageFieldName == "" {
-		ve.add("analysis_tools.test_kitchen.image_field_name is required when driver is \"custom\"")
+	if driver != "" && !knownDrivers[driver] {
+		w.addf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile", driver)
 	}
 
 	// Image registry validation.
@@ -1236,7 +1221,7 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		} else {
 			seenImageNames[img.Name] = i
 		}
-		if img.ID == "" && driver != "dokken" {
+		if img.ID == "" {
 			w.addf("analysis_tools.test_kitchen.images[%d].id is empty; image %q will be skipped", i, img.Name)
 		}
 		for ver := range img.ChefDownloadURLs {
@@ -1253,9 +1238,8 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		}
 	}
 
-	// Non-dokken driver warnings.
-	if driver != "dokken" && len(tk.Images) == 0 {
-		w.add("analysis_tools.test_kitchen.images is empty for non-dokken driver; Test Kitchen will skip all cookbooks")
+	if len(tk.Images) == 0 {
+		w.add("analysis_tools.test_kitchen.images is empty; Test Kitchen will skip all cookbooks")
 	}
 
 	// Platform map validation.
@@ -1268,17 +1252,15 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		} else {
 			seenKitchenNames[entry.KitchenName] = i
 		}
-		if entry.Image == "" && driver != "dokken" {
+		if entry.Image == "" {
 			w.addf("analysis_tools.test_kitchen.platform_map[%d].image is empty; platform %q will be skipped", i, entry.KitchenName)
-		} else if entry.Image != "" && driver != "dokken" {
-			if _, ok := seenImageNames[entry.Image]; !ok {
-				w.addf("analysis_tools.test_kitchen.platform_map[%d].image %q does not reference a defined image", i, entry.Image)
-			}
+		} else if _, ok := seenImageNames[entry.Image]; !ok {
+			w.addf("analysis_tools.test_kitchen.platform_map[%d].image %q does not reference a defined image", i, entry.Image)
 		}
 	}
 
-	if driver != "dokken" && len(tk.PlatformMap) == 0 {
-		w.add("analysis_tools.test_kitchen.platform_map is empty for non-dokken driver; Test Kitchen will skip all cookbooks")
+	if len(tk.PlatformMap) == 0 {
+		w.add("analysis_tools.test_kitchen.platform_map is empty; Test Kitchen will skip all cookbooks")
 	}
 
 	// Chef license key validation for v19+.

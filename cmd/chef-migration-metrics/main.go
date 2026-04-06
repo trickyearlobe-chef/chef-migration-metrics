@@ -791,11 +791,6 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	} else {
 		app.startup.Info(fmt.Sprintf("kitchen not available: %s — Test Kitchen testing disabled", toolResult.Kitchen.Error))
 	}
-	if toolResult.Docker.Available {
-		app.startup.Info(fmt.Sprintf("docker available: %s (version %s)", toolResult.Docker.Path, toolResult.Docker.Version))
-	} else {
-		app.startup.Info(fmt.Sprintf("docker not available: %s — Test Kitchen testing disabled", toolResult.Docker.Error))
-	}
 	if !toolResult.CookstyleEnabled && !toolResult.KitchenEnabled {
 		app.startup.Warn("neither CookStyle nor Test Kitchen available — no cookbook compatibility testing will be performed")
 	}

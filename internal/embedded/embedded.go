@@ -257,13 +257,13 @@ type ValidationResult struct {
 	Cookstyle ToolInfo
 	Kitchen   ToolInfo
 	Git       ToolInfo
-	Docker    ToolInfo
 
 	// CookstyleEnabled is true if CookStyle scanning is available.
 	CookstyleEnabled bool
 
-	// KitchenEnabled is true if Test Kitchen testing is available.
-	// Requires both kitchen and docker.
+	// KitchenEnabled is true if the kitchen binary is available.
+	// Docker is no longer required — VM-based drivers (vcenter, proxmox,
+	// ec2, vagrant) manage their own infrastructure.
 	KitchenEnabled bool
 }
 
@@ -271,18 +271,17 @@ type ValidationResult struct {
 // a summary. The caller decides how to handle missing tools:
 //   - Git unavailable → fatal (refuse to start)
 //   - Cookstyle unavailable → disable CookStyle scanning
-//   - Kitchen or Docker unavailable → disable Test Kitchen testing
+//   - Kitchen unavailable → disable Test Kitchen testing
 //   - Both cookstyle and kitchen unavailable → warn, no compatibility testing
 func (r *Resolver) ValidateAll(ctx context.Context) ValidationResult {
 	result := ValidationResult{
 		Git:       r.ValidateGit(ctx),
 		Cookstyle: r.ValidateCookstyle(ctx),
 		Kitchen:   r.ValidateKitchen(ctx),
-		Docker:    r.ValidateDocker(ctx),
 	}
 
 	result.CookstyleEnabled = result.Cookstyle.Available
-	result.KitchenEnabled = result.Kitchen.Available && result.Docker.Available
+	result.KitchenEnabled = result.Kitchen.Available
 
 	return result
 }

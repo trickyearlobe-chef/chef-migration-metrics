@@ -15,16 +15,11 @@ import type {
 } from "../types";
 
 const DRIVERS = [
-  "dokken",
   "proxmox",
   "vcenter",
   "vra",
   "ec2",
-  "azurerm",
-  "google",
   "vagrant",
-  "openstack",
-  "custom",
 ];
 
 const DRIVER_SETTING_HINTS: Record<string, string[]> = {
@@ -47,8 +42,6 @@ const DRIVER_SETTING_HINTS: Record<string, string[]> = {
     "security_group_ids",
   ],
   vra: ["base_url", "username", "tenant"],
-  azurerm: ["subscription_id", "location", "machine_size"],
-  google: ["project", "zone", "machine_type"],
 };
 
 const INPUT_CLASS =
@@ -75,7 +68,7 @@ function emptyPlatform(): PlatformMapEntry {
 function emptyConfig(): TestKitchenConfig {
   return {
     enabled: false,
-    driver: "dokken",
+    driver: "",
     timeout_minutes: 30,
     driver_settings: {},
     driver_secrets: {},
@@ -608,24 +601,6 @@ export function AdminTestKitchenPage() {
               Enabled
             </label>
           </div>
-
-          {config.driver === "custom" && (
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Image Field Name
-              </label>
-              <input
-                type="text"
-                value={config.image_field_name}
-                onChange={(e) =>
-                  updateConfig({ image_field_name: e.target.value })
-                }
-                disabled={saving}
-                placeholder="e.g. image_id"
-                className={INPUT_CLASS}
-              />
-            </div>
-          )}
         </div>
       </div>
 
