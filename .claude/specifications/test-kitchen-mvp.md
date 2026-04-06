@@ -111,6 +111,7 @@ analysis_tools:
       node: "pve-node-01"
     driver_secrets:
       proxmox_token_secret: proxmox-kitchen-token
+    chef_download_url: "https://packages.example.com/chef/19.2.12/chef-19.2.12-1.el9.x86_64.rpm"
     platform_map:
       - kitchen_name: almalinux-10
         image: 100

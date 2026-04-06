@@ -224,6 +224,12 @@ analysis_tools:
     # Built-in profiles set this automatically.
     image_field_name: template
 
+    # Chef 19+ installation — choose one:
+    # Option A: public chef.io download (requires license key)
+    chef_license_key_credential: chef-license-key
+    # Option B: direct package URL (bypasses license key requirement)
+    # chef_download_url: https://packages.example.com/chef-19.rpm
+
     # Platform image map
     platform_map:
       - kitchen_name: ubuntu-22.04
@@ -264,6 +270,8 @@ analysis_tools:
 | `driver_secrets` | empty map |
 | `platform_map` | empty list |
 | `image_field_name` | set by built-in profile; required for `custom` |
+| `chef_license_key_credential` | empty (optional; mutually exclusive with `chef_download_url`) |
+| `chef_download_url` | empty (optional; mutually exclusive with `chef_license_key_credential`) |
 
 ### Driver Change Example: vCenter → vRA
 
