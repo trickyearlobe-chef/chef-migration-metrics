@@ -53,3 +53,15 @@ export function highestSemver(versions: string[]): string | undefined {
 
   return best;
 }
+
+/**
+ * Returns true if the given string is a valid MAJOR.MINOR.PATCH semver.
+ *
+ * @example
+ *   isValidSemver("18.5.0")  // true
+ *   isValidSemver("18")      // false
+ *   isValidSemver("foo")     // false
+ */
+export function isValidSemver(version: string): boolean {
+  return /^\d+\.\d+\.\d+$/.test(version);
+}

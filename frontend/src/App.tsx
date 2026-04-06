@@ -29,6 +29,16 @@ import { AdminPerformancePage } from "./pages/AdminPerformancePage";
 import { AdminCredentialsPage } from "./pages/credentials";
 import { AdminTestKitchenPage } from "./pages/AdminTestKitchenPage";
 import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
+import { AdminCollectionPage } from "./pages/AdminCollectionPage";
+import { AdminLoggingPage } from "./pages/AdminLoggingPage";
+import { AdminConcurrencyPage } from "./pages/AdminConcurrencyPage";
+import { AdminAnalysisToolsPage } from "./pages/AdminAnalysisToolsPage";
+import { AdminExportsPage } from "./pages/AdminExportsPage";
+import { AdminTargetVersionsPage } from "./pages/AdminTargetVersionsPage";
+import { AdminOrganisationsPage } from "./pages/AdminOrganisationsPage";
+import { AdminServerPage } from "./pages/AdminServerPage";
+import { AdminAuthPage } from "./pages/AdminAuthPage";
+import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -210,6 +220,86 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminGitURLsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/collection"
+                element={
+                  <RequireAdmin>
+                    <AdminCollectionPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/logging"
+                element={
+                  <RequireAdmin>
+                    <AdminLoggingPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/concurrency"
+                element={
+                  <RequireAdmin>
+                    <AdminConcurrencyPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/analysis-tools"
+                element={
+                  <RequireAdmin>
+                    <AdminAnalysisToolsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/exports"
+                element={
+                  <RequireAdmin>
+                    <AdminExportsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/target-versions"
+                element={
+                  <RequireAdmin>
+                    <AdminTargetVersionsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/organisations"
+                element={
+                  <RequireAdmin>
+                    <AdminOrganisationsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/server"
+                element={
+                  <RequireAdmin>
+                    <AdminServerPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/auth"
+                element={
+                  <RequireAdmin>
+                    <AdminAuthPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/notifications"
+                element={
+                  <RequireAdmin>
+                    <AdminNotificationsPage />
                   </RequireAdmin>
                 }
               />

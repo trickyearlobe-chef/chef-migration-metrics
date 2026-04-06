@@ -1628,6 +1628,345 @@ export async function saveGitURLs(
 }
 
 // ---------------------------------------------------------------------------
+// Admin config — typed section interfaces
+// ---------------------------------------------------------------------------
+
+export interface CollectionConfig {
+  schedule: string;
+  stale_node_threshold_days: number;
+  stale_cookbook_threshold_days: number;
+  skip_server_cookbook_download: boolean;
+  delete_server_cookbooks_after_scan: boolean | null;
+}
+
+export interface ConcurrencyConfig {
+  organisation_collection: number;
+  node_page_fetching: number;
+  git_pull: number;
+  cookbook_download: number;
+  cookstyle_scan: number;
+  test_kitchen_run: number;
+  readiness_evaluation: number;
+}
+
+export interface AnalysisToolsConfig {
+  embedded_bin_dir: string;
+  cookstyle_enabled: boolean | null;
+  cookstyle_timeout_minutes: number;
+}
+
+export interface LoggingConfig {
+  level: string;
+  retention_days: number;
+}
+
+export interface ExportsConfig {
+  max_rows: number;
+  async_threshold: number;
+  output_directory: string;
+  retention_hours: number;
+}
+
+export interface Organisation {
+  name: string;
+  chef_server_url: string;
+  org_name: string;
+  client_name: string;
+  client_key_path: string;
+  client_key_credential: string;
+  ssl_verify: boolean | null;
+}
+
+export interface ACMEConfig {
+  domains: string[];
+  email: string;
+  ca_url: string;
+  challenge: string;
+  dns_provider: string;
+  storage_path: string;
+  renew_before_days: number;
+  agree_to_tos: boolean;
+}
+
+export interface TLSConfig {
+  mode: string;
+  cert_path: string;
+  key_path: string;
+  ca_path: string;
+  min_version: string;
+  http_redirect_port: number;
+  acme: ACMEConfig;
+}
+
+export interface WebSocketConfig {
+  enabled: boolean | null;
+  max_connections: number;
+  send_buffer_size: number;
+  write_timeout_seconds: number;
+  ping_interval_seconds: number;
+  pong_timeout_seconds: number;
+}
+
+export interface ServerConfig {
+  listen_address: string;
+  port: number;
+  tls: TLSConfig;
+  websocket: WebSocketConfig;
+  graceful_shutdown_seconds: number;
+}
+
+export interface AuthProvider {
+  type: string;
+  host?: string;
+  port?: number;
+  base_dn?: string;
+  bind_dn?: string;
+  bind_password_env?: string;
+  bind_password_credential?: string;
+  idp_metadata_url?: string;
+  sp_entity_id?: string;
+}
+
+export interface AuthConfig {
+  providers: AuthProvider[];
+  session_expiry: string;
+  min_password_length: number;
+  lockout_attempts: number;
+}
+
+export interface NotificationChannelFilter {
+  organisations: string[];
+  cookbooks: string[];
+}
+
+export interface NotificationChannel {
+  name: string;
+  type: string;
+  url: string;
+  url_env: string;
+  recipients: string[];
+  events: string[];
+  filters: NotificationChannelFilter;
+}
+
+export interface NotificationsConfig {
+  enabled: boolean;
+  channels: NotificationChannel[];
+  readiness_milestones: number[];
+  stale_node_alert_count: number;
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — collection
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/collection */
+export function fetchCollection(): Promise<CollectionConfig> {
+  return apiFetch<CollectionConfig>(buildUrl("/admin/config/collection"));
+}
+
+/** PUT /api/v1/admin/config/collection */
+export async function saveCollection(
+  value: CollectionConfig,
+): Promise<PutConfigResponse<CollectionConfig>> {
+  const res = await fetch(buildUrl("/admin/config/collection"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<CollectionConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — target versions
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/target-versions */
+export function fetchTargetVersions(): Promise<string[]> {
+  return apiFetch<string[]>(buildUrl("/admin/config/target-versions"));
+}
+
+/** PUT /api/v1/admin/config/target-versions */
+export async function saveTargetVersions(
+  versions: string[],
+): Promise<PutConfigResponse<string[]>> {
+  const res = await fetch(buildUrl("/admin/config/target-versions"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(versions),
+  });
+  return decodePutConfigResponse<string[]>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — concurrency
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/concurrency */
+export function fetchConcurrency(): Promise<ConcurrencyConfig> {
+  return apiFetch<ConcurrencyConfig>(buildUrl("/admin/config/concurrency"));
+}
+
+/** PUT /api/v1/admin/config/concurrency */
+export async function saveConcurrency(
+  value: ConcurrencyConfig,
+): Promise<PutConfigResponse<ConcurrencyConfig>> {
+  const res = await fetch(buildUrl("/admin/config/concurrency"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<ConcurrencyConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — analysis tools
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/analysis-tools */
+export function fetchAnalysisTools(): Promise<AnalysisToolsConfig> {
+  return apiFetch<AnalysisToolsConfig>(buildUrl("/admin/config/analysis-tools"));
+}
+
+/** PUT /api/v1/admin/config/analysis-tools */
+export async function saveAnalysisTools(
+  value: AnalysisToolsConfig,
+): Promise<PutConfigResponse<AnalysisToolsConfig>> {
+  const res = await fetch(buildUrl("/admin/config/analysis-tools"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<AnalysisToolsConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — logging
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/logging */
+export function fetchLogging(): Promise<LoggingConfig> {
+  return apiFetch<LoggingConfig>(buildUrl("/admin/config/logging"));
+}
+
+/** PUT /api/v1/admin/config/logging */
+export async function saveLogging(
+  value: LoggingConfig,
+): Promise<PutConfigResponse<LoggingConfig>> {
+  const res = await fetch(buildUrl("/admin/config/logging"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<LoggingConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — exports
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/exports — not yet a backend endpoint; placeholder */
+export function fetchExportsConfig(): Promise<ExportsConfig> {
+  return apiFetch<ExportsConfig>(buildUrl("/admin/config/exports"));
+}
+
+/** PUT /api/v1/admin/config/exports */
+export async function saveExportsConfig(
+  value: ExportsConfig,
+): Promise<PutConfigResponse<ExportsConfig>> {
+  const res = await fetch(buildUrl("/admin/config/exports"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<ExportsConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — organisations
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/organisations */
+export function fetchConfigOrganisations(): Promise<Organisation[]> {
+  return apiFetch<Organisation[]>(buildUrl("/admin/config/organisations"));
+}
+
+/** PUT /api/v1/admin/config/organisations */
+export async function saveConfigOrganisations(
+  orgs: Organisation[],
+): Promise<PutConfigResponse<Organisation[]>> {
+  const res = await fetch(buildUrl("/admin/config/organisations"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(orgs),
+  });
+  return decodePutConfigResponse<Organisation[]>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — server & TLS
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/server */
+export function fetchServerConfig(): Promise<ServerConfig> {
+  return apiFetch<ServerConfig>(buildUrl("/admin/config/server"));
+}
+
+/** PUT /api/v1/admin/config/server */
+export async function saveServerConfig(
+  value: ServerConfig,
+): Promise<PutConfigResponse<ServerConfig>> {
+  const res = await fetch(buildUrl("/admin/config/server"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<ServerConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — auth
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/auth */
+export function fetchAuthConfig(): Promise<AuthConfig> {
+  return apiFetch<AuthConfig>(buildUrl("/admin/config/auth"));
+}
+
+/** PUT /api/v1/admin/config/auth */
+export async function saveAuthConfig(
+  value: AuthConfig,
+): Promise<PutConfigResponse<AuthConfig>> {
+  const res = await fetch(buildUrl("/admin/config/auth"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<AuthConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Admin config — notifications
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/config/notifications */
+export function fetchNotifications(): Promise<NotificationsConfig> {
+  return apiFetch<NotificationsConfig>(buildUrl("/admin/config/notifications"));
+}
+
+/** PUT /api/v1/admin/config/notifications */
+export async function saveNotifications(
+  value: NotificationsConfig,
+): Promise<PutConfigResponse<NotificationsConfig>> {
+  const res = await fetch(buildUrl("/admin/config/notifications"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  return decodePutConfigResponse<NotificationsConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
 // Re-export Pagination type for convenience
 // ---------------------------------------------------------------------------
 
