@@ -79,7 +79,7 @@ To reduce configuration burden, the application ships built-in profiles for comm
 | `google` | kitchen-google | `image_family` | `service_account_json` |
 | `vagrant` | kitchen-vagrant | `box` | None |
 | `openstack` | kitchen-openstack | `image_ref` | `os_password` |
-| `proxmox` | kitchen-proxmox | `template` | `proxmox_password` |
+| `proxmox` | kitchen-proxmox | `template_id` | `proxmox_token_secret` |
 | `custom` | any | configurable | configurable |
 
 The `custom` profile allows any driver gem shipped in the embedded Ruby environment to be used without a built-in profile. The operator supplies all field mappings in config.

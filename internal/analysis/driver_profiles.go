@@ -30,7 +30,7 @@ var builtinProfiles = map[string]DriverProfile{
     "google":    {Name: "google", ImageFieldName: "image_family", TypicalSecrets: []string{"service_account_json"}},
     "vagrant":   {Name: "vagrant", ImageFieldName: "box", TypicalSecrets: nil},
     "openstack": {Name: "openstack", ImageFieldName: "image_ref", TypicalSecrets: []string{"os_password"}},
-    "proxmox":   {Name: "proxmox", ImageFieldName: "template", TypicalSecrets: []string{"proxmox_password"}},
+    "proxmox":   {Name: "proxmox", ImageFieldName: "template_id", TypicalSecrets: []string{"proxmox_token_secret"}},
 }
 
 // LookupProfile returns the driver profile for the given driver name.
