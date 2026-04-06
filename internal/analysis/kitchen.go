@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -654,11 +655,23 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	// --- Provisioner override (target Chef version) ---
 	if targetVersion != "" {
 		buf.WriteString("\nprovisioner:\n")
-		if driver == "dokken" {
-			fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
-		} else {
-			fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
+		major := chefMajorVersion(targetVersion)
+		if major >= 19 {
+			buf.WriteString("  name: chef_ice\n")
 		}
+		if s.tkConfig.ChefDownloadURL != "" {
+			fmt.Fprintf(&buf, "  download_url: %s\n", yamlScalar(s.tkConfig.ChefDownloadURL))
+		} else {
+			if driver == "dokken" {
+				fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
+			} else {
+				fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
+			}
+			if s.tkConfig.ChefLicenseKeyCredential != "" {
+				buf.WriteString("  chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>\n")
+			}
+		}
+		buf.WriteString("  chef_license: accept\n")
 		hasContent = true
 	}
 
@@ -947,6 +960,16 @@ func countLeadingSpaces(s string) int {
 // ---------------------------------------------------------------------------
 // YAML helpers (minimal — avoids importing a full YAML library)
 // ---------------------------------------------------------------------------
+
+// chefMajorVersion returns the major version number from a "MAJOR.MINOR.PATCH"
+// string. Returns 0 for unrecognised strings.
+func chefMajorVersion(v string) int {
+	if idx := strings.IndexByte(v, '.'); idx > 0 {
+		n, _ := strconv.Atoi(v[:idx])
+		return n
+	}
+	return 0
+}
 
 // yamlScalar formats a string as a YAML scalar value. If the value contains
 // characters that are special in YAML, it is double-quoted. Otherwise it is

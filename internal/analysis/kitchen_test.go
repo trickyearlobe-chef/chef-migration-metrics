@@ -1949,3 +1949,109 @@ func TestBuildOverlay_SecretsOnlyDriverBlock(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests: buildOverlay — chef_license and Chef 19+ provisioner name
+// ---------------------------------------------------------------------------
+
+func TestBuildOverlay_ChefLicense_AlwaysPresent_Dokken(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("18.6.0", "dokken")
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v18 dokken, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_ChefLicense_AlwaysPresent_NonDokken(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{Driver: "proxmox"})
+	got := s.buildOverlay("18.6.0", "proxmox")
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v18 non-dokken, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_ProvisionerName_Dokken(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("19.2.12", "dokken")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice for v19 dokken, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v19 dokken, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_ProvisionerName_NonDokken(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{Driver: "proxmox"})
+	got := s.buildOverlay("19.2.12", "proxmox")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice for v19 proxmox, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v19 proxmox, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef18_NoProvisionerName(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("18.6.0", "dokken")
+	if strings.Contains(got, "name: chef_ice") {
+		t.Errorf("should not emit name: chef_ice for v18, got:\n%s", got)
+	}
+	if strings.Contains(got, "name: chef_infra") {
+		t.Errorf("should not emit provisioner name for v18, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_LicenseKey(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "my-chef-license",
+	})
+	got := s.buildOverlay("19.2.12", "dokken")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license_key:") {
+		t.Errorf("expected chef_license_key ERB, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMM_TK_CHEF_LICENSE_KEY") {
+		t.Errorf("expected CMM_TK_CHEF_LICENSE_KEY env var, got:\n%s", got)
+	}
+	if !strings.Contains(got, `chef_version: "19.2.12"`) && !strings.Contains(got, `product_version: "19.2.12"`) {
+		t.Errorf("expected version field, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_DownloadURL(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		ChefDownloadURL: "https://packages.example.com/chef-19.rpm",
+	})
+	got := s.buildOverlay("19.2.12", "dokken")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	}
+	if !strings.Contains(got, "download_url:") {
+		t.Errorf("expected download_url, got:\n%s", got)
+	}
+	if strings.Contains(got, "chef_license_key") {
+		t.Errorf("should not contain chef_license_key when using download_url, got:\n%s", got)
+	}
+	if strings.Contains(got, "product_version") || strings.Contains(got, "chef_version") {
+		t.Errorf("should not contain version field when using download_url, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_NeitherLicenseNorURL(t *testing.T) {
+	// No license config — overlay still emits chef_ice name and chef_license: accept.
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("19.2.12", "dokken")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept, got:\n%s", got)
+	}
+	if strings.Contains(got, "chef_license_key") {
+		t.Errorf("should not emit chef_license_key without credential, got:\n%s", got)
+	}
+}
