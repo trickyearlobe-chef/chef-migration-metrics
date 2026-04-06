@@ -80,32 +80,32 @@ func ResolveKitchenCredentials(
 		}
 	}
 
-	// 3. Transport secrets (password and SSH key per platform).
-	for _, entry := range tkConfig.PlatformMap {
-		if entry.Transport == nil {
+	// 3. Transport secrets (password and SSH key per image).
+	for _, img := range tkConfig.Images {
+		if img.Transport == nil {
 			continue
 		}
-		if entry.Transport.PasswordCredential != "" {
+		if img.Transport.PasswordCredential != "" {
 			resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
-				CredentialName: entry.Transport.PasswordCredential,
+				CredentialName: img.Transport.PasswordCredential,
 			})
 			if err != nil {
-				errs = append(errs, fmt.Sprintf("transport password for %q (credential %q): %v",
-					entry.KitchenName, entry.Transport.PasswordCredential, err))
+				errs = append(errs, fmt.Sprintf("transport password for image %q (credential %q): %v",
+					img.Name, img.Transport.PasswordCredential, err))
 			} else {
-				envName := transportPasswordEnvVar(entry.KitchenName)
+				envName := transportPasswordEnvVar(img.Name)
 				kc.EnvVars[envName] = resolved.Plaintext
 			}
 		}
-		if entry.Transport.SSHKeyCredential != "" {
+		if img.Transport.SSHKeyCredential != "" {
 			resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
-				CredentialName: entry.Transport.SSHKeyCredential,
+				CredentialName: img.Transport.SSHKeyCredential,
 			})
 			if err != nil {
-				errs = append(errs, fmt.Sprintf("transport SSH key for %q (credential %q): %v",
-					entry.KitchenName, entry.Transport.SSHKeyCredential, err))
+				errs = append(errs, fmt.Sprintf("transport SSH key for image %q (credential %q): %v",
+					img.Name, img.Transport.SSHKeyCredential, err))
 			} else {
-				envName := transportKeyEnvVar(entry.KitchenName)
+				envName := transportKeyEnvVar(img.Name)
 				kc.EnvVars[envName] = resolved.Plaintext
 			}
 		}
@@ -194,33 +194,33 @@ func ValidateDriverCredentials(
 		}
 	}
 
-	// Check transport secrets.
-	for _, entry := range tkConfig.PlatformMap {
-		if entry.Transport == nil {
+	// Check transport secrets (per image, not per platform).
+	for _, img := range tkConfig.Images {
+		if img.Transport == nil {
 			continue
 		}
-		if entry.Transport.PasswordCredential != "" {
+		if img.Transport.PasswordCredential != "" {
 			resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
-				CredentialName: entry.Transport.PasswordCredential,
+				CredentialName: img.Transport.PasswordCredential,
 			})
 			if resolved != nil {
 				secrets.ZeroBytes(resolved.Plaintext)
 			}
 			if err != nil {
-				errs = append(errs, fmt.Sprintf("platform %q transport password → credential %q: %v",
-					entry.KitchenName, entry.Transport.PasswordCredential, err))
+				errs = append(errs, fmt.Sprintf("image %q transport password → credential %q: %v",
+					img.Name, img.Transport.PasswordCredential, err))
 			}
 		}
-		if entry.Transport.SSHKeyCredential != "" {
+		if img.Transport.SSHKeyCredential != "" {
 			resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
-				CredentialName: entry.Transport.SSHKeyCredential,
+				CredentialName: img.Transport.SSHKeyCredential,
 			})
 			if resolved != nil {
 				secrets.ZeroBytes(resolved.Plaintext)
 			}
 			if err != nil {
-				errs = append(errs, fmt.Sprintf("platform %q transport SSH key → credential %q: %v",
-					entry.KitchenName, entry.Transport.SSHKeyCredential, err))
+				errs = append(errs, fmt.Sprintf("image %q transport SSH key → credential %q: %v",
+					img.Name, img.Transport.SSHKeyCredential, err))
 			}
 		}
 	}

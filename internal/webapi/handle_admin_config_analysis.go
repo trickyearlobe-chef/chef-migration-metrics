@@ -201,6 +201,22 @@ func validateAdminTKConfig(tk config.TestKitchenConfig) string {
 		return "analysis_tools.test_kitchen.image_field_name is required when driver is \"custom\"."
 	}
 
+	// Validate images registry: unique names, non-empty ID.
+	seenImages := make(map[string]int)
+	for i, img := range tk.Images {
+		if img.Name == "" {
+			return fmt.Sprintf("analysis_tools.test_kitchen.images[%d].name is required.", i)
+		}
+		if img.ID == "" {
+			return fmt.Sprintf("analysis_tools.test_kitchen.images[%d].id is required.", i)
+		}
+		if prev, dup := seenImages[img.Name]; dup {
+			return fmt.Sprintf("analysis_tools.test_kitchen.images[%d].name %q duplicates images[%d].", i, img.Name, prev)
+		}
+		seenImages[img.Name] = i
+	}
+
+	// Validate platform map: unique kitchen names, image refs must exist.
 	seen := make(map[string]int)
 	for i, entry := range tk.PlatformMap {
 		if entry.KitchenName == "" {
@@ -210,6 +226,11 @@ func validateAdminTKConfig(tk config.TestKitchenConfig) string {
 			return fmt.Sprintf("analysis_tools.test_kitchen.platform_map[%d].kitchen_name %q duplicates entry [%d].", i, entry.KitchenName, prev)
 		}
 		seen[entry.KitchenName] = i
+		if entry.Image != "" {
+			if _, ok := seenImages[entry.Image]; !ok {
+				return fmt.Sprintf("analysis_tools.test_kitchen.platform_map[%d].image %q does not match any defined image.", i, entry.Image)
+			}
+		}
 	}
 
 	return ""

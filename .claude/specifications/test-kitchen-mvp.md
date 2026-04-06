@@ -111,12 +111,16 @@ analysis_tools:
       node: "pve-node-01"
     driver_secrets:
       proxmox_token_secret: proxmox-kitchen-token
-    chef_download_url: "https://packages.example.com/chef/19.2.12/chef-19.2.12-1.el9.x86_64.rpm"
+    images:
+      - name: alma10
+        id: "100"
+        transport:
+          username: kitchen
+        chef_download_urls:
+          "19.2.12": "https://packages.example.com/chef-19.2.12-1.el9.x86_64.rpm"
     platform_map:
       - kitchen_name: almalinux-10
-        image: 100
-      - kitchen_name: ubuntu-22.04
-        image: 101
+        image: alma10
 ```
 
 ### Phase 2: vSphere Validation (P0 — own environment being stood up)

@@ -634,6 +634,9 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	driver := s.effectiveDriver(detectedDriver)
 	profile := LookupProfile(s.tkConfig.Driver, s.tkConfig.ImageFieldName)
 
+	// Build image registry lookup.
+	imageIndex := buildImageIndex(s.tkConfig.Images)
+
 	// --- Driver block (non-dokken only) ---
 	if !IsDokken(s.tkConfig.Driver) {
 		buf.WriteString("\ndriver:\n")
@@ -659,17 +662,15 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 		if major >= 19 {
 			buf.WriteString("  name: chef_ice\n")
 		}
-		if s.tkConfig.ChefDownloadURL != "" {
-			fmt.Fprintf(&buf, "  download_url: %s\n", yamlScalar(s.tkConfig.ChefDownloadURL))
+		// Top-level provisioner: use product_version + license key as
+		// fallback. Per-platform download_url overrides happen below.
+		if driver == "dokken" {
+			fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
 		} else {
-			if driver == "dokken" {
-				fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
-			} else {
-				fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
-			}
-			if s.tkConfig.ChefLicenseKeyCredential != "" {
-				buf.WriteString("  chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>\n")
-			}
+			fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
+		}
+		if s.tkConfig.ChefLicenseKeyCredential != "" {
+			buf.WriteString("  chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>\n")
 		}
 		buf.WriteString("  chef_license: accept\n")
 		hasContent = true
@@ -679,27 +680,41 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	if !IsDokken(s.tkConfig.Driver) && len(s.tkConfig.PlatformMap) > 0 {
 		buf.WriteString("\nplatforms:\n")
 		for _, entry := range s.tkConfig.PlatformMap {
-			fmt.Fprintf(&buf, "  - name: %s\n", entry.KitchenName)
-			buf.WriteString("    driver:\n")
-			// Image field mapped through the profile.
-			fmt.Fprintf(&buf, "      %s: %s\n", profile.ImageFieldName, yamlScalar(entry.Image))
-			// Per-platform driver settings merged on top of top-level.
-			pdsKeys := sortedKeys(entry.DriverSettings)
-			for _, k := range pdsKeys {
-				writeDriverSetting(&buf, k, entry.DriverSettings[k], 6)
+			img, ok := imageIndex[entry.Image]
+			if !ok {
+				// No matching image — skip this platform.
+				continue
 			}
-			// Transport block.
-			if entry.Transport != nil {
-				buf.WriteString("    transport:\n")
-				if entry.Transport.Username != "" {
-					fmt.Fprintf(&buf, "      username: %s\n", yamlScalar(entry.Transport.Username))
+			fmt.Fprintf(&buf, "  - name: %s\n", entry.KitchenName)
+
+			// Driver block: image field + per-image driver settings.
+			buf.WriteString("    driver:\n")
+			fmt.Fprintf(&buf, "      %s: %s\n", profile.ImageFieldName, yamlScalar(img.ID))
+			imgDSKeys := sortedKeys(img.DriverSettings)
+			for _, k := range imgDSKeys {
+				writeDriverSetting(&buf, k, img.DriverSettings[k], 6)
+			}
+
+			// Per-platform provisioner: override with download_url when set.
+			if targetVersion != "" {
+				if url := img.ChefDownloadURLs[targetVersion]; url != "" {
+					buf.WriteString("    provisioner:\n")
+					fmt.Fprintf(&buf, "      download_url: %s\n", yamlScalar(url))
 				}
-				if entry.Transport.PasswordCredential != "" {
-					envName := transportPasswordEnvVar(entry.KitchenName)
+			}
+
+			// Transport block — keyed by image name, not kitchen name.
+			if img.Transport != nil {
+				buf.WriteString("    transport:\n")
+				if img.Transport.Username != "" {
+					fmt.Fprintf(&buf, "      username: %s\n", yamlScalar(img.Transport.Username))
+				}
+				if img.Transport.PasswordCredential != "" {
+					envName := transportPasswordEnvVar(img.Name)
 					fmt.Fprintf(&buf, "      password: <%%= ENV['%s'] %%>\n", envName)
 				}
-				if entry.Transport.SSHKeyCredential != "" {
-					envName := transportKeyEnvVar(entry.KitchenName)
+				if img.Transport.SSHKeyCredential != "" {
+					envName := transportKeyEnvVar(img.Name)
 					fmt.Fprintf(&buf, "      ssh_key: <%%= ENV['%s'] %%>\n", envName)
 				}
 			}
@@ -712,6 +727,16 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	}
 	return buf.String()
 }
+
+// buildImageIndex returns a map from image name to ImageEntry for fast lookup.
+func buildImageIndex(images []config.ImageEntry) map[string]config.ImageEntry {
+	idx := make(map[string]config.ImageEntry, len(images))
+	for _, img := range images {
+		idx[img.Name] = img
+	}
+	return idx
+}
+
 
 // effectiveDriver returns the driver that will actually be used, considering
 // the config. If the config specifies a driver, that is used. Otherwise

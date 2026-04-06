@@ -463,9 +463,13 @@ func TestBuildOverlay_PlatformOverrides(t *testing.T) {
 	// Platform map only emits for non-dokken drivers.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vcenter",
+		Images: []config.ImageEntry{
+			{Name: "ubuntu2204", ID: "tmpl-ubuntu-2204"},
+			{Name: "centos8", ID: "tmpl-centos-8"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
-			{KitchenName: "centos-8", Image: "tmpl-centos-8"},
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
+			{KitchenName: "centos-8", Image: "centos8"},
 		},
 	})
 	got := s.buildOverlay("", "dokken")
@@ -493,8 +497,11 @@ func TestBuildOverlay_AllOverridesCombined(t *testing.T) {
 		DriverSecrets: map[string]string{
 			"aws_secret_access_key": "aws-cred",
 		},
+		Images: []config.ImageEntry{
+			{Name: "rhel9", ID: "ami-12345"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "rhel-9", Image: "ami-12345"},
+			{KitchenName: "rhel-9", Image: "rhel9"},
 		},
 	})
 	got := s.buildOverlay("18.5.0", "vagrant")
@@ -1535,8 +1542,11 @@ func TestBuildOverlay_DokkenToVagrant(t *testing.T) {
 	// Scenario: cookbook uses dokken, operator wants to test with vagrant instead.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vagrant",
+		Images: []config.ImageEntry{
+			{Name: "ubuntu2204", ID: "bento/ubuntu-22.04"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "bento/ubuntu-22.04"},
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
 		},
 	})
 	got := s.buildOverlay("18.5.0", "dokken")
@@ -1590,9 +1600,13 @@ func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 			"region":        "us-east-1",
 			"instance_type": "t3.large",
 		},
+		Images: []config.ImageEntry{
+			{Name: "rhel8", ID: "ami-0abcdef1234567890"},
+			{Name: "amazon2", ID: "ami-0fedcba9876543210"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "rhel-8", Image: "ami-0abcdef1234567890"},
-			{KitchenName: "amazon-2", Image: "ami-0fedcba9876543210"},
+			{KitchenName: "rhel-8", Image: "rhel8"},
+			{KitchenName: "amazon-2", Image: "amazon2"},
 		},
 	})
 	got := s.buildOverlay("18.0.0", "vagrant")
@@ -1649,8 +1663,11 @@ func TestBuildOverlay_VCenterWithCredentials(t *testing.T) {
 		Driver:         "vcenter",
 		DriverSettings: map[string]any{"vcenter_host": "vcenter.example.com"},
 		DriverSecrets:  map[string]string{"vcenter_password": "vcenter-cred"},
+		Images: []config.ImageEntry{
+			{Name: "ubuntu2204", ID: "tmpl-ubuntu-2204"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
 		},
 	})
 	got := s.buildOverlay("", "")
@@ -1670,15 +1687,18 @@ func TestBuildOverlay_VCenterWithCredentials(t *testing.T) {
 func TestBuildOverlay_TransportCredentials(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vcenter",
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
-				Image:       "tmpl-ubuntu-2204",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				Transport: &config.PlatformMapTransport{
 					Username:           "kitchen",
 					PasswordCredential: "vm-pass",
 				},
 			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
 		},
 	})
 	got := s.buildOverlay("", "")
@@ -1689,23 +1709,26 @@ func TestBuildOverlay_TransportCredentials(t *testing.T) {
 	if !strings.Contains(got, "username: kitchen") {
 		t.Errorf("expected transport username, got:\n%s", got)
 	}
-	if !strings.Contains(got, "CMM_TK_TRANSPORT_UBUNTU_22_04") {
-		t.Errorf("expected transport password ERB ref, got:\n%s", got)
+	if !strings.Contains(got, "CMM_TK_TRANSPORT_UBUNTU2204") {
+		t.Errorf("expected transport password ERB ref using image name, got:\n%s", got)
 	}
 }
 
 func TestBuildOverlay_TransportSSHKey(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "ec2",
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "rhel-9",
-				Image:       "ami-12345",
+				Name: "rhel9",
+				ID:   "ami-12345",
 				Transport: &config.PlatformMapTransport{
 					Username:         "ec2-user",
 					SSHKeyCredential: "ec2-ssh-key",
 				},
 			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "rhel9"},
 		},
 	})
 	got := s.buildOverlay("", "")
@@ -1716,8 +1739,8 @@ func TestBuildOverlay_TransportSSHKey(t *testing.T) {
 	if !strings.Contains(got, "username: ec2-user") {
 		t.Errorf("expected transport username, got:\n%s", got)
 	}
-	if !strings.Contains(got, "CMM_TK_KEY_RHEL_9") {
-		t.Errorf("expected transport SSH key ERB ref, got:\n%s", got)
+	if !strings.Contains(got, "CMM_TK_KEY_RHEL9") {
+		t.Errorf("expected transport SSH key ERB ref using image name, got:\n%s", got)
 	}
 }
 
@@ -1874,20 +1897,24 @@ func TestBuildOverlay_PerPlatformDriverSettings(t *testing.T) {
 		DriverSettings: map[string]any{
 			"vcenter_host": "vcenter.example.com",
 		},
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
-				Image:       "tmpl-ubuntu-2204",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				DriverSettings: map[string]any{
 					"datacenter": "DC1",
 					"cluster":    "CLUSTER-A",
 				},
 			},
 			{
-				KitchenName: "centos-8",
-				Image:       "tmpl-centos-8",
-				// No per-platform settings — only top-level should apply.
+				Name: "centos8",
+				ID:   "tmpl-centos-8",
+				// No per-image settings — only top-level should apply.
 			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
+			{KitchenName: "centos-8", Image: "centos8"},
 		},
 	})
 	got := s.buildOverlay("", "dokken")
@@ -1896,14 +1923,14 @@ func TestBuildOverlay_PerPlatformDriverSettings(t *testing.T) {
 	if !strings.Contains(got, "vcenter_host: vcenter.example.com") {
 		t.Errorf("expected top-level vcenter_host, got:\n%s", got)
 	}
-	// Per-platform settings should appear under each platform's driver block.
+	// Per-image settings should appear under each platform's driver block.
 	if !strings.Contains(got, "datacenter: DC1") {
-		t.Errorf("expected per-platform datacenter for ubuntu, got:\n%s", got)
+		t.Errorf("expected per-image datacenter for ubuntu, got:\n%s", got)
 	}
 	if !strings.Contains(got, "cluster: CLUSTER-A") {
-		t.Errorf("expected per-platform cluster for ubuntu, got:\n%s", got)
+		t.Errorf("expected per-image cluster for ubuntu, got:\n%s", got)
 	}
-	// centos-8 should have no per-platform settings (just the image).
+	// centos-8 should have no per-image settings (just the image field).
 	if !strings.Contains(got, "template: tmpl-centos-8") {
 		t.Errorf("expected centos image via template field, got:\n%s", got)
 	}
@@ -1921,8 +1948,11 @@ func TestBuildOverlay_SecretsOnlyDriverBlock(t *testing.T) {
 			"aws_access_key_id":     "aws-key-cred",
 			"aws_secret_access_key": "aws-secret-cred",
 		},
+		Images: []config.ImageEntry{
+			{Name: "rhel9", ID: "ami-12345"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "rhel-9", Image: "ami-12345"},
+			{KitchenName: "rhel-9", Image: "rhel9"},
 		},
 	})
 	got := s.buildOverlay("", "dokken")
@@ -2023,21 +2053,36 @@ func TestBuildOverlay_Chef19_LicenseKey(t *testing.T) {
 }
 
 func TestBuildOverlay_Chef19_DownloadURL(t *testing.T) {
+	// Per-image download_url overrides top-level product_version in per-platform provisioner.
 	s := newScannerWithConfig(config.TestKitchenConfig{
-		ChefDownloadURL: "https://packages.example.com/chef-19.rpm",
+		Driver: "ec2",
+		Images: []config.ImageEntry{
+			{
+				Name: "rhel9",
+				ID:   "ami-12345",
+				ChefDownloadURLs: map[string]string{
+					"19.2.12": "https://packages.example.com/chef-19.rpm",
+				},
+			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "rhel9"},
+		},
 	})
-	got := s.buildOverlay("19.2.12", "dokken")
+	got := s.buildOverlay("19.2.12", "vagrant")
 	if !strings.Contains(got, "name: chef_ice") {
 		t.Errorf("expected name: chef_ice, got:\n%s", got)
 	}
+	// Per-platform provisioner block with download_url.
 	if !strings.Contains(got, "download_url:") {
-		t.Errorf("expected download_url, got:\n%s", got)
+		t.Errorf("expected download_url in per-platform provisioner, got:\n%s", got)
 	}
-	if strings.Contains(got, "chef_license_key") {
-		t.Errorf("should not contain chef_license_key when using download_url, got:\n%s", got)
+	if !strings.Contains(got, "https://packages.example.com/chef-19.rpm") {
+		t.Errorf("expected the RPM URL, got:\n%s", got)
 	}
-	if strings.Contains(got, "product_version") || strings.Contains(got, "chef_version") {
-		t.Errorf("should not contain version field when using download_url, got:\n%s", got)
+	// Top-level should still have product_version as fallback.
+	if !strings.Contains(got, "product_version:") {
+		t.Errorf("expected product_version in top-level provisioner, got:\n%s", got)
 	}
 }
 

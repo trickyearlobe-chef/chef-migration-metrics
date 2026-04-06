@@ -8,6 +8,7 @@ import {
 } from "../api";
 import type {
   TestKitchenConfig,
+  ImageEntry,
   PlatformMapEntry,
   PlatformMapTransport,
   Credential,
@@ -15,6 +16,7 @@ import type {
 
 const DRIVERS = [
   "dokken",
+  "proxmox",
   "vcenter",
   "vra",
   "ec2",
@@ -26,6 +28,7 @@ const DRIVERS = [
 ];
 
 const DRIVER_SETTING_HINTS: Record<string, string[]> = {
+  proxmox: ["proxmox_url", "proxmox_token_id", "node"],
   vcenter: [
     "vcenter_host",
     "vcenter_username",
@@ -55,13 +58,18 @@ function emptyTransport(): PlatformMapTransport {
   return { username: "", password_credential: "", ssh_key_credential: "" };
 }
 
-function emptyPlatform(): PlatformMapEntry {
+function emptyImage(): ImageEntry {
   return {
-    kitchen_name: "",
-    image: "",
+    name: "",
+    id: "",
     driver_settings: {},
     transport: emptyTransport(),
+    chef_download_urls: {},
   };
+}
+
+function emptyPlatform(): PlatformMapEntry {
+  return { kitchen_name: "", image: "" };
 }
 
 function emptyConfig(): TestKitchenConfig {
@@ -72,6 +80,8 @@ function emptyConfig(): TestKitchenConfig {
     driver_settings: {},
     driver_secrets: {},
     image_field_name: "",
+    chef_license_key_credential: "",
+    images: [],
     platform_map: [],
   };
 }
@@ -94,6 +104,58 @@ function kvToRecord(pairs: KVPair[]): Record<string, string> {
   return rec;
 }
 
+function PlusIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+    </svg>
+  );
+}
+
+function AddButton({ onClick, disabled, children }: { onClick: () => void; disabled: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="mt-3 inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+    >
+      <PlusIcon />
+      {children}
+    </button>
+  );
+}
+
+function RemoveButton({ onClick, disabled, title }: { onClick: () => void; disabled: boolean; title?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? "Remove"}
+      className="shrink-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-50"
+    >
+      <XIcon />
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -104,14 +166,14 @@ export function AdminTestKitchenPage() {
   const [updatedAt, setUpdatedAt] = useState<string | undefined>();
   const [updatedBy, setUpdatedBy] = useState<string | undefined>();
 
+  // Top-level driver state.
   const [driverSettings, setDriverSettings] = useState<KVPair[]>([]);
   const [driverSecrets, setDriverSecrets] = useState<KVPair[]>([]);
-  const [platformAdvanced, setPlatformAdvanced] = useState<
-    Record<number, boolean>
-  >({});
-  const [platformDriverJson, setPlatformDriverJson] = useState<
-    Record<number, string>
-  >({});
+
+  // Per-image state: driver settings JSON + download URL KV pairs + advanced toggle.
+  const [imageDriverJson, setImageDriverJson] = useState<Record<number, string>>({});
+  const [imageDownloadUrls, setImageDownloadUrls] = useState<Record<number, KVPair[]>>({});
+  const [imageAdvanced, setImageAdvanced] = useState<Record<number, boolean>>({});
 
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,12 +197,17 @@ export function AdminTestKitchenPage() {
       setDriverSettings(ds.length > 0 ? ds : []);
       const sec = recordToKV(c.driver_secrets);
       setDriverSecrets(sec.length > 0 ? sec : []);
-      const jsonMap: Record<number, string> = {};
-      (c.platform_map ?? []).forEach((p, i) => {
-        jsonMap[i] = JSON.stringify(p.driver_settings ?? {}, null, 2);
+
+      // Init per-image state.
+      const djMap: Record<number, string> = {};
+      const duMap: Record<number, KVPair[]> = {};
+      (c.images ?? []).forEach((img, i) => {
+        djMap[i] = JSON.stringify(img.driver_settings ?? {}, null, 2);
+        duMap[i] = recordToKV(img.chef_download_urls ?? {});
       });
-      setPlatformDriverJson(jsonMap);
-      setPlatformAdvanced({});
+      setImageDriverJson(djMap);
+      setImageDownloadUrls(duMap);
+      setImageAdvanced({});
     },
     [],
   );
@@ -187,7 +254,7 @@ export function AdminTestKitchenPage() {
     return cancel;
   }, [loadConfig]);
 
-  // --- Helpers ---
+  // --- Config helpers ---
 
   function updateConfig(patch: Partial<TestKitchenConfig>) {
     setConfig((prev) => ({ ...prev, ...patch }));
@@ -202,6 +269,7 @@ export function AdminTestKitchenPage() {
     }
   }
 
+  // --- Driver settings ---
   function updateSetting(idx: number, field: "key" | "value", val: string) {
     setDriverSettings((prev) => {
       const next = [...prev];
@@ -216,6 +284,7 @@ export function AdminTestKitchenPage() {
     setDriverSettings((prev) => [...prev, { key: "", value: "" }]);
   }
 
+  // --- Driver secrets ---
   function updateSecret(idx: number, field: "key" | "value", val: string) {
     setDriverSecrets((prev) => {
       const next = [...prev];
@@ -230,32 +299,28 @@ export function AdminTestKitchenPage() {
     setDriverSecrets((prev) => [...prev, { key: "", value: "" }]);
   }
 
-  function updatePlatform(idx: number, patch: Partial<PlatformMapEntry>) {
+  // --- Image helpers ---
+  function updateImage(idx: number, patch: Partial<ImageEntry>) {
     setConfig((prev) => {
-      const platforms = [...(prev.platform_map ?? [])];
-      platforms[idx] = { ...platforms[idx], ...patch };
-      return { ...prev, platform_map: platforms };
+      const images = [...(prev.images ?? [])];
+      images[idx] = { ...images[idx], ...patch };
+      return { ...prev, images };
     });
   }
-
-  function updateTransport(idx: number, patch: Partial<PlatformMapTransport>) {
+  function updateImageTransport(idx: number, patch: Partial<PlatformMapTransport>) {
     setConfig((prev) => {
-      const platforms = [...(prev.platform_map ?? [])];
-      const existing = platforms[idx].transport ?? emptyTransport();
-      platforms[idx] = {
-        ...platforms[idx],
-        transport: { ...existing, ...patch },
-      };
-      return { ...prev, platform_map: platforms };
+      const images = [...(prev.images ?? [])];
+      const existing = images[idx].transport ?? emptyTransport();
+      images[idx] = { ...images[idx], transport: { ...existing, ...patch } };
+      return { ...prev, images };
     });
   }
-
-  function removePlatform(idx: number) {
+  function removeImage(idx: number) {
     setConfig((prev) => ({
       ...prev,
-      platform_map: (prev.platform_map ?? []).filter((_, i) => i !== idx),
+      images: (prev.images ?? []).filter((_, i) => i !== idx),
     }));
-    setPlatformDriverJson((prev) => {
+    setImageDriverJson((prev) => {
       const next: Record<number, string> = {};
       Object.entries(prev).forEach(([k, v]) => {
         const n = Number(k);
@@ -264,7 +329,16 @@ export function AdminTestKitchenPage() {
       });
       return next;
     });
-    setPlatformAdvanced((prev) => {
+    setImageDownloadUrls((prev) => {
+      const next: Record<number, KVPair[]> = {};
+      Object.entries(prev).forEach(([k, v]) => {
+        const n = Number(k);
+        if (n < idx) next[n] = v;
+        else if (n > idx) next[n - 1] = v;
+      });
+      return next;
+    });
+    setImageAdvanced((prev) => {
       const next: Record<number, boolean> = {};
       Object.entries(prev).forEach(([k, v]) => {
         const n = Number(k);
@@ -274,22 +348,41 @@ export function AdminTestKitchenPage() {
       return next;
     });
   }
+  function addImage() {
+    const newIdx = (config.images ?? []).length;
+    setConfig((prev) => ({
+      ...prev,
+      images: [...(prev.images ?? []), emptyImage()],
+    }));
+    setImageDriverJson((prev) => ({ ...prev, [newIdx]: "{}" }));
+    setImageDownloadUrls((prev) => ({ ...prev, [newIdx]: [] }));
+  }
+  function updateImageDownloadUrls(idx: number, pairs: KVPair[]) {
+    setImageDownloadUrls((prev) => ({ ...prev, [idx]: pairs }));
+  }
+  function toggleImageAdvanced(idx: number) {
+    setImageAdvanced((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  }
 
+  // --- Platform map helpers ---
+  function updatePlatform(idx: number, patch: Partial<PlatformMapEntry>) {
+    setConfig((prev) => {
+      const platforms = [...(prev.platform_map ?? [])];
+      platforms[idx] = { ...platforms[idx], ...patch };
+      return { ...prev, platform_map: platforms };
+    });
+  }
+  function removePlatform(idx: number) {
+    setConfig((prev) => ({
+      ...prev,
+      platform_map: (prev.platform_map ?? []).filter((_, i) => i !== idx),
+    }));
+  }
   function addPlatform() {
-    const newIdx = (config.platform_map ?? []).length;
     setConfig((prev) => ({
       ...prev,
       platform_map: [...(prev.platform_map ?? []), emptyPlatform()],
     }));
-    setPlatformDriverJson((prev) => ({ ...prev, [newIdx]: "{}" }));
-  }
-
-  function togglePlatformAdvanced(idx: number) {
-    setPlatformAdvanced((prev) => ({ ...prev, [idx]: !prev[idx] }));
-  }
-
-  function updatePlatformDriverJson(idx: number, val: string) {
-    setPlatformDriverJson((prev) => ({ ...prev, [idx]: val }));
   }
 
   // --- Save ---
@@ -299,21 +392,26 @@ export function AdminTestKitchenPage() {
     setSuccess(null);
     setWarnings([]);
 
-    const platforms = (config.platform_map ?? []).map((p, i) => {
+    const images = (config.images ?? []).map((img, i) => {
       let ds: Record<string, unknown> = {};
       try {
-        ds = JSON.parse(platformDriverJson[i] ?? "{}");
+        ds = JSON.parse(imageDriverJson[i] ?? "{}");
       } catch {
         // leave empty on parse error
       }
-      return { ...p, driver_settings: ds };
+      const urlPairs = imageDownloadUrls[i] ?? [];
+      return {
+        ...img,
+        driver_settings: ds,
+        chef_download_urls: kvToRecord(urlPairs),
+      };
     });
 
     const payload: TestKitchenConfig = {
       ...config,
       driver_settings: kvToRecord(driverSettings),
       driver_secrets: kvToRecord(driverSecrets),
-      platform_map: platforms,
+      images,
     };
 
     try {
@@ -369,6 +467,7 @@ export function AdminTestKitchenPage() {
   }
 
   const credentialNames = credentials.map((c) => c.name);
+  const imageNames = (config.images ?? []).map((img) => img.name).filter(Boolean);
 
   // --- Loading state ---
   if (loading) {
@@ -558,51 +657,11 @@ export function AdminTestKitchenPage() {
                 disabled={saving}
                 className={INPUT_CLASS}
               />
-              <button
-                type="button"
-                onClick={() => removeSetting(idx)}
-                disabled={saving}
-                title="Remove"
-                className="shrink-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-50"
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={1.5}
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18 18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+              <RemoveButton onClick={() => removeSetting(idx)} disabled={saving} />
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={addSetting}
-          disabled={saving}
-          className="mt-3 inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 4.5v15m7.5-7.5h-15"
-            />
-          </svg>
-          Add Setting
-        </button>
+        <AddButton onClick={addSetting} disabled={saving}>Add Setting</AddButton>
       </div>
 
       {/* Section 3: Driver Secrets */}
@@ -639,239 +698,278 @@ export function AdminTestKitchenPage() {
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => removeSecret(idx)}
-                disabled={saving}
-                title="Remove"
-                className="shrink-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-50"
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={1.5}
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18 18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+              <RemoveButton onClick={() => removeSecret(idx)} disabled={saving} />
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={addSecret}
-          disabled={saving}
-          className="mt-3 inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 4.5v15m7.5-7.5h-15"
-            />
-          </svg>
-          Add Secret
-        </button>
+        <AddButton onClick={addSecret} disabled={saving}>Add Secret</AddButton>
       </div>
 
-      {/* Section 4: Platform Map */}
+      {/* Section 4: Provisioner */}
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-500">
-          Platform Map
+        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          Provisioner
         </h3>
-        {(config.platform_map ?? []).length === 0 && (
-          <p className="mb-3 text-sm text-gray-400">
-            No platforms configured.
-          </p>
+        <p className="mb-4 text-xs text-gray-400">
+          Chef client versions come from <code>target_chef_versions</code> in your config file.
+          Set a license key credential as a fallback for platforms without a per-image download URL.
+        </p>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Chef License Key Credential
+          </label>
+          <select
+            value={config.chef_license_key_credential ?? ""}
+            onChange={(e) =>
+              updateConfig({ chef_license_key_credential: e.target.value })
+            }
+            disabled={saving}
+            className={INPUT_CLASS}
+          >
+            <option value="">— none (use per-image download URLs only) —</option>
+            {credentialNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Section 5: Images */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          Images
+        </h3>
+        <p className="mb-4 text-xs text-gray-400">
+          Define infrastructure images once. Each image has a driver ID, optional transport
+          credentials, and per-version Chef download URLs.
+        </p>
+        {(config.images ?? []).length === 0 && (
+          <p className="mb-3 text-sm text-gray-400">No images defined.</p>
         )}
         <div className="space-y-4">
-          {(config.platform_map ?? []).map((plat, idx) => (
-            <div
-              key={idx}
-              className="rounded-md border border-gray-200 bg-gray-50 p-4"
-            >
+          {(config.images ?? []).map((img, idx) => (
+            <div key={idx} className="rounded-md border border-gray-200 bg-gray-50 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">
-                  Platform {idx + 1}
+                  Image {idx + 1}{img.name ? ` — ${img.name}` : ""}
                 </span>
                 <button
                   type="button"
-                  onClick={() => removePlatform(idx)}
+                  onClick={() => removeImage(idx)}
                   disabled={saving}
-                  title="Remove platform"
+                  title="Remove image"
                   className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-red-600 disabled:opacity-50"
                 >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={1.5}
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-                    />
-                  </svg>
+                  <TrashIcon />
                 </button>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+              {/* Name + ID */}
+              <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-600">
-                    Kitchen Name
+                    Name (unique label)
                   </label>
                   <input
                     type="text"
-                    value={plat.kitchen_name}
-                    onChange={(e) =>
-                      updatePlatform(idx, { kitchen_name: e.target.value })
-                    }
-                    placeholder="e.g. centos-7"
+                    value={img.name}
+                    onChange={(e) => updateImage(idx, { name: e.target.value })}
+                    placeholder="e.g. alma10"
                     disabled={saving}
                     className={INPUT_CLASS}
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-600">
-                    Image
+                    Infrastructure ID
                   </label>
                   <input
                     type="text"
-                    value={plat.image}
-                    onChange={(e) =>
-                      updatePlatform(idx, { image: e.target.value })
-                    }
-                    placeholder="e.g. centos-7-template"
+                    value={img.id}
+                    onChange={(e) => updateImage(idx, { id: e.target.value })}
+                    placeholder="e.g. 100 or tmpl-ubuntu"
                     disabled={saving}
                     className={INPUT_CLASS}
                   />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">
-                    Transport User
-                  </label>
-                  <input
-                    type="text"
-                    value={plat.transport?.username ?? ""}
-                    onChange={(e) =>
-                      updateTransport(idx, { username: e.target.value })
-                    }
-                    placeholder="e.g. root"
-                    disabled={saving}
-                    className={INPUT_CLASS}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">
-                    Password Credential
-                  </label>
-                  <select
-                    value={plat.transport?.password_credential ?? ""}
-                    onChange={(e) =>
-                      updateTransport(idx, {
-                        password_credential: e.target.value,
-                      })
-                    }
-                    disabled={saving}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">— none —</option>
-                    {credentialNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-gray-600">
-                    SSH Key Credential
-                  </label>
-                  <select
-                    value={plat.transport?.ssh_key_credential ?? ""}
-                    onChange={(e) =>
-                      updateTransport(idx, {
-                        ssh_key_credential: e.target.value,
-                      })
-                    }
-                    disabled={saving}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">— none —</option>
-                    {credentialNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
 
-              {/* Per-platform driver settings (JSON textarea) */}
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={() => togglePlatformAdvanced(idx)}
-                  className="text-xs font-medium text-blue-600 hover:text-blue-800"
+              {/* Chef Download URLs */}
+              <div className="mb-3">
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Chef Download URLs (version → URL)
+                </label>
+                <div className="space-y-1">
+                  {(imageDownloadUrls[idx] ?? []).map((pair, uidx) => (
+                    <div key={uidx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={pair.key}
+                        onChange={(e) => {
+                          const next = [...(imageDownloadUrls[idx] ?? [])];
+                          next[uidx] = { ...next[uidx], key: e.target.value };
+                          updateImageDownloadUrls(idx, next);
+                        }}
+                        placeholder="19.2.12"
+                        disabled={saving}
+                        className={`${INPUT_CLASS} w-32 shrink-0`}
+                      />
+                      <input
+                        type="text"
+                        value={pair.value}
+                        onChange={(e) => {
+                          const next = [...(imageDownloadUrls[idx] ?? [])];
+                          next[uidx] = { ...next[uidx], value: e.target.value };
+                          updateImageDownloadUrls(idx, next);
+                        }}
+                        placeholder="https://packages.example.com/chef-19.rpm"
+                        disabled={saving}
+                        className={INPUT_CLASS}
+                      />
+                      <RemoveButton
+                        onClick={() => {
+                          updateImageDownloadUrls(idx, (imageDownloadUrls[idx] ?? []).filter((_, i) => i !== uidx));
+                        }}
+                        disabled={saving}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <AddButton
+                  onClick={() => updateImageDownloadUrls(idx, [...(imageDownloadUrls[idx] ?? []), { key: "", value: "" }])}
+                  disabled={saving}
                 >
-                  {platformAdvanced[idx]
-                    ? "\u25be Hide Advanced"
-                    : "\u25b8 Show Advanced (per-platform driver settings)"}
-                </button>
-                {platformAdvanced[idx] && (
-                  <div className="mt-2">
+                  Add URL
+                </AddButton>
+              </div>
+
+              {/* Transport + Driver Settings (advanced toggle) */}
+              <button
+                type="button"
+                onClick={() => toggleImageAdvanced(idx)}
+                className="text-xs font-medium text-blue-600 hover:text-blue-800"
+              >
+                {imageAdvanced[idx] ? "▾ Hide Advanced" : "▸ Show Advanced (transport & driver settings)"}
+              </button>
+              {imageAdvanced[idx] && (
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Transport User
+                      </label>
+                      <input
+                        type="text"
+                        value={img.transport?.username ?? ""}
+                        onChange={(e) => updateImageTransport(idx, { username: e.target.value })}
+                        placeholder="e.g. root"
+                        disabled={saving}
+                        className={INPUT_CLASS}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Password Credential
+                      </label>
+                      <select
+                        value={img.transport?.password_credential ?? ""}
+                        onChange={(e) => updateImageTransport(idx, { password_credential: e.target.value })}
+                        disabled={saving}
+                        className={INPUT_CLASS}
+                      >
+                        <option value="">— none —</option>
+                        {credentialNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        SSH Key Credential
+                      </label>
+                      <select
+                        value={img.transport?.ssh_key_credential ?? ""}
+                        onChange={(e) => updateImageTransport(idx, { ssh_key_credential: e.target.value })}
+                        disabled={saving}
+                        className={INPUT_CLASS}
+                      >
+                        <option value="">— none —</option>
+                        {credentialNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Driver Settings (JSON)
+                      Per-Image Driver Settings (JSON)
                     </label>
                     <textarea
-                      value={platformDriverJson[idx] ?? "{}"}
+                      value={imageDriverJson[idx] ?? "{}"}
                       onChange={(e) =>
-                        updatePlatformDriverJson(idx, e.target.value)
+                        setImageDriverJson((prev) => ({ ...prev, [idx]: e.target.value }))
                       }
                       rows={4}
                       disabled={saving}
                       className={`${INPUT_CLASS} font-mono text-xs`}
                     />
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={addPlatform}
-          disabled={saving}
-          className="mt-3 inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 4.5v15m7.5-7.5h-15"
-            />
-          </svg>
-          Add Platform
-        </button>
+        <AddButton onClick={addImage} disabled={saving}>Add Image</AddButton>
+      </div>
+
+      {/* Section 6: Platform Map */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          Platform Map
+        </h3>
+        <p className="mb-4 text-xs text-gray-400">
+          Map cookbook platform names (as they appear in kitchen.yml) to images defined above.
+        </p>
+        {(config.platform_map ?? []).length === 0 && (
+          <p className="mb-3 text-sm text-gray-400">
+            No platforms configured.
+          </p>
+        )}
+        <div className="space-y-2">
+          {(config.platform_map ?? []).map((plat, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={plat.kitchen_name}
+                onChange={(e) =>
+                  updatePlatform(idx, { kitchen_name: e.target.value })
+                }
+                placeholder="e.g. centos-7"
+                disabled={saving}
+                className={INPUT_CLASS}
+              />
+              <select
+                value={plat.image}
+                onChange={(e) => updatePlatform(idx, { image: e.target.value })}
+                disabled={saving}
+                className={INPUT_CLASS}
+              >
+                <option value="">— select image —</option>
+                {imageNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <RemoveButton
+                onClick={() => removePlatform(idx)}
+                disabled={saving}
+                title="Remove platform"
+              />
+            </div>
+          ))}
+        </div>
+        <AddButton onClick={addPlatform} disabled={saving}>Add Platform</AddButton>
       </div>
 
       {/* Footer: Save + Revert */}
@@ -895,9 +993,10 @@ export function AdminTestKitchenPage() {
           disabled={saving}
           className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
-          {saving ? "Saving\u2026" : "Save Configuration"}
+          {saving ? "Saving…" : "Save Configuration"}
         </button>
       </div>
     </div>
   );
 }
+

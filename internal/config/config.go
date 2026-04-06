@@ -214,59 +214,75 @@ type TestKitchenConfig struct {
 	// the "custom" profile.
 	ImageFieldName string `yaml:"image_field_name"`
 
-	// PlatformMap translates kitchen platform names to driver-specific
-	// image identifiers. Each entry maps a kitchen_name to an image and
-	// optional per-platform driver settings and transport credentials.
+	// PlatformMap is the alias table mapping cookbook platform names to
+	// image registry entries. Each entry maps a kitchen_name to an image
+	// name defined in the Images list.
 	// For dokken with an empty platform map, all platforms pass through
 	// unchanged (backward compatible).
 	PlatformMap []PlatformMapEntry `yaml:"platform_map"`
 
-	// ChefLicenseKeyCredential is the credential name for the Chef
-	// license key. Required for Chef 19+ when using public chef.io
-	// package downloads. Mutually exclusive with ChefDownloadURL.
-	ChefLicenseKeyCredential string `yaml:"chef_license_key_credential"`
+	// Images is the registry of infrastructure images available to the
+	// driver. Each entry defines the driver-specific image identifier,
+	// transport credentials, per-image driver settings, and per-version
+	// Chef package download URLs. Multiple platform map entries can
+	// reference the same image.
+	Images []ImageEntry `yaml:"images"`
 
-	// ChefDownloadURL is a direct URL to a Chef package. When set the
-	// overlay uses download_url instead of product_version, bypassing
-	// the need for a license key. Mutually exclusive with
-	// ChefLicenseKeyCredential.
-	ChefDownloadURL string `yaml:"chef_download_url"`
+	// ChefLicenseKeyCredential is the credential name for the Chef
+	// license key. Used as fallback for versions that have no
+	// chef_download_urls entry in any image (public chef.io download).
+	ChefLicenseKeyCredential string `yaml:"chef_license_key_credential"`
 }
 
-// PlatformMapEntry maps a single kitchen platform name to a driver-specific
-// image identifier and optional per-platform settings.
+// ImageEntry defines a single infrastructure image in the image registry.
+type ImageEntry struct {
+	// Name is the operator-defined label for this image. Must be unique
+	// within the config. Used as the reference in platform_map[].image.
+	Name string `yaml:"name"`
+
+	// ID is the driver-specific image identifier: a Proxmox template ID,
+	// vCenter template name, AMI ID, Docker image, etc. The built-in
+	// driver profile determines which YAML key it maps to in the overlay.
+	ID string `yaml:"id"`
+
+	// DriverSettings contains per-image driver setting overrides merged
+	// on top of the top-level DriverSettings in the overlay.
+	DriverSettings map[string]any `yaml:"driver_settings"`
+
+	// Transport contains transport credentials for connecting to
+	// instances provisioned from this image (SSH/WinRM).
+	Transport *PlatformMapTransport `yaml:"transport"`
+
+	// ChefDownloadURLs maps Chef version strings to direct package
+	// download URLs for this image. When a URL is set for the target
+	// version, the overlay uses download_url instead of product_version.
+	// Platforms without an entry fall back to ChefLicenseKeyCredential.
+	ChefDownloadURLs map[string]string `yaml:"chef_download_urls"`
+}
+
+// PlatformMapEntry maps a single kitchen platform name to an image in
+// the image registry.
 type PlatformMapEntry struct {
 	// KitchenName is the platform name as it appears in the cookbook's
 	// .kitchen.yml (e.g. "ubuntu-22.04", "centos-7", "windows-2022").
 	KitchenName string `yaml:"kitchen_name"`
 
-	// Image is the driver-specific image identifier (e.g. vSphere
-	// template name, AMI ID, Docker image). The built-in profile
-	// determines which driver key it maps to.
+	// Image is the name of an entry in the Images list.
 	Image string `yaml:"image"`
-
-	// DriverSettings contains per-platform driver settings (datacenter,
-	// cluster, resource pool, subnet, etc.). Merged on top of the
-	// top-level DriverSettings.
-	DriverSettings map[string]any `yaml:"driver_settings"`
-
-	// Transport contains optional transport override for connecting to
-	// provisioned instances (SSH/WinRM credentials).
-	Transport *PlatformMapTransport `yaml:"transport"`
 }
 
-// PlatformMapTransport holds transport credentials for a platform map
+// PlatformMapTransport holds transport credentials for an image registry
 // entry. Credentials are resolved at runtime from the credentials table.
 type PlatformMapTransport struct {
 	// Username is the SSH/WinRM username for connecting to the instance.
 	Username string `yaml:"username"`
 
 	// PasswordCredential is the credential name for the SSH/WinRM password.
-	// Resolved at runtime and injected as CMM_TK_TRANSPORT_<NORMALIZED_PLATFORM>.
+	// Resolved at runtime and injected as CMM_TK_TRANSPORT_<UPPER_IMAGE_NAME>.
 	PasswordCredential string `yaml:"password_credential"`
 
 	// SSHKeyCredential is the credential name for the SSH private key (PEM).
-	// Resolved at runtime and injected as CMM_TK_KEY_<NORMALIZED_PLATFORM>.
+	// Resolved at runtime and injected as CMM_TK_KEY_<UPPER_IMAGE_NAME>.
 	SSHKeyCredential string `yaml:"ssh_key_credential"`
 }
 
@@ -1210,6 +1226,38 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		ve.add("analysis_tools.test_kitchen.image_field_name is required when driver is \"custom\"")
 	}
 
+	// Image registry validation.
+	seenImageNames := make(map[string]int, len(tk.Images))
+	for i, img := range tk.Images {
+		if img.Name == "" {
+			ve.addf("analysis_tools.test_kitchen.images[%d].name is required", i)
+		} else if prev, ok := seenImageNames[img.Name]; ok {
+			ve.addf("analysis_tools.test_kitchen.images[%d].name %q duplicates entry [%d]", i, img.Name, prev)
+		} else {
+			seenImageNames[img.Name] = i
+		}
+		if img.ID == "" && driver != "dokken" {
+			w.addf("analysis_tools.test_kitchen.images[%d].id is empty; image %q will be skipped", i, img.Name)
+		}
+		for ver := range img.ChefDownloadURLs {
+			found := false
+			for _, tv := range c.TargetChefVersions {
+				if tv == ver {
+					found = true
+					break
+				}
+			}
+			if !found {
+				w.addf("analysis_tools.test_kitchen.images[%d].chef_download_urls key %q is not in target_chef_versions", i, ver)
+			}
+		}
+	}
+
+	// Non-dokken driver warnings.
+	if driver != "dokken" && len(tk.Images) == 0 {
+		w.add("analysis_tools.test_kitchen.images is empty for non-dokken driver; Test Kitchen will skip all cookbooks")
+	}
+
 	// Platform map validation.
 	seenKitchenNames := make(map[string]int, len(tk.PlatformMap))
 	for i, entry := range tk.PlatformMap {
@@ -1222,22 +1270,32 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		}
 		if entry.Image == "" && driver != "dokken" {
 			w.addf("analysis_tools.test_kitchen.platform_map[%d].image is empty; platform %q will be skipped", i, entry.KitchenName)
+		} else if entry.Image != "" && driver != "dokken" {
+			if _, ok := seenImageNames[entry.Image]; !ok {
+				w.addf("analysis_tools.test_kitchen.platform_map[%d].image %q does not reference a defined image", i, entry.Image)
+			}
 		}
 	}
 
-	// Non-dokken driver warnings.
 	if driver != "dokken" && len(tk.PlatformMap) == 0 {
 		w.add("analysis_tools.test_kitchen.platform_map is empty for non-dokken driver; Test Kitchen will skip all cookbooks")
 	}
 
-	// Chef license / download URL validation.
-	if tk.ChefLicenseKeyCredential != "" && tk.ChefDownloadURL != "" {
-		ve.add("analysis_tools.test_kitchen: chef_license_key_credential and chef_download_url are mutually exclusive")
-	}
+	// Chef license key validation for v19+.
 	for _, v := range c.TargetChefVersions {
-		if chefMajorVersionFromString(v) >= 19 && tk.ChefLicenseKeyCredential == "" && tk.ChefDownloadURL == "" {
-			w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or chef_download_url for Chef 19+ installation", v)
-			break
+		if chefMajorVersionFromString(v) >= 19 && tk.ChefLicenseKeyCredential == "" {
+			// Check if every image has a download_url for this version.
+			allCovered := len(tk.Images) > 0
+			for _, img := range tk.Images {
+				if img.ChefDownloadURLs[v] == "" {
+					allCovered = false
+					break
+				}
+			}
+			if !allCovered {
+				w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or per-image chef_download_urls for Chef 19+ installation", v)
+				break
+			}
 		}
 	}
 }

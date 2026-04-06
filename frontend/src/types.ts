@@ -1323,11 +1323,17 @@ export interface PlatformMapTransport {
 }
 
 /** A single entry in the Test Kitchen platform map. */
+export interface ImageEntry {
+  name: string;
+  id: string;
+  driver_settings?: Record<string, unknown>;
+  transport?: PlatformMapTransport | null;
+  chef_download_urls?: Record<string, string>;
+}
+
 export interface PlatformMapEntry {
   kitchen_name: string;
   image: string;
-  driver_settings: Record<string, unknown>;
-  transport: PlatformMapTransport | null;
 }
 
 /** Test Kitchen configuration stored in runtime_settings. */
@@ -1338,6 +1344,8 @@ export interface TestKitchenConfig {
   driver_settings: Record<string, unknown>;
   driver_secrets: Record<string, string>;
   image_field_name: string;
+  chef_license_key_credential: string;
+  images: ImageEntry[];
   platform_map: PlatformMapEntry[];
 }
 
