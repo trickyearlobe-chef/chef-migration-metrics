@@ -220,6 +220,17 @@ type TestKitchenConfig struct {
 	// For dokken with an empty platform map, all platforms pass through
 	// unchanged (backward compatible).
 	PlatformMap []PlatformMapEntry `yaml:"platform_map"`
+
+	// ChefLicenseKeyCredential is the credential name for the Chef
+	// license key. Required for Chef 19+ when using public chef.io
+	// package downloads. Mutually exclusive with ChefDownloadURL.
+	ChefLicenseKeyCredential string `yaml:"chef_license_key_credential"`
+
+	// ChefDownloadURL is a direct URL to a Chef package. When set the
+	// overlay uses download_url instead of product_version, bypassing
+	// the need for a license key. Mutually exclusive with
+	// ChefLicenseKeyCredential.
+	ChefDownloadURL string `yaml:"chef_download_url"`
 }
 
 // PlatformMapEntry maps a single kitchen platform name to a driver-specific
@@ -1099,6 +1110,12 @@ func HighestVersion(versions []string) string {
 	return best
 }
 
+// chefMajorVersionFromString returns the major version number from a
+// "MAJOR.MINOR.PATCH" string. Returns 0 for invalid strings.
+func chefMajorVersionFromString(v string) int {
+	return parseSemverParts(v)[0]
+}
+
 // parseSemverParts splits a "MAJOR.MINOR.PATCH" string into three ints.
 // Non-numeric or missing segments default to 0.
 func parseSemverParts(v string) [3]int {
@@ -1211,6 +1228,17 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	// Non-dokken driver warnings.
 	if driver != "dokken" && len(tk.PlatformMap) == 0 {
 		w.add("analysis_tools.test_kitchen.platform_map is empty for non-dokken driver; Test Kitchen will skip all cookbooks")
+	}
+
+	// Chef license / download URL validation.
+	if tk.ChefLicenseKeyCredential != "" && tk.ChefDownloadURL != "" {
+		ve.add("analysis_tools.test_kitchen: chef_license_key_credential and chef_download_url are mutually exclusive")
+	}
+	for _, v := range c.TargetChefVersions {
+		if chefMajorVersionFromString(v) >= 19 && tk.ChefLicenseKeyCredential == "" && tk.ChefDownloadURL == "" {
+			w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or chef_download_url for Chef 19+ installation", v)
+			break
+		}
 	}
 }
 

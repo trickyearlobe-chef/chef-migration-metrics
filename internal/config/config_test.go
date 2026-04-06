@@ -2945,6 +2945,150 @@ func TestParseRaw_InvalidYAML(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Chef 19+ license / download_url config validation
+// ---------------------------------------------------------------------------
+
+func TestValidation_Chef19_LicenseKeyAndDownloadURLMutuallyExclusive(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    chef_license_key_credential: my-license-key
+    chef_download_url: https://packages.example.com/chef-19.rpm
+`
+	expectParseError(t, yaml, "mutually exclusive")
+}
+
+func TestValidation_Chef19_WarnWhenNeitherSet(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+
+target_chef_versions:
+  - "19.2.12"
+
+datastore:
+  url: postgres://localhost:5432/test
+`
+	_, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "19.2.12") && strings.Contains(msg, "chef_license_key_credential") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about missing license config for v19, got: %v", warnings.Messages)
+	}
+}
+
+func TestValidation_Chef19_NoWarnWhenLicenseKeySet(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+
+target_chef_versions:
+  - "19.2.12"
+
+datastore:
+  url: postgres://localhost:5432/test
+
+analysis_tools:
+  test_kitchen:
+    chef_license_key_credential: my-chef-license
+`
+	_, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "chef_license_key_credential") {
+			t.Errorf("unexpected license warning when credential is set: %s", msg)
+		}
+	}
+}
+
+func TestValidation_Chef19_NoWarnWhenDownloadURLSet(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+
+target_chef_versions:
+  - "19.2.12"
+
+datastore:
+  url: postgres://localhost:5432/test
+
+analysis_tools:
+  test_kitchen:
+    chef_download_url: https://packages.example.com/chef-19.rpm
+`
+	_, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "chef_license_key_credential") {
+			t.Errorf("unexpected license warning when download_url is set: %s", msg)
+		}
+	}
+}
+
+func TestValidation_Chef18_NoWarnWithoutLicenseConfig(t *testing.T) {
+	// v18 should not trigger the license warning even without license config.
+	_, warnings, err := Parse([]byte(minimalValidYAML()))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "chef_license_key_credential") {
+			t.Errorf("unexpected license warning for v18: %s", msg)
+		}
+	}
+}
+
+func TestConfig_ChefLicenseFields_Parsed(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    chef_license_key_credential: my-chef-license
+`
+	cfg := mustParse(t, yaml)
+	if cfg.AnalysisTools.TestKitchen.ChefLicenseKeyCredential != "my-chef-license" {
+		t.Errorf("expected chef_license_key_credential %q, got %q",
+			"my-chef-license", cfg.AnalysisTools.TestKitchen.ChefLicenseKeyCredential)
+	}
+}
+
+func TestConfig_ChefDownloadURL_Parsed(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    chef_download_url: https://packages.example.com/chef-18.rpm
+`
+	cfg := mustParse(t, yaml)
+	if cfg.AnalysisTools.TestKitchen.ChefDownloadURL != "https://packages.example.com/chef-18.rpm" {
+		t.Errorf("expected chef_download_url %q, got %q",
+			"https://packages.example.com/chef-18.rpm", cfg.AnalysisTools.TestKitchen.ChefDownloadURL)
+	}
+}
+
 func TestParseRaw_AppliesDefaults(t *testing.T) {
 	yaml := `
 datastore:
