@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { OrgProvider } from "./context/OrgContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -39,6 +39,7 @@ import { AdminOrganisationsPage } from "./pages/AdminOrganisationsPage";
 import { AdminServerPage } from "./pages/AdminServerPage";
 import { AdminAuthPage } from "./pages/AdminAuthPage";
 import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
+import { AdminSetupWizardPage, useSetupRequired } from "./pages/AdminSetupWizardPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -99,8 +100,23 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
-// Login route — redirects to dashboard if already authenticated.
+// Setup mode guard — admins with empty config_store are sent to /admin/setup.
+// Skips on the setup page itself to avoid infinite redirect loops.
 // ---------------------------------------------------------------------------
+
+function SetupModeGuard({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useAuth();
+  const { setupRequired, checking } = useSetupRequired();
+  const location = useLocation();
+
+  // Only redirect admins; non-admins can't reach admin routes anyway.
+  if (isAdmin && !checking && setupRequired && !location.pathname.startsWith("/admin/setup")) {
+    return <Navigate to="/admin/setup" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 
 function LoginRoute() {
   const { isAuthenticated, loading } = useAuth();
@@ -128,11 +144,22 @@ export function App() {
               element={
                 <RequireAuth>
                   <OrgProvider>
-                    <AppLayout />
+                    <SetupModeGuard>
+                      <AppLayout />
+                    </SetupModeGuard>
                   </OrgProvider>
                 </RequireAuth>
               }
             >
+              {/* Setup wizard — shown to admins when config_store has no organisations */}
+              <Route
+                path="/admin/setup"
+                element={
+                  <RequireAdmin>
+                    <AdminSetupWizardPage />
+                  </RequireAdmin>
+                }
+              />
               <Route path="/" element={<DashboardPage />} />
               <Route path="/nodes" element={<NodesPage />} />
               <Route path="/nodes/:org/:name" element={<NodeDetailPage />} />

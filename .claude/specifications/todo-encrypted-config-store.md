@@ -154,8 +154,8 @@ Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 - [x] Notifications page (collapsible channel cards, event checkboxes)
 - [x] Logging page (level select, retention days)
 - [x] Exports page (max rows, async threshold, retention)
-- [ ] Setup wizard for empty `config_store`
-- [ ] Component tests for each page
+- [x] Setup wizard for empty `config_store`
+- [x] Component tests for each page
 
 ## Phase 4: Deprecation
 
