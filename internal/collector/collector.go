@@ -1234,7 +1234,8 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		}
 
 		// B.4: Test Kitchen for git repos with test suites.
-		if c.kitchenScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+		if c.kitchenScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 &&
+			c.kitchenScanner.IsEnabled() {
 			log.Info("running Test Kitchen",
 				logging.WithCollectionRunID(run.OrganisationName))
 
@@ -1251,6 +1252,9 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 					tkBatch.Duration.Round(time.Millisecond)),
 					logging.WithCollectionRunID(run.OrganisationName))
 			}
+		} else if c.kitchenScanner != nil && !c.kitchenScanner.IsEnabled() {
+			log.Debug("skipping Test Kitchen — disabled via configuration",
+				logging.WithCollectionRunID(run.OrganisationName))
 		} else if c.kitchenScanner != nil && c.gitRepoDirFn == nil {
 			log.Debug("skipping Test Kitchen — no git repo directory resolver configured",
 				logging.WithCollectionRunID(run.OrganisationName))

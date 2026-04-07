@@ -226,6 +226,12 @@ func (s *KitchenScanner) SetTestKitchenConfig(cfg config.TestKitchenConfig) {
 	s.tkConfig = cfg
 }
 
+// IsEnabled reports whether Test Kitchen testing is enabled in the current
+// runtime config.
+func (s *KitchenScanner) IsEnabled() bool {
+	return s.tkConfig.IsEnabled()
+}
+
 // ---------------------------------------------------------------------------
 // Batch execution
 // ---------------------------------------------------------------------------

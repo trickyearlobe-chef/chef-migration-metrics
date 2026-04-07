@@ -816,7 +816,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		app.startup.Info("CookStyle disabled via configuration (analysis_tools.cookstyle_enabled: false)")
 	}
 
-	if toolResult.KitchenEnabled && app.cfg.AnalysisTools.TestKitchen.IsEnabled() {
+	if toolResult.KitchenEnabled {
 		tkScanner := analysis.NewKitchenScanner(
 			app.db, app.logger, toolResult.Kitchen.Path,
 			app.cfg.Concurrency.TestKitchenRun,
@@ -825,8 +825,6 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		)
 		collOpts = append(collOpts, collector.WithKitchenScanner(tkScanner))
 		app.startup.Info("Test Kitchen scanner enabled")
-	} else if toolResult.KitchenEnabled && !app.cfg.AnalysisTools.TestKitchen.IsEnabled() {
-		app.startup.Info("Test Kitchen disabled via configuration (analysis_tools.test_kitchen.enabled: false)")
 	}
 
 	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)
