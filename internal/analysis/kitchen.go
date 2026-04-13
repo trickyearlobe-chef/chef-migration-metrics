@@ -22,6 +22,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
 // ---------------------------------------------------------------------------
@@ -32,13 +33,14 @@ import (
 // fake without touching the filesystem or requiring Docker / Vagrant.
 type KitchenExecutor interface {
 	// Run executes the kitchen binary with the given arguments in the
-	// specified working directory. It returns stdout, stderr, the exit
-	// code, and any execution error. A non-zero exit code is NOT returned
-	// as an error when the process ran to completion — Test Kitchen exits
-	// non-zero when converge or verify fails. An error is returned only
-	// for failures to start the process, context cancellation, or
-	// signal-based termination.
-	Run(ctx context.Context, dir string, args ...string) (stdout, stderr string, exitCode int, err error)
+	// specified working directory. extraEnv is a list of additional
+	// KEY=VALUE pairs (e.g. resolved credential env vars) to append to the
+	// process environment. It returns stdout, stderr, the exit code, and
+	// any execution error. A non-zero exit code is NOT returned as an error
+	// when the process ran to completion — Test Kitchen exits non-zero when
+	// converge or verify fails. An error is returned only for failures to
+	// start the process, context cancellation, or signal-based termination.
+	Run(ctx context.Context, dir string, extraEnv []string, args ...string) (stdout, stderr string, exitCode int, err error)
 }
 
 // defaultKitchenExecutor shells out to the real kitchen binary.
@@ -46,7 +48,7 @@ type defaultKitchenExecutor struct {
 	path string
 }
 
-func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, args ...string) (string, string, int, error) {
+func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, extraEnv []string, args ...string) (string, string, int, error) {
 	cmd := makeCommand(ctx, e.path, args...)
 	cmd.Dir = dir
 
@@ -57,6 +59,7 @@ func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, args ...st
 	// servers or fail to resolve dependencies — producing non-JSON output
 	// on stdout that breaks our JSON parser.
 	env := sanitiseKitchenEnv(os.Environ())
+	env = append(env, extraEnv...)
 	cmd.Env = env
 
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -159,13 +162,14 @@ type KitchenBatchResult struct {
 // test suites. It supports driver and platform overrides so cookbooks can be
 // tested against the actual infrastructure and platforms used in production.
 type KitchenScanner struct {
-	db          *datastore.DB
-	logger      *logging.Logger
-	executor    KitchenExecutor
-	concurrency int
-	timeout     time.Duration
-	kitchenPath string
-	tkConfig    config.TestKitchenConfig
+	db            *datastore.DB
+	logger        *logging.Logger
+	executor      KitchenExecutor
+	credResolver  *secrets.CredentialResolver
+	concurrency   int
+	timeout       time.Duration
+	kitchenPath   string
+	tkConfig      config.TestKitchenConfig
 }
 
 // KitchenScannerOption configures a KitchenScanner.
@@ -174,6 +178,12 @@ type KitchenScannerOption func(*KitchenScanner)
 // WithKitchenExecutor overrides the command executor (for testing).
 func WithKitchenExecutor(e KitchenExecutor) KitchenScannerOption {
 	return func(s *KitchenScanner) { s.executor = e }
+}
+
+// WithCredentialResolver sets the credential resolver used to inject driver
+// secrets into the kitchen process environment via CMM_TK_SECRET_* env vars.
+func WithCredentialResolver(r *secrets.CredentialResolver) KitchenScannerOption {
+	return func(s *KitchenScanner) { s.credResolver = r }
 }
 
 // NewKitchenScanner creates a scanner.
@@ -432,21 +442,32 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		}
 	}()
 
+	// Step 4b: Resolve driver secrets into environment variables.
+	// These are injected as CMM_TK_SECRET_* into every kitchen subprocess
+	// so that ERB references in .kitchen.local.yml are populated.
+	creds, credErr := ResolveKitchenCredentials(ctx, s.credResolver, s.tkConfig)
+	if credErr != nil {
+		result.Error = fmt.Errorf("resolving kitchen credentials: %w", credErr)
+		return result
+	}
+	defer creds.Cleanup()
+	credEnv := InjectCredentialEnvVars(nil, creds)
+
 	// Determine what driver and platform we're actually using for metadata.
 	result.DriverUsed = s.effectiveDriver(detectedDriver)
 	result.PlatformTested = s.effectivePlatformSummary()
 
 	// Step 5: Discover instances via `kitchen list --format json`.
-	instances, listErr := s.listInstances(ctx, dir)
+	instances, listErr := s.listInstances(ctx, dir, credEnv)
 	if listErr != nil {
 		result.Error = fmt.Errorf("kitchen list: %w", listErr)
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		return result
 	}
 	if len(instances) == 0 {
 		log.Error(fmt.Sprintf("no Test Kitchen instances defined for %s", gr.Name))
 		result.Error = fmt.Errorf("no Test Kitchen instances defined")
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		return result
 	}
 
@@ -455,7 +476,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 
 	// Step 6: Run converge with timeout.
 	convergeCtx, convergeCancel := context.WithTimeout(ctx, s.timeout)
-	convergeResult := s.runPhase(convergeCtx, dir, "converge")
+	convergeResult := s.runPhase(convergeCtx, dir, credEnv, "converge")
 	convergeCancel()
 
 	result.ConvergeOutput = convergeResult.Output
@@ -468,7 +489,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		result.Compatible = false
 		result.CompletedAt = time.Now().UTC()
 		result.Duration = result.CompletedAt.Sub(result.StartedAt)
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		s.persistResult(ctx, gr, result)
 		return result
 	}
@@ -479,7 +500,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		result.Compatible = false
 		result.CompletedAt = time.Now().UTC()
 		result.Duration = result.CompletedAt.Sub(result.StartedAt)
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		s.persistResult(ctx, gr, result)
 		return result
 	}
@@ -487,7 +508,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 	// Step 7: Run verify (only if converge passed).
 	if convergeResult.Passed {
 		verifyCtx, verifyCancel := context.WithTimeout(ctx, s.timeout)
-		verifyResult := s.runPhase(verifyCtx, dir, "verify")
+		verifyResult := s.runPhase(verifyCtx, dir, credEnv, "verify")
 		verifyCancel()
 
 		result.VerifyOutput = verifyResult.Output
@@ -504,7 +525,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 	result.Compatible = result.ConvergePassed && result.TestsPassed
 
 	// Step 8: Destroy (always, regardless of pass/fail).
-	s.destroyBestEffort(ctx, dir, &result)
+	s.destroyBestEffort(ctx, dir, credEnv, &result)
 
 	result.CompletedAt = time.Now().UTC()
 	result.Duration = result.CompletedAt.Sub(result.StartedAt)
@@ -531,10 +552,10 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 // Phase execution
 // ---------------------------------------------------------------------------
 
-func (s *KitchenScanner) runPhase(ctx context.Context, dir, phase string) phaseResult {
+func (s *KitchenScanner) runPhase(ctx context.Context, dir string, extraEnv []string, phase string) phaseResult {
 	args := []string{phase, "--concurrency=1", "--log-level=info"}
 
-	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, args...)
+	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, extraEnv, args...)
 
 	combined := stdout
 	if stderr != "" {
@@ -567,11 +588,11 @@ func (s *KitchenScanner) runPhase(ctx context.Context, dir, phase string) phaseR
 // result but never fails the overall run. Uses a fresh context with a
 // 5-minute timeout so that destroy can proceed even if the parent context
 // was cancelled.
-func (s *KitchenScanner) destroyBestEffort(ctx context.Context, dir string, result *KitchenRunResult) {
+func (s *KitchenScanner) destroyBestEffort(ctx context.Context, dir string, extraEnv []string, result *KitchenRunResult) {
 	destroyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	stdout, stderr, _, err := s.executor.Run(destroyCtx, dir, "destroy", "--concurrency=1")
+	stdout, stderr, _, err := s.executor.Run(destroyCtx, dir, extraEnv, "destroy", "--concurrency=1")
 
 	combined := stdout
 	if stderr != "" {
@@ -592,8 +613,8 @@ func (s *KitchenScanner) destroyBestEffort(ctx context.Context, dir string, resu
 // Instance discovery
 // ---------------------------------------------------------------------------
 
-func (s *KitchenScanner) listInstances(ctx context.Context, dir string) ([]KitchenInstance, error) {
-	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, "list", "--json")
+func (s *KitchenScanner) listInstances(ctx context.Context, dir string, extraEnv []string) ([]KitchenInstance, error) {
+	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, extraEnv, "list", "--json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run kitchen list: %w", err)
 	}

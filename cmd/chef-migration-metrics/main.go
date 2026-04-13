@@ -822,6 +822,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			app.cfg.Concurrency.TestKitchenRun,
 			app.cfg.AnalysisTools.TestKitchenTimeoutMinutes,
 			app.cfg.AnalysisTools.TestKitchen,
+			analysis.WithCredentialResolver(app.credResolver),
 		)
 		collOpts = append(collOpts, collector.WithKitchenScanner(tkScanner))
 		app.startup.Info("Test Kitchen scanner enabled")

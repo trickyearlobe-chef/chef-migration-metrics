@@ -34,8 +34,9 @@ type mockKitchenExecutor struct {
 }
 
 type mockKitchenCall struct {
-	Dir  string
-	Args []string
+	Dir      string
+	Args     []string
+	ExtraEnv []string
 }
 
 type mockKitchenResponse struct {
@@ -51,8 +52,8 @@ func newMockKitchenExecutor() *mockKitchenExecutor {
 	}
 }
 
-func (m *mockKitchenExecutor) Run(_ context.Context, dir string, args ...string) (string, string, int, error) {
-	m.calls = append(m.calls, mockKitchenCall{Dir: dir, Args: args})
+func (m *mockKitchenExecutor) Run(_ context.Context, dir string, extraEnv []string, args ...string) (string, string, int, error) {
+	m.calls = append(m.calls, mockKitchenCall{Dir: dir, Args: args, ExtraEnv: extraEnv})
 
 	// Determine phase from the first arg.
 	phase := ""
@@ -588,7 +589,7 @@ func TestRunPhase_Success(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "converge")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "converge")
 	if !pr.Passed {
 		t.Error("expected converge to pass")
 	}
@@ -613,7 +614,7 @@ func TestRunPhase_Failure(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "verify")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "verify")
 	if pr.Passed {
 		t.Error("expected verify to fail with exit code 1")
 	}
@@ -636,7 +637,7 @@ func TestRunPhase_ExecutionError(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "converge")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "converge")
 	if pr.Passed {
 		t.Error("expected failure on execution error")
 	}
@@ -660,7 +661,7 @@ func TestRunPhase_ContextTimeout(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
 	defer cancel()
 
-	pr := s.runPhase(ctx, "/tmp/test", "converge")
+	pr := s.runPhase(ctx, "/tmp/test", nil, "converge")
 	if pr.Passed {
 		t.Error("expected failure on timeout")
 	}
@@ -677,7 +678,7 @@ func TestRunPhase_Arguments(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	s.runPhase(context.Background(), "/tmp/cookbooks/myapp", "converge")
+	s.runPhase(context.Background(), "/tmp/cookbooks/myapp", nil, "converge")
 
 	if mock.callCount() != 1 {
 		t.Fatalf("expected 1 call, got %d", mock.callCount())
@@ -713,12 +714,39 @@ func TestRunPhase_CombinesStdoutStderr(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "verify")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "verify")
 	if !strings.Contains(pr.Output, "stdout-content") {
 		t.Error("expected stdout in combined output")
 	}
 	if !strings.Contains(pr.Output, "stderr-content") {
 		t.Error("expected stderr in combined output")
+	}
+}
+
+func TestRunPhase_CredentialEnvVarsPassedToExecutor(t *testing.T) {
+	mock := newMockKitchenExecutor()
+	s := &KitchenScanner{
+		executor: mock,
+		logger:   testLogger(),
+		timeout:  30 * time.Minute,
+	}
+
+	extraEnv := []string{"CMM_TK_SECRET_PROXMOX_TOKEN_SECRET=supersecret"}
+	s.runPhase(context.Background(), "/tmp/test", extraEnv, "converge")
+
+	if mock.callCount() != 1 {
+		t.Fatalf("expected 1 call, got %d", mock.callCount())
+	}
+	call := mock.calls[0]
+	found := false
+	for _, e := range call.ExtraEnv {
+		if e == "CMM_TK_SECRET_PROXMOX_TOKEN_SECRET=supersecret" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("credential env var not passed to executor; got ExtraEnv: %v", call.ExtraEnv)
 	}
 }
 
@@ -736,7 +764,7 @@ func TestListInstances_Success(t *testing.T) {
 		logger:   testLogger(),
 	}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -758,7 +786,7 @@ func TestListInstances_UsesJsonFlag(t *testing.T) {
 	}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -791,7 +819,7 @@ func TestListInstances_MultipleInstances(t *testing.T) {
 	}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -805,7 +833,7 @@ func TestListInstances_EmptyArray(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: "[]"}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -819,7 +847,7 @@ func TestListInstances_EmptyStdout(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: ""}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -833,7 +861,7 @@ func TestListInstances_InvalidJSON(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: "not json"}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error on invalid JSON")
 	}
@@ -851,7 +879,7 @@ func TestListInstances_InvalidJSON_IncludesStdoutAndStderr(t *testing.T) {
 	}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error on HTML stdout")
 	}
@@ -873,7 +901,7 @@ func TestListInstances_InvalidJSON_TruncatesLongOutput(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: longHTML}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -892,7 +920,7 @@ func TestListInstances_ExecutionError(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Err: fmt.Errorf("kitchen not found")}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -910,7 +938,7 @@ func TestDestroyBestEffort_Success(t *testing.T) {
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
 	result := &KitchenRunResult{CookbookName: "test-cb"}
-	s.destroyBestEffort(context.Background(), "/tmp/test", result)
+	s.destroyBestEffort(context.Background(), "/tmp/test", nil, result)
 
 	if result.DestroyOutput == "" {
 		t.Error("expected destroy output to be captured")
@@ -929,7 +957,7 @@ func TestDestroyBestEffort_Failure(t *testing.T) {
 
 	result := &KitchenRunResult{CookbookName: "test-cb"}
 	// Should not panic — destroy errors are logged but not propagated.
-	s.destroyBestEffort(context.Background(), "/tmp/test", result)
+	s.destroyBestEffort(context.Background(), "/tmp/test", nil, result)
 }
 
 func TestDestroyBestEffort_Arguments(t *testing.T) {
@@ -937,7 +965,7 @@ func TestDestroyBestEffort_Arguments(t *testing.T) {
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
 	result := &KitchenRunResult{CookbookName: "test-cb"}
-	s.destroyBestEffort(context.Background(), "/tmp/test", result)
+	s.destroyBestEffort(context.Background(), "/tmp/test", nil, result)
 
 	calls := mock.callsForPhase("destroy")
 	if len(calls) != 1 {
@@ -1415,12 +1443,12 @@ func TestPhaseSequence_AllPass(t *testing.T) {
 	s := &KitchenScanner{executor: mock, logger: testLogger(), timeout: 5 * time.Minute}
 
 	// Run each phase manually (simulating what testOne does).
-	cr := s.runPhase(context.Background(), "/tmp", "converge")
+	cr := s.runPhase(context.Background(), "/tmp", nil, "converge")
 	if !cr.Passed {
 		t.Error("converge should pass")
 	}
 
-	vr := s.runPhase(context.Background(), "/tmp", "verify")
+	vr := s.runPhase(context.Background(), "/tmp", nil, "verify")
 	if !vr.Passed {
 		t.Error("verify should pass")
 	}
@@ -1440,7 +1468,7 @@ func TestPhaseSequence_ConvergeFails_VerifySkipped(t *testing.T) {
 	mock.responses["verify"] = mockKitchenResponse{Stdout: "should not run", ExitCode: 0}
 	s := &KitchenScanner{executor: mock, logger: testLogger(), timeout: 5 * time.Minute}
 
-	cr := s.runPhase(context.Background(), "/tmp", "converge")
+	cr := s.runPhase(context.Background(), "/tmp", nil, "converge")
 	if cr.Passed {
 		t.Fatal("converge should fail")
 	}
