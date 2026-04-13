@@ -283,6 +283,10 @@ type DataStore interface {
 	// previews for the given git repo ID.
 	DeleteGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error
 
+	// DeleteGitRepoTestKitchenResultsByRepo removes all test kitchen results
+	// for the given git repo ID. Forces a full retest on the next cycle.
+	DeleteGitRepoTestKitchenResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error
+
 	// DeleteAllGitRepoCookstyleResults removes all git repo cookstyle
 	// results.
 	DeleteAllGitRepoCookstyleResults(ctx context.Context) error
@@ -293,6 +297,10 @@ type DataStore interface {
 	// DeleteAllGitRepoAutocorrectPreviews removes all git repo autocorrect
 	// preview records.
 	DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error
+
+	// DeleteAllGitRepoTestKitchenResults removes all git repo test kitchen
+	// results. Forces a full retest of every repo on the next cycle.
+	DeleteAllGitRepoTestKitchenResults(ctx context.Context) error
 
 	// -----------------------------------------------------------------
 	// Log entries

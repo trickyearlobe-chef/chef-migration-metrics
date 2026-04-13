@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchGitRepoDetail, requestGitRepoRescan, resetGitRepo } from "../api";
+import { fetchGitRepoDetail, requestGitRepoRescan, requestGitRepoTestKitchenRescan, resetGitRepo } from "../api";
 import type { GitRepoDetailResponse, TestKitchenResult } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
@@ -73,6 +73,8 @@ export function GitRepoDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
   const [rescanMsg, setRescanMsg] = useState<string | null>(null);
+  const [rescanningTK, setRescanningTK] = useState(false);
+  const [rescanTKMsg, setRescanTKMsg] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -98,6 +100,19 @@ export function GitRepoDetailPage() {
       })
       .catch((e: Error) => setRescanMsg(`Rescan failed: ${e.message}`))
       .finally(() => setRescanning(false));
+  }, [name, load]);
+
+  const handleRescanTK = useCallback(() => {
+    if (!name) return;
+    setRescanningTK(true);
+    setRescanTKMsg(null);
+    requestGitRepoTestKitchenRescan(name)
+      .then((res) => {
+        setRescanTKMsg(res.message);
+        load();
+      })
+      .catch((e: Error) => setRescanTKMsg(`Rerun failed: ${e.message}`))
+      .finally(() => setRescanningTK(false));
   }, [name, load]);
 
   const handleReset = useCallback(() => {
@@ -141,6 +156,14 @@ export function GitRepoDetailPage() {
           {rescanning ? "Requesting…" : "Rescan CookStyle"}
         </button>
         <button
+          onClick={handleRescanTK}
+          disabled={rescanningTK}
+          className="inline-flex items-center gap-1.5 rounded-md border border-orange-300 bg-white px-3 py-1.5 text-sm font-medium text-orange-700 shadow-sm hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title="Invalidate cached Test Kitchen results and trigger an immediate rerun"
+        >
+          {rescanningTK ? "Requesting…" : "Rerun Test Kitchen"}
+        </button>
+        <button
           onClick={() => setShowResetConfirm(true)}
           disabled={resetting}
           className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -177,6 +200,12 @@ export function GitRepoDetailPage() {
       {rescanMsg && (
         <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
           {rescanMsg}
+        </div>
+      )}
+
+      {rescanTKMsg && (
+        <div className="rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+          {rescanTKMsg}
         </div>
       )}
 

@@ -464,6 +464,12 @@ export function rescanAllCookstyle(): Promise<{ message: string }> {
   });
 }
 
+export function rerunAllTestKitchen(): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>("/api/v1/admin/rerun-all-test-kitchen", {
+    method: "POST",
+  });
+}
+
 export function resetGitCookbook(
   name: string,
 ): Promise<ResetGitCookbookResponse> {
@@ -517,6 +523,17 @@ export function requestGitRepoRescan(name: string): Promise<{
   return apiFetch(`/api/v1/git-repos/${encodeURIComponent(name)}/rescan`, {
     method: "POST",
   });
+}
+
+export function requestGitRepoTestKitchenRescan(name: string): Promise<{
+  git_repo_name: string;
+  repos_invalidated: number;
+  message: string;
+}> {
+  return apiFetch(
+    `/api/v1/git-repos/${encodeURIComponent(name)}/rescan-test-kitchen`,
+    { method: "POST" },
+  );
 }
 
 export function resetGitRepo(name: string): Promise<ResetGitCookbookResponse> {

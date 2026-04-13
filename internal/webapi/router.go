@@ -442,6 +442,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
+	r.adminOnly("/api/v1/admin/rerun-all-test-kitchen", r.handleAdminRerunAllTestKitchen)
 
 	// Performance diagnostics (admin-only, gated on config + recorder).
 	if r.cfg.Performance.IsEnabled() && r.recorder != nil {
