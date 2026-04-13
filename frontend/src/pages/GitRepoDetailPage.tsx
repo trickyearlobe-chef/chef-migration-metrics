@@ -1,10 +1,69 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { fetchGitRepoDetail, requestGitRepoRescan, resetGitRepo } from "../api";
-import type { GitRepoDetailResponse } from "../types";
+import type { GitRepoDetailResponse, TestKitchenResult } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
 
+function TKResultCard({ tk }: { tk: TestKitchenResult }) {
+  const [showLogs, setShowLogs] = useState(false);
+  const hasLogs = !!(tk.converge_output || tk.verify_output || tk.destroy_output);
+
+  return (
+    <div className="rounded-lg border border-gray-100 p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs text-gray-500">Target: {tk.target_chef_version}</span>
+        <StatusBadge
+          variant={tk.compatible ? "compatible" : "incompatible"}
+          label={tk.compatible ? "Compatible" : "Incompatible"}
+          size="sm"
+        />
+        {tk.timed_out && <StatusBadge variant="stale" label="Timed Out" size="sm" />}
+        <span className="text-xs text-gray-500">
+          Converge: {tk.converge_passed ? "✓" : "✗"} | Tests: {tk.tests_passed ? "✓" : "✗"}
+        </span>
+        {tk.platform_tested && (
+          <span className="text-xs text-gray-400">
+            {tk.platform_tested}{tk.driver_used ? ` (${tk.driver_used})` : ""}
+          </span>
+        )}
+        <span className="text-xs text-gray-400">
+          {tk.duration_seconds}s · {new Date(tk.completed_at).toLocaleString()}
+        </span>
+        {hasLogs && (
+          <button
+            onClick={() => setShowLogs((v) => !v)}
+            className="ml-auto text-xs text-blue-600 hover:text-blue-800"
+          >
+            {showLogs ? "Hide logs" : "Show logs"}
+          </button>
+        )}
+      </div>
+      {showLogs && hasLogs && (
+        <div className="mt-3 space-y-2">
+          {tk.converge_output && (
+            <div>
+              <div className="mb-1 text-xs font-medium text-gray-500">Converge</div>
+              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">{tk.converge_output}</pre>
+            </div>
+          )}
+          {tk.verify_output && (
+            <div>
+              <div className="mb-1 text-xs font-medium text-gray-500">Verify</div>
+              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">{tk.verify_output}</pre>
+            </div>
+          )}
+          {tk.destroy_output && (
+            <div>
+              <div className="mb-1 text-xs font-medium text-gray-500">Destroy</div>
+              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">{tk.destroy_output}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function GitRepoDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -265,26 +324,7 @@ export function GitRepoDetailPage() {
                   {gd.test_kitchen && gd.test_kitchen.length > 0 ? (
                     <div className="space-y-2">
                       {gd.test_kitchen.map((tk) => (
-                        <div key={tk.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
-                          <span className="text-xs text-gray-500">Target: {tk.target_chef_version}</span>
-                          <StatusBadge
-                            variant={tk.compatible ? "compatible" : "incompatible"}
-                            label={tk.compatible ? "Compatible" : "Incompatible"}
-                            size="sm"
-                          />
-                          {tk.timed_out && <StatusBadge variant="stale" label="Timed Out" size="sm" />}
-                          <span className="text-xs text-gray-500">
-                            Converge: {tk.converge_passed ? "✓" : "✗"} | Tests: {tk.tests_passed ? "✓" : "✗"}
-                          </span>
-                          {tk.platform_tested && (
-                            <span className="text-xs text-gray-400">
-                              {tk.platform_tested}{tk.driver_used ? ` (${tk.driver_used})` : ""}
-                            </span>
-                          )}
-                          <span className="text-xs text-gray-400">
-                            {tk.duration_seconds}s · {new Date(tk.completed_at).toLocaleString()}
-                          </span>
-                        </div>
+                        <TKResultCard key={tk.target_chef_version} tk={tk} />
                       ))}
                     </div>
                   ) : (

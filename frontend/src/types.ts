@@ -584,6 +584,9 @@ export interface TestKitchenResult {
   started_at: string;
   completed_at: string;
   created_at: string;
+  converge_output?: string;
+  verify_output?: string;
+  destroy_output?: string;
 }
 
 export interface CookbookVersionDetail {
