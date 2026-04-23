@@ -7,6 +7,7 @@ import {
   CookbookCompatibilityCard,
   GitRepoCompatibilityCard,
   TestKitchenCompatibilityCard,
+  GitKitchenResultsSummaryCard,
 } from "./StatusCards";
 import {
   VersionDistributionTrendCard,
@@ -90,6 +91,7 @@ export function DashboardPage() {
           <CookbookCompatibilityCard organisation={org} />
           <GitRepoCompatibilityCard organisation={org} />
           <TestKitchenCompatibilityCard organisation={org} />
+          <GitKitchenResultsSummaryCard />
         </div>
       )}
 

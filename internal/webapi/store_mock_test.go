@@ -149,6 +149,15 @@ type mockStore struct {
 	SetGitRepoKitchenExclusionFn   func(ctx context.Context, name string, reason string, excludedBy string) error
 	ClearGitRepoKitchenExclusionFn func(ctx context.Context, name string) error
 	ListExcludedGitReposFn         func(ctx context.Context) ([]datastore.GitRepo, error)
+
+	// Git Kitchen Results (per-instance)
+	UpsertGitKitchenResultFn         func(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error)
+	GetGitKitchenResultFn            func(ctx context.Context, id string) (datastore.GitKitchenResult, error)
+	ListGitKitchenResultsFn          func(ctx context.Context) ([]datastore.GitKitchenResult, error)
+	ListGitKitchenResultsByBatchFn   func(ctx context.Context, batchID string) ([]datastore.GitKitchenResult, error)
+	ListGitKitchenResultsByRepoFn    func(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
+	CountGitKitchenResultsByBatchFn  func(ctx context.Context, batchID string) (int, int, int, int, int, error)
+	DeleteGitKitchenResultsByBatchFn func(ctx context.Context, batchID string) error
 }
 
 // compile-time check
@@ -1115,6 +1124,55 @@ func (m *mockStore) ListExcludedGitRepos(ctx context.Context) ([]datastore.GitRe
 		return m.ListExcludedGitReposFn(ctx)
 	}
 	panic("mockStore.ListExcludedGitReposFn not set")
+}
+
+func (m *mockStore) UpsertGitKitchenResult(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error) {
+	if m.UpsertGitKitchenResultFn != nil {
+		return m.UpsertGitKitchenResultFn(ctx, p)
+	}
+	return datastore.GitKitchenResult{}, nil
+}
+
+func (m *mockStore) GetGitKitchenResult(ctx context.Context, id string) (datastore.GitKitchenResult, error) {
+	if m.GetGitKitchenResultFn != nil {
+		return m.GetGitKitchenResultFn(ctx, id)
+	}
+	return datastore.GitKitchenResult{}, datastore.ErrNotFound
+}
+
+func (m *mockStore) ListGitKitchenResults(ctx context.Context) ([]datastore.GitKitchenResult, error) {
+	if m.ListGitKitchenResultsFn != nil {
+		return m.ListGitKitchenResultsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListGitKitchenResultsByBatch(ctx context.Context, batchID string) ([]datastore.GitKitchenResult, error) {
+	if m.ListGitKitchenResultsByBatchFn != nil {
+		return m.ListGitKitchenResultsByBatchFn(ctx, batchID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error) {
+	if m.ListGitKitchenResultsByRepoFn != nil {
+		return m.ListGitKitchenResultsByRepoFn(ctx, gitRepoName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CountGitKitchenResultsByBatch(ctx context.Context, batchID string) (int, int, int, int, int, error) {
+	if m.CountGitKitchenResultsByBatchFn != nil {
+		return m.CountGitKitchenResultsByBatchFn(ctx, batchID)
+	}
+	return 0, 0, 0, 0, 0, nil
+}
+
+func (m *mockStore) DeleteGitKitchenResultsByBatch(ctx context.Context, batchID string) error {
+	if m.DeleteGitKitchenResultsByBatchFn != nil {
+		return m.DeleteGitKitchenResultsByBatchFn(ctx, batchID)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

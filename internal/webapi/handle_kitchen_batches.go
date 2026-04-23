@@ -98,6 +98,17 @@ func (r *Router) handleKitchenBatchDetail(w http.ResponseWriter, req *http.Reque
 
 	id := segments[0]
 
+	// /api/v1/kitchen/batches/:id/results
+	if len(segments) == 2 && segments[1] == "results" {
+		r.handleBatchResults(w, req, id)
+		return
+	}
+	// /api/v1/kitchen/batches/:id/progress
+	if len(segments) == 2 && segments[1] == "progress" {
+		r.handleBatchProgress(w, req, id)
+		return
+	}
+
 	// /api/v1/kitchen/batches/:id/run
 	if len(segments) == 2 && segments[1] == "run" {
 		r.handleRunKitchenBatch(w, req, id)

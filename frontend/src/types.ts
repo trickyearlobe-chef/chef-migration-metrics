@@ -1510,3 +1510,39 @@ export interface GitRepoExcludeRequest {
   reason: string;
   excluded_by: string;
 }
+
+/** Per-instance kitchen result from git_kitchen_results table. */
+export interface GitKitchenResult {
+  id: string;
+  batch_id?: string;
+  git_repo_name: string;
+  git_repo_url: string;
+  target_chef_version: string;
+  commit_sha: string;
+  platform_name: string;
+  suite_name: string;
+  template_used?: string;
+  driver_used?: string;
+  converge_passed: boolean | null;
+  tests_passed: boolean | null;
+  timed_out: boolean;
+  converge_output?: string;
+  verify_output?: string;
+  destroy_output?: string;
+  duration_seconds?: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  vm_tracking_id?: string;
+  created_at: string;
+}
+
+/** Aggregate progress counts for a batch. */
+export interface BatchProgress {
+  passed: number;
+  failed: number;
+  pending: number;
+  timed_out: number;
+  errored: number;
+  total: number;
+}

@@ -83,6 +83,8 @@ import type {
   KitchenBatchRequest,
   GitRepoExcludeRequest,
   GitRepoListItem,
+  GitKitchenResult,
+  BatchProgress,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -2157,6 +2159,44 @@ export async function clearGitRepoExclusion(name: string): Promise<void> {
 /** List all git repos excluded from kitchen testing. */
 export async function listExcludedGitRepos(): Promise<GitRepoListItem[]> {
   return apiFetch<GitRepoListItem[]>("/git-repos/excluded");
+}
+
+// ---------------------------------------------------------------------------
+// Git Kitchen Results (per-instance)
+// ---------------------------------------------------------------------------
+
+/** List git kitchen results, optionally filtered by repo or batch. */
+export async function listGitKitchenResults(params?: {
+  repo?: string;
+  batch_id?: string;
+}): Promise<GitKitchenResult[]> {
+  const search = new URLSearchParams();
+  if (params?.repo) search.set("repo", params.repo);
+  if (params?.batch_id) search.set("batch_id", params.batch_id);
+  const qs = search.toString();
+  const path = qs ? `/git-kitchen-results?${qs}` : "/git-kitchen-results";
+  return apiFetch<GitKitchenResult[]>(path);
+}
+
+/** Get a single git kitchen result by ID. */
+export async function getGitKitchenResult(
+  id: string,
+): Promise<GitKitchenResult> {
+  return apiFetch<GitKitchenResult>(`/git-kitchen-results/${id}`);
+}
+
+/** Get per-instance results for a batch. */
+export async function fetchBatchResults(
+  batchId: string,
+): Promise<GitKitchenResult[]> {
+  return apiFetch<GitKitchenResult[]>(`/kitchen/batches/${batchId}/results`);
+}
+
+/** Get batch execution progress (aggregate counts). */
+export async function fetchBatchProgress(
+  batchId: string,
+): Promise<BatchProgress> {
+  return apiFetch<BatchProgress>(`/kitchen/batches/${batchId}/progress`);
 }
 
 // ---------------------------------------------------------------------------
