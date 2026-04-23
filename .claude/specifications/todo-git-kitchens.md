@@ -31,8 +31,8 @@
 
 ## Frontend
 
-- [ ] Batch detail results tab (per-instance table)
-- [ ] Batch progress display (poll + stats)
+- [x] Batch detail results tab (per-instance table)
+- [x] Batch progress display (poll + stats)
 - [ ] Cross-batch results page with filters
 - [ ] Dashboard: per-instance breakdown replacing single pass/fail
 - [ ] Dashboard: platform/suite matrix view
