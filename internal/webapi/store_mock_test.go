@@ -132,6 +132,10 @@ type mockStore struct {
 	MarkVMDestroyedFn                                   func(ctx context.Context, id string) error
 	MarkVMOrphanedFn                                    func(ctx context.Context, id string) error
 	CountTrackedVMsByStatusFn                           func(ctx context.Context) (map[string]int, error)
+	ListNodeKitchenRunsFn                               func(ctx context.Context, orgName string) ([]datastore.NodeKitchenRun, error)
+	ListNodeKitchenRunsByNodeFn                         func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeKitchenRun, error)
+	GetNodeKitchenRunFn                                 func(ctx context.Context, id string) (*datastore.NodeKitchenRun, error)
+	DeleteNodeKitchenRunFn                              func(ctx context.Context, id string) error
 }
 
 // compile-time check
@@ -1007,6 +1011,34 @@ func (m *mockStore) CountTrackedVMsByStatus(ctx context.Context) (map[string]int
 		return m.CountTrackedVMsByStatusFn(ctx)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) ListNodeKitchenRuns(ctx context.Context, orgName string) ([]datastore.NodeKitchenRun, error) {
+	if m.ListNodeKitchenRunsFn != nil {
+		return m.ListNodeKitchenRunsFn(ctx, orgName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListNodeKitchenRunsByNode(ctx context.Context, orgName, nodeName string) ([]datastore.NodeKitchenRun, error) {
+	if m.ListNodeKitchenRunsByNodeFn != nil {
+		return m.ListNodeKitchenRunsByNodeFn(ctx, orgName, nodeName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetNodeKitchenRun(ctx context.Context, id string) (*datastore.NodeKitchenRun, error) {
+	if m.GetNodeKitchenRunFn != nil {
+		return m.GetNodeKitchenRunFn(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) DeleteNodeKitchenRun(ctx context.Context, id string) error {
+	if m.DeleteNodeKitchenRunFn != nil {
+		return m.DeleteNodeKitchenRunFn(ctx, id)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

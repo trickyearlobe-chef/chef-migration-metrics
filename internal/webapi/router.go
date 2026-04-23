@@ -9,9 +9,12 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/pprof"
+
 	"path"
 	"strings"
 	"time"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -103,6 +106,10 @@ type Router struct {
 	// cleanup. Nil when no hypervisor is configured — handlers return
 	// empty results gracefully.
 	hypervisor hypervisor.Hypervisor
+
+	// nodeKitchenRunner orchestrates on-demand Node Kitchen runs.
+	// Nil when not configured — the trigger endpoint returns 503.
+	nodeKitchenRunner *nodekitchen.Runner
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -203,6 +210,11 @@ func WithHypervisor(h hypervisor.Hypervisor) RouterOption {
 	return func(r *Router) { r.hypervisor = h }
 }
 
+// WithNodeKitchenRunner sets the runner used by the Node Kitchen trigger endpoint.
+func WithNodeKitchenRunner(runner *nodekitchen.Runner) RouterOption {
+	return func(r *Router) { r.nodeKitchenRunner = runner }
+}
+
 // NewRouter creates a new Router with all routes registered. The EventHub
 // must already be running (via go hub.Run()) before requests are served.
 //
@@ -224,7 +236,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 	// from startup output when a component was defined but never passed
 	// to NewRouter — the most common class of silent wiring bug with
 	// functional options.
-	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t hypervisor=%t",
+	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t hypervisor=%t node_kitchen=%t",
 		r.logger != nil,
 		r.frontendFS != nil,
 		r.authMiddleware != nil,
@@ -233,6 +245,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 		r.recorder != nil,
 		r.triggerCollection != nil,
 		r.hypervisor != nil,
+		r.nodeKitchenRunner != nil,
 	)
 
 	r.registerRoutes()
@@ -462,6 +475,13 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs)
 	r.adminOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM)
 	r.adminOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
+
+	// -----------------------------------------------------------------
+	// Node Kitchen endpoints
+	// -----------------------------------------------------------------
+	r.adminOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger)
+	r.protect("/api/v1/kitchen/node-runs", r.handleNodeKitchenRuns)
+	r.protect("/api/v1/kitchen/node-runs/", r.handleNodeKitchenRunDetail)
 
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)

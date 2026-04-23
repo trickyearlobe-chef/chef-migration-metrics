@@ -574,6 +574,22 @@ type DataStore interface {
 
 	// DeleteRuntimeSetting removes a runtime setting by key (idempotent).
 	DeleteRuntimeSetting(ctx context.Context, key string) error
+
+	// -----------------------------------------------------------------
+	// Node Kitchen Runs
+	// -----------------------------------------------------------------
+
+	// ListNodeKitchenRuns returns all kitchen runs for the given organisation.
+	ListNodeKitchenRuns(ctx context.Context, orgName string) ([]datastore.NodeKitchenRun, error)
+
+	// ListNodeKitchenRunsByNode returns kitchen runs for a specific node.
+	ListNodeKitchenRunsByNode(ctx context.Context, orgName, nodeName string) ([]datastore.NodeKitchenRun, error)
+
+	// GetNodeKitchenRun returns a single run by ID, or (nil, nil) if not found.
+	GetNodeKitchenRun(ctx context.Context, id string) (*datastore.NodeKitchenRun, error)
+
+	// DeleteNodeKitchenRun removes a run by ID. Returns ErrNotFound if missing.
+	DeleteNodeKitchenRun(ctx context.Context, id string) error
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.
