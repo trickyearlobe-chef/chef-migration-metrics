@@ -73,6 +73,40 @@ for file in "${STAGED_FILES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
+# 1b. Deny-patterns check — block customer names and other sensitive strings
+# ---------------------------------------------------------------------------
+# Reads regexes from .git-deny-patterns (one per line, # = comment).
+# The file is gitignored so real customer names never enter the repo.
+DENY_FILE=".git-deny-patterns"
+if [[ -f "$DENY_FILE" ]]; then
+  DENY_PATTERNS=""
+  while IFS= read -r line; do
+    case "$line" in
+      ""|\#*) continue ;;
+    esac
+    if [[ -z "$DENY_PATTERNS" ]]; then
+      DENY_PATTERNS="$line"
+    else
+      DENY_PATTERNS="$DENY_PATTERNS|$line"
+    fi
+  done < "$DENY_FILE"
+
+  if [[ -n "$DENY_PATTERNS" ]]; then
+    # Scan the staged diff (added lines only) for denied patterns.
+    # Excludes the example file and the deny-patterns file itself.
+    DENY_MATCHES=$(git diff --cached --diff-filter=ACMR -U0 -- . \
+      ':(exclude).git-deny-patterns' \
+      ':(exclude).git-deny-patterns.example' \
+      | grep -iE -- "$DENY_PATTERNS" || true)
+    if [[ -n "$DENY_MATCHES" ]]; then
+      printf "${RED}BLOCKED${RESET}  Staged changes contain denied patterns (see %s):\n" "$DENY_FILE" >&2
+      printf '%s\n' "$DENY_MATCHES" >&2
+      BLOCKED=$((BLOCKED + 1))
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 2. Content checks — scan staged file contents for secret patterns
 # ---------------------------------------------------------------------------
 # We scan the staged (cached) version of each file, not the working copy,

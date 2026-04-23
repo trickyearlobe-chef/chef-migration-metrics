@@ -140,6 +140,9 @@ Desktop.ini
 keys/
 deploy/docker-compose/keys/
 
+# Pre-commit hook deny patterns (contains real customer names)
+.git-deny-patterns
+
 # Environment files with real credentials
 .env
 deploy/docker-compose/.env
