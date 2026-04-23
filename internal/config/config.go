@@ -229,6 +229,24 @@ type TestKitchenConfig struct {
 	// license key. Used as fallback for versions that have no
 	// chef_download_urls entry in any image (public chef.io download).
 	ChefLicenseKeyCredential string `yaml:"chef_license_key_credential" json:"chef_license_key_credential"`
+
+	// HypervisorType selects the hypervisor backend for template discovery
+	// and VM lifecycle management. Valid values: "vcenter", "proxmox", or ""
+	// (auto-detect from driver name). When empty, the driver name is used
+	// to infer the hypervisor type.
+	HypervisorType string `yaml:"hypervisor_type" json:"hypervisor_type"`
+
+	// VMTTLHours is the maximum VM lifetime in hours before flagging as
+	// orphaned. Defaults to 4.
+	VMTTLHours int `yaml:"vm_ttl_hours" json:"vm_ttl_hours"`
+
+	// VMNamePrefix is the prefix used in the VM naming convention.
+	// Defaults to "cmm".
+	VMNamePrefix string `yaml:"vm_name_prefix" json:"vm_name_prefix"`
+
+	// MaxConcurrentVMs is the global ceiling on concurrent VMs across
+	// all batches. Defaults to 10.
+	MaxConcurrentVMs int `yaml:"max_concurrent_vms" json:"max_concurrent_vms"`
 }
 
 // ImageEntry defines a single infrastructure image in the image registry.
@@ -303,6 +321,47 @@ func (tk *TestKitchenConfig) EffectiveTimeoutMinutes() int {
 		return 30
 	}
 	return tk.TimeoutMinutes
+}
+
+// EffectiveVMTTLHours returns the configured VM TTL or the default of 4 hours.
+func (c TestKitchenConfig) EffectiveVMTTLHours() int {
+	if c.VMTTLHours > 0 {
+		return c.VMTTLHours
+	}
+	return 4
+}
+
+// EffectiveVMNamePrefix returns the configured VM name prefix or "cmm".
+func (c TestKitchenConfig) EffectiveVMNamePrefix() string {
+	if c.VMNamePrefix != "" {
+		return c.VMNamePrefix
+	}
+	return "cmm"
+}
+
+// EffectiveMaxConcurrentVMs returns the configured max concurrent VMs or 10.
+func (c TestKitchenConfig) EffectiveMaxConcurrentVMs() int {
+	if c.MaxConcurrentVMs > 0 {
+		return c.MaxConcurrentVMs
+	}
+	return 10
+}
+
+// EffectiveHypervisorType returns the hypervisor type — either explicitly
+// configured or inferred from the driver name.
+func (c TestKitchenConfig) EffectiveHypervisorType() string {
+	if c.HypervisorType != "" {
+		return c.HypervisorType
+	}
+	// Auto-detect from driver name.
+	switch c.Driver {
+	case "vcenter":
+		return "vcenter"
+	case "proxmox":
+		return "proxmox"
+	default:
+		return ""
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1209,6 +1268,20 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	}
 	if driver != "" && !knownDrivers[driver] {
 		w.addf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile", driver)
+	}
+
+	// Hypervisor integration validation.
+	knownHypervisors := map[string]bool{
+		"vcenter": true, "proxmox": true, "": true,
+	}
+	if !knownHypervisors[tk.HypervisorType] {
+		w.addf("analysis_tools.test_kitchen.hypervisor_type %q is not a recognised hypervisor type", tk.HypervisorType)
+	}
+	if tk.VMTTLHours < 0 {
+		ve.add("analysis_tools.test_kitchen.vm_ttl_hours must be >= 0")
+	}
+	if tk.MaxConcurrentVMs < 0 {
+		ve.add("analysis_tools.test_kitchen.max_concurrent_vms must be >= 0")
 	}
 
 	// Image registry validation.

@@ -17,6 +17,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
@@ -97,6 +98,11 @@ type Router struct {
 	// configHolder provides live config access and reload for the admin
 	// config section endpoints. Nil when not wired up.
 	configHolder *configstore.ConfigHolder
+
+	// hypervisor provides template discovery, VM inventory, and orphan
+	// cleanup. Nil when no hypervisor is configured — handlers return
+	// empty results gracefully.
+	hypervisor hypervisor.Hypervisor
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -192,6 +198,11 @@ func WithConfigStore(store *configstore.Store, holder *configstore.ConfigHolder)
 	}
 }
 
+// WithHypervisor sets the hypervisor client for template discovery and VM management.
+func WithHypervisor(h hypervisor.Hypervisor) RouterOption {
+	return func(r *Router) { r.hypervisor = h }
+}
+
 // NewRouter creates a new Router with all routes registered. The EventHub
 // must already be running (via go hub.Run()) before requests are served.
 //
@@ -213,7 +224,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 	// from startup output when a component was defined but never passed
 	// to NewRouter — the most common class of silent wiring bug with
 	// functional options.
-	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t",
+	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t hypervisor=%t",
 		r.logger != nil,
 		r.frontendFS != nil,
 		r.authMiddleware != nil,
@@ -221,6 +232,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 		r.configStore != nil,
 		r.recorder != nil,
 		r.triggerCollection != nil,
+		r.hypervisor != nil,
 	)
 
 	r.registerRoutes()
@@ -441,6 +453,14 @@ func (r *Router) registerRoutes() {
 
 	// Kitchen analysis trigger (admin only)
 	r.adminOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger)
+
+	// -----------------------------------------------------------------
+	// Hypervisor endpoints (viewer for reads, admin for writes)
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/hypervisor/templates", r.handleHypervisorTemplates)
+	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs)
+	r.adminOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM)
+	r.adminOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
 
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)

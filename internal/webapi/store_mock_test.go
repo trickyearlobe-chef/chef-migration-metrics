@@ -125,6 +125,13 @@ type mockStore struct {
 	GetRuntimeSettingFn                                 func(ctx context.Context, key string) (*datastore.RuntimeSetting, error)
 	SetRuntimeSettingFn                                 func(ctx context.Context, key string, value json.RawMessage, updatedBy string) error
 	DeleteRuntimeSettingFn                              func(ctx context.Context, key string) error
+	ListTrackedVMsFn                                    func(ctx context.Context) ([]datastore.TrackedVM, error)
+	ListTrackedVMsFilteredFn                            func(ctx context.Context, status string) ([]datastore.TrackedVM, error)
+	GetTrackedVMFn                                      func(ctx context.Context, id string) (*datastore.TrackedVM, error)
+	ListOrphanedVMsFn                                   func(ctx context.Context) ([]datastore.TrackedVM, error)
+	MarkVMDestroyedFn                                   func(ctx context.Context, id string) error
+	MarkVMOrphanedFn                                    func(ctx context.Context, id string) error
+	CountTrackedVMsByStatusFn                           func(ctx context.Context) (map[string]int, error)
 }
 
 // compile-time check
@@ -947,6 +954,59 @@ func (m *mockStore) DeleteRuntimeSetting(ctx context.Context, key string) error 
 		return m.DeleteRuntimeSettingFn(ctx, key)
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// VM Tracking
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) ListTrackedVMs(ctx context.Context) ([]datastore.TrackedVM, error) {
+	if m.ListTrackedVMsFn != nil {
+		return m.ListTrackedVMsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListTrackedVMsFiltered(ctx context.Context, status string) ([]datastore.TrackedVM, error) {
+	if m.ListTrackedVMsFilteredFn != nil {
+		return m.ListTrackedVMsFilteredFn(ctx, status)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetTrackedVM(ctx context.Context, id string) (*datastore.TrackedVM, error) {
+	if m.GetTrackedVMFn != nil {
+		return m.GetTrackedVMFn(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListOrphanedVMs(ctx context.Context) ([]datastore.TrackedVM, error) {
+	if m.ListOrphanedVMsFn != nil {
+		return m.ListOrphanedVMsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) MarkVMDestroyed(ctx context.Context, id string) error {
+	if m.MarkVMDestroyedFn != nil {
+		return m.MarkVMDestroyedFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockStore) MarkVMOrphaned(ctx context.Context, id string) error {
+	if m.MarkVMOrphanedFn != nil {
+		return m.MarkVMOrphanedFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockStore) CountTrackedVMsByStatus(ctx context.Context) (map[string]int, error) {
+	if m.CountTrackedVMsByStatusFn != nil {
+		return m.CountTrackedVMsByStatusFn(ctx)
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------
