@@ -8,10 +8,10 @@
 
 ## Batch Execution Engine
 
-- [ ] `internal/batch/executor.go` — fan-out orchestrator with bounded concurrency
-- [ ] `internal/batch/executor_test.go` — mock runner, concurrency, cancellation
-- [ ] `internal/batch/kitchen_runner.go` — per-instance runner, overlay, backup/restore
-- [ ] `internal/batch/kitchen_runner_test.go` — chef version override, local.yml conflict
+- [x] `internal/batch/executor.go` — fan-out orchestrator with bounded concurrency
+- [x] `internal/batch/executor_test.go` — mock runner, concurrency, cancellation
+- [x] `internal/batch/kitchen_runner.go` — per-instance runner, overlay, backup/restore
+- [x] `internal/batch/kitchen_runner_test.go` — chef version override, local.yml conflict
 
 ## Resolver Enhancements (deferred from Phase 5)
 
