@@ -1401,3 +1401,45 @@ export interface PlatformMappingStatusResponse {
   skipped_count: number;
   mapped_count: number;
 }
+
+// ---------------------------------------------------------------------------
+// Node Kitchen
+// ---------------------------------------------------------------------------
+
+/** A Node Kitchen run result (mirrors Go datastore.NodeKitchenRun). */
+export interface NodeKitchenRun {
+  id: string;
+  node_name: string;
+  organisation_name: string;
+  target_chef_version: string;
+  cookbook_source: "server" | "git" | "hybrid";
+  platform_name: string;
+  template_used?: string;
+  run_list: string[];
+  cookbook_versions: Record<string, string>;
+  converge_passed: boolean | null;
+  verify_passed: boolean | null;
+  converge_output?: string;
+  verify_output?: string;
+  destroy_output?: string;
+  duration_seconds?: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  vm_tracking_id?: string;
+  created_at: string;
+}
+
+/** Request body for triggering a Node Kitchen run. */
+export interface NodeKitchenRunRequest {
+  node_name: string;
+  organisation_name: string;
+  target_chef_version: string;
+  cookbook_source: "server" | "git" | "hybrid";
+}
+
+/** Response from the trigger endpoint. */
+export interface NodeKitchenTriggerResponse {
+  status: string;
+  message: string;
+}

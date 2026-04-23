@@ -75,6 +75,9 @@ import type {
   TestKitchenConfigResponse,
   TestKitchenConfigSaveResponse,
   PlatformMappingStatusResponse,
+  NodeKitchenRun,
+  NodeKitchenRunRequest,
+  NodeKitchenTriggerResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -1995,6 +1998,49 @@ export async function saveNotifications(
     body: JSON.stringify(value),
   });
   return decodePutConfigResponse<NotificationsConfig>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Node Kitchen
+// ---------------------------------------------------------------------------
+
+/** Trigger a Node Kitchen run (async — returns immediately). */
+export async function triggerNodeKitchenRun(
+  req: NodeKitchenRunRequest,
+): Promise<NodeKitchenTriggerResponse> {
+  const res = await fetch(buildUrl("/kitchen/node-run"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok)
+    throw new Error(`Failed to trigger node kitchen run: ${res.status}`);
+  return res.json();
+}
+
+/** List Node Kitchen runs, optionally filtered by node. */
+export async function fetchNodeKitchenRuns(
+  org: string,
+  node?: string,
+): Promise<NodeKitchenRun[]> {
+  const params = new URLSearchParams({ org });
+  if (node) params.set("node", node);
+  return apiFetch<NodeKitchenRun[]>(`/kitchen/node-runs?${params}`);
+}
+
+/** Get a single Node Kitchen run by ID. */
+export async function fetchNodeKitchenRun(id: string): Promise<NodeKitchenRun> {
+  return apiFetch<NodeKitchenRun>(`/kitchen/node-runs/${id}`);
+}
+
+/** Delete a Node Kitchen run. */
+export async function deleteNodeKitchenRun(id: string): Promise<void> {
+  const res = await fetch(buildUrl(`/kitchen/node-runs/${id}`), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok)
+    throw new Error(`Failed to delete node kitchen run: ${res.status}`);
 }
 
 // ---------------------------------------------------------------------------
