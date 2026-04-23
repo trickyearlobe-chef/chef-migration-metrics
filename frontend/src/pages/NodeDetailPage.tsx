@@ -1,7 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchNodeDetail } from "../api";
-import type { NodeDetailResponse, NodeReadiness, BlockingCookbook, CookbookSourceVerdict } from "../types";
+import {
+  fetchNodeDetail,
+  fetchFilterTargetChefVersions,
+  fetchNodeKitchenRuns,
+  triggerNodeKitchenRun,
+} from "../api";
+import type {
+  NodeDetailResponse,
+  NodeReadiness,
+  BlockingCookbook,
+  CookbookSourceVerdict,
+  NodeKitchenRun,
+} from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { StaleBadge, StatusBadge } from "../components/StatusBadge";
 
@@ -26,13 +37,18 @@ const SOURCE_LABELS: Record<string, string> = {
   none: "None",
 };
 
-const STATUS_ICON: Record<string, { icon: string; color: string; bg: string }> = {
-  compatible: { icon: "✓", color: "text-green-600", bg: "bg-green-50" },
-  compatible_cookstyle_only: { icon: "✓", color: "text-green-500", bg: "bg-green-50" },
-  incompatible: { icon: "✗", color: "text-red-600", bg: "bg-red-50" },
-  untested: { icon: "?", color: "text-gray-400", bg: "bg-gray-50" },
-  unknown: { icon: "—", color: "text-gray-300", bg: "bg-gray-50" },
-};
+const STATUS_ICON: Record<string, { icon: string; color: string; bg: string }> =
+  {
+    compatible: { icon: "✓", color: "text-green-600", bg: "bg-green-50" },
+    compatible_cookstyle_only: {
+      icon: "✓",
+      color: "text-green-500",
+      bg: "bg-green-50",
+    },
+    incompatible: { icon: "✗", color: "text-red-600", bg: "bg-red-50" },
+    untested: { icon: "?", color: "text-gray-400", bg: "bg-gray-50" },
+    unknown: { icon: "—", color: "text-gray-300", bg: "bg-gray-50" },
+  };
 
 function sourceLabel(source: string): string {
   return SOURCE_LABELS[source] || source;
@@ -44,11 +60,16 @@ function statusIcon(status: string) {
 
 function statusLabel(status: string): string {
   switch (status) {
-    case "compatible": return "Compatible";
-    case "compatible_cookstyle_only": return "Compatible (CookStyle only)";
-    case "incompatible": return "Incompatible";
-    case "untested": return "Untested";
-    default: return status || "Unknown";
+    case "compatible":
+      return "Compatible";
+    case "compatible_cookstyle_only":
+      return "Compatible (CookStyle only)";
+    case "incompatible":
+      return "Incompatible";
+    case "untested":
+      return "Untested";
+    default:
+      return status || "Unknown";
   }
 }
 
@@ -61,14 +82,18 @@ function VerdictRow({ verdict }: { verdict: CookbookSourceVerdict }) {
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className={`font-bold ${si.color}`}>{si.icon}</span>
-      <span className="font-medium text-gray-700">{sourceLabel(verdict.source)}</span>
+      <span className="font-medium text-gray-700">
+        {sourceLabel(verdict.source)}
+      </span>
       <span className="text-gray-400">—</span>
       <span className={si.color}>{statusLabel(verdict.status)}</span>
       {verdict.version && (
         <span className="text-gray-400">
           v{verdict.version}
           {verdict.commit_sha && (
-            <span className="ml-1 font-mono text-[10px]">({verdict.commit_sha.slice(0, 7)})</span>
+            <span className="ml-1 font-mono text-[10px]">
+              ({verdict.commit_sha.slice(0, 7)})
+            </span>
           )}
         </span>
       )}
@@ -91,12 +116,12 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
   const hasVerdicts = bc.verdicts && bc.verdicts.length > 0;
 
   const serverIncompat = bc.verdicts?.find(
-    (v) => v.source === "server_cookstyle" && v.status === "incompatible"
+    (v) => v.source === "server_cookstyle" && v.status === "incompatible",
   );
   const gitCompat = bc.verdicts?.find(
     (v) =>
       (v.source === "git_cookstyle" || v.source === "git_test_kitchen") &&
-      (v.status === "compatible" || v.status === "compatible_cookstyle_only")
+      (v.status === "compatible" || v.status === "compatible_cookstyle_only"),
   );
   const showActionHint = serverIncompat && gitCompat;
 
@@ -112,10 +137,11 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
         </Link>
         <span className="text-xs text-gray-500">@{bc.version}</span>
         <span
-          className={`rounded px-1.5 py-0.5 text-xs font-medium ${bc.reason === "incompatible"
-            ? "bg-red-100 text-red-700"
-            : "bg-gray-100 text-gray-600"
-            }`}
+          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+            bc.reason === "incompatible"
+              ? "bg-red-100 text-red-700"
+              : "bg-gray-100 text-gray-600"
+          }`}
         >
           {bc.reason}
         </span>
@@ -130,7 +156,9 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
             onClick={() => setExpanded(!expanded)}
             className="ml-auto text-xs text-blue-600 hover:text-blue-800 hover:underline"
           >
-            {expanded ? "Hide verdicts" : `Show verdicts (${bc.verdicts!.length})`}
+            {expanded
+              ? "Hide verdicts"
+              : `Show verdicts (${bc.verdicts!.length})`}
           </button>
         )}
       </div>
@@ -146,8 +174,8 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
               className="font-medium underline hover:text-blue-900"
             >
               git
-            </Link>
-            {" "}— upload to Chef Server to resolve.
+            </Link>{" "}
+            — upload to Chef Server to resolve.
           </span>
         </div>
       )}
@@ -158,7 +186,8 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
           {bc.verdicts!.map((v, i) => (
             <div key={i} className="flex items-center gap-2">
               <VerdictRow verdict={v} />
-              {(v.source === "git_cookstyle" || v.source === "git_test_kitchen") && (
+              {(v.source === "git_cookstyle" ||
+                v.source === "git_test_kitchen") && (
                 <Link
                   to={`/git-repos/${encodeURIComponent(bc.name)}`}
                   className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline"
@@ -186,7 +215,15 @@ function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
 // Disk space analysis panel
 // ---------------------------------------------------------------------------
 
-function DiskSpacePanel({ r, org, nodeName }: { r: NodeReadiness; org?: string; nodeName?: string }) {
+function DiskSpacePanel({
+  r,
+  org,
+  nodeName,
+}: {
+  r: NodeReadiness;
+  org?: string;
+  nodeName?: string;
+}) {
   const available = r.available_disk_mb;
   const required = r.required_disk_mb;
   const sufficient = r.sufficient_disk_space;
@@ -202,7 +239,9 @@ function DiskSpacePanel({ r, org, nodeName }: { r: NodeReadiness; org?: string; 
         <div className="flex items-center gap-2">
           <span className="text-lg text-gray-400">💾</span>
           <span className="text-sm font-medium text-gray-600">Disk Space</span>
-          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">Unknown</span>
+          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+            Unknown
+          </span>
         </div>
         <p className="mt-1 text-xs text-gray-500">{reason}</p>
         {required != null && (
@@ -211,7 +250,10 @@ function DiskSpacePanel({ r, org, nodeName }: { r: NodeReadiness; org?: string; 
           </p>
         )}
         {org && nodeName && (
-          <Link to={diskDetailPath(org, nodeName)} className="mt-1.5 inline-block text-xs text-blue-600 hover:text-blue-800 hover:underline">
+          <Link
+            to={diskDetailPath(org, nodeName)}
+            className="mt-1.5 inline-block text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
             View Filesystem Details →
           </Link>
         )}
@@ -220,21 +262,26 @@ function DiskSpacePanel({ r, org, nodeName }: { r: NodeReadiness; org?: string; 
   }
 
   // Known state
-  const pct = available != null && required != null && required > 0
-    ? Math.min(100, Math.round((available / required) * 100))
-    : null;
+  const pct =
+    available != null && required != null && required > 0
+      ? Math.min(100, Math.round((available / required) * 100))
+      : null;
 
   const barColor = sufficient ? "bg-green-500" : "bg-red-500";
   const borderColor = sufficient ? "border-green-200" : "border-red-200";
   const bgColor = sufficient ? "bg-green-50" : "bg-red-50";
-  const badgeBg = sufficient ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700";
+  const badgeBg = sufficient
+    ? "bg-green-100 text-green-700"
+    : "bg-red-100 text-red-700";
 
   return (
     <div className={`rounded-lg border ${borderColor} ${bgColor} p-3`}>
       <div className="flex items-center gap-2">
         <span className="text-lg">{sufficient ? "✅" : "⚠️"}</span>
         <span className="text-sm font-medium text-gray-700">Disk Space</span>
-        <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${badgeBg}`}>
+        <span
+          className={`rounded px-1.5 py-0.5 text-xs font-medium ${badgeBg}`}
+        >
           {sufficient ? "Sufficient" : "Insufficient"}
         </span>
       </div>
@@ -243,8 +290,14 @@ function DiskSpacePanel({ r, org, nodeName }: { r: NodeReadiness; org?: string; 
       {available != null && required != null && pct != null && (
         <div className="mt-2">
           <div className="flex justify-between text-xs text-gray-500">
-            <span>Available: <strong className="text-gray-700">{formatMB(available)}</strong></span>
-            <span>Required: <strong className="text-gray-700">{formatMB(required)}</strong></span>
+            <span>
+              Available:{" "}
+              <strong className="text-gray-700">{formatMB(available)}</strong>
+            </span>
+            <span>
+              Required:{" "}
+              <strong className="text-gray-700">{formatMB(required)}</strong>
+            </span>
           </div>
           <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-gray-200">
             <div
@@ -262,12 +315,16 @@ function DiskSpacePanel({ r, org, nodeName }: { r: NodeReadiness; org?: string; 
 
       {available != null && required == null && (
         <p className="mt-1 text-xs text-gray-500">
-          Available: <strong>{formatMB(available)}</strong> (no minimum configured)
+          Available: <strong>{formatMB(available)}</strong> (no minimum
+          configured)
         </p>
       )}
 
       {org && nodeName && (
-        <Link to={diskDetailPath(org, nodeName)} className="mt-2 inline-block text-xs text-blue-600 hover:text-blue-800 hover:underline">
+        <Link
+          to={diskDetailPath(org, nodeName)}
+          className="mt-2 inline-block text-xs text-blue-600 hover:text-blue-800 hover:underline"
+        >
           View Filesystem Details →
         </Link>
       )}
@@ -289,7 +346,7 @@ function formatMB(mb: number): string {
 interface CookbookRow {
   name: string;
   version: string;
-  status: string;       // "compatible", "incompatible", "untested", "unknown"
+  status: string; // "compatible", "incompatible", "untested", "unknown"
   source: string;
   blocking?: BlockingCookbook;
 }
@@ -320,7 +377,7 @@ function buildCookbookRows(
       rows.push({
         name,
         version: bc.version || version,
-        status: bc.reason,      // "incompatible" or "untested"
+        status: bc.reason, // "incompatible" or "untested"
         source: bc.source,
         blocking: bc,
       });
@@ -336,7 +393,12 @@ function buildCookbookRows(
   }
 
   // Sort: incompatible first, then untested, then compatible. Within each group, alphabetical.
-  const ORDER: Record<string, number> = { incompatible: 0, untested: 1, compatible: 2, compatible_cookstyle_only: 2 };
+  const ORDER: Record<string, number> = {
+    incompatible: 0,
+    untested: 1,
+    compatible: 2,
+    compatible_cookstyle_only: 2,
+  };
   rows.sort((a, b) => {
     const oa = ORDER[a.status] ?? 3;
     const ob = ORDER[b.status] ?? 3;
@@ -362,10 +424,16 @@ function CookbookCompatibilityTable({
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
         <div className="flex items-center gap-2">
           <span className="text-lg">📦</span>
-          <span className="text-sm font-medium text-gray-600">Cookbook Compatibility</span>
-          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">No cookbooks</span>
+          <span className="text-sm font-medium text-gray-600">
+            Cookbook Compatibility
+          </span>
+          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+            No cookbooks
+          </span>
         </div>
-        <p className="mt-1 text-xs text-gray-500">This node has no cookbooks in its run list.</p>
+        <p className="mt-1 text-xs text-gray-500">
+          This node has no cookbooks in its run list.
+        </p>
       </div>
     );
   }
@@ -374,8 +442,12 @@ function CookbookCompatibilityTable({
   const untested = rows.filter((r) => r.status === "untested").length;
   const compatible = rows.length - incompatible - untested;
 
-  const blocking = rows.filter((r) => r.status === "incompatible" || r.status === "untested");
-  const nonBlocking = rows.filter((r) => r.status !== "incompatible" && r.status !== "untested");
+  const blocking = rows.filter(
+    (r) => r.status === "incompatible" || r.status === "untested",
+  );
+  const nonBlocking = rows.filter(
+    (r) => r.status !== "incompatible" && r.status !== "untested",
+  );
   const displayedNonBlocking = showAll ? nonBlocking : [];
 
   const allCompatible = incompatible === 0 && untested === 0;
@@ -387,7 +459,9 @@ function CookbookCompatibilityTable({
       {/* Summary header */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-lg">📦</span>
-        <span className="text-sm font-medium text-gray-700">Cookbook Compatibility</span>
+        <span className="text-sm font-medium text-gray-700">
+          Cookbook Compatibility
+        </span>
         {allCompatible ? (
           <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700">
             All {rows.length} compatible
@@ -447,20 +521,29 @@ function CookbookCompatibilityTable({
             row.blocking ? (
               <BlockingCookbookCard key={row.name} bc={row.blocking} />
             ) : (
-              <div key={row.name} className="flex items-center gap-2 rounded border border-red-100 bg-red-50 px-2 py-1.5 text-xs">
-                <span className={`font-bold ${statusIcon(row.status).color}`}>{statusIcon(row.status).icon}</span>
+              <div
+                key={row.name}
+                className="flex items-center gap-2 rounded border border-red-100 bg-red-50 px-2 py-1.5 text-xs"
+              >
+                <span className={`font-bold ${statusIcon(row.status).color}`}>
+                  {statusIcon(row.status).icon}
+                </span>
                 <Link
                   to={`/cookbooks/${encodeURIComponent(row.name)}`}
                   className="font-medium text-gray-700 hover:text-blue-600 hover:underline"
                 >
                   {row.name}
                 </Link>
-                {row.version && <span className="text-gray-400">@{row.version}</span>}
-                <span className={`rounded px-1 py-0.5 text-[10px] ${statusIcon(row.status).bg} ${statusIcon(row.status).color}`}>
+                {row.version && (
+                  <span className="text-gray-400">@{row.version}</span>
+                )}
+                <span
+                  className={`rounded px-1 py-0.5 text-[10px] ${statusIcon(row.status).bg} ${statusIcon(row.status).color}`}
+                >
                   {row.status}
                 </span>
               </div>
-            )
+            ),
           )}
         </div>
       )}
@@ -488,7 +571,9 @@ function CookbookCompatibilityTable({
                 >
                   <span className="font-bold text-green-500">✓</span>
                   {row.name}
-                  {row.version && <span className="text-green-400">@{row.version}</span>}
+                  {row.version && (
+                    <span className="text-green-400">@{row.version}</span>
+                  )}
                 </Link>
               ))}
             </div>
@@ -517,7 +602,9 @@ function ReadinessCard({
   const ready = r.is_ready;
 
   return (
-    <div className={`rounded-lg border p-4 ${ready ? "border-green-200 bg-green-50/30" : "border-red-200 bg-red-50/20"}`}>
+    <div
+      className={`rounded-lg border p-4 ${ready ? "border-green-200 bg-green-50/30" : "border-red-200 bg-red-50/20"}`}
+    >
       {/* Header */}
       <div className="flex items-center gap-3">
         <StatusBadge variant={ready ? "ready" : "blocked"} />
@@ -537,11 +624,14 @@ function ReadinessCard({
       </div>
 
       {/* Overall verdict */}
-      <div className={`mt-3 rounded-lg px-3 py-2 text-sm ${ready ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+      <div
+        className={`mt-3 rounded-lg px-3 py-2 text-sm ${ready ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}
+      >
         {ready ? (
           <span className="flex items-center gap-2">
             <span className="text-base">🟢</span>
-            This node is <strong>ready</strong> to upgrade — all cookbooks are compatible and disk space is sufficient.
+            This node is <strong>ready</strong> to upgrade — all cookbooks are
+            compatible and disk space is sufficient.
           </span>
         ) : (
           <span className="flex items-center gap-2">
@@ -571,7 +661,15 @@ function ReadinessCard({
 // Readiness section (container)
 // ---------------------------------------------------------------------------
 
-function ReadinessSection({ data, org, nodeName }: { data: NodeDetailResponse; org?: string; nodeName?: string }) {
+function ReadinessSection({
+  data,
+  org,
+  nodeName,
+}: {
+  data: NodeDetailResponse;
+  org?: string;
+  nodeName?: string;
+}) {
   if (!data.readiness || data.readiness.length === 0) return null;
 
   return (
@@ -593,6 +691,274 @@ function ReadinessSection({ data, org, nodeName }: { data: NodeDetailResponse; o
 }
 
 // ---------------------------------------------------------------------------
+// Node Kitchen Testing section
+// ---------------------------------------------------------------------------
+
+function NodeKitchenSection({
+  org,
+  nodeName,
+  targetVersions,
+}: {
+  org: string;
+  nodeName: string;
+  targetVersions: string[];
+}) {
+  const [runs, setRuns] = useState<NodeKitchenRun[]>([]);
+  const [loadingRuns, setLoadingRuns] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [targetVersion, setTargetVersion] = useState(targetVersions[0] || "");
+  const [cookbookSource, setCookbookSource] = useState<
+    "server" | "git" | "hybrid"
+  >("server");
+  const [triggering, setTriggering] = useState(false);
+  const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [expandedError, setExpandedError] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadRuns = useCallback(async () => {
+    try {
+      const data = await fetchNodeKitchenRuns(org, nodeName);
+      setRuns(data);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingRuns(false);
+    }
+  }, [org, nodeName]);
+
+  useEffect(() => {
+    loadRuns();
+  }, [loadRuns]);
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
+
+  const handleTrigger = async () => {
+    setTriggering(true);
+    setTriggerMsg(null);
+    try {
+      const resp = await triggerNodeKitchenRun({
+        node_name: nodeName,
+        organisation_name: org,
+        target_chef_version: targetVersion,
+        cookbook_source: cookbookSource,
+      });
+      setTriggerMsg(`Started: ${resp.message}`);
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      const startTime = Date.now();
+      pollingRef.current = setInterval(async () => {
+        if (Date.now() - startTime > 30 * 60 * 1000) {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          return;
+        }
+        try {
+          const fresh = await fetchNodeKitchenRuns(org, nodeName);
+          setRuns(fresh);
+          if (fresh.length > 0 && fresh[0].completed_at) {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+            setTriggerMsg(null);
+          }
+        } catch {
+          /* ignore polling errors */
+        }
+      }, 5000);
+    } catch (e: unknown) {
+      setTriggerMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  const convergeIcon = (r: NodeKitchenRun) =>
+    r.converge_passed === true
+      ? "✅"
+      : r.converge_passed === false
+        ? "❌"
+        : "⏳";
+  const verifyIcon = (r: NodeKitchenRun) =>
+    r.verify_passed === true ? "✅" : r.verify_passed === false ? "❌" : "—";
+  const formatDuration = (s?: number) => {
+    if (s == null) return "—";
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  };
+
+  return (
+    <div className="card">
+      <h3 className="card-header">Node Kitchen Testing</h3>
+      <div className="mb-4">
+        <button
+          className="text-sm text-blue-600 hover:underline"
+          onClick={() => setShowForm(!showForm)}
+        >
+          {showForm ? "▾ Hide Test Form" : "▸ New Test Run…"}
+        </button>
+        {showForm && (
+          <div className="mt-3 rounded border border-gray-200 bg-gray-50 p-4 space-y-3">
+            <div className="flex flex-wrap gap-4 items-end">
+              <label className="text-sm">
+                <span className="block font-medium text-gray-700 mb-1">
+                  Target Chef Version
+                </span>
+                <select
+                  className="rounded border border-gray-300 px-2 py-1 text-sm"
+                  value={targetVersion}
+                  onChange={(e) => setTargetVersion(e.target.value)}
+                >
+                  {targetVersions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <fieldset className="text-sm">
+                <legend className="font-medium text-gray-700 mb-1">
+                  Cookbook Source
+                </legend>
+                <div className="flex gap-3">
+                  {(["server", "git", "hybrid"] as const).map((src) => (
+                    <label
+                      key={src}
+                      className="flex items-center gap-1 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="cookbook_source"
+                        value={src}
+                        checked={cookbookSource === src}
+                        onChange={() => setCookbookSource(src)}
+                      />
+                      <span className="capitalize">{src}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <button
+                className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                onClick={handleTrigger}
+                disabled={triggering || targetVersions.length === 0}
+              >
+                {triggering ? "Starting…" : "Run Test"}
+              </button>
+            </div>
+            {triggerMsg && (
+              <p className="text-sm text-blue-600">{triggerMsg}</p>
+            )}
+          </div>
+        )}
+      </div>
+      {loadingRuns ? (
+        <p className="text-sm text-gray-400">Loading runs…</p>
+      ) : runs.length === 0 ? (
+        <p className="text-sm text-gray-400">No kitchen runs yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs text-gray-500">
+                <th className="py-1 pr-3">Target</th>
+                <th className="py-1 pr-3">Source</th>
+                <th className="py-1 pr-3">Platform</th>
+                <th className="py-1 pr-3">Converge</th>
+                <th className="py-1 pr-3">Verify</th>
+                <th className="py-1 pr-3">Duration</th>
+                <th className="py-1 pr-3">Started</th>
+                <th className="py-1 pr-3">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((r) => (
+                <Fragment key={r.id}>
+                  <tr
+                    className="border-b cursor-pointer hover:bg-gray-50"
+                    onClick={() =>
+                      setExpandedRow(expandedRow === r.id ? null : r.id)
+                    }
+                  >
+                    <td className="py-1 pr-3">{r.target_chef_version}</td>
+                    <td className="py-1 pr-3 capitalize">
+                      {r.cookbook_source}
+                    </td>
+                    <td className="py-1 pr-3">{r.platform_name || "—"}</td>
+                    <td className="py-1 pr-3">{convergeIcon(r)}</td>
+                    <td className="py-1 pr-3">{verifyIcon(r)}</td>
+                    <td className="py-1 pr-3">
+                      {formatDuration(r.duration_seconds)}
+                    </td>
+                    <td className="py-1 pr-3">
+                      {r.started_at
+                        ? new Date(r.started_at).toLocaleString()
+                        : "—"}
+                    </td>
+                    <td className="py-1 pr-3">
+                      {r.error_message ? (
+                        <span
+                          className="text-red-600 cursor-pointer"
+                          title={r.error_message}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedError(
+                              expandedError === r.id ? null : r.id,
+                            );
+                          }}
+                        >
+                          {expandedError === r.id
+                            ? r.error_message
+                            : r.error_message.slice(0, 40) +
+                              (r.error_message.length > 40 ? "…" : "")}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                  {expandedRow === r.id && (
+                    <tr>
+                      <td colSpan={8} className="bg-gray-50 p-3">
+                        <div className="space-y-2">
+                          {r.converge_output && (
+                            <div>
+                              <span className="text-xs font-medium text-gray-500">
+                                Converge Output
+                              </span>
+                              <pre className="mt-1 max-h-48 overflow-auto rounded bg-gray-900 p-2 text-xs text-green-300">
+                                {r.converge_output}
+                              </pre>
+                            </div>
+                          )}
+                          {r.verify_output && (
+                            <div>
+                              <span className="text-xs font-medium text-gray-500">
+                                Verify Output
+                              </span>
+                              <pre className="mt-1 max-h-48 overflow-auto rounded bg-gray-900 p-2 text-xs text-green-300">
+                                {r.verify_output}
+                              </pre>
+                            </div>
+                          )}
+                          {!r.converge_output && !r.verify_output && (
+                            <p className="text-xs text-gray-400">
+                              No output available yet.
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page component
 // ---------------------------------------------------------------------------
 
@@ -601,6 +967,7 @@ export function NodeDetailPage() {
   const [data, setData] = useState<NodeDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [targetVersions, setTargetVersions] = useState<string[]>([]);
 
   const load = useCallback(() => {
     if (!org || !name) return;
@@ -612,7 +979,15 @@ export function NodeDetailPage() {
       .finally(() => setLoading(false));
   }, [org, name]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    fetchFilterTargetChefVersions()
+      .then((r) => setTargetVersions(r.data))
+      .catch(() => {});
+  }, []);
 
   if (loading) return <LoadingSpinner message="Loading node detail…" />;
   if (error) return <ErrorAlert message={error} onRetry={load} />;
@@ -624,7 +999,9 @@ export function NodeDetailPage() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="text-sm text-gray-500">
-        <Link to="/nodes" className="hover:text-blue-600 hover:underline">Nodes</Link>
+        <Link to="/nodes" className="hover:text-blue-600 hover:underline">
+          Nodes
+        </Link>
         <span className="mx-1">/</span>
         <span className="text-gray-800">{node.node_name}</span>
       </nav>
@@ -637,14 +1014,37 @@ export function NodeDetailPage() {
 
       {/* Info grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <InfoCard label="Organisation" value={data.organisation_name || node.organisation_id} />
+        <InfoCard
+          label="Organisation"
+          value={data.organisation_name || node.organisation_id}
+        />
         <InfoCard label="Environment" value={node.chef_environment || "—"} />
         <InfoCard label="Chef Version" value={node.chef_version || "—"} />
-        <InfoCard label="Platform" value={`${node.platform || "—"} ${node.platform_version || ""}`} />
+        <InfoCard
+          label="Platform"
+          value={`${node.platform || "—"} ${node.platform_version || ""}`}
+        />
         <InfoCard label="Platform Family" value={node.platform_family || "—"} />
-        <InfoCard label="Policy" value={node.policy_name ? `${node.policy_name} / ${node.policy_group}` : "—"} />
-        <InfoCard label="Last Collected" value={new Date(node.collected_at).toLocaleString()} />
-        <InfoCard label="Ohai Time" value={node.ohai_time ? new Date(Number(node.ohai_time) * 1000).toLocaleString() : "—"} />
+        <InfoCard
+          label="Policy"
+          value={
+            node.policy_name
+              ? `${node.policy_name} / ${node.policy_group}`
+              : "—"
+          }
+        />
+        <InfoCard
+          label="Last Collected"
+          value={new Date(node.collected_at).toLocaleString()}
+        />
+        <InfoCard
+          label="Ohai Time"
+          value={
+            node.ohai_time
+              ? new Date(Number(node.ohai_time) * 1000).toLocaleString()
+              : "—"
+          }
+        />
         <Link
           to={diskDetailPath(org!, name!)}
           className="stat-card group flex items-center gap-2 hover:border-blue-300 hover:bg-blue-50/50"
@@ -662,13 +1062,25 @@ export function NodeDetailPage() {
       {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
       <ReadinessSection data={data} org={org} nodeName={name} />
 
+      {/* Node Kitchen Testing */}
+      {org && name && (
+        <NodeKitchenSection
+          org={org}
+          nodeName={name}
+          targetVersions={targetVersions}
+        />
+      )}
+
       {/* Run list */}
       {node.run_list && node.run_list.length > 0 && (
         <div className="card">
           <h3 className="card-header">Run List</h3>
           <div className="flex flex-wrap gap-2">
             {node.run_list.map((item, i) => (
-              <code key={i} className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
+              <code
+                key={i}
+                className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700"
+              >
                 {item}
               </code>
             ))}
@@ -682,7 +1094,9 @@ export function NodeDetailPage() {
           <h3 className="card-header">Roles</h3>
           <div className="flex flex-wrap gap-2">
             {node.roles.map((role) => (
-              <span key={role} className="badge badge-compatible">{role}</span>
+              <span key={role} className="badge badge-compatible">
+                {role}
+              </span>
             ))}
           </div>
         </div>
@@ -699,7 +1113,10 @@ export function NodeDetailPage() {
                 to={`/cookbooks/${encodeURIComponent(name)}`}
                 className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100"
               >
-                {name} {typeof info === "object" && info && "version" in info ? `@${(info as Record<string, string>).version}` : ""}
+                {name}{" "}
+                {typeof info === "object" && info && "version" in info
+                  ? `@${(info as Record<string, string>).version}`
+                  : ""}
               </Link>
             ))}
           </div>
