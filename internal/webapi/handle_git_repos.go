@@ -288,6 +288,27 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 	segments := pathSegments(req.URL.Path, "/api/v1/git-repos/")
 
+	// /api/v1/git-repos/excluded — list all excluded repos
+	if len(segments) == 1 && segments[0] == "excluded" {
+		r.handleListExcludedGitRepos(w, req)
+		return
+	}
+
+	// /api/v1/git-repos/:name/exclude — POST to exclude, DELETE to clear
+	if len(segments) == 2 && segments[1] == "exclude" {
+		repoName := segments[0]
+		switch req.Method {
+		case http.MethodPost:
+			r.handleGitRepoExclude(w, req, repoName)
+		case http.MethodDelete:
+			r.handleGitRepoClearExclusion(w, req, repoName)
+		default:
+			WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
+				"This endpoint supports POST and DELETE.")
+		}
+		return
+	}
+
 	// /api/v1/git-repos/:name/:version/remediation
 	if len(segments) >= 3 && segments[len(segments)-1] == "remediation" {
 		r.handleGitRepoRemediation(w, req)
@@ -587,6 +608,7 @@ func (r *Router) handleGitRepoRescanTestKitchen(w http.ResponseWriter, req *http
 		"message":              msg,
 	})
 }
+
 //
 // POST /api/v1/git-repos/:name/reset
 //

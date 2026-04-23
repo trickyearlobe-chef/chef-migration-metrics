@@ -590,6 +590,42 @@ type DataStore interface {
 
 	// DeleteNodeKitchenRun removes a run by ID. Returns ErrNotFound if missing.
 	DeleteNodeKitchenRun(ctx context.Context, id string) error
+
+	// -----------------------------------------------------------------
+	// Kitchen Batches
+	// -----------------------------------------------------------------
+
+	// CreateKitchenBatch creates a new batch definition.
+	CreateKitchenBatch(ctx context.Context, p datastore.CreateKitchenBatchParams) (datastore.KitchenBatch, error)
+
+	// GetKitchenBatch returns a batch by UUID. Returns ErrNotFound if missing.
+	GetKitchenBatch(ctx context.Context, id string) (datastore.KitchenBatch, error)
+
+	// ListKitchenBatches returns all batches ordered by created_at DESC.
+	ListKitchenBatches(ctx context.Context) ([]datastore.KitchenBatch, error)
+
+	// UpdateKitchenBatch updates a draft batch. Returns ErrNotFound if
+	// the batch does not exist or is not in draft status.
+	UpdateKitchenBatch(ctx context.Context, id string, p datastore.UpdateKitchenBatchParams) (datastore.KitchenBatch, error)
+
+	// UpdateKitchenBatchStatus transitions a batch to a new status.
+	UpdateKitchenBatchStatus(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error)
+
+	// DeleteKitchenBatch removes a batch (only draft/completed/cancelled).
+	DeleteKitchenBatch(ctx context.Context, id string) error
+
+	// -----------------------------------------------------------------
+	// Git Repo Kitchen Exclusions
+	// -----------------------------------------------------------------
+
+	// SetGitRepoKitchenExclusion marks a repo as excluded from kitchen testing.
+	SetGitRepoKitchenExclusion(ctx context.Context, name string, reason string, excludedBy string) error
+
+	// ClearGitRepoKitchenExclusion removes the kitchen exclusion flag.
+	ClearGitRepoKitchenExclusion(ctx context.Context, name string) error
+
+	// ListExcludedGitRepos returns all repos excluded from kitchen testing.
+	ListExcludedGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

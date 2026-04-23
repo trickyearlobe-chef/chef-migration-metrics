@@ -483,6 +483,12 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/kitchen/node-runs", r.handleNodeKitchenRuns)
 	r.protect("/api/v1/kitchen/node-runs/", r.handleNodeKitchenRunDetail)
 
+	// -----------------------------------------------------------------
+	// Kitchen Batch endpoints
+	// -----------------------------------------------------------------
+	r.adminOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
+	r.protect("/api/v1/kitchen/batches/", r.handleKitchenBatchDetail)
+
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
 		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers)

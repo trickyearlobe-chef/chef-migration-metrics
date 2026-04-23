@@ -1443,3 +1443,70 @@ export interface NodeKitchenTriggerResponse {
   status: string;
   message: string;
 }
+
+// ---------------------------------------------------------------------------
+// Kitchen Batches
+// ---------------------------------------------------------------------------
+
+/** Filter criteria for a kitchen batch (all AND-combined). */
+export interface BatchFilters {
+  cookbook_names?: string[];
+  platforms?: string[];
+  exclude_cookbooks?: string[];
+  has_test_suite?: boolean;
+  previous_status?: string;
+  target_chef_versions?: string[];
+  include_excluded?: boolean;
+}
+
+/** A kitchen batch definition. */
+export interface KitchenBatch {
+  id: string;
+  name: string;
+  filters: BatchFilters;
+  max_count: number | null;
+  max_concurrent_vms: number | null;
+  dry_run: boolean;
+  status: "draft" | "previewing" | "running" | "completed" | "cancelled";
+  created_by?: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+/** A resolved cookbook in a batch estimate. */
+export interface ResolvedCookbook {
+  name: string;
+  git_repo_url: string;
+  platforms?: string[];
+  suites?: string[];
+  estimated_vms: number;
+}
+
+/** Batch estimate summary. */
+export interface BatchEstimate {
+  total_cookbooks: number;
+  total_estimated_vms: number;
+  per_platform?: Record<string, number>;
+  cookbooks: ResolvedCookbook[];
+}
+
+/** Batch detail response (batch + resolved estimate). */
+export interface KitchenBatchDetail extends KitchenBatch {
+  estimate?: BatchEstimate;
+}
+
+/** Request body for creating/updating a batch. */
+export interface KitchenBatchRequest {
+  name: string;
+  filters: BatchFilters;
+  max_count?: number | null;
+  max_concurrent_vms?: number | null;
+  dry_run?: boolean;
+}
+
+/** Request body for excluding a git repo from kitchen testing. */
+export interface GitRepoExcludeRequest {
+  reason: string;
+  excluded_by: string;
+}
