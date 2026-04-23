@@ -269,12 +269,12 @@ func TestTestKitchenConfig_PUT_ValidationError_MissingImage(t *testing.T) {
 	}
 	found := false
 	for _, d := range details {
-		if s, ok := d.(string); ok && s == "platform_map[0]: image is required" {
+		if s, ok := d.(string); ok && s == "platform_map[0]: image is required (or set skip to true)" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected 'image is required' in details, got %v", details)
+		t.Errorf("expected 'image is required (or set skip to true)' in details, got %v", details)
 	}
 }
 
@@ -447,12 +447,74 @@ func TestValidateTestKitchenConfig_MissingImage(t *testing.T) {
 	problems := validateTestKitchenConfig(cfg)
 	found := false
 	for _, p := range problems {
-		if p == "platform_map[0]: image is required" {
+		if p == "platform_map[0]: image is required (or set skip to true)" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected 'image is required', got %v", problems)
+		t.Errorf("expected 'image is required (or set skip to true)', got %v", problems)
+	}
+}
+
+func TestValidateTestKitchenConfig_SkipAllowsEmptyImage(t *testing.T) {
+	cfg := config.TestKitchenConfig{
+		Driver: "ec2",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "", Skip: true},
+		},
+	}
+	problems := validateTestKitchenConfig(cfg)
+	if len(problems) != 0 {
+		t.Errorf("expected no problems for skip entry with empty image, got %v", problems)
+	}
+}
+
+func TestValidateTestKitchenConfig_PatternRequiresWildcard(t *testing.T) {
+	cfg := config.TestKitchenConfig{
+		Driver: "ec2",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel7", Image: "rhel-tmpl", IsPattern: true},
+		},
+	}
+	problems := validateTestKitchenConfig(cfg)
+	found := false
+	for _, p := range problems {
+		if p == `platform_map[0]: is_pattern is true but kitchen_name "rhel7" contains no wildcards (* or ?)` {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected wildcard warning, got %v", problems)
+	}
+}
+
+func TestValidateTestKitchenConfig_PatternWithWildcardValid(t *testing.T) {
+	cfg := config.TestKitchenConfig{
+		Driver: "ec2",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel*", Image: "rhel-tmpl", IsPattern: true},
+		},
+	}
+	problems := validateTestKitchenConfig(cfg)
+	if len(problems) != 0 {
+		t.Errorf("expected no problems, got %v", problems)
+	}
+}
+
+func TestValidateTestKitchenConfig_PatternNoDuplicateCheck(t *testing.T) {
+	// Two pattern entries with the same name should not trigger duplicate check.
+	cfg := config.TestKitchenConfig{
+		Driver: "ec2",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel*", Image: "rhel-tmpl", IsPattern: true},
+			{KitchenName: "rhel*", Image: "rhel-tmpl-2", IsPattern: true},
+		},
+	}
+	problems := validateTestKitchenConfig(cfg)
+	for _, p := range problems {
+		if p == `platform_map[1]: duplicate kitchen_name "rhel*"` {
+			t.Errorf("pattern entries should not trigger duplicate check, got %v", problems)
+		}
 	}
 }
 

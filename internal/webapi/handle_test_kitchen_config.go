@@ -4,9 +4,11 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -102,6 +104,9 @@ func (r *Router) handlePutTestKitchenConfig(w http.ResponseWriter, req *http.Req
 
 	r.logf("INFO", "admin %q saved Test Kitchen configuration (driver=%s)", username, tkCfg.EffectiveDriver())
 
+	// Generate non-blocking warnings about unmapped platforms.
+	mappingWarnings := r.generatePlatformMappingWarnings(req.Context(), tkCfg)
+
 	// Re-read to get the server-set updated_at.
 	saved, _ := r.db.GetRuntimeSetting(req.Context(), "test_kitchen")
 	resp := map[string]any{
@@ -111,6 +116,9 @@ func (r *Router) handlePutTestKitchenConfig(w http.ResponseWriter, req *http.Req
 	}
 	if saved != nil {
 		resp["updated_at"] = saved.UpdatedAt
+	}
+	if len(mappingWarnings) > 0 {
+		resp["warnings"] = mappingWarnings
 	}
 	WriteJSON(w, http.StatusOK, resp)
 }
@@ -149,10 +157,15 @@ func validateTestKitchenConfig(cfg config.TestKitchenConfig) []string {
 		if entry.KitchenName == "" {
 			problems = append(problems, fmt.Sprintf("platform_map[%d]: kitchen_name is required", i))
 		}
-		if entry.Image == "" {
-			problems = append(problems, fmt.Sprintf("platform_map[%d]: image is required", i))
+		// Image is required unless skip is true.
+		if entry.Image == "" && !entry.Skip {
+			problems = append(problems, fmt.Sprintf("platform_map[%d]: image is required (or set skip to true)", i))
 		}
-		if entry.KitchenName != "" {
+		// Pattern entries must contain at least one wildcard.
+		if entry.IsPattern && !strings.ContainsAny(entry.KitchenName, "*?") {
+			problems = append(problems, fmt.Sprintf("platform_map[%d]: is_pattern is true but kitchen_name %q contains no wildcards (* or ?)", i, entry.KitchenName))
+		}
+		if entry.KitchenName != "" && !entry.IsPattern {
 			if seen[entry.KitchenName] {
 				problems = append(problems, fmt.Sprintf("platform_map[%d]: duplicate kitchen_name %q", i, entry.KitchenName))
 			}
@@ -161,4 +174,50 @@ func validateTestKitchenConfig(cfg config.TestKitchenConfig) []string {
 	}
 
 	return problems
+}
+
+// generatePlatformMappingWarnings checks the saved config against discovered
+// platforms and returns non-blocking warnings.
+func (r *Router) generatePlatformMappingWarnings(ctx context.Context, cfg config.TestKitchenConfig) []string {
+	var warnings []string
+
+	platforms, err := r.db.ListDiscoveredPlatforms(ctx)
+	if err != nil {
+		// Cannot generate warnings — not a failure.
+		return nil
+	}
+	if len(platforms) == 0 {
+		return nil
+	}
+
+	// Check for unmapped platforms.
+	unmapped := 0
+	for _, p := range platforms {
+		result := config.MatchPlatform(p.PlatformName, cfg.PlatformMap)
+		if result.Index < 0 {
+			unmapped++
+		}
+	}
+	if unmapped > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d discovered platform(s) have no matching platform_map entry", unmapped))
+	}
+
+	// Check for zero-match patterns.
+	for i, entry := range cfg.PlatformMap {
+		if !entry.IsPattern {
+			continue
+		}
+		matched := 0
+		for _, p := range platforms {
+			r := config.MatchPlatform(p.PlatformName, cfg.PlatformMap)
+			if r.Index == i {
+				matched++
+			}
+		}
+		if matched == 0 {
+			warnings = append(warnings, fmt.Sprintf("platform_map[%d]: pattern %q matches no discovered platforms", i, entry.KitchenName))
+		}
+	}
+
+	return warnings
 }
