@@ -27,7 +27,7 @@
 - [x] `GET /api/v1/kitchen/batches/:id/progress` — status counts
 - [x] `GET /api/v1/git-kitchen-results` — cross-batch result query
 - [x] Add new DataStore methods to interface + mock
-- [ ] Handler tests for new endpoints
+- [x] Handler tests for new endpoints
 
 ## Frontend
 
