@@ -2,9 +2,9 @@
 
 ## DB Migration & Datastore
 
-- [ ] Migration `0014_node_kitchen_runs.up.sql` / `.down.sql`
-- [ ] `internal/datastore/node_kitchen_runs.go` — types, CRUD, scan helpers
-- [ ] `internal/datastore/node_kitchen_runs_test.go` — validation + scan tests
+- [x] Migration `0014_node_kitchen_runs.up.sql` / `.down.sql`
+- [x] `internal/datastore/node_kitchen_runs.go` — types, CRUD, scan helpers
+- [x] `internal/datastore/node_kitchen_runs_test.go` — validation + scan tests
 
 ## Run_list Expansion
 
@@ -13,33 +13,33 @@
 
 ## Cookbook Assembly
 
-- [ ] `internal/nodekitchen/assembly.go` — server/git/hybrid download, concurrent fetch, write to temp dir
+- [x] `internal/nodekitchen/assembly.go` — server/git/hybrid download, concurrent fetch, write to temp dir
 - [ ] `internal/nodekitchen/assembly_test.go` — mock interfaces, verify layout
 
 ## Synthetic Kitchen Config
 
-- [ ] `internal/nodekitchen/config_gen.go` — generate `.kitchen.yml` + `.kitchen.local.yml`
-- [ ] `internal/nodekitchen/config_gen_test.go` — YAML structure, platform mapping
+- [x] `internal/nodekitchen/config_gen.go` — generate `.kitchen.yml` + `.kitchen.local.yml`
+- [x] `internal/nodekitchen/config_gen_test.go` — YAML structure, platform mapping
 
 ## Runner
 
-- [ ] `internal/nodekitchen/runner.go` — orchestration: validate → expand → assemble → generate → execute → store → cleanup
-- [ ] `internal/nodekitchen/runner_test.go` — mock all deps, verify flow
+- [x] `internal/nodekitchen/runner.go` — orchestration: validate → expand → assemble → generate → execute → store → cleanup
+- [x] `internal/nodekitchen/runner_test.go` — mock all deps, verify flow
 
 ## API
 
-- [ ] `internal/webapi/handle_node_kitchen.go` — POST trigger, GET list, GET detail, DELETE
-- [ ] `internal/webapi/handle_node_kitchen_test.go` — handler unit tests
+- [x] `internal/webapi/handle_node_kitchen.go` — POST trigger, GET list, GET detail, DELETE
+- [x] `internal/webapi/handle_node_kitchen_test.go` — handler unit tests
 
 ## Frontend
 
-- [ ] `frontend/src/types.ts` — `NodeKitchenRun` type
-- [ ] `frontend/src/api.ts` — API functions for node kitchen endpoints
-- [ ] Node kitchen UI — trigger button, source selector, results view
+- [x] `frontend/src/types.ts` — `NodeKitchenRun` type
+- [x] `frontend/src/api.ts` — API functions for node kitchen endpoints
+- [x] Node kitchen UI — trigger button, source selector, results view
 - [ ] Frontend tests
 
 ## Integration
 
-- [ ] Register routes in router
-- [ ] Wire runner in service composition
+- [x] Register routes in router
+- [ ] Wire runner in service composition (`main.go`)
 - [ ] Update `.gitignore` / `.dockerignore` if needed
