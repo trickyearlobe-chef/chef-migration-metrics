@@ -31,7 +31,7 @@
 - [x] `frontend/src/api.ts` — batch + exclusion API functions
 - [x] Batch management UI (list, create, detail, dry-run preview)
 - [x] Exclusion management UI
-- [ ] Frontend tests for KitchenBatchesPage
+- [x] Frontend tests for KitchenBatchesPage
 
 ## Remaining
 
