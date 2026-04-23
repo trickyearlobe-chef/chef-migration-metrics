@@ -537,6 +537,31 @@ type DataStore interface {
 	ListDiscoveredPlatformsFiltered(ctx context.Context, osFamily string, minCount int) ([]datastore.KitchenDiscoveredPlatform, error)
 
 	// -----------------------------------------------------------------
+	// VM Tracking
+	// -----------------------------------------------------------------
+
+	// ListTrackedVMs returns all tracked VMs ordered by created_at DESC.
+	ListTrackedVMs(ctx context.Context) ([]datastore.TrackedVM, error)
+
+	// ListTrackedVMsFiltered returns tracked VMs with optional status filter.
+	ListTrackedVMsFiltered(ctx context.Context, status string) ([]datastore.TrackedVM, error)
+
+	// GetTrackedVM returns a tracked VM by ID. Returns (nil, nil) if not found.
+	GetTrackedVM(ctx context.Context, id string) (*datastore.TrackedVM, error)
+
+	// ListOrphanedVMs returns VMs past their TTL that are not yet destroyed.
+	ListOrphanedVMs(ctx context.Context) ([]datastore.TrackedVM, error)
+
+	// MarkVMDestroyed marks a VM as destroyed with actual_destroy_at = now().
+	MarkVMDestroyed(ctx context.Context, id string) error
+
+	// MarkVMOrphaned marks a VM as orphaned.
+	MarkVMOrphaned(ctx context.Context, id string) error
+
+	// CountTrackedVMsByStatus returns VM counts grouped by status.
+	CountTrackedVMsByStatus(ctx context.Context) (map[string]int, error)
+
+	// -----------------------------------------------------------------
 	// Runtime Settings
 	// -----------------------------------------------------------------
 
