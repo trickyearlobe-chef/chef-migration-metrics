@@ -61,6 +61,11 @@ func requireGET(w http.ResponseWriter, req *http.Request) bool {
 	return requireMethod(w, req, http.MethodGet)
 }
 
+// requirePOST is a shorthand for requireMethod(w, req, "POST").
+func requirePOST(w http.ResponseWriter, req *http.Request) bool {
+	return requireMethod(w, req, http.MethodPost)
+}
+
 // ---------------------------------------------------------------------------
 // Query parameter helpers
 // ---------------------------------------------------------------------------

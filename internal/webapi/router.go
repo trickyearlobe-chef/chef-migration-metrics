@@ -432,6 +432,16 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/notifications", r.handleAdminConfigNotifications)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/test-kitchen/config", r.handleTestKitchenConfig)
+
+	// Kitchen analysis endpoints (viewer — any authenticated user)
+	r.protect("/api/v1/kitchen/analysis/summary", r.handleKitchenAnalysisSummary)
+	r.protect("/api/v1/kitchen/analysis/platforms", r.handleKitchenAnalysisPlatforms)
+	r.protect("/api/v1/kitchen/analysis/cookbooks", r.handleKitchenAnalysisCookbooksRouter)
+	r.protect("/api/v1/kitchen/analysis/cookbooks/", r.handleKitchenAnalysisCookbooksRouter)
+
+	// Kitchen analysis trigger (admin only)
+	r.adminOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger)
+
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
 		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers)

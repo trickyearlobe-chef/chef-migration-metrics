@@ -116,6 +116,12 @@ type mockStore struct {
 	ActiveQueriesFn                                     func(ctx context.Context) ([]datastore.ActiveQuery, error)
 	ResetPgStatsFn                                      func(ctx context.Context) error
 	GetCookbookPlatformCoverageFn                       func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
+	GetKitchenAnalysisSummaryFn                         func(ctx context.Context) (*datastore.KitchenAnalysisSummary, error)
+	ListKitchenAnalysisResultsFn                        func(ctx context.Context) ([]datastore.KitchenAnalysisResult, error)
+	ListKitchenAnalysisResultsFilteredFn                func(ctx context.Context, driverName string, hasLocalOverride *bool) ([]datastore.KitchenAnalysisResult, error)
+	GetKitchenAnalysisResultByNameFn                    func(ctx context.Context, gitRepoName string) (*datastore.KitchenAnalysisResult, error)
+	ListDiscoveredPlatformsFn                           func(ctx context.Context) ([]datastore.KitchenDiscoveredPlatform, error)
+	ListDiscoveredPlatformsFilteredFn                   func(ctx context.Context, osFamily string, minCount int) ([]datastore.KitchenDiscoveredPlatform, error)
 	GetRuntimeSettingFn                                 func(ctx context.Context, key string) (*datastore.RuntimeSetting, error)
 	SetRuntimeSettingFn                                 func(ctx context.Context, key string, value json.RawMessage, updatedBy string) error
 	DeleteRuntimeSettingFn                              func(ctx context.Context, key string) error
@@ -876,6 +882,48 @@ func (m *mockStore) ResetPgStats(ctx context.Context) error {
 func (m *mockStore) GetCookbookPlatformCoverage(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error) {
 	if m.GetCookbookPlatformCoverageFn != nil {
 		return m.GetCookbookPlatformCoverageFn(ctx, cookbookName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetKitchenAnalysisSummary(ctx context.Context) (*datastore.KitchenAnalysisSummary, error) {
+	if m.GetKitchenAnalysisSummaryFn != nil {
+		return m.GetKitchenAnalysisSummaryFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListKitchenAnalysisResults(ctx context.Context) ([]datastore.KitchenAnalysisResult, error) {
+	if m.ListKitchenAnalysisResultsFn != nil {
+		return m.ListKitchenAnalysisResultsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListKitchenAnalysisResultsFiltered(ctx context.Context, driverName string, hasLocalOverride *bool) ([]datastore.KitchenAnalysisResult, error) {
+	if m.ListKitchenAnalysisResultsFilteredFn != nil {
+		return m.ListKitchenAnalysisResultsFilteredFn(ctx, driverName, hasLocalOverride)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetKitchenAnalysisResultByName(ctx context.Context, gitRepoName string) (*datastore.KitchenAnalysisResult, error) {
+	if m.GetKitchenAnalysisResultByNameFn != nil {
+		return m.GetKitchenAnalysisResultByNameFn(ctx, gitRepoName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListDiscoveredPlatforms(ctx context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
+	if m.ListDiscoveredPlatformsFn != nil {
+		return m.ListDiscoveredPlatformsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListDiscoveredPlatformsFiltered(ctx context.Context, osFamily string, minCount int) ([]datastore.KitchenDiscoveredPlatform, error) {
+	if m.ListDiscoveredPlatformsFilteredFn != nil {
+		return m.ListDiscoveredPlatformsFilteredFn(ctx, osFamily, minCount)
 	}
 	return nil, nil
 }
