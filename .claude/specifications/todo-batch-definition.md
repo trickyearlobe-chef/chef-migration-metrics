@@ -35,6 +35,6 @@
 
 ## Remaining
 
-- [ ] Platform filter resolution (cross-ref kitchen analysis data in resolver — deferred to Phase 6)
-- [ ] Previous status filter resolution (cross-ref TK results in resolver — deferred to Phase 6)
-- [ ] Batch execution engine (deferred to Phase 6)
+- [x] Platform filter resolution (cross-ref kitchen analysis data in resolver — done in Phase 6)
+- [x] Previous status filter resolution (cross-ref TK results in resolver — done in Phase 6)
+- [x] Batch execution engine (done in Phase 6)
