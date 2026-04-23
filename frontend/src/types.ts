@@ -1337,6 +1337,9 @@ export interface ImageEntry {
 export interface PlatformMapEntry {
   kitchen_name: string;
   image: string;
+  is_pattern?: boolean;
+  skip?: boolean;
+  transport?: PlatformMapTransport | null;
 }
 
 /** Test Kitchen configuration stored in runtime_settings. */
@@ -1367,4 +1370,34 @@ export interface TestKitchenConfigSaveResponse {
   updated_at?: string;
   updated_by?: string;
   warnings?: string[];
+}
+
+/** A discovered platform with its mapping status. */
+export interface DiscoveredPlatformStatus {
+  platform_name: string;
+  normalised_name: string;
+  os_family: string;
+  cookbook_count: number;
+  transport_type: string;
+  mapping_status: "mapped" | "skipped" | "unmapped";
+  matched_entry_index: number;
+  matched_image: string;
+}
+
+/** Hypervisor template available for platform mapping. */
+export interface HypervisorTemplate {
+  id: string;
+  name: string;
+  guest_os?: string;
+  notes?: string;
+  last_modified?: string;
+}
+
+/** Response from GET /api/v1/admin/platform-mapping/status. */
+export interface PlatformMappingStatusResponse {
+  discovered_platforms: DiscoveredPlatformStatus[];
+  templates: HypervisorTemplate[];
+  unmapped_count: number;
+  skipped_count: number;
+  mapped_count: number;
 }

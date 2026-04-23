@@ -444,6 +444,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/notifications", r.handleAdminConfigNotifications)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/test-kitchen/config", r.handleTestKitchenConfig)
+	r.adminOnly("/api/v1/admin/platform-mapping/status", r.handlePlatformMappingStatus)
 
 	// Kitchen analysis endpoints (viewer — any authenticated user)
 	r.protect("/api/v1/kitchen/analysis/summary", r.handleKitchenAnalysisSummary)

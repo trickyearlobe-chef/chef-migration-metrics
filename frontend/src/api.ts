@@ -74,6 +74,7 @@ import type {
   TestKitchenConfig,
   TestKitchenConfigResponse,
   TestKitchenConfigSaveResponse,
+  PlatformMappingStatusResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -1588,6 +1589,17 @@ export async function deleteTestKitchenConfig(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Platform Mapping Status (admin)
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/admin/platform-mapping/status — get platform mapping status. */
+export function fetchPlatformMappingStatus(): Promise<PlatformMappingStatusResponse> {
+  return apiFetch<PlatformMappingStatusResponse>(
+    buildUrl("/admin/platform-mapping/status"),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Admin — Config sections
 // ---------------------------------------------------------------------------
 
@@ -1842,7 +1854,9 @@ export async function saveConcurrency(
 
 /** GET /api/v1/admin/config/analysis-tools */
 export function fetchAnalysisTools(): Promise<AnalysisToolsConfig> {
-  return apiFetch<AnalysisToolsConfig>(buildUrl("/admin/config/analysis-tools"));
+  return apiFetch<AnalysisToolsConfig>(
+    buildUrl("/admin/config/analysis-tools"),
+  );
 }
 
 /** PUT /api/v1/admin/config/analysis-tools */

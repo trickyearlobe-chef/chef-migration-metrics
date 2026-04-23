@@ -275,8 +275,10 @@ type ImageEntry struct {
 	ChefDownloadURLs map[string]string `yaml:"chef_download_urls" json:"chef_download_urls"`
 }
 
-// PlatformMapEntry maps a single kitchen platform name to an image in
-// the image registry.
+// PlatformMapEntry maps a single kitchen platform name (or glob pattern) to
+// an image in the image registry. When IsPattern is true, KitchenName is
+// treated as a glob pattern. When Skip is true, the platform is excluded
+// from TK runs.
 type PlatformMapEntry struct {
 	// KitchenName is the platform name as it appears in the cookbook's
 	// .kitchen.yml (e.g. "ubuntu-22.04", "centos-7", "windows-2022").
@@ -284,6 +286,21 @@ type PlatformMapEntry struct {
 
 	// Image is the name of an entry in the Images list.
 	Image string `yaml:"image" json:"image"`
+
+	// IsPattern indicates that KitchenName is a glob pattern (supports * and ?
+	// wildcards) rather than an exact platform name. Pattern entries are
+	// evaluated in order — first match wins — but exact matches always take
+	// priority regardless of position.
+	IsPattern bool `yaml:"is_pattern,omitempty" json:"is_pattern,omitempty"`
+
+	// Skip marks this platform as explicitly excluded from Test Kitchen runs.
+	// When true, the Image field is ignored. Skipped platforms count as
+	// "handled" for validation purposes (not flagged as unmapped).
+	Skip bool `yaml:"skip,omitempty" json:"skip,omitempty"`
+
+	// Transport provides per-mapping transport credential overrides. When set,
+	// these override the transport defined on the referenced ImageEntry.
+	Transport *PlatformMapTransport `yaml:"transport,omitempty" json:"transport,omitempty"`
 }
 
 // PlatformMapTransport holds transport credentials for an image registry
