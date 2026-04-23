@@ -15,18 +15,18 @@
 
 ## Resolver Enhancements (deferred from Phase 5)
 
-- [ ] Platform filter resolution (cross-ref kitchen analysis data)
-- [ ] Previous status filter resolution (cross-ref git_kitchen_results)
-- [ ] Populate ResolvedCookbook.Platforms/Suites from analysis data
-- [ ] Resolver tests with platform/status filters
+- [x] Platform filter resolution (cross-ref kitchen analysis data)
+- [x] Previous status filter resolution (cross-ref git_kitchen_results)
+- [x] Populate ResolvedCookbook.Platforms/Suites from analysis data
+- [x] Resolver tests with platform/status filters
 
 ## API
 
-- [ ] Wire batch execution into `POST /api/v1/kitchen/batches/:id/run`
-- [ ] `GET /api/v1/kitchen/batches/:id/results` — per-instance results
-- [ ] `GET /api/v1/kitchen/batches/:id/progress` — status counts
-- [ ] `GET /api/v1/git-kitchen-results` — cross-batch result query
-- [ ] Add new DataStore methods to interface + mock
+- [x] Wire batch execution into `POST /api/v1/kitchen/batches/:id/run`
+- [x] `GET /api/v1/kitchen/batches/:id/results` — per-instance results
+- [x] `GET /api/v1/kitchen/batches/:id/progress` — status counts
+- [x] `GET /api/v1/git-kitchen-results` — cross-batch result query
+- [x] Add new DataStore methods to interface + mock
 - [ ] Handler tests for new endpoints
 
 ## Frontend

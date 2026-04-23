@@ -489,6 +489,10 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
 	r.protect("/api/v1/kitchen/batches/", r.handleKitchenBatchDetail)
 
+	// Git Kitchen Results (per-instance)
+	r.protect("/api/v1/git-kitchen-results", r.handleGitKitchenResults)
+	r.protect("/api/v1/git-kitchen-results/", r.handleGitKitchenResultDetail)
+
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
 		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers)

@@ -626,6 +626,31 @@ type DataStore interface {
 
 	// ListExcludedGitRepos returns all repos excluded from kitchen testing.
 	ListExcludedGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
+
+	// -----------------------------------------------------------------
+	// Git Kitchen Results (per-instance)
+	// -----------------------------------------------------------------
+
+	// UpsertGitKitchenResult inserts or updates a per-instance kitchen result.
+	UpsertGitKitchenResult(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error)
+
+	// GetGitKitchenResult returns a result by UUID.
+	GetGitKitchenResult(ctx context.Context, id string) (datastore.GitKitchenResult, error)
+
+	// ListGitKitchenResults returns all per-instance kitchen results.
+	ListGitKitchenResults(ctx context.Context) ([]datastore.GitKitchenResult, error)
+
+	// ListGitKitchenResultsByBatch returns results for a specific batch.
+	ListGitKitchenResultsByBatch(ctx context.Context, batchID string) ([]datastore.GitKitchenResult, error)
+
+	// ListGitKitchenResultsByRepo returns results for a specific repo.
+	ListGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
+
+	// CountGitKitchenResultsByBatch returns aggregate status counts for a batch.
+	CountGitKitchenResultsByBatch(ctx context.Context, batchID string) (passed, failed, pending, timedOut, errored int, err error)
+
+	// DeleteGitKitchenResultsByBatch removes all results for a batch.
+	DeleteGitKitchenResultsByBatch(ctx context.Context, batchID string) error
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

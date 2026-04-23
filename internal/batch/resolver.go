@@ -61,12 +61,31 @@ type Filters struct {
 
 // Resolver resolves batch filters into a list of matching cookbooks.
 type Resolver struct {
-	repos GitRepoLister
+	repos    GitRepoLister
+	analysis KitchenAnalysisProvider   // optional, nil = skip platform filter
+	results  TestKitchenResultProvider // optional, nil = skip status filter
 }
 
-// NewResolver creates a Resolver.
-func NewResolver(repos GitRepoLister) *Resolver {
-	return &Resolver{repos: repos}
+// ResolverOption configures optional Resolver dependencies.
+type ResolverOption func(*Resolver)
+
+// WithAnalysisProvider sets an optional KitchenAnalysisProvider on the Resolver.
+func WithAnalysisProvider(p KitchenAnalysisProvider) ResolverOption {
+	return func(r *Resolver) { r.analysis = p }
+}
+
+// WithResultProvider sets an optional TestKitchenResultProvider on the Resolver.
+func WithResultProvider(p TestKitchenResultProvider) ResolverOption {
+	return func(r *Resolver) { r.results = p }
+}
+
+// NewResolver creates a Resolver with required repos dependency and optional providers.
+func NewResolver(repos GitRepoLister, opts ...ResolverOption) *Resolver {
+	r := &Resolver{repos: repos}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // ResolveBatch applies the given filters to the git repo list and returns
@@ -108,6 +127,35 @@ func (r *Resolver) ResolveBatch(ctx context.Context, filters Filters, maxCount *
 		})
 	}
 
+	// Platform filter: keep only repos that have at least one matching platform
+	// in their kitchen analysis data. Requires analysis provider.
+	if len(filters.Platforms) > 0 && r.analysis != nil {
+		remaining = filterRepos(remaining, func(repo GitRepo) bool {
+			platforms, err := r.analysis.GetKitchenAnalysisPlatforms(ctx, repo.Name)
+			if err != nil || len(platforms) == 0 {
+				return false // No analysis data = no match
+			}
+			for _, p := range platforms {
+				if matchAnyGlob(filters.Platforms, p) {
+					return true
+				}
+			}
+			return false
+		})
+	}
+
+	// Previous status filter: keep only repos whose last result matches.
+	// Requires result provider.
+	if filters.PreviousStatus != "" && r.results != nil {
+		remaining = filterRepos(remaining, func(repo GitRepo) bool {
+			status, err := r.results.GetLatestTestKitchenStatus(ctx, repo.Name)
+			if err != nil {
+				return false
+			}
+			return status == filters.PreviousStatus
+		})
+	}
+
 	// MaxCount cap.
 	if maxCount != nil && *maxCount > 0 && len(remaining) > *maxCount {
 		remaining = remaining[:*maxCount]
@@ -121,6 +169,22 @@ func (r *Resolver) ResolveBatch(ctx context.Context, filters Filters, maxCount *
 			GitRepoURL: repo.GitRepoURL,
 		}
 		totalVMs += cookbooks[i].EstimatedVMs
+	}
+
+	// Populate platforms from analysis data when available.
+	if r.analysis != nil {
+		for i := range cookbooks {
+			platforms, err := r.analysis.GetKitchenAnalysisPlatforms(ctx, cookbooks[i].Name)
+			if err == nil {
+				cookbooks[i].Platforms = platforms
+				cookbooks[i].EstimatedVMs = len(platforms)
+			}
+		}
+		// Recompute total estimated VMs.
+		totalVMs = 0
+		for _, c := range cookbooks {
+			totalVMs += c.EstimatedVMs
+		}
 	}
 
 	return BatchEstimate{

@@ -6,6 +6,7 @@ package batch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -16,6 +17,30 @@ type mockRepoLister struct {
 
 func (m *mockRepoLister) ListGitRepos(_ context.Context) ([]GitRepo, error) {
 	return m.repos, m.err
+}
+
+type mockAnalysisProvider struct {
+	platforms map[string][]string
+}
+
+func (m *mockAnalysisProvider) GetKitchenAnalysisPlatforms(_ context.Context, repoName string) ([]string, error) {
+	p, ok := m.platforms[repoName]
+	if !ok {
+		return nil, fmt.Errorf("no analysis for %s", repoName)
+	}
+	return p, nil
+}
+
+type mockResultProvider struct {
+	statuses map[string]string
+}
+
+func (m *mockResultProvider) GetLatestTestKitchenStatus(_ context.Context, repoName string) (string, error) {
+	s, ok := m.statuses[repoName]
+	if !ok {
+		return "", fmt.Errorf("not found")
+	}
+	return s, nil
 }
 
 func boolPtr(b bool) *bool { return &b }
@@ -302,6 +327,156 @@ func TestResolveBatch_EmptyRepoList(t *testing.T) {
 	}
 	if len(est.Cookbooks) != 0 {
 		t.Errorf("expected empty cookbooks slice, got %d items", len(est.Cookbooks))
+	}
+}
+
+func TestResolveBatch_PlatformFilter(t *testing.T) {
+	repos := []GitRepo{
+		{Name: "apache2", GitRepoURL: "https://git.example.com/apache2.git", HasTestSuite: true},
+		{Name: "nginx", GitRepoURL: "https://git.example.com/nginx.git", HasTestSuite: true},
+		{Name: "iis", GitRepoURL: "https://git.example.com/iis.git", HasTestSuite: true},
+	}
+	mock := &mockRepoLister{repos: repos}
+	analysis := &mockAnalysisProvider{
+		platforms: map[string][]string{
+			"apache2": {"ubuntu-22.04", "centos-8"},
+			"nginx":   {"ubuntu-22.04"},
+			"iis":     {"windows-2019"},
+		},
+	}
+	r := NewResolver(mock, WithAnalysisProvider(analysis))
+
+	est, err := r.ResolveBatch(context.Background(), Filters{Platforms: []string{"ubuntu*"}}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if est.TotalCookbooks != 2 {
+		t.Errorf("expected 2 cookbooks, got %d: %v", est.TotalCookbooks, cookbookNames(est.Cookbooks))
+	}
+	if !containsName(est.Cookbooks, "apache2") {
+		t.Error("apache2 should be in results")
+	}
+	if !containsName(est.Cookbooks, "nginx") {
+		t.Error("nginx should be in results")
+	}
+	if containsName(est.Cookbooks, "iis") {
+		t.Error("iis should not be in results")
+	}
+	// Verify Platforms field is populated.
+	for _, c := range est.Cookbooks {
+		if len(c.Platforms) == 0 {
+			t.Errorf("cookbook %s should have platforms populated", c.Name)
+		}
+	}
+}
+
+func TestResolveBatch_PlatformFilterWithoutProvider(t *testing.T) {
+	repos := []GitRepo{
+		{Name: "apache2", GitRepoURL: "https://git.example.com/apache2.git", HasTestSuite: true},
+		{Name: "nginx", GitRepoURL: "https://git.example.com/nginx.git", HasTestSuite: true},
+		{Name: "iis", GitRepoURL: "https://git.example.com/iis.git", HasTestSuite: true},
+	}
+	mock := &mockRepoLister{repos: repos}
+	r := NewResolver(mock) // No analysis provider.
+
+	est, err := r.ResolveBatch(context.Background(), Filters{Platforms: []string{"ubuntu*"}}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Filter ignored when provider is nil — all 3 returned.
+	if est.TotalCookbooks != 3 {
+		t.Errorf("expected 3 cookbooks, got %d: %v", est.TotalCookbooks, cookbookNames(est.Cookbooks))
+	}
+}
+
+func TestResolveBatch_PreviousStatusFilter(t *testing.T) {
+	repos := []GitRepo{
+		{Name: "apache2", GitRepoURL: "https://git.example.com/apache2.git", HasTestSuite: true},
+		{Name: "nginx", GitRepoURL: "https://git.example.com/nginx.git", HasTestSuite: true},
+		{Name: "iis", GitRepoURL: "https://git.example.com/iis.git", HasTestSuite: true},
+	}
+	mock := &mockRepoLister{repos: repos}
+	results := &mockResultProvider{
+		statuses: map[string]string{
+			"apache2": "passed",
+			"nginx":   "failed",
+			"iis":     "passed",
+		},
+	}
+	r := NewResolver(mock, WithResultProvider(results))
+
+	est, err := r.ResolveBatch(context.Background(), Filters{PreviousStatus: "passed"}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if est.TotalCookbooks != 2 {
+		t.Errorf("expected 2 cookbooks, got %d: %v", est.TotalCookbooks, cookbookNames(est.Cookbooks))
+	}
+	if !containsName(est.Cookbooks, "apache2") {
+		t.Error("apache2 should be in results")
+	}
+	if !containsName(est.Cookbooks, "iis") {
+		t.Error("iis should be in results")
+	}
+	if containsName(est.Cookbooks, "nginx") {
+		t.Error("nginx should not be in results")
+	}
+}
+
+func TestResolveBatch_PreviousStatusFilterWithoutProvider(t *testing.T) {
+	repos := []GitRepo{
+		{Name: "apache2", GitRepoURL: "https://git.example.com/apache2.git", HasTestSuite: true},
+		{Name: "nginx", GitRepoURL: "https://git.example.com/nginx.git", HasTestSuite: true},
+		{Name: "iis", GitRepoURL: "https://git.example.com/iis.git", HasTestSuite: true},
+	}
+	mock := &mockRepoLister{repos: repos}
+	r := NewResolver(mock) // No result provider.
+
+	est, err := r.ResolveBatch(context.Background(), Filters{PreviousStatus: "passed"}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Filter ignored when provider is nil — all 3 returned.
+	if est.TotalCookbooks != 3 {
+		t.Errorf("expected 3 cookbooks, got %d: %v", est.TotalCookbooks, cookbookNames(est.Cookbooks))
+	}
+}
+
+func TestResolveBatch_PlatformsPopulated(t *testing.T) {
+	repos := []GitRepo{
+		{Name: "apache2", GitRepoURL: "https://git.example.com/apache2.git", HasTestSuite: true},
+		{Name: "nginx", GitRepoURL: "https://git.example.com/nginx.git", HasTestSuite: true},
+	}
+	mock := &mockRepoLister{repos: repos}
+	analysis := &mockAnalysisProvider{
+		platforms: map[string][]string{
+			"apache2": {"ubuntu-22.04", "centos-8", "debian-11"},
+			"nginx":   {"ubuntu-22.04"},
+		},
+	}
+	r := NewResolver(mock, WithAnalysisProvider(analysis))
+
+	est, err := r.ResolveBatch(context.Background(), Filters{}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if est.TotalCookbooks != 2 {
+		t.Errorf("expected 2 cookbooks, got %d", est.TotalCookbooks)
+	}
+
+	for _, c := range est.Cookbooks {
+		expected := analysis.platforms[c.Name]
+		if len(c.Platforms) != len(expected) {
+			t.Errorf("cookbook %s: expected %d platforms, got %d", c.Name, len(expected), len(c.Platforms))
+		}
+		if c.EstimatedVMs != len(expected) {
+			t.Errorf("cookbook %s: expected EstimatedVMs=%d, got %d", c.Name, len(expected), c.EstimatedVMs)
+		}
+	}
+
+	// Total estimated VMs = 3 + 1 = 4
+	if est.TotalEstimatedVMs != 4 {
+		t.Errorf("expected TotalEstimatedVMs=4, got %d", est.TotalEstimatedVMs)
 	}
 }
 
