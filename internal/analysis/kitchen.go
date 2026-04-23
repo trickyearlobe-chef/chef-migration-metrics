@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
 // ---------------------------------------------------------------------------
@@ -31,13 +33,14 @@ import (
 // fake without touching the filesystem or requiring Docker / Vagrant.
 type KitchenExecutor interface {
 	// Run executes the kitchen binary with the given arguments in the
-	// specified working directory. It returns stdout, stderr, the exit
-	// code, and any execution error. A non-zero exit code is NOT returned
-	// as an error when the process ran to completion — Test Kitchen exits
-	// non-zero when converge or verify fails. An error is returned only
-	// for failures to start the process, context cancellation, or
-	// signal-based termination.
-	Run(ctx context.Context, dir string, args ...string) (stdout, stderr string, exitCode int, err error)
+	// specified working directory. extraEnv is a list of additional
+	// KEY=VALUE pairs (e.g. resolved credential env vars) to append to the
+	// process environment. It returns stdout, stderr, the exit code, and
+	// any execution error. A non-zero exit code is NOT returned as an error
+	// when the process ran to completion — Test Kitchen exits non-zero when
+	// converge or verify fails. An error is returned only for failures to
+	// start the process, context cancellation, or signal-based termination.
+	Run(ctx context.Context, dir string, extraEnv []string, args ...string) (stdout, stderr string, exitCode int, err error)
 }
 
 // defaultKitchenExecutor shells out to the real kitchen binary.
@@ -45,7 +48,7 @@ type defaultKitchenExecutor struct {
 	path string
 }
 
-func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, args ...string) (string, string, int, error) {
+func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, extraEnv []string, args ...string) (string, string, int, error) {
 	cmd := makeCommand(ctx, e.path, args...)
 	cmd.Dir = dir
 
@@ -56,6 +59,7 @@ func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, args ...st
 	// servers or fail to resolve dependencies — producing non-JSON output
 	// on stdout that breaks our JSON parser.
 	env := sanitiseKitchenEnv(os.Environ())
+	env = append(env, extraEnv...)
 	cmd.Env = env
 
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -158,13 +162,14 @@ type KitchenBatchResult struct {
 // test suites. It supports driver and platform overrides so cookbooks can be
 // tested against the actual infrastructure and platforms used in production.
 type KitchenScanner struct {
-	db          *datastore.DB
-	logger      *logging.Logger
-	executor    KitchenExecutor
-	concurrency int
-	timeout     time.Duration
-	kitchenPath string
-	tkConfig    config.TestKitchenConfig
+	db            *datastore.DB
+	logger        *logging.Logger
+	executor      KitchenExecutor
+	credResolver  *secrets.CredentialResolver
+	concurrency   int
+	timeout       time.Duration
+	kitchenPath   string
+	tkConfig      config.TestKitchenConfig
 }
 
 // KitchenScannerOption configures a KitchenScanner.
@@ -173,6 +178,12 @@ type KitchenScannerOption func(*KitchenScanner)
 // WithKitchenExecutor overrides the command executor (for testing).
 func WithKitchenExecutor(e KitchenExecutor) KitchenScannerOption {
 	return func(s *KitchenScanner) { s.executor = e }
+}
+
+// WithCredentialResolver sets the credential resolver used to inject driver
+// secrets into the kitchen process environment via CMM_TK_SECRET_* env vars.
+func WithCredentialResolver(r *secrets.CredentialResolver) KitchenScannerOption {
+	return func(s *KitchenScanner) { s.credResolver = r }
 }
 
 // NewKitchenScanner creates a scanner.
@@ -223,6 +234,12 @@ func NewKitchenScanner(
 // while a scan is in progress). The collector's run mutex guarantees this.
 func (s *KitchenScanner) SetTestKitchenConfig(cfg config.TestKitchenConfig) {
 	s.tkConfig = cfg
+}
+
+// IsEnabled reports whether Test Kitchen testing is enabled in the current
+// runtime config.
+func (s *KitchenScanner) IsEnabled() bool {
+	return s.tkConfig.IsEnabled()
 }
 
 // ---------------------------------------------------------------------------
@@ -425,21 +442,32 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		}
 	}()
 
+	// Step 4b: Resolve driver secrets into environment variables.
+	// These are injected as CMM_TK_SECRET_* into every kitchen subprocess
+	// so that ERB references in .kitchen.local.yml are populated.
+	creds, credErr := ResolveKitchenCredentials(ctx, s.credResolver, s.tkConfig)
+	if credErr != nil {
+		result.Error = fmt.Errorf("resolving kitchen credentials: %w", credErr)
+		return result
+	}
+	defer creds.Cleanup()
+	credEnv := InjectCredentialEnvVars(nil, creds)
+
 	// Determine what driver and platform we're actually using for metadata.
 	result.DriverUsed = s.effectiveDriver(detectedDriver)
 	result.PlatformTested = s.effectivePlatformSummary()
 
 	// Step 5: Discover instances via `kitchen list --format json`.
-	instances, listErr := s.listInstances(ctx, dir)
+	instances, listErr := s.listInstances(ctx, dir, credEnv)
 	if listErr != nil {
 		result.Error = fmt.Errorf("kitchen list: %w", listErr)
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		return result
 	}
 	if len(instances) == 0 {
 		log.Error(fmt.Sprintf("no Test Kitchen instances defined for %s", gr.Name))
 		result.Error = fmt.Errorf("no Test Kitchen instances defined")
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		return result
 	}
 
@@ -448,7 +476,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 
 	// Step 6: Run converge with timeout.
 	convergeCtx, convergeCancel := context.WithTimeout(ctx, s.timeout)
-	convergeResult := s.runPhase(convergeCtx, dir, "converge")
+	convergeResult := s.runPhase(convergeCtx, dir, credEnv, "converge")
 	convergeCancel()
 
 	result.ConvergeOutput = convergeResult.Output
@@ -461,7 +489,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		result.Compatible = false
 		result.CompletedAt = time.Now().UTC()
 		result.Duration = result.CompletedAt.Sub(result.StartedAt)
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		s.persistResult(ctx, gr, result)
 		return result
 	}
@@ -472,7 +500,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		result.Compatible = false
 		result.CompletedAt = time.Now().UTC()
 		result.Duration = result.CompletedAt.Sub(result.StartedAt)
-		s.destroyBestEffort(ctx, dir, &result)
+		s.destroyBestEffort(ctx, dir, credEnv, &result)
 		s.persistResult(ctx, gr, result)
 		return result
 	}
@@ -480,7 +508,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 	// Step 7: Run verify (only if converge passed).
 	if convergeResult.Passed {
 		verifyCtx, verifyCancel := context.WithTimeout(ctx, s.timeout)
-		verifyResult := s.runPhase(verifyCtx, dir, "verify")
+		verifyResult := s.runPhase(verifyCtx, dir, credEnv, "verify")
 		verifyCancel()
 
 		result.VerifyOutput = verifyResult.Output
@@ -497,7 +525,7 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 	result.Compatible = result.ConvergePassed && result.TestsPassed
 
 	// Step 8: Destroy (always, regardless of pass/fail).
-	s.destroyBestEffort(ctx, dir, &result)
+	s.destroyBestEffort(ctx, dir, credEnv, &result)
 
 	result.CompletedAt = time.Now().UTC()
 	result.Duration = result.CompletedAt.Sub(result.StartedAt)
@@ -524,10 +552,10 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 // Phase execution
 // ---------------------------------------------------------------------------
 
-func (s *KitchenScanner) runPhase(ctx context.Context, dir, phase string) phaseResult {
+func (s *KitchenScanner) runPhase(ctx context.Context, dir string, extraEnv []string, phase string) phaseResult {
 	args := []string{phase, "--concurrency=1", "--log-level=info"}
 
-	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, args...)
+	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, extraEnv, args...)
 
 	combined := stdout
 	if stderr != "" {
@@ -560,11 +588,11 @@ func (s *KitchenScanner) runPhase(ctx context.Context, dir, phase string) phaseR
 // result but never fails the overall run. Uses a fresh context with a
 // 5-minute timeout so that destroy can proceed even if the parent context
 // was cancelled.
-func (s *KitchenScanner) destroyBestEffort(ctx context.Context, dir string, result *KitchenRunResult) {
+func (s *KitchenScanner) destroyBestEffort(ctx context.Context, dir string, extraEnv []string, result *KitchenRunResult) {
 	destroyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	stdout, stderr, _, err := s.executor.Run(destroyCtx, dir, "destroy", "--concurrency=1")
+	stdout, stderr, _, err := s.executor.Run(destroyCtx, dir, extraEnv, "destroy", "--concurrency=1")
 
 	combined := stdout
 	if stderr != "" {
@@ -585,8 +613,8 @@ func (s *KitchenScanner) destroyBestEffort(ctx context.Context, dir string, resu
 // Instance discovery
 // ---------------------------------------------------------------------------
 
-func (s *KitchenScanner) listInstances(ctx context.Context, dir string) ([]KitchenInstance, error) {
-	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, "list", "--json")
+func (s *KitchenScanner) listInstances(ctx context.Context, dir string, extraEnv []string) ([]KitchenInstance, error) {
+	stdout, stderr, exitCode, err := s.executor.Run(ctx, dir, extraEnv, "list", "--json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run kitchen list: %w", err)
 	}
@@ -630,11 +658,13 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	buf.WriteString("# DO NOT EDIT — this file is overwritten on each test run\n")
 
 	hasContent := false
-	driver := s.effectiveDriver(detectedDriver)
 	profile := LookupProfile(s.tkConfig.Driver, s.tkConfig.ImageFieldName)
 
-	// --- Driver block (non-dokken only) ---
-	if !IsDokken(s.tkConfig.Driver) {
+	// Build image registry lookup.
+	imageIndex := buildImageIndex(s.tkConfig.Images)
+
+	// --- Driver block ---
+	if s.tkConfig.Driver != "" {
 		buf.WriteString("\ndriver:\n")
 		fmt.Fprintf(&buf, "  name: %s\n", s.tkConfig.Driver)
 		// Plaintext driver settings.
@@ -654,39 +684,58 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	// --- Provisioner override (target Chef version) ---
 	if targetVersion != "" {
 		buf.WriteString("\nprovisioner:\n")
-		if driver == "dokken" {
-			fmt.Fprintf(&buf, "  chef_version: %q\n", targetVersion)
-		} else {
-			fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
+		major := chefMajorVersion(targetVersion)
+		if major >= 19 {
+			buf.WriteString("  name: chef_ice\n")
 		}
+		// Always use product_version for package-based installation.
+		fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
+		if s.tkConfig.ChefLicenseKeyCredential != "" {
+			buf.WriteString("  chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>\n")
+		}
+		buf.WriteString("  chef_license: accept\n")
 		hasContent = true
 	}
 
-	// --- Platform map (non-dokken only) ---
-	if !IsDokken(s.tkConfig.Driver) && len(s.tkConfig.PlatformMap) > 0 {
+	// --- Platform map ---
+	if len(s.tkConfig.PlatformMap) > 0 {
 		buf.WriteString("\nplatforms:\n")
 		for _, entry := range s.tkConfig.PlatformMap {
-			fmt.Fprintf(&buf, "  - name: %s\n", entry.KitchenName)
-			buf.WriteString("    driver:\n")
-			// Image field mapped through the profile.
-			fmt.Fprintf(&buf, "      %s: %s\n", profile.ImageFieldName, yamlScalar(entry.Image))
-			// Per-platform driver settings merged on top of top-level.
-			pdsKeys := sortedKeys(entry.DriverSettings)
-			for _, k := range pdsKeys {
-				writeDriverSetting(&buf, k, entry.DriverSettings[k], 6)
+			img, ok := imageIndex[entry.Image]
+			if !ok {
+				// No matching image — skip this platform.
+				continue
 			}
-			// Transport block.
-			if entry.Transport != nil {
-				buf.WriteString("    transport:\n")
-				if entry.Transport.Username != "" {
-					fmt.Fprintf(&buf, "      username: %s\n", yamlScalar(entry.Transport.Username))
+			fmt.Fprintf(&buf, "  - name: %s\n", entry.KitchenName)
+
+			// Driver block: image field + per-image driver settings.
+			buf.WriteString("    driver:\n")
+			fmt.Fprintf(&buf, "      %s: %s\n", profile.ImageFieldName, yamlScalar(img.ID))
+			imgDSKeys := sortedKeys(img.DriverSettings)
+			for _, k := range imgDSKeys {
+				writeDriverSetting(&buf, k, img.DriverSettings[k], 6)
+			}
+
+			// Per-platform provisioner: override with download_url when set.
+			if targetVersion != "" {
+				if url := img.ChefDownloadURLs[targetVersion]; url != "" {
+					buf.WriteString("    provisioner:\n")
+					fmt.Fprintf(&buf, "      download_url: %s\n", yamlScalar(url))
 				}
-				if entry.Transport.PasswordCredential != "" {
-					envName := transportPasswordEnvVar(entry.KitchenName)
+			}
+
+			// Transport block — keyed by image name, not kitchen name.
+			if img.Transport != nil {
+				buf.WriteString("    transport:\n")
+				if img.Transport.Username != "" {
+					fmt.Fprintf(&buf, "      username: %s\n", yamlScalar(img.Transport.Username))
+				}
+				if img.Transport.PasswordCredential != "" {
+					envName := transportPasswordEnvVar(img.Name)
 					fmt.Fprintf(&buf, "      password: <%%= ENV['%s'] %%>\n", envName)
 				}
-				if entry.Transport.SSHKeyCredential != "" {
-					envName := transportKeyEnvVar(entry.KitchenName)
+				if img.Transport.SSHKeyCredential != "" {
+					envName := transportKeyEnvVar(img.Name)
 					fmt.Fprintf(&buf, "      ssh_key: <%%= ENV['%s'] %%>\n", envName)
 				}
 			}
@@ -700,18 +749,24 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 	return buf.String()
 }
 
+// buildImageIndex returns a map from image name to ImageEntry for fast lookup.
+func buildImageIndex(images []config.ImageEntry) map[string]config.ImageEntry {
+	idx := make(map[string]config.ImageEntry, len(images))
+	for _, img := range images {
+		idx[img.Name] = img
+	}
+	return idx
+}
+
+
 // effectiveDriver returns the driver that will actually be used, considering
 // the config. If the config specifies a driver, that is used. Otherwise
-// falls back to what was detected in the cookbook's .kitchen.yml, then to
-// "dokken" as the default.
+// falls back to what was detected in the cookbook's .kitchen.yml.
 func (s *KitchenScanner) effectiveDriver(detectedDriver string) string {
 	if s.tkConfig.Driver != "" {
 		return s.tkConfig.Driver
 	}
-	if detectedDriver != "" {
-		return detectedDriver
-	}
-	return "dokken"
+	return detectedDriver
 }
 
 // effectivePlatformSummary returns a short human-readable summary of the
@@ -947,6 +1002,16 @@ func countLeadingSpaces(s string) int {
 // ---------------------------------------------------------------------------
 // YAML helpers (minimal — avoids importing a full YAML library)
 // ---------------------------------------------------------------------------
+
+// chefMajorVersion returns the major version number from a "MAJOR.MINOR.PATCH"
+// string. Returns 0 for unrecognised strings.
+func chefMajorVersion(v string) int {
+	if idx := strings.IndexByte(v, '.'); idx > 0 {
+		n, _ := strconv.Atoi(v[:idx])
+		return n
+	}
+	return 0
+}
 
 // yamlScalar formats a string as a YAML scalar value. If the value contains
 // characters that are special in YAML, it is double-quoted. Otherwise it is

@@ -8,16 +8,6 @@ import (
     "testing"
 )
 
-func TestLookupProfile_Dokken(t *testing.T) {
-    p := LookupProfile("dokken", "")
-    if p.ImageFieldName != "docker_image" {
-        t.Errorf("expected ImageFieldName %q, got %q", "docker_image", p.ImageFieldName)
-    }
-    if p.Name != "dokken" {
-        t.Errorf("expected Name %q, got %q", "dokken", p.Name)
-    }
-}
-
 func TestLookupProfile_VCenter(t *testing.T) {
     p := LookupProfile("vcenter", "")
     if p.ImageFieldName != "template" {
@@ -30,8 +20,8 @@ func TestLookupProfile_VCenter(t *testing.T) {
 
 func TestLookupProfile_Proxmox(t *testing.T) {
     p := LookupProfile("proxmox", "")
-    if p.ImageFieldName != "template" {
-        t.Errorf("expected ImageFieldName %q, got %q", "template", p.ImageFieldName)
+    if p.ImageFieldName != "template_id" {
+        t.Errorf("expected ImageFieldName %q, got %q", "template_id", p.ImageFieldName)
     }
     if p.Name != "proxmox" {
         t.Errorf("expected Name %q, got %q", "proxmox", p.Name)
@@ -90,15 +80,11 @@ func TestLookupProfile_UnknownWithoutOverride(t *testing.T) {
 func TestLookupProfile_BuiltinIgnoresOverride(t *testing.T) {
     // Built-in profiles must ignore the imageFieldNameOverride parameter.
     builtins := map[string]string{
-        "vcenter":   "template",
-        "ec2":       "ami",
-        "dokken":    "docker_image",
-        "azurerm":   "image_urn",
-        "google":    "image_family",
-        "vagrant":   "box",
-        "openstack": "image_ref",
-        "proxmox":   "template",
-        "vra":       "image_mapping",
+        "vcenter": "template",
+        "ec2":     "ami",
+        "vagrant": "box",
+        "proxmox": "template_id",
+        "vra":     "image_mapping",
     }
     for driver, expectedField := range builtins {
         p := LookupProfile(driver, "my_custom_override")
@@ -110,7 +96,7 @@ func TestLookupProfile_BuiltinIgnoresOverride(t *testing.T) {
 }
 
 func TestIsBuiltinDriver_Known(t *testing.T) {
-    known := []string{"dokken", "vcenter", "ec2", "azurerm", "vagrant", "proxmox"}
+    known := []string{"vcenter", "vra", "ec2", "vagrant", "proxmox"}
     for _, name := range known {
         if !IsBuiltinDriver(name) {
             t.Errorf("expected IsBuiltinDriver(%q) to be true", name)
@@ -134,23 +120,5 @@ func TestBuiltinDriverNames_Sorted(t *testing.T) {
     }
     if !sort.StringsAreSorted(names) {
         t.Errorf("expected sorted list, got %v", names)
-    }
-}
-
-func TestIsDokken_True(t *testing.T) {
-    if !IsDokken("dokken") {
-        t.Error("expected IsDokken(\"dokken\") to be true")
-    }
-    if !IsDokken("") {
-        t.Error("expected IsDokken(\"\") to be true")
-    }
-}
-
-func TestIsDokken_False(t *testing.T) {
-    falseNames := []string{"vcenter", "ec2"}
-    for _, name := range falseNames {
-        if IsDokken(name) {
-            t.Errorf("expected IsDokken(%q) to be false", name)
-        }
     }
 }

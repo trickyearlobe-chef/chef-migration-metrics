@@ -69,9 +69,11 @@ type mockStore struct {
 	DeleteGitRepoCookstyleResultsByRepoFn               func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteGitRepoComplexitiesByRepoFn                   func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteGitRepoAutocorrectPreviewsByRepoFn            func(ctx context.Context, gitRepoName, gitRepoURL string) error
+	DeleteGitRepoTestKitchenResultsByRepoFn             func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteAllGitRepoCookstyleResultsFn                  func(ctx context.Context) error
 	DeleteAllGitRepoComplexitiesFn                      func(ctx context.Context) error
 	DeleteAllGitRepoAutocorrectPreviewsFn               func(ctx context.Context) error
+	DeleteAllGitRepoTestKitchenResultsFn                func(ctx context.Context) error
 	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
 	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
 	GetLogEntryFn                                       func(ctx context.Context, id int64) (datastore.LogEntry, error)
@@ -526,6 +528,20 @@ func (m *mockStore) DeleteAllGitRepoComplexities(ctx context.Context) error {
 func (m *mockStore) DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error {
 	if m.DeleteAllGitRepoAutocorrectPreviewsFn != nil {
 		return m.DeleteAllGitRepoAutocorrectPreviewsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteGitRepoTestKitchenResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error {
+	if m.DeleteGitRepoTestKitchenResultsByRepoFn != nil {
+		return m.DeleteGitRepoTestKitchenResultsByRepoFn(ctx, gitRepoName, gitRepoURL)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteAllGitRepoTestKitchenResults(ctx context.Context) error {
+	if m.DeleteAllGitRepoTestKitchenResultsFn != nil {
+		return m.DeleteAllGitRepoTestKitchenResultsFn(ctx)
 	}
 	return nil
 }

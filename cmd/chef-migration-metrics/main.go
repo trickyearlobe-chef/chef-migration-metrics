@@ -791,11 +791,6 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	} else {
 		app.startup.Info(fmt.Sprintf("kitchen not available: %s — Test Kitchen testing disabled", toolResult.Kitchen.Error))
 	}
-	if toolResult.Docker.Available {
-		app.startup.Info(fmt.Sprintf("docker available: %s (version %s)", toolResult.Docker.Path, toolResult.Docker.Version))
-	} else {
-		app.startup.Info(fmt.Sprintf("docker not available: %s — Test Kitchen testing disabled", toolResult.Docker.Error))
-	}
 	if !toolResult.CookstyleEnabled && !toolResult.KitchenEnabled {
 		app.startup.Warn("neither CookStyle nor Test Kitchen available — no cookbook compatibility testing will be performed")
 	}
@@ -821,17 +816,16 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		app.startup.Info("CookStyle disabled via configuration (analysis_tools.cookstyle_enabled: false)")
 	}
 
-	if toolResult.KitchenEnabled && app.cfg.AnalysisTools.TestKitchen.IsEnabled() {
+	if toolResult.KitchenEnabled {
 		tkScanner := analysis.NewKitchenScanner(
 			app.db, app.logger, toolResult.Kitchen.Path,
 			app.cfg.Concurrency.TestKitchenRun,
 			app.cfg.AnalysisTools.TestKitchenTimeoutMinutes,
 			app.cfg.AnalysisTools.TestKitchen,
+			analysis.WithCredentialResolver(app.credResolver),
 		)
 		collOpts = append(collOpts, collector.WithKitchenScanner(tkScanner))
 		app.startup.Info("Test Kitchen scanner enabled")
-	} else if toolResult.KitchenEnabled && !app.cfg.AnalysisTools.TestKitchen.IsEnabled() {
-		app.startup.Info("Test Kitchen disabled via configuration (analysis_tools.test_kitchen.enabled: false)")
 	}
 
 	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)

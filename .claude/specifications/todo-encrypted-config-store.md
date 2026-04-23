@@ -142,20 +142,20 @@ Status key: [ ] Not started | [~] In progress | [x] Done | [!] Blocked
 
 ## Phase 3: Admin UI Pages
 
-- [ ] Settings navigation group in sidebar
-- [ ] Organisations page (table layout, credential dropdown, add/remove rows)
-- [ ] Collection page (schedule, thresholds)
-- [ ] Target Versions page (tag-style input, semver validation)
-- [ ] Git URLs page
-- [ ] Concurrency page (number inputs with min 1)
-- [ ] Analysis Tools page
-- [ ] Server & TLS page (mode-dependent fields, restart-required banner)
-- [ ] Authentication page
-- [ ] Notifications page
-- [ ] Logging page
-- [ ] Exports page
-- [ ] Setup wizard for empty `config_store`
-- [ ] Component tests for each page
+- [x] Settings navigation group in sidebar
+- [x] Organisations page (stacked card layout, credential dropdown, add/remove)
+- [x] Collection page (schedule, thresholds, toggles)
+- [x] Target Versions page (tag-style input, semver validation)
+- [x] Git URLs page
+- [x] Concurrency page (7 worker pool fields, 2-col grid)
+- [x] Analysis Tools page (bin dir, cookstyle toggle + timeout)
+- [x] Server & TLS page (mode-dependent fields, restart-required banner)
+- [x] Authentication page (local/LDAP/SAML providers, policy, restart banner)
+- [x] Notifications page (collapsible channel cards, event checkboxes)
+- [x] Logging page (level select, retention days)
+- [x] Exports page (max rows, async threshold, retention)
+- [x] Setup wizard for empty `config_store`
+- [x] Component tests for each page
 
 ## Phase 4: Deprecation
 

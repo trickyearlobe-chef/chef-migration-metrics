@@ -188,8 +188,8 @@ func TestDefaults_AnalysisTools(t *testing.T) {
 	if cfg.AnalysisTools.TestKitchen.TimeoutMinutes != 30 {
 		t.Errorf("expected test_kitchen.timeout_minutes 30, got %d", cfg.AnalysisTools.TestKitchen.TimeoutMinutes)
 	}
-	if cfg.AnalysisTools.TestKitchen.Driver != "dokken" {
-		t.Errorf("expected test_kitchen.driver dokken, got %q", cfg.AnalysisTools.TestKitchen.Driver)
+	if cfg.AnalysisTools.TestKitchen.Driver != "" {
+		t.Errorf("expected test_kitchen.driver empty, got %q", cfg.AnalysisTools.TestKitchen.Driver)
 	}
 }
 
@@ -2081,11 +2081,11 @@ analysis_tools:
 
 func TestDefaults_TestKitchenDriver(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
-	if cfg.AnalysisTools.TestKitchen.Driver != "dokken" {
-		t.Errorf("expected default driver dokken, got %q", cfg.AnalysisTools.TestKitchen.Driver)
+	if cfg.AnalysisTools.TestKitchen.Driver != "" {
+		t.Errorf("expected default driver empty, got %q", cfg.AnalysisTools.TestKitchen.Driver)
 	}
-	if cfg.AnalysisTools.TestKitchen.EffectiveDriver() != "dokken" {
-		t.Errorf("expected effective driver dokken, got %q", cfg.AnalysisTools.TestKitchen.EffectiveDriver())
+	if cfg.AnalysisTools.TestKitchen.EffectiveDriver() != "" {
+		t.Errorf("expected effective driver empty, got %q", cfg.AnalysisTools.TestKitchen.EffectiveDriver())
 	}
 }
 
@@ -2102,8 +2102,8 @@ func TestTestKitchenConfig_EffectiveTimeoutMinutes(t *testing.T) {
 
 func TestTestKitchenConfig_EffectiveDriver(t *testing.T) {
 	tk := TestKitchenConfig{}
-	if tk.EffectiveDriver() != "dokken" {
-		t.Errorf("expected default driver dokken, got %q", tk.EffectiveDriver())
+	if tk.EffectiveDriver() != "" {
+		t.Errorf("expected default driver empty, got %q", tk.EffectiveDriver())
 	}
 	tk.Driver = "vcenter"
 	if tk.EffectiveDriver() != "vcenter" {
@@ -2146,38 +2146,6 @@ analysis_tools:
 	if cfg.AnalysisTools.TestKitchen.TimeoutMinutes != 60 {
 		t.Errorf("expected nested timeout 60 to take precedence, got %d", cfg.AnalysisTools.TestKitchen.TimeoutMinutes)
 	}
-}
-
-func TestValidation_CustomDriverRequiresImageFieldName(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-analysis_tools:
-  test_kitchen:
-    driver: custom
-`
-	expectParseError(t, yaml, "image_field_name is required when driver is \"custom\"")
-}
-
-func TestValidation_UnknownDriverRequiresImageFieldName(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-analysis_tools:
-  test_kitchen:
-    driver: hyperv
-`
-	expectParseError(t, yaml, "image_field_name is required when driver is \"custom\"")
 }
 
 func TestValidation_PlatformMapKitchenNameRequired(t *testing.T) {
@@ -2278,27 +2246,34 @@ analysis_tools:
 }
 
 func TestValidation_PlatformMapWithTransport(t *testing.T) {
+	// Transport now lives on image entries, not platform map entries.
 	yaml := minimalValidYAML() + `
 analysis_tools:
   test_kitchen:
     driver: vcenter
-    platform_map:
-      - kitchen_name: ubuntu-22.04
-        image: tmpl-ubuntu-2204
+    images:
+      - name: ubuntu2204
+        id: tmpl-ubuntu-2204
         transport:
           username: kitchen
           password_credential: kitchen-vm-password
+    platform_map:
+      - kitchen_name: ubuntu-22.04
+        image: ubuntu2204
 `
 	cfg := mustParse(t, yaml)
-	entry := cfg.AnalysisTools.TestKitchen.PlatformMap[0]
-	if entry.Transport == nil {
-		t.Fatal("expected transport to be set")
+	if len(cfg.AnalysisTools.TestKitchen.Images) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(cfg.AnalysisTools.TestKitchen.Images))
 	}
-	if entry.Transport.Username != "kitchen" {
-		t.Errorf("expected username kitchen, got %q", entry.Transport.Username)
+	img := cfg.AnalysisTools.TestKitchen.Images[0]
+	if img.Transport == nil {
+		t.Fatal("expected transport to be set on image")
 	}
-	if entry.Transport.PasswordCredential != "kitchen-vm-password" {
-		t.Errorf("expected password_credential, got %q", entry.Transport.PasswordCredential)
+	if img.Transport.Username != "kitchen" {
+		t.Errorf("expected username kitchen, got %q", img.Transport.Username)
+	}
+	if img.Transport.PasswordCredential != "kitchen-vm-password" {
+		t.Errorf("expected password_credential, got %q", img.Transport.PasswordCredential)
 	}
 }
 
@@ -2942,6 +2917,172 @@ func TestParseRaw_InvalidYAML(t *testing.T) {
 	_, err := ParseRaw([]byte("{{{{not yaml"))
 	if err == nil {
 		t.Fatal("expected YAML parse error, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Chef 19+ license / download_url config validation
+// ---------------------------------------------------------------------------
+
+func TestValidation_Chef19_CanHaveBothLicenseKeyAndPerImageURL(t *testing.T) {
+	// It's valid to have both a fallback license key AND per-image download URLs.
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    chef_license_key_credential: my-license-key
+    images:
+      - name: alma10
+        id: "100"
+        chef_download_urls:
+          "19.2.12": https://packages.example.com/chef-19.rpm
+`
+	_, _, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error (both license key and per-image URL should be valid): %v", err)
+	}
+}
+
+func TestValidation_Chef19_WarnWhenNeitherSet(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+
+target_chef_versions:
+  - "19.2.12"
+
+datastore:
+  url: postgres://localhost:5432/test
+`
+	_, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "19.2.12") && strings.Contains(msg, "chef_license_key_credential") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about missing license config for v19, got: %v", warnings.Messages)
+	}
+}
+
+func TestValidation_Chef19_NoWarnWhenLicenseKeySet(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+
+target_chef_versions:
+  - "19.2.12"
+
+datastore:
+  url: postgres://localhost:5432/test
+
+analysis_tools:
+  test_kitchen:
+    chef_license_key_credential: my-chef-license
+`
+	_, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "chef_license_key_credential") {
+			t.Errorf("unexpected license warning when credential is set: %s", msg)
+		}
+	}
+}
+
+func TestValidation_Chef19_NoWarnWhenPerImageDownloadURLSet(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test-client
+    client_key_credential: test-key
+
+target_chef_versions:
+  - "19.2.12"
+
+datastore:
+  url: postgres://localhost:5432/test
+
+analysis_tools:
+  test_kitchen:
+    images:
+      - name: alma10
+        id: "100"
+        chef_download_urls:
+          "19.2.12": https://packages.example.com/chef-19.rpm
+    platform_map:
+      - kitchen_name: almalinux-10
+        image: alma10
+`
+	_, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "chef_license_key_credential") {
+			t.Errorf("unexpected license warning when all platforms have per-image download URLs: %s", msg)
+		}
+	}
+}
+
+func TestValidation_Chef18_NoWarnWithoutLicenseConfig(t *testing.T) {
+	// v18 should not trigger the license warning even without license config.
+	_, warnings, err := Parse([]byte(minimalValidYAML()))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, msg := range warnings.Messages {
+		if strings.Contains(msg, "chef_license_key_credential") {
+			t.Errorf("unexpected license warning for v18: %s", msg)
+		}
+	}
+}
+
+func TestConfig_ChefLicenseFields_Parsed(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    chef_license_key_credential: my-chef-license
+`
+	cfg := mustParse(t, yaml)
+	if cfg.AnalysisTools.TestKitchen.ChefLicenseKeyCredential != "my-chef-license" {
+		t.Errorf("expected chef_license_key_credential %q, got %q",
+			"my-chef-license", cfg.AnalysisTools.TestKitchen.ChefLicenseKeyCredential)
+	}
+}
+
+func TestConfig_ChefDownloadURLs_ParsedOnImage(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    images:
+      - name: alma10
+        id: "100"
+        chef_download_urls:
+          "18.5.0": https://packages.example.com/chef-18.5.0.rpm
+`
+	cfg := mustParse(t, yaml)
+	if len(cfg.AnalysisTools.TestKitchen.Images) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(cfg.AnalysisTools.TestKitchen.Images))
+	}
+	img := cfg.AnalysisTools.TestKitchen.Images[0]
+	if img.ChefDownloadURLs["18.5.0"] != "https://packages.example.com/chef-18.5.0.rpm" {
+		t.Errorf("expected download URL, got %q", img.ChefDownloadURLs["18.5.0"])
 	}
 }
 

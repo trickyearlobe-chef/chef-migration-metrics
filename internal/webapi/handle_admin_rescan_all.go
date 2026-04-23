@@ -123,6 +123,60 @@ func (r *Router) handleAdminRescanAllCookstyle(w http.ResponseWriter, req *http.
 	})
 }
 
+// ---------------------------------------------------------------------------
+// Admin Rerun All Test Kitchen endpoint
+//
+// POST /api/v1/admin/rerun-all-test-kitchen
+//
+// Invalidates ALL cached Test Kitchen results across every git repo, then
+// triggers an immediate collection run so the retest starts right away
+// instead of waiting for the next scheduled cycle.
+//
+// This is useful after updating the kitchen configuration, changing the
+// target Chef versions, or modifying driver settings.
+//
+// Response (200):
+//
+//	{
+//	  "message": "All Test Kitchen results invalidated — collection run triggered.",
+//	  "collection_triggered": true
+//	}
+//
+// ---------------------------------------------------------------------------
+
+// handleAdminRerunAllTestKitchen handles POST /api/v1/admin/rerun-all-test-kitchen.
+func (r *Router) handleAdminRerunAllTestKitchen(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
+			"Only POST is allowed for this endpoint.")
+		return
+	}
+
+	ctx := req.Context()
+
+	if err := r.db.DeleteAllGitRepoTestKitchenResults(ctx); err != nil {
+		r.logf("ERROR", "deleting all git repo test kitchen results: %v", err)
+		WriteInternalError(w, "Failed to delete git repo test kitchen results.")
+		return
+	}
+
+	r.logf("INFO", "admin rerun-all-test-kitchen: all test kitchen results deleted")
+
+	triggered := r.triggerCollectionInBackground()
+
+	msg := "All Test Kitchen results invalidated"
+	if triggered {
+		msg += " — collection run triggered."
+	} else {
+		msg += " — rerun will start on the next collection cycle."
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"message":              msg,
+		"collection_triggered": triggered,
+	})
+}
+
 // triggerCollectionInBackground launches an immediate collection run in a
 // background goroutine. Returns true if the trigger was dispatched, false
 // if no trigger function is configured or if a run is already in progress.

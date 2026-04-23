@@ -182,81 +182,105 @@ type TestKitchenConfig struct {
 	// Enabled controls whether Test Kitchen testing is active. When set to
 	// false, Test Kitchen is disabled even if the kitchen binary is
 	// available. When omitted or set to true (the default), Test Kitchen
-	// is enabled automatically if the kitchen binary is detected at startup
-	// (and Docker is available for dokken).
-	Enabled *bool `yaml:"enabled"`
+	// is enabled automatically if the kitchen binary is detected at startup.
+	Enabled *bool `yaml:"enabled" json:"enabled"`
 
 	// TimeoutMinutes is the maximum wall-clock time for a single Test
 	// Kitchen converge or verify step. Defaults to 30.
-	TimeoutMinutes int `yaml:"timeout_minutes"`
+	TimeoutMinutes int `yaml:"timeout_minutes" json:"timeout_minutes"`
 
 	// Driver selects the Test Kitchen driver profile. Built-in profiles:
-	// dokken, vcenter, vra, ec2, azurerm, google, vagrant, openstack, proxmox.
-	// Use "custom" for any driver gem not in the built-in list.
-	// Defaults to "dokken".
-	Driver string `yaml:"driver"`
+	// vcenter, vra, ec2, vagrant, proxmox. Required.
+	Driver string `yaml:"driver" json:"driver"`
 
 	// DriverSettings contains plaintext driver connection settings as
 	// key-value pairs. Keys are driver-specific (e.g. vcenter_host,
 	// region). These are serialised into the top-level driver: block of
 	// the generated .kitchen.local.yml overlay.
-	DriverSettings map[string]any `yaml:"driver_settings"`
+	DriverSettings map[string]any `yaml:"driver_settings" json:"driver_settings"`
 
 	// DriverSecrets maps driver setting names to credential names from
 	// the credentials table. At runtime each secret is resolved via the
 	// credential resolver and injected as CMM_TK_SECRET_<UPPER_KEY>
 	// environment variables. The overlay references them via ERB.
-	DriverSecrets map[string]string `yaml:"driver_secrets"`
+	DriverSecrets map[string]string `yaml:"driver_secrets" json:"driver_secrets"`
 
 	// ImageFieldName is the YAML key used for the image identifier in
 	// platform map entries. Built-in profiles set this automatically
 	// (e.g. "template" for vcenter, "ami" for ec2). Required only for
 	// the "custom" profile.
-	ImageFieldName string `yaml:"image_field_name"`
+	ImageFieldName string `yaml:"image_field_name" json:"image_field_name"`
 
-	// PlatformMap translates kitchen platform names to driver-specific
-	// image identifiers. Each entry maps a kitchen_name to an image and
-	// optional per-platform driver settings and transport credentials.
+	// PlatformMap is the alias table mapping cookbook platform names to
+	// image registry entries. Each entry maps a kitchen_name to an image
+	// name defined in the Images list.
 	// For dokken with an empty platform map, all platforms pass through
 	// unchanged (backward compatible).
-	PlatformMap []PlatformMapEntry `yaml:"platform_map"`
+	PlatformMap []PlatformMapEntry `yaml:"platform_map" json:"platform_map"`
+
+	// Images is the registry of infrastructure images available to the
+	// driver. Each entry defines the driver-specific image identifier,
+	// transport credentials, per-image driver settings, and per-version
+	// Chef package download URLs. Multiple platform map entries can
+	// reference the same image.
+	Images []ImageEntry `yaml:"images" json:"images"`
+
+	// ChefLicenseKeyCredential is the credential name for the Chef
+	// license key. Used as fallback for versions that have no
+	// chef_download_urls entry in any image (public chef.io download).
+	ChefLicenseKeyCredential string `yaml:"chef_license_key_credential" json:"chef_license_key_credential"`
 }
 
-// PlatformMapEntry maps a single kitchen platform name to a driver-specific
-// image identifier and optional per-platform settings.
+// ImageEntry defines a single infrastructure image in the image registry.
+type ImageEntry struct {
+	// Name is the operator-defined label for this image. Must be unique
+	// within the config. Used as the reference in platform_map[].image.
+	Name string `yaml:"name" json:"name"`
+
+	// ID is the driver-specific image identifier: a Proxmox template ID,
+	// vCenter template name, AMI ID, Docker image, etc. The built-in
+	// driver profile determines which YAML key it maps to in the overlay.
+	ID string `yaml:"id" json:"id"`
+
+	// DriverSettings contains per-image driver setting overrides merged
+	// on top of the top-level DriverSettings in the overlay.
+	DriverSettings map[string]any `yaml:"driver_settings" json:"driver_settings"`
+
+	// Transport contains transport credentials for connecting to
+	// instances provisioned from this image (SSH/WinRM).
+	Transport *PlatformMapTransport `yaml:"transport" json:"transport"`
+
+	// ChefDownloadURLs maps Chef version strings to direct package
+	// download URLs for this image. When a URL is set for the target
+	// version, the overlay uses download_url instead of product_version.
+	// Platforms without an entry fall back to ChefLicenseKeyCredential.
+	ChefDownloadURLs map[string]string `yaml:"chef_download_urls" json:"chef_download_urls"`
+}
+
+// PlatformMapEntry maps a single kitchen platform name to an image in
+// the image registry.
 type PlatformMapEntry struct {
 	// KitchenName is the platform name as it appears in the cookbook's
 	// .kitchen.yml (e.g. "ubuntu-22.04", "centos-7", "windows-2022").
-	KitchenName string `yaml:"kitchen_name"`
+	KitchenName string `yaml:"kitchen_name" json:"kitchen_name"`
 
-	// Image is the driver-specific image identifier (e.g. vSphere
-	// template name, AMI ID, Docker image). The built-in profile
-	// determines which driver key it maps to.
-	Image string `yaml:"image"`
-
-	// DriverSettings contains per-platform driver settings (datacenter,
-	// cluster, resource pool, subnet, etc.). Merged on top of the
-	// top-level DriverSettings.
-	DriverSettings map[string]any `yaml:"driver_settings"`
-
-	// Transport contains optional transport override for connecting to
-	// provisioned instances (SSH/WinRM credentials).
-	Transport *PlatformMapTransport `yaml:"transport"`
+	// Image is the name of an entry in the Images list.
+	Image string `yaml:"image" json:"image"`
 }
 
-// PlatformMapTransport holds transport credentials for a platform map
+// PlatformMapTransport holds transport credentials for an image registry
 // entry. Credentials are resolved at runtime from the credentials table.
 type PlatformMapTransport struct {
 	// Username is the SSH/WinRM username for connecting to the instance.
-	Username string `yaml:"username"`
+	Username string `yaml:"username" json:"username"`
 
 	// PasswordCredential is the credential name for the SSH/WinRM password.
-	// Resolved at runtime and injected as CMM_TK_TRANSPORT_<NORMALIZED_PLATFORM>.
-	PasswordCredential string `yaml:"password_credential"`
+	// Resolved at runtime and injected as CMM_TK_TRANSPORT_<UPPER_IMAGE_NAME>.
+	PasswordCredential string `yaml:"password_credential" json:"password_credential"`
 
 	// SSHKeyCredential is the credential name for the SSH private key (PEM).
-	// Resolved at runtime and injected as CMM_TK_KEY_<NORMALIZED_PLATFORM>.
-	SSHKeyCredential string `yaml:"ssh_key_credential"`
+	// Resolved at runtime and injected as CMM_TK_KEY_<UPPER_IMAGE_NAME>.
+	SSHKeyCredential string `yaml:"ssh_key_credential" json:"ssh_key_credential"`
 }
 
 // IsEnabled returns true if Test Kitchen testing is enabled in the
@@ -268,11 +292,8 @@ func (tk *TestKitchenConfig) IsEnabled() bool {
 	return *tk.Enabled
 }
 
-// EffectiveDriver returns the configured driver, defaulting to "dokken".
+// EffectiveDriver returns the configured driver name.
 func (tk *TestKitchenConfig) EffectiveDriver() string {
-	if tk.Driver == "" {
-		return "dokken"
-	}
 	return tk.Driver
 }
 
@@ -675,9 +696,6 @@ func (c *Config) setDefaults() {
 	}
 
 	// Test Kitchen nested defaults.
-	if c.AnalysisTools.TestKitchen.Driver == "" {
-		c.AnalysisTools.TestKitchen.Driver = "dokken"
-	}
 	if c.AnalysisTools.TestKitchen.TimeoutMinutes == 0 {
 		c.AnalysisTools.TestKitchen.TimeoutMinutes = 30
 	}
@@ -1099,6 +1117,12 @@ func HighestVersion(versions []string) string {
 	return best
 }
 
+// chefMajorVersionFromString returns the major version number from a
+// "MAJOR.MINOR.PATCH" string. Returns 0 for invalid strings.
+func chefMajorVersionFromString(v string) int {
+	return parseSemverParts(v)[0]
+}
+
 // parseSemverParts splits a "MAJOR.MINOR.PATCH" string into three ints.
 // Non-numeric or missing segments default to 0.
 func parseSemverParts(v string) [3]int {
@@ -1180,17 +1204,42 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	// Driver profile validation.
 	driver := tk.EffectiveDriver()
 	knownDrivers := map[string]bool{
-		"dokken": true, "vcenter": true, "vra": true, "ec2": true,
-		"azurerm": true, "google": true, "vagrant": true, "openstack": true,
-		"proxmox": true, "custom": true,
+		"vcenter": true, "vra": true, "ec2": true,
+		"vagrant": true, "proxmox": true,
 	}
-	if !knownDrivers[driver] {
-		w.addf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile; proceeding as custom", driver)
+	if driver != "" && !knownDrivers[driver] {
+		w.addf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile", driver)
 	}
 
-	// Custom profile requires image_field_name.
-	if (driver == "custom" || !knownDrivers[driver]) && tk.ImageFieldName == "" {
-		ve.add("analysis_tools.test_kitchen.image_field_name is required when driver is \"custom\"")
+	// Image registry validation.
+	seenImageNames := make(map[string]int, len(tk.Images))
+	for i, img := range tk.Images {
+		if img.Name == "" {
+			ve.addf("analysis_tools.test_kitchen.images[%d].name is required", i)
+		} else if prev, ok := seenImageNames[img.Name]; ok {
+			ve.addf("analysis_tools.test_kitchen.images[%d].name %q duplicates entry [%d]", i, img.Name, prev)
+		} else {
+			seenImageNames[img.Name] = i
+		}
+		if img.ID == "" {
+			w.addf("analysis_tools.test_kitchen.images[%d].id is empty; image %q will be skipped", i, img.Name)
+		}
+		for ver := range img.ChefDownloadURLs {
+			found := false
+			for _, tv := range c.TargetChefVersions {
+				if tv == ver {
+					found = true
+					break
+				}
+			}
+			if !found {
+				w.addf("analysis_tools.test_kitchen.images[%d].chef_download_urls key %q is not in target_chef_versions", i, ver)
+			}
+		}
+	}
+
+	if len(tk.Images) == 0 {
+		w.add("analysis_tools.test_kitchen.images is empty; Test Kitchen will skip all cookbooks")
 	}
 
 	// Platform map validation.
@@ -1203,14 +1252,33 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		} else {
 			seenKitchenNames[entry.KitchenName] = i
 		}
-		if entry.Image == "" && driver != "dokken" {
+		if entry.Image == "" {
 			w.addf("analysis_tools.test_kitchen.platform_map[%d].image is empty; platform %q will be skipped", i, entry.KitchenName)
+		} else if _, ok := seenImageNames[entry.Image]; !ok {
+			w.addf("analysis_tools.test_kitchen.platform_map[%d].image %q does not reference a defined image", i, entry.Image)
 		}
 	}
 
-	// Non-dokken driver warnings.
-	if driver != "dokken" && len(tk.PlatformMap) == 0 {
-		w.add("analysis_tools.test_kitchen.platform_map is empty for non-dokken driver; Test Kitchen will skip all cookbooks")
+	if len(tk.PlatformMap) == 0 {
+		w.add("analysis_tools.test_kitchen.platform_map is empty; Test Kitchen will skip all cookbooks")
+	}
+
+	// Chef license key validation for v19+.
+	for _, v := range c.TargetChefVersions {
+		if chefMajorVersionFromString(v) >= 19 && tk.ChefLicenseKeyCredential == "" {
+			// Check if every image has a download_url for this version.
+			allCovered := len(tk.Images) > 0
+			for _, img := range tk.Images {
+				if img.ChefDownloadURLs[v] == "" {
+					allCovered = false
+					break
+				}
+			}
+			if !allCovered {
+				w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or per-image chef_download_urls for Chef 19+ installation", v)
+				break
+			}
+		}
 	}
 }
 

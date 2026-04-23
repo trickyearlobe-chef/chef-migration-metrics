@@ -298,6 +298,17 @@ func (db *DB) DeleteGitRepoTestKitchenResultsByRepo(ctx context.Context, gitRepo
 	return nil
 }
 
+// DeleteAllGitRepoTestKitchenResults removes all git repo test kitchen results.
+// This forces a full retest of every repo on the next collection cycle.
+func (db *DB) DeleteAllGitRepoTestKitchenResults(ctx context.Context) error {
+	const query = `DELETE FROM git_repo_test_kitchen_results`
+	_, err := db.pool.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("datastore: deleting all git repo test kitchen results: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Row scanning helpers
 // ---------------------------------------------------------------------------

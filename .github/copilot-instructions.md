@@ -1,12 +1,18 @@
-# CLAUDE.md — Development Guidelines
+# GitHub Copilot Instructions
 
-- CLAUDE.md is operating rules for the AI, not project documentation.
+This file contains the rules and conventions that must be followed at all times when working on this project. Read this file before doing anything else.
+
+- `.github/copilot-instructions.md` is operating rules for GitHub Copilot, not project documentation.
 - Keep it concise. Every line costs context window budget.
+- If we change our working practices, `.github/copilot-instructions.md` must be updated.
 
 ## Constraints
 
 - When a user request conflicts with a NEVER rule, stop and flag the conflict. Do not proceed until the user explicitly confirms. Confirmation applies to that single action only — it does not relax the rule for the rest of the session.
-- No implementation code in CLAUDE.md or specs. That's what TDD is for.
+- No implementation code in instruction files or specs. That's what TDD is for.
+
+## Token Efficiency
+
 - Always be concise and NEVER include preamble or narrative in generated files.
 - Only read specs, todos, or plans relevant to the current task.
 - Be concise when creating or updating specs and todos so tokens are not wasted retrieving context.
@@ -16,17 +22,18 @@
 - Component specs and todos live in `.claude/specifications/`.
 - Each component spec is self-contained. Read only what you need for the current task.
 - Background research is available via Nuclia RAG through MCP. Query it when specs are insufficient.
+- Work plans live in `plans/`. One file per task or feature.
 
 ## Planning
 
-- Work plans live in `plans/`. One file per task or feature.
 - Before starting work, create a plan in `plans/<task>.md`.
 - Plans are short: goal, which specs to read, ordered steps, and acceptance criteria.
 - Delete the plan when the work is done. Git is the history.
 
 ## Quality Maintenance
 
-- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status.
+- Session start checklist: (a) read `.github/copilot-instructions.md`, (b) read the plan, (c) check for draft files pending review, (d) check git status.
+- TODO hygiene: a session should not end with a net increase in TODOs unless they are genuinely open questions.
 - Always update todos when items are completed or blocked to avoid losing context.
 
 ## File Format
@@ -38,12 +45,11 @@
 - Features need a specification.
 - Specifications don't contain code.
 - Don't write code or tests until the problem or goal is clear.
-- We practice TDD. Start by writing tests, then code.
+- Start by writing tests.
 - Make sure tests are passing before committing code.
 
 ## Specifications
 
-- Specs live under `.claude/specifications/<component>.md` (flat layout, no subdirectories).
 - NEVER silently diverge from a spec.
 - Do not modify specs without asking.
 - Specs define *what*, not *how*. They contain contracts, expected outputs, reference data, and behaviour descriptions. No function bodies or algorithm implementations — that's what TDD is for.
@@ -53,13 +59,15 @@
 ## Git
 
 - All work is local. NEVER push, create GitHub issues, create GitHub PRs, or interact with remotes in any way.
-- Spawned agents NEVER run git commands (add, commit, push, status, etc.). Only the main Claude commits.
+- Spawned agents NEVER run git commands (add, commit, push, status, etc.). Only the main agent commits.
 - Every spawn message MUST include: Do NOT run any git commands (add, commit, push, etc.). Write files only — the caller handles git.
 - All tasks must be performed on a branch, never on `main`.
 - Branch names must be of the pattern `<type>/<short-description>` where `<type>` is one of `feature`, `fix`, `refactor`, `chore`, `docs`, `specification`, or `test`.
 - **Do not merge the feature branch into `main` without explicit permission from the user.**
 - After significant work has been completed and verified (tests pass, linting clean, summary written), present a summary of the branch's changes and **ask the user for permission to merge**.
 - When permission is granted, merge using `git merge --no-ff` to preserve the branch history, then delete the feature branch.
+- If the user declines or wants changes first, continue working on the same branch.
+- Do not squash commits when merging.
 - NEVER include personal hostnames, IPs, usernames, or internal domain names in code, specs, docs, plans, or commit messages. Use generic examples (`example.com`, `10.0.0.1`, `user@host`).
 
 ## Commits
@@ -74,13 +82,15 @@
   - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
 - Do not commit secrets, credentials, or API keys. Use environment variables.
 
+## File Operations
+
+- NEVER use the console/terminal for file editing. Do not use `sed`, `awk`, `cat >`, `echo >>`, or similar shell commands to create or modify files.
 
 ## Spawned Agents
 
 - Scope spawned agents tightly. One file or one narrow topic per agent.
 - If a task requires many changes, split across multiple agents rather than risking context exhaustion.
 - Every spawn message MUST include: Do NOT use the console for file operations.
-
 
 ## Permission Boundaries
 

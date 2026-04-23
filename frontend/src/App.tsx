@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { OrgProvider } from "./context/OrgContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -29,6 +29,17 @@ import { AdminPerformancePage } from "./pages/AdminPerformancePage";
 import { AdminCredentialsPage } from "./pages/credentials";
 import { AdminTestKitchenPage } from "./pages/AdminTestKitchenPage";
 import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
+import { AdminCollectionPage } from "./pages/AdminCollectionPage";
+import { AdminLoggingPage } from "./pages/AdminLoggingPage";
+import { AdminConcurrencyPage } from "./pages/AdminConcurrencyPage";
+import { AdminAnalysisToolsPage } from "./pages/AdminAnalysisToolsPage";
+import { AdminExportsPage } from "./pages/AdminExportsPage";
+import { AdminTargetVersionsPage } from "./pages/AdminTargetVersionsPage";
+import { AdminOrganisationsPage } from "./pages/AdminOrganisationsPage";
+import { AdminServerPage } from "./pages/AdminServerPage";
+import { AdminAuthPage } from "./pages/AdminAuthPage";
+import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
+import { AdminSetupWizardPage, useSetupRequired } from "./pages/AdminSetupWizardPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -89,8 +100,23 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
-// Login route — redirects to dashboard if already authenticated.
+// Setup mode guard — admins with empty config_store are sent to /admin/setup.
+// Skips on the setup page itself to avoid infinite redirect loops.
 // ---------------------------------------------------------------------------
+
+function SetupModeGuard({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useAuth();
+  const { setupRequired, checking } = useSetupRequired();
+  const location = useLocation();
+
+  // Only redirect admins; non-admins can't reach admin routes anyway.
+  if (isAdmin && !checking && setupRequired && !location.pathname.startsWith("/admin/setup")) {
+    return <Navigate to="/admin/setup" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 
 function LoginRoute() {
   const { isAuthenticated, loading } = useAuth();
@@ -118,11 +144,22 @@ export function App() {
               element={
                 <RequireAuth>
                   <OrgProvider>
-                    <AppLayout />
+                    <SetupModeGuard>
+                      <AppLayout />
+                    </SetupModeGuard>
                   </OrgProvider>
                 </RequireAuth>
               }
             >
+              {/* Setup wizard — shown to admins when config_store has no organisations */}
+              <Route
+                path="/admin/setup"
+                element={
+                  <RequireAdmin>
+                    <AdminSetupWizardPage />
+                  </RequireAdmin>
+                }
+              />
               <Route path="/" element={<DashboardPage />} />
               <Route path="/nodes" element={<NodesPage />} />
               <Route path="/nodes/:org/:name" element={<NodeDetailPage />} />
@@ -210,6 +247,86 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminGitURLsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/collection"
+                element={
+                  <RequireAdmin>
+                    <AdminCollectionPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/logging"
+                element={
+                  <RequireAdmin>
+                    <AdminLoggingPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/concurrency"
+                element={
+                  <RequireAdmin>
+                    <AdminConcurrencyPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/analysis-tools"
+                element={
+                  <RequireAdmin>
+                    <AdminAnalysisToolsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/exports"
+                element={
+                  <RequireAdmin>
+                    <AdminExportsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/target-versions"
+                element={
+                  <RequireAdmin>
+                    <AdminTargetVersionsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/organisations"
+                element={
+                  <RequireAdmin>
+                    <AdminOrganisationsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/server"
+                element={
+                  <RequireAdmin>
+                    <AdminServerPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/auth"
+                element={
+                  <RequireAdmin>
+                    <AdminAuthPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/notifications"
+                element={
+                  <RequireAdmin>
+                    <AdminNotificationsPage />
                   </RequireAdmin>
                 }
               />

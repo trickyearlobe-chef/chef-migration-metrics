@@ -123,9 +123,10 @@ func TestResolveKitchenCredentials_TransportPassword(t *testing.T) {
 		"ubuntu_pass": []byte("pass-123"),
 	})
 	tkConfig := config.TestKitchenConfig{
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				Transport: &config.PlatformMapTransport{
 					Username:           "root",
 					PasswordCredential: "ubuntu_pass",
@@ -139,7 +140,7 @@ func TestResolveKitchenCredentials_TransportPassword(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	envName := "CMM_TK_TRANSPORT_UBUNTU_22_04"
+	envName := "CMM_TK_TRANSPORT_UBUNTU2204"
 	val, ok := kc.EnvVars[envName]
 	if !ok {
 		t.Fatalf("missing env var %s, got keys: %v", envName, envVarKeys(kc.EnvVars))
@@ -154,9 +155,10 @@ func TestResolveKitchenCredentials_TransportSSHKey(t *testing.T) {
 		"ubuntu_key": []byte("-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----"),
 	})
 	tkConfig := config.TestKitchenConfig{
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				Transport: &config.PlatformMapTransport{
 					Username:         "root",
 					SSHKeyCredential: "ubuntu_key",
@@ -170,7 +172,7 @@ func TestResolveKitchenCredentials_TransportSSHKey(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	envName := "CMM_TK_KEY_UBUNTU_22_04"
+	envName := "CMM_TK_KEY_UBUNTU2204"
 	val, ok := kc.EnvVars[envName]
 	if !ok {
 		t.Fatalf("missing env var %s, got keys: %v", envName, envVarKeys(kc.EnvVars))
@@ -190,9 +192,10 @@ func TestResolveKitchenCredentials_MixedSecrets(t *testing.T) {
 		DriverSecrets: map[string]string{
 			"password": "vc_pass",
 		},
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "centos-7",
+				Name: "centos7",
+				ID:   "tmpl-centos-7",
 				Transport: &config.PlatformMapTransport{
 					Username:           "root",
 					PasswordCredential: "ssh_pass",
@@ -208,9 +211,9 @@ func TestResolveKitchenCredentials_MixedSecrets(t *testing.T) {
 	}
 
 	expected := map[string]string{
-		"CMM_TK_SECRET_PASSWORD":    "driver-secret",
-		"CMM_TK_TRANSPORT_CENTOS_7": "transport-pass",
-		"CMM_TK_KEY_CENTOS_7":       "transport-key",
+		"CMM_TK_SECRET_PASSWORD":  "driver-secret",
+		"CMM_TK_TRANSPORT_CENTOS7": "transport-pass",
+		"CMM_TK_KEY_CENTOS7":       "transport-key",
 	}
 	for envName, wantVal := range expected {
 		got, ok := kc.EnvVars[envName]
@@ -262,10 +265,11 @@ func TestResolveKitchenCredentials_ResolutionFailure(t *testing.T) {
 func TestResolveKitchenCredentials_NoTransport(t *testing.T) {
 	resolver := newMockResolver(map[string][]byte{})
 	tkConfig := config.TestKitchenConfig{
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
-				Transport:   nil,
+				Name:      "ubuntu2204",
+				ID:        "tmpl-ubuntu-2204",
+				Transport: nil,
 			},
 		},
 	}
@@ -292,9 +296,10 @@ func TestKitchenCredentials_Cleanup(t *testing.T) {
 		DriverSecrets: map[string]string{
 			"key_a": "cred_a",
 		},
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				Transport: &config.PlatformMapTransport{
 					Username:           "root",
 					PasswordCredential: "cred_b",
@@ -498,9 +503,10 @@ func TestValidateDriverCredentials_AllValid(t *testing.T) {
 		DriverSecrets: map[string]string{
 			"key_a": "cred_a",
 		},
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				Transport: &config.PlatformMapTransport{
 					Username:           "root",
 					PasswordCredential: "cred_b",
@@ -529,9 +535,10 @@ func TestValidateDriverCredentials_ZeroesResolvedPlaintext(t *testing.T) {
 		DriverSecrets: map[string]string{
 			"password": "drv",
 		},
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "centos-7",
+				Name: "centos7",
+				ID:   "tmpl-centos-7",
 				Transport: &config.PlatformMapTransport{
 					Username:           "root",
 					PasswordCredential: "pwd",
@@ -643,4 +650,75 @@ func envVarKeys(m map[string][]byte) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// ---------------------------------------------------------------------------
+// Tests: Chef license key credential resolution
+// ---------------------------------------------------------------------------
+
+func TestResolveKitchenCredentials_ChefLicenseKey(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{
+		"my-chef-license": []byte("ABCD-1234-EFGH-5678"),
+	})
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "my-chef-license",
+	}
+	kc, err := ResolveKitchenCredentials(context.Background(), resolver, tkConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val, ok := kc.EnvVars["CMM_TK_CHEF_LICENSE_KEY"]
+	if !ok {
+		t.Fatalf("expected CMM_TK_CHEF_LICENSE_KEY in env vars, got keys: %v", envVarKeys(kc.EnvVars))
+	}
+	if string(val) != "ABCD-1234-EFGH-5678" {
+		t.Errorf("expected license key value, got %q", string(val))
+	}
+}
+
+func TestResolveKitchenCredentials_NoLicenseKey_WhenNotConfigured(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{})
+	tkConfig := config.TestKitchenConfig{}
+	kc, err := ResolveKitchenCredentials(context.Background(), resolver, tkConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := kc.EnvVars["CMM_TK_CHEF_LICENSE_KEY"]; ok {
+		t.Error("should not inject CMM_TK_CHEF_LICENSE_KEY when credential not configured")
+	}
+}
+
+func TestResolveKitchenCredentials_ChefLicenseKey_MissingCredential(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{}) // credential not in store
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "missing-license",
+	}
+	_, err := ResolveKitchenCredentials(context.Background(), resolver, tkConfig)
+	if err == nil {
+		t.Fatal("expected error when license credential is missing, got nil")
+	}
+}
+
+func TestValidateDriverCredentials_ChefLicenseKey(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{
+		"my-chef-license": []byte("ABCD-1234"),
+	})
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "my-chef-license",
+	}
+	errs := ValidateDriverCredentials(context.Background(), resolver, tkConfig)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateDriverCredentials_ChefLicenseKey_Missing(t *testing.T) {
+	resolver := newMockResolver(map[string][]byte{})
+	tkConfig := config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "missing-license",
+	}
+	errs := ValidateDriverCredentials(context.Background(), resolver, tkConfig)
+	if len(errs) == 0 {
+		t.Error("expected validation error for missing license credential")
+	}
 }

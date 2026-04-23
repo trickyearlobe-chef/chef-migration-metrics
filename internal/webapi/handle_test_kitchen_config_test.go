@@ -25,7 +25,7 @@ import (
 func newTestRouterForTKConfig(store *mockStore) *Router {
 	cfg := testConfig()
 	cfg.AnalysisTools.TestKitchen = config.TestKitchenConfig{
-		Driver:         "dokken",
+		Driver:         "",
 		TimeoutMinutes: 30,
 	}
 	hub := NewEventHub()
@@ -65,8 +65,8 @@ func TestTestKitchenConfig_GET_FileDefault(t *testing.T) {
 	if resp.Source != "file" {
 		t.Errorf("source = %q, want %q", resp.Source, "file")
 	}
-	if resp.Config.Driver != "dokken" {
-		t.Errorf("config.driver = %q, want %q", resp.Config.Driver, "dokken")
+	if resp.Config.Driver != "" {
+		t.Errorf("config.driver = %q, want %q", resp.Config.Driver, "")
 	}
 	if resp.UpdatedAt != nil {
 		t.Errorf("updated_at should be nil for file source, got %v", resp.UpdatedAt)
@@ -166,7 +166,7 @@ func TestTestKitchenConfig_PUT_Valid(t *testing.T) {
 	}
 	r := newTestRouterForTKConfig(store)
 
-	body := `{"Driver":"ec2","TimeoutMinutes":45,"PlatformMap":[{"KitchenName":"ubuntu-22.04","Image":"ami-12345"}]}`
+	body := `{"driver":"ec2","timeout_minutes":45,"platform_map":[{"kitchen_name":"ubuntu-22.04","image":"ami-12345"}]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/test-kitchen/config", bytes.NewBufferString(body))
 	r.ServeHTTP(w, req)
@@ -224,7 +224,7 @@ func TestTestKitchenConfig_PUT_ValidationError_MissingPlatformMap(t *testing.T) 
 	r := newTestRouterForTKConfig(store)
 
 	// vcenter (non-dokken) requires a platform map.
-	body := `{"Driver":"vcenter","TimeoutMinutes":30}`
+	body := `{"driver":"vcenter","timeout_minutes":30}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/test-kitchen/config", bytes.NewBufferString(body))
 	r.ServeHTTP(w, req)
@@ -250,7 +250,7 @@ func TestTestKitchenConfig_PUT_ValidationError_MissingImage(t *testing.T) {
 	store := &mockStore{}
 	r := newTestRouterForTKConfig(store)
 
-	body := `{"Driver":"ec2","PlatformMap":[{"KitchenName":"ubuntu-22.04","Image":""},{"KitchenName":"centos-7","Image":"ami-67890"}]}`
+	body := `{"driver":"ec2","platform_map":[{"kitchen_name":"ubuntu-22.04","image":""},{"kitchen_name":"centos-7","image":"ami-67890"}]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/test-kitchen/config", bytes.NewBufferString(body))
 	r.ServeHTTP(w, req)
@@ -282,7 +282,7 @@ func TestTestKitchenConfig_PUT_ValidationError_DuplicateKitchenName(t *testing.T
 	store := &mockStore{}
 	r := newTestRouterForTKConfig(store)
 
-	body := `{"Driver":"ec2","PlatformMap":[{"KitchenName":"ubuntu-22.04","Image":"ami-111"},{"KitchenName":"ubuntu-22.04","Image":"ami-222"}]}`
+	body := `{"driver":"ec2","platform_map":[{"kitchen_name":"ubuntu-22.04","image":"ami-111"},{"kitchen_name":"ubuntu-22.04","image":"ami-222"}]}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/test-kitchen/config", bytes.NewBufferString(body))
 	r.ServeHTTP(w, req)
@@ -307,76 +307,6 @@ func TestTestKitchenConfig_PUT_ValidationError_DuplicateKitchenName(t *testing.T
 	}
 	if !found {
 		t.Errorf("expected 'duplicate kitchen_name' in details, got %v", details)
-	}
-}
-
-func TestTestKitchenConfig_PUT_ValidationError_CustomDriverMissingImageField(t *testing.T) {
-	store := &mockStore{}
-	r := newTestRouterForTKConfig(store)
-
-	body := `{"Driver":"custom","PlatformMap":[{"KitchenName":"myplat","Image":"myimg"}]}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/test-kitchen/config", bytes.NewBufferString(body))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
-	}
-
-	var resp map[string]any
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	details, ok := resp["details"].([]any)
-	if !ok || len(details) == 0 {
-		t.Fatal("expected non-empty details array")
-	}
-	found := false
-	for _, d := range details {
-		if s, ok := d.(string); ok && s == "image_field_name is required when driver is 'custom'" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected 'image_field_name is required' in details, got %v", details)
-	}
-}
-
-func TestTestKitchenConfig_PUT_DokkenNoPlatformMapIsValid(t *testing.T) {
-	store := &mockStore{
-		SetRuntimeSettingFn: func(context.Context, string, json.RawMessage, string) error {
-			return nil
-		},
-	}
-	r := newTestRouterForTKConfig(store)
-
-	// Dokken with no platform map is valid (backward compatible).
-	body := `{"Driver":"dokken","TimeoutMinutes":30}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/test-kitchen/config", bytes.NewBufferString(body))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-}
-
-func TestTestKitchenConfig_PUT_EmptyDriverDefaultsDokken(t *testing.T) {
-	store := &mockStore{
-		SetRuntimeSettingFn: func(context.Context, string, json.RawMessage, string) error {
-			return nil
-		},
-	}
-	r := newTestRouterForTKConfig(store)
-
-	// Empty driver defaults to dokken via EffectiveDriver(), so no platform map needed.
-	body := `{"TimeoutMinutes":15}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/test-kitchen/config", bytes.NewBufferString(body))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 }
 
@@ -478,41 +408,9 @@ func TestValidateTestKitchenConfig_Valid(t *testing.T) {
 	}
 }
 
-func TestValidateTestKitchenConfig_DokkenEmptyPlatformMap(t *testing.T) {
-	cfg := config.TestKitchenConfig{
-		Driver: "dokken",
-	}
-	problems := validateTestKitchenConfig(cfg)
-	if len(problems) != 0 {
-		t.Errorf("dokken with empty platform_map should be valid, got %v", problems)
-	}
-}
-
-func TestValidateTestKitchenConfig_EmptyDriverEmptyPlatformMap(t *testing.T) {
-	// Empty driver defaults to dokken via EffectiveDriver.
-	cfg := config.TestKitchenConfig{}
-	problems := validateTestKitchenConfig(cfg)
-	if len(problems) != 0 {
-		t.Errorf("empty driver (defaults to dokken) with empty platform_map should be valid, got %v", problems)
-	}
-}
-
-func TestValidateTestKitchenConfig_NonDokkenMissingPlatformMap(t *testing.T) {
+func TestValidateTestKitchenConfig_MissingPlatformMap(t *testing.T) {
 	cfg := config.TestKitchenConfig{
 		Driver: "vcenter",
-	}
-	problems := validateTestKitchenConfig(cfg)
-	if len(problems) != 1 {
-		t.Fatalf("expected 1 problem, got %d: %v", len(problems), problems)
-	}
-}
-
-func TestValidateTestKitchenConfig_CustomMissingImageField(t *testing.T) {
-	cfg := config.TestKitchenConfig{
-		Driver: "custom",
-		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "myplat", Image: "myimg"},
-		},
 	}
 	problems := validateTestKitchenConfig(cfg)
 	if len(problems) != 1 {

@@ -34,8 +34,9 @@ type mockKitchenExecutor struct {
 }
 
 type mockKitchenCall struct {
-	Dir  string
-	Args []string
+	Dir      string
+	Args     []string
+	ExtraEnv []string
 }
 
 type mockKitchenResponse struct {
@@ -51,8 +52,8 @@ func newMockKitchenExecutor() *mockKitchenExecutor {
 	}
 }
 
-func (m *mockKitchenExecutor) Run(_ context.Context, dir string, args ...string) (string, string, int, error) {
-	m.calls = append(m.calls, mockKitchenCall{Dir: dir, Args: args})
+func (m *mockKitchenExecutor) Run(_ context.Context, dir string, extraEnv []string, args ...string) (string, string, int, error) {
+	m.calls = append(m.calls, mockKitchenCall{Dir: dir, Args: args, ExtraEnv: extraEnv})
 
 	// Determine phase from the first arg.
 	phase := ""
@@ -361,23 +362,23 @@ func newScannerWithConfig(tkConfig config.TestKitchenConfig) *KitchenScanner {
 
 func TestBuildOverlay_NoOverrides_NoTargetVersion(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
-	got := s.buildOverlay("", "dokken")
+	got := s.buildOverlay("", "")
 	if got != "" {
 		t.Errorf("expected empty overlay, got:\n%s", got)
 	}
 }
 
-func TestBuildOverlay_TargetVersionOnly_Dokken(t *testing.T) {
+func TestBuildOverlay_TargetVersionOnly_EmptyDriver(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
-	got := s.buildOverlay("18.3.0", "dokken")
+	got := s.buildOverlay("18.3.0", "")
 	if !strings.Contains(got, "provisioner:") {
 		t.Error("expected provisioner section")
 	}
-	if !strings.Contains(got, `chef_version: "18.3.0"`) {
-		t.Errorf("expected dokken-style chef_version, got:\n%s", got)
+	if !strings.Contains(got, `product_version: "18.3.0"`) {
+		t.Errorf("expected product_version, got:\n%s", got)
 	}
-	if strings.Contains(got, "product_version") {
-		t.Error("should not contain product_version for dokken driver")
+	if strings.Contains(got, "chef_version") {
+		t.Error("should not contain chef_version")
 	}
 }
 
@@ -395,15 +396,14 @@ func TestBuildOverlay_TargetVersionOnly_Vagrant(t *testing.T) {
 func TestBuildOverlay_TargetVersionOnly_UnknownDriver(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
 	got := s.buildOverlay("18.0.0", "")
-	// No configured driver + empty detected → effectiveDriver returns "dokken",
-	// so provisioner uses chef_version.
-	if !strings.Contains(got, "chef_version") {
-		t.Errorf("expected chef_version for default dokken driver, got:\n%s", got)
+	// No configured driver + empty detected → provisioner uses product_version.
+	if !strings.Contains(got, "product_version") {
+		t.Errorf("expected product_version for empty driver, got:\n%s", got)
 	}
 }
 
 func TestBuildOverlay_DriverOverride(t *testing.T) {
-	// Non-dokken driver emits a driver block.
+	// Non-empty driver emits a driver block.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vcenter",
 	})
@@ -414,9 +414,9 @@ func TestBuildOverlay_DriverOverride(t *testing.T) {
 	if !strings.Contains(got, "name: vcenter") {
 		t.Errorf("expected driver name vcenter, got:\n%s", got)
 	}
-	// vcenter is not dokken, so provisioner should use product_version.
+	// vcenter driver uses product_version in the provisioner.
 	if !strings.Contains(got, "product_version") {
-		t.Errorf("expected product_version for non-dokken driver, got:\n%s", got)
+		t.Errorf("expected product_version for vcenter driver, got:\n%s", got)
 	}
 }
 
@@ -428,7 +428,7 @@ func TestBuildOverlay_DriverConfig(t *testing.T) {
 			"network":    "host",
 		},
 	})
-	got := s.buildOverlay("", "dokken")
+	got := s.buildOverlay("", "")
 	if !strings.Contains(got, "name: vcenter") {
 		t.Errorf("expected driver name vcenter, got:\n%s", got)
 	}
@@ -440,35 +440,19 @@ func TestBuildOverlay_DriverConfig(t *testing.T) {
 	}
 }
 
-func TestBuildOverlay_DriverConfigWithoutDriverOverride(t *testing.T) {
-	// Driver: "dokken" (explicit) with DriverSettings — dokken emits no
-	// driver block, so DriverSettings are silently ignored.
-	s := newScannerWithConfig(config.TestKitchenConfig{
-		Driver: "dokken",
-		DriverSettings: map[string]any{
-			"privileged": "true",
-		},
-	})
-	got := s.buildOverlay("", "vagrant")
-	// Dokken does not emit a driver block.
-	if strings.Contains(got, "driver:") {
-		t.Error("dokken should not emit driver section")
-	}
-	if strings.Contains(got, "privileged") {
-		t.Error("dokken should not emit driver settings")
-	}
-}
-
 func TestBuildOverlay_PlatformOverrides(t *testing.T) {
-	// Platform map only emits for non-dokken drivers.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vcenter",
+		Images: []config.ImageEntry{
+			{Name: "ubuntu2204", ID: "tmpl-ubuntu-2204"},
+			{Name: "centos8", ID: "tmpl-centos-8"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
-			{KitchenName: "centos-8", Image: "tmpl-centos-8"},
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
+			{KitchenName: "centos-8", Image: "centos8"},
 		},
 	})
-	got := s.buildOverlay("", "dokken")
+	got := s.buildOverlay("", "")
 	if !strings.Contains(got, "platforms:") {
 		t.Error("expected platforms section")
 	}
@@ -493,8 +477,11 @@ func TestBuildOverlay_AllOverridesCombined(t *testing.T) {
 		DriverSecrets: map[string]string{
 			"aws_secret_access_key": "aws-cred",
 		},
+		Images: []config.ImageEntry{
+			{Name: "rhel9", ID: "ami-12345"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "rhel-9", Image: "ami-12345"},
+			{KitchenName: "rhel-9", Image: "rhel9"},
 		},
 	})
 	got := s.buildOverlay("18.5.0", "vagrant")
@@ -508,8 +495,7 @@ func TestBuildOverlay_AllOverridesCombined(t *testing.T) {
 		t.Error("expected driver secret ERB reference")
 	}
 	if !strings.Contains(got, "product_version") {
-		// ec2 is not dokken, should use product_version.
-		t.Error("expected product_version for non-dokken driver")
+		t.Error("expected product_version for ec2 driver")
 	}
 	if !strings.Contains(got, "- name: rhel-9") {
 		t.Error("expected platform map entry")
@@ -521,7 +507,7 @@ func TestBuildOverlay_AllOverridesCombined(t *testing.T) {
 }
 
 func TestBuildOverlay_Header(t *testing.T) {
-	// Use a non-dokken driver so the overlay has content (driver block).
+	// A non-empty driver ensures the overlay has content.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vcenter",
 	})
@@ -540,7 +526,7 @@ func TestBuildOverlay_Header(t *testing.T) {
 
 func TestEffectiveDriver_Override(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{Driver: "ec2"})
-	got := s.effectiveDriver("dokken")
+	got := s.effectiveDriver("vagrant")
 	if got != "ec2" {
 		t.Errorf("effectiveDriver() = %q, want %q", got, "ec2")
 	}
@@ -557,8 +543,8 @@ func TestEffectiveDriver_Detected(t *testing.T) {
 func TestEffectiveDriver_Unknown(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
 	got := s.effectiveDriver("")
-	if got != "dokken" {
-		t.Errorf("effectiveDriver() = %q, want %q", got, "dokken")
+	if got != "" {
+		t.Errorf("effectiveDriver() = %q, want %q", got, "")
 	}
 }
 
@@ -603,7 +589,7 @@ func TestRunPhase_Success(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "converge")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "converge")
 	if !pr.Passed {
 		t.Error("expected converge to pass")
 	}
@@ -628,7 +614,7 @@ func TestRunPhase_Failure(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "verify")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "verify")
 	if pr.Passed {
 		t.Error("expected verify to fail with exit code 1")
 	}
@@ -651,7 +637,7 @@ func TestRunPhase_ExecutionError(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "converge")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "converge")
 	if pr.Passed {
 		t.Error("expected failure on execution error")
 	}
@@ -675,7 +661,7 @@ func TestRunPhase_ContextTimeout(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
 	defer cancel()
 
-	pr := s.runPhase(ctx, "/tmp/test", "converge")
+	pr := s.runPhase(ctx, "/tmp/test", nil, "converge")
 	if pr.Passed {
 		t.Error("expected failure on timeout")
 	}
@@ -692,7 +678,7 @@ func TestRunPhase_Arguments(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	s.runPhase(context.Background(), "/tmp/cookbooks/myapp", "converge")
+	s.runPhase(context.Background(), "/tmp/cookbooks/myapp", nil, "converge")
 
 	if mock.callCount() != 1 {
 		t.Fatalf("expected 1 call, got %d", mock.callCount())
@@ -728,12 +714,39 @@ func TestRunPhase_CombinesStdoutStderr(t *testing.T) {
 		timeout:  30 * time.Minute,
 	}
 
-	pr := s.runPhase(context.Background(), "/tmp/test", "verify")
+	pr := s.runPhase(context.Background(), "/tmp/test", nil, "verify")
 	if !strings.Contains(pr.Output, "stdout-content") {
 		t.Error("expected stdout in combined output")
 	}
 	if !strings.Contains(pr.Output, "stderr-content") {
 		t.Error("expected stderr in combined output")
+	}
+}
+
+func TestRunPhase_CredentialEnvVarsPassedToExecutor(t *testing.T) {
+	mock := newMockKitchenExecutor()
+	s := &KitchenScanner{
+		executor: mock,
+		logger:   testLogger(),
+		timeout:  30 * time.Minute,
+	}
+
+	extraEnv := []string{"CMM_TK_SECRET_PROXMOX_TOKEN_SECRET=supersecret"}
+	s.runPhase(context.Background(), "/tmp/test", extraEnv, "converge")
+
+	if mock.callCount() != 1 {
+		t.Fatalf("expected 1 call, got %d", mock.callCount())
+	}
+	call := mock.calls[0]
+	found := false
+	for _, e := range call.ExtraEnv {
+		if e == "CMM_TK_SECRET_PROXMOX_TOKEN_SECRET=supersecret" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("credential env var not passed to executor; got ExtraEnv: %v", call.ExtraEnv)
 	}
 }
 
@@ -751,7 +764,7 @@ func TestListInstances_Success(t *testing.T) {
 		logger:   testLogger(),
 	}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -773,7 +786,7 @@ func TestListInstances_UsesJsonFlag(t *testing.T) {
 	}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -806,7 +819,7 @@ func TestListInstances_MultipleInstances(t *testing.T) {
 	}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -820,7 +833,7 @@ func TestListInstances_EmptyArray(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: "[]"}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -834,7 +847,7 @@ func TestListInstances_EmptyStdout(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: ""}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	instances, err := s.listInstances(context.Background(), "/tmp/test")
+	instances, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -848,7 +861,7 @@ func TestListInstances_InvalidJSON(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: "not json"}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error on invalid JSON")
 	}
@@ -866,7 +879,7 @@ func TestListInstances_InvalidJSON_IncludesStdoutAndStderr(t *testing.T) {
 	}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error on HTML stdout")
 	}
@@ -888,7 +901,7 @@ func TestListInstances_InvalidJSON_TruncatesLongOutput(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Stdout: longHTML}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -907,7 +920,7 @@ func TestListInstances_ExecutionError(t *testing.T) {
 	mock.responses["list"] = mockKitchenResponse{Err: fmt.Errorf("kitchen not found")}
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
-	_, err := s.listInstances(context.Background(), "/tmp/test")
+	_, err := s.listInstances(context.Background(), "/tmp/test", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -925,7 +938,7 @@ func TestDestroyBestEffort_Success(t *testing.T) {
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
 	result := &KitchenRunResult{CookbookName: "test-cb"}
-	s.destroyBestEffort(context.Background(), "/tmp/test", result)
+	s.destroyBestEffort(context.Background(), "/tmp/test", nil, result)
 
 	if result.DestroyOutput == "" {
 		t.Error("expected destroy output to be captured")
@@ -944,7 +957,7 @@ func TestDestroyBestEffort_Failure(t *testing.T) {
 
 	result := &KitchenRunResult{CookbookName: "test-cb"}
 	// Should not panic — destroy errors are logged but not propagated.
-	s.destroyBestEffort(context.Background(), "/tmp/test", result)
+	s.destroyBestEffort(context.Background(), "/tmp/test", nil, result)
 }
 
 func TestDestroyBestEffort_Arguments(t *testing.T) {
@@ -952,7 +965,7 @@ func TestDestroyBestEffort_Arguments(t *testing.T) {
 	s := &KitchenScanner{executor: mock, logger: testLogger()}
 
 	result := &KitchenRunResult{CookbookName: "test-cb"}
-	s.destroyBestEffort(context.Background(), "/tmp/test", result)
+	s.destroyBestEffort(context.Background(), "/tmp/test", nil, result)
 
 	calls := mock.callsForPhase("destroy")
 	if len(calls) != 1 {
@@ -1269,9 +1282,9 @@ func TestNewKitchenScanner_NegativeValues(t *testing.T) {
 func TestSetTestKitchenConfig_UpdatesOverlay(t *testing.T) {
 	t.Parallel()
 
-	// Start with dokken config.
+	// Start with an empty config.
 	scanner := NewKitchenScanner(nil, nil, "/usr/bin/kitchen", 1, 30,
-		config.TestKitchenConfig{Driver: "dokken"})
+		config.TestKitchenConfig{})
 
 	// Swap to vcenter config with a platform map.
 	scanner.SetTestKitchenConfig(config.TestKitchenConfig{
@@ -1369,7 +1382,7 @@ func TestConfigValidation_EmptyPlatformName(t *testing.T) {
 }
 
 func TestConfigValidation_DriverOverrideValues(t *testing.T) {
-	drivers := []string{"dokken", "vagrant", "ec2", "azurerm", "gce", "docker"}
+	drivers := []string{"vcenter", "vra", "vagrant", "ec2", "proxmox"}
 	for _, d := range drivers {
 		tkc := config.TestKitchenConfig{Driver: d}
 		if tkc.Driver != d {
@@ -1430,12 +1443,12 @@ func TestPhaseSequence_AllPass(t *testing.T) {
 	s := &KitchenScanner{executor: mock, logger: testLogger(), timeout: 5 * time.Minute}
 
 	// Run each phase manually (simulating what testOne does).
-	cr := s.runPhase(context.Background(), "/tmp", "converge")
+	cr := s.runPhase(context.Background(), "/tmp", nil, "converge")
 	if !cr.Passed {
 		t.Error("converge should pass")
 	}
 
-	vr := s.runPhase(context.Background(), "/tmp", "verify")
+	vr := s.runPhase(context.Background(), "/tmp", nil, "verify")
 	if !vr.Passed {
 		t.Error("verify should pass")
 	}
@@ -1455,7 +1468,7 @@ func TestPhaseSequence_ConvergeFails_VerifySkipped(t *testing.T) {
 	mock.responses["verify"] = mockKitchenResponse{Stdout: "should not run", ExitCode: 0}
 	s := &KitchenScanner{executor: mock, logger: testLogger(), timeout: 5 * time.Minute}
 
-	cr := s.runPhase(context.Background(), "/tmp", "converge")
+	cr := s.runPhase(context.Background(), "/tmp", nil, "converge")
 	if cr.Passed {
 		t.Fatal("converge should fail")
 	}
@@ -1535,8 +1548,11 @@ func TestBuildOverlay_DokkenToVagrant(t *testing.T) {
 	// Scenario: cookbook uses dokken, operator wants to test with vagrant instead.
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vagrant",
+		Images: []config.ImageEntry{
+			{Name: "ubuntu2204", ID: "bento/ubuntu-22.04"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "bento/ubuntu-22.04"},
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
 		},
 	})
 	got := s.buildOverlay("18.5.0", "dokken")
@@ -1557,31 +1573,6 @@ func TestBuildOverlay_DokkenToVagrant(t *testing.T) {
 	}
 }
 
-func TestBuildOverlay_VagrantToDokken(t *testing.T) {
-	// Scenario: cookbook uses vagrant, operator configures dokken.
-	// Dokken + platform map → platform map is NOT emitted (dokken passthrough).
-	s := newScannerWithConfig(config.TestKitchenConfig{
-		Driver: "dokken",
-		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "dokken/ubuntu-22.04"},
-		},
-	})
-	got := s.buildOverlay("17.10.0", "vagrant")
-
-	// Dokken should use chef_version in provisioner.
-	if !strings.Contains(got, "chef_version") {
-		t.Error("expected chef_version for dokken")
-	}
-	// Dokken does not emit a driver block.
-	if strings.Contains(got, "name: dokken") {
-		t.Error("dokken should not emit a driver name block")
-	}
-	// Dokken does not emit platforms.
-	if strings.Contains(got, "platforms:") {
-		t.Error("dokken should not emit platform map")
-	}
-}
-
 func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 	// Scenario: test on real AWS instances.
 	s := newScannerWithConfig(config.TestKitchenConfig{
@@ -1590,9 +1581,13 @@ func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 			"region":        "us-east-1",
 			"instance_type": "t3.large",
 		},
+		Images: []config.ImageEntry{
+			{Name: "rhel8", ID: "ami-0abcdef1234567890"},
+			{Name: "amazon2", ID: "ami-0fedcba9876543210"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "rhel-8", Image: "ami-0abcdef1234567890"},
-			{KitchenName: "amazon-2", Image: "ami-0fedcba9876543210"},
+			{KitchenName: "rhel-8", Image: "rhel8"},
+			{KitchenName: "amazon-2", Image: "amazon2"},
 		},
 	})
 	got := s.buildOverlay("18.0.0", "vagrant")
@@ -1618,28 +1613,6 @@ func TestBuildOverlay_EC2WithInstanceType(t *testing.T) {
 	}
 }
 
-func TestBuildOverlay_ProductionPlatformAlignment(t *testing.T) {
-	// Scenario: no driver configured (dokken default) with PlatformMap.
-	// Dokken passthrough: platform map is NOT emitted.
-	s := newScannerWithConfig(config.TestKitchenConfig{
-		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-20.04", Image: "dokken/ubuntu-20.04"},
-			{KitchenName: "ubuntu-22.04", Image: "dokken/ubuntu-22.04"},
-			{KitchenName: "rhel-8", Image: "dokken/centos-8"},
-		},
-	})
-	got := s.buildOverlay("18.5.0", "dokken")
-
-	// Dokken does not emit platforms.
-	if strings.Contains(got, "platforms:") {
-		t.Error("dokken should not emit platform map")
-	}
-	// But should still emit provisioner with chef_version.
-	if !strings.Contains(got, "chef_version") {
-		t.Errorf("expected chef_version in provisioner, got:\n%s", got)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Tests: new overlay generation scenarios
 // ---------------------------------------------------------------------------
@@ -1649,8 +1622,11 @@ func TestBuildOverlay_VCenterWithCredentials(t *testing.T) {
 		Driver:         "vcenter",
 		DriverSettings: map[string]any{"vcenter_host": "vcenter.example.com"},
 		DriverSecrets:  map[string]string{"vcenter_password": "vcenter-cred"},
+		Images: []config.ImageEntry{
+			{Name: "ubuntu2204", ID: "tmpl-ubuntu-2204"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "tmpl-ubuntu-2204"},
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
 		},
 	})
 	got := s.buildOverlay("", "")
@@ -1670,15 +1646,18 @@ func TestBuildOverlay_VCenterWithCredentials(t *testing.T) {
 func TestBuildOverlay_TransportCredentials(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "vcenter",
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
-				Image:       "tmpl-ubuntu-2204",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				Transport: &config.PlatformMapTransport{
 					Username:           "kitchen",
 					PasswordCredential: "vm-pass",
 				},
 			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
 		},
 	})
 	got := s.buildOverlay("", "")
@@ -1689,23 +1668,26 @@ func TestBuildOverlay_TransportCredentials(t *testing.T) {
 	if !strings.Contains(got, "username: kitchen") {
 		t.Errorf("expected transport username, got:\n%s", got)
 	}
-	if !strings.Contains(got, "CMM_TK_TRANSPORT_UBUNTU_22_04") {
-		t.Errorf("expected transport password ERB ref, got:\n%s", got)
+	if !strings.Contains(got, "CMM_TK_TRANSPORT_UBUNTU2204") {
+		t.Errorf("expected transport password ERB ref using image name, got:\n%s", got)
 	}
 }
 
 func TestBuildOverlay_TransportSSHKey(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{
 		Driver: "ec2",
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "rhel-9",
-				Image:       "ami-12345",
+				Name: "rhel9",
+				ID:   "ami-12345",
 				Transport: &config.PlatformMapTransport{
 					Username:         "ec2-user",
 					SSHKeyCredential: "ec2-ssh-key",
 				},
 			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "rhel9"},
 		},
 	})
 	got := s.buildOverlay("", "")
@@ -1716,29 +1698,29 @@ func TestBuildOverlay_TransportSSHKey(t *testing.T) {
 	if !strings.Contains(got, "username: ec2-user") {
 		t.Errorf("expected transport username, got:\n%s", got)
 	}
-	if !strings.Contains(got, "CMM_TK_KEY_RHEL_9") {
-		t.Errorf("expected transport SSH key ERB ref, got:\n%s", got)
+	if !strings.Contains(got, "CMM_TK_KEY_RHEL9") {
+		t.Errorf("expected transport SSH key ERB ref using image name, got:\n%s", got)
 	}
 }
 
-func TestBuildOverlay_DokkenDefault(t *testing.T) {
-	// Empty config (all defaults) with no target version → empty overlay.
+func TestBuildOverlay_EmptyConfig_NoTargetVersion(t *testing.T) {
+	// Empty config with no target version → empty overlay.
 	s := newScannerWithConfig(config.TestKitchenConfig{})
-	got := s.buildOverlay("", "dokken")
+	got := s.buildOverlay("", "")
 	if got != "" {
-		t.Errorf("expected empty overlay for dokken defaults, got:\n%s", got)
+		t.Errorf("expected empty overlay for empty config, got:\n%s", got)
 	}
 }
 
-func TestBuildOverlay_DokkenWithTargetVersion(t *testing.T) {
-	// Empty Driver field + targetVersion → provisioner with chef_version.
+func TestBuildOverlay_EmptyConfig_WithTargetVersion(t *testing.T) {
+	// Empty Driver field + targetVersion → provisioner with product_version.
 	s := newScannerWithConfig(config.TestKitchenConfig{})
-	got := s.buildOverlay("18.3.0", "dokken")
+	got := s.buildOverlay("18.3.0", "")
 	if !strings.Contains(got, "provisioner:") {
 		t.Error("expected provisioner section")
 	}
-	if !strings.Contains(got, `chef_version: "18.3.0"`) {
-		t.Errorf("expected chef_version, got:\n%s", got)
+	if !strings.Contains(got, `product_version: "18.3.0"`) {
+		t.Errorf("expected product_version, got:\n%s", got)
 	}
 }
 
@@ -1874,36 +1856,38 @@ func TestBuildOverlay_PerPlatformDriverSettings(t *testing.T) {
 		DriverSettings: map[string]any{
 			"vcenter_host": "vcenter.example.com",
 		},
-		PlatformMap: []config.PlatformMapEntry{
+		Images: []config.ImageEntry{
 			{
-				KitchenName: "ubuntu-22.04",
-				Image:       "tmpl-ubuntu-2204",
+				Name: "ubuntu2204",
+				ID:   "tmpl-ubuntu-2204",
 				DriverSettings: map[string]any{
 					"datacenter": "DC1",
 					"cluster":    "CLUSTER-A",
 				},
 			},
 			{
-				KitchenName: "centos-8",
-				Image:       "tmpl-centos-8",
-				// No per-platform settings — only top-level should apply.
+				Name: "centos8",
+				ID:   "tmpl-centos-8",
+				// No per-image settings — only top-level should apply.
 			},
 		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu2204"},
+			{KitchenName: "centos-8", Image: "centos8"},
+		},
 	})
-	got := s.buildOverlay("", "dokken")
-
-	// Top-level driver settings should appear in the driver block.
+	got := s.buildOverlay("", "")
 	if !strings.Contains(got, "vcenter_host: vcenter.example.com") {
 		t.Errorf("expected top-level vcenter_host, got:\n%s", got)
 	}
-	// Per-platform settings should appear under each platform's driver block.
+	// Per-image settings should appear under each platform's driver block.
 	if !strings.Contains(got, "datacenter: DC1") {
-		t.Errorf("expected per-platform datacenter for ubuntu, got:\n%s", got)
+		t.Errorf("expected per-image datacenter for ubuntu, got:\n%s", got)
 	}
 	if !strings.Contains(got, "cluster: CLUSTER-A") {
-		t.Errorf("expected per-platform cluster for ubuntu, got:\n%s", got)
+		t.Errorf("expected per-image cluster for ubuntu, got:\n%s", got)
 	}
-	// centos-8 should have no per-platform settings (just the image).
+	// centos-8 should have no per-image settings (just the image field).
 	if !strings.Contains(got, "template: tmpl-centos-8") {
 		t.Errorf("expected centos image via template field, got:\n%s", got)
 	}
@@ -1921,11 +1905,14 @@ func TestBuildOverlay_SecretsOnlyDriverBlock(t *testing.T) {
 			"aws_access_key_id":     "aws-key-cred",
 			"aws_secret_access_key": "aws-secret-cred",
 		},
+		Images: []config.ImageEntry{
+			{Name: "rhel9", ID: "ami-12345"},
+		},
 		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "rhel-9", Image: "ami-12345"},
+			{KitchenName: "rhel-9", Image: "rhel9"},
 		},
 	})
-	got := s.buildOverlay("", "dokken")
+	got := s.buildOverlay("", "")
 
 	if !strings.Contains(got, "driver:") {
 		t.Error("expected driver section for secrets-only block")
@@ -1947,5 +1934,126 @@ func TestBuildOverlay_SecretsOnlyDriverBlock(t *testing.T) {
 		if strings.HasPrefix(trimmed, "instance_type:") || strings.HasPrefix(trimmed, "region:") {
 			t.Errorf("unexpected plaintext driver setting: %s", trimmed)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests: buildOverlay — chef_license and Chef 19+ provisioner name
+// ---------------------------------------------------------------------------
+
+func TestBuildOverlay_ChefLicense_AlwaysPresent_EmptyDriver(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("18.6.0", "")
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v18, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_ChefLicense_AlwaysPresent_NonDokken(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{Driver: "proxmox"})
+	got := s.buildOverlay("18.6.0", "proxmox")
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v18, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_ProvisionerName_EmptyDriver(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("19.2.12", "")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice for v19, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v19, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_ProvisionerName_NonDokken(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{Driver: "proxmox"})
+	got := s.buildOverlay("19.2.12", "proxmox")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice for v19 proxmox, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept for v19 proxmox, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef18_NoProvisionerName(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("18.6.0", "")
+	if strings.Contains(got, "name: chef_ice") {
+		t.Errorf("should not emit name: chef_ice for v18, got:\n%s", got)
+	}
+	if strings.Contains(got, "name: chef_infra") {
+		t.Errorf("should not emit provisioner name for v18, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_LicenseKey(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		ChefLicenseKeyCredential: "my-chef-license",
+	})
+	got := s.buildOverlay("19.2.12", "")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license_key:") {
+		t.Errorf("expected chef_license_key ERB, got:\n%s", got)
+	}
+	if !strings.Contains(got, "CMM_TK_CHEF_LICENSE_KEY") {
+		t.Errorf("expected CMM_TK_CHEF_LICENSE_KEY env var, got:\n%s", got)
+	}
+	if !strings.Contains(got, `product_version: "19.2.12"`) {
+		t.Errorf("expected product_version field, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_DownloadURL(t *testing.T) {
+	// Per-image download_url overrides top-level product_version in per-platform provisioner.
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "ec2",
+		Images: []config.ImageEntry{
+			{
+				Name: "rhel9",
+				ID:   "ami-12345",
+				ChefDownloadURLs: map[string]string{
+					"19.2.12": "https://packages.example.com/chef-19.rpm",
+				},
+			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "rhel9"},
+		},
+	})
+	got := s.buildOverlay("19.2.12", "vagrant")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	}
+	// Per-platform provisioner block with download_url.
+	if !strings.Contains(got, "download_url:") {
+		t.Errorf("expected download_url in per-platform provisioner, got:\n%s", got)
+	}
+	if !strings.Contains(got, "https://packages.example.com/chef-19.rpm") {
+		t.Errorf("expected the RPM URL, got:\n%s", got)
+	}
+	// Top-level should still have product_version as fallback.
+	if !strings.Contains(got, "product_version:") {
+		t.Errorf("expected product_version in top-level provisioner, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Chef19_NeitherLicenseNorURL(t *testing.T) {
+	// No license config — overlay still emits chef_ice name and chef_license: accept.
+	s := newScannerWithConfig(config.TestKitchenConfig{})
+	got := s.buildOverlay("19.2.12", "")
+	if !strings.Contains(got, "name: chef_ice") {
+		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept, got:\n%s", got)
+	}
+	if strings.Contains(got, "chef_license_key") {
+		t.Errorf("should not emit chef_license_key without credential, got:\n%s", got)
 	}
 }

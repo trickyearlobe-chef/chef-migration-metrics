@@ -59,11 +59,6 @@ const adminNavItems = [
     icon: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z",
   },
   {
-    to: "/admin/config/git-urls",
-    label: "Git URLs",
-    icon: "M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244",
-  },
-  {
     to: "/admin/users",
     label: "Users",
     icon: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128H9m6 0a5.972 5.972 0 0 0-.786-3.07M9 19.128v-.003c0-1.113.285-2.16.786-3.07M9 19.128H3.375a1.125 1.125 0 0 1-1.125-1.125v-1.5c0-.621.504-1.125 1.125-1.125h3.026a5.972 5.972 0 0 1 .786-3.07M9 19.128a5.972 5.972 0 0 1-.786-3.07m0 0A5.974 5.974 0 0 1 12 12.75a5.974 5.974 0 0 1 3.786 3.308m-3.786-3.308a5.25 5.25 0 1 1 0-10.5 5.25 5.25 0 0 1 0 10.5",
@@ -73,18 +68,31 @@ const adminNavItems = [
     label: "Actions",
     icon: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   },
-
   {
     to: "/admin/system-stats",
     label: "System Stats",
     icon: "M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 0 6h13.5a3 3 0 1 0 0-6m-16.5-3a3 3 0 0 1 3-3h13.5a3 3 0 0 1 3 3m-19.5 0a4.5 4.5 0 0 1 .9-2.7L5.737 5.1a3.375 3.375 0 0 1 2.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 0 1 .9 2.7m0 0a3 3 0 0 1-3 3m0 3h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Zm-3 6h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Z",
   },
-
   {
     to: "/admin/performance",
     label: "Performance",
     icon: "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75",
   },
+];
+
+// Settings sub-group items under Admin → Settings.
+const settingsNavItems = [
+  { to: "/admin/config/organisations", label: "Organisations" },
+  { to: "/admin/config/collection", label: "Collection" },
+  { to: "/admin/config/target-versions", label: "Target Versions" },
+  { to: "/admin/config/git-urls", label: "Git URLs" },
+  { to: "/admin/config/concurrency", label: "Concurrency" },
+  { to: "/admin/config/analysis-tools", label: "Analysis Tools" },
+  { to: "/admin/config/server", label: "Server & TLS" },
+  { to: "/admin/config/auth", label: "Authentication" },
+  { to: "/admin/config/notifications", label: "Notifications" },
+  { to: "/admin/config/logging", label: "Logging" },
+  { to: "/admin/config/exports", label: "Exports" },
 ];
 
 export function AppLayout() {
@@ -171,6 +179,22 @@ export function AppLayout() {
                       d={item.icon}
                     />
                   </svg>
+                  {item.label}
+                </NavLink>
+              ))}
+
+              {/* Settings sub-group */}
+              <div className="mt-3 px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Settings
+              </div>
+              {settingsNavItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `nav-link pl-6 ${isActive ? "active" : ""}`
+                  }
+                >
                   {item.label}
                 </NavLink>
               ))}

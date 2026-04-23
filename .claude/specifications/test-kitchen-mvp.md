@@ -26,7 +26,7 @@ Proxmox is available today in the developer lab, so it's the first environment w
 
 - **End-to-end validation** of overlay generation → `kitchen converge` → `kitchen verify` → `kitchen destroy` for `vcenter` and `proxmox` drivers against real infrastructure.
 - **Driver profiles** for the three MVP targets plus `dokken` (retained as default).
-- **Credential injection** for vSphere (`vcenter_password`), Proxmox (`proxmox_password`), and EC2 (`aws_secret_access_key`).
+- **Credential injection** for vSphere (`vcenter_password`), Proxmox (`proxmox_token_secret`), and EC2 (`aws_secret_access_key`).
 - **Platform image mapping** for VM templates (vSphere/Proxmox) and AMIs (EC2).
 - **Transport credentials** — SSH username/password for VM-based targets.
 - **Config UI** — the existing admin page at `/admin/test-kitchen` already supports configuring any driver. No changes needed for MVP.
@@ -107,22 +107,20 @@ analysis_tools:
     timeout_minutes: 45
     driver_settings:
       proxmox_url: "https://proxmox.lab.local:8006/api2/json"
-      proxmox_username: "kitchen@pam"
+      proxmox_token_id: "kitchen@pam!mytoken"
       node: "pve-node-01"
-      pool: "kitchen"
     driver_secrets:
-      proxmox_password: proxmox-kitchen-password
+      proxmox_token_secret: proxmox-kitchen-token
+    images:
+      - name: alma10
+        id: "100"
+        transport:
+          username: kitchen
+        chef_download_urls:
+          "19.2.12": "https://packages.example.com/chef-19.2.12-1.el9.x86_64.rpm"
     platform_map:
-      - kitchen_name: ubuntu-22.04
-        image: ubuntu-2204-template
-        transport:
-          username: kitchen
-          password_credential: vm-ssh-password
-      - kitchen_name: rocky-9
-        image: rocky-9-template
-        transport:
-          username: kitchen
-          password_credential: vm-ssh-password
+      - kitchen_name: almalinux-10
+        image: alma10
 ```
 
 ### Phase 2: vSphere Validation (P0 — own environment being stood up)
@@ -262,7 +260,7 @@ The built-in profiles map currently lists 9 drivers. All 9 can stay in code — 
 |---------|-------------|-----------------|
 | `dokken` | `docker_image` | None |
 | `vcenter` | `template` | `vcenter_password` |
-| `proxmox` | `template` | `proxmox_password` |
+| `proxmox` | `template_id` | `proxmox_token_secret` |
 | `ec2` | `ami` | `aws_secret_access_key` |
 
 The other profiles (`vra`, `azurerm`, `google`, `vagrant`, `openstack`) remain in the code and work via the `custom` path if anyone needs them, but we don't document, test, or support them in the MVP.

@@ -261,11 +261,12 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 // with cookstyle results, test kitchen results, and complexity records.
 //
 // Also dispatches to sub-path handlers:
-//   - /api/v1/git-repos/:name/committers       → handleGitRepoCommitters
-//   - /api/v1/git-repos/:name/committers/assign → handleGitRepoCommittersAssign
-//   - /api/v1/git-repos/:name/rescan            → handleGitRepoRescan
-//   - /api/v1/git-repos/:name/reset             → handleGitRepoReset
-//   - /api/v1/git-repos/:name/:version/remediation → handleGitRepoRemediation
+//   - /api/v1/git-repos/:name/committers              → handleGitRepoCommitters
+//   - /api/v1/git-repos/:name/committers/assign       → handleGitRepoCommittersAssign
+//   - /api/v1/git-repos/:name/rescan                  → handleGitRepoRescan
+//   - /api/v1/git-repos/:name/rescan-test-kitchen     → handleGitRepoRescanTestKitchen
+//   - /api/v1/git-repos/:name/reset                   → handleGitRepoReset
+//   - /api/v1/git-repos/:name/:version/remediation    → handleGitRepoRemediation
 //
 // Response (200):
 //
@@ -296,6 +297,12 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 	// /api/v1/git-repos/:name/rescan
 	if len(segments) >= 2 && segments[len(segments)-1] == "rescan" {
 		r.handleGitRepoRescan(w, req)
+		return
+	}
+
+	// /api/v1/git-repos/:name/rescan-test-kitchen
+	if len(segments) >= 2 && segments[len(segments)-1] == "rescan-test-kitchen" {
+		r.handleGitRepoRescanTestKitchen(w, req)
 		return
 	}
 
@@ -488,7 +495,98 @@ func (r *Router) handleGitRepoRescan(w http.ResponseWriter, req *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Git Repo Reset endpoint
+// Git Repo Rescan Test Kitchen endpoint
+//
+// POST /api/v1/git-repos/:name/rescan-test-kitchen
+//
+// Invalidates all Test Kitchen results for the given git repo name, then
+// triggers an immediate collection run so the retest starts right away.
+//
+// Response (200):
+//
+//	{
+//	  "git_repo_name": "my-cookbook",
+//	  "repos_invalidated": 1,
+//	  "collection_triggered": true,
+//	  "message": "Test Kitchen results invalidated — collection run triggered."
+//	}
+//
+// ---------------------------------------------------------------------------
+
+func (r *Router) handleGitRepoRescanTestKitchen(w http.ResponseWriter, req *http.Request) {
+	if !requireMethod(w, req, http.MethodPost) {
+		return
+	}
+
+	segments := pathSegments(req.URL.Path, "/api/v1/git-repos/")
+	if len(segments) < 2 || segments[len(segments)-1] != "rescan-test-kitchen" {
+		WriteNotFound(w, "Expected path: /api/v1/git-repos/:name/rescan-test-kitchen")
+		return
+	}
+	repoName := segments[0]
+	if repoName == "" {
+		WriteBadRequest(w, "Git repo name is required.")
+		return
+	}
+
+	ctx := req.Context()
+
+	gitRepos, err := r.db.ListGitReposByName(ctx, repoName)
+	if err != nil {
+		r.logf("ERROR", "listing git repos for test kitchen rescan %s: %v", repoName, err)
+		WriteInternalError(w, "Failed to look up git repo.")
+		return
+	}
+
+	if len(gitRepos) == 0 {
+		WriteNotFound(w, fmt.Sprintf("Git repo %q not found.", repoName))
+		return
+	}
+
+	invalidated := 0
+	var lastErr error
+
+	for _, gr := range gitRepos {
+		tkErr := r.db.DeleteGitRepoTestKitchenResultsByRepo(ctx, gr.Name, gr.GitRepoURL)
+		if tkErr != nil {
+			r.logf("WARN", "deleting test kitchen results for git repo %s (%s): %v", gr.Name, gr.GitRepoURL, tkErr)
+			lastErr = tkErr
+		} else {
+			invalidated++
+		}
+	}
+
+	if lastErr != nil && invalidated == 0 {
+		WriteInternalError(w, "Failed to invalidate git repo test kitchen results.")
+		return
+	}
+
+	if r.hub != nil {
+		r.hub.Broadcast(NewEvent(EventGitRepoStatusChanged, map[string]any{
+			"git_repo_name":     repoName,
+			"action":            "rescan-test-kitchen",
+			"repos_invalidated": invalidated,
+		}))
+	}
+
+	r.logf("INFO", "git repo test kitchen rescan requested for %s — %d repo(s) invalidated", repoName, invalidated)
+
+	triggered := r.triggerCollectionInBackground()
+
+	msg := "Test Kitchen results invalidated"
+	if triggered {
+		msg += " — collection run triggered."
+	} else {
+		msg += " — rerun will start on the next collection cycle."
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"git_repo_name":        repoName,
+		"repos_invalidated":    invalidated,
+		"collection_triggered": triggered,
+		"message":              msg,
+	})
+}
 //
 // POST /api/v1/git-repos/:name/reset
 //
