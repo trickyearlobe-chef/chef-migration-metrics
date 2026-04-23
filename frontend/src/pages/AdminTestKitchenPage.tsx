@@ -4,6 +4,7 @@ import {
   saveTestKitchenConfig,
   deleteTestKitchenConfig,
   fetchCredentials,
+  fetchPlatformMappingStatus,
   ApiError,
 } from "../api";
 import type {
@@ -12,15 +13,10 @@ import type {
   PlatformMapEntry,
   PlatformMapTransport,
   Credential,
+  PlatformMappingStatusResponse,
 } from "../types";
 
-const DRIVERS = [
-  "proxmox",
-  "vcenter",
-  "vra",
-  "ec2",
-  "vagrant",
-];
+const DRIVERS = ["proxmox", "vcenter", "vra", "ec2", "vagrant"];
 
 const DRIVER_SETTING_HINTS: Record<string, string[]> = {
   proxmox: ["proxmox_url", "proxmox_token_id", "node"],
@@ -61,10 +57,6 @@ function emptyImage(): ImageEntry {
   };
 }
 
-function emptyPlatform(): PlatformMapEntry {
-  return { kitchen_name: "", image: "" };
-}
-
 function emptyConfig(): TestKitchenConfig {
   return {
     enabled: false,
@@ -100,29 +92,67 @@ function kvToRecord(pairs: KVPair[]): Record<string, string> {
 
 function PlusIcon() {
   return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={2}
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 4.5v15m7.5-7.5h-15"
+      />
     </svg>
   );
 }
 
 function XIcon() {
   return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 18 18 6M6 6l12 12"
+      />
     </svg>
   );
 }
 
 function TrashIcon() {
   return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+      />
     </svg>
   );
 }
 
-function AddButton({ onClick, disabled, children }: { onClick: () => void; disabled: boolean; children: React.ReactNode }) {
+function AddButton({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -136,7 +166,15 @@ function AddButton({ onClick, disabled, children }: { onClick: () => void; disab
   );
 }
 
-function RemoveButton({ onClick, disabled, title }: { onClick: () => void; disabled: boolean; title?: string }) {
+function RemoveButton({
+  onClick,
+  disabled,
+  title,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  title?: string;
+}) {
   return (
     <button
       type="button"
@@ -165,9 +203,15 @@ export function AdminTestKitchenPage() {
   const [driverSecrets, setDriverSecrets] = useState<KVPair[]>([]);
 
   // Per-image state: driver settings JSON + download URL KV pairs + advanced toggle.
-  const [imageDriverJson, setImageDriverJson] = useState<Record<number, string>>({});
-  const [imageDownloadUrls, setImageDownloadUrls] = useState<Record<number, KVPair[]>>({});
-  const [imageAdvanced, setImageAdvanced] = useState<Record<number, boolean>>({});
+  const [imageDriverJson, setImageDriverJson] = useState<
+    Record<number, string>
+  >({});
+  const [imageDownloadUrls, setImageDownloadUrls] = useState<
+    Record<number, KVPair[]>
+  >({});
+  const [imageAdvanced, setImageAdvanced] = useState<Record<number, boolean>>(
+    {},
+  );
 
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -175,6 +219,10 @@ export function AdminTestKitchenPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  // Platform mapping status
+  const [mappingStatus, setMappingStatus] =
+    useState<PlatformMappingStatusResponse | null>(null);
 
   const applyConfig = useCallback(
     (
@@ -213,10 +261,7 @@ export function AdminTestKitchenPage() {
     setSuccess(null);
     setWarnings([]);
 
-    Promise.all([
-      fetchTestKitchenConfig(),
-      fetchCredentials({ per_page: 500 }),
-    ])
+    Promise.all([fetchTestKitchenConfig(), fetchCredentials({ per_page: 500 })])
       .then(([tkRes, credRes]) => {
         if (cancelled) return;
         applyConfig(
@@ -243,10 +288,17 @@ export function AdminTestKitchenPage() {
     };
   }, [applyConfig]);
 
+  const loadMappingStatus = useCallback(() => {
+    fetchPlatformMappingStatus()
+      .then(setMappingStatus)
+      .catch(() => setMappingStatus(null));
+  }, []);
+
   useEffect(() => {
     const cancel = loadConfig();
+    loadMappingStatus();
     return cancel;
-  }, [loadConfig]);
+  }, [loadConfig, loadMappingStatus]);
 
   // --- Config helpers ---
 
@@ -301,7 +353,10 @@ export function AdminTestKitchenPage() {
       return { ...prev, images };
     });
   }
-  function updateImageTransport(idx: number, patch: Partial<PlatformMapTransport>) {
+  function updateImageTransport(
+    idx: number,
+    patch: Partial<PlatformMapTransport>,
+  ) {
     setConfig((prev) => {
       const images = [...(prev.images ?? [])];
       const existing = images[idx].transport ?? emptyTransport();
@@ -372,10 +427,13 @@ export function AdminTestKitchenPage() {
       platform_map: (prev.platform_map ?? []).filter((_, i) => i !== idx),
     }));
   }
-  function addPlatform() {
+  function addPlatform(kitchenName?: string) {
     setConfig((prev) => ({
       ...prev,
-      platform_map: [...(prev.platform_map ?? []), emptyPlatform()],
+      platform_map: [
+        ...(prev.platform_map ?? []),
+        { kitchen_name: kitchenName ?? "", image: "" },
+      ],
     }));
   }
 
@@ -418,6 +476,7 @@ export function AdminTestKitchenPage() {
       );
       setWarnings(res.warnings ?? []);
       setSuccess("Configuration saved successfully.");
+      loadMappingStatus();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setError(`Save failed: ${err.message}`);
@@ -461,7 +520,9 @@ export function AdminTestKitchenPage() {
   }
 
   const credentialNames = credentials.map((c) => c.name);
-  const imageNames = (config.images ?? []).map((img) => img.name).filter(Boolean);
+  const imageNames = (config.images ?? [])
+    .map((img) => img.name)
+    .filter(Boolean);
 
   // --- Loading state ---
   if (loading) {
@@ -505,18 +566,11 @@ export function AdminTestKitchenPage() {
           </h2>
           <p className="text-sm text-gray-500">
             Currently using:{" "}
-            <span className="font-medium text-gray-700">
-              {source} config
-            </span>
+            <span className="font-medium text-gray-700">{source} config</span>
             {updatedBy && (
               <span className="ml-2 text-gray-400">
                 · last saved by {updatedBy}
-                {updatedAt && (
-                  <>
-                    {" "}
-                    at {new Date(updatedAt).toLocaleString()}
-                  </>
-                )}
+                {updatedAt && <> at {new Date(updatedAt).toLocaleString()}</>}
               </span>
             )}
           </p>
@@ -633,11 +687,16 @@ export function AdminTestKitchenPage() {
                 disabled={saving}
                 className={INPUT_CLASS}
               />
-              <RemoveButton onClick={() => removeSetting(idx)} disabled={saving} />
+              <RemoveButton
+                onClick={() => removeSetting(idx)}
+                disabled={saving}
+              />
             </div>
           ))}
         </div>
-        <AddButton onClick={addSetting} disabled={saving}>Add Setting</AddButton>
+        <AddButton onClick={addSetting} disabled={saving}>
+          Add Setting
+        </AddButton>
       </div>
 
       {/* Section 3: Driver Secrets */}
@@ -674,11 +733,16 @@ export function AdminTestKitchenPage() {
                   </option>
                 ))}
               </select>
-              <RemoveButton onClick={() => removeSecret(idx)} disabled={saving} />
+              <RemoveButton
+                onClick={() => removeSecret(idx)}
+                disabled={saving}
+              />
             </div>
           ))}
         </div>
-        <AddButton onClick={addSecret} disabled={saving}>Add Secret</AddButton>
+        <AddButton onClick={addSecret} disabled={saving}>
+          Add Secret
+        </AddButton>
       </div>
 
       {/* Section 4: Provisioner */}
@@ -687,8 +751,9 @@ export function AdminTestKitchenPage() {
           Provisioner
         </h3>
         <p className="mb-4 text-xs text-gray-400">
-          Chef client versions come from <code>target_chef_versions</code> in your config file.
-          Set a license key credential as a fallback for platforms without a per-image download URL.
+          Chef client versions come from <code>target_chef_versions</code> in
+          your config file. Set a license key credential as a fallback for
+          platforms without a per-image download URL.
         </p>
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -702,7 +767,9 @@ export function AdminTestKitchenPage() {
             disabled={saving}
             className={INPUT_CLASS}
           >
-            <option value="">— none (use per-image download URLs only) —</option>
+            <option value="">
+              — none (use per-image download URLs only) —
+            </option>
             {credentialNames.map((name) => (
               <option key={name} value={name}>
                 {name}
@@ -718,18 +785,22 @@ export function AdminTestKitchenPage() {
           Images
         </h3>
         <p className="mb-4 text-xs text-gray-400">
-          Define infrastructure images once. Each image has a driver ID, optional transport
-          credentials, and per-version Chef download URLs.
+          Define infrastructure images once. Each image has a driver ID,
+          optional transport credentials, and per-version Chef download URLs.
         </p>
         {(config.images ?? []).length === 0 && (
           <p className="mb-3 text-sm text-gray-400">No images defined.</p>
         )}
         <div className="space-y-4">
           {(config.images ?? []).map((img, idx) => (
-            <div key={idx} className="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <div
+              key={idx}
+              className="rounded-md border border-gray-200 bg-gray-50 p-4"
+            >
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">
-                  Image {idx + 1}{img.name ? ` — ${img.name}` : ""}
+                  Image {idx + 1}
+                  {img.name ? ` — ${img.name}` : ""}
                 </span>
                 <button
                   type="button"
@@ -806,7 +877,12 @@ export function AdminTestKitchenPage() {
                       />
                       <RemoveButton
                         onClick={() => {
-                          updateImageDownloadUrls(idx, (imageDownloadUrls[idx] ?? []).filter((_, i) => i !== uidx));
+                          updateImageDownloadUrls(
+                            idx,
+                            (imageDownloadUrls[idx] ?? []).filter(
+                              (_, i) => i !== uidx,
+                            ),
+                          );
                         }}
                         disabled={saving}
                       />
@@ -814,7 +890,12 @@ export function AdminTestKitchenPage() {
                   ))}
                 </div>
                 <AddButton
-                  onClick={() => updateImageDownloadUrls(idx, [...(imageDownloadUrls[idx] ?? []), { key: "", value: "" }])}
+                  onClick={() =>
+                    updateImageDownloadUrls(idx, [
+                      ...(imageDownloadUrls[idx] ?? []),
+                      { key: "", value: "" },
+                    ])
+                  }
                   disabled={saving}
                 >
                   Add URL
@@ -827,7 +908,9 @@ export function AdminTestKitchenPage() {
                 onClick={() => toggleImageAdvanced(idx)}
                 className="text-xs font-medium text-blue-600 hover:text-blue-800"
               >
-                {imageAdvanced[idx] ? "▾ Hide Advanced" : "▸ Show Advanced (transport & driver settings)"}
+                {imageAdvanced[idx]
+                  ? "▾ Hide Advanced"
+                  : "▸ Show Advanced (transport & driver settings)"}
               </button>
               {imageAdvanced[idx] && (
                 <div className="mt-3 space-y-3">
@@ -839,7 +922,11 @@ export function AdminTestKitchenPage() {
                       <input
                         type="text"
                         value={img.transport?.username ?? ""}
-                        onChange={(e) => updateImageTransport(idx, { username: e.target.value })}
+                        onChange={(e) =>
+                          updateImageTransport(idx, {
+                            username: e.target.value,
+                          })
+                        }
                         placeholder="e.g. root"
                         disabled={saving}
                         className={INPUT_CLASS}
@@ -851,13 +938,19 @@ export function AdminTestKitchenPage() {
                       </label>
                       <select
                         value={img.transport?.password_credential ?? ""}
-                        onChange={(e) => updateImageTransport(idx, { password_credential: e.target.value })}
+                        onChange={(e) =>
+                          updateImageTransport(idx, {
+                            password_credential: e.target.value,
+                          })
+                        }
                         disabled={saving}
                         className={INPUT_CLASS}
                       >
                         <option value="">— none —</option>
                         {credentialNames.map((name) => (
-                          <option key={name} value={name}>{name}</option>
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -867,13 +960,19 @@ export function AdminTestKitchenPage() {
                       </label>
                       <select
                         value={img.transport?.ssh_key_credential ?? ""}
-                        onChange={(e) => updateImageTransport(idx, { ssh_key_credential: e.target.value })}
+                        onChange={(e) =>
+                          updateImageTransport(idx, {
+                            ssh_key_credential: e.target.value,
+                          })
+                        }
                         disabled={saving}
                         className={INPUT_CLASS}
                       >
                         <option value="">— none —</option>
                         {credentialNames.map((name) => (
-                          <option key={name} value={name}>{name}</option>
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -885,7 +984,10 @@ export function AdminTestKitchenPage() {
                     <textarea
                       value={imageDriverJson[idx] ?? "{}"}
                       onChange={(e) =>
-                        setImageDriverJson((prev) => ({ ...prev, [idx]: e.target.value }))
+                        setImageDriverJson((prev) => ({
+                          ...prev,
+                          [idx]: e.target.value,
+                        }))
                       }
                       rows={4}
                       disabled={saving}
@@ -897,55 +999,184 @@ export function AdminTestKitchenPage() {
             </div>
           ))}
         </div>
-        <AddButton onClick={addImage} disabled={saving}>Add Image</AddButton>
+        <AddButton onClick={addImage} disabled={saving}>
+          Add Image
+        </AddButton>
       </div>
 
       {/* Section 6: Platform Map */}
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500">
-          Platform Map
-        </h3>
-        <p className="mb-4 text-xs text-gray-400">
-          Map cookbook platform names (as they appear in kitchen.yml) to images defined above.
-        </p>
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+              Platform Map
+            </h3>
+            <p className="mt-1 text-xs text-gray-400">
+              Map cookbook platform names to images. Supports glob patterns (*
+              and ?).
+            </p>
+          </div>
+          {mappingStatus && (
+            <div className="flex gap-2 text-xs">
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 font-medium text-green-700">
+                {mappingStatus.mapped_count} mapped
+              </span>
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 font-medium text-gray-600">
+                {mappingStatus.skipped_count} skipped
+              </span>
+              {mappingStatus.unmapped_count > 0 && (
+                <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 font-medium text-red-700">
+                  {mappingStatus.unmapped_count} unmapped
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mapping Rules */}
         {(config.platform_map ?? []).length === 0 && (
           <p className="mb-3 text-sm text-gray-400">
-            No platforms configured.
+            No platform mapping rules configured.
           </p>
         )}
-        <div className="space-y-2">
+        <div className="space-y-3">
           {(config.platform_map ?? []).map((plat, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={plat.kitchen_name}
-                onChange={(e) =>
-                  updatePlatform(idx, { kitchen_name: e.target.value })
-                }
-                placeholder="e.g. centos-7"
-                disabled={saving}
-                className={INPUT_CLASS}
-              />
-              <select
-                value={plat.image}
-                onChange={(e) => updatePlatform(idx, { image: e.target.value })}
-                disabled={saving}
-                className={INPUT_CLASS}
-              >
-                <option value="">— select image —</option>
-                {imageNames.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <RemoveButton
-                onClick={() => removePlatform(idx)}
-                disabled={saving}
-                title="Remove platform"
-              />
+            <div
+              key={idx}
+              className="rounded-md border border-gray-100 bg-gray-50 p-3"
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={plat.kitchen_name}
+                  onChange={(e) =>
+                    updatePlatform(idx, { kitchen_name: e.target.value })
+                  }
+                  placeholder={plat.is_pattern ? "e.g. rhel*" : "e.g. centos-7"}
+                  disabled={saving}
+                  className={INPUT_CLASS + " flex-1"}
+                />
+                {!plat.skip && (
+                  <select
+                    value={plat.image}
+                    onChange={(e) =>
+                      updatePlatform(idx, { image: e.target.value })
+                    }
+                    disabled={saving}
+                    className={INPUT_CLASS}
+                  >
+                    <option value="">— select image —</option>
+                    {imageNames.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {plat.skip && (
+                  <span className="rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-500">
+                    SKIP
+                  </span>
+                )}
+                <RemoveButton
+                  onClick={() => removePlatform(idx)}
+                  disabled={saving}
+                  title="Remove mapping rule"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                <label className="inline-flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={plat.is_pattern ?? false}
+                    onChange={(e) =>
+                      updatePlatform(idx, { is_pattern: e.target.checked })
+                    }
+                    disabled={saving}
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                  />
+                  <span className="text-gray-600">Pattern (glob)</span>
+                </label>
+                <label className="inline-flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={plat.skip ?? false}
+                    onChange={(e) =>
+                      updatePlatform(idx, {
+                        skip: e.target.checked,
+                        image: e.target.checked ? "" : plat.image,
+                      })
+                    }
+                    disabled={saving}
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                  />
+                  <span className="text-gray-600">Skip</span>
+                </label>
+                {!plat.skip && (
+                  <PlatformTransportEditor
+                    transport={plat.transport ?? null}
+                    onChange={(t) => updatePlatform(idx, { transport: t })}
+                    credentials={credentialNames}
+                    disabled={saving}
+                  />
+                )}
+              </div>
             </div>
           ))}
         </div>
-        <AddButton onClick={addPlatform} disabled={saving}>Add Platform</AddButton>
+        <AddButton onClick={() => addPlatform()} disabled={saving}>
+          Add Mapping Rule
+        </AddButton>
+
+        {/* Unmapped Platforms Panel */}
+        {mappingStatus && mappingStatus.unmapped_count > 0 && (
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-700">
+              Unmapped Platforms ({mappingStatus.unmapped_count})
+            </h4>
+            <p className="mb-2 text-xs text-amber-600">
+              These discovered platforms have no matching mapping rule. Add a
+              rule or mark as skip.
+            </p>
+            <div className="space-y-1">
+              {mappingStatus.discovered_platforms
+                .filter((p) => p.mapping_status === "unmapped")
+                .sort((a, b) => b.cookbook_count - a.cookbook_count)
+                .map((p) => (
+                  <div
+                    key={p.platform_name}
+                    className="flex items-center justify-between rounded bg-white px-2 py-1 text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-800">
+                        {p.platform_name}
+                      </span>
+                      {p.normalised_name !== p.platform_name && (
+                        <span className="text-gray-400">
+                          → {p.normalised_name}
+                        </span>
+                      )}
+                      <OsFamilyBadge family={p.os_family} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="tabular-nums text-gray-500">
+                        {p.cookbook_count} cookbook
+                        {p.cookbook_count !== 1 ? "s" : ""}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => addPlatform(p.platform_name)}
+                        disabled={saving}
+                        className="rounded bg-blue-50 px-2 py-0.5 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer: Save + Revert */}
@@ -976,3 +1207,111 @@ export function AdminTestKitchenPage() {
   );
 }
 
+const OS_FAMILY_BADGE_COLORS: Record<string, string> = {
+  rhel: "bg-red-100 text-red-700",
+  windows: "bg-blue-100 text-blue-700",
+  debian: "bg-orange-100 text-orange-700",
+  suse: "bg-green-100 text-green-700",
+};
+
+function OsFamilyBadge({ family }: { family: string }) {
+  const cls =
+    OS_FAMILY_BADGE_COLORS[family.toLowerCase()] ?? "bg-gray-100 text-gray-600";
+  return (
+    <span
+      className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+    >
+      {family}
+    </span>
+  );
+}
+
+function PlatformTransportEditor({
+  transport,
+  onChange,
+  credentials,
+  disabled,
+}: {
+  transport: PlatformMapTransport | null;
+  onChange: (t: PlatformMapTransport | null) => void;
+  credentials: string[];
+  disabled: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasTransport =
+    transport &&
+    (transport.username ||
+      transport.password_credential ||
+      transport.ssh_key_credential);
+
+  if (!expanded && !hasTransport) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="text-blue-600 hover:text-blue-700"
+        disabled={disabled}
+      >
+        + Transport
+      </button>
+    );
+  }
+
+  const t = transport ?? {
+    username: "",
+    password_credential: "",
+    ssh_key_credential: "",
+  };
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-gray-200 bg-white p-2 text-xs">
+      <input
+        type="text"
+        value={t.username}
+        onChange={(e) => onChange({ ...t, username: e.target.value })}
+        placeholder="Username"
+        disabled={disabled}
+        className="w-24 rounded border border-gray-200 px-1.5 py-1 text-xs"
+      />
+      <select
+        value={t.password_credential}
+        onChange={(e) =>
+          onChange({ ...t, password_credential: e.target.value })
+        }
+        disabled={disabled}
+        className="w-36 rounded border border-gray-200 px-1.5 py-1 text-xs"
+      >
+        <option value="">— password cred —</option>
+        {credentials.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+      <select
+        value={t.ssh_key_credential}
+        onChange={(e) => onChange({ ...t, ssh_key_credential: e.target.value })}
+        disabled={disabled}
+        className="w-36 rounded border border-gray-200 px-1.5 py-1 text-xs"
+      >
+        <option value="">— SSH key cred —</option>
+        {credentials.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          onChange(null);
+          setExpanded(false);
+        }}
+        className="text-red-500 hover:text-red-600"
+        disabled={disabled}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
