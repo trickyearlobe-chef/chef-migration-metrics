@@ -6,82 +6,82 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## DB Migration (0012)
 
-- [ ] Create `kitchen_analysis_results` table with FK to `git_repos`
-- [ ] Create `kitchen_discovered_platforms` aggregate table
-- [ ] Index on `driver_name`
-- [ ] Up and down migration scripts
+- [x] Create `kitchen_analysis_results` table with FK to `git_repos`
+- [x] Create `kitchen_discovered_platforms` aggregate table
+- [x] Index on `driver_name`
+- [x] Up and down migration scripts
 
 ## Datastore Layer
 
-- [ ] `KitchenAnalysisResult` and `KitchenDiscoveredPlatform` types
-- [ ] `UpsertKitchenAnalysisResult` — insert or update per-repo analysis
-- [ ] `GetKitchenAnalysisResult` — single repo lookup
-- [ ] `ListKitchenAnalysisResults` — all results
-- [ ] `ListKitchenAnalysisResultsFiltered` — filter by driver, has_local_override
-- [ ] `DeleteKitchenAnalysisResultsByRepo` — remove analysis for a repo
-- [ ] `RebuildDiscoveredPlatforms` — rebuild aggregate table from analysis results
-- [ ] `ListDiscoveredPlatforms` — all platforms with counts
-- [ ] `ListDiscoveredPlatformsFiltered` — filter by os_family, min_count
-- [ ] `GetKitchenAnalysisSummary` — aggregate stats (total scanned, driver counts, etc.)
-- [ ] Validation tests for param checks and edge cases
+- [x] `KitchenAnalysisResult` and `KitchenDiscoveredPlatform` types
+- [x] `UpsertKitchenAnalysisResult` — insert or update per-repo analysis
+- [x] `GetKitchenAnalysisResult` — single repo lookup
+- [x] `ListKitchenAnalysisResults` — all results
+- [x] `ListKitchenAnalysisResultsFiltered` — filter by driver, has_local_override
+- [x] `DeleteKitchenAnalysisResultsByRepo` — remove analysis for a repo
+- [x] `RebuildDiscoveredPlatforms` — rebuild aggregate table from analysis results
+- [x] `ListDiscoveredPlatforms` — all platforms with counts
+- [x] `ListDiscoveredPlatformsFiltered` — filter by os_family, min_count
+- [x] `GetKitchenAnalysisSummary` — aggregate stats (total scanned, driver counts, etc.)
+- [x] Validation tests for param checks and edge cases
 
 ## YAML Parser
 
-- [ ] Add `gopkg.in/yaml.v3` dependency
-- [ ] Parse `.kitchen.yml` into structured config
-- [ ] Merge `.kitchen.local.yml` with TK semantics (deep-merge maps, replace arrays)
-- [ ] Extract driver name and settings
-- [ ] Extract provisioner name and settings
-- [ ] Extract platforms with all attributes and extensions
-- [ ] Extract suites with run_list, excludes, includes
-- [ ] Extract default transport block
-- [ ] Detect `.kitchen.*.yml` variant files
-- [ ] Tests for all extraction paths
-- [ ] Tests for merge semantics (map merge, array replace, nested merge)
-- [ ] Tests for malformed/empty YAML handling
+- [x] Add `gopkg.in/yaml.v3` dependency
+- [x] Parse `.kitchen.yml` into structured config
+- [x] Merge `.kitchen.local.yml` with TK semantics (deep-merge maps, replace arrays)
+- [x] Extract driver name and settings
+- [x] Extract provisioner name and settings
+- [x] Extract platforms with all attributes and extensions
+- [x] Extract suites with run_list, excludes, includes
+- [x] Extract default transport block
+- [x] Detect `.kitchen.*.yml` variant files
+- [x] Tests for all extraction paths
+- [x] Tests for merge semantics (map merge, array replace, nested merge)
+- [x] Tests for malformed/empty YAML handling
 
 ## Platform Normaliser
 
-- [ ] Lowercase normalisation
-- [ ] Strip known suffixes (-chef16, -x86_64, -stable, -small, etc.)
-- [ ] Normalise OS prefixes (win → windows-, centos → centos-, etc.)
-- [ ] Normalise version formats (2k12 → 2012, 2k16 → 2016, 2k19 → 2019)
-- [ ] OS family detection (rhel, windows, debian, suse, other)
-- [ ] OS version extraction
-- [ ] Tests for normalisation edge cases
-- [ ] Tests for OS family detection
+- [x] Lowercase normalisation
+- [x] Strip known suffixes (-chef16, -x86_64, -stable, -small, etc.)
+- [x] Normalise OS prefixes (win → windows-, centos → centos-, etc.)
+- [x] Normalise version formats (2k12 → 2012, 2k16 → 2016, 2k19 → 2019)
+- [x] OS family detection (rhel, windows, debian, suse, other)
+- [x] OS version extraction
+- [x] Tests for normalisation edge cases
+- [x] Tests for OS family detection
 
 ## Analyser Engine
 
-- [ ] `KitchenAnalyser` struct with configurable concurrency
-- [ ] `AnalyseRepo` — scan single repo directory, return result
-- [ ] `AnalyseAll` — concurrent analysis of all repos with worker pool
-- [ ] Store results via datastore upsert
-- [ ] Rebuild discovered platforms aggregate after full run
-- [ ] Tests with mock filesystem and sample configs
+- [x] `KitchenAnalyser` struct with configurable concurrency
+- [x] `AnalyseRepo` — scan single repo directory, return result
+- [x] `AnalyseAll` — concurrent analysis of all repos with worker pool
+- [x] Store results via datastore upsert
+- [x] Rebuild discovered platforms aggregate after full run
+- [x] Tests with mock filesystem and sample configs
 
 ## Collection Pipeline Integration
 
-- [ ] Wire analyser into collector after git clone/fetch
-- [ ] Run analysis for repos with kitchen files
-- [ ] Skip analysis for repos with clone errors
+- [x] Wire analyser into collector after git clone/fetch
+- [x] Run analysis for repos with kitchen files
+- [x] Skip analysis for repos with clone errors
 
 ## API Endpoints
 
-- [ ] `GET /api/v1/kitchen/analysis/summary` — aggregate stats
-- [ ] `GET /api/v1/kitchen/analysis/platforms` — discovered platforms with filters
-- [ ] `GET /api/v1/kitchen/analysis/cookbooks` — per-cookbook results, paginated
-- [ ] `GET /api/v1/kitchen/analysis/cookbooks/:name` — single cookbook detail
-- [ ] `POST /api/v1/kitchen/analysis/trigger` — re-analyse on demand (admin)
-- [ ] Add methods to `DataStore` interface in `store.go`
-- [ ] Register routes in `router.go`
-- [ ] Handler tests for all endpoints
+- [x] `GET /api/v1/kitchen/analysis/summary` — aggregate stats
+- [x] `GET /api/v1/kitchen/analysis/platforms` — discovered platforms with filters
+- [x] `GET /api/v1/kitchen/analysis/cookbooks` — per-cookbook results, paginated
+- [x] `GET /api/v1/kitchen/analysis/cookbooks/:name` — single cookbook detail
+- [x] `POST /api/v1/kitchen/analysis/trigger` — re-analyse on demand (admin)
+- [x] Add methods to `DataStore` interface in `store.go`
+- [x] Register routes in `router.go`
+- [x] Handler tests for all endpoints
 
 ## Frontend
 
-- [ ] `AdminKitchenAnalysisPage.tsx` page component
-- [ ] Summary cards (total with TK, without TK, platform count, driver breakdown, conflicts)
-- [ ] Platform table (sortable by name/count/os_family, mapped/unmapped indicator)
-- [ ] Conflict list (cookbooks with `.kitchen.local.yml` touching driver/platforms)
-- [ ] Route `/admin/kitchen-analysis` in `App.tsx`
-- [ ] Sidebar navigation link
+- [x] `AdminKitchenAnalysisPage.tsx` page component
+- [x] Summary cards (total with TK, without TK, platform count, driver breakdown, conflicts)
+- [x] Platform table (sortable by name/count/os_family, mapped/unmapped indicator)
+- [x] Conflict list (cookbooks with `.kitchen.local.yml` touching driver/platforms)
+- [x] Route `/admin/kitchen-analysis` in `App.tsx`
+- [x] Sidebar navigation link
