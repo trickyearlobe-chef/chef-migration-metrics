@@ -1,4 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { OrgProvider } from "./context/OrgContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -28,6 +34,7 @@ import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
 import { AdminPerformancePage } from "./pages/AdminPerformancePage";
 import { AdminCredentialsPage } from "./pages/credentials";
 import { AdminTestKitchenPage } from "./pages/AdminTestKitchenPage";
+import { AdminKitchenAnalysisPage } from "./pages/AdminKitchenAnalysisPage";
 import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
 import { AdminCollectionPage } from "./pages/AdminCollectionPage";
 import { AdminLoggingPage } from "./pages/AdminLoggingPage";
@@ -39,7 +46,10 @@ import { AdminOrganisationsPage } from "./pages/AdminOrganisationsPage";
 import { AdminServerPage } from "./pages/AdminServerPage";
 import { AdminAuthPage } from "./pages/AdminAuthPage";
 import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
-import { AdminSetupWizardPage, useSetupRequired } from "./pages/AdminSetupWizardPage";
+import {
+  AdminSetupWizardPage,
+  useSetupRequired,
+} from "./pages/AdminSetupWizardPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -110,13 +120,17 @@ function SetupModeGuard({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   // Only redirect admins; non-admins can't reach admin routes anyway.
-  if (isAdmin && !checking && setupRequired && !location.pathname.startsWith("/admin/setup")) {
+  if (
+    isAdmin &&
+    !checking &&
+    setupRequired &&
+    !location.pathname.startsWith("/admin/setup")
+  ) {
     return <Navigate to="/admin/setup" replace />;
   }
 
   return <>{children}</>;
 }
-
 
 function LoginRoute() {
   const { isAuthenticated, loading } = useAuth();
@@ -239,6 +253,14 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminTestKitchenPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/kitchen-analysis"
+                element={
+                  <RequireAdmin>
+                    <AdminKitchenAnalysisPage />
                   </RequireAdmin>
                 }
               />

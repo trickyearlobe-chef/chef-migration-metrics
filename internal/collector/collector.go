@@ -52,6 +52,7 @@ type Collector struct {
 	// collection cycle. When nil, the corresponding step is skipped.
 	cookstyleScanner *analysis.CookstyleScanner
 	kitchenScanner   *analysis.KitchenScanner
+	kitchenAnalyser  *analysis.KitchenAnalyser
 	autocorrectGen   *remediation.AutocorrectGenerator
 	complexityScorer *remediation.ComplexityScorer
 	readinessEval    *analysis.ReadinessEvaluator
@@ -107,6 +108,12 @@ func WithCookstyleScanner(s *analysis.CookstyleScanner) Option {
 // When set, Test Kitchen runs after CookStyle scanning.
 func WithKitchenScanner(s *analysis.KitchenScanner) Option {
 	return func(c *Collector) { c.kitchenScanner = s }
+}
+
+// WithKitchenAnalyser sets the Kitchen Analyser for config discovery.
+// When set, kitchen config analysis runs after git clone/fetch.
+func WithKitchenAnalyser(a *analysis.KitchenAnalyser) Option {
+	return func(c *Collector) { c.kitchenAnalyser = a }
 }
 
 // WithAutocorrectGenerator sets the autocorrect preview generator.
@@ -1207,6 +1214,28 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			}
 		} else if c.cookstyleScanner != nil && c.gitRepoDirFn == nil {
 			log.Debug("skipping CookStyle scanning — no git repo directory resolver configured",
+				logging.WithCollectionRunID(run.OrganisationName))
+		}
+
+		// B.3a: Kitchen config analysis — discover platforms, drivers, suites.
+		if c.kitchenAnalyser != nil && c.gitRepoDirFn != nil {
+			analysisRepos, analysisListErr := c.db.ListGitRepos(ctx)
+			if analysisListErr != nil {
+				log.Warn(fmt.Sprintf("failed to list git repos for kitchen analysis: %v", analysisListErr),
+					logging.WithCollectionRunID(run.OrganisationName))
+			} else {
+				log.Info(fmt.Sprintf("analysing kitchen configs for %d git repo(s)", len(analysisRepos)),
+					logging.WithCollectionRunID(run.OrganisationName))
+
+				batch := c.kitchenAnalyser.AnalyseAll(ctx, analysisRepos, c.gitRepoDirFn)
+				log.Info(fmt.Sprintf(
+					"kitchen analysis complete: %d total, %d analysed, %d skipped, %d errors in %s",
+					batch.Total, batch.Analysed, batch.Skipped, batch.Errors,
+					batch.Duration.Round(time.Millisecond)),
+					logging.WithCollectionRunID(run.OrganisationName))
+			}
+		} else if c.kitchenAnalyser != nil && c.gitRepoDirFn == nil {
+			log.Debug("skipping kitchen analysis — no git repo directory resolver configured",
 				logging.WithCollectionRunID(run.OrganisationName))
 		}
 

@@ -268,7 +268,6 @@ func (db *DB) ListKitchenAnalysisResultsFiltered(ctx context.Context, driverName
 	if hasLocalOverride != nil {
 		query += fmt.Sprintf(" AND has_local_override = $%d", argIdx)
 		args = append(args, *hasLocalOverride)
-		argIdx++
 	}
 
 	query += " ORDER BY git_repo_name"
@@ -382,7 +381,6 @@ func (db *DB) ListDiscoveredPlatformsFiltered(ctx context.Context, osFamily stri
 	if minCount > 0 {
 		query += fmt.Sprintf(" AND cookbook_count >= $%d", argIdx)
 		args = append(args, minCount)
-		argIdx++
 	}
 
 	query += " ORDER BY cookbook_count DESC, platform_name"

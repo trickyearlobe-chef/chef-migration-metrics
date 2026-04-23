@@ -509,6 +509,34 @@ type DataStore interface {
 	GetCookbookPlatformCoverage(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
 
 	// -----------------------------------------------------------------
+	// Kitchen Analysis
+	// -----------------------------------------------------------------
+
+	// GetKitchenAnalysisSummary returns aggregate statistics about kitchen
+	// config analysis across all repos.
+	GetKitchenAnalysisSummary(ctx context.Context) (*datastore.KitchenAnalysisSummary, error)
+
+	// ListKitchenAnalysisResults returns all kitchen analysis results.
+	ListKitchenAnalysisResults(ctx context.Context) ([]datastore.KitchenAnalysisResult, error)
+
+	// ListKitchenAnalysisResultsFiltered returns kitchen analysis results
+	// matching the given filters. Empty driverName means no driver filter.
+	// Nil hasLocalOverride means no override filter.
+	ListKitchenAnalysisResultsFiltered(ctx context.Context, driverName string, hasLocalOverride *bool) ([]datastore.KitchenAnalysisResult, error)
+
+	// GetKitchenAnalysisResultByName returns the kitchen analysis result for
+	// the given cookbook/repo name. Returns (nil, nil) if not found.
+	GetKitchenAnalysisResultByName(ctx context.Context, gitRepoName string) (*datastore.KitchenAnalysisResult, error)
+
+	// ListDiscoveredPlatforms returns all discovered kitchen platforms
+	// ordered by cookbook_count descending.
+	ListDiscoveredPlatforms(ctx context.Context) ([]datastore.KitchenDiscoveredPlatform, error)
+
+	// ListDiscoveredPlatformsFiltered returns discovered platforms matching
+	// the given filters.
+	ListDiscoveredPlatformsFiltered(ctx context.Context, osFamily string, minCount int) ([]datastore.KitchenDiscoveredPlatform, error)
+
+	// -----------------------------------------------------------------
 	// Runtime Settings
 	// -----------------------------------------------------------------
 
