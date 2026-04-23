@@ -34,6 +34,7 @@ import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
 import { AdminPerformancePage } from "./pages/AdminPerformancePage";
 import { AdminCredentialsPage } from "./pages/credentials";
 import { AdminTestKitchenPage } from "./pages/AdminTestKitchenPage";
+import KitchenBatchesPage from "./pages/KitchenBatchesPage";
 import { AdminKitchenAnalysisPage } from "./pages/AdminKitchenAnalysisPage";
 import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
 import { AdminCollectionPage } from "./pages/AdminCollectionPage";
@@ -253,6 +254,14 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminTestKitchenPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/kitchen-batches"
+                element={
+                  <RequireAdmin>
+                    <KitchenBatchesPage />
                   </RequireAdmin>
                 }
               />

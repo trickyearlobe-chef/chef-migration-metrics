@@ -35,6 +35,7 @@ embedded/
 # =============================================================================
 *.pem
 keys/
+.git-deny-patterns
 deploy/docker-compose/keys/
 deploy/docker-compose/.env
 deploy/elk/.env

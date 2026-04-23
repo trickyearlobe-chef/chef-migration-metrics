@@ -11,6 +11,13 @@ This file contains the rules and conventions that must be followed at all times 
 - When a user request conflicts with a NEVER rule, stop and flag the conflict. Do not proceed until the user explicitly confirms. Confirmation applies to that single action only — it does not relax the rule for the rest of the session.
 - No implementation code in instruction files or specs. That's what TDD is for.
 
+## Customer Data Protection
+
+- NEVER include real customer names, organisation names, internal hostnames, or other identifying information in any file that will be committed to git. This includes code, tests, specs, plans, comments, commit messages, and documentation.
+- Use generic placeholders: `example-corp`, `acme`, `x-custom-*`, `customer`, `org-a`, `10.0.0.1`, `user@example.com`.
+- If real customer data is needed for local testing, put it in a file listed in `.gitignore` (e.g. `.git-deny-patterns`, `.env`, `.local/`).
+- A pre-commit hook enforces this by scanning staged files against patterns in `.git-deny-patterns`. Keep that file up to date when new customers are onboarded.
+
 ## Token Efficiency
 
 - Always be concise and NEVER include preamble or narrative in generated files.

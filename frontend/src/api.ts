@@ -78,6 +78,11 @@ import type {
   NodeKitchenRun,
   NodeKitchenRunRequest,
   NodeKitchenTriggerResponse,
+  KitchenBatch,
+  KitchenBatchDetail,
+  KitchenBatchRequest,
+  GitRepoExcludeRequest,
+  GitRepoListItem,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -2041,6 +2046,117 @@ export async function deleteNodeKitchenRun(id: string): Promise<void> {
   });
   if (!res.ok)
     throw new Error(`Failed to delete node kitchen run: ${res.status}`);
+}
+
+// ---------------------------------------------------------------------------
+// Kitchen Batches
+// ---------------------------------------------------------------------------
+
+/** Create a new kitchen batch. */
+export async function createKitchenBatch(
+  req: KitchenBatchRequest,
+): Promise<KitchenBatch> {
+  const res = await fetch(buildUrl("/kitchen/batches"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`Failed to create kitchen batch: ${res.status}`);
+  return res.json() as Promise<KitchenBatch>;
+}
+
+/** List all kitchen batches. */
+export async function listKitchenBatches(): Promise<KitchenBatch[]> {
+  return apiFetch<KitchenBatch[]>("/kitchen/batches");
+}
+
+/** Get a kitchen batch by ID (includes resolved estimate). */
+export async function getKitchenBatch(id: string): Promise<KitchenBatchDetail> {
+  return apiFetch<KitchenBatchDetail>(`/kitchen/batches/${id}`);
+}
+
+/** Update a draft kitchen batch. */
+export async function updateKitchenBatch(
+  id: string,
+  req: KitchenBatchRequest,
+): Promise<KitchenBatch> {
+  const res = await fetch(buildUrl(`/kitchen/batches/${id}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`Failed to update kitchen batch: ${res.status}`);
+  return res.json() as Promise<KitchenBatch>;
+}
+
+/** Run (or dry-run) a kitchen batch. */
+export async function runKitchenBatch(id: string): Promise<KitchenBatchDetail> {
+  const res = await fetch(buildUrl(`/kitchen/batches/${id}/run`), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Failed to run kitchen batch: ${res.status}`);
+  return res.json() as Promise<KitchenBatchDetail>;
+}
+
+/** Cancel a running kitchen batch. */
+export async function cancelKitchenBatch(id: string): Promise<KitchenBatch> {
+  const res = await fetch(buildUrl(`/kitchen/batches/${id}/cancel`), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Failed to cancel kitchen batch: ${res.status}`);
+  return res.json() as Promise<KitchenBatch>;
+}
+
+/** Delete a kitchen batch. */
+export async function deleteKitchenBatch(id: string): Promise<void> {
+  const res = await fetch(buildUrl(`/kitchen/batches/${id}`), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Failed to delete kitchen batch: ${res.status}`);
+}
+
+// ---------------------------------------------------------------------------
+// Git Repo Kitchen Exclusions
+// ---------------------------------------------------------------------------
+
+/** Exclude a git repo from kitchen testing. */
+export async function excludeGitRepo(
+  name: string,
+  req: GitRepoExcludeRequest,
+): Promise<void> {
+  const res = await fetch(
+    buildUrl(`/git-repos/${encodeURIComponent(name)}/exclude`),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(req),
+    },
+  );
+  if (!res.ok) throw new Error(`Failed to exclude git repo: ${res.status}`);
+}
+
+/** Clear kitchen exclusion from a git repo. */
+export async function clearGitRepoExclusion(name: string): Promise<void> {
+  const res = await fetch(
+    buildUrl(`/git-repos/${encodeURIComponent(name)}/exclude`),
+    {
+      method: "DELETE",
+      headers: { Accept: "application/json" },
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to clear git repo exclusion: ${res.status}`);
+}
+
+/** List all git repos excluded from kitchen testing. */
+export async function listExcludedGitRepos(): Promise<GitRepoListItem[]> {
+  return apiFetch<GitRepoListItem[]>("/git-repos/excluded");
 }
 
 // ---------------------------------------------------------------------------

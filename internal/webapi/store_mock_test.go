@@ -136,6 +136,19 @@ type mockStore struct {
 	ListNodeKitchenRunsByNodeFn                         func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeKitchenRun, error)
 	GetNodeKitchenRunFn                                 func(ctx context.Context, id string) (*datastore.NodeKitchenRun, error)
 	DeleteNodeKitchenRunFn                              func(ctx context.Context, id string) error
+
+	// Kitchen Batches
+	CreateKitchenBatchFn       func(ctx context.Context, p datastore.CreateKitchenBatchParams) (datastore.KitchenBatch, error)
+	GetKitchenBatchFn          func(ctx context.Context, id string) (datastore.KitchenBatch, error)
+	ListKitchenBatchesFn       func(ctx context.Context) ([]datastore.KitchenBatch, error)
+	UpdateKitchenBatchFn       func(ctx context.Context, id string, p datastore.UpdateKitchenBatchParams) (datastore.KitchenBatch, error)
+	UpdateKitchenBatchStatusFn func(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error)
+	DeleteKitchenBatchFn       func(ctx context.Context, id string) error
+
+	// Git Repo Kitchen Exclusions
+	SetGitRepoKitchenExclusionFn   func(ctx context.Context, name string, reason string, excludedBy string) error
+	ClearGitRepoKitchenExclusionFn func(ctx context.Context, name string) error
+	ListExcludedGitReposFn         func(ctx context.Context) ([]datastore.GitRepo, error)
 }
 
 // compile-time check
@@ -1039,6 +1052,69 @@ func (m *mockStore) DeleteNodeKitchenRun(ctx context.Context, id string) error {
 		return m.DeleteNodeKitchenRunFn(ctx, id)
 	}
 	return nil
+}
+
+func (m *mockStore) CreateKitchenBatch(ctx context.Context, p datastore.CreateKitchenBatchParams) (datastore.KitchenBatch, error) {
+	if m.CreateKitchenBatchFn != nil {
+		return m.CreateKitchenBatchFn(ctx, p)
+	}
+	panic("mockStore.CreateKitchenBatchFn not set")
+}
+
+func (m *mockStore) GetKitchenBatch(ctx context.Context, id string) (datastore.KitchenBatch, error) {
+	if m.GetKitchenBatchFn != nil {
+		return m.GetKitchenBatchFn(ctx, id)
+	}
+	panic("mockStore.GetKitchenBatchFn not set")
+}
+
+func (m *mockStore) ListKitchenBatches(ctx context.Context) ([]datastore.KitchenBatch, error) {
+	if m.ListKitchenBatchesFn != nil {
+		return m.ListKitchenBatchesFn(ctx)
+	}
+	panic("mockStore.ListKitchenBatchesFn not set")
+}
+
+func (m *mockStore) UpdateKitchenBatch(ctx context.Context, id string, p datastore.UpdateKitchenBatchParams) (datastore.KitchenBatch, error) {
+	if m.UpdateKitchenBatchFn != nil {
+		return m.UpdateKitchenBatchFn(ctx, id, p)
+	}
+	panic("mockStore.UpdateKitchenBatchFn not set")
+}
+
+func (m *mockStore) UpdateKitchenBatchStatus(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error) {
+	if m.UpdateKitchenBatchStatusFn != nil {
+		return m.UpdateKitchenBatchStatusFn(ctx, id, status, now)
+	}
+	panic("mockStore.UpdateKitchenBatchStatusFn not set")
+}
+
+func (m *mockStore) DeleteKitchenBatch(ctx context.Context, id string) error {
+	if m.DeleteKitchenBatchFn != nil {
+		return m.DeleteKitchenBatchFn(ctx, id)
+	}
+	panic("mockStore.DeleteKitchenBatchFn not set")
+}
+
+func (m *mockStore) SetGitRepoKitchenExclusion(ctx context.Context, name string, reason string, excludedBy string) error {
+	if m.SetGitRepoKitchenExclusionFn != nil {
+		return m.SetGitRepoKitchenExclusionFn(ctx, name, reason, excludedBy)
+	}
+	panic("mockStore.SetGitRepoKitchenExclusionFn not set")
+}
+
+func (m *mockStore) ClearGitRepoKitchenExclusion(ctx context.Context, name string) error {
+	if m.ClearGitRepoKitchenExclusionFn != nil {
+		return m.ClearGitRepoKitchenExclusionFn(ctx, name)
+	}
+	panic("mockStore.ClearGitRepoKitchenExclusionFn not set")
+}
+
+func (m *mockStore) ListExcludedGitRepos(ctx context.Context) ([]datastore.GitRepo, error) {
+	if m.ListExcludedGitReposFn != nil {
+		return m.ListExcludedGitReposFn(ctx)
+	}
+	panic("mockStore.ListExcludedGitReposFn not set")
 }
 
 // ---------------------------------------------------------------------------

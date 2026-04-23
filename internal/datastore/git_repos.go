@@ -33,6 +33,11 @@ type GitRepo struct {
 	LastFetchedAt time.Time `json:"last_fetched_at,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+
+	KitchenExcluded      bool       `json:"kitchen_excluded"`
+	KitchenExcludeReason string     `json:"kitchen_exclude_reason,omitempty"`
+	KitchenExcludedBy    string     `json:"kitchen_excluded_by,omitempty"`
+	KitchenExcludedAt    *time.Time `json:"kitchen_excluded_at,omitempty"`
 }
 
 // IsCloned returns true when the git repo has been successfully cloned.
@@ -57,7 +62,8 @@ func (gr GitRepo) MarshalJSON() ([]byte, error) {
 const gitRepoColumns = `
 	name, git_repo_url, head_commit_sha, default_branch,
 	has_test_suite, clone_status, clone_error,
-	last_fetched_at, created_at, updated_at
+	last_fetched_at, created_at, updated_at,
+	kitchen_excluded, kitchen_exclude_reason, kitchen_excluded_by, kitchen_excluded_at
 `
 
 // ---------------------------------------------------------------------------
@@ -369,6 +375,8 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 	var gr GitRepo
 	var commitSHA, branch, cloneErr sql.NullString
 	var lastFetched sql.NullTime
+	var excludeReason, excludedBy sql.NullString
+	var excludedAt sql.NullTime
 
 	err := row.Scan(
 		&gr.Name,
@@ -381,6 +389,10 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 		&lastFetched,
 		&gr.CreatedAt,
 		&gr.UpdatedAt,
+		&gr.KitchenExcluded,
+		&excludeReason,
+		&excludedBy,
+		&excludedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -393,6 +405,9 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 	gr.DefaultBranch = stringFromNull(branch)
 	gr.CloneError = stringFromNull(cloneErr)
 	gr.LastFetchedAt = timeFromNull(lastFetched)
+	gr.KitchenExcludeReason = stringFromNull(excludeReason)
+	gr.KitchenExcludedBy = stringFromNull(excludedBy)
+	gr.KitchenExcludedAt = timePtrFromNull(excludedAt)
 	return gr, nil
 }
 
@@ -407,6 +422,8 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 		var gr GitRepo
 		var commitSHA, branch, cloneErr sql.NullString
 		var lastFetched sql.NullTime
+		var excludeReason, excludedBy sql.NullString
+		var excludedAt sql.NullTime
 
 		if err := rows.Scan(
 			&gr.Name,
@@ -419,6 +436,10 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 			&lastFetched,
 			&gr.CreatedAt,
 			&gr.UpdatedAt,
+			&gr.KitchenExcluded,
+			&excludeReason,
+			&excludedBy,
+			&excludedAt,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning git repo row: %w", err)
 		}
@@ -427,6 +448,9 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 		gr.DefaultBranch = stringFromNull(branch)
 		gr.CloneError = stringFromNull(cloneErr)
 		gr.LastFetchedAt = timeFromNull(lastFetched)
+		gr.KitchenExcludeReason = stringFromNull(excludeReason)
+		gr.KitchenExcludedBy = stringFromNull(excludedBy)
+		gr.KitchenExcludedAt = timePtrFromNull(excludedAt)
 		repos = append(repos, gr)
 	}
 	if err := rows.Err(); err != nil {

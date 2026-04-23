@@ -1,0 +1,10 @@
+# Denied patterns for pre-commit hook.
+# One case-insensitive regex per line. Comments start with #.
+# The real file is .git-deny-patterns (gitignored).
+# Copy this file and add actual customer names:
+#   cp .git-deny-patterns.example .git-deny-patterns
+#
+# Examples:
+# acme-corp
+# x-acme-
+# internal\.acme\.com
