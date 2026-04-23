@@ -3106,3 +3106,120 @@ server:
 		t.Error("Concurrency.OrganisationCollection default not applied")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Hypervisor integration
+// ---------------------------------------------------------------------------
+
+func TestHypervisorConfigDefaults(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	tk := cfg.AnalysisTools.TestKitchen
+	if got := tk.EffectiveVMTTLHours(); got != 4 {
+		t.Errorf("EffectiveVMTTLHours() = %d, want 4", got)
+	}
+	if got := tk.EffectiveVMNamePrefix(); got != "cmm" {
+		t.Errorf("EffectiveVMNamePrefix() = %q, want %q", got, "cmm")
+	}
+	if got := tk.EffectiveMaxConcurrentVMs(); got != 10 {
+		t.Errorf("EffectiveMaxConcurrentVMs() = %d, want 10", got)
+	}
+	if got := tk.EffectiveHypervisorType(); got != "" {
+		t.Errorf("EffectiveHypervisorType() = %q, want %q", got, "")
+	}
+}
+
+func TestHypervisorConfigExplicit(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: vcenter
+    hypervisor_type: vcenter
+    vm_ttl_hours: 8
+    vm_name_prefix: myapp
+    max_concurrent_vms: 20
+    platform_map:
+      - kitchen_name: centos-7
+        image: centos7-tmpl
+    images:
+      - name: centos7-tmpl
+        id: tmpl-centos-7
+`
+	cfg := mustParse(t, yaml)
+	tk := cfg.AnalysisTools.TestKitchen
+	if got := tk.EffectiveVMTTLHours(); got != 8 {
+		t.Errorf("EffectiveVMTTLHours() = %d, want 8", got)
+	}
+	if got := tk.EffectiveVMNamePrefix(); got != "myapp" {
+		t.Errorf("EffectiveVMNamePrefix() = %q, want %q", got, "myapp")
+	}
+	if got := tk.EffectiveMaxConcurrentVMs(); got != 20 {
+		t.Errorf("EffectiveMaxConcurrentVMs() = %d, want 20", got)
+	}
+	if got := tk.EffectiveHypervisorType(); got != "vcenter" {
+		t.Errorf("EffectiveHypervisorType() = %q, want %q", got, "vcenter")
+	}
+}
+
+func TestHypervisorTypeAutoDetect(t *testing.T) {
+	for _, tc := range []struct {
+		driver string
+		want   string
+	}{
+		{"vcenter", "vcenter"},
+		{"proxmox", "proxmox"},
+	} {
+		yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: ` + tc.driver + `
+`
+		cfg := mustParse(t, yaml)
+		if got := cfg.AnalysisTools.TestKitchen.EffectiveHypervisorType(); got != tc.want {
+			t.Errorf("driver=%q: EffectiveHypervisorType() = %q, want %q", tc.driver, got, tc.want)
+		}
+	}
+}
+
+func TestHypervisorTypeUnknownDriver(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: ec2
+`
+	cfg := mustParse(t, yaml)
+	if got := cfg.AnalysisTools.TestKitchen.EffectiveHypervisorType(); got != "" {
+		t.Errorf("EffectiveHypervisorType() = %q, want %q", got, "")
+	}
+}
+
+func TestHypervisorConfigValidation_NegativeTTL(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  test_kitchen:
+    vm_ttl_hours: -1
+`
+	expectParseError(t, yaml, "vm_ttl_hours must be >= 0")
+}
+
+func TestHypervisorConfigValidation_NegativeConcurrency(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  test_kitchen:
+    max_concurrent_vms: -1
+`
+	expectParseError(t, yaml, "max_concurrent_vms must be >= 0")
+}
