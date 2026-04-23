@@ -237,7 +237,7 @@ func TestExtractKitchenConfig_PlatformExtensions(t *testing.T) {
 	raw := map[string]any{
 		"platforms": []any{
 			map[string]any{
-				"name":                "rhel7",
+				"name":              "rhel7",
 				"x-custom-box_type": "stable",
 				"x-custom-size":     "small",
 			},
