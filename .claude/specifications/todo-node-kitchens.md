@@ -14,7 +14,7 @@
 ## Cookbook Assembly
 
 - [x] `internal/nodekitchen/assembly.go` — server/git/hybrid download, concurrent fetch, write to temp dir
-- [ ] `internal/nodekitchen/assembly_test.go` — mock interfaces, verify layout
+- [x] `internal/nodekitchen/assembly_test.go` — mock interfaces, verify layout
 
 ## Synthetic Kitchen Config
 
@@ -36,10 +36,10 @@
 - [x] `frontend/src/types.ts` — `NodeKitchenRun` type
 - [x] `frontend/src/api.ts` — API functions for node kitchen endpoints
 - [x] Node kitchen UI — trigger button, source selector, results view
-- [ ] Frontend tests
+- [x] Frontend tests
 
 ## Integration
 
 - [x] Register routes in router
-- [ ] Wire runner in service composition (`main.go`)
-- [ ] Update `.gitignore` / `.dockerignore` if needed
+- [x] Wire runner in service composition (`main.go`)
+- [x] Update `.gitignore` / `.dockerignore` if needed (checked — no changes needed)

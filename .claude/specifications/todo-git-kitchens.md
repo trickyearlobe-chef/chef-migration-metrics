@@ -36,4 +36,4 @@
 - [x] Cross-batch results page with filters
 - [x] Dashboard: per-instance breakdown replacing single pass/fail
 - [x] Dashboard: platform/suite matrix view
-- [ ] Frontend tests for new components
+- [x] Frontend tests for new components

@@ -24,6 +24,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
@@ -32,6 +33,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
@@ -101,8 +103,9 @@ type serverApp struct {
 	credResolver    *secrets.CredentialResolver
 
 	// Collector components.
-	coll  *collector.Collector
-	sched *collector.Scheduler
+	coll        *collector.Collector
+	sched       *collector.Scheduler
+	kitchenPath string // path to kitchen binary, set during setupCollector
 
 	// Export cleanup stop function.
 	stopExportCleanup func()
@@ -817,6 +820,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	}
 
 	if toolResult.KitchenEnabled {
+		app.kitchenPath = toolResult.Kitchen.Path
 		tkScanner := analysis.NewKitchenScanner(
 			app.db, app.logger, toolResult.Kitchen.Path,
 			app.cfg.Concurrency.TestKitchenRun,
@@ -1057,6 +1061,73 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 
 	if app.cfgStore != nil && app.configHolder != nil {
 		routerOpts = append(routerOpts, webapi.WithConfigStore(app.cfgStore, app.configHolder))
+	}
+
+	// Wire Node Kitchen runner factory when kitchen binary is available.
+	if app.kitchenPath != "" {
+		nkScoped := logger.WithScope(logging.ScopeTestKitchenRun)
+		nkLogger := &nodekitchen.ScopedLoggerAdapter{
+			Info_:  func(msg string) { _ = nkScoped.Info(msg) },
+			Warn_:  func(msg string) { _ = nkScoped.Warn(msg) },
+			Error_: func(msg string) { _ = nkScoped.Error(msg) },
+		}
+		factory := &nodekitchen.RunnerFactory{
+			DB:          app.db,
+			DepResolver: &nodekitchen.DBCookbookDependencyResolver{DB: app.db},
+			ClientFactory: func(ctx context.Context, orgName string) (*chefapi.Client, error) {
+				org, err := app.db.GetOrganisation(ctx, orgName)
+				if err != nil {
+					return nil, fmt.Errorf("looking up organisation %q: %w", orgName, err)
+				}
+
+				src := secrets.CredentialSource{
+					CredentialName: org.ClientKeyCredentialName,
+				}
+				for _, cfgOrg := range app.cfg.Organisations {
+					if cfgOrg.Name == org.Name {
+						if src.CredentialName == "" {
+							src.CredentialName = cfgOrg.ClientKeyCredential
+						}
+						if src.FilePath == "" {
+							src.FilePath = cfgOrg.ClientKeyPath
+						}
+						break
+					}
+				}
+
+				resolved, err := app.credResolver.Resolve(ctx, src)
+				if err != nil {
+					return nil, fmt.Errorf("resolving client key for org %q: %w", orgName, err)
+				}
+				defer secrets.ZeroBytes(resolved.Plaintext)
+
+				sslVerify := true
+				for _, cfgOrg := range app.cfg.Organisations {
+					if cfgOrg.Name == org.Name {
+						sslVerify = cfgOrg.SSLVerifyEnabled()
+						break
+					}
+				}
+
+				return chefapi.NewClient(chefapi.ClientConfig{
+					ServerURL:     org.ChefServerURL,
+					ClientName:    org.ClientName,
+					PrivateKeyPEM: resolved.Plaintext,
+					OrgName:       org.OrgName,
+					SSLVerify:     &sslVerify,
+				})
+			},
+			Executor:       &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
+			CredResolver:   &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
+			Logger:         nkLogger,
+			TKConfig:       app.cfg.AnalysisTools.TestKitchen,
+			GitCookbookDir: app.cfg.Storage.GitCookbookDir,
+			Concurrency:    app.cfg.Concurrency.CookbookDownload,
+		}
+		routerOpts = append(routerOpts, webapi.WithNodeKitchenRunner(factory))
+		app.startup.Info("Node Kitchen runner factory enabled")
+	} else {
+		app.startup.Info("Node Kitchen runner not available (kitchen binary not found)")
 	}
 
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {

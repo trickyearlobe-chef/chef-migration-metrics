@@ -109,7 +109,7 @@ type Router struct {
 
 	// nodeKitchenRunner orchestrates on-demand Node Kitchen runs.
 	// Nil when not configured — the trigger endpoint returns 503.
-	nodeKitchenRunner *nodekitchen.Runner
+	nodeKitchenRunner NodeKitchenRunner
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -210,8 +210,14 @@ func WithHypervisor(h hypervisor.Hypervisor) RouterOption {
 	return func(r *Router) { r.hypervisor = h }
 }
 
+// NodeKitchenRunner abstracts the Node Kitchen run orchestrator so that
+// callers can inject either a single-org runner or a multi-org factory.
+type NodeKitchenRunner interface {
+	Run(ctx context.Context, req nodekitchen.RunRequest) nodekitchen.RunResult
+}
+
 // WithNodeKitchenRunner sets the runner used by the Node Kitchen trigger endpoint.
-func WithNodeKitchenRunner(runner *nodekitchen.Runner) RouterOption {
+func WithNodeKitchenRunner(runner NodeKitchenRunner) RouterOption {
 	return func(r *Router) { r.nodeKitchenRunner = runner }
 }
 
