@@ -48,7 +48,7 @@ func GenerateKitchenYML(cfg KitchenGenConfig) (string, error) {
 	buf.WriteString("\nprovisioner:\n")
 	major := chefMajorVersion(cfg.TargetChefVersion)
 	if major >= 19 {
-		buf.WriteString("  name: chef_ice\n")
+		buf.WriteString("  name: chef-ice\n")
 	} else {
 		buf.WriteString("  name: chef_zero\n")
 	}

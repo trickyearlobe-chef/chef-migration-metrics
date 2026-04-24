@@ -273,6 +273,25 @@ type ImageEntry struct {
 	// version, the overlay uses download_url instead of product_version.
 	// Platforms without an entry fall back to ChefLicenseKeyCredential.
 	ChefDownloadURLs map[string]string `yaml:"chef_download_urls" json:"chef_download_urls"`
+
+	// InstallMethod controls how Chef is installed on instances using this image.
+	// "download" (default): use product_version or download_url to install Chef.
+	// "baked_in": Chef is pre-installed in the image; emit require_chef_omnibus: false.
+	InstallMethod string `yaml:"install_method,omitempty" json:"install_method,omitempty"`
+
+	// ChefClientPath is the path to the chef-client binary when InstallMethod
+	// is "baked_in" (e.g. "/usr/bin/chef-client", "/opt/chef/bin/chef-client").
+	// Ignored when InstallMethod is "download".
+	ChefClientPath string `yaml:"chef_client_path,omitempty" json:"chef_client_path,omitempty"`
+}
+
+// EffectiveInstallMethod returns the install method for the image,
+// defaulting to "download" when unset.
+func (e ImageEntry) EffectiveInstallMethod() string {
+	if e.InstallMethod == "" {
+		return "download"
+	}
+	return e.InstallMethod
 }
 
 // PlatformMapEntry maps a single kitchen platform name (or glob pattern) to
@@ -1313,6 +1332,15 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		}
 		if img.ID == "" {
 			w.addf("analysis_tools.test_kitchen.images[%d].id is empty; image %q will be skipped", i, img.Name)
+		}
+		if img.InstallMethod != "" && img.InstallMethod != "download" && img.InstallMethod != "baked_in" {
+			ve.addf("analysis_tools.test_kitchen.images[%d].install_method %q must be \"download\" or \"baked_in\"", i, img.InstallMethod)
+		}
+		if img.InstallMethod == "baked_in" && img.ChefClientPath == "" {
+			ve.addf("analysis_tools.test_kitchen.images[%d].chef_client_path is required when install_method is \"baked_in\"", i)
+		}
+		if img.InstallMethod != "baked_in" && img.ChefClientPath != "" {
+			w.addf("analysis_tools.test_kitchen.images[%d].chef_client_path is set but install_method is not \"baked_in\"; it will be ignored", i)
 		}
 		for ver := range img.ChefDownloadURLs {
 			found := false
