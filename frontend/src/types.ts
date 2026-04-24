@@ -1546,3 +1546,40 @@ export interface BatchProgress {
   errored: number;
   total: number;
 }
+
+// ---------------------------------------------------------------------------
+// Git Kitchen
+// ---------------------------------------------------------------------------
+
+export interface GitKitchenRunRequest {
+  git_repo_name: string;
+  target_chef_version: string;
+  platform_name: string;
+  suite_name: string;
+}
+
+export interface GitKitchenTriggerResponse {
+  status: string;
+  message: string;
+}
+
+export interface KitchenAnalysisCookbook {
+  git_repo_name: string;
+  git_repo_url: string;
+  platforms: KitchenPlatformInfo[];
+  suites: KitchenSuiteInfo[];
+  driver_name?: string;
+  provisioner_name?: string;
+  has_local_override: boolean;
+  error_message?: string;
+}
+
+export interface KitchenPlatformInfo {
+  name: string;
+  driver?: Record<string, unknown>;
+}
+
+export interface KitchenSuiteInfo {
+  name: string;
+  run_list?: string[];
+}

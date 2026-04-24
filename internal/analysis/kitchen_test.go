@@ -1960,8 +1960,8 @@ func TestBuildOverlay_ChefLicense_AlwaysPresent_NonDokken(t *testing.T) {
 func TestBuildOverlay_Chef19_ProvisionerName_EmptyDriver(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
 	got := s.buildOverlay("19.2.12", "")
-	if !strings.Contains(got, "name: chef_ice") {
-		t.Errorf("expected name: chef_ice for v19, got:\n%s", got)
+	if !strings.Contains(got, "name: chef-ice") {
+		t.Errorf("expected name: chef-ice for v19, got:\n%s", got)
 	}
 	if !strings.Contains(got, "chef_license: accept") {
 		t.Errorf("expected chef_license: accept for v19, got:\n%s", got)
@@ -1971,8 +1971,8 @@ func TestBuildOverlay_Chef19_ProvisionerName_EmptyDriver(t *testing.T) {
 func TestBuildOverlay_Chef19_ProvisionerName_NonDokken(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{Driver: "proxmox"})
 	got := s.buildOverlay("19.2.12", "proxmox")
-	if !strings.Contains(got, "name: chef_ice") {
-		t.Errorf("expected name: chef_ice for v19 proxmox, got:\n%s", got)
+	if !strings.Contains(got, "name: chef-ice") {
+		t.Errorf("expected name: chef-ice for v19 proxmox, got:\n%s", got)
 	}
 	if !strings.Contains(got, "chef_license: accept") {
 		t.Errorf("expected chef_license: accept for v19 proxmox, got:\n%s", got)
@@ -1982,8 +1982,8 @@ func TestBuildOverlay_Chef19_ProvisionerName_NonDokken(t *testing.T) {
 func TestBuildOverlay_Chef18_NoProvisionerName(t *testing.T) {
 	s := newScannerWithConfig(config.TestKitchenConfig{})
 	got := s.buildOverlay("18.6.0", "")
-	if strings.Contains(got, "name: chef_ice") {
-		t.Errorf("should not emit name: chef_ice for v18, got:\n%s", got)
+	if strings.Contains(got, "name: chef-ice") {
+		t.Errorf("should not emit name: chef-ice for v18, got:\n%s", got)
 	}
 	if strings.Contains(got, "name: chef_infra") {
 		t.Errorf("should not emit provisioner name for v18, got:\n%s", got)
@@ -1995,8 +1995,8 @@ func TestBuildOverlay_Chef19_LicenseKey(t *testing.T) {
 		ChefLicenseKeyCredential: "my-chef-license",
 	})
 	got := s.buildOverlay("19.2.12", "")
-	if !strings.Contains(got, "name: chef_ice") {
-		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	if !strings.Contains(got, "name: chef-ice") {
+		t.Errorf("expected name: chef-ice, got:\n%s", got)
 	}
 	if !strings.Contains(got, "chef_license_key:") {
 		t.Errorf("expected chef_license_key ERB, got:\n%s", got)
@@ -2027,8 +2027,8 @@ func TestBuildOverlay_Chef19_DownloadURL(t *testing.T) {
 		},
 	})
 	got := s.buildOverlay("19.2.12", "vagrant")
-	if !strings.Contains(got, "name: chef_ice") {
-		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	if !strings.Contains(got, "name: chef-ice") {
+		t.Errorf("expected name: chef-ice, got:\n%s", got)
 	}
 	// Per-platform provisioner block with download_url.
 	if !strings.Contains(got, "download_url:") {
@@ -2044,16 +2044,98 @@ func TestBuildOverlay_Chef19_DownloadURL(t *testing.T) {
 }
 
 func TestBuildOverlay_Chef19_NeitherLicenseNorURL(t *testing.T) {
-	// No license config — overlay still emits chef_ice name and chef_license: accept.
+	// No license config — overlay still emits chef-ice name and chef_license: accept.
 	s := newScannerWithConfig(config.TestKitchenConfig{})
 	got := s.buildOverlay("19.2.12", "")
-	if !strings.Contains(got, "name: chef_ice") {
-		t.Errorf("expected name: chef_ice, got:\n%s", got)
+	if !strings.Contains(got, "name: chef-ice") {
+		t.Errorf("expected name: chef-ice, got:\n%s", got)
 	}
 	if !strings.Contains(got, "chef_license: accept") {
 		t.Errorf("expected chef_license: accept, got:\n%s", got)
 	}
 	if strings.Contains(got, "chef_license_key") {
 		t.Errorf("should not emit chef_license_key without credential, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_BakedIn_EmitsRequireChefOmnibusFalse(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "vcenter",
+		Images: []config.ImageEntry{
+			{
+				Name:           "rhel9-baked",
+				ID:             "tmpl-rhel9",
+				InstallMethod:  "baked_in",
+				ChefClientPath: "/opt/chef/bin/chef-client",
+			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "rhel9-baked"},
+		},
+	})
+	got := s.buildOverlay("19.2.12", "vcenter")
+	if !strings.Contains(got, "require_chef_omnibus: false") {
+		t.Errorf("expected require_chef_omnibus: false for baked_in, got:\n%s", got)
+	}
+	if !strings.Contains(got, "chef_client_path: /opt/chef/bin/chef-client") {
+		t.Errorf("expected chef_client_path, got:\n%s", got)
+	}
+	// Should NOT have download_url since it's baked in.
+	if strings.Contains(got, "download_url") {
+		t.Errorf("should not emit download_url for baked_in image, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_BakedIn_IgnoresDownloadURLs(t *testing.T) {
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "vcenter",
+		Images: []config.ImageEntry{
+			{
+				Name:           "rhel9-baked",
+				ID:             "tmpl-rhel9",
+				InstallMethod:  "baked_in",
+				ChefClientPath: "/usr/bin/chef-client",
+				ChefDownloadURLs: map[string]string{
+					"19.2.12": "https://packages.example.com/chef-19.rpm",
+				},
+			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "rhel9-baked"},
+		},
+	})
+	got := s.buildOverlay("19.2.12", "vcenter")
+	// baked_in takes precedence — download_url should not appear.
+	if strings.Contains(got, "download_url") {
+		t.Errorf("baked_in should suppress download_url, got:\n%s", got)
+	}
+	if !strings.Contains(got, "require_chef_omnibus: false") {
+		t.Errorf("expected require_chef_omnibus: false, got:\n%s", got)
+	}
+}
+
+func TestBuildOverlay_Download_DefaultBehaviour(t *testing.T) {
+	// No InstallMethod set — should behave as before (download).
+	s := newScannerWithConfig(config.TestKitchenConfig{
+		Driver: "ec2",
+		Images: []config.ImageEntry{
+			{
+				Name: "rhel9",
+				ID:   "ami-12345",
+				ChefDownloadURLs: map[string]string{
+					"19.2.12": "https://packages.example.com/chef-19.rpm",
+				},
+			},
+		},
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "rhel-9", Image: "rhel9"},
+		},
+	})
+	got := s.buildOverlay("19.2.12", "ec2")
+	if !strings.Contains(got, "download_url") {
+		t.Errorf("expected download_url for default install method, got:\n%s", got)
+	}
+	if strings.Contains(got, "require_chef_omnibus: false") {
+		t.Errorf("should not emit require_chef_omnibus: false for download, got:\n%s", got)
 	}
 }

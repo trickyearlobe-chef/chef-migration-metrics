@@ -53,7 +53,7 @@ func TestGenerateKitchenYML_ChefIceForV19(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	assertContains(t, out, "name: chef_ice")
+	assertContains(t, out, "name: chef-ice")
 	assertNotContains(t, out, "chef_zero")
 }
 
@@ -71,7 +71,7 @@ func TestGenerateKitchenYML_ChefIceForV20(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	assertContains(t, out, "name: chef_ice")
+	assertContains(t, out, "name: chef-ice")
 }
 
 func TestGenerateKitchenYML_WithRoles(t *testing.T) {

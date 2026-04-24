@@ -283,8 +283,8 @@ func TestKitchenRunner_ChefVersionOverlay_Chef18(t *testing.T) {
 	if !strings.Contains(capturedOverlay, "chef_license: accept") {
 		t.Errorf("expected overlay to contain chef_license: accept, got:\n%s", capturedOverlay)
 	}
-	if strings.Contains(capturedOverlay, "name: chef_ice") {
-		t.Errorf("overlay should NOT contain chef_ice for Chef 18, got:\n%s", capturedOverlay)
+	if strings.Contains(capturedOverlay, "name: chef-ice") {
+		t.Errorf("overlay should NOT contain chef-ice for Chef 18, got:\n%s", capturedOverlay)
 	}
 }
 
@@ -319,8 +319,63 @@ func TestKitchenRunner_ChefVersionOverlay_Chef19(t *testing.T) {
 		SuiteName:         "default",
 	})
 
-	if !strings.Contains(capturedOverlay, "chef_ice") {
-		t.Errorf("expected overlay to contain chef_ice for Chef 19, got:\n%s", capturedOverlay)
+	if !strings.Contains(capturedOverlay, "chef-ice") {
+		t.Errorf("expected overlay to contain chef-ice for Chef 19, got:\n%s", capturedOverlay)
+	}
+}
+
+func TestKitchenRunner_BakedIn_OverlayEmitsRequireChefOmnibusFalse(t *testing.T) {
+	dir := t.TempDir()
+	writeKitchenYAML(t, dir)
+
+	var capturedOverlay string
+	exec := &mockKitchenExec{
+		resultFn: func(call mockExecCall) (string, string, int, error) {
+			for _, a := range call.Args {
+				if a == "converge" {
+					data, err := os.ReadFile(filepath.Join(call.Dir, ".kitchen.local.yml"))
+					if err == nil {
+						capturedOverlay = string(data)
+					}
+					return "ok", "", 0, nil
+				}
+			}
+			return "ok", "", 0, nil
+		},
+	}
+
+	runner := newTestRunner(t, exec, nil, dir, OverlayConfig{
+		Images: []ImageConfig{
+			{
+				Name:           "rhel9-baked",
+				ID:             "tmpl-rhel9",
+				InstallMethod:  "baked_in",
+				ChefClientPath: "/opt/chef/bin/chef-client",
+			},
+		},
+		PlatformMap: []PlatformEntry{
+			{KitchenName: "rhel-9", Image: "rhel9-baked"},
+		},
+	})
+
+	runner.RunInstance(context.Background(), RunInstanceRequest{
+		BatchID:           "b-baked",
+		GitRepoName:       "baked-cb",
+		GitRepoURL:        "https://git.example.com/baked-cb.git",
+		CommitSHA:         "eee555",
+		TargetChefVersion: "19.2.12",
+		PlatformName:      "rhel-9",
+		SuiteName:         "default",
+	})
+
+	if !strings.Contains(capturedOverlay, "require_chef_omnibus: false") {
+		t.Errorf("expected require_chef_omnibus: false for baked_in image, got:\n%s", capturedOverlay)
+	}
+	if !strings.Contains(capturedOverlay, "chef_client_path: /opt/chef/bin/chef-client") {
+		t.Errorf("expected chef_client_path, got:\n%s", capturedOverlay)
+	}
+	if strings.Contains(capturedOverlay, "download_url") {
+		t.Errorf("should not have download_url for baked_in, got:\n%s", capturedOverlay)
 	}
 }
 

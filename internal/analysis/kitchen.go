@@ -162,14 +162,14 @@ type KitchenBatchResult struct {
 // test suites. It supports driver and platform overrides so cookbooks can be
 // tested against the actual infrastructure and platforms used in production.
 type KitchenScanner struct {
-	db            *datastore.DB
-	logger        *logging.Logger
-	executor      KitchenExecutor
-	credResolver  *secrets.CredentialResolver
-	concurrency   int
-	timeout       time.Duration
-	kitchenPath   string
-	tkConfig      config.TestKitchenConfig
+	db           *datastore.DB
+	logger       *logging.Logger
+	executor     KitchenExecutor
+	credResolver *secrets.CredentialResolver
+	concurrency  int
+	timeout      time.Duration
+	kitchenPath  string
+	tkConfig     config.TestKitchenConfig
 }
 
 // KitchenScannerOption configures a KitchenScanner.
@@ -686,7 +686,7 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 		buf.WriteString("\nprovisioner:\n")
 		major := chefMajorVersion(targetVersion)
 		if major >= 19 {
-			buf.WriteString("  name: chef_ice\n")
+			buf.WriteString("  name: chef-ice\n")
 		}
 		// Always use product_version for package-based installation.
 		fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
@@ -716,11 +716,20 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 				writeDriverSetting(&buf, k, img.DriverSettings[k], 6)
 			}
 
-			// Per-platform provisioner: override with download_url when set.
+			// Per-platform provisioner: behaviour depends on install method.
 			if targetVersion != "" {
-				if url := img.ChefDownloadURLs[targetVersion]; url != "" {
+				switch img.EffectiveInstallMethod() {
+				case "baked_in":
 					buf.WriteString("    provisioner:\n")
-					fmt.Fprintf(&buf, "      download_url: %s\n", yamlScalar(url))
+					buf.WriteString("      require_chef_omnibus: false\n")
+					if img.ChefClientPath != "" {
+						fmt.Fprintf(&buf, "      chef_client_path: %s\n", yamlScalar(img.ChefClientPath))
+					}
+				default: // "download"
+					if url := img.ChefDownloadURLs[targetVersion]; url != "" {
+						buf.WriteString("    provisioner:\n")
+						fmt.Fprintf(&buf, "      download_url: %s\n", yamlScalar(url))
+					}
 				}
 			}
 
@@ -757,7 +766,6 @@ func buildImageIndex(images []config.ImageEntry) map[string]config.ImageEntry {
 	}
 	return idx
 }
-
 
 // effectiveDriver returns the driver that will actually be used, considering
 // the config. If the config specifies a driver, that is used. Otherwise

@@ -1,30 +1,53 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchGitRepoDetail, requestGitRepoRescan, requestGitRepoTestKitchenRescan, resetGitRepo } from "../api";
-import type { GitRepoDetailResponse, TestKitchenResult } from "../types";
+import {
+  fetchGitRepoDetail,
+  requestGitRepoRescan,
+  requestGitRepoTestKitchenRescan,
+  resetGitRepo,
+  triggerGitKitchenRun,
+  fetchKitchenAnalysisCookbook,
+  fetchFilterTargetChefVersions,
+} from "../api";
+import type {
+  GitRepoDetailResponse,
+  TestKitchenResult,
+  KitchenPlatformInfo,
+  KitchenSuiteInfo,
+} from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
 
 function TKResultCard({ tk }: { tk: TestKitchenResult }) {
   const [showLogs, setShowLogs] = useState(false);
-  const hasLogs = !!(tk.converge_output || tk.verify_output || tk.destroy_output);
+  const hasLogs = !!(
+    tk.converge_output ||
+    tk.verify_output ||
+    tk.destroy_output
+  );
 
   return (
     <div className="rounded-lg border border-gray-100 p-3">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-gray-500">Target: {tk.target_chef_version}</span>
+        <span className="text-xs text-gray-500">
+          Target: {tk.target_chef_version}
+        </span>
         <StatusBadge
           variant={tk.compatible ? "compatible" : "incompatible"}
           label={tk.compatible ? "Compatible" : "Incompatible"}
           size="sm"
         />
-        {tk.timed_out && <StatusBadge variant="stale" label="Timed Out" size="sm" />}
+        {tk.timed_out && (
+          <StatusBadge variant="stale" label="Timed Out" size="sm" />
+        )}
         <span className="text-xs text-gray-500">
-          Converge: {tk.converge_passed ? "✓" : "✗"} | Tests: {tk.tests_passed ? "✓" : "✗"}
+          Converge: {tk.converge_passed ? "✓" : "✗"} | Tests:{" "}
+          {tk.tests_passed ? "✓" : "✗"}
         </span>
         {tk.platform_tested && (
           <span className="text-xs text-gray-400">
-            {tk.platform_tested}{tk.driver_used ? ` (${tk.driver_used})` : ""}
+            {tk.platform_tested}
+            {tk.driver_used ? ` (${tk.driver_used})` : ""}
           </span>
         )}
         <span className="text-xs text-gray-400">
@@ -43,20 +66,32 @@ function TKResultCard({ tk }: { tk: TestKitchenResult }) {
         <div className="mt-3 space-y-2">
           {tk.converge_output && (
             <div>
-              <div className="mb-1 text-xs font-medium text-gray-500">Converge</div>
-              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">{tk.converge_output}</pre>
+              <div className="mb-1 text-xs font-medium text-gray-500">
+                Converge
+              </div>
+              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">
+                {tk.converge_output}
+              </pre>
             </div>
           )}
           {tk.verify_output && (
             <div>
-              <div className="mb-1 text-xs font-medium text-gray-500">Verify</div>
-              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">{tk.verify_output}</pre>
+              <div className="mb-1 text-xs font-medium text-gray-500">
+                Verify
+              </div>
+              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">
+                {tk.verify_output}
+              </pre>
             </div>
           )}
           {tk.destroy_output && (
             <div>
-              <div className="mb-1 text-xs font-medium text-gray-500">Destroy</div>
-              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">{tk.destroy_output}</pre>
+              <div className="mb-1 text-xs font-medium text-gray-500">
+                Destroy
+              </div>
+              <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100 whitespace-pre-wrap">
+                {tk.destroy_output}
+              </pre>
             </div>
           )}
         </div>
@@ -79,6 +114,18 @@ export function GitRepoDetailPage() {
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
+  // Kitchen test trigger state
+  const [showKitchenForm, setShowKitchenForm] = useState(false);
+  const [targetVersions, setTargetVersions] = useState<string[]>([]);
+  const [platforms, setPlatforms] = useState<KitchenPlatformInfo[]>([]);
+  const [suites, setSuites] = useState<KitchenSuiteInfo[]>([]);
+  const [kitchenVersion, setKitchenVersion] = useState("");
+  const [kitchenPlatform, setKitchenPlatform] = useState("");
+  const [kitchenSuite, setKitchenSuite] = useState("");
+  const [kitchenTriggering, setKitchenTriggering] = useState(false);
+  const [kitchenMsg, setKitchenMsg] = useState<string | null>(null);
+  const kitchenPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const load = useCallback(() => {
     if (!name) return;
     setLoading(true);
@@ -88,6 +135,41 @@ export function GitRepoDetailPage() {
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [name]);
+
+  useEffect(() => {
+    fetchFilterTargetChefVersions()
+      .then((res) => {
+        setTargetVersions(res.data || []);
+        if (res.data && res.data.length > 0) setKitchenVersion(res.data[0]);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!name) return;
+    fetchKitchenAnalysisCookbook(name)
+      .then((analysis) => {
+        if (analysis) {
+          const plats = analysis.platforms || [];
+          const sts = analysis.suites || [];
+          setPlatforms(plats);
+          setSuites(sts);
+          if (plats.length > 0) setKitchenPlatform(plats[0].name);
+          if (sts.length > 0) setKitchenSuite(sts[0].name);
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      });
+  }, [name]);
+
+  useEffect(() => {
+    return () => {
+      if (kitchenPollingRef.current) clearInterval(kitchenPollingRef.current);
+    };
+  }, []);
 
   const handleRescan = useCallback(() => {
     if (!name) return;
@@ -129,7 +211,39 @@ export function GitRepoDetailPage() {
       .finally(() => setResetting(false));
   }, [name, load]);
 
-  useEffect(() => { load(); }, [load]);
+  const handleKitchenTrigger = useCallback(async () => {
+    if (!name) return;
+    setKitchenTriggering(true);
+    setKitchenMsg(null);
+    try {
+      const resp = await triggerGitKitchenRun({
+        git_repo_name: name,
+        target_chef_version: kitchenVersion,
+        platform_name: kitchenPlatform,
+        suite_name: kitchenSuite,
+      });
+      setKitchenMsg(`Started: ${resp.message}`);
+      // Poll for completion by reloading the page data
+      if (kitchenPollingRef.current) clearInterval(kitchenPollingRef.current);
+      const startTime = Date.now();
+      kitchenPollingRef.current = setInterval(() => {
+        if (Date.now() - startTime > 30 * 60 * 1000) {
+          if (kitchenPollingRef.current)
+            clearInterval(kitchenPollingRef.current);
+          return;
+        }
+        load();
+      }, 10000);
+    } catch (e: unknown) {
+      setKitchenMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setKitchenTriggering(false);
+    }
+  }, [name, kitchenVersion, kitchenPlatform, kitchenSuite, load]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <LoadingSpinner message="Loading git repo detail…" />;
   if (error) return <ErrorAlert message={error} onRetry={load} />;
@@ -140,7 +254,9 @@ export function GitRepoDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="text-sm text-gray-500">
-        <Link to="/git-repos" className="hover:text-blue-600 hover:underline">Git Repos</Link>
+        <Link to="/git-repos" className="hover:text-blue-600 hover:underline">
+          Git Repos
+        </Link>
         <span className="mx-1">/</span>
         <span className="text-gray-800">{data.name}</span>
       </nav>
@@ -175,10 +291,13 @@ export function GitRepoDetailPage() {
 
       {showResetConfirm && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          <p className="font-medium">Are you sure you want to reset git data for "{data.name}"?</p>
+          <p className="font-medium">
+            Are you sure you want to reset git data for "{data.name}"?
+          </p>
           <p className="mt-1 text-red-600">
-            This will delete all git-sourced repo data, committer data, and the local clone.
-            The repo will be re-cloned from the currently configured git base URLs on the next collection cycle.
+            This will delete all git-sourced repo data, committer data, and the
+            local clone. The repo will be re-cloned from the currently
+            configured git base URLs on the next collection cycle.
           </p>
           <div className="mt-3 flex gap-2">
             <button
@@ -217,6 +336,113 @@ export function GitRepoDetailPage() {
 
       {hasGitRepos && (
         <div className="card">
+          <h3 className="card-header">Run Kitchen Test</h3>
+          <div className="mb-2">
+            <button
+              className="text-sm text-blue-600 hover:underline"
+              onClick={() => setShowKitchenForm(!showKitchenForm)}
+            >
+              {showKitchenForm ? "▾ Hide Test Form" : "▸ New Kitchen Run…"}
+            </button>
+          </div>
+          {showKitchenForm && (
+            <div className="rounded border border-gray-200 bg-gray-50 p-4 space-y-3">
+              <div className="flex flex-wrap gap-4 items-end">
+                <label className="text-sm">
+                  <span className="block font-medium text-gray-700 mb-1">
+                    Target Chef Version
+                  </span>
+                  <select
+                    className="rounded border border-gray-300 px-2 py-1 text-sm"
+                    value={kitchenVersion}
+                    onChange={(e) => setKitchenVersion(e.target.value)}
+                  >
+                    {targetVersions.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="block font-medium text-gray-700 mb-1">
+                    Platform
+                  </span>
+                  {platforms.length > 0 ? (
+                    <select
+                      className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      value={kitchenPlatform}
+                      onChange={(e) => setKitchenPlatform(e.target.value)}
+                    >
+                      {platforms.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      value={kitchenPlatform}
+                      onChange={(e) => setKitchenPlatform(e.target.value)}
+                      placeholder="e.g. ubuntu-22.04"
+                    />
+                  )}
+                </label>
+                <label className="text-sm">
+                  <span className="block font-medium text-gray-700 mb-1">
+                    Suite
+                  </span>
+                  {suites.length > 0 ? (
+                    <select
+                      className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      value={kitchenSuite}
+                      onChange={(e) => setKitchenSuite(e.target.value)}
+                    >
+                      {suites.map((s) => (
+                        <option key={s.name} value={s.name}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      value={kitchenSuite}
+                      onChange={(e) => setKitchenSuite(e.target.value)}
+                      placeholder="e.g. default"
+                    />
+                  )}
+                </label>
+                <button
+                  className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  onClick={handleKitchenTrigger}
+                  disabled={
+                    kitchenTriggering ||
+                    !kitchenVersion ||
+                    !kitchenPlatform ||
+                    !kitchenSuite
+                  }
+                >
+                  {kitchenTriggering ? "Starting…" : "Run Test"}
+                </button>
+              </div>
+              {kitchenMsg && (
+                <p
+                  className={`text-sm ${kitchenMsg.startsWith("Error") ? "text-red-600" : "text-blue-600"}`}
+                >
+                  {kitchenMsg}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasGitRepos && (
+        <div className="card">
           <div className="flex items-center justify-between">
             <div>
               <h4 className="text-sm font-medium text-gray-600">Committers</h4>
@@ -238,7 +464,9 @@ export function GitRepoDetailPage() {
         <EmptyState title="No git repo entries found" />
       ) : (
         <div className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Git Repositories</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Git Repositories
+          </h3>
           {data.git_repos.map((gd, idx) => {
             const gr = gd.git_repo;
             return (
@@ -259,12 +487,23 @@ export function GitRepoDetailPage() {
                     </span>
                   ) : null}
                   {gr.clone_status === "ok" && gr.has_test_suite ? (
-                    <StatusBadge variant="compatible" label="Has Test Suite" size="sm" />
+                    <StatusBadge
+                      variant="compatible"
+                      label="Has Test Suite"
+                      size="sm"
+                    />
                   ) : gr.clone_status === "ok" ? (
-                    <StatusBadge variant="untested" label="No Test Suite" size="sm" />
+                    <StatusBadge
+                      variant="untested"
+                      label="No Test Suite"
+                      size="sm"
+                    />
                   ) : null}
                   {gr.git_repo_url && (
-                    <span className="text-xs text-gray-400 truncate max-w-md" title={gr.git_repo_url}>
+                    <span
+                      className="text-xs text-gray-400 truncate max-w-md"
+                      title={gr.git_repo_url}
+                    >
                       {gr.git_repo_url}
                     </span>
                   )}
@@ -275,9 +514,13 @@ export function GitRepoDetailPage() {
                   <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
                     <span className="mt-0.5 shrink-0 text-red-500">⚠</span>
                     <div className="text-sm text-red-700">
-                      <p className="font-medium">Repository could not be cloned</p>
+                      <p className="font-medium">
+                        Repository could not be cloned
+                      </p>
                       {gr.clone_error && (
-                        <p className="mt-1 text-xs text-red-600">{gr.clone_error}</p>
+                        <p className="mt-1 text-xs text-red-600">
+                          {gr.clone_error}
+                        </p>
                       )}
                       <p className="mt-1 text-xs text-red-500">
                         Clone will be reattempted on the next collection run.
@@ -290,38 +533,54 @@ export function GitRepoDetailPage() {
                 <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-gray-500">
                   {gr.default_branch && (
                     <span>
-                      Branch: <code className="rounded bg-gray-100 px-1 py-0.5">{gr.default_branch}</code>
+                      Branch:{" "}
+                      <code className="rounded bg-gray-100 px-1 py-0.5">
+                        {gr.default_branch}
+                      </code>
                     </span>
                   )}
                   {gr.head_commit_sha && (
                     <span>
-                      HEAD: <code className="rounded bg-gray-100 px-1 py-0.5" title={gr.head_commit_sha}>
+                      HEAD:{" "}
+                      <code
+                        className="rounded bg-gray-100 px-1 py-0.5"
+                        title={gr.head_commit_sha}
+                      >
                         {gr.head_commit_sha.substring(0, 12)}
                       </code>
                     </span>
                   )}
                   {gr.last_fetched_at && (
                     <span>
-                      Last fetched: {new Date(gr.last_fetched_at).toLocaleString()}
+                      Last fetched:{" "}
+                      {new Date(gr.last_fetched_at).toLocaleString()}
                     </span>
                   )}
                 </div>
 
                 {/* Cookstyle results */}
                 <div>
-                  <h4 className="mb-2 text-sm font-medium text-gray-600">CookStyle Results</h4>
+                  <h4 className="mb-2 text-sm font-medium text-gray-600">
+                    CookStyle Results
+                  </h4>
                   {gd.cookstyle && gd.cookstyle.length > 0 ? (
                     <div className="space-y-2">
                       {gd.cookstyle.map((cs) => (
-                        <div key={cs.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
-                          <span className="text-xs text-gray-500">Target: {cs.target_chef_version}</span>
+                        <div
+                          key={cs.id}
+                          className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3"
+                        >
+                          <span className="text-xs text-gray-500">
+                            Target: {cs.target_chef_version}
+                          </span>
                           <StatusBadge
                             variant={cs.passed ? "compatible" : "incompatible"}
                             label={cs.passed ? "Passed" : "Failed"}
                             size="sm"
                           />
                           <span className="text-xs text-gray-500">
-                            Offences: {cs.offence_count} | Deprecations: {cs.deprecation_count}
+                            Offences: {cs.offence_count} | Deprecations:{" "}
+                            {cs.deprecation_count}
                           </span>
                           <span className="text-xs text-gray-400">
                             Scanned: {new Date(cs.scanned_at).toLocaleString()}
@@ -339,9 +598,14 @@ export function GitRepoDetailPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 p-3">
-                      <StatusBadge variant="untested" label="Not Yet Scanned" size="sm" />
+                      <StatusBadge
+                        variant="untested"
+                        label="Not Yet Scanned"
+                        size="sm"
+                      />
                       <span className="text-xs text-gray-400">
-                        CookStyle results will appear here after the next collection run.
+                        CookStyle results will appear here after the next
+                        collection run.
                       </span>
                     </div>
                   )}
@@ -349,7 +613,9 @@ export function GitRepoDetailPage() {
 
                 {/* Test Kitchen results */}
                 <div className="mt-4">
-                  <h4 className="mb-2 text-sm font-medium text-gray-600">Test Kitchen Results</h4>
+                  <h4 className="mb-2 text-sm font-medium text-gray-600">
+                    Test Kitchen Results
+                  </h4>
                   {gd.test_kitchen && gd.test_kitchen.length > 0 ? (
                     <div className="space-y-2">
                       {gd.test_kitchen.map((tk) => (
@@ -360,18 +626,32 @@ export function GitRepoDetailPage() {
                     <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 p-3">
                       {gr.has_test_suite ? (
                         <>
-                          <StatusBadge variant="untested" label="Not Yet Run" size="sm" />
+                          <StatusBadge
+                            variant="untested"
+                            label="Not Yet Run"
+                            size="sm"
+                          />
                           <span className="text-xs text-gray-400">
-                            A test suite was detected but Test Kitchen has not run yet. Results will appear after the next collection run
-                            (requires Test Kitchen to be enabled in the server configuration).
+                            A test suite was detected but Test Kitchen has not
+                            run yet. Results will appear after the next
+                            collection run (requires Test Kitchen to be enabled
+                            in the server configuration).
                           </span>
                         </>
                       ) : (
                         <>
-                          <StatusBadge variant="untested" label="No Test Suite" size="sm" />
+                          <StatusBadge
+                            variant="untested"
+                            label="No Test Suite"
+                            size="sm"
+                          />
                           <span className="text-xs text-gray-400">
-                            This repository does not contain a <code className="rounded bg-gray-100 px-1 py-0.5">.kitchen.yml</code> file.
-                            Add one to enable integration testing with Test Kitchen.
+                            This repository does not contain a{" "}
+                            <code className="rounded bg-gray-100 px-1 py-0.5">
+                              .kitchen.yml
+                            </code>{" "}
+                            file. Add one to enable integration testing with
+                            Test Kitchen.
                           </span>
                         </>
                       )}
@@ -382,27 +662,41 @@ export function GitRepoDetailPage() {
                 {/* Complexity results */}
                 {gd.complexity && gd.complexity.length > 0 && (
                   <div className="mt-4">
-                    <h4 className="mb-2 text-sm font-medium text-gray-600">Complexity Analysis</h4>
+                    <h4 className="mb-2 text-sm font-medium text-gray-600">
+                      Complexity Analysis
+                    </h4>
                     <div className="space-y-2">
                       {gd.complexity.map((cx) => (
-                        <div key={cx.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
-                          <span className="text-xs text-gray-500">Target: {cx.target_chef_version}</span>
+                        <div
+                          key={cx.id}
+                          className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3"
+                        >
+                          <span className="text-xs text-gray-500">
+                            Target: {cx.target_chef_version}
+                          </span>
                           <StatusBadge
                             variant={
-                              cx.complexity_label === "low" ? "low"
-                                : cx.complexity_label === "medium" ? "medium"
-                                  : cx.complexity_label === "high" ? "high"
-                                    : cx.complexity_label === "critical" ? "critical"
+                              cx.complexity_label === "low"
+                                ? "low"
+                                : cx.complexity_label === "medium"
+                                  ? "medium"
+                                  : cx.complexity_label === "high"
+                                    ? "high"
+                                    : cx.complexity_label === "critical"
+                                      ? "critical"
                                       : "unknown"
                             }
                             label={`${(cx.complexity_label ?? "unknown").charAt(0).toUpperCase() + (cx.complexity_label ?? "unknown").slice(1)} (${cx.complexity_score ?? 0})`}
                             size="sm"
                           />
                           <span className="text-xs text-gray-500">
-                            Auto-fix: {cx.auto_correctable_count} | Manual: {cx.manual_fix_count} | Errors: {cx.error_count}
+                            Auto-fix: {cx.auto_correctable_count} | Manual:{" "}
+                            {cx.manual_fix_count} | Errors: {cx.error_count}
                           </span>
                           <span className="text-xs text-gray-500">
-                            Deprecations: {cx.deprecation_count} | Correctness: {cx.correctness_count} | Modernize: {cx.modernize_count}
+                            Deprecations: {cx.deprecation_count} | Correctness:{" "}
+                            {cx.correctness_count} | Modernize:{" "}
+                            {cx.modernize_count}
                           </span>
                           <span className="text-xs text-gray-400">
                             {new Date(cx.created_at).toLocaleString()}

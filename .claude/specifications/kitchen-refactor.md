@@ -248,6 +248,7 @@ When `dry_run = true`:
 | `POST /api/v1/kitchen/batches/:id/run` | Execute (or dry-run) a batch |
 | `POST /api/v1/kitchen/batches/:id/cancel` | Cancel a running batch |
 | `DELETE /api/v1/kitchen/batches/:id` | Delete a batch definition |
+| `POST /api/v1/kitchen/git-run` | Trigger a single Git Kitchen run. Body: `{git_repo_name, target_chef_version, platform_name, suite_name}`. Returns 202. |
 
 ## Git Kitchens (Per-Instance Results)
 
@@ -307,13 +308,30 @@ provisioner:
 
 This overrides the `require_chef_omnibus: false` found in most existing kitchen configs.
 
-For Chef >= 19 (`chef_ice`):
+For Chef >= 19 (`chef-ice`):
 ```
 provisioner:
   require_chef_omnibus: true  
-  product_name: chef_ice
+  product_name: chef-ice
   product_version: 19.0.0
 ```
+
+### Per-Image Install Method
+
+Each image in the image registry supports an `install_method` field:
+
+- `download` (default): Chef is installed from the network. The overlay uses `product_version` or `download_url`.
+- `baked_in`: Chef is pre-installed in the image. The overlay emits:
+
+```
+provisioner:
+  require_chef_omnibus: false
+  chef_client_path: /opt/chef/bin/chef-client
+```
+
+When `install_method` is `baked_in`, `chef_client_path` is required. When `download` (or unset), `chef_client_path` is ignored.
+
+This is per-image, not global — some images may have Chef baked in while others download it from an internal Nexus repository.
 
 ## Hypervisor Template Discovery
 

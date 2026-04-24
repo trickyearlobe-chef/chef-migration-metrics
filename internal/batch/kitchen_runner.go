@@ -49,6 +49,16 @@ type ImageConfig struct {
 	DriverSettings   map[string]interface{}
 	Transport        *TransportConfig
 	ChefDownloadURLs map[string]string
+	InstallMethod    string // "download" (default) or "baked_in"
+	ChefClientPath   string // path to chef-client binary when baked_in
+}
+
+// effectiveInstallMethod returns the install method, defaulting to "download".
+func (ic ImageConfig) effectiveInstallMethod() string {
+	if ic.InstallMethod == "" {
+		return "download"
+	}
+	return ic.InstallMethod
 }
 
 // TransportConfig holds transport settings for an image.
@@ -252,7 +262,7 @@ func (r *KitchenRunner) buildInstanceOverlay(targetVersion string) string {
 		buf.WriteString("\nprovisioner:\n")
 		major := chefMajorVersion(targetVersion)
 		if major >= 19 {
-			buf.WriteString("  name: chef_ice\n")
+			buf.WriteString("  name: chef-ice\n")
 		}
 		fmt.Fprintf(&buf, "  product_version: %q\n", targetVersion)
 		if cfg.ChefLicenseKey != "" {
@@ -279,9 +289,18 @@ func (r *KitchenRunner) buildInstanceOverlay(targetVersion string) string {
 			}
 
 			if targetVersion != "" {
-				if url, ok := img.ChefDownloadURLs[targetVersion]; ok && url != "" {
+				switch img.effectiveInstallMethod() {
+				case "baked_in":
 					buf.WriteString("    provisioner:\n")
-					fmt.Fprintf(&buf, "      download_url: %s\n", overlayYAMLScalar(url))
+					buf.WriteString("      require_chef_omnibus: false\n")
+					if img.ChefClientPath != "" {
+						fmt.Fprintf(&buf, "      chef_client_path: %s\n", overlayYAMLScalar(img.ChefClientPath))
+					}
+				default: // "download"
+					if url, ok := img.ChefDownloadURLs[targetVersion]; ok && url != "" {
+						buf.WriteString("    provisioner:\n")
+						fmt.Fprintf(&buf, "      download_url: %s\n", overlayYAMLScalar(url))
+					}
 				}
 			}
 
