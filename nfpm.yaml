@@ -24,7 +24,7 @@ version: ${VERSION}
 release: "1"
 section: admin
 priority: optional
-maintainer: Project Maintainers
+maintainer: Richard Nixon
 description: Tool for planning and tracking Chef Client upgrade projects
 vendor: Chef Migration Metrics Project
 homepage: https://github.com/trickyearlobe-chef/chef-migration-metrics
