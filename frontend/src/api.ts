@@ -85,6 +85,9 @@ import type {
   GitRepoListItem,
   GitKitchenResult,
   BatchProgress,
+  GitKitchenRunRequest,
+  GitKitchenTriggerResponse,
+  KitchenAnalysisCookbook,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -2197,6 +2200,33 @@ export async function fetchBatchProgress(
   batchId: string,
 ): Promise<BatchProgress> {
   return apiFetch<BatchProgress>(`/kitchen/batches/${batchId}/progress`);
+}
+
+/** Trigger a single Git Kitchen run (async — returns immediately). */
+export async function triggerGitKitchenRun(
+  req: GitKitchenRunRequest,
+): Promise<GitKitchenTriggerResponse> {
+  const res = await fetch(buildUrl("/kitchen/git-run"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok)
+    throw new Error(`Failed to trigger git kitchen run: ${res.status}`);
+  return res.json() as Promise<GitKitchenTriggerResponse>;
+}
+
+/** Fetch kitchen analysis for a single cookbook by name. */
+export async function fetchKitchenAnalysisCookbook(
+  name: string,
+): Promise<KitchenAnalysisCookbook | null> {
+  try {
+    return await apiFetch<KitchenAnalysisCookbook>(
+      `/kitchen/analysis/cookbooks/${encodeURIComponent(name)}`,
+    );
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
