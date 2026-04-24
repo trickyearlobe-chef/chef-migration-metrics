@@ -172,6 +172,7 @@ analysis_tools:
     driver_settings: {}
     driver_secrets: {}
     image_field_name: ""
+    images: []
     platform_map: []
 ```
 
@@ -185,7 +186,20 @@ analysis_tools:
 | `test_kitchen.driver_settings` | `{}` | Driver connection settings as key-value pairs (plaintext). Keys are driver-specific (e.g. `vcenter_host`, `region`). |
 | `test_kitchen.driver_secrets` | `{}` | Driver secret settings. Keys are driver setting names, values are credential names from the `credentials` table. |
 | `test_kitchen.image_field_name` | set by profile | Driver-specific field name for the image identifier in the platform map. Required only for the `custom` profile. |
+| `test_kitchen.images` | `[]` | Image registry list. Each entry defines a named image with its driver-specific identifier and optional per-image settings. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) § ImageEntry Fields. |
 | `test_kitchen.platform_map` | `[]` | Platform image mapping list. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) § Platform Image Mapping. |
+
+**Image Entry Fields** — each entry in `analysis_tools.test_kitchen.images[]`:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | required | Unique label used as the reference value in `platform_map[].image`. |
+| `id` | string | required (non-dokken) | Driver-specific image identifier (template name, AMI ID, etc.). |
+| `install_method` | string | `"download"` | How Chef is installed on instances using this image. `"download"` installs from the network; `"baked_in"` means Chef is pre-installed in the image. |
+| `chef_client_path` | string | `""` | Path to the chef-client binary when `install_method` is `"baked_in"` (e.g. `/opt/chef/bin/chef-client`). Required for `baked_in`; ignored for `download`. |
+| `driver_settings` | map | `{}` | Per-image driver setting overrides, merged on top of top-level `driver_settings`. |
+| `transport` | object | nil | Transport credentials: `username`, `password_credential`, `ssh_key_credential`. |
+| `chef_download_urls` | map | `{}` | Map of `version → URL`. When set for the target version, the overlay uses `download_url` instead of `product_version`. |
 
 > **Path resolution order:** For `cookstyle` and `kitchen`, the application resolves binaries in this order:
 > 1. `<embedded_bin_dir>/cookstyle` (or `kitchen`)
@@ -813,6 +827,14 @@ analysis_tools:
     enabled: true
     timeout_minutes: 30
     driver: dokken
+    images:
+      - name: alma9
+        id: tmpl-alma9-kitchen
+        install_method: download
+      - name: ubuntu2204-baked
+        id: tmpl-ubuntu2204-baked
+        install_method: baked_in
+        chef_client_path: /opt/chef/bin/chef-client
 
 elasticsearch:
   enabled: false
