@@ -32,7 +32,8 @@ import { CheckStatusIcons } from "../components/CheckStatusIcons";
 import { PlatformLabel } from "../components/PlatformLabel";
 
 // ---------------------------------------------------------------------------
-// Readiness filter values
+// Readiness filter values — pushed down to backend SQL via readiness_filter
+// and target_chef_version query params.
 // ---------------------------------------------------------------------------
 type ReadinessFilter =
   | ""
@@ -41,42 +42,6 @@ type ReadinessFilter =
   | "cookbooks_blocked"
   | "disk_blocked"
   | "disk_unknown";
-
-function matchesReadinessFilter(
-  node: NodeListItem,
-  targetVersion: string,
-  filter: ReadinessFilter,
-): boolean {
-  if (!filter) return true; // "All" — no filtering
-
-  // Find the readiness entry for the selected target version.
-  const entry = (node.readiness ?? []).find(
-    (r) => r.target_chef_version === targetVersion,
-  );
-
-  // If there's no readiness data for this target version, only show in "unknown".
-  if (!entry) {
-    return filter === "blocked"; // nodes with no data are implicitly not ready
-  }
-
-  switch (filter) {
-    case "ready":
-      return entry.is_ready;
-    case "blocked":
-      return !entry.is_ready;
-    case "cookbooks_blocked":
-      return !entry.all_cookbooks_compatible;
-    case "disk_blocked":
-      return entry.sufficient_disk_space === false;
-    case "disk_unknown":
-      return (
-        entry.sufficient_disk_space === null ||
-        entry.sufficient_disk_space === undefined
-      );
-    default:
-      return true;
-  }
-}
 
 function formatOhaiTime(ohaiTime?: number): string {
   if (!ohaiTime) return "—";
@@ -208,6 +173,9 @@ export function NodesPage() {
     if (stale) filters.stale = stale;
     if (sortField) filters.sort = sortField;
     if (sortOrder) filters.order = sortOrder;
+    if (selectedTargetVersion)
+      filters.target_chef_version = selectedTargetVersion;
+    if (readinessFilter) filters.readiness_filter = readinessFilter;
 
     fetchNodes(filters)
       .then((res) => {
@@ -226,6 +194,8 @@ export function NodesPage() {
     policyName,
     policyGroup,
     stale,
+    readinessFilter,
+    selectedTargetVersion,
     page,
     sortField,
     sortOrder,
@@ -248,6 +218,8 @@ export function NodesPage() {
     policyName,
     policyGroup,
     stale,
+    readinessFilter,
+    selectedTargetVersion,
     sortField,
     sortOrder,
   ]);
@@ -278,16 +250,9 @@ export function NodesPage() {
     setReadinessFilter("");
   };
 
-  // Apply client-side readiness filter. The backend doesn't support readiness
-  // filtering directly, so we filter the already-fetched page of nodes.
-  // This means the displayed count may be less than the page size when a
-  // readiness filter is active, which is an acceptable trade-off for now.
-  const displayNodes =
-    readinessFilter && selectedTargetVersion
-      ? nodes.filter((n) =>
-          matchesReadinessFilter(n, selectedTargetVersion, readinessFilter),
-        )
-      : nodes;
+  // Readiness filtering is now handled server-side via readiness_filter and
+  // target_chef_version query params. No client-side post-filtering needed.
+  const displayNodes = nodes;
 
   // Build the current filter set for export buttons.
   const exportFilters: ExportFilters = {};

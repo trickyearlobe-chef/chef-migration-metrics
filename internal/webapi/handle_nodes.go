@@ -491,6 +491,10 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	f.Sort = q.Get("sort")
 	f.SortOrder = q.Get("order")
 
+	// Readiness filter push-down — requires target_chef_version.
+	f.TargetChefVersion = q.Get("target_chef_version")
+	f.ReadinessFilter = q.Get("readiness_filter")
+
 	// Map the stale parameter — supports legacy bool and tier values.
 	switch q.Get("stale") {
 	case "true":

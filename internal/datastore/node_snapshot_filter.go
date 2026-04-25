@@ -80,6 +80,18 @@ type NodeSnapshotFilter struct {
 	// SortOrder specifies the sort direction: "asc" or "desc".
 	// Empty string defaults to "asc".
 	SortOrder string
+
+	// ReadinessFilter filters nodes by upgrade readiness status. Requires
+	// TargetChefVersion to be set. Values: "ready", "blocked",
+	// "cookbooks_blocked", "disk_blocked", "disk_unknown". Empty means no
+	// readiness filter. Ignored when TargetChefVersion is empty.
+	ReadinessFilter string
+
+	// TargetChefVersion is the target Chef version used to JOIN with
+	// node_readiness for readiness filtering and data enrichment. When set
+	// (even without ReadinessFilter), a LEFT JOIN to node_readiness is
+	// included so callers can access readiness columns.
+	TargetChefVersion string
 }
 
 // buildNodeSnapshotFilterQuery constructs the SQL query and args for
@@ -111,8 +123,8 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		cols = heavyCols
 	}
 
-	// Reuse the shared CTE + WHERE clause builder.
-	cte, where, args := buildNodeSnapshotFilterParts(f)
+	// Reuse the shared CTE + JOIN + WHERE clause builder.
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
 
 	// Build the full query with COUNT(*) OVER() for total count.
 	var sb strings.Builder
@@ -120,6 +132,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	sb.WriteString("\nSELECT ")
 	sb.WriteString(cols)
 	sb.WriteString(", COUNT(*) OVER () AS total_count\n  FROM completed_nodes cn")
+	sb.WriteString(join)
 	sb.WriteString(where)
 
 	// Dynamic sort column with whitelist validation.
@@ -308,15 +321,15 @@ func (db *DB) countNodeDistribution(ctx context.Context, f NodeSnapshotFilter, e
 	// We re-use buildNodeSnapshotFilterQuery and then wrap it.
 	// However, the filter query includes SELECT columns we don't need.
 	// Instead, build the CTE and WHERE clause directly.
-	cte, where, args := buildNodeSnapshotFilterParts(f)
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
 
 	query := fmt.Sprintf(`%s
 		SELECT %s AS %s, COUNT(*) AS cnt
 		  FROM completed_nodes cn
-		%s
+		%s%s
 		 GROUP BY %s
 		 ORDER BY cnt DESC, %s ASC
-	`, cte, expr, alias, where, alias, alias)
+	`, cte, expr, alias, join, where, alias, alias)
 
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -349,15 +362,15 @@ func (db *DB) countNodeDistribution(ctx context.Context, f NodeSnapshotFilter, e
 // ListDistinctNodeValues returns sorted distinct non-empty values for the
 // given column expression from nodes matching the filter.
 func (db *DB) ListDistinctNodeValues(ctx context.Context, f NodeSnapshotFilter, columnExpr string) ([]string, error) {
-	cte, where, args := buildNodeSnapshotFilterParts(f)
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
 
 	query := fmt.Sprintf(`%s
 		SELECT DISTINCT %s AS val
 		  FROM completed_nodes cn
-		%s
+		%s%s
 		   AND %s IS NOT NULL AND %s != ''
 		 ORDER BY val
-	`, cte, columnExpr, where, columnExpr, columnExpr)
+	`, cte, columnExpr, join, where, columnExpr, columnExpr)
 
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -379,17 +392,17 @@ func (db *DB) ListDistinctNodeValues(ctx context.Context, f NodeSnapshotFilter, 
 // ListDistinctNodeRoles returns sorted distinct non-empty role names from
 // the roles JSONB array across all nodes matching the filter.
 func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter) ([]string, error) {
-	cte, where, args := buildNodeSnapshotFilterParts(f)
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
 
 	query := fmt.Sprintf(`%s
 		SELECT DISTINCT r.value AS val
-		  FROM completed_nodes cn,
-		       jsonb_array_elements_text(cn.roles) r(value)
+		  FROM completed_nodes cn
+		%s, jsonb_array_elements_text(cn.roles) r(value)
 		%s
 		   AND jsonb_typeof(cn.roles) = 'array'
 		   AND r.value IS NOT NULL AND r.value != ''
 		 ORDER BY val
-	`, cte, where)
+	`, cte, join, where)
 
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -416,7 +429,7 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter) (
 // separately so callers can compose custom SELECT/GROUP BY queries around
 // the same filtering logic. The WHERE clause always starts with " WHERE 1=1"
 // so additional conditions can be appended with AND.
-func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where string, args []interface{}) {
+func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string, where string, args []interface{}) {
 	cte = `WITH completed_nodes AS (
 		SELECT ns.collection_run_org, ns.organisation_name, ns.node_name,
 		       ns.chef_environment, ns.chef_version,
@@ -508,5 +521,24 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 		args = append(args, *f.Stale)
 	}
 
-	return cte, where, args
+	// Readiness filter — JOIN node_readiness when TargetChefVersion is set.
+	if f.TargetChefVersion != "" {
+		join = "\n LEFT JOIN node_readiness nr ON nr.organisation_name = cn.organisation_name AND nr.node_name = cn.node_name AND nr.target_chef_version = " + nextArg()
+		args = append(args, f.TargetChefVersion)
+
+		switch f.ReadinessFilter {
+		case "ready":
+			where += " AND nr.is_ready = true"
+		case "blocked":
+			where += " AND (nr.is_ready = false OR nr.is_ready IS NULL)"
+		case "cookbooks_blocked":
+			where += " AND (nr.all_cookbooks_compatible = false OR nr.all_cookbooks_compatible IS NULL)"
+		case "disk_blocked":
+			where += " AND nr.sufficient_disk_space = false"
+		case "disk_unknown":
+			where += " AND (nr.sufficient_disk_space IS NULL)"
+		}
+	}
+
+	return cte, join, where, args
 }

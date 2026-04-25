@@ -83,6 +83,8 @@ export interface NodeFilterQuery extends PaginationQuery {
   policy_group?: string;
   role?: string;
   stale?: string;
+  readiness_filter?: string;
+  target_chef_version?: string;
   sort?: string;
   order?: string;
   search?: string;
