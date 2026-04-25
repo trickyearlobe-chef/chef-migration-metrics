@@ -8,7 +8,12 @@ Project-specific technical conventions for the Chef Migration Metrics dashboard.
 - The application must run pending migrations automatically on startup.
 - Migrations must never be edited after they have been committed. Instead, create a new migration to make further changes.
 - Keep in mind this dashboard runs at scale with 100000 nodes when writing specs or code.
-- **Always use natural keys** (e.g. `organisation_name`, `node_name`, `cookbook_name + version`, `git_repo_name`) as primary keys and foreign keys. Do not introduce synthetic UUIDs unless there is a compelling reason (e.g. the entity genuinely has no stable natural identifier). UUIDs add a fragile layer of indirection — when they drift between tables (re-collection, upsert, deduplication) joins break silently and data becomes invisible.
+
+### Primary Key Strategy
+
+- **Domain entities** use natural composite keys (e.g. `organisation_name`, `node_name`, `cookbook_name + version`, `git_repo_name`). Do not introduce synthetic UUIDs for these — they add a fragile layer of indirection that breaks silently during re-collection, upsert, and deduplication. Migrations 0001–0009 establish this pattern.
+- **Ephemeral operational records** — tables that model transient processes with no stable natural identifier — may use UUID primary keys (`DEFAULT gen_random_uuid()`). Examples: `vm_tracking`, `node_kitchen_runs`, `kitchen_batches`, `git_kitchen_results` (migrations 0013–0016). These rows represent one-off runs or tracked VMs, not long-lived domain concepts.
+- When adding a new table, default to natural keys. Use UUIDs only when the entity genuinely has no stable natural identifier and document the reasoning in the migration file header comment.
 
 ## Language and Concurrency
 
