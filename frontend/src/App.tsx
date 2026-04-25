@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { OrgProvider } from "./context/OrgContext";
+import { GlobalFilterProvider } from "./context/GlobalFilterContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppLayout } from "./components/AppLayout";
 import { LoginPage } from "./pages/LoginPage";
@@ -161,9 +162,11 @@ export function App() {
               element={
                 <RequireAuth>
                   <OrgProvider>
-                    <SetupModeGuard>
-                      <AppLayout />
-                    </SetupModeGuard>
+                    <GlobalFilterProvider>
+                      <SetupModeGuard>
+                        <AppLayout />
+                      </SetupModeGuard>
+                    </GlobalFilterProvider>
                   </OrgProvider>
                 </RequireAuth>
               }
