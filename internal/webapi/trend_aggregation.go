@@ -32,6 +32,8 @@ type staleTrendPoint struct {
 	TotalNodes       int    `json:"total_nodes"`
 	StaleNodes       int    `json:"stale_nodes"`
 	FreshNodes       int    `json:"fresh_nodes"`
+	WarningNodes     int    `json:"warning_nodes"`
+	CriticalNodes    int    `json:"critical_nodes"`
 }
 
 // complexityTrendPoint is a single data point in the complexity trend
@@ -178,9 +180,11 @@ func mergeStaleTrendSnapshots(points []staleTrendPoint) []staleTrendPoint {
 
 	// Phase 2: Sum across orgs within each hour bucket.
 	type bucket struct {
-		totalNodes int
-		staleNodes int
-		freshNodes int
+		totalNodes    int
+		staleNodes    int
+		freshNodes    int
+		warningNodes  int
+		criticalNodes int
 	}
 
 	buckets := make(map[time.Time]*bucket)
@@ -196,6 +200,8 @@ func mergeStaleTrendSnapshots(points []staleTrendPoint) []staleTrendPoint {
 		b.totalNodes += entry.point.TotalNodes
 		b.staleNodes += entry.point.StaleNodes
 		b.freshNodes += entry.point.FreshNodes
+		b.warningNodes += entry.point.WarningNodes
+		b.criticalNodes += entry.point.CriticalNodes
 	}
 
 	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
@@ -204,10 +210,12 @@ func mergeStaleTrendSnapshots(points []staleTrendPoint) []staleTrendPoint {
 	for _, hour := range hours {
 		b := buckets[hour]
 		result = append(result, staleTrendPoint{
-			CompletedAt: hour.Format(trendTimestampFormat),
-			TotalNodes:  b.totalNodes,
-			StaleNodes:  b.staleNodes,
-			FreshNodes:  b.freshNodes,
+			CompletedAt:   hour.Format(trendTimestampFormat),
+			TotalNodes:    b.totalNodes,
+			StaleNodes:    b.staleNodes,
+			FreshNodes:    b.freshNodes,
+			WarningNodes:  b.warningNodes,
+			CriticalNodes: b.criticalNodes,
 		})
 	}
 	return result

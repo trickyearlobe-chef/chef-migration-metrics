@@ -394,8 +394,9 @@ export function NodesPage() {
           onChange={setStale}
           options={[
             { value: "", label: "All" },
-            { value: "true", label: "Stale" },
-            { value: "false", label: "Fresh" },
+            { value: "fresh", label: "Fresh" },
+            { value: "warning", label: "Missing (Warning)" },
+            { value: "critical", label: "Gone (Critical)" },
           ]}
         />
         <FilterSelect
@@ -506,7 +507,12 @@ export function NodesPage() {
                           : "—"}
                       </td>
                       <td>
-                        <StaleBadge isStale={node.is_stale} size="sm" />
+                        <StaleBadge
+                          isStale={node.is_stale}
+                          stalenesTier={node.staleness_tier}
+                          ageHours={node.ohai_time_age_hours}
+                          size="sm"
+                        />
                       </td>
                       <td className="text-xs text-gray-400">
                         {formatOhaiTime(node.ohai_time)}

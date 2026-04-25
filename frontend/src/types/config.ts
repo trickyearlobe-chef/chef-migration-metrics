@@ -3,6 +3,8 @@
 export interface CollectionConfig {
   schedule: string;
   stale_node_threshold_days: number;
+  stale_node_warning_hours: number;
+  stale_node_critical_days: number;
   stale_cookbook_threshold_days: number;
   skip_server_cookbook_download: boolean;
   delete_server_cookbooks_after_scan: boolean | null;

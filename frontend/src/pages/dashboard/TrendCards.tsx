@@ -403,18 +403,27 @@ export function StaleTrendCard({ organisation }: { organisation?: string }) {
 
     return [
       {
-        key: "stale",
-        label: "Stale nodes",
-        colour: "#ef4444", // red-500
+        key: "critical",
+        label: "Gone (Critical)",
+        colour: "#dc2626", // red-600
         data: sorted.map((pt) => ({
           timestamp: pt.completed_at,
-          value: pt.stale_nodes,
+          value: pt.critical_nodes ?? pt.stale_nodes,
+        })),
+      },
+      {
+        key: "warning",
+        label: "Missing (Warning)",
+        colour: "#d97706", // amber-600
+        data: sorted.map((pt) => ({
+          timestamp: pt.completed_at,
+          value: pt.warning_nodes ?? 0,
         })),
       },
       {
         key: "fresh",
-        label: "Fresh nodes",
-        colour: "#22c55e", // green-500
+        label: "Fresh",
+        colour: "#16a34a", // green-600
         data: sorted.map((pt) => ({
           timestamp: pt.completed_at,
           value: pt.fresh_nodes,

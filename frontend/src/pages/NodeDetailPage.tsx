@@ -1009,7 +1009,11 @@ export function NodeDetailPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold text-gray-800">{node.node_name}</h2>
-        <StaleBadge isStale={node.is_stale} />
+        <StaleBadge
+          isStale={node.is_stale}
+          stalenesTier={node.staleness_tier}
+          ageHours={node.ohai_time_age_hours}
+        />
       </div>
 
       {/* Info grid */}

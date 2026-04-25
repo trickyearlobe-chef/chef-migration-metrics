@@ -50,7 +50,16 @@ type NodeSnapshotFilter struct {
 
 	// Stale filters by exact boolean match on is_stale.
 	// nil means no filter (return both stale and fresh nodes).
+	// Ignored when StaleTier is set.
 	Stale *bool
+
+	// StaleTier filters by computed staleness tier. Values: "fresh", "warning", "critical".
+	// Empty means no tier filter. When set, Stale is ignored.
+	StaleTier string
+	// StaleWarningHours and StaleCriticalDays are the tier thresholds for
+	// SQL-level staleness tier computation. Only used when StaleTier is set.
+	StaleWarningHours int
+	StaleCriticalDays int
 
 	// IncludeHeavyJSON controls whether heavy JSONB columns (filesystem,
 	// cookbooks, custom_attributes) are included in the result. Default false
@@ -483,7 +492,18 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, where strin
 		args = append(args, f.Role)
 	}
 
-	if f.Stale != nil {
+	if f.StaleTier != "" {
+		warningSeconds := f.StaleWarningHours * 3600
+		criticalSeconds := f.StaleCriticalDays * 86400
+		switch f.StaleTier {
+		case "fresh":
+			where += fmt.Sprintf(" AND cn.ohai_time > extract(epoch from now()) - %d", warningSeconds)
+		case "warning":
+			where += fmt.Sprintf(" AND cn.ohai_time <= extract(epoch from now()) - %d AND cn.ohai_time > extract(epoch from now()) - %d", warningSeconds, criticalSeconds)
+		case "critical":
+			where += fmt.Sprintf(" AND (cn.ohai_time <= extract(epoch from now()) - %d OR cn.ohai_time = 0 OR cn.ohai_time IS NULL)", criticalSeconds)
+		}
+	} else if f.Stale != nil {
 		where += " AND cn.is_stale = " + nextArg()
 		args = append(args, *f.Stale)
 	}

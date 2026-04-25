@@ -172,9 +172,11 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 		}
 		for _, ms := range metrics {
 			var payload struct {
-				TotalNodes int `json:"total_nodes"`
-				StaleNodes int `json:"stale_nodes"`
-				FreshNodes int `json:"fresh_nodes"`
+				TotalNodes    int `json:"total_nodes"`
+				StaleNodes    int `json:"stale_nodes"`
+				FreshNodes    int `json:"fresh_nodes"`
+				WarningNodes  int `json:"warning_nodes"`
+				CriticalNodes int `json:"critical_nodes"`
 			}
 			if err := json.Unmarshal(ms.Data, &payload); err != nil {
 				r.logf("WARN", "unmarshalling metric snapshot %d for stale trend: %v", ms.ID, err)
@@ -187,6 +189,8 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 				TotalNodes:       payload.TotalNodes,
 				StaleNodes:       payload.StaleNodes,
 				FreshNodes:       payload.FreshNodes,
+				WarningNodes:     payload.WarningNodes,
+				CriticalNodes:    payload.CriticalNodes,
 			})
 		}
 	}
