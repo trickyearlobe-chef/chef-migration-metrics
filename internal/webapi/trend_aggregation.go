@@ -34,6 +34,23 @@ type staleTrendPoint struct {
 	FreshNodes       int    `json:"fresh_nodes"`
 }
 
+// complexityTrendPoint is a single data point in the complexity trend
+// response. Each point represents aggregate complexity scores for one
+// (organisation, target version) pair from one collection run.
+type complexityTrendPoint struct {
+	OrganisationName  string  `json:"organisation_name"`
+	CollectionRunOrg  string  `json:"collection_run_org"`
+	CompletedAt       string  `json:"completed_at"`
+	TargetChefVersion string  `json:"target_chef_version"`
+	TotalCookbooks    int     `json:"total_cookbooks"`
+	TotalScore        int     `json:"total_score"`
+	AverageScore      float64 `json:"average_score"`
+	LowCount          int     `json:"low_count"`
+	MediumCount       int     `json:"medium_count"`
+	HighCount         int     `json:"high_count"`
+	CriticalCount     int     `json:"critical_count"`
+}
+
 // readinessTrendPoint is a single data point in the readiness trend
 // response. Each point represents readiness counts for one (organisation,
 // target version) pair from one collection run.
@@ -196,6 +213,19 @@ func mergeStaleTrendSnapshots(points []staleTrendPoint) []staleTrendPoint {
 	return result
 }
 
+// complexityOrgKey deduplicates complexity snapshots per (org, hour, version).
+type complexityOrgKey struct {
+	hour    time.Time
+	org     string
+	version string
+}
+
+// complexityKey groups complexity trend points by hour and target version.
+type complexityKey struct {
+	hour    time.Time
+	version string
+}
+
 // readinessKey groups readiness trend points by hour and target version.
 type readinessKey struct {
 	hour    time.Time
@@ -207,6 +237,95 @@ type readinessOrgKey struct {
 	hour    time.Time
 	org     string
 	version string
+}
+
+// mergeComplexityTrendSnapshots aggregates per-org complexity trend points
+// into one merged point per (hour, target version) pair. Within each
+// bucket, only the latest snapshot per org is kept. Then TotalCookbooks,
+// TotalScore, LowCount, MediumCount, HighCount, and CriticalCount are
+// summed, and AverageScore is recomputed. The returned slice is sorted
+// ascending by (time, version).
+func mergeComplexityTrendSnapshots(points []complexityTrendPoint) []complexityTrendPoint {
+	if len(points) == 0 {
+		return points
+	}
+
+	// Phase 1: Deduplicate — keep the latest snapshot per (org, hour, version).
+	type dedupEntry struct {
+		point     complexityTrendPoint
+		timestamp time.Time
+	}
+	deduped := make(map[complexityOrgKey]*dedupEntry)
+
+	for _, p := range points {
+		t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
+		if err != nil {
+			continue
+		}
+		hour := truncateToHour(t)
+		key := complexityOrgKey{hour: hour, org: p.OrganisationName, version: p.TargetChefVersion}
+
+		if existing, ok := deduped[key]; !ok || t.After(existing.timestamp) {
+			deduped[key] = &dedupEntry{point: p, timestamp: t}
+		}
+	}
+
+	// Phase 2: Sum across orgs within each (hour, version) bucket.
+	type bucket struct {
+		totalCookbooks int
+		totalScore     int
+		lowCount       int
+		mediumCount    int
+		highCount      int
+		criticalCount  int
+	}
+
+	buckets := make(map[complexityKey]*bucket)
+	var keys []complexityKey
+
+	for k, entry := range deduped {
+		ck := complexityKey{hour: k.hour, version: k.version}
+		b, ok := buckets[ck]
+		if !ok {
+			b = &bucket{}
+			buckets[ck] = b
+			keys = append(keys, ck)
+		}
+		b.totalCookbooks += entry.point.TotalCookbooks
+		b.totalScore += entry.point.TotalScore
+		b.lowCount += entry.point.LowCount
+		b.mediumCount += entry.point.MediumCount
+		b.highCount += entry.point.HighCount
+		b.criticalCount += entry.point.CriticalCount
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		if !keys[i].hour.Equal(keys[j].hour) {
+			return keys[i].hour.Before(keys[j].hour)
+		}
+		return keys[i].version < keys[j].version
+	})
+
+	result := make([]complexityTrendPoint, 0, len(keys))
+	for _, k := range keys {
+		b := buckets[k]
+		avg := 0.0
+		if b.totalCookbooks > 0 {
+			avg = float64(b.totalScore) / float64(b.totalCookbooks)
+		}
+		result = append(result, complexityTrendPoint{
+			CompletedAt:       k.hour.Format(trendTimestampFormat),
+			TargetChefVersion: k.version,
+			TotalCookbooks:    b.totalCookbooks,
+			TotalScore:        b.totalScore,
+			AverageScore:      avg,
+			LowCount:          b.lowCount,
+			MediumCount:       b.mediumCount,
+			HighCount:         b.highCount,
+			CriticalCount:     b.criticalCount,
+		})
+	}
+	return result
 }
 
 // mergeReadinessTrendSnapshots aggregates per-org readiness trend points

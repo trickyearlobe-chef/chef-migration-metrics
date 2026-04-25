@@ -1,0 +1,132 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import type { PaginatedResponse } from "./common";
+import type { CookbookSourceVerdict } from "./cookbooks";
+
+export interface NodeReadinessSummary {
+  target_chef_version: string;
+  is_ready: boolean;
+  all_cookbooks_compatible: boolean;
+  sufficient_disk_space: boolean | null;
+  blocking_cookbook_count: number;
+  stale_data: boolean;
+}
+
+export interface NodeListItem {
+  id: string;
+  organisation_id: string;
+  organisation_name: string;
+  node_name: string;
+  chef_environment?: string;
+  chef_version?: string;
+  platform?: string;
+  platform_version?: string;
+  platform_family?: string;
+  policy_name?: string;
+  policy_group?: string;
+  is_stale: boolean;
+  ohai_time?: number;
+  collected_at: string;
+  readiness?: NodeReadinessSummary[];
+}
+
+export type NodeListResponse = PaginatedResponse<NodeListItem>;
+
+export interface NodeSnapshot {
+  id: string;
+  collection_run_id: string;
+  organisation_id: string;
+  node_name: string;
+  chef_environment: string;
+  chef_version: string;
+  platform: string;
+  platform_version: string;
+  platform_family: string;
+  filesystem: Record<string, unknown> | null;
+  cookbooks: Record<string, unknown> | null;
+  run_list: string[] | null;
+  roles: string[] | null;
+  policy_name: string;
+  policy_group: string;
+  ohai_time: number;
+  is_stale: boolean;
+  collected_at: string;
+  created_at: string;
+}
+
+export interface BlockingCookbook {
+  name: string;
+  version: string;
+  reason: string;
+  source: string;
+  complexity_score: number;
+  complexity_label: string;
+  verdicts?: CookbookSourceVerdict[];
+}
+
+export interface NodeReadiness {
+  id: string;
+  node_snapshot_id: string;
+  organisation_id: string;
+  node_name: string;
+  target_chef_version: string;
+  is_ready: boolean;
+  all_cookbooks_compatible: boolean;
+  sufficient_disk_space: boolean | null;
+  blocking_cookbooks: BlockingCookbook[] | null;
+  available_disk_mb: number | null;
+  required_disk_mb: number | null;
+  stale_data: boolean;
+  evaluated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NodeDetailResponse {
+  node: NodeSnapshot;
+  organisation_name: string;
+  readiness: NodeReadiness[] | null;
+}
+
+export interface NodesByVersionResponse {
+  chef_version: string;
+  total: number;
+  data: NodeSnapshot[];
+}
+
+export interface NodeWithOrg {
+  organisation_name: string;
+  node: NodeSnapshot;
+}
+
+export interface NodesByCookbookResponse {
+  cookbook_name: string;
+  total: number;
+  data: NodeWithOrg[];
+}
+
+export interface DiskEntry {
+  mount: string;
+  device: string;
+  fs_type: string;
+  kb_size: number;
+  kb_used: number;
+  kb_available: number;
+  percent_used: number;
+  uuid?: string;
+  mount_options?: string[];
+  inodes_used?: number;
+  total_inodes?: number;
+  inodes_available?: number;
+  inodes_percent_used?: number;
+  drive_type?: string;
+  volume_name?: string;
+  encryption_status?: string;
+}
+
+export interface NodeDiskDetailResponse {
+  node_name: string;
+  organisation_name: string;
+  platform: string;
+  disks: DiskEntry[];
+}
