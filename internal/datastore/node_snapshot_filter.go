@@ -379,18 +379,48 @@ func (db *DB) countNodeDistribution(ctx context.Context, f NodeSnapshotFilter, e
 // Distinct value queries for filter dropdowns
 // ---------------------------------------------------------------------------
 
+// DistinctValueOpts holds optional search prefix and result limit for
+// distinct-value filter endpoints. Zero values mean no restriction.
+type DistinctValueOpts struct {
+	// SearchPrefix restricts results to values starting with this prefix
+	// (case-insensitive). Empty means no prefix filter.
+	SearchPrefix string
+	// Limit caps the number of returned values. 0 means no limit.
+	Limit int
+}
+
 // ListDistinctNodeValues returns sorted distinct non-empty values for the
-// given column expression from nodes matching the filter.
-func (db *DB) ListDistinctNodeValues(ctx context.Context, f NodeSnapshotFilter, columnExpr string) ([]string, error) {
+// given column expression from nodes matching the filter. When
+// opts.SearchPrefix is set, only values starting with that prefix are
+// returned. When opts.Limit > 0, results are capped.
+func (db *DB) ListDistinctNodeValues(ctx context.Context, f NodeSnapshotFilter, columnExpr string, opts DistinctValueOpts) ([]string, error) {
 	cte, join, where, args := buildNodeSnapshotFilterParts(f)
+
+	argN := len(args)
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
+	}
+
+	prefixClause := ""
+	if opts.SearchPrefix != "" {
+		prefixClause = " AND LOWER((" + columnExpr + ")::text) LIKE LOWER(" + nextArg() + ") || '%'"
+		args = append(args, opts.SearchPrefix)
+	}
+
+	limitClause := ""
+	if opts.Limit > 0 {
+		limitClause = " LIMIT " + nextArg()
+		args = append(args, opts.Limit)
+	}
 
 	query := fmt.Sprintf(`%s
 		SELECT DISTINCT %s AS val
 		  FROM completed_nodes cn
 		%s%s
-		   AND %s IS NOT NULL AND %s != ''
-		 ORDER BY val
-	`, cte, columnExpr, join, where, columnExpr, columnExpr)
+		   AND %s IS NOT NULL AND %s != ''%s
+		 ORDER BY val%s
+	`, cte, columnExpr, join, where, columnExpr, columnExpr, prefixClause, limitClause)
 
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -410,9 +440,29 @@ func (db *DB) ListDistinctNodeValues(ctx context.Context, f NodeSnapshotFilter, 
 }
 
 // ListDistinctNodeRoles returns sorted distinct non-empty role names from
-// the roles JSONB array across all nodes matching the filter.
-func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter) ([]string, error) {
+// the roles JSONB array across all nodes matching the filter. When
+// opts.SearchPrefix is set, only roles starting with that prefix are
+// returned. When opts.Limit > 0, results are capped.
+func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, opts DistinctValueOpts) ([]string, error) {
 	cte, join, where, args := buildNodeSnapshotFilterParts(f)
+
+	argN := len(args)
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
+	}
+
+	prefixClause := ""
+	if opts.SearchPrefix != "" {
+		prefixClause = " AND LOWER(r.value) LIKE LOWER(" + nextArg() + ") || '%'"
+		args = append(args, opts.SearchPrefix)
+	}
+
+	limitClause := ""
+	if opts.Limit > 0 {
+		limitClause = " LIMIT " + nextArg()
+		args = append(args, opts.Limit)
+	}
 
 	query := fmt.Sprintf(`%s
 		SELECT DISTINCT r.value AS val
@@ -420,9 +470,9 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter) (
 		%s, jsonb_array_elements_text(cn.roles) r(value)
 		%s
 		   AND jsonb_typeof(cn.roles) = 'array'
-		   AND r.value IS NOT NULL AND r.value != ''
-		 ORDER BY val
-	`, cte, join, where)
+		   AND r.value IS NOT NULL AND r.value != ''%s
+		 ORDER BY val%s
+	`, cte, join, where, prefixClause, limitClause)
 
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {

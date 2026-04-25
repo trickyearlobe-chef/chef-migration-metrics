@@ -336,7 +336,7 @@ func TestHandleFilterEnvironments_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error) {
 			return []string{"production", "staging"}, nil
 		},
 	}
@@ -368,7 +368,7 @@ func TestHandleFilterEnvironments_HappyPath_Empty(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error) {
 			return nil, nil
 		},
 	}
@@ -396,7 +396,7 @@ func TestHandleFilterRoles_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error) {
+		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error) {
 			return []string{"base", "db", "web"}, nil
 		},
 	}
@@ -428,7 +428,7 @@ func TestHandleFilterPlatforms_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error) {
 			return []string{"centos", "ubuntu"}, nil
 		},
 	}
@@ -456,7 +456,7 @@ func TestHandleFilterPolicyNames_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error) {
 			// SQL DISTINCT already excludes empty strings.
 			return []string{"database", "webserver"}, nil
 		},
@@ -485,7 +485,7 @@ func TestHandleFilterPolicyGroups_HappyPath(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error) {
 			return []string{"prod-eu-west", "prod-us-east"}, nil
 		},
 	}
@@ -601,7 +601,7 @@ func TestHandleFilterEnvironments_DistinctDBError(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error) {
+		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error) {
 			return nil, errors.New("partial failure")
 		},
 	}
@@ -620,7 +620,7 @@ func TestHandleFilterRoles_DistinctDBError(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error) {
+		ListDistinctNodeRolesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error) {
 			return nil, errors.New("partial failure")
 		},
 	}
