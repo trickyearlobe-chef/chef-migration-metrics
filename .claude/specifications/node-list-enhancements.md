@@ -46,8 +46,8 @@ The node list shows an overall readiness status (`is_ready` boolean) but not whi
 | Field | TypeScript Type |
 |---|---|
 | `disk_status` | `"sufficient" \| "insufficient" \| "unknown"` |
-| `cookstyle_status` | `"passed" \| "failed" \| "warnings" \| "unknown"` |
-| `kitchen_status` | `"passed" \| "failed" \| "partial" \| "unknown"` |
+| `cookstyle_status` | `"passed" \| "failed" \| "warnings" \| "scan_error" \| "unknown"` |
+| `kitchen_status` | `"passed" \| "failed" \| "partial" \| "scan_error" \| "unknown"` |
 | `disk_detail` | `string \| null` |
 | `cookstyle_detail` | `string \| null` |
 | `kitchen_detail` | `string \| null` |
@@ -71,6 +71,7 @@ These fields are derived from data already computed during readiness evaluation 
 | All cookbooks have a passing CookStyle result (server or git) | `"passed"` |
 | One or more cookbooks have CookStyle failures (incompatible) | `"failed"` |
 | All scanned cookbooks pass but some have deprecation warnings | `"warnings"` |
+| One or more cookbooks have a CookStyle scan error (e.g. bad `.rubocop.yml` causing exit code ≥ 2) — distinct from a genuine fail | `"scan_error"` |
 | Not all cookbooks have been scanned | `"unknown"` |
 
 **Test Kitchen status** (aggregated across all cookbooks):
@@ -80,6 +81,7 @@ These fields are derived from data already computed during readiness evaluation 
 | All cookbooks have passing TK results | `"passed"` |
 | One or more cookbooks fail TK | `"failed"` |
 | Some cookbooks tested and passing, others not yet tested | `"partial"` |
+| One or more cookbooks have a TK scan error (infrastructure failure, not a test failure) | `"scan_error"` |
 | No TK results available for any cookbook | `"unknown"` |
 
 ## Per-Check Status Icons
@@ -105,6 +107,7 @@ Each check is represented by a small icon (16×16px or equivalent). The three ic
 | `sufficient` / `passed` | Green (`text-green-600`) | Checkmark (✓) | Check passed |
 | `insufficient` / `failed` | Red (`text-red-600`) | X mark (✗) | Check failed |
 | `warnings` / `partial` | Amber (`text-amber-500`) | Tilde (~) | Partial / warnings |
+| `scan_error` | Orange (`text-orange-500`) | Exclamation (!) | Tool crashed — not a pass or fail |
 | `unknown` | Grey (`text-gray-400`) | Question mark (?) | No data available |
 
 Colour is the primary signal. Shape overlay (✓/✗/~/?) is the secondary signal for accessibility — users who cannot distinguish colours can still read status from icon shape.
@@ -148,7 +151,7 @@ Renders a single icon with colour, shape overlay, and tooltip. Reusable across t
 
 | Prop | Type | Description |
 |---|---|---|
-| `status` | `"passed" \| "failed" \| "warnings" \| "partial" \| "sufficient" \| "insufficient" \| "unknown"` | Determines colour and overlay |
+| `status` | `"passed" \| "failed" \| "warnings" \| "partial" \| "sufficient" \| "insufficient" \| "scan_error" \| "unknown"` | Determines colour and overlay |
 | `icon` | React element or icon name | The base shape (disk, code, flask) |
 | `tooltip` | `string` | Hover text |
 | `ariaLabel` | `string` | Accessible label |

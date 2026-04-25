@@ -122,7 +122,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 				// One result per (server_cookbook_id, target_chef_version).
 				csKey := cs.OrganisationName + "/" + cs.CookbookName + "/" + cs.CookbookVersion
 				if cs.ErrorMessage != "" {
-					compatByID[csKey] = "error"
+					compatByID[csKey] = "scan_error"
 				} else if cs.Passed {
 					compatByID[csKey] = "compatible"
 				} else {

@@ -523,6 +523,8 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
 	r.adminOnly("/api/v1/admin/rerun-all-test-kitchen", r.handleAdminRerunAllTestKitchen)
+	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames)
+	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset)
 
 	// Performance diagnostics (admin-only, gated on config + recorder).
 	if r.cfg.Performance.IsEnabled() && r.recorder != nil {

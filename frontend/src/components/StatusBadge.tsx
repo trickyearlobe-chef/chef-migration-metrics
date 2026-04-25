@@ -217,6 +217,9 @@ export function CompatibilityBadge({
     case "incompatible":
       variant = "incompatible";
       break;
+    case "scan_error":
+      variant = "scan_error";
+      break;
     default:
       variant = "untested";
       break;

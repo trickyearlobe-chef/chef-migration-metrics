@@ -20,26 +20,27 @@ import (
 // Defined at package level to avoid duplication across handleNodes and
 // handleNodesWithOwnerFilter.
 type nodeResp struct {
-	OrganisationName string                      `json:"organisation_name"`
-	NodeName         string                      `json:"node_name"`
-	ChefEnvironment  string                      `json:"chef_environment,omitempty"`
-	ChefVersion      string                      `json:"chef_version,omitempty"`
-	Platform         string                      `json:"platform,omitempty"`
-	PlatformVersion  string                      `json:"platform_version,omitempty"`
-	PlatformFamily   string                      `json:"platform_family,omitempty"`
-	PolicyName       string                      `json:"policy_name,omitempty"`
-	PolicyGroup      string                      `json:"policy_group,omitempty"`
-	IsStale          bool                        `json:"is_stale"`
-	StalenesTier     string                      `json:"staleness_tier"`
-	OhaiTimeAgeHours float64                     `json:"ohai_time_age_hours,omitempty"`
-	OhaiTime         float64                     `json:"ohai_time,omitempty"`
-	CollectedAt      string                      `json:"collected_at"`
-	Readiness        []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
+	OrganisationName    string                      `json:"organisation_name"`
+	NodeName            string                      `json:"node_name"`
+	ChefEnvironment     string                      `json:"chef_environment,omitempty"`
+	ChefVersion         string                      `json:"chef_version,omitempty"`
+	Platform            string                      `json:"platform,omitempty"`
+	PlatformVersion     string                      `json:"platform_version,omitempty"`
+	PlatformFamily      string                      `json:"platform_family,omitempty"`
+	PlatformDisplayName *string                     `json:"platform_display_name,omitempty"`
+	PolicyName          string                      `json:"policy_name,omitempty"`
+	PolicyGroup         string                      `json:"policy_group,omitempty"`
+	IsStale             bool                        `json:"is_stale"`
+	StalenesTier        string                      `json:"staleness_tier"`
+	OhaiTimeAgeHours    float64                     `json:"ohai_time_age_hours,omitempty"`
+	OhaiTime            float64                     `json:"ohai_time,omitempty"`
+	CollectedAt         string                      `json:"collected_at"`
+	Readiness           []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
 }
 
 // buildNodeResp constructs a nodeResp from a NodeSnapshot, computing the
 // staleness tier from ohai_time at response time.
-func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadinessSummaryEntry) nodeResp {
+func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadinessSummaryEntry, platformDisplayName *string) nodeResp {
 	now := time.Now()
 	thresholds := staleness.Thresholds{
 		WarningHours: r.cfg.Collection.StaleNodeWarningHours,
@@ -59,21 +60,22 @@ func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadine
 	}
 
 	return nodeResp{
-		OrganisationName: n.OrganisationName,
-		NodeName:         n.NodeName,
-		ChefEnvironment:  n.ChefEnvironment,
-		ChefVersion:      n.ChefVersion,
-		Platform:         n.Platform,
-		PlatformVersion:  n.PlatformVersion,
-		PlatformFamily:   n.PlatformFamily,
-		PolicyName:       n.PolicyName,
-		PolicyGroup:      n.PolicyGroup,
-		IsStale:          n.IsStale,
-		StalenesTier:     string(tier),
-		OhaiTimeAgeHours: ageHours,
-		OhaiTime:         n.OhaiTime,
-		CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
-		Readiness:        readiness,
+		OrganisationName:    n.OrganisationName,
+		NodeName:            n.NodeName,
+		ChefEnvironment:     n.ChefEnvironment,
+		ChefVersion:         n.ChefVersion,
+		Platform:            n.Platform,
+		PlatformVersion:     n.PlatformVersion,
+		PlatformFamily:      n.PlatformFamily,
+		PlatformDisplayName: platformDisplayName,
+		PolicyName:          n.PolicyName,
+		PolicyGroup:         n.PolicyGroup,
+		IsStale:             n.IsStale,
+		StalenesTier:        string(tier),
+		OhaiTimeAgeHours:    ageHours,
+		OhaiTime:            n.OhaiTime,
+		CollectedAt:         n.CollectedAt.Format("2006-01-02T15:04:05Z"),
+		Readiness:           readiness,
 	}
 }
 
@@ -144,9 +146,16 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	// instead of 1 per node). Index by node_name for O(1) lookup.
 	readinessByNodeName := bulkLoadReadiness(req.Context(), r.db, nodes, r)
 
+	// Load platform display name mappings (non-fatal on error).
+	mappings, mErr := r.loadPlatformDisplayNames(req.Context())
+	if mErr != nil {
+		r.logf("WARN", "loading platform display names: %v", mErr)
+	}
+
 	result := make([]nodeResp, 0, len(nodes))
 	for _, n := range nodes {
-		result = append(result, r.buildNodeResp(n, readinessByNodeName[n.NodeName]))
+		pdn := resolvePlatformDisplayName(n.Platform, n.PlatformVersion, mappings)
+		result = append(result, r.buildNodeResp(n, readinessByNodeName[n.NodeName], pdn))
 	}
 
 	WritePaginated(w, result, pg, total)
@@ -199,9 +208,16 @@ func (r *Router) handleNodesWithOwnerFilter(
 	// 1 per node) — see bulkLoadReadiness.
 	readinessByNodeName := bulkLoadReadiness(ctx, r.db, pageNodes, r)
 
+	// Load platform display name mappings (non-fatal on error).
+	mappings, mErr := r.loadPlatformDisplayNames(ctx)
+	if mErr != nil {
+		r.logf("WARN", "loading platform display names: %v", mErr)
+	}
+
 	result := make([]nodeResp, 0, len(pageNodes))
 	for _, n := range pageNodes {
-		result = append(result, r.buildNodeResp(n, readinessByNodeName[n.NodeName]))
+		pdn := resolvePlatformDisplayName(n.Platform, n.PlatformVersion, mappings)
+		result = append(result, r.buildNodeResp(n, readinessByNodeName[n.NodeName], pdn))
 	}
 
 	WritePaginated(w, result, pg, total)
@@ -209,12 +225,18 @@ func (r *Router) handleNodesWithOwnerFilter(
 
 // nodeReadinessSummaryEntry is a compact readiness summary for the node list.
 type nodeReadinessSummaryEntry struct {
-	TargetChefVersion      string `json:"target_chef_version"`
-	IsReady                bool   `json:"is_ready"`
-	AllCookbooksCompatible bool   `json:"all_cookbooks_compatible"`
-	SufficientDiskSpace    *bool  `json:"sufficient_disk_space"`
-	BlockingCookbookCount  int    `json:"blocking_cookbook_count"`
-	StaleData              bool   `json:"stale_data"`
+	TargetChefVersion      string  `json:"target_chef_version"`
+	IsReady                bool    `json:"is_ready"`
+	AllCookbooksCompatible bool    `json:"all_cookbooks_compatible"`
+	SufficientDiskSpace    *bool   `json:"sufficient_disk_space"`
+	BlockingCookbookCount  int     `json:"blocking_cookbook_count"`
+	StaleData              bool    `json:"stale_data"`
+	DiskStatus             string  `json:"disk_status"`
+	CookstyleStatus        string  `json:"cookstyle_status"`
+	KitchenStatus          string  `json:"kitchen_status"`
+	DiskDetail             *string `json:"disk_detail"`
+	CookstyleDetail        *string `json:"cookstyle_detail"`
+	KitchenDetail          *string `json:"kitchen_detail"`
 }
 
 // countBlockingCookbooks returns the number of blocking cookbooks from the
@@ -287,10 +309,18 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 		// Non-fatal — we still return the snapshot.
 	}
 
+	// Load platform display name mappings (non-fatal on error).
+	mappings, mErr := r.loadPlatformDisplayNames(req.Context())
+	if mErr != nil {
+		r.logf("WARN", "loading platform display names: %v", mErr)
+	}
+	pdn := resolvePlatformDisplayName(snapshot.Platform, snapshot.PlatformVersion, mappings)
+
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"node":              snapshot,
-		"organisation_name": org.Name,
-		"readiness":         readiness,
+		"node":                  snapshot,
+		"organisation_name":     org.Name,
+		"readiness":             readiness,
+		"platform_display_name": pdn,
 	})
 }
 
@@ -510,6 +540,7 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 		}
 		for nodeName, recs := range bulk {
 			for _, rec := range recs {
+				cs := deriveCheckStatus(rec)
 				result[nodeName] = append(result[nodeName], nodeReadinessSummaryEntry{
 					TargetChefVersion:      rec.TargetChefVersion,
 					IsReady:                rec.IsReady,
@@ -517,6 +548,12 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 					SufficientDiskSpace:    rec.SufficientDiskSpace,
 					BlockingCookbookCount:  countBlockingCookbooks(rec.BlockingCookbooks),
 					StaleData:              rec.StaleData,
+					DiskStatus:             cs.DiskStatus,
+					CookstyleStatus:        cs.CookstyleStatus,
+					KitchenStatus:          cs.KitchenStatus,
+					DiskDetail:             cs.DiskDetail,
+					CookstyleDetail:        cs.CookstyleDetail,
+					KitchenDetail:          cs.KitchenDetail,
 				})
 			}
 		}
