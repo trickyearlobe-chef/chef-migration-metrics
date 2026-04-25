@@ -113,6 +113,8 @@ type StorageConfig struct {
 type CollectionConfig struct {
 	Schedule                       string `yaml:"schedule"`
 	StaleNodeThresholdDays         int    `yaml:"stale_node_threshold_days"`
+	StaleNodeWarningHours          int    `yaml:"stale_node_warning_hours"`
+	StaleNodeCriticalDays          int    `yaml:"stale_node_critical_days"`
 	StaleCookbookThresholdDays     int    `yaml:"stale_cookbook_threshold_days"`
 	SkipServerCookbookDownload     bool   `yaml:"skip_server_cookbook_download"`
 	DeleteServerCookbooksAfterScan *bool  `yaml:"delete_server_cookbooks_after_scan"`
@@ -745,6 +747,17 @@ func (c *Config) setDefaults() {
 	if c.Collection.StaleNodeThresholdDays == 0 {
 		c.Collection.StaleNodeThresholdDays = 7
 	}
+	if c.Collection.StaleNodeWarningHours == 0 {
+		c.Collection.StaleNodeWarningHours = 72
+	}
+	if c.Collection.StaleNodeCriticalDays == 0 {
+		// Backward compat: if old threshold is set, use it for critical.
+		if c.Collection.StaleNodeThresholdDays > 0 {
+			c.Collection.StaleNodeCriticalDays = c.Collection.StaleNodeThresholdDays
+		} else {
+			c.Collection.StaleNodeCriticalDays = 7
+		}
+	}
 	if c.Collection.StaleCookbookThresholdDays == 0 {
 		c.Collection.StaleCookbookThresholdDays = 365
 	}
@@ -1124,7 +1137,7 @@ func (c *Config) Validate() (*Warnings, error) {
 
 	c.validateOrganisations(ve)
 	c.validateTargetVersions(ve)
-	c.validateCollection(ve)
+	c.validateCollection(ve, w)
 	c.validateConcurrency(ve)
 	c.validateAnalysisTools(ve, w)
 	c.validateNotifications(ve, w)
@@ -1244,16 +1257,28 @@ func compareSemverParts(a, b [3]int) int {
 // space-separated fields. Full parsing is left to the scheduler library.
 var cronFieldRe = regexp.MustCompile(`^(\S+\s+){4}\S+$`)
 
-func (c *Config) validateCollection(ve *ValidationError) {
+func (c *Config) validateCollection(ve *ValidationError, w *Warnings) {
 	if !cronFieldRe.MatchString(c.Collection.Schedule) {
 		ve.addf("collection.schedule: %q is not a valid cron expression", c.Collection.Schedule)
 	}
 	if c.Collection.StaleNodeThresholdDays < 1 {
 		ve.add("collection.stale_node_threshold_days must be >= 1")
 	}
+	if c.Collection.StaleNodeWarningHours < 1 {
+		ve.add("collection.stale_node_warning_hours must be >= 1")
+	}
+	if c.Collection.StaleNodeCriticalDays < 1 {
+		ve.add("collection.stale_node_critical_days must be >= 1")
+	}
+	// Warning threshold must be strictly less than critical threshold.
+	warningAsDays := float64(c.Collection.StaleNodeWarningHours) / 24.0
+	if warningAsDays >= float64(c.Collection.StaleNodeCriticalDays) {
+		ve.add("collection.stale_node_warning_hours must be less than stale_node_critical_days (converted to same unit)")
+	}
 	if c.Collection.StaleCookbookThresholdDays < 1 {
 		ve.add("collection.stale_cookbook_threshold_days must be >= 1")
 	}
+
 }
 
 func (c *Config) validateConcurrency(ve *ValidationError) {

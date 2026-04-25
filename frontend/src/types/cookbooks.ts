@@ -60,6 +60,8 @@ export interface CookstyleResult {
   passed: boolean;
   offence_count: number;
   deprecation_count: number;
+  error_message?: string;
+  process_stderr?: string;
   scanned_at: string;
   created_at: string;
 }

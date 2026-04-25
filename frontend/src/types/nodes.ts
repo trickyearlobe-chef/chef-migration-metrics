@@ -25,7 +25,9 @@ export interface NodeListItem {
   policy_name?: string;
   policy_group?: string;
   is_stale: boolean;
+  staleness_tier?: "fresh" | "warning" | "critical";
   ohai_time?: number;
+  ohai_time_age_hours?: number;
   collected_at: string;
   readiness?: NodeReadinessSummary[];
 }
@@ -50,6 +52,8 @@ export interface NodeSnapshot {
   policy_group: string;
   ohai_time: number;
   is_stale: boolean;
+  staleness_tier?: "fresh" | "warning" | "critical";
+  ohai_time_age_hours?: number;
   collected_at: string;
   created_at: string;
 }

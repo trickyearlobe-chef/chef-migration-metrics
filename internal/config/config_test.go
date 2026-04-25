@@ -139,6 +139,20 @@ func TestDefaults_StaleNodeThresholdDays(t *testing.T) {
 	}
 }
 
+func TestDefaults_StaleNodeWarningHours(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if cfg.Collection.StaleNodeWarningHours != 72 {
+		t.Errorf("expected default stale_node_warning_hours 72, got %d", cfg.Collection.StaleNodeWarningHours)
+	}
+}
+
+func TestDefaults_StaleNodeCriticalDays(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if cfg.Collection.StaleNodeCriticalDays != 7 {
+		t.Errorf("expected default stale_node_critical_days 7, got %d", cfg.Collection.StaleNodeCriticalDays)
+	}
+}
+
 func TestDefaults_StaleCookbookThresholdDays(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if cfg.Collection.StaleCookbookThresholdDays != 365 {
@@ -2423,6 +2437,8 @@ git_base_urls:
 collection:
   schedule: "*/30 * * * *"
   stale_node_threshold_days: 3
+  stale_node_warning_hours: 24
+  stale_node_critical_days: 3
   stale_cookbook_threshold_days: 180
 
 concurrency:

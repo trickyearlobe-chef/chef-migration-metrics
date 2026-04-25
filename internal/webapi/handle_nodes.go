@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/staleness"
 )
 
 // nodeResp is the JSON response struct for a single node in list endpoints.
@@ -28,9 +30,51 @@ type nodeResp struct {
 	PolicyName       string                      `json:"policy_name,omitempty"`
 	PolicyGroup      string                      `json:"policy_group,omitempty"`
 	IsStale          bool                        `json:"is_stale"`
+	StalenesTier     string                      `json:"staleness_tier"`
+	OhaiTimeAgeHours float64                     `json:"ohai_time_age_hours,omitempty"`
 	OhaiTime         float64                     `json:"ohai_time,omitempty"`
 	CollectedAt      string                      `json:"collected_at"`
 	Readiness        []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
+}
+
+// buildNodeResp constructs a nodeResp from a NodeSnapshot, computing the
+// staleness tier from ohai_time at response time.
+func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadinessSummaryEntry) nodeResp {
+	now := time.Now()
+	thresholds := staleness.Thresholds{
+		WarningHours: r.cfg.Collection.StaleNodeWarningHours,
+		CriticalDays: r.cfg.Collection.StaleNodeCriticalDays,
+	}
+
+	var ohaiTime time.Time
+	if n.OhaiTime > 0 {
+		ohaiTime = time.Unix(int64(n.OhaiTime), 0)
+	}
+
+	tier := staleness.ComputeTier(ohaiTime, now, thresholds)
+
+	var ageHours float64
+	if !ohaiTime.IsZero() {
+		ageHours = now.Sub(ohaiTime).Hours()
+	}
+
+	return nodeResp{
+		OrganisationName: n.OrganisationName,
+		NodeName:         n.NodeName,
+		ChefEnvironment:  n.ChefEnvironment,
+		ChefVersion:      n.ChefVersion,
+		Platform:         n.Platform,
+		PlatformVersion:  n.PlatformVersion,
+		PlatformFamily:   n.PlatformFamily,
+		PolicyName:       n.PolicyName,
+		PolicyGroup:      n.PolicyGroup,
+		IsStale:          n.IsStale,
+		StalenesTier:     string(tier),
+		OhaiTimeAgeHours: ageHours,
+		OhaiTime:         n.OhaiTime,
+		CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
+		Readiness:        readiness,
+	}
 }
 
 // handleNodes handles GET /api/v1/nodes — lists all node snapshots across
@@ -71,7 +115,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	pg := ParsePagination(req)
 
 	// Build SQL filter from query parameters.
-	f := nodeSnapshotFilterFromRequest(req, orgIDs)
+	f := nodeSnapshotFilterFromRequest(req, orgIDs, r.cfg.Collection.StaleNodeWarningHours, r.cfg.Collection.StaleNodeCriticalDays)
 	f.Limit = pg.Limit()
 	f.Offset = pg.Offset()
 
@@ -102,21 +146,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 
 	result := make([]nodeResp, 0, len(nodes))
 	for _, n := range nodes {
-		result = append(result, nodeResp{
-			OrganisationName: n.OrganisationName,
-			NodeName:         n.NodeName,
-			ChefEnvironment:  n.ChefEnvironment,
-			ChefVersion:      n.ChefVersion,
-			Platform:         n.Platform,
-			PlatformVersion:  n.PlatformVersion,
-			PlatformFamily:   n.PlatformFamily,
-			PolicyName:       n.PolicyName,
-			PolicyGroup:      n.PolicyGroup,
-			IsStale:          n.IsStale,
-			OhaiTime:         n.OhaiTime,
-			CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
-			Readiness:        readinessByNodeName[n.NodeName],
-		})
+		result = append(result, r.buildNodeResp(n, readinessByNodeName[n.NodeName]))
 	}
 
 	WritePaginated(w, result, pg, total)
@@ -149,7 +179,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 	for _, org := range orgs {
 		orgIDs = append(orgIDs, org.Name)
 	}
-	f := nodeSnapshotFilterFromRequest(req, orgIDs)
+	f := nodeSnapshotFilterFromRequest(req, orgIDs, r.cfg.Collection.StaleNodeWarningHours, r.cfg.Collection.StaleNodeCriticalDays)
 	// No limit/offset — we need all matching nodes for ownership filtering.
 
 	allNodes, _, err2 := r.db.ListNodeSnapshotsFiltered(ctx, f)
@@ -171,21 +201,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 
 	result := make([]nodeResp, 0, len(pageNodes))
 	for _, n := range pageNodes {
-		result = append(result, nodeResp{
-			OrganisationName: n.OrganisationName,
-			NodeName:         n.NodeName,
-			ChefEnvironment:  n.ChefEnvironment,
-			ChefVersion:      n.ChefVersion,
-			Platform:         n.Platform,
-			PlatformVersion:  n.PlatformVersion,
-			PlatformFamily:   n.PlatformFamily,
-			PolicyName:       n.PolicyName,
-			PolicyGroup:      n.PolicyGroup,
-			IsStale:          n.IsStale,
-			OhaiTime:         n.OhaiTime,
-			CollectedAt:      n.CollectedAt.Format("2006-01-02T15:04:05Z"),
-			Readiness:        readinessByNodeName[n.NodeName],
-		})
+		result = append(result, r.buildNodeResp(n, readinessByNodeName[n.NodeName]))
 	}
 
 	WritePaginated(w, result, pg, total)
@@ -427,7 +443,7 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 // query-string parameters of an HTTP request. It maps the same parameters
 // that were previously consumed by export.FilterNodes, so the semantics
 // are identical (case-insensitive substring matching).
-func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string) datastore.NodeSnapshotFilter {
+func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHours, criticalDays int) datastore.NodeSnapshotFilter {
 	q := req.URL.Query()
 
 	f := datastore.NodeSnapshotFilter{
@@ -445,7 +461,7 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string) datastore
 	f.Sort = q.Get("sort")
 	f.SortOrder = q.Get("order")
 
-	// Map the string "true"/"false" stale parameter to *bool.
+	// Map the stale parameter — supports legacy bool and tier values.
 	switch q.Get("stale") {
 	case "true":
 		v := true
@@ -453,6 +469,10 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string) datastore
 	case "false":
 		v := false
 		f.Stale = &v
+	case "fresh", "warning", "critical":
+		f.StaleTier = q.Get("stale")
+		f.StaleWarningHours = warningHours
+		f.StaleCriticalDays = criticalDays
 	}
 
 	return f

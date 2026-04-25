@@ -86,6 +86,8 @@ export interface StaleTrendPoint {
   total_nodes: number;
   stale_nodes: number;
   fresh_nodes: number;
+  warning_nodes?: number;
+  critical_nodes?: number;
 }
 
 export interface StaleTrendResponse {

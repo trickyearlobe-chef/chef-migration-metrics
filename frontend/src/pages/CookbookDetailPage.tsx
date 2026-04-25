@@ -12,6 +12,7 @@ import type {
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { PlatformCoverageCard } from "../components/PlatformCoverageCard";
 import { StatusBadge } from "../components/StatusBadge";
+import { CookstyleResultRow } from "../components/CookstyleResultRow";
 
 /** Small helper – renders a label/value row in the metadata grid. */
 function MetaRow({
@@ -302,34 +303,15 @@ export function CookbookDetailPage() {
                     </h4>
                     <div className="space-y-2">
                       {vd.cookstyle.map((cs) => (
-                        <div
+                        <CookstyleResultRow
                           key={cs.id}
-                          className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3"
-                        >
-                          <span className="text-xs text-gray-500">
-                            Target: {cs.target_chef_version}
-                          </span>
-                          <StatusBadge
-                            variant={cs.passed ? "compatible" : "incompatible"}
-                            label={cs.passed ? "Passed" : "Failed"}
-                            size="sm"
-                          />
-                          <span className="text-xs text-gray-500">
-                            Offences: {cs.offence_count} | Deprecations:{" "}
-                            {cs.deprecation_count}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            Scanned: {new Date(cs.scanned_at).toLocaleString()}
-                          </span>
-                          {cb.version && cs.target_chef_version && (
-                            <Link
-                              to={`/cookbooks/${encodeURIComponent(cb.name)}/${encodeURIComponent(cb.version)}/remediation?target_chef_version=${encodeURIComponent(cs.target_chef_version)}`}
-                              className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              View Remediation Detail →
-                            </Link>
-                          )}
-                        </div>
+                          result={cs}
+                          linkBase={
+                            cb.version
+                              ? `/cookbooks/${encodeURIComponent(cb.name)}/${encodeURIComponent(cb.version)}/remediation`
+                              : undefined
+                          }
+                        />
                       ))}
                     </div>
                   </div>

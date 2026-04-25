@@ -2098,11 +2098,13 @@ func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 // versionDistPayload mirrors the JSON structure returned by
 // buildVersionDistributionPayload so we can unmarshal and assert.
 type versionDistPayload struct {
-	Distribution map[string]int `json:"distribution"`
-	TotalNodes   int            `json:"total_nodes"`
-	StaleNodes   int            `json:"stale_nodes"`
-	FreshNodes   int            `json:"fresh_nodes"`
-	Nodes        []struct {
+	Distribution  map[string]int `json:"distribution"`
+	TotalNodes    int            `json:"total_nodes"`
+	StaleNodes    int            `json:"stale_nodes"`
+	FreshNodes    int            `json:"fresh_nodes"`
+	WarningNodes  int            `json:"warning_nodes"`
+	CriticalNodes int            `json:"critical_nodes"`
+	Nodes         []struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
 	} `json:"nodes"`
@@ -2129,7 +2131,7 @@ func TestBuildVersionDistributionPayload_BasicDistribution(t *testing.T) {
 		{NodeName: "db01", ChefVersion: "17.0.0", IsStale: true},
 	}
 
-	raw, err := buildVersionDistributionPayload(params)
+	raw, err := buildVersionDistributionPayload(params, 72, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2172,7 +2174,7 @@ func TestBuildVersionDistributionPayload_EmptyVersion(t *testing.T) {
 		{NodeName: "node-no-version", ChefVersion: "", IsStale: false},
 	}
 
-	raw, err := buildVersionDistributionPayload(params)
+	raw, err := buildVersionDistributionPayload(params, 72, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2198,7 +2200,7 @@ func TestBuildVersionDistributionPayload_EmptyVersion(t *testing.T) {
 }
 
 func TestBuildVersionDistributionPayload_NoNodes(t *testing.T) {
-	raw, err := buildVersionDistributionPayload([]datastore.InsertNodeSnapshotParams{})
+	raw, err := buildVersionDistributionPayload([]datastore.InsertNodeSnapshotParams{}, 72, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2237,7 +2239,7 @@ func TestBuildVersionDistributionPayload_NodesArray(t *testing.T) {
 		{NodeName: "app02", ChefVersion: "17.0.0", IsStale: true},
 	}
 
-	raw, err := buildVersionDistributionPayload(params)
+	raw, err := buildVersionDistributionPayload(params, 72, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2273,7 +2275,7 @@ func TestBuildVersionDistributionPayload_NodesArray(t *testing.T) {
 func TestBuildVersionDistributionPayload_LargeOrgOmitsNodes(t *testing.T) {
 	params := makeNodeParams(50001)
 
-	raw, err := buildVersionDistributionPayload(params)
+	raw, err := buildVersionDistributionPayload(params, 72, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

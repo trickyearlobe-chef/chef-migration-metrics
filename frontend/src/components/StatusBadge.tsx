@@ -32,11 +32,13 @@ type BadgeVariant =
   | "blocked"
   | "stale"
   | "fresh"
+  | "warning"
   | "active"
   | "inactive"
   | "healthy"
   | "unhealthy"
-  | "unknown";
+  | "unknown"
+  | "scan_error";
 
 interface StatusBadgeProps {
   /** The status variant to display. Determines colour and default label. */
@@ -67,6 +69,7 @@ const variantStyles: Record<BadgeVariant, string> = {
   blocked: "bg-red-100 text-red-800 ring-red-600/20",
   stale: "bg-purple-100 text-purple-800 ring-purple-600/20",
   fresh: "bg-green-100 text-green-800 ring-green-600/20",
+  warning: "bg-amber-100 text-amber-800 ring-amber-600/20",
   active: "bg-green-100 text-green-800 ring-green-600/20",
   inactive: "bg-gray-100 text-gray-600 ring-gray-500/20",
 
@@ -74,6 +77,7 @@ const variantStyles: Record<BadgeVariant, string> = {
   healthy: "bg-green-100 text-green-800 ring-green-600/20",
   unhealthy: "bg-red-100 text-red-800 ring-red-600/20",
   unknown: "bg-gray-100 text-gray-600 ring-gray-500/20",
+  scan_error: "bg-orange-100 text-orange-800 ring-orange-600/20",
 };
 
 const variantLabels: Record<BadgeVariant, string> = {
@@ -89,23 +93,28 @@ const variantLabels: Record<BadgeVariant, string> = {
   blocked: "Blocked",
   stale: "Stale",
   fresh: "Fresh",
+  warning: "Warning",
   active: "Active",
   inactive: "Inactive",
   healthy: "Healthy",
   unhealthy: "Unhealthy",
   unknown: "Unknown",
+  scan_error: "Scan Error",
 };
 
 /** Short descriptor shown as a tooltip on hover for compatibility statuses. */
 const variantTooltips: Partial<Record<BadgeVariant, string>> = {
-  compatible:
-    "Full integration test (Test Kitchen) passed — high confidence",
+  compatible: "Full integration test (Test Kitchen) passed — high confidence",
   cookstyle_only:
     "Static analysis only (CookStyle) — no integration test. Medium confidence.",
   incompatible: "Known to be incompatible with the target Chef version",
   untested: "No test or scan results available yet",
   stale: "Last check-in exceeds the configured stale threshold",
-  critical: "Critical remediation complexity — significant manual effort required",
+  warning: "Node has not checked in recently — may be transient",
+  critical:
+    "Critical remediation complexity — significant manual effort required",
+  scan_error:
+    "CookStyle crashed before completing the scan — check the error details",
 };
 
 /**
@@ -152,11 +161,11 @@ export function StatusBadge({
         variant === "cookstyle_only" ||
         variant === "incompatible" ||
         variant === "untested") && (
-          <span
-            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor(variant)}`}
-            aria-hidden="true"
-          />
-        )}
+        <span
+          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor(variant)}`}
+          aria-hidden="true"
+        />
+      )}
       {displayLabel}
     </span>
   );
@@ -235,34 +244,49 @@ export function ComplexityBadge({
   const label =
     score != null
       ? `${variantLabels[variant] ?? complexityLabel} (${score})`
-      : variantLabels[variant] ?? complexityLabel;
+      : (variantLabels[variant] ?? complexityLabel);
 
   return <StatusBadge variant={variant} label={label} size={size} />;
 }
 
-/** Renders a stale/fresh indicator for nodes. */
+/** Renders a stale/fresh indicator for nodes with two-tier staleness support. */
 export function StaleBadge({
   isStale,
+  stalenesTier,
   ageHours,
   size = "md",
 }: {
   isStale: boolean;
+  stalenesTier?: "fresh" | "warning" | "critical";
   ageHours?: number;
   size?: "sm" | "md";
 }) {
-  if (!isStale) {
+  // Prefer tier if available, fall back to boolean for backward compat.
+  const tier = stalenesTier ?? (isStale ? "critical" : "fresh");
+
+  if (tier === "fresh") {
     return <StatusBadge variant="fresh" size={size} />;
   }
 
-  let label = "Stale";
+  // Format age label per spec:
+  // < 1 hour → Nm, 1-47 hours → Nh, >= 48 hours → Nd
+  let ageLabel = "";
   if (ageHours != null) {
-    if (ageHours < 48) {
-      label = `Stale (${Math.round(ageHours)}h ago)`;
+    if (ageHours < 1) {
+      ageLabel = ` (${Math.max(1, Math.round(ageHours * 60))}m)`;
+    } else if (ageHours < 48) {
+      ageLabel = ` (${Math.round(ageHours)}h)`;
     } else {
-      const days = Math.round(ageHours / 24);
-      label = `Stale (${days}d ago)`;
+      ageLabel = ` (${Math.round(ageHours / 24)}d)`;
     }
   }
 
-  return <StatusBadge variant="stale" label={label} size={size} />;
+  if (tier === "warning") {
+    return (
+      <StatusBadge variant="warning" label={`Missing${ageLabel}`} size={size} />
+    );
+  }
+
+  // critical
+  return <StatusBadge variant="stale" label={`Gone${ageLabel}`} size={size} />;
 }

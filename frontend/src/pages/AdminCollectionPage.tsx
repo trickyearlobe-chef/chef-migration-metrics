@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchCollection, saveCollection, type CollectionConfig } from "../api";
-import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
+import {
+  ErrorAlert,
+  InlineSpinner,
+  LoadingSpinner,
+} from "../components/Feedback";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -9,6 +13,8 @@ export function AdminCollectionPage() {
   const [config, setConfig] = useState<CollectionConfig>({
     schedule: "",
     stale_node_threshold_days: 30,
+    stale_node_warning_hours: 72,
+    stale_node_critical_days: 7,
     stale_cookbook_threshold_days: 30,
     skip_server_cookbook_download: false,
     delete_server_cookbooks_after_scan: false,
@@ -33,7 +39,9 @@ export function AdminCollectionPage() {
       .catch((err: unknown) => {
         if (!cancelled)
           setLoadError(
-            err instanceof Error ? err.message : "Failed to load collection settings.",
+            err instanceof Error
+              ? err.message
+              : "Failed to load collection settings.",
           );
       })
       .finally(() => {
@@ -48,7 +56,10 @@ export function AdminCollectionPage() {
 
   const isDirty = JSON.stringify(config) !== JSON.stringify(saved);
 
-  function handleChange<K extends keyof CollectionConfig>(key: K, value: CollectionConfig[K]) {
+  function handleChange<K extends keyof CollectionConfig>(
+    key: K,
+    value: CollectionConfig[K],
+  ) {
     setConfig((prev) => ({ ...prev, [key]: value }));
     setSuccess(false);
   }
@@ -59,7 +70,8 @@ export function AdminCollectionPage() {
     setSuccess(false);
     const payload: CollectionConfig = {
       ...config,
-      delete_server_cookbooks_after_scan: config.delete_server_cookbooks_after_scan ?? false,
+      delete_server_cookbooks_after_scan:
+        config.delete_server_cookbooks_after_scan ?? false,
     };
     try {
       const { value: updated } = await saveCollection(payload);
@@ -68,7 +80,9 @@ export function AdminCollectionPage() {
       setSuccess(true);
     } catch (err: unknown) {
       setSaveError(
-        err instanceof Error ? err.message : "Failed to save collection settings.",
+        err instanceof Error
+          ? err.message
+          : "Failed to save collection settings.",
       );
     } finally {
       setSaving(false);
@@ -88,16 +102,21 @@ export function AdminCollectionPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900">Collection Settings</h2>
+        <h2 className="text-xl font-semibold text-gray-900">
+          Collection Settings
+        </h2>
         <p className="mt-1 text-sm text-gray-500">
-          Controls the background data collection schedule and staleness thresholds.
+          Controls the background data collection schedule and staleness
+          thresholds.
         </p>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Collection Schedule</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Collection Schedule
+            </label>
             <input
               type="text"
               value={config.schedule}
@@ -118,10 +137,55 @@ export function AdminCollectionPage() {
               type="number"
               min={1}
               value={config.stale_node_threshold_days}
-              onChange={(e) => handleChange("stale_node_threshold_days", Number(e.target.value))}
+              onChange={(e) =>
+                handleChange(
+                  "stale_node_threshold_days",
+                  Number(e.target.value),
+                )
+              }
               className={INPUT_CLASS}
               disabled={saving}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Stale Node Warning (hours)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={config.stale_node_warning_hours}
+              onChange={(e) =>
+                handleChange("stale_node_warning_hours", Number(e.target.value))
+              }
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Nodes missing longer than this are shown as &lsquo;Missing&rsquo;
+              (amber)
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Stale Node Critical (days)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={config.stale_node_critical_days}
+              onChange={(e) =>
+                handleChange("stale_node_critical_days", Number(e.target.value))
+              }
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Nodes missing longer than this are shown as &lsquo;Gone&rsquo;
+              (red). Must be greater than warning threshold.
+            </p>
           </div>
 
           <div>
@@ -133,7 +197,10 @@ export function AdminCollectionPage() {
               min={1}
               value={config.stale_cookbook_threshold_days}
               onChange={(e) =>
-                handleChange("stale_cookbook_threshold_days", Number(e.target.value))
+                handleChange(
+                  "stale_cookbook_threshold_days",
+                  Number(e.target.value),
+                )
               }
               className={INPUT_CLASS}
               disabled={saving}
@@ -156,12 +223,16 @@ export function AdminCollectionPage() {
               }
               disabled={saving}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${
-                config.skip_server_cookbook_download ? "bg-blue-600" : "bg-gray-200"
+                config.skip_server_cookbook_download
+                  ? "bg-blue-600"
+                  : "bg-gray-200"
               }`}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  config.skip_server_cookbook_download ? "translate-x-6" : "translate-x-1"
+                  config.skip_server_cookbook_download
+                    ? "translate-x-6"
+                    : "translate-x-1"
                 }`}
               />
             </button>
@@ -173,8 +244,8 @@ export function AdminCollectionPage() {
                 Delete Server Cookbooks After Scan
               </label>
               <p className="mt-1 text-xs text-gray-500">
-                When enabled, cookbook files are deleted immediately after scanning to save disk
-                space.
+                When enabled, cookbook files are deleted immediately after
+                scanning to save disk space.
               </p>
             </div>
             <button
@@ -189,7 +260,9 @@ export function AdminCollectionPage() {
               }
               disabled={saving}
               className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${
-                (config.delete_server_cookbooks_after_scan ?? false) ? "bg-blue-600" : "bg-gray-200"
+                (config.delete_server_cookbooks_after_scan ?? false)
+                  ? "bg-blue-600"
+                  : "bg-gray-200"
               }`}
             >
               <span

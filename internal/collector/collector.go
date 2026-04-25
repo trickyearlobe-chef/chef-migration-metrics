@@ -30,6 +30,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/staleness"
 )
 
 // ClientFactory creates a chefapi.Client for a given organisation. This is
@@ -1627,9 +1628,10 @@ type nodeVersionEntry struct {
 //
 // For organisations exceeding maxNodesInMetricSnapshot nodes, per-node
 // data is omitted and nodes_omitted is set to true.
-func buildVersionDistributionPayload(snapshotParams []datastore.InsertNodeSnapshotParams) (json.RawMessage, error) {
+func buildVersionDistributionPayload(snapshotParams []datastore.InsertNodeSnapshotParams, warningHours, criticalDays int) (json.RawMessage, error) {
 	versionDist := make(map[string]int, 16)
 	var totalStale, totalFresh int
+	var totalWarning, totalCritical int
 
 	// Pre-allocate the nodes slice unless the org is too large.
 	omitNodes := len(snapshotParams) > maxNodesInMetricSnapshot
@@ -1637,6 +1639,9 @@ func buildVersionDistributionPayload(snapshotParams []datastore.InsertNodeSnapsh
 	if !omitNodes {
 		nodes = make([]nodeVersionEntry, 0, len(snapshotParams))
 	}
+
+	now := time.Now()
+	thresholds := staleness.Thresholds{WarningHours: warningHours, CriticalDays: criticalDays}
 
 	for _, p := range snapshotParams {
 		ver := p.ChefVersion
@@ -1649,17 +1654,32 @@ func buildVersionDistributionPayload(snapshotParams []datastore.InsertNodeSnapsh
 		} else {
 			totalFresh++
 		}
+
+		var ohaiTime time.Time
+		if p.OhaiTime > 0 {
+			ohaiTime = time.Unix(int64(p.OhaiTime), 0)
+		}
+		tier := staleness.ComputeTier(ohaiTime, now, thresholds)
+		switch tier {
+		case staleness.Warning:
+			totalWarning++
+		case staleness.Critical:
+			totalCritical++
+		}
+
 		if !omitNodes {
 			nodes = append(nodes, nodeVersionEntry{Name: p.NodeName, Version: ver})
 		}
 	}
 
 	payload := map[string]interface{}{
-		"distribution":  versionDist,
-		"total_nodes":   len(snapshotParams),
-		"stale_nodes":   totalStale,
-		"fresh_nodes":   totalFresh,
-		"nodes_omitted": omitNodes,
+		"distribution":   versionDist,
+		"total_nodes":    len(snapshotParams),
+		"stale_nodes":    totalStale,
+		"fresh_nodes":    totalFresh,
+		"warning_nodes":  totalWarning,
+		"critical_nodes": totalCritical,
+		"nodes_omitted":  omitNodes,
 	}
 	if omitNodes {
 		// Explicitly omit the nodes key to save space.
@@ -1690,7 +1710,7 @@ func (c *Collector) recordMetricSnapshots(
 
 	// chef_version_distribution metric snapshot — used by the version
 	// distribution trend chart.
-	distJSON, err := buildVersionDistributionPayload(snapshotParams)
+	distJSON, err := buildVersionDistributionPayload(snapshotParams, c.cfg.Collection.StaleNodeWarningHours, c.cfg.Collection.StaleNodeCriticalDays)
 	if err != nil {
 		log.Warn(fmt.Sprintf("failed to marshal chef_version_distribution metric: %v", err),
 			logging.WithCollectionRunID(collectionRunID))
