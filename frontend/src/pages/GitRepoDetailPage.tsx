@@ -17,6 +17,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
+import { CookstyleResultRow } from "../components/CookstyleResultRow";
 
 function TKResultCard({ tk }: { tk: TestKitchenResult }) {
   const [showLogs, setShowLogs] = useState(false);
@@ -566,34 +567,11 @@ export function GitRepoDetailPage() {
                   {gd.cookstyle && gd.cookstyle.length > 0 ? (
                     <div className="space-y-2">
                       {gd.cookstyle.map((cs) => (
-                        <div
+                        <CookstyleResultRow
                           key={cs.id}
-                          className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3"
-                        >
-                          <span className="text-xs text-gray-500">
-                            Target: {cs.target_chef_version}
-                          </span>
-                          <StatusBadge
-                            variant={cs.passed ? "compatible" : "incompatible"}
-                            label={cs.passed ? "Passed" : "Failed"}
-                            size="sm"
-                          />
-                          <span className="text-xs text-gray-500">
-                            Offences: {cs.offence_count} | Deprecations:{" "}
-                            {cs.deprecation_count}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            Scanned: {new Date(cs.scanned_at).toLocaleString()}
-                          </span>
-                          {cs.target_chef_version && (
-                            <Link
-                              to={`/git-repos/${encodeURIComponent(gr.name)}/latest/remediation?target_chef_version=${encodeURIComponent(cs.target_chef_version)}`}
-                              className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              View Remediation Detail →
-                            </Link>
-                          )}
-                        </div>
+                          result={cs}
+                          linkBase={`/git-repos/${encodeURIComponent(gr.name)}/latest/remediation`}
+                        />
                       ))}
                     </div>
                   ) : (

@@ -23,10 +23,10 @@ Status key: [ ] Needs spec | [~] Spec in progress | [x] Spec complete
 
 ## Bugs / Snags
 
-- [ ] **Complexity trend card shows only today's data** — confirmed bug, tracked in `todo-tech-debt.md`. Backend queries live data instead of `metric_snapshots`; no historical snapshots written.
-- [ ] **Readiness trend card uses fake timestamps** — latent bug, tracked in `todo-tech-debt.md`. Backend sends real `completed_at` but frontend type omits it and synthesises fake dates.
-- [ ] **Filter combobox prefix matching** — version filter may show misleading dropdown suggestions (e.g. typing `17` shows `16.17.x`). Backend uses correct `^<string>.*` prefix match, but client-side combobox option filtering may do substring. **Verify locally — may already be fixed.** Covered by `filter-ux-overhaul.md` matching-consistency section.
-- [ ] **chef-vault 1.3.1 CookStyle crash** — `.rubocop.yml` references removed/renamed cops, causing CookStyle to error out entirely. UI shows misleading "Failed" with zero offences instead of "Scan Error". Partially tracked in `todo-visualisation.md` (scan error distinction). Decision needed: work around bad rubocop configs automatically, or just report clearly? Likely not the only cookbook with this issue.
+- [x] **Complexity trend card shows only today's data** — fixed. Backend now writes `complexity_summary` metric snapshots and trend handler reads from `metric_snapshots` with live-data fallback.
+- [x] **Readiness trend card uses fake timestamps** — fixed. Frontend types now include `completed_at` and trend cards use real timestamps.
+- [x] **Filter combobox prefix matching** — not a bug. `FilterCombobox` is a plain `<select>` element, not a searchable combobox. No client-side substring matching occurs. Will be revisited when `filter-ux-overhaul.md` lands type-ahead components.
+- [x] **chef-vault 1.3.1 CookStyle crash** — fixed. New `CookstyleResultRow` component distinguishes three states: Passed (green), Failed (red), Scan Error (orange). Error message displayed inline; `process_stderr` available via expandable detail. Backend already stored `error_message` and `process_stderr` — only the frontend was ignoring them.
 - [ ] **Fleet-wide dependency graph unusable at scale** — force-directed simulation with thousands of roles/cookbooks is slow to render and produces an unreadable hairball. Addressed by `dependency-graph-refactor.md`.
 
 ## Not Yet Captured
