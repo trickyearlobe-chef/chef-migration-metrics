@@ -28,6 +28,8 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StaleBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
+import { CheckStatusIcons } from "../components/CheckStatusIcons";
+import { PlatformLabel } from "../components/PlatformLabel";
 
 // ---------------------------------------------------------------------------
 // Readiness filter values
@@ -469,6 +471,7 @@ export function NodesPage() {
                       onSort={handleSort}
                     />
                     <th>Status</th>
+                    <th>Checks</th>
                     <SortableColumnHeader
                       label="Ohai Time"
                       field="ohai_time"
@@ -502,9 +505,11 @@ export function NodesPage() {
                         </code>
                       </td>
                       <td>
-                        {node.platform
-                          ? `${node.platform} ${node.platform_version || ""}`
-                          : "—"}
+                        <PlatformLabel
+                          platform={node.platform}
+                          platformVersion={node.platform_version}
+                          platformDisplayName={node.platform_display_name}
+                        />
                       </td>
                       <td>
                         <StaleBadge
@@ -513,6 +518,29 @@ export function NodesPage() {
                           ageHours={node.ohai_time_age_hours}
                           size="sm"
                         />
+                      </td>
+                      <td>
+                        {(() => {
+                          const entry = selectedTargetVersion
+                            ? node.readiness?.find(
+                                (r) =>
+                                  r.target_chef_version ===
+                                  selectedTargetVersion,
+                              )
+                            : node.readiness?.[0];
+                          return (
+                            <CheckStatusIcons
+                              diskStatus={entry?.disk_status ?? "unknown"}
+                              cookstyleStatus={
+                                entry?.cookstyle_status ?? "unknown"
+                              }
+                              kitchenStatus={entry?.kitchen_status ?? "unknown"}
+                              diskDetail={entry?.disk_detail ?? null}
+                              cookstyleDetail={entry?.cookstyle_detail ?? null}
+                              kitchenDetail={entry?.kitchen_detail ?? null}
+                            />
+                          );
+                        })()}
                       </td>
                       <td className="text-xs text-gray-400">
                         {formatOhaiTime(node.ohai_time)}
