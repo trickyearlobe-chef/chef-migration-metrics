@@ -6,14 +6,10 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Bugs
 
-- [ ] Complexity trend card shows only today's data — backend queries live cookbook complexity instead of `metric_snapshots`; no `complexity_summary` snapshots are written during collection; frontend synthesises fake timestamps. Fix: add snapshot writes in collector, update `handleDashboardComplexityTrend` to read from `metric_snapshots`, add `completed_at` to `ComplexityTrendPoint` type. Files: `handle_dashboard_trends.go` L27–85, `types.ts` L155–165, `TrendCards.tsx` L206–223.
-- [ ] Readiness trend card uses fake timestamps despite backend sending real ones — `ReadinessTrendPoint` in `types.ts` L138–145 is missing `completed_at` field; frontend synthesises `Date.now()`-based timestamps (`TrendCards.tsx` L108–132); stale comment on L113 claims endpoint doesn't return timestamps but it does now. Fix: add `completed_at` to type, use real timestamps like version-distribution and stale cards do.
 - [ ] `CompatibilityBadge` has dead branch — both arms of the `confidence` ternary produce `"Compatible"` (`StatusBadge.tsx` L171–176).
 
 ## Frontend — Large Files
 
-- [ ] `api.ts` (~2230 lines) exceeds the 500-line guideline — split by domain (nodes, cookbooks, owners, admin, auth, kitchen, exports).
-- [ ] `types.ts` (~1585 lines) exceeds the 500-line guideline — split to match `api.ts` domains.
 - [ ] `NodeDetailPage.tsx` (~1136 lines) contains 10+ sub-components — extract `DiskSpacePanel`, `CookbookCompatibilityTable`, `ReadinessCard`, `ReadinessSection`, `InfoCard` into separate files.
 - [ ] `DependencyGraphPage.tsx` (~1646 lines) — extract force-directed simulation, table view, and selected-node panel into separate files.
 - [ ] `StatusCards.tsx` (~860 lines) — 7 cards each repeat the same fetch-load-error pattern; extract a `useFetch<T>` hook to eliminate boilerplate.
