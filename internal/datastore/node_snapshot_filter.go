@@ -48,6 +48,26 @@ type NodeSnapshotFilter struct {
 	// in the roles JSONB array.
 	Role string
 
+	// Environments filters by exact match against any of these environments.
+	// Uses ANY($N) SQL. When set, takes precedence over Environment (substring).
+	Environments []string
+
+	// Platforms filters by exact match on "platform platform_version" string.
+	// Uses ANY($N) SQL. When set, takes precedence over Platform (substring).
+	Platforms []string
+
+	// ChefVersions filters by exact match against any of these versions.
+	// Uses ANY($N) SQL. When set, takes precedence over ChefVersion (substring).
+	ChefVersions []string
+
+	// PolicyNames filters by exact match against any of these policy names.
+	// Uses ANY($N) SQL. When set, takes precedence over PolicyName (substring).
+	PolicyNames []string
+
+	// PolicyGroups filters by exact match against any of these policy groups.
+	// Uses ANY($N) SQL. When set, takes precedence over PolicyGroup (substring).
+	PolicyGroups []string
+
 	// Stale filters by exact boolean match on is_stale.
 	// nil means no filter (return both stale and fresh nodes).
 	// Ignored when StaleTier is set.
@@ -468,19 +488,28 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		args = append(args, f.NodeName)
 	}
 
-	if f.Environment != "" {
+	if len(f.Environments) > 0 {
+		where += " AND cn.chef_environment = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.Environments))
+	} else if f.Environment != "" {
 		where += " AND LOWER(cn.chef_environment) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.Environment)
 	}
 
-	if strings.EqualFold(f.Platform, "unknown") {
+	if len(f.Platforms) > 0 {
+		where += " AND (cn.platform || ' ' || COALESCE(cn.platform_version, '')) = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.Platforms))
+	} else if strings.EqualFold(f.Platform, "unknown") {
 		where += " AND (cn.platform IS NULL OR cn.platform = '')"
 	} else if f.Platform != "" {
 		where += " AND LOWER(cn.platform || ' ' || COALESCE(cn.platform_version, '')) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.Platform)
 	}
 
-	if f.ChefVersionExact != "" {
+	if len(f.ChefVersions) > 0 {
+		where += " AND cn.chef_version = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.ChefVersions))
+	} else if f.ChefVersionExact != "" {
 		where += " AND cn.chef_version = " + nextArg()
 		args = append(args, f.ChefVersionExact)
 	} else if strings.EqualFold(f.ChefVersion, "unknown") {
@@ -490,12 +519,18 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		args = append(args, f.ChefVersion)
 	}
 
-	if f.PolicyName != "" {
+	if len(f.PolicyNames) > 0 {
+		where += " AND cn.policy_name = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.PolicyNames))
+	} else if f.PolicyName != "" {
 		where += " AND LOWER(cn.policy_name) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.PolicyName)
 	}
 
-	if f.PolicyGroup != "" {
+	if len(f.PolicyGroups) > 0 {
+		where += " AND cn.policy_group = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.PolicyGroups))
+	} else if f.PolicyGroup != "" {
 		where += " AND LOWER(cn.policy_group) LIKE '%' || LOWER(" + nextArg() + ") || '%'"
 		args = append(args, f.PolicyGroup)
 	}

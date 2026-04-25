@@ -479,12 +479,45 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	f := datastore.NodeSnapshotFilter{
 		OrganisationNames: orgIDs,
 		NodeName:          q.Get("node_name"),
-		Environment:       q.Get("environment"),
-		Platform:          q.Get("platform"),
-		ChefVersion:       q.Get("chef_version"),
-		PolicyName:        q.Get("policy_name"),
-		PolicyGroup:       q.Get("policy_group"),
 		Role:              q.Get("role"),
+	}
+
+	// Multi-value filters: comma-separated values use exact-match ANY($N).
+	// Single values (no comma) fall through to the substring LIKE fields.
+	if env := q.Get("environment"); env != "" {
+		if strings.Contains(env, ",") {
+			f.Environments = strings.Split(env, ",")
+		} else {
+			f.Environment = env
+		}
+	}
+	if plat := q.Get("platform"); plat != "" {
+		if strings.Contains(plat, ",") {
+			f.Platforms = strings.Split(plat, ",")
+		} else {
+			f.Platform = plat
+		}
+	}
+	if cv := q.Get("chef_version"); cv != "" {
+		if strings.Contains(cv, ",") {
+			f.ChefVersions = strings.Split(cv, ",")
+		} else {
+			f.ChefVersion = cv
+		}
+	}
+	if pn := q.Get("policy_name"); pn != "" {
+		if strings.Contains(pn, ",") {
+			f.PolicyNames = strings.Split(pn, ",")
+		} else {
+			f.PolicyName = pn
+		}
+	}
+	if pg := q.Get("policy_group"); pg != "" {
+		if strings.Contains(pg, ",") {
+			f.PolicyGroups = strings.Split(pg, ",")
+		} else {
+			f.PolicyGroup = pg
+		}
 	}
 
 	// Sort parameters.
