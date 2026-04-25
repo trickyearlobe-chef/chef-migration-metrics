@@ -48,28 +48,32 @@ Implement two independent customer-requested features:
 
 16. Add `disk_status`, `cookstyle_status`, `kitchen_status` + detail strings to node readiness response
 17. Derivation: disk from `sufficient_disk_space`, cookstyle/kitchen from `blocking_cookbooks` verdicts
-18. Tests for derivation logic (all status combinations, edge cases, stale nodes)
+18. `cookstyle_status` must distinguish `"scan_error"` (tool crashed, e.g. bad `.rubocop.yml`) from `"failed"` (genuine incompatibility). The backend already stores `error_message` on CookStyle results — use it during derivation. Same for `kitchen_status`.
+19. Tests for derivation logic (all status combinations, edge cases, stale nodes, scan errors)
 
 ### Frontend
 
-19. Add per-check status fields to `NodeReadinessSummary` TS type
-20. Write tests for `CheckStatusIcons` component (colour, shape overlay, tooltip, aria)
-21. Implement `CheckStatusIcons` — three compact icons (disk, cookstyle, TK) with colour + overlay
-22. Implement `CheckStatusIcon` (internal) — single icon with status-based colour/overlay/tooltip
-23. Add "Checks" column to node list table after "Status" column
-24. Tests for NodesPage integration (column renders, graceful degradation)
-25. Commit
+20. Add per-check status fields to `NodeReadinessSummary` TS type
+21. Write tests for `CheckStatusIcons` component (colour, shape overlay, tooltip, aria)
+22. Implement `CheckStatusIcons` — three compact icons (disk, cookstyle, TK) with colour + overlay
+23. Implement `CheckStatusIcon` (internal) — single icon with status-based colour/overlay/tooltip
+24. `scan_error` status renders in orange with `!` overlay — distinct from red fail and grey unknown
+25. Add "Checks" column to node list table after "Status" column
+26. Also surface `scan_error` on cookbook list page — CookStyle compatibility badge should show "Scan Error" (orange) instead of "Incompatible" (red) when the scan crashed rather than finding real issues. Reuse the `scan_error` StatusBadge variant already added for `CookstyleResultRow`.
+27. Tests for NodesPage integration (column renders, graceful degradation, scan error state)
+28. Commit
 
 ### Acceptance Criteria
 
 - Three icons per node row: disk, CookStyle, Test Kitchen
-- Colour: green (pass), red (fail), amber (partial/warnings), grey (unknown)
-- Shape overlay: ✓/✗/~/? as secondary signal for accessibility
+- Colour: green (pass), red (fail), amber (partial/warnings), orange (scan error), grey (unknown)
+- Shape overlay: ✓/✗/~/!/? as secondary signal for accessibility
 - Tooltips with detail text
 - Graceful degradation when per-check fields absent (all-unknown)
+- Scan errors clearly distinguished from genuine failures in node list AND cookbook list
 
 ## Wrap-Up
 
-26. Update `customer-feedback.md` — mark both items implemented
-27. Update `todo-visualisation.md` if applicable
-28. Delete this plan
+29. Update `customer-feedback.md` — mark both items implemented
+30. Update `todo-visualisation.md` if applicable
+31. Delete this plan
