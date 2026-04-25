@@ -108,6 +108,7 @@ const settingsNavItems = [
   { to: "/admin/config/notifications", label: "Notifications" },
   { to: "/admin/config/logging", label: "Logging" },
   { to: "/admin/config/exports", label: "Exports" },
+  { to: "/admin/config/platform-display-names", label: "Platform Names" },
 ];
 
 export function AppLayout() {

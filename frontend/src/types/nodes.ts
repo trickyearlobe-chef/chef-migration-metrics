@@ -10,6 +10,17 @@ export interface NodeReadinessSummary {
   sufficient_disk_space: boolean | null;
   blocking_cookbook_count: number;
   stale_data: boolean;
+  disk_status?: "sufficient" | "insufficient" | "unknown";
+  cookstyle_status?:
+    | "passed"
+    | "failed"
+    | "warnings"
+    | "scan_error"
+    | "unknown";
+  kitchen_status?: "passed" | "failed" | "partial" | "scan_error" | "unknown";
+  disk_detail?: string | null;
+  cookstyle_detail?: string | null;
+  kitchen_detail?: string | null;
 }
 
 export interface NodeListItem {
@@ -22,6 +33,7 @@ export interface NodeListItem {
   platform?: string;
   platform_version?: string;
   platform_family?: string;
+  platform_display_name?: string | null;
   policy_name?: string;
   policy_group?: string;
   is_stale: boolean;
@@ -44,6 +56,7 @@ export interface NodeSnapshot {
   platform: string;
   platform_version: string;
   platform_family: string;
+  platform_display_name?: string | null;
   filesystem: Record<string, unknown> | null;
   cookbooks: Record<string, unknown> | null;
   run_list: string[] | null;

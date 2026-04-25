@@ -52,6 +52,7 @@ import {
   AdminSetupWizardPage,
   useSetupRequired,
 } from "./pages/AdminSetupWizardPage";
+import { AdminPlatformDisplayNamesPage } from "./pages/AdminPlatformDisplayNamesPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -367,6 +368,14 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminNotificationsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/platform-display-names"
+                element={
+                  <RequireAdmin>
+                    <AdminPlatformDisplayNamesPage />
                   </RequireAdmin>
                 }
               />
