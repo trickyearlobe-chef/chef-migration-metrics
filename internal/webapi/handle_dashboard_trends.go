@@ -32,66 +32,111 @@ func (r *Router) handleDashboardComplexityTrend(w http.ResponseWriter, req *http
 		return
 	}
 
+	ctx := req.Context()
 	targetVersions := r.cfg.TargetChefVersions
 
-	type trendPoint struct {
-		OrganisationName  string  `json:"organisation_name"`
-		TargetChefVersion string  `json:"target_chef_version"`
-		TotalCookbooks    int     `json:"total_cookbooks"`
-		TotalScore        int     `json:"total_score"`
-		AverageScore      float64 `json:"average_score"`
-		LowCount          int     `json:"low_count"`
-		MediumCount       int     `json:"medium_count"`
-		HighCount         int     `json:"high_count"`
-		CriticalCount     int     `json:"critical_count"`
-	}
+	var points []complexityTrendPoint
 
-	var points []trendPoint
+	// Try snapshot-based path first (preferred).
+	snapshotFound := false
 	for _, org := range orgs {
-		complexities, err := r.db.ListServerCookbookComplexitiesByOrganisation(req.Context(), org.Name)
-		if err != nil {
-			r.logf("WARN", "listing complexities for org %s in trend: %v", org.Name, err)
-			continue
-		}
-
-		// Group by target chef version.
-		byVersion := make(map[string][]datastore.ServerCookbookComplexity)
-		for _, cc := range complexities {
-			byVersion[cc.TargetChefVersion] = append(byVersion[cc.TargetChefVersion], cc)
-		}
-
 		for _, tv := range targetVersions {
-			ccs := byVersion[tv]
-			if len(ccs) == 0 {
+			metrics, mErr := r.db.ListMetricSnapshotsByOrganisationAndVersion(ctx, org.Name, "complexity_summary", tv, 10)
+			if mErr != nil {
+				r.logf("WARN", "listing complexity snapshots for org %s version %s: %v", org.Name, tv, mErr)
 				continue
 			}
-			pt := trendPoint{
-				OrganisationName:  org.Name,
-				TargetChefVersion: tv,
-				TotalCookbooks:    len(ccs),
+			if len(metrics) > 0 {
+				snapshotFound = true
 			}
-			for _, cc := range ccs {
-				pt.TotalScore += cc.ComplexityScore
-				switch cc.ComplexityLabel {
-				case "low":
-					pt.LowCount++
-				case "medium":
-					pt.MediumCount++
-				case "high":
-					pt.HighCount++
-				case "critical":
-					pt.CriticalCount++
+			for _, ms := range metrics {
+				var payload struct {
+					TotalCookbooks int     `json:"total_cookbooks"`
+					TotalScore     int     `json:"total_score"`
+					AverageScore   float64 `json:"average_score"`
+					LowCount       int     `json:"low_count"`
+					MediumCount    int     `json:"medium_count"`
+					HighCount      int     `json:"high_count"`
+					CriticalCount  int     `json:"critical_count"`
 				}
+				if jErr := json.Unmarshal(ms.Data, &payload); jErr != nil {
+					r.logf("WARN", "unmarshalling complexity snapshot %d: %v", ms.ID, jErr)
+					continue
+				}
+
+				points = append(points, complexityTrendPoint{
+					OrganisationName:  org.Name,
+					CollectionRunOrg:  ms.CollectionRunOrg,
+					CompletedAt:       ms.SnapshotAt.Format(trendTimestampFormat),
+					TargetChefVersion: tv,
+					TotalCookbooks:    payload.TotalCookbooks,
+					TotalScore:        payload.TotalScore,
+					AverageScore:      payload.AverageScore,
+					LowCount:          payload.LowCount,
+					MediumCount:       payload.MediumCount,
+					HighCount:         payload.HighCount,
+					CriticalCount:     payload.CriticalCount,
+				})
 			}
-			if pt.TotalCookbooks > 0 {
-				pt.AverageScore = float64(pt.TotalScore) / float64(pt.TotalCookbooks)
-			}
-			points = append(points, pt)
 		}
+	}
+
+	// Fallback: if no snapshots were found (pre-upgrade data), query live
+	// ServerCookbookComplexity for a single current-state point.
+	if !snapshotFound {
+		for _, org := range orgs {
+			complexities, cErr := r.db.ListServerCookbookComplexitiesByOrganisation(ctx, org.Name)
+			if cErr != nil {
+				r.logf("WARN", "listing complexities for org %s in trend fallback: %v", org.Name, cErr)
+				continue
+			}
+
+			// Group by target chef version.
+			byVersion := make(map[string][]datastore.ServerCookbookComplexity)
+			for _, cc := range complexities {
+				byVersion[cc.TargetChefVersion] = append(byVersion[cc.TargetChefVersion], cc)
+			}
+
+			for _, tv := range targetVersions {
+				ccs := byVersion[tv]
+				if len(ccs) == 0 {
+					continue
+				}
+				pt := complexityTrendPoint{
+					OrganisationName:  org.Name,
+					TargetChefVersion: tv,
+					TotalCookbooks:    len(ccs),
+				}
+				for _, cc := range ccs {
+					pt.TotalScore += cc.ComplexityScore
+					switch cc.ComplexityLabel {
+					case "low":
+						pt.LowCount++
+					case "medium":
+						pt.MediumCount++
+					case "high":
+						pt.HighCount++
+					case "critical":
+						pt.CriticalCount++
+					}
+				}
+				if pt.TotalCookbooks > 0 {
+					pt.AverageScore = float64(pt.TotalScore) / float64(pt.TotalCookbooks)
+				}
+				points = append(points, pt)
+			}
+		}
+	}
+
+	// When multiple orgs are in scope, merge per-org snapshots
+	// from the same collection cycle into a single data point to
+	// avoid sawtooth patterns in the chart.
+	if len(orgs) > 1 && snapshotFound {
+		points = mergeComplexityTrendSnapshots(points)
 	}
 
 	if points == nil {
-		points = []trendPoint{}
+		points = []complexityTrendPoint{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": points})

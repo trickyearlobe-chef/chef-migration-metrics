@@ -2480,3 +2480,136 @@ func TestBuildReadinessSnapshotPayload_AllBlocked(t *testing.T) {
 		t.Errorf("blocked = %d, want 2", got.Blocked)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// buildComplexitySnapshotPayload
+// ---------------------------------------------------------------------------
+
+type complexitySnapshotPayload struct {
+	TotalCookbooks int     `json:"total_cookbooks"`
+	TotalScore     int     `json:"total_score"`
+	AverageScore   float64 `json:"average_score"`
+	LowCount       int     `json:"low_count"`
+	MediumCount    int     `json:"medium_count"`
+	HighCount      int     `json:"high_count"`
+	CriticalCount  int     `json:"critical_count"`
+}
+
+func TestBuildComplexitySnapshotPayload_BasicCounts(t *testing.T) {
+	complexities := []datastore.ServerCookbookComplexity{
+		{CookbookName: "cb-a", ComplexityScore: 10, ComplexityLabel: "low"},
+		{CookbookName: "cb-b", ComplexityScore: 30, ComplexityLabel: "medium"},
+		{CookbookName: "cb-c", ComplexityScore: 60, ComplexityLabel: "high"},
+	}
+
+	raw, err := buildComplexitySnapshotPayload(complexities)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got complexitySnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.TotalCookbooks != 3 {
+		t.Errorf("total_cookbooks = %d, want 3", got.TotalCookbooks)
+	}
+	if got.TotalScore != 100 {
+		t.Errorf("total_score = %d, want 100", got.TotalScore)
+	}
+	wantAvg := 100.0 / 3.0
+	if got.AverageScore != wantAvg {
+		t.Errorf("average_score = %f, want %f", got.AverageScore, wantAvg)
+	}
+	if got.LowCount != 1 {
+		t.Errorf("low_count = %d, want 1", got.LowCount)
+	}
+	if got.MediumCount != 1 {
+		t.Errorf("medium_count = %d, want 1", got.MediumCount)
+	}
+	if got.HighCount != 1 {
+		t.Errorf("high_count = %d, want 1", got.HighCount)
+	}
+	if got.CriticalCount != 0 {
+		t.Errorf("critical_count = %d, want 0", got.CriticalCount)
+	}
+}
+
+func TestBuildComplexitySnapshotPayload_EmptySlice(t *testing.T) {
+	raw, err := buildComplexitySnapshotPayload([]datastore.ServerCookbookComplexity{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got complexitySnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.TotalCookbooks != 0 {
+		t.Errorf("total_cookbooks = %d, want 0", got.TotalCookbooks)
+	}
+	if got.TotalScore != 0 {
+		t.Errorf("total_score = %d, want 0", got.TotalScore)
+	}
+	if got.AverageScore != 0 {
+		t.Errorf("average_score = %f, want 0", got.AverageScore)
+	}
+	if got.LowCount != 0 {
+		t.Errorf("low_count = %d, want 0", got.LowCount)
+	}
+	if got.MediumCount != 0 {
+		t.Errorf("medium_count = %d, want 0", got.MediumCount)
+	}
+	if got.HighCount != 0 {
+		t.Errorf("high_count = %d, want 0", got.HighCount)
+	}
+	if got.CriticalCount != 0 {
+		t.Errorf("critical_count = %d, want 0", got.CriticalCount)
+	}
+}
+
+func TestBuildComplexitySnapshotPayload_MixedLabels(t *testing.T) {
+	complexities := []datastore.ServerCookbookComplexity{
+		{CookbookName: "cb-1", ComplexityScore: 5, ComplexityLabel: "low"},
+		{CookbookName: "cb-2", ComplexityScore: 8, ComplexityLabel: "low"},
+		{CookbookName: "cb-3", ComplexityScore: 25, ComplexityLabel: "medium"},
+		{CookbookName: "cb-4", ComplexityScore: 50, ComplexityLabel: "high"},
+		{CookbookName: "cb-5", ComplexityScore: 90, ComplexityLabel: "critical"},
+		{CookbookName: "cb-6", ComplexityScore: 95, ComplexityLabel: "critical"},
+	}
+
+	raw, err := buildComplexitySnapshotPayload(complexities)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got complexitySnapshotPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.TotalCookbooks != 6 {
+		t.Errorf("total_cookbooks = %d, want 6", got.TotalCookbooks)
+	}
+	if got.TotalScore != 273 {
+		t.Errorf("total_score = %d, want 273", got.TotalScore)
+	}
+	wantAvg := 273.0 / 6.0
+	if got.AverageScore != wantAvg {
+		t.Errorf("average_score = %f, want %f", got.AverageScore, wantAvg)
+	}
+	if got.LowCount != 2 {
+		t.Errorf("low_count = %d, want 2", got.LowCount)
+	}
+	if got.MediumCount != 1 {
+		t.Errorf("medium_count = %d, want 1", got.MediumCount)
+	}
+	if got.HighCount != 1 {
+		t.Errorf("high_count = %d, want 1", got.HighCount)
+	}
+	if got.CriticalCount != 2 {
+		t.Errorf("critical_count = %d, want 2", got.CriticalCount)
+	}
+}

@@ -1127,6 +1127,9 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 					logging.WithCollectionRunID(run.OrganisationName))
 			}
 		}
+
+		// Record complexity metric snapshots for trend charts.
+		c.recordComplexitySnapshots(ctx, log, run.OrganisationName, org.Name, c.cfg.TargetChefVersions)
 	}()
 
 	// -------------------------------------------------------------------
@@ -1798,6 +1801,94 @@ func (c *Collector) recordReadinessSnapshots(
 			SnapshotAt:        now,
 		}); msErr != nil {
 			log.Warn(fmt.Sprintf("failed to record readiness_summary metric for version %s: %v", tv, msErr),
+				logging.WithCollectionRunID(collectionRunID))
+		}
+	}
+}
+
+// buildComplexitySnapshotPayload builds the JSONB payload for a
+// complexity_summary metric snapshot from server cookbook complexity records.
+func buildComplexitySnapshotPayload(complexities []datastore.ServerCookbookComplexity) (json.RawMessage, error) {
+	var totalScore, low, medium, high, critical int
+	for _, cc := range complexities {
+		totalScore += cc.ComplexityScore
+		switch cc.ComplexityLabel {
+		case "low":
+			low++
+		case "medium":
+			medium++
+		case "high":
+			high++
+		case "critical":
+			critical++
+		}
+	}
+
+	avg := 0.0
+	if len(complexities) > 0 {
+		avg = float64(totalScore) / float64(len(complexities))
+	}
+
+	payload := map[string]interface{}{
+		"total_cookbooks": len(complexities),
+		"total_score":     totalScore,
+		"average_score":   avg,
+		"low_count":       low,
+		"medium_count":    medium,
+		"high_count":      high,
+		"critical_count":  critical,
+	}
+	return json.Marshal(payload)
+}
+
+// recordComplexitySnapshots persists pre-aggregated complexity metric
+// snapshots for each target Chef version so that the complexity trend chart
+// can display historical data.
+func (c *Collector) recordComplexitySnapshots(
+	ctx context.Context,
+	log *logging.ScopedLogger,
+	collectionRunID string,
+	organisationID string,
+	targetVersions []string,
+) {
+	allComplexities, err := c.db.ListServerCookbookComplexitiesByOrganisation(ctx, organisationID)
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to list complexities for snapshot: %v", err),
+			logging.WithCollectionRunID(collectionRunID))
+		return
+	}
+
+	// Group by target version.
+	byVersion := make(map[string][]datastore.ServerCookbookComplexity, len(targetVersions))
+	for i := range allComplexities {
+		tv := allComplexities[i].TargetChefVersion
+		byVersion[tv] = append(byVersion[tv], allComplexities[i])
+	}
+
+	now := time.Now().UTC()
+
+	for _, tv := range targetVersions {
+		ccs := byVersion[tv]
+		if len(ccs) == 0 {
+			continue
+		}
+
+		payload, pErr := buildComplexitySnapshotPayload(ccs)
+		if pErr != nil {
+			log.Warn(fmt.Sprintf("failed to marshal complexity_summary metric for version %s: %v", tv, pErr),
+				logging.WithCollectionRunID(collectionRunID))
+			continue
+		}
+
+		if _, msErr := c.db.InsertMetricSnapshot(ctx, datastore.InsertMetricSnapshotParams{
+			CollectionRunOrg:  collectionRunID,
+			OrganisationName:  organisationID,
+			SnapshotType:      "complexity_summary",
+			TargetChefVersion: tv,
+			Data:              payload,
+			SnapshotAt:        now,
+		}); msErr != nil {
+			log.Warn(fmt.Sprintf("failed to record complexity_summary metric for version %s: %v", tv, msErr),
 				logging.WithCollectionRunID(collectionRunID))
 		}
 	}

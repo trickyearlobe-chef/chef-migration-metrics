@@ -728,3 +728,139 @@ func TestMergeReadinessTrendSnapshots_DedupSameOrgSameHour(t *testing.T) {
 		t.Errorf("ReadyPercent = %f, want %f", got[0].ReadyPercent, wantPct)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// mergeComplexityTrendSnapshots
+// ---------------------------------------------------------------------------
+
+func TestMergeComplexityTrendSnapshots(t *testing.T) {
+	t.Run("empty slice", func(t *testing.T) {
+		got := mergeComplexityTrendSnapshots([]complexityTrendPoint{})
+		if len(got) != 0 {
+			t.Errorf("expected empty slice, got %d items", len(got))
+		}
+	})
+
+	t.Run("single point", func(t *testing.T) {
+		points := []complexityTrendPoint{
+			{
+				OrganisationName:  "org-a",
+				CollectionRunOrg:  "org-a",
+				CompletedAt:       "2025-06-15T14:02:00Z",
+				TargetChefVersion: "18.4.2",
+				TotalCookbooks:    10,
+				TotalScore:        25,
+				AverageScore:      2.5,
+				LowCount:          5,
+				MediumCount:       3,
+				HighCount:         1,
+				CriticalCount:     1,
+			},
+		}
+
+		got := mergeComplexityTrendSnapshots(points)
+
+		if len(got) != 1 {
+			t.Fatalf("len = %d, want 1", len(got))
+		}
+		p := got[0]
+		if p.CompletedAt != "2025-06-15T14:00:00Z" {
+			t.Errorf("CompletedAt = %q, want %q", p.CompletedAt, "2025-06-15T14:00:00Z")
+		}
+		if p.TotalCookbooks != 10 {
+			t.Errorf("TotalCookbooks = %d, want 10", p.TotalCookbooks)
+		}
+		if p.TotalScore != 25 {
+			t.Errorf("TotalScore = %d, want 25", p.TotalScore)
+		}
+		if p.AverageScore != 2.5 {
+			t.Errorf("AverageScore = %f, want 2.5", p.AverageScore)
+		}
+		if p.LowCount != 5 {
+			t.Errorf("LowCount = %d, want 5", p.LowCount)
+		}
+		if p.MediumCount != 3 {
+			t.Errorf("MediumCount = %d, want 3", p.MediumCount)
+		}
+		if p.HighCount != 1 {
+			t.Errorf("HighCount = %d, want 1", p.HighCount)
+		}
+		if p.CriticalCount != 1 {
+			t.Errorf("CriticalCount = %d, want 1", p.CriticalCount)
+		}
+	})
+
+	t.Run("multi org same hour", func(t *testing.T) {
+		points := []complexityTrendPoint{
+			{
+				OrganisationName:  "org-a",
+				CollectionRunOrg:  "org-a",
+				CompletedAt:       "2025-06-15T14:02:00Z",
+				TargetChefVersion: "18.4.2",
+				TotalCookbooks:    10,
+				TotalScore:        30,
+				AverageScore:      3.0,
+				LowCount:          4,
+				MediumCount:       3,
+				HighCount:         2,
+				CriticalCount:     1,
+			},
+			{
+				OrganisationName:  "org-b",
+				CollectionRunOrg:  "org-b",
+				CompletedAt:       "2025-06-15T14:07:00Z",
+				TargetChefVersion: "18.4.2",
+				TotalCookbooks:    5,
+				TotalScore:        20,
+				AverageScore:      4.0,
+				LowCount:          1,
+				MediumCount:       1,
+				HighCount:         2,
+				CriticalCount:     1,
+			},
+		}
+
+		got := mergeComplexityTrendSnapshots(points)
+
+		if len(got) != 1 {
+			t.Fatalf("len = %d, want 1", len(got))
+		}
+
+		p := got[0]
+		if p.CompletedAt != "2025-06-15T14:00:00Z" {
+			t.Errorf("CompletedAt = %q, want %q", p.CompletedAt, "2025-06-15T14:00:00Z")
+		}
+		if p.TargetChefVersion != "18.4.2" {
+			t.Errorf("TargetChefVersion = %q, want %q", p.TargetChefVersion, "18.4.2")
+		}
+		if p.TotalCookbooks != 15 {
+			t.Errorf("TotalCookbooks = %d, want 15", p.TotalCookbooks)
+		}
+		if p.TotalScore != 50 {
+			t.Errorf("TotalScore = %d, want 50", p.TotalScore)
+		}
+		// AverageScore should be recomputed: 50/15 = 3.333...
+		wantAvg := float64(50) / float64(15)
+		if p.AverageScore != wantAvg {
+			t.Errorf("AverageScore = %f, want %f", p.AverageScore, wantAvg)
+		}
+		if p.LowCount != 5 {
+			t.Errorf("LowCount = %d, want 5", p.LowCount)
+		}
+		if p.MediumCount != 4 {
+			t.Errorf("MediumCount = %d, want 4", p.MediumCount)
+		}
+		if p.HighCount != 4 {
+			t.Errorf("HighCount = %d, want 4", p.HighCount)
+		}
+		if p.CriticalCount != 2 {
+			t.Errorf("CriticalCount = %d, want 2", p.CriticalCount)
+		}
+		if p.OrganisationName != "" {
+			t.Errorf("OrganisationName = %q, want empty", p.OrganisationName)
+		}
+		if p.CollectionRunOrg != "" {
+			t.Errorf("CollectionRunOrg = %q, want empty", p.CollectionRunOrg)
+		}
+	})
+}

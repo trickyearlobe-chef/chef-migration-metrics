@@ -137,6 +137,8 @@ export interface ReadinessResponse {
 
 export interface ReadinessTrendPoint {
   organisation_name: string;
+  collection_run_org: string;
+  completed_at: string;
   target_chef_version: string;
   total_nodes: number;
   ready_nodes: number;
@@ -154,6 +156,8 @@ export interface ReadinessTrendResponse {
 
 export interface ComplexityTrendPoint {
   organisation_name: string;
+  collection_run_org: string;
+  completed_at: string;
   target_chef_version: string;
   total_cookbooks: number;
   total_score: number;
