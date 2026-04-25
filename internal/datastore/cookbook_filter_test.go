@@ -1,0 +1,252 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package datastore
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+// ---------------------------------------------------------------------------
+// buildCookbookFilterQuery — unit tests
+// ---------------------------------------------------------------------------
+
+func TestBuildCookbookFilterQuery_NoFilters(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{})
+
+	if len(args) != 0 {
+		t.Errorf("expected 0 args, got %d: %v", len(args), args)
+	}
+	if !strings.Contains(q, "WITH cb AS") {
+		t.Error("query missing CTE")
+	}
+	if !strings.Contains(q, "COUNT(*) OVER()") {
+		t.Error("query missing COUNT(*) OVER()")
+	}
+	if !strings.Contains(q, "ORDER BY") {
+		t.Error("query missing ORDER BY")
+	}
+	if strings.Contains(q, "LIMIT") {
+		t.Error("query should not contain LIMIT when Limit=0")
+	}
+	if strings.Contains(q, "OFFSET") {
+		t.Error("query should not contain OFFSET when Offset=0")
+	}
+}
+
+func TestBuildCookbookFilterQuery_WithTargetVersion(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN server_cookbook_cookstyle_results csr") {
+		t.Error("query missing LEFT JOIN to cookstyle results")
+	}
+	if !strings.Contains(q, "csr.target_chef_version") {
+		t.Error("query missing csr.target_chef_version condition")
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
+	}
+	if args[0] != "18.5.0" {
+		t.Errorf("args[0] = %v, want 18.5.0", args[0])
+	}
+}
+
+func TestBuildCookbookFilterQuery_WithoutTargetVersion(t *testing.T) {
+	q, _ := buildCookbookFilterQuery(CookbookFilter{
+		TargetChefVersion: "",
+	})
+
+	if strings.Contains(q, "LEFT JOIN") {
+		t.Error("query should not contain LEFT JOIN when TargetChefVersion is empty")
+	}
+	if strings.Contains(q, "server_cookbook_cookstyle_results") {
+		t.Error("query should not reference server_cookbook_cookstyle_results when TargetChefVersion is empty")
+	}
+	if !strings.Contains(q, "'untested' AS compatibility") {
+		t.Error("query missing 'untested' AS compatibility")
+	}
+}
+
+func TestBuildCookbookFilterQuery_OrgFilter(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		OrganisationNames: []string{"org-a", "org-b"},
+	})
+
+	if !strings.Contains(q, "sc.organisation_name = ANY($1)") {
+		t.Errorf("query missing org filter, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
+	}
+}
+
+func TestBuildCookbookFilterQuery_NameFilter(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		Name: "nginx",
+	})
+
+	if !strings.Contains(q, "LOWER(sc.name) LIKE") {
+		t.Errorf("query missing name filter, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
+	}
+	if args[0] != "nginx" {
+		t.Errorf("args[0] = %v, want nginx", args[0])
+	}
+}
+
+func TestBuildCookbookFilterQuery_ActiveTrue(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		Active: boolPtr(true),
+	})
+
+	if !strings.Contains(q, "sc.is_active = $1") {
+		t.Errorf("query missing is_active filter, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
+	}
+	if args[0] != true {
+		t.Errorf("args[0] = %v, want true", args[0])
+	}
+}
+
+func TestBuildCookbookFilterQuery_CompatibilityFilter(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		Compatibility:     "incompatible",
+		TargetChefVersion: "18.5.0",
+	})
+
+	// $1 = target_chef_version, $2 = compatibility
+	if !strings.Contains(q, "cb.compatibility = $2") {
+		t.Errorf("query missing outer compatibility filter, got:\n%s", q)
+	}
+	if len(args) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
+	}
+	if args[0] != "18.5.0" {
+		t.Errorf("args[0] = %v, want 18.5.0", args[0])
+	}
+	if args[1] != "incompatible" {
+		t.Errorf("args[1] = %v, want incompatible", args[1])
+	}
+}
+
+func TestBuildCookbookFilterQuery_DownloadStatusFilter(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		DownloadStatus: "ok",
+	})
+
+	if !strings.Contains(q, "sc.download_status = $1") {
+		t.Errorf("query missing download_status filter, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
+	}
+	if args[0] != "ok" {
+		t.Errorf("args[0] = %v, want ok", args[0])
+	}
+}
+
+func TestBuildCookbookFilterQuery_Pagination(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		Limit:  20,
+		Offset: 40,
+	})
+
+	if !strings.Contains(q, "LIMIT $1") {
+		t.Errorf("query missing LIMIT clause, got:\n%s", q)
+	}
+	if !strings.Contains(q, "OFFSET $2") {
+		t.Errorf("query missing OFFSET clause, got:\n%s", q)
+	}
+	if len(args) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
+	}
+	if args[0] != 20 {
+		t.Errorf("args[0] = %v, want 20", args[0])
+	}
+	if args[1] != 40 {
+		t.Errorf("args[1] = %v, want 40", args[1])
+	}
+}
+
+func TestBuildCookbookFilterQuery_SortName(t *testing.T) {
+	q, _ := buildCookbookFilterQuery(CookbookFilter{
+		Sort: "name",
+	})
+
+	if !strings.Contains(q, "ORDER BY LOWER(cb.name)") {
+		t.Errorf("query missing ORDER BY cb.name, got:\n%s", q)
+	}
+}
+
+func TestBuildCookbookFilterQuery_SortCompatibility(t *testing.T) {
+	q, _ := buildCookbookFilterQuery(CookbookFilter{
+		Sort: "compatibility",
+	})
+
+	if !strings.Contains(q, "ORDER BY cb.compatibility") {
+		t.Errorf("query missing ORDER BY cb.compatibility, got:\n%s", q)
+	}
+}
+
+func TestBuildCookbookFilterQuery_AllFilters(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		OrganisationNames: []string{"org-a", "org-b"},
+		Name:              "nginx",
+		Active:            boolPtr(true),
+		DownloadStatus:    "ok",
+		Compatibility:     "incompatible",
+		TargetChefVersion: "18.5.0",
+		Limit:             20,
+		Offset:            40,
+		Sort:              "name",
+		SortOrder:         "desc",
+	})
+
+	// $1 = target_chef_version, $2 = org names, $3 = name,
+	// $4 = active, $5 = download_status, $6 = compatibility,
+	// $7 = limit, $8 = offset
+	expectedArgs := 8
+	if len(args) != expectedArgs {
+		t.Errorf("expected %d args, got %d: %v", expectedArgs, len(args), args)
+	}
+
+	// Verify parameter numbering is sequential with no duplicates.
+	for i := 1; i <= expectedArgs; i++ {
+		placeholder := fmt.Sprintf("$%d", i)
+		if !strings.Contains(q, placeholder) {
+			t.Errorf("query missing placeholder %s", placeholder)
+		}
+	}
+	// $9 should not exist.
+	if strings.Contains(q, fmt.Sprintf("$%d", expectedArgs+1)) {
+		t.Errorf("query contains unexpected placeholder $%d", expectedArgs+1)
+	}
+
+	// Spot-check that all filter clauses are present.
+	checks := []string{
+		"sc.organisation_name = ANY(",
+		"LOWER(sc.name) LIKE",
+		"sc.is_active =",
+		"sc.download_status =",
+		"cb.compatibility =",
+		"LEFT JOIN server_cookbook_cookstyle_results",
+		"csr.target_chef_version",
+		"LIMIT",
+		"OFFSET",
+		"ORDER BY",
+		"DESC",
+	}
+	for _, check := range checks {
+		if !strings.Contains(q, check) {
+			t.Errorf("query missing expected clause %q", check)
+		}
+	}
+}

@@ -137,6 +137,11 @@ type DataStore interface {
 	// Server cookbooks
 	// -----------------------------------------------------------------
 
+	// ListCookbooksFiltered returns server cookbooks matching the given
+	// filter with compatibility computed via SQL JOIN. Pagination and
+	// sorting are handled in SQL.
+	ListCookbooksFiltered(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error)
+
 	// ListServerCookbooksByOrganisation returns all server cookbooks
 	// belonging to the given organisation.
 	ListServerCookbooksByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)

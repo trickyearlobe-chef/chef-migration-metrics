@@ -268,12 +268,13 @@ func TestHandleCookbooks_HappyPath_EachVersionIsARow(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
-				{Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "pending"},
-				{Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-			}, nil
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			rows := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "pending"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+			}
+			return rows, len(rows), nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -328,15 +329,12 @@ func TestHandleCookbooks_HappyPath_MultiOrg_EachRowDistinct(t *testing.T) {
 				{Name: "staging"},
 			}, nil
 		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			if orgID == "prod" {
-				return []datastore.ServerCookbook{
-					{OrganisationName: "prod", Name: "apt", Version: "7.2.0", IsActive: true, DownloadStatus: "ok"},
-				}, nil
-			}
-			return []datastore.ServerCookbook{
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			rows := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "7.2.0", IsActive: true, DownloadStatus: "ok"},
 				{OrganisationName: "staging", Name: "apt", Version: "7.2.0", IsActive: true, DownloadStatus: "pending"},
-			}, nil
+			}
+			return rows, len(rows), nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -387,10 +385,11 @@ func TestHandleCookbooks_HappyPath_VersionFieldInResponse(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
-				{Name: "apt", Version: "7.2.0", IsActive: true},
-			}, nil
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			rows := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "7.2.0", IsActive: true},
+			}
+			return rows, len(rows), nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -424,11 +423,12 @@ func TestHandleCookbooks_HappyPath_NoVersionCountField(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
-				{Name: "apt", Version: "1.0.0", IsActive: true},
-				{Name: "apt", Version: "2.0.0", IsActive: true},
-			}, nil
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			rows := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true},
+				{OrganisationName: "prod", Name: "apt", Version: "2.0.0", IsActive: true},
+			}
+			return rows, len(rows), nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -464,12 +464,23 @@ func TestHandleCookbooks_FilterByDownloadStatus(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
-				{Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
-				{Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "failed"},
-			}, nil
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			all := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
+				{OrganisationName: "prod", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "failed"},
+			}
+			// Simulate SQL filtering by download_status.
+			if f.DownloadStatus != "" {
+				var filtered []datastore.CookbookFilterRow
+				for _, r := range all {
+					if r.DownloadStatus == f.DownloadStatus {
+						filtered = append(filtered, r)
+					}
+				}
+				return filtered, len(filtered), nil
+			}
+			return all, len(all), nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -650,11 +661,12 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
-				{Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
-			}, nil
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			rows := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok", Compatibility: "untested"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "pending", Compatibility: "untested"},
+			}
+			return rows, len(rows), nil
 		},
 	}
 
@@ -695,24 +707,14 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbook, error) {
-			return []datastore.ServerCookbook{
-				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{OrganisationName: "prod", Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "ok"},
-				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok"},
-				{OrganisationName: "prod", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending"},
-			}, nil
-		},
-		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookCookstyleResult, error) {
-			return []datastore.ServerCookbookCookstyleResult{
-				// apt 1.0.0: passed
-				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0", Passed: true, OffenceCount: 0},
-				// apt 2.0.0: failed (different version of same cookbook can differ)
-				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "2.0.0", TargetChefVersion: "18.0", Passed: false, OffenceCount: 5},
-				// nginx: failed
-				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0", Passed: false, OffenceCount: 3},
-				// mysql: no cookstyle result → untested
-			}, nil
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			rows := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok", Compatibility: "compatible"},
+				{OrganisationName: "prod", Name: "apt", Version: "2.0.0", IsActive: true, DownloadStatus: "ok", Compatibility: "incompatible"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok", Compatibility: "incompatible"},
+				{OrganisationName: "prod", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending", Compatibility: "untested"},
+			}
+			return rows, len(rows), nil
 		},
 	}
 
