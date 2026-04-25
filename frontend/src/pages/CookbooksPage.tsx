@@ -5,7 +5,8 @@ import { useOrg } from "../context/OrgContext";
 import { useSort } from "../hooks/useSort";
 import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
-import { FilterInput, FilterSelect } from "../components/FilterInputs";
+import { FilterInput } from "../components/FilterInputs";
+import { FilterMultiCheckbox } from "../components/FilterMultiCheckbox";
 import { fetchCookbooks, type CookbookFilterQuery } from "../api";
 import type { CookbookListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
@@ -67,13 +68,15 @@ export function CookbooksPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Filters
-  const [active, setActive] = useState(searchParams.get("active") || "");
-  const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
-  const [compatibility, setCompatibility] = useState(
-    searchParams.get("compatibility") || "",
+  const [active, setActive] = useState<string[]>(
+    searchParams.get("active")?.split(",").filter(Boolean) ?? [],
   );
-  const [downloadStatus, setDownloadStatus] = useState(
-    searchParams.get("download_status") || "",
+  const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
+  const [compatibility, setCompatibility] = useState<string[]>(
+    searchParams.get("compatibility")?.split(",").filter(Boolean) ?? [],
+  );
+  const [downloadStatus, setDownloadStatus] = useState<string[]>(
+    searchParams.get("download_status")?.split(",").filter(Boolean) ?? [],
   );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
@@ -86,11 +89,7 @@ export function CookbooksPage() {
   });
 
   // Target Chef versions loaded from backend config.
-  const {
-    targetVersions,
-    selectedVersion: selectedTargetVersion,
-    setSelectedVersion: setSelectedTargetVersion,
-  } = useTargetChefVersion({
+  const { selectedVersion: selectedTargetVersion } = useTargetChefVersion({
     initialVersion: searchParams.get("target_chef_version") || undefined,
   });
 
@@ -116,10 +115,12 @@ export function CookbooksPage() {
       per_page: perPage,
     };
     if (selectedOrg) filters.organisation = selectedOrg;
-    if (active) filters.active = active;
+    if (active.length > 0) filters.active = active.join(",");
     if (nameFilter) filters.name = nameFilter;
-    if (compatibility) filters.compatibility = compatibility;
-    if (downloadStatus) filters.download_status = downloadStatus;
+    if (compatibility.length > 0)
+      filters.compatibility = compatibility.join(",");
+    if (downloadStatus.length > 0)
+      filters.download_status = downloadStatus.join(",");
     if (selectedTargetVersion)
       filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
@@ -161,18 +162,17 @@ export function CookbooksPage() {
   ]);
 
   // Count active filters for the clear button.
-  const activeFilterCount = [
-    nameFilter,
-    active,
-    compatibility,
-    downloadStatus,
-  ].filter(Boolean).length;
+  const activeFilterCount =
+    (nameFilter ? 1 : 0) +
+    (active.length > 0 ? 1 : 0) +
+    (compatibility.length > 0 ? 1 : 0) +
+    (downloadStatus.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNameFilter("");
-    setActive("");
-    setCompatibility("");
-    setDownloadStatus("");
+    setActive([]);
+    setCompatibility([]);
+    setDownloadStatus([]);
   };
 
   return (
@@ -187,57 +187,35 @@ export function CookbooksPage() {
           onChange={setNameFilter}
           placeholder="Filter by name"
         />
-        <FilterSelect
+        <FilterMultiCheckbox
           label="Active"
-          value={active}
-          onChange={setActive}
           options={[
-            { value: "", label: "All" },
             { value: "true", label: "Active" },
             { value: "false", label: "Inactive" },
           ]}
+          selected={active}
+          onChange={setActive}
         />
-        <FilterSelect
+        <FilterMultiCheckbox
           label="Compatibility"
-          value={compatibility}
-          onChange={setCompatibility}
           options={[
-            { value: "", label: "All" },
             { value: "compatible", label: "Compatible" },
             { value: "incompatible", label: "Incompatible" },
             { value: "untested", label: "Untested" },
           ]}
-          wide
+          selected={compatibility}
+          onChange={setCompatibility}
         />
-        <FilterSelect
+        <FilterMultiCheckbox
           label="Download"
-          value={downloadStatus}
-          onChange={setDownloadStatus}
           options={[
-            { value: "", label: "All" },
             { value: "ok", label: "OK" },
             { value: "pending", label: "Pending" },
             { value: "failed", label: "Failed" },
           ]}
+          selected={downloadStatus}
+          onChange={setDownloadStatus}
         />
-        {targetVersions.length > 1 && (
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">
-              Target Version
-            </label>
-            <select
-              value={selectedTargetVersion}
-              onChange={(e) => setSelectedTargetVersion(e.target.value)}
-              className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              {targetVersions.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
         {activeFilterCount > 0 && (
           <button
             onClick={clearFilters}
