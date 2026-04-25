@@ -1,0 +1,185 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { useSearchParams } from "react-router-dom";
+import { fetchFilterTargetChefVersions } from "../api";
+import { highestSemver } from "../semver";
+
+// ---------------------------------------------------------------------------
+// Global filter context — stores cross-cutting filters (target Chef version
+// and staleness tier) that apply across multiple pages. Values are persisted
+// in URL search params so that bookmarking / link-sharing restores state.
+//
+// URL params: ?target_chef_version=18.5.0&stale_status=fresh
+// ---------------------------------------------------------------------------
+
+type StaleStatus = "all" | "stale" | "fresh";
+
+const PARAM_TARGET_VERSION = "target_chef_version";
+const PARAM_STALE_STATUS = "stale_status";
+
+const VALID_STALE_STATUSES: readonly StaleStatus[] = ["all", "stale", "fresh"];
+const DEFAULT_STALE_STATUS: StaleStatus = "all";
+
+function isValidStaleStatus(value: string): value is StaleStatus {
+  return (VALID_STALE_STATUSES as readonly string[]).includes(value);
+}
+
+export interface GlobalFilterContextValue {
+  /** All available target Chef versions from the backend config. */
+  targetVersions: string[];
+  /** The currently selected target Chef version. */
+  targetChefVersion: string;
+  /** Change the selected target Chef version. */
+  setTargetChefVersion: (v: string) => void;
+  /** Current staleness filter. */
+  staleStatus: StaleStatus;
+  /** Change the staleness filter. */
+  setStaleStatus: (s: StaleStatus) => void;
+  /** True while the version list is being fetched. */
+  versionsLoading: boolean;
+}
+
+const GlobalFilterContext = createContext<GlobalFilterContextValue | undefined>(
+  undefined,
+);
+
+export function GlobalFilterProvider({ children }: { children: ReactNode }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Read initial values from URL params.
+  const urlVersion = searchParams.get(PARAM_TARGET_VERSION) ?? "";
+  const urlStale = searchParams.get(PARAM_STALE_STATUS) ?? "";
+
+  const [targetVersions, setTargetVersions] = useState<string[]>([]);
+  const [targetChefVersion, setTargetChefVersionState] = useState<string>(
+    urlVersion,
+  );
+  const [staleStatus, setStaleStatusState] = useState<StaleStatus>(
+    isValidStaleStatus(urlStale) ? urlStale : DEFAULT_STALE_STATUS,
+  );
+  const [versionsLoading, setVersionsLoading] = useState(true);
+
+  // Sync URL params whenever filter values change. Preserves existing
+  // non-global params so page-specific params are not overwritten.
+  const syncParams = useCallback(
+    (version: string, stale: StaleStatus) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+
+          // Set or remove target_chef_version.
+          if (version) {
+            next.set(PARAM_TARGET_VERSION, version);
+          } else {
+            next.delete(PARAM_TARGET_VERSION);
+          }
+
+          // Set or remove stale_status (omit default "all").
+          if (stale && stale !== DEFAULT_STALE_STATUS) {
+            next.set(PARAM_STALE_STATUS, stale);
+          } else {
+            next.delete(PARAM_STALE_STATUS);
+          }
+
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const setTargetChefVersion = useCallback(
+    (v: string) => {
+      setTargetChefVersionState(v);
+      syncParams(v, staleStatus);
+    },
+    [staleStatus, syncParams],
+  );
+
+  const setStaleStatus = useCallback(
+    (s: StaleStatus) => {
+      setStaleStatusState(s);
+      syncParams(targetChefVersion, s);
+    },
+    [targetChefVersion, syncParams],
+  );
+
+  // Fetch available target versions on mount.
+  useEffect(() => {
+    let cancelled = false;
+    setVersionsLoading(true);
+
+    fetchFilterTargetChefVersions()
+      .then((res) => {
+        if (cancelled) return;
+        const versions = res.data ?? [];
+        setTargetVersions(versions);
+
+        if (versions.length > 0) {
+          // If URL had a version that exists in the list, keep it.
+          if (urlVersion && versions.includes(urlVersion)) {
+            setTargetChefVersionState(urlVersion);
+          } else {
+            // Auto-select highest version.
+            const highest = highestSemver(versions) ?? versions[0];
+            setTargetChefVersionState(highest);
+            syncParams(highest, staleStatus);
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTargetVersions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setVersionsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run only on mount
+
+  return (
+    <GlobalFilterContext.Provider
+      value={{
+        targetVersions,
+        targetChefVersion,
+        setTargetChefVersion,
+        staleStatus,
+        setStaleStatus,
+        versionsLoading,
+      }}
+    >
+      {children}
+    </GlobalFilterContext.Provider>
+  );
+}
+
+/**
+ * Hook to access the global filter context.
+ * Must be used inside a `<GlobalFilterProvider>`.
+ */
+export function useGlobalFilters(): GlobalFilterContextValue {
+  const ctx = useContext(GlobalFilterContext);
+  if (ctx === undefined) {
+    throw new Error(
+      "useGlobalFilters must be used within a <GlobalFilterProvider>",
+    );
+  }
+  return ctx;
+}

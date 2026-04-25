@@ -4,8 +4,11 @@
 package datastore
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/lib/pq"
 )
 
 // boolPtr is a helper to create a *bool for test cases.
@@ -492,7 +495,7 @@ func TestBuildNodeSnapshotFilterQuery_CollectionRunJoin(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildNodeSnapshotFilterParts_NoFilters(t *testing.T) {
-	cte, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{})
+	cte, _, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{})
 
 	if !strings.Contains(cte, "WITH completed_nodes AS") {
 		t.Error("CTE missing")
@@ -506,7 +509,7 @@ func TestBuildNodeSnapshotFilterParts_NoFilters(t *testing.T) {
 }
 
 func TestBuildNodeSnapshotFilterParts_WithFilters(t *testing.T) {
-	_, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{
+	_, _, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{
 		OrganisationNames: []string{"org-1"},
 		Environment:       "staging",
 	})
@@ -525,7 +528,7 @@ func TestBuildNodeSnapshotFilterParts_WithFilters(t *testing.T) {
 func TestBuildNodeSnapshotFilterParts_NoPagination(t *testing.T) {
 	// buildNodeSnapshotFilterParts should NOT include LIMIT/OFFSET
 	// because those are only relevant for the list query, not aggregates.
-	_, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{
+	_, _, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{
 		Limit:  25,
 		Offset: 50,
 	})
@@ -645,12 +648,12 @@ func TestBuildNodeSnapshotFilterQuery_WhereAlwaysStartsWith1Eq1(t *testing.T) {
 	// The WHERE clause (in both buildNodeSnapshotFilterQuery and
 	// buildNodeSnapshotFilterParts) always starts with "WHERE 1=1" so
 	// that additional AND clauses can be appended safely.
-	_, where, _ := buildNodeSnapshotFilterParts(NodeSnapshotFilter{})
+	_, _, where, _ := buildNodeSnapshotFilterParts(NodeSnapshotFilter{})
 	if !strings.HasPrefix(where, " WHERE 1=1") {
 		t.Errorf("where should start with \" WHERE 1=1\", got %q", where)
 	}
 
-	_, where2, _ := buildNodeSnapshotFilterParts(NodeSnapshotFilter{
+	_, _, where2, _ := buildNodeSnapshotFilterParts(NodeSnapshotFilter{
 		Environment: "prod",
 	})
 	if !strings.HasPrefix(where2, " WHERE 1=1") {
@@ -670,6 +673,335 @@ func TestBuildNodeSnapshotFilterQuery_CountOverAlwaysPresent(t *testing.T) {
 		if !strings.Contains(q, "COUNT(*) OVER () AS total_count") {
 			t.Errorf("test[%d]: query missing COUNT(*) OVER () AS total_count", i)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Readiness filter push-down tests
+// ---------------------------------------------------------------------------
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessReady(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "ready",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query missing LEFT JOIN node_readiness")
+	}
+	if !strings.Contains(q, "nr.target_chef_version") {
+		t.Error("query missing nr.target_chef_version")
+	}
+	if !strings.Contains(q, "nr.is_ready = true") {
+		t.Error("query missing nr.is_ready = true")
+	}
+	found := false
+	for _, a := range args {
+		if a == "18.5.0" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("args should contain 18.5.0, got %v", args)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessBlocked(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "blocked",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query missing LEFT JOIN node_readiness")
+	}
+	if !strings.Contains(q, "nr.is_ready = false OR nr.is_ready IS NULL") {
+		t.Error("query missing blocked condition (nr.is_ready = false OR nr.is_ready IS NULL)")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessCookbooksBlocked(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "cookbooks_blocked",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query missing LEFT JOIN node_readiness")
+	}
+	if !strings.Contains(q, "nr.all_cookbooks_compatible = false OR nr.all_cookbooks_compatible IS NULL") {
+		t.Error("query missing cookbooks_blocked condition")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessDiskBlocked(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "disk_blocked",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query missing LEFT JOIN node_readiness")
+	}
+	if !strings.Contains(q, "nr.sufficient_disk_space = false") {
+		t.Error("query missing nr.sufficient_disk_space = false")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessDiskUnknown(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "disk_unknown",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query missing LEFT JOIN node_readiness")
+	}
+	if !strings.Contains(q, "nr.sufficient_disk_space IS NULL") {
+		t.Error("query missing nr.sufficient_disk_space IS NULL")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessWithoutTargetVersion(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "ready",
+		TargetChefVersion: "",
+	})
+
+	if strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query should NOT join node_readiness when TargetChefVersion is empty")
+	}
+	if strings.Contains(q, "nr.is_ready") {
+		t.Error("query should NOT contain readiness WHERE clause when TargetChefVersion is empty")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_TargetVersionOnly(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query should join node_readiness when TargetChefVersion is set (for response enrichment)")
+	}
+	found := false
+	for _, a := range args {
+		if a == "18.5.0" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("args should contain 18.5.0, got %v", args)
+	}
+	// No readiness WHERE filter should be applied.
+	if strings.Contains(q, "nr.is_ready") {
+		t.Error("query should NOT have readiness WHERE clause when ReadinessFilter is empty")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessWithOtherFilters(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "ready",
+		TargetChefVersion: "18.5.0",
+		Environment:       "production",
+	})
+
+	// Readiness JOIN and WHERE must be present.
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query missing LEFT JOIN node_readiness")
+	}
+	if !strings.Contains(q, "nr.is_ready = true") {
+		t.Error("query missing nr.is_ready = true")
+	}
+
+	// Environment filter must be present.
+	if !strings.Contains(q, "LOWER(cn.chef_environment) LIKE") {
+		t.Error("query missing environment filter clause")
+	}
+
+	// Verify both args are present and parameter numbering is correct.
+	if len(args) < 2 {
+		t.Fatalf("expected at least 2 args, got %d: %v", len(args), args)
+	}
+
+	// Find positions of target_chef_version and environment in args.
+	versionIdx := -1
+	envIdx := -1
+	for i, a := range args {
+		if a == "18.5.0" {
+			versionIdx = i
+		}
+		if a == "production" {
+			envIdx = i
+		}
+	}
+	if versionIdx == -1 {
+		t.Errorf("args missing 18.5.0: %v", args)
+	}
+	if envIdx == -1 {
+		t.Errorf("args missing production: %v", args)
+	}
+	if versionIdx != -1 && envIdx != -1 && versionIdx == envIdx {
+		t.Error("target_chef_version and environment should be separate args")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Multi-value filter tests ([]string slice fields with ANY($N) SQL)
+// ---------------------------------------------------------------------------
+
+func TestBuildNodeSnapshotFilterQuery_MultiEnvironments(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Environments: []string{"prod", "staging"},
+	})
+
+	if !strings.Contains(q, "chef_environment = ANY(") {
+		t.Errorf("query missing chef_environment = ANY clause, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d: %v", len(args), args)
+	}
+	// Verify the arg is a pq.Array wrapping the expected slice.
+	expected := fmt.Sprintf("%v", pq.Array([]string{"prod", "staging"}))
+	got := fmt.Sprintf("%v", args[0])
+	if got != expected {
+		t.Errorf("args[0] = %v, want %v", got, expected)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_MultiPlatforms(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Platforms: []string{"centos 7", "ubuntu 20.04"},
+	})
+
+	if !strings.Contains(q, "= ANY(") {
+		t.Errorf("query missing ANY clause, got:\n%s", q)
+	}
+	if !strings.Contains(q, "cn.platform || ' ' || COALESCE(cn.platform_version") {
+		t.Errorf("query missing platform concatenation, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d: %v", len(args), args)
+	}
+	expected := fmt.Sprintf("%v", pq.Array([]string{"centos 7", "ubuntu 20.04"}))
+	got := fmt.Sprintf("%v", args[0])
+	if got != expected {
+		t.Errorf("args[0] = %v, want %v", got, expected)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_MultiChefVersions(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ChefVersions: []string{"18.5.0", "17.10.0"},
+	})
+
+	if !strings.Contains(q, "chef_version = ANY(") {
+		t.Errorf("query missing chef_version = ANY clause, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d: %v", len(args), args)
+	}
+	expected := fmt.Sprintf("%v", pq.Array([]string{"18.5.0", "17.10.0"}))
+	got := fmt.Sprintf("%v", args[0])
+	if got != expected {
+		t.Errorf("args[0] = %v, want %v", got, expected)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_MultiPolicyNames(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		PolicyNames: []string{"base", "web"},
+	})
+
+	if !strings.Contains(q, "policy_name = ANY(") {
+		t.Errorf("query missing policy_name = ANY clause, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d: %v", len(args), args)
+	}
+	expected := fmt.Sprintf("%v", pq.Array([]string{"base", "web"}))
+	got := fmt.Sprintf("%v", args[0])
+	if got != expected {
+		t.Errorf("args[0] = %v, want %v", got, expected)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_MultiPolicyGroups(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		PolicyGroups: []string{"prod", "staging"},
+	})
+
+	if !strings.Contains(q, "policy_group = ANY(") {
+		t.Errorf("query missing policy_group = ANY clause, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d: %v", len(args), args)
+	}
+	expected := fmt.Sprintf("%v", pq.Array([]string{"prod", "staging"}))
+	got := fmt.Sprintf("%v", args[0])
+	if got != expected {
+		t.Errorf("args[0] = %v, want %v", got, expected)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_MultiEnvironments_OverridesSubstring(t *testing.T) {
+	// When both Environment (substring) and Environments (slice) are set,
+	// the slice takes precedence — no LIKE clause for chef_environment.
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Environment:  "prod",
+		Environments: []string{"staging"},
+	})
+
+	if strings.Contains(q, "LOWER(cn.chef_environment) LIKE") {
+		t.Error("query should NOT contain LIKE for chef_environment when Environments slice is set")
+	}
+	if !strings.Contains(q, "chef_environment = ANY(") {
+		t.Error("query missing chef_environment = ANY clause")
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_SingleEnvironment_PreservesSubstring(t *testing.T) {
+	// When only Environment (substring) is set with no Environments slice,
+	// existing LIKE behaviour is preserved.
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Environment: "prod",
+	})
+
+	if !strings.Contains(q, "LOWER(cn.chef_environment) LIKE") {
+		t.Error("query should contain LIKE for chef_environment when only substring filter is set")
+	}
+	if strings.Contains(q, "chef_environment = ANY(") {
+		t.Error("query should NOT contain ANY when Environments slice is empty")
+	}
+	if len(args) != 1 || args[0] != "prod" {
+		t.Errorf("args = %v, want [prod]", args)
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_MultiValueCombined(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Environments: []string{"prod"},
+		Platforms:    []string{"centos 7"},
+		ChefVersions: []string{"18.5.0"},
+	})
+
+	if !strings.Contains(q, "chef_environment = ANY(") {
+		t.Error("query missing chef_environment = ANY clause")
+	}
+	if !strings.Contains(q, "cn.platform || ' ' || COALESCE(cn.platform_version") {
+		t.Error("query missing platform concatenation ANY clause")
+	}
+	if !strings.Contains(q, "chef_version = ANY(") {
+		t.Error("query missing chef_version = ANY clause")
+	}
+	if len(args) != 3 {
+		t.Fatalf("expected 3 args (one pq.Array per filter), got %d: %v", len(args), args)
 	}
 }
 

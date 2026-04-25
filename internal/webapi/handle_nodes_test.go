@@ -467,6 +467,89 @@ func TestHandleNodesByCookbook_DBError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// nodeSnapshotFilterFromRequest tests
+// ---------------------------------------------------------------------------
+
+func TestNodeSnapshotFilterFromRequest_SingleValues(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/nodes?environment=prod&platform=centos&chef_version=18.5.0&policy_name=base&policy_group=default", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org-1"}, 24, 7)
+
+	if f.Environment != "prod" {
+		t.Errorf("Environment = %q, want %q", f.Environment, "prod")
+	}
+	if len(f.Environments) != 0 {
+		t.Errorf("Environments should be empty for single value, got %v", f.Environments)
+	}
+	if f.Platform != "centos" {
+		t.Errorf("Platform = %q, want %q", f.Platform, "centos")
+	}
+	if f.ChefVersion != "18.5.0" {
+		t.Errorf("ChefVersion = %q, want %q", f.ChefVersion, "18.5.0")
+	}
+	if f.PolicyName != "base" {
+		t.Errorf("PolicyName = %q, want %q", f.PolicyName, "base")
+	}
+	if f.PolicyGroup != "default" {
+		t.Errorf("PolicyGroup = %q, want %q", f.PolicyGroup, "default")
+	}
+}
+
+func TestNodeSnapshotFilterFromRequest_CommaSeparatedValues(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/nodes?environment=prod,staging&platform=centos+7,ubuntu+20.04&chef_version=18.5.0,17.10.0&policy_name=base,web&policy_group=prod,staging", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org-1"}, 24, 7)
+
+	// Comma-separated values should populate the slice fields.
+	if len(f.Environments) != 2 || f.Environments[0] != "prod" || f.Environments[1] != "staging" {
+		t.Errorf("Environments = %v, want [prod staging]", f.Environments)
+	}
+	if f.Environment != "" {
+		t.Errorf("Environment should be empty when comma-separated, got %q", f.Environment)
+	}
+	if len(f.Platforms) != 2 || f.Platforms[0] != "centos 7" || f.Platforms[1] != "ubuntu 20.04" {
+		t.Errorf("Platforms = %v, want [centos 7 ubuntu 20.04]", f.Platforms)
+	}
+	if len(f.ChefVersions) != 2 || f.ChefVersions[0] != "18.5.0" || f.ChefVersions[1] != "17.10.0" {
+		t.Errorf("ChefVersions = %v, want [18.5.0 17.10.0]", f.ChefVersions)
+	}
+	if len(f.PolicyNames) != 2 || f.PolicyNames[0] != "base" || f.PolicyNames[1] != "web" {
+		t.Errorf("PolicyNames = %v, want [base web]", f.PolicyNames)
+	}
+	if len(f.PolicyGroups) != 2 || f.PolicyGroups[0] != "prod" || f.PolicyGroups[1] != "staging" {
+		t.Errorf("PolicyGroups = %v, want [prod staging]", f.PolicyGroups)
+	}
+}
+
+func TestNodeSnapshotFilterFromRequest_ReadinessParams(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/nodes?target_chef_version=18.5.0&readiness_filter=ready", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org-1"}, 24, 7)
+
+	if f.TargetChefVersion != "18.5.0" {
+		t.Errorf("TargetChefVersion = %q, want %q", f.TargetChefVersion, "18.5.0")
+	}
+	if f.ReadinessFilter != "ready" {
+		t.Errorf("ReadinessFilter = %q, want %q", f.ReadinessFilter, "ready")
+	}
+}
+
+func TestNodeSnapshotFilterFromRequest_EmptyParams(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org-1"}, 24, 7)
+
+	if f.Environment != "" || len(f.Environments) != 0 {
+		t.Errorf("expected empty environment filters, got Environment=%q Environments=%v", f.Environment, f.Environments)
+	}
+	if f.ReadinessFilter != "" {
+		t.Errorf("ReadinessFilter = %q, want empty", f.ReadinessFilter)
+	}
+	if f.TargetChefVersion != "" {
+		t.Errorf("TargetChefVersion = %q, want empty", f.TargetChefVersion)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // bulkLoadReadiness tests
 // ---------------------------------------------------------------------------
 

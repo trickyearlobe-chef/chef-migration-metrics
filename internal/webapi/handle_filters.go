@@ -31,7 +31,12 @@ func (r *Router) handleFilterEnvironments(w http.ResponseWriter, req *http.Reque
 		WriteInternalError(w, "Failed to list environments.")
 		return
 	}
-	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.chef_environment")
+	q := req.URL.Query().Get("q")
+	opts := datastore.DistinctValueOpts{SearchPrefix: q}
+	if q != "" {
+		opts.Limit = 50
+	}
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.chef_environment", opts)
 	if err != nil {
 		r.logf("ERROR", "listing distinct environments: %v", err)
 		WriteInternalError(w, "Failed to list environments.")
@@ -54,7 +59,12 @@ func (r *Router) handleFilterRoles(w http.ResponseWriter, req *http.Request) {
 		WriteInternalError(w, "Failed to list roles.")
 		return
 	}
-	values, err := r.db.ListDistinctNodeRoles(req.Context(), f)
+	q := req.URL.Query().Get("q")
+	opts := datastore.DistinctValueOpts{SearchPrefix: q}
+	if q != "" {
+		opts.Limit = 50
+	}
+	values, err := r.db.ListDistinctNodeRoles(req.Context(), f, opts)
 	if err != nil {
 		r.logf("ERROR", "listing distinct roles: %v", err)
 		WriteInternalError(w, "Failed to list roles.")
@@ -77,7 +87,12 @@ func (r *Router) handleFilterPolicyNames(w http.ResponseWriter, req *http.Reques
 		WriteInternalError(w, "Failed to list policy names.")
 		return
 	}
-	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.policy_name")
+	q := req.URL.Query().Get("q")
+	opts := datastore.DistinctValueOpts{SearchPrefix: q}
+	if q != "" {
+		opts.Limit = 50
+	}
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.policy_name", opts)
 	if err != nil {
 		r.logf("ERROR", "listing distinct policy names: %v", err)
 		WriteInternalError(w, "Failed to list policy names.")
@@ -100,7 +115,12 @@ func (r *Router) handleFilterPolicyGroups(w http.ResponseWriter, req *http.Reque
 		WriteInternalError(w, "Failed to list policy groups.")
 		return
 	}
-	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.policy_group")
+	q := req.URL.Query().Get("q")
+	opts := datastore.DistinctValueOpts{SearchPrefix: q}
+	if q != "" {
+		opts.Limit = 50
+	}
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, "cn.policy_group", opts)
 	if err != nil {
 		r.logf("ERROR", "listing distinct policy groups: %v", err)
 		WriteInternalError(w, "Failed to list policy groups.")
@@ -129,7 +149,12 @@ func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request)
 	              WHEN cn.platform_version IS NOT NULL AND cn.platform_version != '' THEN cn.platform || ' ' || cn.platform_version
 	              ELSE cn.platform
 	         END`
-	values, err := r.db.ListDistinctNodeValues(req.Context(), f, expr)
+	q := req.URL.Query().Get("q")
+	opts := datastore.DistinctValueOpts{SearchPrefix: q}
+	if q != "" {
+		opts.Limit = 50
+	}
+	values, err := r.db.ListDistinctNodeValues(req.Context(), f, expr, opts)
 	if err != nil {
 		r.logf("ERROR", "listing distinct platforms: %v", err)
 		WriteInternalError(w, "Failed to list platforms.")

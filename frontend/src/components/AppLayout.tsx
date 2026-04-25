@@ -2,6 +2,55 @@ import { NavLink, Outlet } from "react-router-dom";
 import { OrgSelector } from "./OrgSelector";
 import { HealthBadge } from "./HealthBadge";
 import { useAuth } from "../context/AuthContext";
+import { useGlobalFilters } from "../context/GlobalFilterContext";
+
+function GlobalFilterBar() {
+  const {
+    targetVersions,
+    targetChefVersion,
+    setTargetChefVersion,
+    staleStatus,
+    setStaleStatus,
+    versionsLoading,
+  } = useGlobalFilters();
+
+  if (versionsLoading) return null;
+
+  return (
+    <div className="flex items-center gap-3">
+      {targetVersions.length > 0 && (
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs font-medium text-gray-500">Target</label>
+          <select
+            value={targetChefVersion}
+            onChange={(e) => setTargetChefVersion(e.target.value)}
+            className="block w-24 rounded-md border border-gray-300 bg-white px-1.5 py-1 text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {targetVersions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div className="flex items-center gap-1.5">
+        <label className="text-xs font-medium text-gray-500">Staleness</label>
+        <select
+          value={staleStatus}
+          onChange={(e) =>
+            setStaleStatus(e.target.value as "all" | "stale" | "fresh")
+          }
+          className="block w-20 rounded-md border border-gray-300 bg-white px-1.5 py-1 text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="all">All</option>
+          <option value="fresh">Fresh</option>
+          <option value="stale">Stale</option>
+        </select>
+      </div>
+    </div>
+  );
+}
 
 const navItems = [
   {
@@ -287,8 +336,11 @@ export function AppLayout() {
           <h1 className="text-lg font-semibold text-gray-800">
             Chef Migration Metrics
           </h1>
-          <div className="w-64">
-            <OrgSelector />
+          <div className="flex items-center gap-4">
+            <GlobalFilterBar />
+            <div className="w-64">
+              <OrgSelector />
+            </div>
           </div>
         </header>
 

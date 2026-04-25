@@ -77,11 +77,11 @@ type DataStore interface {
 
 	// ListDistinctNodeValues returns sorted distinct non-empty values for the
 	// given column expression from nodes matching the filter.
-	ListDistinctNodeValues(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string) ([]string, error)
+	ListDistinctNodeValues(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error)
 
 	// ListDistinctNodeRoles returns sorted distinct non-empty role names from
 	// the roles JSONB array across all nodes matching the filter.
-	ListDistinctNodeRoles(ctx context.Context, f datastore.NodeSnapshotFilter) ([]string, error)
+	ListDistinctNodeRoles(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error)
 
 	// ListNodeSnapshotsByCollectionRun returns all node snapshots captured
 	// during the given collection run.
@@ -136,6 +136,11 @@ type DataStore interface {
 	// -----------------------------------------------------------------
 	// Server cookbooks
 	// -----------------------------------------------------------------
+
+	// ListCookbooksFiltered returns server cookbooks matching the given
+	// filter with compatibility computed via SQL JOIN. Pagination and
+	// sorting are handled in SQL.
+	ListCookbooksFiltered(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error)
 
 	// ListServerCookbooksByOrganisation returns all server cookbooks
 	// belonging to the given organisation.

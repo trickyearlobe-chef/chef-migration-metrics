@@ -58,13 +58,6 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "cookbook")
-	if err != nil {
-		r.logf("ERROR", "resolving cookbook ownership filter: %v", err)
-		WriteInternalError(w, "Failed to resolve ownership filter.")
-		return
-	}
-
 	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
 		r.logf("ERROR", "listing organisations for cookbooks: %v", err)
@@ -72,109 +65,70 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Build org name lookup and collect all cookbook rows.
-	orgNameByID := make(map[string]string, len(orgs))
+	orgIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		orgNameByID[org.Name] = org.Name
+		orgIDs = append(orgIDs, org.Name)
 	}
 
-	var rows []cookbookRow
-	for _, org := range orgs {
-		cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
-		if err != nil {
-			r.logf("WARN", "listing server cookbooks for org %s: %v", org.Name, err)
-			continue
-		}
-		for _, sc := range cbs {
-			rows = append(rows, cookbookRow{
-				OrganisationName: sc.OrganisationName,
-				Name:             sc.Name,
-				Version:          sc.Version,
-				IsActive:         sc.IsActive,
-				IsStaleCookbook:  sc.IsStaleCookbook,
-				DownloadStatus:   sc.DownloadStatus,
-				DownloadError:    sc.DownloadError,
-			})
-		}
-	}
-
-	// Apply query-parameter filters.
-	rows = filterCookbookRows(req, rows)
-
-	// Compute compatibility per cookbook ID from cookstyle results.
 	targetChefVersion := queryString(req, "target_chef_version", "")
 	if targetChefVersion == "" {
 		targetChefVersion = r.defaultTargetVersion()
 	}
 
-	compatByID := make(map[string]string)
-	if targetChefVersion != "" {
-		for _, org := range orgs {
-			csResults, cErr := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.Name)
-			if cErr != nil {
-				r.logf("WARN", "listing cookstyle results for org %s: %v", org.Name, cErr)
-				continue
-			}
-			for _, cs := range csResults {
-				if cs.TargetChefVersion != targetChefVersion {
-					continue
-				}
-				// One result per (server_cookbook_id, target_chef_version).
-				csKey := cs.OrganisationName + "/" + cs.CookbookName + "/" + cs.CookbookVersion
-				if cs.ErrorMessage != "" {
-					compatByID[csKey] = "scan_error"
-				} else if cs.Passed {
-					compatByID[csKey] = "compatible"
-				} else {
-					compatByID[csKey] = "incompatible"
-				}
-			}
-		}
-	}
-
-	// Assign compatibility to each row.
-	for i := range rows {
-		if c, ok := compatByID[rows[i].key()]; ok {
-			rows[i].Compatibility = c
-		} else {
-			rows[i].Compatibility = "untested"
-		}
-	}
-
-	rows = filterByOwnershipKey(rows, ownedKeys, of, func(cb cookbookRow) string { return cb.Name })
-
-	// Apply compatibility filter if specified.
-	compatFilter := req.URL.Query().Get("compatibility")
-	if compatFilter != "" {
-		filtered := rows[:0]
-		for _, cb := range rows {
-			if cb.Compatibility == compatFilter {
-				filtered = append(filtered, cb)
-			}
-		}
-		rows = filtered
-	}
-
-	// Apply download_status filter if specified.
-	dlFilter := req.URL.Query().Get("download_status")
-	if dlFilter != "" {
-		filtered := rows[:0]
-		for _, cb := range rows {
-			if cb.DownloadStatus == dlFilter {
-				filtered = append(filtered, cb)
-			}
-		}
-		rows = filtered
-	}
-
-	// Sort the results.
-	sortField := queryString(req, "sort", "name")
-	sortOrder := queryString(req, "order", "asc")
-	sortCookbookRows(rows, sortField, sortOrder)
-
-	// Paginate the results.
+	q := req.URL.Query()
 	pg := ParsePagination(req)
-	pageRows, total := PaginateSlice(rows, pg)
+
+	// Build SQL filter from query parameters.
+	f := datastore.CookbookFilter{
+		OrganisationNames: orgIDs,
+		Name:              q.Get("name"),
+		DownloadStatus:    q.Get("download_status"),
+		Compatibility:     q.Get("compatibility"),
+		TargetChefVersion: targetChefVersion,
+		Sort:              queryString(req, "sort", "name"),
+		SortOrder:         queryString(req, "order", "asc"),
+		Limit:             pg.Limit(),
+		Offset:            pg.Offset(),
+	}
+
+	// Parse the active filter (bool pointer — nil means no filter).
+	switch q.Get("active") {
+	case "true":
+		v := true
+		f.Active = &v
+	case "false":
+		v := false
+		f.Active = &v
+	}
+
+	// When ownership filtering is active, we disable SQL pagination and
+	// apply ownership + pagination in memory (same pattern as nodes).
+	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	if ownerFilterActive {
+		f.Limit = 0
+		f.Offset = 0
+	}
+
+	rows, total, err := r.db.ListCookbooksFiltered(ctx, f)
+	if err != nil {
+		r.logf("ERROR", "listing filtered cookbooks: %v", err)
+		WriteInternalError(w, "Failed to list cookbooks.")
+		return
+	}
+
+	// Apply ownership filter in memory if active.
+	if ownerFilterActive {
+		ownedKeys, oErr := r.resolveOwnershipFilter(ctx, of, "cookbook")
+		if oErr != nil {
+			r.logf("ERROR", "resolving cookbook ownership filter: %v", oErr)
+			WriteInternalError(w, "Failed to resolve ownership filter.")
+			return
+		}
+		rows = filterByOwnershipKey(rows, ownedKeys, of, func(cb datastore.CookbookFilterRow) string { return cb.Name })
+		total = len(rows)
+		pageRows, _ := PaginateSlice(rows, pg)
+		rows = pageRows
+	}
 
 	type cookbookResp struct {
 		ID                string `json:"id"`
@@ -190,8 +144,8 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
-	result := make([]cookbookResp, 0, len(pageRows))
-	for _, cb := range pageRows {
+	result := make([]cookbookResp, 0, len(rows))
+	for _, cb := range rows {
 		resp := cookbookResp{
 			ID:                cb.OrganisationName + "/" + cb.Name + "/" + cb.Version,
 			OrganisationID:    cb.OrganisationName,
