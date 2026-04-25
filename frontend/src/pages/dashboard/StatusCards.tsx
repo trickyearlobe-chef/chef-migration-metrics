@@ -23,6 +23,10 @@ import {
   ErrorAlert,
   EmptyState,
 } from "../../components/Feedback";
+import {
+  BatteryBarChart,
+  groupByMajorVersion,
+} from "../../components/battery-bar";
 
 // ---------------------------------------------------------------------------
 // Version Distribution Card (point-in-time)
@@ -66,34 +70,14 @@ export function VersionDistributionCard({
               description="No nodes have been collected yet."
             />
           ) : (
-            <div className="space-y-1">
-              {data.distribution.map((v) => {
-                const pct =
-                  data.total_nodes > 0 ? (v.count / data.total_nodes) * 100 : 0;
-                return (
-                  <Link
-                    key={v.version}
-                    to={`/nodes?chef_version=${encodeURIComponent(v.version)}`}
-                    className="bar-chart-row hover:bg-gray-50 rounded transition-colors"
-                  >
-                    <span className="bar-chart-label" title={v.version}>
-                      {v.version}
-                    </span>
-                    <div className="bar-chart-track">
-                      <div
-                        className="bar-chart-fill bg-blue-500"
-                        style={{ width: `${Math.max(pct, 2)}%` }}
-                      >
-                        {pct >= 8 && <span>{pct.toFixed(1)}%</span>}
-                      </div>
-                    </div>
-                    <span className="bar-chart-value">
-                      {v.count.toLocaleString()}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
+            <BatteryBarChart
+              groups={groupByMajorVersion(data.distribution, data.total_nodes)}
+              totalCount={data.total_nodes}
+              labelPrefix="Chef"
+              childLinkBuilder={(version) =>
+                `/nodes?chef_version=${encodeURIComponent(version)}`
+              }
+            />
           )}
         </>
       )}
