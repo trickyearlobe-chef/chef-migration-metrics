@@ -11,7 +11,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 ## Frontend — Large Files
 
 - [ ] `NodeDetailPage.tsx` (~1136 lines) contains 10+ sub-components — extract `DiskSpacePanel`, `CookbookCompatibilityTable`, `ReadinessCard`, `ReadinessSection`, `InfoCard` into separate files.
-- [ ] `DependencyGraphPage.tsx` (~1646 lines) — extract force-directed simulation, table view, and selected-node panel into separate files.
+- [x] `DependencyGraphPage.tsx` (~1646→~739 lines) — ForceGraph simulation + SelectedNodePanel extracted to `components/force-graph/`. Table view and SharedCookbooksCard remain; further extraction optional.
 - [ ] `StatusCards.tsx` (~860 lines) — 7 cards each repeat the same fetch-load-error pattern; extract a `useFetch<T>` hook to eliminate boilerplate.
 
 ## Frontend — Inconsistency
