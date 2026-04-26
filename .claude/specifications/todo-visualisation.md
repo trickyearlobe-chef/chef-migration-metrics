@@ -15,7 +15,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Dependency Graph View
 
-- [ ] Colour-code cookbook nodes by compatibility status (green=compatible, red=incompatible, grey=untested, amber=CookStyle-only) — nodes are currently coloured by type only (role=blue, cookbook=green); compatibility status is not fetched or applied
+- [~] Colour-code cookbook nodes by compatibility status (green=compatible, red=incompatible, grey=untested, amber=CookStyle-only) — ForceGraph component now supports `compatibility_status` colouring; role dependency graph uses it. Org-level dependency graph still needs backend to supply compatibility data on nodes.
 - [ ] Support filtering by compatibility status (show only paths involving incompatible/untested cookbooks) — not implemented; would require fetching compatibility data and joining with graph nodes
 - [ ] Implement lazy loading or level-of-detail rendering for large graphs
 - [ ] Link role nodes to node list filtered by that role — URL param infrastructure exists (nodes page reads query params), needs wiring in dependency graph component
