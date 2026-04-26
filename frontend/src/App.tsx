@@ -19,6 +19,8 @@ import { CookbooksPage } from "./pages/CookbooksPage";
 import { CookbookDetailPage } from "./pages/CookbookDetailPage";
 import { CookbookCommittersPage } from "./pages/CookbookCommittersPage";
 import { CookbookRemediationPage } from "./pages/CookbookRemediationPage";
+import { RolesPage } from "./pages/RolesPage";
+import { RoleDetailPage } from "./pages/RoleDetailPage";
 import { GitReposPage } from "./pages/GitReposPage";
 import { GitRepoDetailPage } from "./pages/GitRepoDetailPage";
 import { GitRepoRemediationPage } from "./pages/GitRepoRemediationPage";
@@ -197,6 +199,8 @@ export function App() {
                 path="/cookbooks/:name/:version/remediation"
                 element={<CookbookRemediationPage />}
               />
+              <Route path="/roles" element={<RolesPage />} />
+              <Route path="/roles/:name" element={<RoleDetailPage />} />
               <Route path="/git-repos" element={<GitReposPage />} />
               <Route path="/git-repos/:name" element={<GitRepoDetailPage />} />
               <Route
