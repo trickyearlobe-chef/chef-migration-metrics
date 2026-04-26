@@ -2,17 +2,15 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
+import { useGlobalFilters } from "../context/GlobalFilterContext";
 import { useSort } from "../hooks/useSort";
 import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
-import {
-  FilterInput,
-  FilterSelect,
-  FilterCombobox,
-} from "../components/FilterInputs";
+import { FilterInput } from "../components/FilterInputs";
+import { FilterMultiCheckbox } from "../components/FilterMultiCheckbox";
+import { FilterTypeAhead } from "../components/FilterTypeAhead";
 import {
   fetchNodes,
-  fetchFilterRoles,
   fetchFilterPolicyNames,
   fetchFilterPolicyGroups,
   fetchFilterEnvironments,
@@ -31,18 +29,6 @@ import { ExportButton } from "../components/ExportButton";
 import { CheckStatusIcons } from "../components/CheckStatusIcons";
 import { PlatformLabel } from "../components/PlatformLabel";
 
-// ---------------------------------------------------------------------------
-// Readiness filter values — pushed down to backend SQL via readiness_filter
-// and target_chef_version query params.
-// ---------------------------------------------------------------------------
-type ReadinessFilter =
-  | ""
-  | "ready"
-  | "blocked"
-  | "cookbooks_blocked"
-  | "disk_blocked"
-  | "disk_unknown";
-
 function formatOhaiTime(ohaiTime?: number): string {
   if (!ohaiTime) return "—";
   try {
@@ -52,15 +38,24 @@ function formatOhaiTime(ohaiTime?: number): string {
   }
 }
 
+const READINESS_OPTIONS: { value: string; label: string }[] = [
+  { value: "ready", label: "✓ Ready" },
+  { value: "blocked", label: "✗ Blocked" },
+  { value: "cookbooks_blocked", label: "📦 Cookbooks Blocked" },
+  { value: "disk_blocked", label: "💾 Disk Blocked" },
+  { value: "disk_unknown", label: "💾 Disk Unknown" },
+];
+
 // ---------------------------------------------------------------------------
 // Nodes list page — paginated table from GET /api/v1/nodes with filter
 // dropdowns for environment, platform, chef_version, role, policy name,
-// policy group, stale status, and readiness (for a selected target version).
+// policy group, stale status (global), and readiness (multi-select).
 // Each row links to node detail. Stale nodes are colour-coded.
 // ---------------------------------------------------------------------------
 
 export function NodesPage() {
   const { selectedOrg } = useOrg();
+  const { staleStatus } = useGlobalFilters();
   const [nodes, setNodes] = useState<NodeListItem[]>([]);
   const [pagination, setPagination] = useState<PaginationType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,17 +67,26 @@ export function NodesPage() {
 
   // Filter state
   const [nodeName, setNodeName] = useState("");
-  const [environment, setEnvironment] = useState("");
-  const [platform, setPlatform] = useState(searchParams.get("platform") || "");
+  const [environments, setEnvironments] = useState<string[]>(
+    searchParams.get("environment")?.split(",").filter(Boolean) ?? [],
+  );
+  const [platforms, setPlatforms] = useState<string[]>(
+    searchParams.get("platform")?.split(",").filter(Boolean) ?? [],
+  );
   const [chefVersion, setChefVersion] = useState(
     searchParams.get("chef_version") || "",
   );
-  const [role, setRole] = useState("");
-  const [policyName, setPolicyName] = useState("");
-  const [policyGroup, setPolicyGroup] = useState("");
-  const [stale, setStale] = useState("");
-  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>(
-    (searchParams.get("readiness") as ReadinessFilter) || "",
+  const [roles, setRoles] = useState<string[]>(
+    searchParams.get("role")?.split(",").filter(Boolean) ?? [],
+  );
+  const [policyNames, setPolicyNames] = useState<string[]>(
+    searchParams.get("policy_name")?.split(",").filter(Boolean) ?? [],
+  );
+  const [policyGroups, setPolicyGroups] = useState<string[]>(
+    searchParams.get("policy_group")?.split(",").filter(Boolean) ?? [],
+  );
+  const [readinessFilter, setReadinessFilter] = useState<string[]>(
+    searchParams.get("readiness")?.split(",").filter(Boolean) ?? [],
   );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
@@ -99,18 +103,10 @@ export function NodesPage() {
     ],
   });
 
-  // Target Chef version for readiness filter and exports (loaded from backend config)
-  const initialTargetVersion = searchParams.get("target_version") || "";
-  const {
-    targetVersions,
-    selectedVersion: selectedTargetVersion,
-    setSelectedVersion: setSelectedTargetVersion,
-  } = useTargetChefVersion({
-    initialVersion: initialTargetVersion || undefined,
-  });
+  // Target Chef version for readiness filter and exports (from global context)
+  const { selectedVersion: selectedTargetVersion } = useTargetChefVersion();
 
   // Filter option values loaded from the backend
-  const [roleOptions, setRoleOptions] = useState<string[]>([]);
   const [policyNameOptions, setPolicyNameOptions] = useState<string[]>([]);
   const [policyGroupOptions, setPolicyGroupOptions] = useState<string[]>([]);
   const [environmentOptions, setEnvironmentOptions] = useState<string[]>([]);
@@ -123,7 +119,11 @@ export function NodesPage() {
       searchParams.has("readiness") ||
       searchParams.has("target_version") ||
       searchParams.has("chef_version") ||
-      searchParams.has("platform")
+      searchParams.has("platform") ||
+      searchParams.has("environment") ||
+      searchParams.has("role") ||
+      searchParams.has("policy_name") ||
+      searchParams.has("policy_group")
     ) {
       setSearchParams({}, { replace: true });
     }
@@ -132,10 +132,6 @@ export function NodesPage() {
   // Load filter option values whenever the selected org changes.
   useEffect(() => {
     const org = selectedOrg || undefined;
-
-    fetchFilterRoles(org)
-      .then((res) => setRoleOptions(res.data ?? []))
-      .catch(() => setRoleOptions([]));
 
     fetchFilterPolicyNames(org)
       .then((res) => setPolicyNameOptions(res.data ?? []))
@@ -164,18 +160,20 @@ export function NodesPage() {
     };
     if (selectedOrg) filters.organisation = selectedOrg;
     if (nodeName) filters.node_name = nodeName;
-    if (environment) filters.environment = environment;
-    if (platform) filters.platform = platform;
+    if (environments.length > 0) filters.environment = environments.join(",");
+    if (platforms.length > 0) filters.platform = platforms.join(",");
     if (chefVersion) filters.chef_version = chefVersion;
-    if (role) filters.role = role;
-    if (policyName) filters.policy_name = policyName;
-    if (policyGroup) filters.policy_group = policyGroup;
-    if (stale) filters.stale = stale;
+    if (roles.length > 0) filters.role = roles.join(",");
+    if (policyNames.length > 0) filters.policy_name = policyNames.join(",");
+    if (policyGroups.length > 0) filters.policy_group = policyGroups.join(",");
+    if (staleStatus === "stale") filters.stale = "stale";
+    else if (staleStatus === "fresh") filters.stale = "fresh";
     if (sortField) filters.sort = sortField;
     if (sortOrder) filters.order = sortOrder;
     if (selectedTargetVersion)
       filters.target_chef_version = selectedTargetVersion;
-    if (readinessFilter) filters.readiness_filter = readinessFilter;
+    if (readinessFilter.length > 0)
+      filters.readiness_filter = readinessFilter.join(",");
 
     fetchNodes(filters)
       .then((res) => {
@@ -187,13 +185,13 @@ export function NodesPage() {
   }, [
     selectedOrg,
     nodeName,
-    environment,
-    platform,
+    environments,
+    platforms,
     chefVersion,
-    role,
-    policyName,
-    policyGroup,
-    stale,
+    roles,
+    policyNames,
+    policyGroups,
+    staleStatus,
     readinessFilter,
     selectedTargetVersion,
     page,
@@ -211,13 +209,13 @@ export function NodesPage() {
   }, [
     selectedOrg,
     nodeName,
-    environment,
-    platform,
+    environments,
+    platforms,
     chefVersion,
-    role,
-    policyName,
-    policyGroup,
-    stale,
+    roles,
+    policyNames,
+    policyGroups,
+    staleStatus,
     readinessFilter,
     selectedTargetVersion,
     sortField,
@@ -225,29 +223,25 @@ export function NodesPage() {
   ]);
 
   // Count active filters for the clear button.
-  // Readiness filter is counted only when set (target version selector is not counted as a filter).
-  const activeFilterCount = [
-    nodeName,
-    environment,
-    platform,
-    chefVersion,
-    role,
-    policyName,
-    policyGroup,
-    stale,
-    readinessFilter,
-  ].filter(Boolean).length;
+  const activeFilterCount =
+    (nodeName ? 1 : 0) +
+    (environments.length > 0 ? 1 : 0) +
+    (platforms.length > 0 ? 1 : 0) +
+    (chefVersion ? 1 : 0) +
+    (roles.length > 0 ? 1 : 0) +
+    (policyNames.length > 0 ? 1 : 0) +
+    (policyGroups.length > 0 ? 1 : 0) +
+    (readinessFilter.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNodeName("");
-    setEnvironment("");
-    setPlatform("");
+    setEnvironments([]);
+    setPlatforms([]);
     setChefVersion("");
-    setRole("");
-    setPolicyName("");
-    setPolicyGroup("");
-    setStale("");
-    setReadinessFilter("");
+    setRoles([]);
+    setPolicyNames([]);
+    setPolicyGroups([]);
+    setReadinessFilter([]);
   };
 
   // Readiness filtering is now handled server-side via readiness_filter and
@@ -258,38 +252,22 @@ export function NodesPage() {
   const exportFilters: ExportFilters = {};
   if (selectedOrg) exportFilters.organisation = selectedOrg;
   if (nodeName) exportFilters.node_name = nodeName;
-  if (environment) exportFilters.environment = environment;
-  if (platform) exportFilters.platform = platform;
+  if (environments.length > 0)
+    exportFilters.environment = environments.join(",");
+  if (platforms.length > 0) exportFilters.platform = platforms.join(",");
   if (chefVersion) exportFilters.chef_version = chefVersion;
-  if (role) exportFilters.role = role;
-  if (policyName) exportFilters.policy_name = policyName;
-  if (policyGroup) exportFilters.policy_group = policyGroup;
-  if (stale) exportFilters.stale = stale;
+  if (roles.length > 0) exportFilters.role = roles.join(",");
+  if (policyNames.length > 0) exportFilters.policy_name = policyNames.join(",");
+  if (policyGroups.length > 0)
+    exportFilters.policy_group = policyGroups.join(",");
+  if (staleStatus === "stale") exportFilters.stale = "stale";
+  else if (staleStatus === "fresh") exportFilters.stale = "fresh";
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold text-gray-800">Nodes</h2>
         <div className="flex items-center gap-3">
-          {/* Target version selector for readiness filter + exports */}
-          {targetVersions.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-gray-500">
-                Target Version
-              </label>
-              <select
-                value={selectedTargetVersion}
-                onChange={(e) => setSelectedTargetVersion(e.target.value)}
-                className="block w-28 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                {targetVersions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <ExportButton
             exportType="ready_nodes"
             targetChefVersion={selectedTargetVersion || undefined}
@@ -314,19 +292,17 @@ export function NodesPage() {
           onChange={setNodeName}
           placeholder="Filter by name"
         />
-        <FilterCombobox
+        <FilterMultiCheckbox
           label="Environment"
-          value={environment}
-          onChange={setEnvironment}
-          options={environmentOptions}
-          placeholder="All environments"
+          selected={environments}
+          onChange={setEnvironments}
+          options={environmentOptions.map((o) => ({ value: o, label: o }))}
         />
-        <FilterCombobox
+        <FilterMultiCheckbox
           label="Platform"
-          value={platform}
-          onChange={setPlatform}
-          options={platformOptions}
-          placeholder="All platforms"
+          selected={platforms}
+          onChange={setPlatforms}
+          options={platformOptions.map((o) => ({ value: o, label: o }))}
         />
         <FilterInput
           label="Chef Version"
@@ -334,51 +310,29 @@ export function NodesPage() {
           onChange={setChefVersion}
           placeholder="e.g. 17.10.0"
         />
-        <FilterCombobox
+        <FilterTypeAhead
           label="Role"
-          value={role}
-          onChange={setRole}
-          options={roleOptions}
-          placeholder="All roles"
+          endpoint="/api/v1/filters/roles"
+          selected={roles}
+          onChange={setRoles}
         />
-        <FilterCombobox
+        <FilterMultiCheckbox
           label="Policy Name"
-          value={policyName}
-          onChange={setPolicyName}
-          options={policyNameOptions}
-          placeholder="All policies"
+          selected={policyNames}
+          onChange={setPolicyNames}
+          options={policyNameOptions.map((o) => ({ value: o, label: o }))}
         />
-        <FilterCombobox
+        <FilterMultiCheckbox
           label="Policy Group"
-          value={policyGroup}
-          onChange={setPolicyGroup}
-          options={policyGroupOptions}
-          placeholder="All groups"
+          selected={policyGroups}
+          onChange={setPolicyGroups}
+          options={policyGroupOptions.map((o) => ({ value: o, label: o }))}
         />
-        <FilterSelect
-          label="Stale Status"
-          value={stale}
-          onChange={setStale}
-          options={[
-            { value: "", label: "All" },
-            { value: "fresh", label: "Fresh" },
-            { value: "warning", label: "Missing (Warning)" },
-            { value: "critical", label: "Gone (Critical)" },
-          ]}
-        />
-        <FilterSelect
+        <FilterMultiCheckbox
           label="Readiness"
-          value={readinessFilter}
-          onChange={(v) => setReadinessFilter(v as ReadinessFilter)}
-          options={[
-            { value: "", label: "All" },
-            { value: "ready", label: "✓ Ready" },
-            { value: "blocked", label: "✗ Blocked" },
-            { value: "cookbooks_blocked", label: "📦 Cookbooks Blocked" },
-            { value: "disk_blocked", label: "💾 Disk Blocked" },
-            { value: "disk_unknown", label: "💾 Disk Unknown" },
-          ]}
-          wide
+          selected={readinessFilter}
+          onChange={setReadinessFilter}
+          options={READINESS_OPTIONS}
         />
         {activeFilterCount > 0 && (
           <button
@@ -525,7 +479,3 @@ export function NodesPage() {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Filter helpers
-// ---------------------------------------------------------------------------
