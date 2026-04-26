@@ -8,13 +8,23 @@ import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { FilterInput } from "../components/FilterInputs";
 import { FilterMultiCheckbox } from "../components/FilterMultiCheckbox";
 import { fetchRoles } from "../api";
-import type { RoleListItem, RoleSummary, Pagination as PaginationType } from "../types";
+import type {
+  RoleListItem,
+  RoleSummary,
+  Pagination as PaginationType,
+} from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { CompatibilityBadge } from "../components/StatusBadge";
 import type { RoleFilterQuery } from "../api/roles";
 
-function SummaryBar({ summary }: { summary: RoleSummary | null }) {
+function SummaryBar({
+  summary,
+  onFilterClick,
+}: {
+  summary: RoleSummary | null;
+  onFilterClick: (status: string) => void;
+}) {
   if (!summary || summary.total_roles === 0) return null;
 
   const pct = (n: number) =>
@@ -26,40 +36,58 @@ function SummaryBar({ summary }: { summary: RoleSummary | null }) {
     <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
       <div className="flex h-3">
         {summary.compatible_roles > 0 && (
-          <div
-            className="bg-green-500 transition-all"
+          <button
+            type="button"
+            className="bg-green-500 transition-all hover:brightness-110 cursor-pointer"
             style={{ width: `${pct(summary.compatible_roles)}%` }}
-            title={`Compatible: ${summary.compatible_roles}`}
+            title={`Compatible: ${summary.compatible_roles} — click to filter`}
+            onClick={() => onFilterClick("compatible")}
           />
         )}
         {summary.untested_roles > 0 && (
-          <div
-            className="bg-gray-400 transition-all"
+          <button
+            type="button"
+            className="bg-gray-400 transition-all hover:brightness-110 cursor-pointer"
             style={{ width: `${pct(summary.untested_roles)}%` }}
-            title={`Untested: ${summary.untested_roles}`}
+            title={`Untested: ${summary.untested_roles} — click to filter`}
+            onClick={() => onFilterClick("untested")}
           />
         )}
         {summary.incompatible_roles > 0 && (
-          <div
-            className="bg-red-500 transition-all"
+          <button
+            type="button"
+            className="bg-red-500 transition-all hover:brightness-110 cursor-pointer"
             style={{ width: `${pct(summary.incompatible_roles)}%` }}
-            title={`Incompatible: ${summary.incompatible_roles}`}
+            title={`Incompatible: ${summary.incompatible_roles} — click to filter`}
+            onClick={() => onFilterClick("incompatible")}
           />
         )}
       </div>
       <div className="flex items-center justify-between px-4 py-2 text-xs text-gray-600">
-        <span>
+        <button
+          type="button"
+          onClick={() => onFilterClick("compatible")}
+          className="cursor-pointer hover:underline"
+        >
           <span className="mr-1 inline-block h-2 w-2 rounded-full bg-green-500" />
           Compatible: {summary.compatible_roles}
-        </span>
-        <span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onFilterClick("untested")}
+          className="cursor-pointer hover:underline"
+        >
           <span className="mr-1 inline-block h-2 w-2 rounded-full bg-gray-400" />
           Untested: {summary.untested_roles}
-        </span>
-        <span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onFilterClick("incompatible")}
+          className="cursor-pointer hover:underline"
+        >
           <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500" />
           Incompatible: {summary.incompatible_roles}
-        </span>
+        </button>
         <span className="font-medium text-gray-800">
           Total: {summary.total_roles}
         </span>
@@ -78,9 +106,7 @@ export function RolesPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [nameFilter, setNameFilter] = useState(
-    searchParams.get("name") || "",
-  );
+  const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
   const [compatibility, setCompatibility] = useState<string[]>(
     searchParams.get("compatibility_status")?.split(",").filter(Boolean) ?? [],
   );
@@ -169,7 +195,10 @@ export function RolesPage() {
     <div className="space-y-4">
       <h2 className="text-xl font-bold text-gray-800">Roles</h2>
 
-      <SummaryBar summary={summary} />
+      <SummaryBar
+        summary={summary}
+        onFilterClick={(status) => setCompatibility([status])}
+      />
 
       <div className="flex flex-wrap items-end gap-3">
         <FilterInput
