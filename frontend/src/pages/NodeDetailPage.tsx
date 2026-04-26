@@ -1098,9 +1098,13 @@ export function NodeDetailPage() {
           <h3 className="card-header">Roles</h3>
           <div className="flex flex-wrap gap-2">
             {node.roles.map((role) => (
-              <span key={role} className="badge badge-compatible">
+              <Link
+                key={role}
+                to={`/roles/${encodeURIComponent(role)}`}
+                className="badge badge-compatible transition-colors hover:opacity-80"
+              >
                 {role}
-              </span>
+              </Link>
             ))}
           </div>
         </div>

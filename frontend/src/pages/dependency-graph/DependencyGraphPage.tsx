@@ -17,7 +17,11 @@ import type {
   DependencyTableRow,
   SharedCookbook,
 } from "../../types";
-import { LoadingSpinner, ErrorAlert, EmptyState } from "../../components/Feedback";
+import {
+  LoadingSpinner,
+  ErrorAlert,
+  EmptyState,
+} from "../../components/Feedback";
 import { Pagination } from "../../components/Pagination";
 
 // ---------------------------------------------------------------------------
@@ -1209,13 +1213,14 @@ function SelectedNodePanel({
             </h5>
             <div className="flex flex-wrap gap-1">
               {depRoles.map((n) => (
-                <span
+                <Link
                   key={n.id}
-                  className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700"
+                  to={`/roles/${encodeURIComponent(n.name)}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 transition-colors hover:bg-blue-100"
                 >
                   <span className="inline-block h-1.5 w-1.5 rounded-sm bg-blue-500" />
                   {n.name}
-                </span>
+                </Link>
               ))}
             </div>
           </div>
@@ -1227,27 +1232,38 @@ function SelectedNodePanel({
             <h5 className="mb-1 font-medium text-gray-600">Depended on by</h5>
             <div className="flex flex-wrap gap-1">
               {dependedOnBy.map((n) => (
-                <span
+                <Link
                   key={n.id}
-                  className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700"
+                  to={
+                    n.type === "role"
+                      ? `/roles/${encodeURIComponent(n.name)}`
+                      : `/cookbooks/${encodeURIComponent(n.name)}`
+                  }
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 transition-colors hover:bg-amber-100"
                 >
                   <span
                     className={`inline-block h-1.5 w-1.5 ${n.type === "role" ? "rounded-sm bg-blue-500" : "rounded-full bg-emerald-500"}`}
                   />
                   {n.name}
-                </span>
+                </Link>
               ))}
             </div>
           </div>
         )}
 
         {/* Link to detail page */}
-        {node.type === "cookbook" && (
+        {(node.type === "cookbook" || node.type === "role") && (
           <Link
-            to={`/cookbooks/${encodeURIComponent(node.name)}`}
+            to={
+              node.type === "role"
+                ? `/roles/${encodeURIComponent(node.name)}`
+                : `/cookbooks/${encodeURIComponent(node.name)}`
+            }
             className="mt-2 flex items-center justify-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
           >
-            View Cookbook Details
+            {node.type === "role"
+              ? "View Role Details"
+              : "View Cookbook Details"}
             <svg
               className="h-3.5 w-3.5"
               fill="none"
@@ -1538,7 +1554,14 @@ function TableRow({
             />
           </svg>
         </td>
-        <td className="font-medium text-gray-900">{row.role_name}</td>
+        <td>
+          <Link
+            to={`/roles/${encodeURIComponent(row.role_name)}`}
+            className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            {row.role_name}
+          </Link>
+        </td>
         <td>
           <span className="inline-flex items-center gap-1">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
@@ -1565,19 +1588,25 @@ function TableRow({
           {/* Mini dependency pills, show first few */}
           <div className="flex flex-wrap gap-1">
             {row.dependencies.slice(0, 4).map((d) => (
-              <span
+              <Link
                 key={`${d.type}:${d.name}`}
-                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                to={
                   d.type === "cookbook"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-blue-50 text-blue-700"
+                    ? `/cookbooks/${encodeURIComponent(d.name)}`
+                    : `/roles/${encodeURIComponent(d.name)}`
+                }
+                onClick={(e) => e.stopPropagation()}
+                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                  d.type === "cookbook"
+                    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : "bg-blue-50 text-blue-700 hover:bg-blue-100"
                 }`}
               >
                 <span
                   className={`inline-block h-1 w-1 ${d.type === "cookbook" ? "rounded-full bg-emerald-500" : "rounded-sm bg-blue-500"}`}
                 />
                 {d.name}
-              </span>
+              </Link>
             ))}
             {row.dependencies.length > 4 && (
               <span className="inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
@@ -1626,13 +1655,14 @@ function TableRow({
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {roleDeps.map((d) => (
-                      <span
+                      <Link
                         key={d.name}
-                        className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20"
+                        to={`/roles/${encodeURIComponent(d.name)}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20 transition-colors hover:bg-blue-100"
                       >
                         <span className="inline-block h-1.5 w-1.5 rounded-sm bg-blue-500" />
                         {d.name}
-                      </span>
+                      </Link>
                     ))}
                   </div>
                 )}
