@@ -78,6 +78,8 @@ type mockStore struct {
 	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
 	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
 	GetLogEntryFn                                       func(ctx context.Context, id int64) (datastore.LogEntry, error)
+	ListRolesFilteredFn                                 func(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error)
+	GetRoleDetailFn                                     func(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error)
 	ListRoleDependenciesByOrgFn                         func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
 	CountDependenciesByRoleFn                           func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
 	CountRolesPerCookbookFn                             func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
@@ -621,6 +623,20 @@ func (m *mockStore) GetLogEntry(ctx context.Context, id int64) (datastore.LogEnt
 // -----------------------------------------------------------------
 // Role dependencies
 // -----------------------------------------------------------------
+
+func (m *mockStore) ListRolesFiltered(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error) {
+	if m.ListRolesFilteredFn != nil {
+		return m.ListRolesFilteredFn(ctx, f)
+	}
+	return nil, 0, datastore.RoleFilterSummary{}, nil
+}
+
+func (m *mockStore) GetRoleDetail(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error) {
+	if m.GetRoleDetailFn != nil {
+		return m.GetRoleDetailFn(ctx, roleName, targetChefVersion)
+	}
+	return nil, datastore.ErrNotFound
+}
 
 func (m *mockStore) ListRoleDependenciesByOrg(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 	if m.ListRoleDependenciesByOrgFn != nil {

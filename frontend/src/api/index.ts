@@ -19,3 +19,4 @@ export * from "./credentials";
 export * from "./kitchen";
 export * from "./config";
 export * from "./platform-display-names";
+export * from "./roles";

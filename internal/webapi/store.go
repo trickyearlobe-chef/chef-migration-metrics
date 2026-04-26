@@ -326,6 +326,14 @@ type DataStore interface {
 	// Role dependencies (used by dependency graph handlers)
 	// -----------------------------------------------------------------
 
+	// ListRolesFiltered returns roles matching the given filter with derived
+	// compatibility status, total count, and summary counts.
+	ListRolesFiltered(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error)
+
+	// GetRoleDetail returns the full detail view for a single role including
+	// dependencies, blocking cookbooks, blast radius, and nested role chain.
+	GetRoleDetail(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error)
+
 	// ListRoleDependenciesByOrg returns all dependency records for the given
 	// organisation, ordered by role_name, dependency_type, dependency_name.
 	ListRoleDependenciesByOrg(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
