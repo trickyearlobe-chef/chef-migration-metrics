@@ -30,10 +30,12 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(url: string): Promise<T> {
+export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url.startsWith("/api/") ? url : `${BASE}${url}`, {
+    ...init,
     headers: {
       Accept: "application/json",
+      ...init?.headers,
     },
   });
 

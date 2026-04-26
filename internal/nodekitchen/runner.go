@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -218,7 +220,13 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) RunResult {
 	}
 
 	// Step 12: Generate overlay.
-	overlay, err := GenerateOverlay(&r.deps.TKConfig, node.Platform)
+	// Use the full platform name (with version) so the overlay's platform
+	// entry matches the one in .kitchen.yml exactly.
+	overlayPlatform := node.Platform
+	if node.PlatformVersion != "" {
+		overlayPlatform = node.Platform + "-" + node.PlatformVersion
+	}
+	overlay, err := GenerateOverlay(&r.deps.TKConfig, overlayPlatform)
 	if err != nil {
 		r.failRun(ctx, &result, startedAt, err)
 		return result
@@ -243,6 +251,20 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) RunResult {
 				defer cleanup()
 			}
 			credEnv = credEnvSlice(envVars)
+
+			// Write SSH key credentials to temp files — Test Kitchen's ssh_key
+			// transport option expects a file path, not inline PEM content.
+			sshKeyPaths, sshKeyCleanup, sshKeyErr := writeSSHKeyFiles(envVars)
+			if sshKeyErr != nil {
+				r.deps.Logger.Warn(fmt.Sprintf("writing SSH key files: %v", sshKeyErr))
+			} else {
+				if sshKeyCleanup != nil {
+					defer sshKeyCleanup()
+				}
+				for k, v := range sshKeyPaths {
+					credEnv = append(credEnv, k+"="+v)
+				}
+			}
 		}
 	}
 
@@ -390,6 +412,59 @@ func credEnvSlice(envVars map[string][]byte) []string {
 		env = append(env, k+"="+string(v))
 	}
 	return env
+}
+
+// writeSSHKeyFiles writes CMM_TK_KEY_* credential values to temporary files
+// and returns env vars mapping CMM_TK_KEY_PATH_* to the file paths.
+// Test Kitchen's ssh_key transport option expects a file path, not inline content.
+func writeSSHKeyFiles(envVars map[string][]byte) (map[string]string, func(), error) {
+	const keyPrefix = "CMM_TK_KEY_"
+	const pathPrefix = "CMM_TK_KEY_PATH_"
+
+	paths := make(map[string]string)
+	var tempFiles []string
+
+	cleanupAll := func() {
+		for _, f := range tempFiles {
+			os.Remove(f)
+		}
+	}
+
+	for envName, val := range envVars {
+		if !strings.HasPrefix(envName, keyPrefix) {
+			continue
+		}
+		if strings.HasPrefix(envName, pathPrefix) {
+			continue
+		}
+		suffix := envName[len(keyPrefix):]
+
+		f, err := os.CreateTemp("", "cmm-tk-key-*")
+		if err != nil {
+			cleanupAll()
+			return nil, nil, fmt.Errorf("creating temp file for %s: %w", envName, err)
+		}
+		tempFiles = append(tempFiles, f.Name())
+
+		if err := f.Chmod(0600); err != nil {
+			f.Close()
+			cleanupAll()
+			return nil, nil, fmt.Errorf("chmod temp file for %s: %w", envName, err)
+		}
+		if _, err := f.Write(val); err != nil {
+			f.Close()
+			cleanupAll()
+			return nil, nil, fmt.Errorf("writing temp file for %s: %w", envName, err)
+		}
+		if err := f.Close(); err != nil {
+			cleanupAll()
+			return nil, nil, fmt.Errorf("closing temp file for %s: %w", envName, err)
+		}
+
+		paths[pathPrefix+suffix] = f.Name()
+	}
+
+	return paths, cleanupAll, nil
 }
 
 func boolPtr(b bool) *bool { return &b }

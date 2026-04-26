@@ -160,6 +160,20 @@ func (r *KitchenRunner) RunInstance(ctx context.Context, req RunInstanceRequest)
 			if cleanup != nil {
 				defer cleanup()
 			}
+
+			// Write SSH key credentials to temp files — Test Kitchen's ssh_key
+			// transport option expects a file path, not inline PEM content.
+			sshKeyPaths, sshKeyCleanup, sshKeyErr := writeSSHKeyFilesFromEnv(credEnv)
+			if sshKeyErr != nil {
+				r.logger.Warn(fmt.Sprintf("writing SSH key files: %v", sshKeyErr))
+			} else {
+				if sshKeyCleanup != nil {
+					defer sshKeyCleanup()
+				}
+				for k, v := range sshKeyPaths {
+					credEnv = append(credEnv, k+"="+v)
+				}
+			}
 		}
 	}
 
@@ -314,7 +328,7 @@ func (r *KitchenRunner) buildInstanceOverlay(targetVersion string) string {
 					fmt.Fprintf(&buf, "      password: <%%= ENV['%s'] %%>\n", envName)
 				}
 				if img.Transport.SSHKeyCredential != "" {
-					envName := "CMM_TK_KEY_" + normalizeOverlayEnvSuffix(img.Name)
+					envName := "CMM_TK_KEY_PATH_" + normalizeOverlayEnvSuffix(img.Name)
 					fmt.Fprintf(&buf, "      ssh_key: <%%= ENV['%s'] %%>\n", envName)
 				}
 			}
@@ -351,6 +365,66 @@ func restoreLocalOverride(dir string, hadOverride bool) {
 		bakPath := filepath.Join(dir, ".kitchen.local.yml.bak")
 		_ = os.Rename(bakPath, overlayPath)
 	}
+}
+
+// writeSSHKeyFilesFromEnv parses KEY=VALUE env var strings to find CMM_TK_KEY_*
+// entries, writes their values to temp files, and returns CMM_TK_KEY_PATH_* env
+// vars. Test Kitchen's ssh_key expects a file path, not inline PEM content.
+func writeSSHKeyFilesFromEnv(envVars []string) (map[string]string, func(), error) {
+	const keyPrefix = "CMM_TK_KEY_"
+	const pathPrefix = "CMM_TK_KEY_PATH_"
+
+	paths := make(map[string]string)
+	var tempFiles []string
+
+	cleanupAll := func() {
+		for _, f := range tempFiles {
+			os.Remove(f)
+		}
+	}
+
+	for _, kv := range envVars {
+		idx := strings.IndexByte(kv, '=')
+		if idx < 0 {
+			continue
+		}
+		envName := kv[:idx]
+		envVal := kv[idx+1:]
+
+		if !strings.HasPrefix(envName, keyPrefix) {
+			continue
+		}
+		if strings.HasPrefix(envName, pathPrefix) {
+			continue
+		}
+		suffix := envName[len(keyPrefix):]
+
+		f, err := os.CreateTemp("", "cmm-tk-key-*")
+		if err != nil {
+			cleanupAll()
+			return nil, nil, fmt.Errorf("creating temp file for %s: %w", envName, err)
+		}
+		tempFiles = append(tempFiles, f.Name())
+
+		if err := f.Chmod(0600); err != nil {
+			f.Close()
+			cleanupAll()
+			return nil, nil, fmt.Errorf("chmod temp file for %s: %w", envName, err)
+		}
+		if _, err := f.WriteString(envVal); err != nil {
+			f.Close()
+			cleanupAll()
+			return nil, nil, fmt.Errorf("writing temp file for %s: %w", envName, err)
+		}
+		if err := f.Close(); err != nil {
+			cleanupAll()
+			return nil, nil, fmt.Errorf("closing temp file for %s: %w", envName, err)
+		}
+
+		paths[pathPrefix+suffix] = f.Name()
+	}
+
+	return paths, cleanupAll, nil
 }
 
 // combineOutput joins stdout and stderr, trimming whitespace.

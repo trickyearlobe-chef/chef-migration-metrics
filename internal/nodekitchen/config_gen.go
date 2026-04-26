@@ -138,7 +138,7 @@ func GenerateOverlay(tkConfig *config.TestKitchenConfig, platformName string) (s
 	img, imgOK := imageIndex[entry.Image]
 	if imgOK {
 		buf.WriteString("\nplatforms:\n")
-		fmt.Fprintf(&buf, "  - name: %s\n", entry.KitchenName)
+		fmt.Fprintf(&buf, "  - name: %s\n", platformName)
 		buf.WriteString("    driver:\n")
 		fmt.Fprintf(&buf, "      %s: %s\n", profile.ImageFieldName, yamlScalar(img.ID))
 		imgDSKeys := sortedKeys(img.DriverSettings)
@@ -161,7 +161,7 @@ func GenerateOverlay(tkConfig *config.TestKitchenConfig, platformName string) (s
 				fmt.Fprintf(&buf, "      password: <%%= ENV['%s'] %%>\n", envName)
 			}
 			if transport.SSHKeyCredential != "" {
-				envName := transportKeyEnvVar(img.Name)
+				envName := transportKeyPathEnvVar(img.Name)
 				fmt.Fprintf(&buf, "      ssh_key: <%%= ENV['%s'] %%>\n", envName)
 			}
 		}
@@ -301,6 +301,10 @@ func transportPasswordEnvVar(imageName string) string {
 
 func transportKeyEnvVar(imageName string) string {
 	return "CMM_TK_KEY_" + normalizeEnvVarSuffix(imageName)
+}
+
+func transportKeyPathEnvVar(imageName string) string {
+	return "CMM_TK_KEY_PATH_" + normalizeEnvVarSuffix(imageName)
 }
 
 func sortedKeys(m map[string]any) []string {

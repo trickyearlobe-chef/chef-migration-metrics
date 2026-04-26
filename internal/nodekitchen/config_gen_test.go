@@ -310,7 +310,7 @@ func TestGenerateOverlay_PatternMatch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertContains(t, out, "platforms:")
-	assertContains(t, out, "- name: centos-*")
+	assertContains(t, out, "- name: centos-7")
 }
 
 func TestGenerateOverlay_TransportOverride(t *testing.T) {
@@ -345,7 +345,7 @@ func TestGenerateOverlay_TransportOverride(t *testing.T) {
 
 	// Should use the platform map entry transport override.
 	assertContains(t, out, "username: admin")
-	assertContains(t, out, "CMM_TK_KEY_CENTOS7IMG")
+	assertContains(t, out, "CMM_TK_KEY_PATH_CENTOS7IMG")
 	// Should NOT use the image transport.
 	assertNotContains(t, out, "username: root")
 }
@@ -374,7 +374,7 @@ func TestGenerateOverlay_SSHKeyTransport(t *testing.T) {
 	}
 
 	assertContains(t, out, "username: ec2-user")
-	assertContains(t, out, "CMM_TK_KEY_RHEL9")
+	assertContains(t, out, "CMM_TK_KEY_PATH_RHEL9")
 	assertNotContains(t, out, "CMM_TK_TRANSPORT_")
 }
 

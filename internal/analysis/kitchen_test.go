@@ -1698,8 +1698,8 @@ func TestBuildOverlay_TransportSSHKey(t *testing.T) {
 	if !strings.Contains(got, "username: ec2-user") {
 		t.Errorf("expected transport username, got:\n%s", got)
 	}
-	if !strings.Contains(got, "CMM_TK_KEY_RHEL9") {
-		t.Errorf("expected transport SSH key ERB ref using image name, got:\n%s", got)
+	if !strings.Contains(got, "CMM_TK_KEY_PATH_RHEL9") {
+		t.Errorf("expected transport SSH key path ERB ref using image name, got:\n%s", got)
 	}
 }
 

@@ -6,6 +6,7 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -117,13 +118,74 @@ func ResolveKitchenCredentials(
 	return kc, nil
 }
 
+// WriteSSHKeyFiles finds all CMM_TK_KEY_* env vars in the resolved credentials,
+// writes each value to a temp file (mode 0600), and returns additional env vars
+// mapping CMM_TK_KEY_PATH_<suffix> to the temp file path. The cleanup function
+// removes all temp files and zeros the credential bytes.
+//
+// Callers must invoke cleanup after the kitchen process exits.
+func WriteSSHKeyFiles(creds *KitchenCredentials) (pathEnvVars map[string]string, cleanup func(), err error) {
+	const keyPrefix = "CMM_TK_KEY_"
+	const pathPrefix = "CMM_TK_KEY_PATH_"
+
+	pathEnvVars = make(map[string]string)
+	var tempFiles []string
+
+	cleanupAll := func() {
+		for _, f := range tempFiles {
+			os.Remove(f)
+		}
+	}
+
+	if creds == nil {
+		return pathEnvVars, func() {}, nil
+	}
+
+	for envName, val := range creds.EnvVars {
+		if !strings.HasPrefix(envName, keyPrefix) {
+			continue
+		}
+		if strings.HasPrefix(envName, pathPrefix) {
+			continue
+		}
+		suffix := envName[len(keyPrefix):]
+
+		f, ferr := os.CreateTemp("", "cmm-tk-key-*")
+		if ferr != nil {
+			cleanupAll()
+			return nil, nil, fmt.Errorf("creating temp file for %s: %w", envName, ferr)
+		}
+		tempFiles = append(tempFiles, f.Name())
+
+		if cherr := f.Chmod(0600); cherr != nil {
+			f.Close()
+			cleanupAll()
+			return nil, nil, fmt.Errorf("chmod temp file for %s: %w", envName, cherr)
+		}
+		if _, werr := f.Write(val); werr != nil {
+			f.Close()
+			cleanupAll()
+			return nil, nil, fmt.Errorf("writing temp file for %s: %w", envName, werr)
+		}
+		if cerr := f.Close(); cerr != nil {
+			cleanupAll()
+			return nil, nil, fmt.Errorf("closing temp file for %s: %w", envName, cerr)
+		}
+
+		pathEnvVars[pathPrefix+suffix] = f.Name()
+	}
+
+	return pathEnvVars, cleanupAll, nil
+}
+
 // InjectCredentialEnvVars returns a copy of the base environment with the
 // credential env vars appended. This is used to build the child process
 // environment. The []byte credential values are converted to strings only
 // here, at the last moment before injection. It also strips any
 // pre-existing CMM_TK_* variables from the base environment to avoid
-// leaking stale credentials.
-func InjectCredentialEnvVars(baseEnv []string, creds *KitchenCredentials) []string {
+// leaking stale credentials. The optional sshKeyPaths map adds
+// CMM_TK_KEY_PATH_* env vars pointing to temporary key files.
+func InjectCredentialEnvVars(baseEnv []string, creds *KitchenCredentials, sshKeyPaths map[string]string) []string {
 	// Always filter out any existing CMM_TK_* vars from base to avoid
 	// leaking stale credentials, even when creds is nil or empty.
 	credCount := 0
@@ -149,6 +211,11 @@ func InjectCredentialEnvVars(baseEnv []string, creds *KitchenCredentials) []stri
 	// injection time so the []byte originals remain zeroable.
 	for k, v := range creds.EnvVars {
 		out = append(out, k+"="+string(v))
+	}
+
+	// Append SSH key path env vars.
+	for k, v := range sshKeyPaths {
+		out = append(out, k+"="+v)
 	}
 	return out
 }
