@@ -6,6 +6,8 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -211,7 +213,7 @@ func TestResolveKitchenCredentials_MixedSecrets(t *testing.T) {
 	}
 
 	expected := map[string]string{
-		"CMM_TK_SECRET_PASSWORD":  "driver-secret",
+		"CMM_TK_SECRET_PASSWORD":   "driver-secret",
 		"CMM_TK_TRANSPORT_CENTOS7": "transport-pass",
 		"CMM_TK_KEY_CENTOS7":       "transport-key",
 	}
@@ -343,7 +345,7 @@ func TestInjectCredentialEnvVars_Empty(t *testing.T) {
 	base := []string{"HOME=/home/user", "PATH=/usr/bin"}
 	creds := &KitchenCredentials{EnvVars: map[string][]byte{}}
 
-	result := InjectCredentialEnvVars(base, creds)
+	result := InjectCredentialEnvVars(base, creds, nil)
 	if len(result) != len(base) {
 		t.Errorf("expected %d env vars, got %d", len(base), len(result))
 	}
@@ -362,7 +364,7 @@ func TestInjectCredentialEnvVars_AppendsVars(t *testing.T) {
 		},
 	}
 
-	result := InjectCredentialEnvVars(base, creds)
+	result := InjectCredentialEnvVars(base, creds, nil)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 env vars, got %d: %v", len(result), result)
 	}
@@ -393,7 +395,7 @@ func TestInjectCredentialEnvVars_StripsExistingCMMTK(t *testing.T) {
 		},
 	}
 
-	result := InjectCredentialEnvVars(base, creds)
+	result := InjectCredentialEnvVars(base, creds, nil)
 
 	for _, kv := range result {
 		if idx := strings.IndexByte(kv, '='); idx > 0 {
@@ -430,7 +432,7 @@ func TestInjectCredentialEnvVars_StripsExistingCMMTK(t *testing.T) {
 
 func TestInjectCredentialEnvVars_NilCreds(t *testing.T) {
 	base := []string{"HOME=/home/user", "PATH=/usr/bin"}
-	result := InjectCredentialEnvVars(base, nil)
+	result := InjectCredentialEnvVars(base, nil, nil)
 	if len(result) != len(base) {
 		t.Errorf("expected %d env vars, got %d", len(base), len(result))
 	}
@@ -443,7 +445,7 @@ func TestInjectCredentialEnvVars_NilCreds_StripsStaleCMMTK(t *testing.T) {
 		"CMM_TK_SECRET_LEAKED=old-secret",
 		"PATH=/usr/bin",
 	}
-	result := InjectCredentialEnvVars(base, nil)
+	result := InjectCredentialEnvVars(base, nil, nil)
 
 	for _, kv := range result {
 		if idx := strings.IndexByte(kv, '='); idx > 0 {
@@ -466,7 +468,7 @@ func TestInjectCredentialEnvVars_EmptyCreds_StripsStaleCMMTK(t *testing.T) {
 	}
 	creds := &KitchenCredentials{EnvVars: map[string][]byte{}}
 
-	result := InjectCredentialEnvVars(base, creds)
+	result := InjectCredentialEnvVars(base, creds, nil)
 
 	for _, kv := range result {
 		if idx := strings.IndexByte(kv, '='); idx > 0 {
@@ -478,6 +480,153 @@ func TestInjectCredentialEnvVars_EmptyCreds_StripsStaleCMMTK(t *testing.T) {
 	}
 	if len(result) != 2 {
 		t.Errorf("expected 2 env vars (HOME, PATH), got %d: %v", len(result), result)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WriteSSHKeyFiles tests
+// ---------------------------------------------------------------------------
+
+func TestWriteSSHKeyFiles_WritesAndCleans(t *testing.T) {
+	pemContent := []byte("-----BEGIN RSA PRIVATE KEY-----\nfake-key-content\n-----END RSA PRIVATE KEY-----\n")
+	creds := &KitchenCredentials{
+		EnvVars: map[string][]byte{
+			"CMM_TK_KEY_ALMA10": pemContent,
+		},
+	}
+
+	pathEnvVars, cleanup, err := WriteSSHKeyFiles(creds)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify CMM_TK_KEY_PATH_ALMA10 is returned.
+	keyPath, ok := pathEnvVars["CMM_TK_KEY_PATH_ALMA10"]
+	if !ok {
+		t.Fatalf("expected CMM_TK_KEY_PATH_ALMA10 in result, got keys: %v", pathEnvVars)
+	}
+
+	// Verify the file exists.
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("temp file should exist at %s: %v", keyPath, err)
+	}
+
+	// Verify mode 0600.
+	if perm := info.Mode().Perm(); perm != fs.FileMode(0600) {
+		t.Errorf("expected file mode 0600, got %04o", perm)
+	}
+
+	// Verify file content matches.
+	content, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("reading temp file: %v", err)
+	}
+	if string(content) != string(pemContent) {
+		t.Errorf("file content = %q, want %q", string(content), string(pemContent))
+	}
+
+	// Verify cleanup removes the file.
+	cleanup()
+	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
+		t.Errorf("temp file should be removed after cleanup, got err: %v", err)
+	}
+}
+
+func TestWriteSSHKeyFiles_NoKeys(t *testing.T) {
+	creds := &KitchenCredentials{
+		EnvVars: map[string][]byte{
+			"CMM_TK_SECRET_FOO":       []byte("bar"),
+			"CMM_TK_CHEF_LICENSE_KEY": []byte("license"),
+		},
+	}
+
+	pathEnvVars, cleanup, err := WriteSSHKeyFiles(creds)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pathEnvVars) != 0 {
+		t.Errorf("expected empty map, got %v", pathEnvVars)
+	}
+	// cleanup should be a no-op but must not panic.
+	cleanup()
+}
+
+func TestWriteSSHKeyFiles_SkipsPathVars(t *testing.T) {
+	creds := &KitchenCredentials{
+		EnvVars: map[string][]byte{
+			"CMM_TK_KEY_PATH_FOO": []byte("/some/path"),
+		},
+	}
+
+	pathEnvVars, cleanup, err := WriteSSHKeyFiles(creds)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer cleanup()
+	if len(pathEnvVars) != 0 {
+		t.Errorf("CMM_TK_KEY_PATH_* should not be treated as key content, got %v", pathEnvVars)
+	}
+}
+
+func TestInjectCredentialEnvVars_WithSSHKeyPaths(t *testing.T) {
+	base := []string{
+		"HOME=/home/user",
+		"CMM_TK_KEY_PATH_OLD=/old/path",
+		"PATH=/usr/bin",
+	}
+	creds := &KitchenCredentials{
+		EnvVars: map[string][]byte{
+			"CMM_TK_KEY_ALMA10": []byte("pem-content"),
+		},
+	}
+	sshKeyPaths := map[string]string{
+		"CMM_TK_KEY_PATH_ALMA10": "/tmp/cmm-tk-key-12345",
+	}
+
+	result := InjectCredentialEnvVars(base, creds, sshKeyPaths)
+
+	// Stale CMM_TK_KEY_PATH_OLD should be stripped.
+	for _, kv := range result {
+		if strings.HasPrefix(kv, "CMM_TK_KEY_PATH_OLD=") {
+			t.Error("stale CMM_TK_KEY_PATH_OLD should have been stripped")
+		}
+	}
+
+	// New path var should be present.
+	foundPath := false
+	foundKey := false
+	for _, kv := range result {
+		if kv == "CMM_TK_KEY_PATH_ALMA10=/tmp/cmm-tk-key-12345" {
+			foundPath = true
+		}
+		if kv == "CMM_TK_KEY_ALMA10=pem-content" {
+			foundKey = true
+		}
+	}
+	if !foundPath {
+		t.Errorf("expected CMM_TK_KEY_PATH_ALMA10 in result, got: %v", result)
+	}
+	if !foundKey {
+		t.Errorf("expected CMM_TK_KEY_ALMA10 in result, got: %v", result)
+	}
+
+	// HOME and PATH should be preserved.
+	foundHome := false
+	foundSysPath := false
+	for _, kv := range result {
+		if strings.HasPrefix(kv, "HOME=") {
+			foundHome = true
+		}
+		if strings.HasPrefix(kv, "PATH=") {
+			foundSysPath = true
+		}
+	}
+	if !foundHome {
+		t.Error("HOME should be preserved")
+	}
+	if !foundSysPath {
+		t.Error("PATH should be preserved")
 	}
 }
 

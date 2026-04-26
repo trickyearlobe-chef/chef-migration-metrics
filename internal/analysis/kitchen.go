@@ -451,7 +451,17 @@ func (s *KitchenScanner) testOne(ctx context.Context, gr datastore.GitRepo, targ
 		return result
 	}
 	defer creds.Cleanup()
-	credEnv := InjectCredentialEnvVars(nil, creds)
+
+	// Write SSH key credentials to temp files so the overlay can reference
+	// file paths (Test Kitchen's ssh_key expects a path, not inline content).
+	sshKeyPaths, sshKeyCleanup, sshKeyErr := WriteSSHKeyFiles(creds)
+	if sshKeyErr != nil {
+		result.Error = fmt.Errorf("writing SSH key files: %w", sshKeyErr)
+		return result
+	}
+	defer sshKeyCleanup()
+
+	credEnv := InjectCredentialEnvVars(nil, creds, sshKeyPaths)
 
 	// Determine what driver and platform we're actually using for metadata.
 	result.DriverUsed = s.effectiveDriver(detectedDriver)
@@ -744,7 +754,7 @@ func (s *KitchenScanner) buildOverlay(targetVersion, detectedDriver string) stri
 					fmt.Fprintf(&buf, "      password: <%%= ENV['%s'] %%>\n", envName)
 				}
 				if img.Transport.SSHKeyCredential != "" {
-					envName := transportKeyEnvVar(img.Name)
+					envName := transportKeyPathEnvVar(img.Name)
 					fmt.Fprintf(&buf, "      ssh_key: <%%= ENV['%s'] %%>\n", envName)
 				}
 			}
@@ -812,6 +822,10 @@ func transportPasswordEnvVar(kitchenName string) string {
 // platform's SSH key. The platform name is normalised.
 func transportKeyEnvVar(kitchenName string) string {
 	return "CMM_TK_KEY_" + normalizeEnvVarSuffix(kitchenName)
+}
+
+func transportKeyPathEnvVar(kitchenName string) string {
+	return "CMM_TK_KEY_PATH_" + normalizeEnvVarSuffix(kitchenName)
 }
 
 // normalizeEnvVarSuffix uppercases and replaces any character that is not
