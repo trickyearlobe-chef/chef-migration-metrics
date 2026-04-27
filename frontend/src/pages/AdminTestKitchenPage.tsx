@@ -42,6 +42,8 @@ const DRIVER_SETTING_HINTS: Record<string, string[]> = {
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
+const INPUT_FLEX_CLASS =
+  "block min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
 
 function emptyTransport(): PlatformMapTransport {
   return { username: "", password_credential: "", ssh_key_credential: "" };
@@ -1054,7 +1056,7 @@ export function AdminTestKitchenPage() {
                   }
                   placeholder={plat.is_pattern ? "e.g. rhel*" : "e.g. centos-7"}
                   disabled={saving}
-                  className={INPUT_CLASS + " flex-1"}
+                  className={INPUT_FLEX_CLASS + " flex-1"}
                 />
                 {!plat.skip && (
                   <select
@@ -1063,7 +1065,7 @@ export function AdminTestKitchenPage() {
                       updatePlatform(idx, { image: e.target.value })
                     }
                     disabled={saving}
-                    className={INPUT_CLASS}
+                    className={INPUT_FLEX_CLASS + " flex-1"}
                   >
                     <option value="">— select image —</option>
                     {imageNames.map((name) => (
