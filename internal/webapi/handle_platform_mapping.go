@@ -6,8 +6,10 @@ package webapi
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 )
 
@@ -18,6 +20,8 @@ type DiscoveredPlatformStatus struct {
 	NormalisedName    string `json:"normalised_name"`
 	OSFamily          string `json:"os_family"`
 	CookbookCount     int    `json:"cookbook_count"`
+	NodeCount         int    `json:"node_count"`
+	Source            string `json:"source"` // "kitchen", "nodes", or "both"
 	TransportType     string `json:"transport_type,omitempty"`
 	MappingStatus     string `json:"mapping_status"`      // "mapped", "skipped", or "unmapped"
 	MatchedEntryIndex int    `json:"matched_entry_index"` // -1 if unmapped
@@ -63,12 +67,19 @@ func (r *Router) handlePlatformMappingStatus(w http.ResponseWriter, req *http.Re
 		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
 	}
 
-	// Fetch discovered platforms.
+	// Fetch discovered platforms from kitchen analysis.
 	platforms, err := r.db.ListDiscoveredPlatforms(ctx)
 	if err != nil {
 		r.logf("ERROR", "platform-mapping-status: list discovered platforms: %v", err)
 		WriteInternalError(w, "Failed to list discovered platforms.")
 		return
+	}
+
+	// Fetch node platform distribution (best-effort).
+	nodePlatforms, _, nodeErr := r.db.CountNodePlatformDistribution(ctx, datastore.NodeSnapshotFilter{})
+	if nodeErr != nil {
+		r.logf("WARN", "platform-mapping-status: count node platforms: %v", nodeErr)
+		nodePlatforms = map[string]int{}
 	}
 
 	// Fetch hypervisor templates (best-effort).
@@ -83,8 +94,9 @@ func (r *Router) handlePlatformMappingStatus(w http.ResponseWriter, req *http.Re
 	}
 
 	// Build per-platform status and counters.
+	// Start with kitchen-discovered platforms, then merge node platforms.
 	var mapped, skipped, unmapped int
-	statuses := make([]DiscoveredPlatformStatus, 0, len(platforms))
+	statuses := make([]DiscoveredPlatformStatus, 0, len(platforms)+len(nodePlatforms))
 
 	for _, p := range platforms {
 		match := config.MatchPlatform(p.PlatformName, tkCfg.PlatformMap)
@@ -95,6 +107,51 @@ func (r *Router) handlePlatformMappingStatus(w http.ResponseWriter, req *http.Re
 			OSFamily:       p.OSFamily,
 			CookbookCount:  p.CookbookCount,
 			TransportType:  p.TransportType,
+			Source:         "kitchen",
+		}
+
+		if match.Entry != nil {
+			s.MatchedEntryIndex = match.Index
+			if match.Entry.Skip {
+				s.MappingStatus = "skipped"
+				skipped++
+			} else {
+				s.MappingStatus = "mapped"
+				s.MatchedImage = match.Entry.Image
+				mapped++
+			}
+		} else {
+			s.MappingStatus = "unmapped"
+			s.MatchedEntryIndex = -1
+			unmapped++
+		}
+
+		// Check if a node platform matches this kitchen platform.
+		if nc, ok := nodePlatforms[p.PlatformName]; ok {
+			s.NodeCount = nc
+			s.Source = "both"
+			delete(nodePlatforms, p.PlatformName)
+		}
+
+		statuses = append(statuses, s)
+	}
+
+	// Add remaining node-only platforms.
+	nodePlatformNames := make([]string, 0, len(nodePlatforms))
+	for name := range nodePlatforms {
+		nodePlatformNames = append(nodePlatformNames, name)
+	}
+	sort.Strings(nodePlatformNames)
+
+	for _, name := range nodePlatformNames {
+		count := nodePlatforms[name]
+		match := config.MatchPlatform(name, tkCfg.PlatformMap)
+
+		s := DiscoveredPlatformStatus{
+			PlatformName:   name,
+			NormalisedName: name,
+			NodeCount:      count,
+			Source:         "nodes",
 		}
 
 		if match.Entry != nil {

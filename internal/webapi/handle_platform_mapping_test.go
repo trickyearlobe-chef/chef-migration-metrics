@@ -488,3 +488,212 @@ func TestHandlePlatformMappingStatus_DBError(t *testing.T) {
 		t.Errorf("error = %q, want %q", resp.Error, ErrCodeInternalError)
 	}
 }
+
+func TestHandlePlatformMappingStatus_NodePlatforms(t *testing.T) {
+	tkCfg := config.TestKitchenConfig{
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu-tmpl"},
+		},
+	}
+	cfgBytes := tkConfigJSON(t, tkCfg)
+
+	store := &mockStore{
+		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
+			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
+		},
+		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
+			return []datastore.KitchenDiscoveredPlatform{
+				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
+			}, nil
+		},
+		CountNodePlatformDistributionFn: func(_ context.Context, _ datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+			return map[string]int{
+				"almalinux 10.1": 15,
+				"windows 2022":   8,
+			}, 23, nil
+		},
+	}
+	r := newTestRouterWithHypervisor(store, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	resp := decodePlatformMappingResponse(t, rec)
+
+	// 1 kitchen + 2 node-only = 3 total
+	if len(resp.DiscoveredPlatforms) != 3 {
+		t.Fatalf("discovered_platforms count = %d, want 3", len(resp.DiscoveredPlatforms))
+	}
+
+	byName := make(map[string]DiscoveredPlatformStatus)
+	for _, dp := range resp.DiscoveredPlatforms {
+		byName[dp.PlatformName] = dp
+	}
+
+	// Kitchen-only platform.
+	ub := byName["ubuntu-22.04"]
+	if ub.Source != "kitchen" {
+		t.Errorf("ubuntu-22.04 source = %q, want %q", ub.Source, "kitchen")
+	}
+	if ub.MappingStatus != "mapped" {
+		t.Errorf("ubuntu-22.04 status = %q, want %q", ub.MappingStatus, "mapped")
+	}
+
+	// Node-only platforms.
+	alma := byName["almalinux 10.1"]
+	if alma.Source != "nodes" {
+		t.Errorf("almalinux 10.1 source = %q, want %q", alma.Source, "nodes")
+	}
+	if alma.NodeCount != 15 {
+		t.Errorf("almalinux 10.1 node_count = %d, want 15", alma.NodeCount)
+	}
+	if alma.MappingStatus != "unmapped" {
+		t.Errorf("almalinux 10.1 status = %q, want %q", alma.MappingStatus, "unmapped")
+	}
+
+	win := byName["windows 2022"]
+	if win.Source != "nodes" {
+		t.Errorf("windows 2022 source = %q, want %q", win.Source, "nodes")
+	}
+	if win.NodeCount != 8 {
+		t.Errorf("windows 2022 node_count = %d, want 8", win.NodeCount)
+	}
+}
+
+func TestHandlePlatformMappingStatus_NodeAndKitchenOverlap(t *testing.T) {
+	tkCfg := config.TestKitchenConfig{
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "ubuntu-tmpl"},
+		},
+	}
+	cfgBytes := tkConfigJSON(t, tkCfg)
+
+	store := &mockStore{
+		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
+			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
+		},
+		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
+			return []datastore.KitchenDiscoveredPlatform{
+				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
+			}, nil
+		},
+		CountNodePlatformDistributionFn: func(_ context.Context, _ datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+			// Same name as a kitchen platform — should merge, not duplicate.
+			return map[string]int{
+				"ubuntu-22.04": 20,
+				"centos 7":     5,
+			}, 25, nil
+		},
+	}
+	r := newTestRouterWithHypervisor(store, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	resp := decodePlatformMappingResponse(t, rec)
+
+	// 1 merged (ubuntu-22.04) + 1 node-only (centos 7) = 2
+	if len(resp.DiscoveredPlatforms) != 2 {
+		t.Fatalf("discovered_platforms count = %d, want 2", len(resp.DiscoveredPlatforms))
+	}
+
+	byName := make(map[string]DiscoveredPlatformStatus)
+	for _, dp := range resp.DiscoveredPlatforms {
+		byName[dp.PlatformName] = dp
+	}
+
+	ub := byName["ubuntu-22.04"]
+	if ub.Source != "both" {
+		t.Errorf("ubuntu-22.04 source = %q, want %q", ub.Source, "both")
+	}
+	if ub.NodeCount != 20 {
+		t.Errorf("ubuntu-22.04 node_count = %d, want 20", ub.NodeCount)
+	}
+	if ub.CookbookCount != 50 {
+		t.Errorf("ubuntu-22.04 cookbook_count = %d, want 50", ub.CookbookCount)
+	}
+	if ub.MappingStatus != "mapped" {
+		t.Errorf("ubuntu-22.04 status = %q, want %q", ub.MappingStatus, "mapped")
+	}
+
+	centos := byName["centos 7"]
+	if centos.Source != "nodes" {
+		t.Errorf("centos 7 source = %q, want %q", centos.Source, "nodes")
+	}
+	if centos.NodeCount != 5 {
+		t.Errorf("centos 7 node_count = %d, want 5", centos.NodeCount)
+	}
+}
+
+func TestHandlePlatformMappingStatus_NodePlatformsMapped(t *testing.T) {
+	tkCfg := config.TestKitchenConfig{
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "almalinux 10.1", Image: "alma-tmpl"},
+			{KitchenName: "windows 2022", Skip: true},
+		},
+	}
+	cfgBytes := tkConfigJSON(t, tkCfg)
+
+	store := &mockStore{
+		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
+			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
+		},
+		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
+			return nil, nil
+		},
+		CountNodePlatformDistributionFn: func(_ context.Context, _ datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+			return map[string]int{
+				"almalinux 10.1": 15,
+				"windows 2022":   8,
+			}, 23, nil
+		},
+	}
+	r := newTestRouterWithHypervisor(store, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	resp := decodePlatformMappingResponse(t, rec)
+	if resp.MappedCount != 1 {
+		t.Errorf("mapped_count = %d, want 1", resp.MappedCount)
+	}
+	if resp.SkippedCount != 1 {
+		t.Errorf("skipped_count = %d, want 1", resp.SkippedCount)
+	}
+	if resp.UnmappedCount != 0 {
+		t.Errorf("unmapped_count = %d, want 0", resp.UnmappedCount)
+	}
+
+	byName := make(map[string]DiscoveredPlatformStatus)
+	for _, dp := range resp.DiscoveredPlatforms {
+		byName[dp.PlatformName] = dp
+	}
+
+	alma := byName["almalinux 10.1"]
+	if alma.MappingStatus != "mapped" {
+		t.Errorf("almalinux 10.1 status = %q, want %q", alma.MappingStatus, "mapped")
+	}
+	if alma.MatchedImage != "alma-tmpl" {
+		t.Errorf("almalinux 10.1 matched_image = %q, want %q", alma.MatchedImage, "alma-tmpl")
+	}
+
+	win := byName["windows 2022"]
+	if win.MappingStatus != "skipped" {
+		t.Errorf("windows 2022 status = %q, want %q", win.MappingStatus, "skipped")
+	}
+}
