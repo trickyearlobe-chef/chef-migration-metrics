@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchTestKitchenConfig,
   saveTestKitchenConfig,
@@ -413,30 +413,6 @@ export function AdminTestKitchenPage() {
   }
   function toggleImageAdvanced(idx: number) {
     setImageAdvanced((prev) => ({ ...prev, [idx]: !prev[idx] }));
-  }
-
-  // --- Platform map helpers ---
-  function updatePlatform(idx: number, patch: Partial<PlatformMapEntry>) {
-    setConfig((prev) => {
-      const platforms = [...(prev.platform_map ?? [])];
-      platforms[idx] = { ...platforms[idx], ...patch };
-      return { ...prev, platform_map: platforms };
-    });
-  }
-  function removePlatform(idx: number) {
-    setConfig((prev) => ({
-      ...prev,
-      platform_map: (prev.platform_map ?? []).filter((_, i) => i !== idx),
-    }));
-  }
-  function addPlatform(kitchenName?: string) {
-    setConfig((prev) => ({
-      ...prev,
-      platform_map: [
-        ...(prev.platform_map ?? []),
-        { kitchen_name: kitchenName ?? "", image: "" },
-      ],
-    }));
   }
 
   // --- Save ---
@@ -1007,179 +983,13 @@ export function AdminTestKitchenPage() {
       </div>
 
       {/* Section 6: Platform Map */}
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
-              Platform Map
-            </h3>
-            <p className="mt-1 text-xs text-gray-400">
-              Map cookbook platform names to images. Supports glob patterns (*
-              and ?).
-            </p>
-          </div>
-          {mappingStatus && (
-            <div className="flex gap-2 text-xs">
-              <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 font-medium text-green-700">
-                {mappingStatus.mapped_count} mapped
-              </span>
-              <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 font-medium text-gray-600">
-                {mappingStatus.skipped_count} skipped
-              </span>
-              {mappingStatus.unmapped_count > 0 && (
-                <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 font-medium text-red-700">
-                  {mappingStatus.unmapped_count} unmapped
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Mapping Rules */}
-        {(config.platform_map ?? []).length === 0 && (
-          <p className="mb-3 text-sm text-gray-400">
-            No platform mapping rules configured.
-          </p>
-        )}
-        <div className="space-y-3">
-          {(config.platform_map ?? []).map((plat, idx) => (
-            <div
-              key={idx}
-              className="rounded-md border border-gray-100 bg-gray-50 p-3"
-            >
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={plat.kitchen_name}
-                  onChange={(e) =>
-                    updatePlatform(idx, { kitchen_name: e.target.value })
-                  }
-                  placeholder={plat.is_pattern ? "e.g. rhel*" : "e.g. centos-7"}
-                  disabled={saving}
-                  className={INPUT_FLEX_CLASS + " flex-1"}
-                />
-                {!plat.skip && (
-                  <select
-                    value={plat.image}
-                    onChange={(e) =>
-                      updatePlatform(idx, { image: e.target.value })
-                    }
-                    disabled={saving}
-                    className={INPUT_FLEX_CLASS + " flex-1"}
-                  >
-                    <option value="">— select image —</option>
-                    {imageNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {plat.skip && (
-                  <span className="rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-500">
-                    SKIP
-                  </span>
-                )}
-                <RemoveButton
-                  onClick={() => removePlatform(idx)}
-                  disabled={saving}
-                  title="Remove mapping rule"
-                />
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                <label className="inline-flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={plat.is_pattern ?? false}
-                    onChange={(e) =>
-                      updatePlatform(idx, { is_pattern: e.target.checked })
-                    }
-                    disabled={saving}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
-                  />
-                  <span className="text-gray-600">Pattern (glob)</span>
-                </label>
-                <label className="inline-flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={plat.skip ?? false}
-                    onChange={(e) =>
-                      updatePlatform(idx, {
-                        skip: e.target.checked,
-                        image: e.target.checked ? "" : plat.image,
-                      })
-                    }
-                    disabled={saving}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
-                  />
-                  <span className="text-gray-600">Skip</span>
-                </label>
-                {!plat.skip && (
-                  <PlatformTransportEditor
-                    transport={plat.transport ?? null}
-                    onChange={(t) => updatePlatform(idx, { transport: t })}
-                    credentials={credentialNames}
-                    disabled={saving}
-                  />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <AddButton onClick={() => addPlatform()} disabled={saving}>
-          Add Mapping Rule
-        </AddButton>
-
-        {/* Unmapped Platforms Panel */}
-        {mappingStatus && mappingStatus.unmapped_count > 0 && (
-          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-700">
-              Unmapped Platforms ({mappingStatus.unmapped_count})
-            </h4>
-            <p className="mb-2 text-xs text-amber-600">
-              These discovered platforms have no matching mapping rule. Add a
-              rule or mark as skip.
-            </p>
-            <div className="space-y-1">
-              {mappingStatus.discovered_platforms
-                .filter((p) => p.mapping_status === "unmapped")
-                .sort((a, b) => b.cookbook_count - a.cookbook_count)
-                .map((p) => (
-                  <div
-                    key={p.platform_name}
-                    className="flex items-center justify-between rounded bg-white px-2 py-1 text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-800">
-                        {p.platform_name}
-                      </span>
-                      {p.normalised_name !== p.platform_name && (
-                        <span className="text-gray-400">
-                          → {p.normalised_name}
-                        </span>
-                      )}
-                      <OsFamilyBadge family={p.os_family} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="tabular-nums text-gray-500">
-                        {p.cookbook_count} cookbook
-                        {p.cookbook_count !== 1 ? "s" : ""}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => addPlatform(p.platform_name)}
-                        disabled={saving}
-                        className="rounded bg-blue-50 px-2 py-0.5 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
-                      >
-                        + Add
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <PlatformMapSection
+        mappingStatus={mappingStatus}
+        config={config}
+        setConfig={setConfig}
+        imageNames={imageNames}
+        saving={saving}
+      />
 
       {/* Footer: Save + Revert */}
       <div className="flex items-center justify-between border-t border-gray-200 pt-4">
@@ -1228,92 +1038,179 @@ function OsFamilyBadge({ family }: { family: string }) {
   );
 }
 
-function PlatformTransportEditor({
-  transport,
-  onChange,
-  credentials,
-  disabled,
-}: {
-  transport: PlatformMapTransport | null;
-  onChange: (t: PlatformMapTransport | null) => void;
-  credentials: string[];
-  disabled: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const hasTransport =
-    transport &&
-    (transport.username ||
-      transport.password_credential ||
-      transport.ssh_key_credential);
+const SOURCE_BADGE_COLORS: Record<string, string> = {
+  kitchen: "bg-blue-100 text-blue-700",
+  nodes: "bg-purple-100 text-purple-700",
+  both: "bg-green-100 text-green-700",
+};
 
-  if (!expanded && !hasTransport) {
-    return (
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className="text-blue-600 hover:text-blue-700"
-        disabled={disabled}
-      >
-        + Transport
-      </button>
-    );
+function SourceBadge({ source }: { source: string }) {
+  const cls = SOURCE_BADGE_COLORS[source] ?? "bg-gray-100 text-gray-600";
+  return (
+    <span
+      className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+    >
+      {source}
+    </span>
+  );
+}
+
+function PlatformMapSection({
+  mappingStatus,
+  config,
+  setConfig,
+  imageNames,
+  saving,
+}: {
+  mappingStatus: PlatformMappingStatusResponse | null;
+  config: TestKitchenConfig;
+  setConfig: React.Dispatch<React.SetStateAction<TestKitchenConfig>>;
+  imageNames: string[];
+  saving: boolean;
+}) {
+  const discoveredPlatforms = mappingStatus?.discovered_platforms ?? [];
+
+  const initMappings = useCallback((): Record<string, string> => {
+    const m: Record<string, string> = {};
+    for (const p of discoveredPlatforms) {
+      m[p.platform_name] =
+        p.mapping_status === "mapped" ? p.matched_image : "";
+    }
+    return m;
+  }, [discoveredPlatforms]);
+
+  const [platformMappings, setPlatformMappings] = useState<
+    Record<string, string>
+  >(initMappings);
+
+  useEffect(() => {
+    setPlatformMappings(initMappings());
+  }, [initMappings]);
+
+  const syncToConfig = useCallback(
+    (mappings: Record<string, string>) => {
+      setConfig((prev) => {
+        const entries: PlatformMapEntry[] = Object.entries(mappings).map(
+          ([name, image]) =>
+            image
+              ? { kitchen_name: name, image }
+              : { kitchen_name: name, image: "", skip: true },
+        );
+        return { ...prev, platform_map: entries };
+      });
+    },
+    [setConfig],
+  );
+
+  function handleImageChange(platformName: string, image: string) {
+    const updated = { ...platformMappings, [platformName]: image };
+    setPlatformMappings(updated);
+    syncToConfig(updated);
   }
 
-  const t = transport ?? {
-    username: "",
-    password_credential: "",
-    ssh_key_credential: "",
-  };
+  const sortedPlatforms = useMemo(() => {
+    return [...discoveredPlatforms].sort((a, b) => {
+      const aHasImage = platformMappings[a.platform_name] ? 0 : 1;
+      const bHasImage = platformMappings[b.platform_name] ? 0 : 1;
+      if (aHasImage !== bHasImage) return aHasImage - bHasImage;
+      return a.platform_name.localeCompare(b.platform_name);
+    });
+  }, [discoveredPlatforms, platformMappings]);
+
+  const hasNoPlatforms =
+    discoveredPlatforms.length === 0 &&
+    (config.platform_map ?? []).length === 0;
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-gray-200 bg-white p-2 text-xs">
-      <input
-        type="text"
-        value={t.username}
-        onChange={(e) => onChange({ ...t, username: e.target.value })}
-        placeholder="Username"
-        disabled={disabled}
-        className="w-24 rounded border border-gray-200 px-1.5 py-1 text-xs"
-      />
-      <select
-        value={t.password_credential}
-        onChange={(e) =>
-          onChange({ ...t, password_credential: e.target.value })
-        }
-        disabled={disabled}
-        className="w-36 rounded border border-gray-200 px-1.5 py-1 text-xs"
-      >
-        <option value="">— password cred —</option>
-        {credentials.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </select>
-      <select
-        value={t.ssh_key_credential}
-        onChange={(e) => onChange({ ...t, ssh_key_credential: e.target.value })}
-        disabled={disabled}
-        className="w-36 rounded border border-gray-200 px-1.5 py-1 text-xs"
-      >
-        <option value="">— SSH key cred —</option>
-        {credentials.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        onClick={() => {
-          onChange(null);
-          setExpanded(false);
-        }}
-        className="text-red-500 hover:text-red-600"
-        disabled={disabled}
-      >
-        ✕
-      </button>
+    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+            Platform Map
+          </h3>
+          <p className="mt-1 text-xs text-gray-400">
+            Discovered platforms from kitchen configs and nodes. Select an image
+            or leave as skip.
+          </p>
+        </div>
+        {mappingStatus && (
+          <div className="flex gap-2 text-xs">
+            <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 font-medium text-green-700">
+              {mappingStatus.mapped_count} mapped
+            </span>
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 font-medium text-gray-600">
+              {mappingStatus.skipped_count} skipped
+            </span>
+            {mappingStatus.unmapped_count > 0 && (
+              <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 font-medium text-red-700">
+                {mappingStatus.unmapped_count} unmapped
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {hasNoPlatforms && (
+        <p className="text-sm text-gray-400">
+          No platforms discovered yet. Run kitchen analysis to discover
+          platforms.
+        </p>
+      )}
+
+      {sortedPlatforms.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500">
+                <th className="pb-2 pr-3 font-medium">Platform</th>
+                <th className="pb-2 pr-3 font-medium">Source</th>
+                <th className="pb-2 pr-3 font-medium">OS</th>
+                <th className="pb-2 pr-3 font-medium">Count</th>
+                <th className="pb-2 font-medium">Image</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sortedPlatforms.map((p) => (
+                <tr key={p.platform_name}>
+                  <td className="py-2 pr-3 font-medium text-gray-800">
+                    {p.platform_name}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <SourceBadge source={p.source} />
+                  </td>
+                  <td className="py-2 pr-3">
+                    <OsFamilyBadge family={p.os_family} />
+                  </td>
+                  <td className="py-2 pr-3 tabular-nums text-gray-600">
+                    {p.cookbook_count > 0 &&
+                      `${p.cookbook_count} cookbook${p.cookbook_count !== 1 ? "s" : ""}`}
+                    {p.cookbook_count > 0 && p.node_count > 0 && ", "}
+                    {p.node_count > 0 &&
+                      `${p.node_count} node${p.node_count !== 1 ? "s" : ""}`}
+                  </td>
+                  <td className="py-2">
+                    <select
+                      value={platformMappings[p.platform_name] ?? ""}
+                      onChange={(e) =>
+                        handleImageChange(p.platform_name, e.target.value)
+                      }
+                      disabled={saving}
+                      className={INPUT_FLEX_CLASS + " flex-1 min-w-0"}
+                    >
+                      <option value="">— skip —</option>
+                      {imageNames.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

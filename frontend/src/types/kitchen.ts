@@ -54,6 +54,8 @@ export interface DiscoveredPlatformStatus {
   normalised_name: string;
   os_family: string;
   cookbook_count: number;
+  node_count: number;
+  source: "kitchen" | "nodes" | "both";
   transport_type: string;
   mapping_status: "mapped" | "skipped" | "unmapped";
   matched_entry_index: number;
