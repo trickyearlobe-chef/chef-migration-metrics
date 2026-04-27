@@ -72,34 +72,28 @@ func TestUpsertGitKitchenResultParams_Validation(t *testing.T) {
 
 func TestGitKitchenResult_JSONRoundTrip(t *testing.T) {
 	t.Run("all_fields_populated", func(t *testing.T) {
-		convergePassed := true
-		testsPassed := false
+		passed := true
 		duration := 120
 		started := time.Date(2025, 1, 15, 10, 0, 0, 0, time.UTC)
 		completed := time.Date(2025, 1, 15, 10, 2, 0, 0, time.UTC)
 
 		original := GitKitchenResult{
 			ID:                "result-001",
-			BatchID:           "batch-001",
 			GitRepoName:       "my-repo",
 			GitRepoURL:        "https://example.com/my-repo.git",
 			TargetChefVersion: "18.4.12",
 			CommitSHA:         "abc123def456",
 			PlatformName:      "ubuntu-22.04",
 			SuiteName:         "default",
-			TemplateUsed:      "kitchen-dokken",
+			InstanceName:      "default-ubuntu-2204",
 			DriverUsed:        "dokken",
-			ConvergePassed:    &convergePassed,
-			TestsPassed:       &testsPassed,
+			Passed:            &passed,
 			TimedOut:          true,
-			ConvergeOutput:    "converge ok",
-			VerifyOutput:      "verify ok",
-			DestroyOutput:     "destroy ok",
+			Output:            "kitchen test output",
 			DurationSeconds:   &duration,
 			ErrorMessage:      "something went wrong",
 			StartedAt:         &started,
 			CompletedAt:       &completed,
-			VMTrackingID:      "vm-001",
 			CreatedAt:         time.Date(2025, 1, 15, 9, 0, 0, 0, time.UTC),
 		}
 
@@ -116,50 +110,23 @@ func TestGitKitchenResult_JSONRoundTrip(t *testing.T) {
 		if restored.ID != original.ID {
 			t.Errorf("ID = %q, want %q", restored.ID, original.ID)
 		}
-		if restored.BatchID != original.BatchID {
-			t.Errorf("BatchID = %q, want %q", restored.BatchID, original.BatchID)
-		}
 		if restored.GitRepoName != original.GitRepoName {
 			t.Errorf("GitRepoName = %q, want %q", restored.GitRepoName, original.GitRepoName)
 		}
-		if restored.GitRepoURL != original.GitRepoURL {
-			t.Errorf("GitRepoURL = %q, want %q", restored.GitRepoURL, original.GitRepoURL)
-		}
-		if restored.TargetChefVersion != original.TargetChefVersion {
-			t.Errorf("TargetChefVersion = %q, want %q", restored.TargetChefVersion, original.TargetChefVersion)
-		}
-		if restored.CommitSHA != original.CommitSHA {
-			t.Errorf("CommitSHA = %q, want %q", restored.CommitSHA, original.CommitSHA)
-		}
-		if restored.PlatformName != original.PlatformName {
-			t.Errorf("PlatformName = %q, want %q", restored.PlatformName, original.PlatformName)
-		}
-		if restored.SuiteName != original.SuiteName {
-			t.Errorf("SuiteName = %q, want %q", restored.SuiteName, original.SuiteName)
-		}
-		if restored.TemplateUsed != original.TemplateUsed {
-			t.Errorf("TemplateUsed = %q, want %q", restored.TemplateUsed, original.TemplateUsed)
+		if restored.InstanceName != original.InstanceName {
+			t.Errorf("InstanceName = %q, want %q", restored.InstanceName, original.InstanceName)
 		}
 		if restored.DriverUsed != original.DriverUsed {
 			t.Errorf("DriverUsed = %q, want %q", restored.DriverUsed, original.DriverUsed)
 		}
-		if restored.ConvergePassed == nil || *restored.ConvergePassed != true {
-			t.Errorf("ConvergePassed = %v, want true", restored.ConvergePassed)
-		}
-		if restored.TestsPassed == nil || *restored.TestsPassed != false {
-			t.Errorf("TestsPassed = %v, want false", restored.TestsPassed)
+		if restored.Passed == nil || *restored.Passed != true {
+			t.Errorf("Passed = %v, want true", restored.Passed)
 		}
 		if !restored.TimedOut {
 			t.Error("TimedOut should be true")
 		}
-		if restored.ConvergeOutput != original.ConvergeOutput {
-			t.Errorf("ConvergeOutput = %q, want %q", restored.ConvergeOutput, original.ConvergeOutput)
-		}
-		if restored.VerifyOutput != original.VerifyOutput {
-			t.Errorf("VerifyOutput = %q, want %q", restored.VerifyOutput, original.VerifyOutput)
-		}
-		if restored.DestroyOutput != original.DestroyOutput {
-			t.Errorf("DestroyOutput = %q, want %q", restored.DestroyOutput, original.DestroyOutput)
+		if restored.Output != original.Output {
+			t.Errorf("Output = %q, want %q", restored.Output, original.Output)
 		}
 		if restored.DurationSeconds == nil || *restored.DurationSeconds != 120 {
 			t.Errorf("DurationSeconds = %v, want 120", restored.DurationSeconds)
@@ -172,9 +139,6 @@ func TestGitKitchenResult_JSONRoundTrip(t *testing.T) {
 		}
 		if restored.CompletedAt == nil || !restored.CompletedAt.Equal(completed) {
 			t.Errorf("CompletedAt = %v, want %v", restored.CompletedAt, completed)
-		}
-		if restored.VMTrackingID != original.VMTrackingID {
-			t.Errorf("VMTrackingID = %q, want %q", restored.VMTrackingID, original.VMTrackingID)
 		}
 		if !restored.CreatedAt.Equal(original.CreatedAt) {
 			t.Errorf("CreatedAt = %v, want %v", restored.CreatedAt, original.CreatedAt)
@@ -199,17 +163,12 @@ func TestGitKitchenResult_JSONRoundTrip(t *testing.T) {
 
 		raw := string(data)
 		absentFields := []string{
-			"batch_id",
-			"template_used",
 			"driver_used",
-			"converge_output",
-			"verify_output",
-			"destroy_output",
+			"output",
 			"duration_seconds",
 			"error_message",
 			"started_at",
 			"completed_at",
-			"vm_tracking_id",
 		}
 		for _, field := range absentFields {
 			if strings.Contains(raw, field) {
@@ -218,8 +177,7 @@ func TestGitKitchenResult_JSONRoundTrip(t *testing.T) {
 		}
 	})
 
-	t.Run("nullable_bools", func(t *testing.T) {
-		// nil *bool marshals as null
+	t.Run("nullable_passed", func(t *testing.T) {
 		r := GitKitchenResult{
 			ID:                "result-003",
 			GitRepoName:       "repo",
@@ -227,8 +185,7 @@ func TestGitKitchenResult_JSONRoundTrip(t *testing.T) {
 			TargetChefVersion: "18.4.12",
 			PlatformName:      "ubuntu-22.04",
 			SuiteName:         "default",
-			ConvergePassed:    nil,
-			TestsPassed:       nil,
+			Passed:            nil,
 			CreatedAt:         time.Date(2025, 1, 15, 9, 0, 0, 0, time.UTC),
 		}
 
@@ -242,33 +199,24 @@ func TestGitKitchenResult_JSONRoundTrip(t *testing.T) {
 			t.Fatalf("unmarshal to map: %v", err)
 		}
 
-		if m["converge_passed"] != nil {
-			t.Errorf("converge_passed should be null when nil, got %v", m["converge_passed"])
-		}
-		if m["tests_passed"] != nil {
-			t.Errorf("tests_passed should be null when nil, got %v", m["tests_passed"])
+		if m["passed"] != nil {
+			t.Errorf("passed should be null when nil, got %v", m["passed"])
 		}
 
-		// set *bool values and verify they marshal correctly
 		trueVal := true
-		falseVal := false
-		r.ConvergePassed = &trueVal
-		r.TestsPassed = &falseVal
+		r.Passed = &trueVal
 
 		data, err = json.Marshal(r)
 		if err != nil {
-			t.Fatalf("marshal with set bools: %v", err)
+			t.Fatalf("marshal with set bool: %v", err)
 		}
 
 		if err := json.Unmarshal(data, &m); err != nil {
 			t.Fatalf("unmarshal to map: %v", err)
 		}
 
-		if m["converge_passed"] != true {
-			t.Errorf("converge_passed should be true, got %v", m["converge_passed"])
-		}
-		if m["tests_passed"] != false {
-			t.Errorf("tests_passed should be false, got %v", m["tests_passed"])
+		if m["passed"] != true {
+			t.Errorf("passed should be true, got %v", m["passed"])
 		}
 	})
 }
@@ -281,11 +229,8 @@ func TestGkrColumns_NotEmpty(t *testing.T) {
 
 func TestGitKitchenResult_Defaults(t *testing.T) {
 	var r GitKitchenResult
-	if r.ConvergePassed != nil {
-		t.Errorf("ConvergePassed should be nil, got %v", r.ConvergePassed)
-	}
-	if r.TestsPassed != nil {
-		t.Errorf("TestsPassed should be nil, got %v", r.TestsPassed)
+	if r.Passed != nil {
+		t.Errorf("Passed should be nil, got %v", r.Passed)
 	}
 	if r.TimedOut {
 		t.Error("TimedOut should be false")
@@ -302,13 +247,7 @@ func TestGitKitchenResult_Defaults(t *testing.T) {
 	if r.ID != "" {
 		t.Errorf("ID should be empty, got %q", r.ID)
 	}
-	if r.BatchID != "" {
-		t.Errorf("BatchID should be empty, got %q", r.BatchID)
-	}
 	if r.ErrorMessage != "" {
 		t.Errorf("ErrorMessage should be empty, got %q", r.ErrorMessage)
-	}
-	if r.VMTrackingID != "" {
-		t.Errorf("VMTrackingID should be empty, got %q", r.VMTrackingID)
 	}
 }

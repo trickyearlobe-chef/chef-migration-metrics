@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -282,18 +283,13 @@ func TestCollector_Run_ErrorWhenAlreadyRunning(t *testing.T) {
 func TestCollector_Run_NilDB_ReturnsError(t *testing.T) {
 	c, _ := newTestCollector(t, nil)
 
-	// db is nil, so ListOrganisations will panic or return error.
-	// We expect a panic recovery or error.
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// Expected — nil db causes a nil pointer dereference.
-				// This confirms the collector attempts to use the db.
-				t.Log("recovered from expected nil DB panic")
-			}
-		}()
-		_, _ = c.Run(context.Background())
-	}()
+	_, err := c.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error from Run with nil DB, got nil")
+	}
+	if !strings.Contains(err.Error(), "database is nil") {
+		t.Errorf("unexpected error: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1556,9 +1552,6 @@ func TestCollector_PipelineFields_NilByDefault(t *testing.T) {
 	if c.cookstyleScanner != nil {
 		t.Error("expected cookstyleScanner to be nil by default")
 	}
-	if c.kitchenScanner != nil {
-		t.Error("expected kitchenScanner to be nil by default")
-	}
 	if c.autocorrectGen != nil {
 		t.Error("expected autocorrectGen to be nil by default")
 	}
@@ -1587,20 +1580,6 @@ func TestWithCookstyleScanner_SetsField(t *testing.T) {
 	c := New(nil, cfg, logger, resolver, WithCookstyleScanner(scanner))
 	if c.cookstyleScanner != scanner {
 		t.Error("expected cookstyleScanner to be set by WithCookstyleScanner")
-	}
-}
-
-func TestWithKitchenScanner_SetsField(t *testing.T) {
-	scanner := analysis.NewKitchenScanner(nil, nil, "/usr/bin/kitchen", 2, 30, config.TestKitchenConfig{})
-
-	memWriter := logging.NewMemoryWriter()
-	logger := logging.New(logging.Options{Level: logging.DEBUG, Writers: []logging.Writer{memWriter}})
-	cfg := &config.Config{}
-	resolver := secrets.NewCredentialResolver(nil)
-
-	c := New(nil, cfg, logger, resolver, WithKitchenScanner(scanner))
-	if c.kitchenScanner != scanner {
-		t.Error("expected kitchenScanner to be set by WithKitchenScanner")
 	}
 }
 
@@ -1862,18 +1841,13 @@ func TestResumeInterruptedRuns_NilDB_ReturnsError(t *testing.T) {
 
 	c := New(nil, cfg, logger, resolver)
 
-	// With a nil DB, the call to GetInterruptedCollectionRuns will panic
-	// (nil pointer dereference). This verifies the collector handles the
-	// nil DB scenario — in production, DB is never nil, but we confirm
-	// the method doesn't silently succeed.
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("expected panic with nil DB, but got none")
-			}
-		}()
-		_, _ = c.ResumeInterruptedRuns(context.Background())
-	}()
+	_, err := c.ResumeInterruptedRuns(context.Background())
+	if err == nil {
+		t.Fatal("expected error with nil DB, got nil")
+	}
+	if !strings.Contains(err.Error(), "database is nil") {
+		t.Errorf("unexpected error: %v", err)
+	}
 }
 
 func TestRunForOrganisations_ErrorWhenAlreadyRunning(t *testing.T) {
@@ -2041,7 +2015,6 @@ func TestEstimateCollectionInterval_EmptyScheduleFallsBack(t *testing.T) {
 
 func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 	csScanner := analysis.NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 2, 5)
-	tkScanner := analysis.NewKitchenScanner(nil, nil, "/usr/bin/kitchen", 2, 30, config.TestKitchenConfig{})
 	acGen := remediation.NewAutocorrectGenerator(nil, nil, "/usr/bin/cookstyle", 10)
 	cxScorer := remediation.NewComplexityScorer(nil, nil)
 	readEval := analysis.NewReadinessEvaluator(nil, nil, 2, 2048)
@@ -2055,7 +2028,6 @@ func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 
 	c := New(nil, cfg, logger, resolver,
 		WithCookstyleScanner(csScanner),
-		WithKitchenScanner(tkScanner),
 		WithAutocorrectGenerator(acGen),
 		WithComplexityScorer(cxScorer),
 		WithReadinessEvaluator(readEval),
@@ -2065,9 +2037,6 @@ func TestMultiplePipelineOptions_AllSet(t *testing.T) {
 
 	if c.cookstyleScanner != csScanner {
 		t.Error("cookstyleScanner not set")
-	}
-	if c.kitchenScanner != tkScanner {
-		t.Error("kitchenScanner not set")
 	}
 	if c.autocorrectGen != acGen {
 		t.Error("autocorrectGen not set")

@@ -64,15 +64,6 @@ export async function rescanAllCookstyle(): Promise<{ message: string }> {
   return res.json() as Promise<{ message: string }>;
 }
 
-export async function rerunAllTestKitchen(): Promise<{ message: string }> {
-  const res = await fetch(buildUrl("/admin/rerun-all-test-kitchen"), {
-    method: "POST",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`Rerun all TK failed: ${res.status}`);
-  return res.json() as Promise<{ message: string }>;
-}
-
 export async function resetGitCookbook(
   name: string,
 ): Promise<ResetGitCookbookResponse> {

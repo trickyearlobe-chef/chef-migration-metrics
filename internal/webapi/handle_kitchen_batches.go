@@ -98,14 +98,14 @@ func (r *Router) handleKitchenBatchDetail(w http.ResponseWriter, req *http.Reque
 
 	id := segments[0]
 
-	// /api/v1/kitchen/batches/:id/results
+	// /api/v1/kitchen/batches/:id/results — removed (git kitchen rebuild)
 	if len(segments) == 2 && segments[1] == "results" {
-		r.handleBatchResults(w, req, id)
+		WriteNotFound(w, "Batch results endpoint has been removed.")
 		return
 	}
-	// /api/v1/kitchen/batches/:id/progress
+	// /api/v1/kitchen/batches/:id/progress — removed (git kitchen rebuild)
 	if len(segments) == 2 && segments[1] == "progress" {
-		r.handleBatchProgress(w, req, id)
+		WriteNotFound(w, "Batch progress endpoint has been removed.")
 		return
 	}
 

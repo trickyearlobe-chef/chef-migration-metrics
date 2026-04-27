@@ -2274,13 +2274,6 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath(t *testing.T) {
 				{Name: "cookbook-c"},
 			}, nil
 		},
-		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
-			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoName: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoName: "cookbook-b", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoName: "cookbook-c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: true, StartedAt: time.Now()},
-			}, nil
-		},
 	}
 	cfg := testConfig()
 	cfg.TargetChefVersions = []string{"18.0.0"}
@@ -2316,17 +2309,8 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath(t *testing.T) {
 	if d.TotalRepos != 3 {
 		t.Errorf("total_repos = %d, want 3", d.TotalRepos)
 	}
-	if d.PassedRepos != 1 {
-		t.Errorf("passed_repos = %d, want 1", d.PassedRepos)
-	}
-	if d.FailedRepos != 1 {
-		t.Errorf("failed_repos = %d, want 1", d.FailedRepos)
-	}
-	if d.TimedOutRepos != 1 {
-		t.Errorf("timed_out_repos = %d, want 1", d.TimedOutRepos)
-	}
-	if d.UntestedRepos != 0 {
-		t.Errorf("untested_repos = %d, want 0", d.UntestedRepos)
+	if d.UntestedRepos != 3 {
+		t.Errorf("untested_repos = %d, want 3", d.UntestedRepos)
 	}
 }
 
@@ -2337,12 +2321,6 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_WithUntested(t *testi
 				{Name: "cookbook-a"},
 				{Name: "cookbook-b"},
 				{Name: "cookbook-c"},
-			}, nil
-		},
-		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
-			// Only cookbook-a has been tested — cookbook-b and cookbook-c are untested.
-			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoName: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
 			}, nil
 		},
 	}
@@ -2375,20 +2353,14 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_WithUntested(t *testi
 	if d.TotalRepos != 3 {
 		t.Errorf("total_repos = %d, want 3", d.TotalRepos)
 	}
-	if d.PassedRepos != 1 {
-		t.Errorf("passed_repos = %d, want 1", d.PassedRepos)
-	}
-	if d.UntestedRepos != 2 {
-		t.Errorf("untested_repos = %d, want 2", d.UntestedRepos)
+	if d.UntestedRepos != 3 {
+		t.Errorf("untested_repos = %d, want 3", d.UntestedRepos)
 	}
 }
 
 func TestHandleDashboardTestKitchenCompatibility_HappyPath_Empty(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return nil, nil
-		},
-		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return nil, nil
 		},
 	}
@@ -2427,12 +2399,6 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersion
 				{Name: "cookbook-a"},
 			}, nil
 		},
-		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
-			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoName: "cookbook-a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoName: "cookbook-a", TargetChefVersion: "19.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
-			}, nil
-		},
 	}
 	cfg := testConfig()
 	cfg.TargetChefVersions = []string{"18.0.0", "19.0.0"}
@@ -2448,8 +2414,7 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersion
 		Data []struct {
 			TargetChefVersion string `json:"target_chef_version"`
 			TotalRepos        int    `json:"total_repos"`
-			PassedRepos       int    `json:"passed_repos"`
-			FailedRepos       int    `json:"failed_repos"`
+			UntestedRepos     int    `json:"untested_repos"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -2458,46 +2423,23 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersion
 	if len(body.Data) != 2 {
 		t.Fatalf("len(data) = %d, want 2", len(body.Data))
 	}
-	// First target version: passed.
 	if body.Data[0].TargetChefVersion != "18.0.0" {
 		t.Errorf("data[0].target_chef_version = %q, want 18.0.0", body.Data[0].TargetChefVersion)
 	}
-	if body.Data[0].PassedRepos != 1 {
-		t.Errorf("data[0].passed_repos = %d, want 1", body.Data[0].PassedRepos)
+	if body.Data[0].UntestedRepos != 1 {
+		t.Errorf("data[0].untested_repos = %d, want 1", body.Data[0].UntestedRepos)
 	}
-	// Second target version: failed.
 	if body.Data[1].TargetChefVersion != "19.0.0" {
 		t.Errorf("data[1].target_chef_version = %q, want 19.0.0", body.Data[1].TargetChefVersion)
 	}
-	if body.Data[1].FailedRepos != 1 {
-		t.Errorf("data[1].failed_repos = %d, want 1", body.Data[1].FailedRepos)
+	if body.Data[1].UntestedRepos != 1 {
+		t.Errorf("data[1].untested_repos = %d, want 1", body.Data[1].UntestedRepos)
 	}
 }
 
 func TestHandleDashboardTestKitchenCompatibility_DBError_GitRepos(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return nil, errors.New("connection refused")
-		},
-	}
-	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/test-kitchen-compatibility", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-}
-
-func TestHandleDashboardTestKitchenCompatibility_DBError_TKResults(t *testing.T) {
-	store := &mockStore{
-		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return []datastore.GitRepo{{Name: "a"}}, nil
-		},
-		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
 			return nil, errors.New("connection refused")
 		},
 	}
@@ -2523,14 +2465,6 @@ func TestHandleDashboardTestKitchenCompatibility_PassedPercent(t *testing.T) {
 				{Name: "d"},
 			}, nil
 		},
-		ListAllGitRepoTestKitchenResultsFn: func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
-			return []datastore.GitRepoTestKitchenResult{
-				{GitRepoName: "a", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoName: "b", TargetChefVersion: "18.0.0", Compatible: true, TimedOut: false, StartedAt: time.Now()},
-				{GitRepoName: "c", TargetChefVersion: "18.0.0", Compatible: false, TimedOut: false, StartedAt: time.Now()},
-				// d is untested
-			}, nil
-		},
 	}
 	cfg := testConfig()
 	cfg.TargetChefVersions = []string{"18.0.0"}
@@ -2546,7 +2480,7 @@ func TestHandleDashboardTestKitchenCompatibility_PassedPercent(t *testing.T) {
 		Data []struct {
 			PassedPercent float64 `json:"passed_percent"`
 			TotalRepos    int     `json:"total_repos"`
-			PassedRepos   int     `json:"passed_repos"`
+			UntestedRepos int     `json:"untested_repos"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -2555,9 +2489,12 @@ func TestHandleDashboardTestKitchenCompatibility_PassedPercent(t *testing.T) {
 	if len(body.Data) != 1 {
 		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
-	// 2 passed out of 4 total = 50%
-	if body.Data[0].PassedPercent != 50.0 {
-		t.Errorf("passed_percent = %f, want 50.0", body.Data[0].PassedPercent)
+	// 0 passed out of 4 total = 0%
+	if body.Data[0].PassedPercent != 0.0 {
+		t.Errorf("passed_percent = %f, want 0.0", body.Data[0].PassedPercent)
+	}
+	if body.Data[0].UntestedRepos != 4 {
+		t.Errorf("untested_repos = %d, want 4", body.Data[0].UntestedRepos)
 	}
 }
 

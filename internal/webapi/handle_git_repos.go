@@ -21,11 +21,10 @@ import (
 // GET /api/v1/git-repos
 //
 // Returns all git repos, optionally filtered by name (substring match),
-// compatibility status, Test Kitchen status, and/or clone status. Each repo
-// includes a compatibility field ("compatible", "incompatible", or "untested")
-// computed from git repo complexity records and a tk_status field ("passed",
-// "failed", "timed_out", or "untested") computed from Test Kitchen results,
-// both for the specified target Chef version.
+// compatibility status, and/or clone status. Each repo includes a
+// compatibility field ("compatible", "incompatible", or "untested")
+// computed from git repo complexity records for the specified target Chef
+// version.
 //
 // Supports pagination via page/per_page query parameters.
 //
@@ -35,8 +34,6 @@ import (
 //     (defaults to the first configured target version)
 //   - compatibility: filter by status — "compatible", "incompatible",
 //     "untested", or "" (no filter)
-//   - tk_status: filter by Test Kitchen status — "passed", "failed",
-//     "timed_out", "untested", or "" (no filter)
 //   - clone_status: filter by clone/fetch status — "ok", "failed",
 //     "pending", or "" (no filter)
 //   - page: page number (default 1)
@@ -109,36 +106,6 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Build Test Kitchen status map from TK results.
-	tkStatusByName := make(map[string]string)
-	if targetChefVersion != "" {
-		allTKResults, tkErr := r.db.ListAllGitRepoTestKitchenResults(ctx)
-		if tkErr != nil {
-			r.logf("WARN", "listing git repo TK results for tk_status: %v", tkErr)
-		} else {
-			for _, tk := range allTKResults {
-				if tk.TargetChefVersion != targetChefVersion {
-					continue
-				}
-				name := repoNameByID[tk.GitRepoName]
-				if name == "" {
-					continue
-				}
-				if _, seen := tkStatusByName[name]; seen {
-					continue
-				}
-				switch {
-				case tk.TimedOut:
-					tkStatusByName[name] = "timed_out"
-				case tk.Compatible:
-					tkStatusByName[name] = "passed"
-				default:
-					tkStatusByName[name] = "failed"
-				}
-			}
-		}
-	}
-
 	// Apply optional name filter (case-insensitive substring).
 	nameFilter := queryString(req, "name", "")
 	if nameFilter != "" {
@@ -161,22 +128,6 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 				c = "untested"
 			}
 			if c == compatFilter {
-				filtered = append(filtered, gr)
-			}
-		}
-		repos = filtered
-	}
-
-	// Apply optional Test Kitchen status filter.
-	tkFilter := queryString(req, "tk_status", "")
-	if tkFilter != "" {
-		filtered := repos[:0]
-		for _, gr := range repos {
-			t := tkStatusByName[gr.Name]
-			if t == "" {
-				t = "untested"
-			}
-			if t == tkFilter {
 				filtered = append(filtered, gr)
 			}
 		}
@@ -215,7 +166,6 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		CloneError        string `json:"clone_error,omitempty"`
 		LastFetchedAt     string `json:"last_fetched_at,omitempty"`
 		Compatibility     string `json:"compatibility"`
-		TKStatus          string `json:"tk_status"`
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 	}
 
@@ -224,10 +174,6 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		c := compatByName[gr.Name]
 		if c == "" {
 			c = "untested"
-		}
-		tkSt := tkStatusByName[gr.Name]
-		if tkSt == "" {
-			tkSt = "untested"
 		}
 		resp := gitRepoResp{
 			ID:                gr.Name,
@@ -239,7 +185,6 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			CloneStatus:       gr.CloneStatus,
 			CloneError:        gr.CloneError,
 			Compatibility:     c,
-			TKStatus:          tkSt,
 			TargetChefVersion: targetChefVersion,
 		}
 		if !gr.LastFetchedAt.IsZero() {
@@ -258,13 +203,12 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 //
 // Returns all git repo rows for the given cookbook name (there may be
 // multiple if the same cookbook is tracked at different git URLs), along
-// with cookstyle results, test kitchen results, and complexity records.
+// with cookstyle results and complexity records.
 //
 // Also dispatches to sub-path handlers:
 //   - /api/v1/git-repos/:name/committers              → handleGitRepoCommitters
 //   - /api/v1/git-repos/:name/committers/assign       → handleGitRepoCommittersAssign
 //   - /api/v1/git-repos/:name/rescan                  → handleGitRepoRescan
-//   - /api/v1/git-repos/:name/rescan-test-kitchen     → handleGitRepoRescanTestKitchen
 //   - /api/v1/git-repos/:name/reset                   → handleGitRepoReset
 //   - /api/v1/git-repos/:name/:version/remediation    → handleGitRepoRemediation
 //
@@ -276,7 +220,6 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 //	    {
 //	      "git_repo": { ... },
 //	      "cookstyle": [ ... ],
-//	      "test_kitchen": [ ... ],
 //	      "complexity": [ ... ]
 //	    }
 //	  ]
@@ -318,12 +261,6 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 	// /api/v1/git-repos/:name/rescan
 	if len(segments) >= 2 && segments[len(segments)-1] == "rescan" {
 		r.handleGitRepoRescan(w, req)
-		return
-	}
-
-	// /api/v1/git-repos/:name/rescan-test-kitchen
-	if len(segments) >= 2 && segments[len(segments)-1] == "rescan-test-kitchen" {
-		r.handleGitRepoRescanTestKitchen(w, req)
 		return
 	}
 
@@ -376,7 +313,6 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 	type gitRepoDetailEntry struct {
 		GitRepo     datastore.GitRepo                    `json:"git_repo"`
 		Cookstyle   []datastore.GitRepoCookstyleResult   `json:"cookstyle,omitempty"`
-		TestKitchen []datastore.GitRepoTestKitchenResult `json:"test_kitchen,omitempty"`
 		Complexity  []datastore.GitRepoComplexity        `json:"complexity,omitempty"`
 	}
 
@@ -389,13 +325,6 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 			r.logf("WARN", "listing cookstyle results for git repo %s: %v", gr.Name, csErr)
 		} else {
 			detail.Cookstyle = cookstyle
-		}
-
-		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.Name, gr.GitRepoURL)
-		if tkErr != nil {
-			r.logf("WARN", "listing test kitchen results for git repo %s: %v", gr.Name, tkErr)
-		} else {
-			detail.TestKitchen = tk
 		}
 
 		complexity, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, gr.Name, gr.GitRepoURL)
@@ -505,100 +434,6 @@ func (r *Router) handleGitRepoRescan(w http.ResponseWriter, req *http.Request) {
 		msg += " — collection run triggered."
 	} else {
 		msg += " — rescan will run on the next collection cycle."
-	}
-
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"git_repo_name":        repoName,
-		"repos_invalidated":    invalidated,
-		"collection_triggered": triggered,
-		"message":              msg,
-	})
-}
-
-// ---------------------------------------------------------------------------
-// Git Repo Rescan Test Kitchen endpoint
-//
-// POST /api/v1/git-repos/:name/rescan-test-kitchen
-//
-// Invalidates all Test Kitchen results for the given git repo name, then
-// triggers an immediate collection run so the retest starts right away.
-//
-// Response (200):
-//
-//	{
-//	  "git_repo_name": "my-cookbook",
-//	  "repos_invalidated": 1,
-//	  "collection_triggered": true,
-//	  "message": "Test Kitchen results invalidated — collection run triggered."
-//	}
-//
-// ---------------------------------------------------------------------------
-
-func (r *Router) handleGitRepoRescanTestKitchen(w http.ResponseWriter, req *http.Request) {
-	if !requireMethod(w, req, http.MethodPost) {
-		return
-	}
-
-	segments := pathSegments(req.URL.Path, "/api/v1/git-repos/")
-	if len(segments) < 2 || segments[len(segments)-1] != "rescan-test-kitchen" {
-		WriteNotFound(w, "Expected path: /api/v1/git-repos/:name/rescan-test-kitchen")
-		return
-	}
-	repoName := segments[0]
-	if repoName == "" {
-		WriteBadRequest(w, "Git repo name is required.")
-		return
-	}
-
-	ctx := req.Context()
-
-	gitRepos, err := r.db.ListGitReposByName(ctx, repoName)
-	if err != nil {
-		r.logf("ERROR", "listing git repos for test kitchen rescan %s: %v", repoName, err)
-		WriteInternalError(w, "Failed to look up git repo.")
-		return
-	}
-
-	if len(gitRepos) == 0 {
-		WriteNotFound(w, fmt.Sprintf("Git repo %q not found.", repoName))
-		return
-	}
-
-	invalidated := 0
-	var lastErr error
-
-	for _, gr := range gitRepos {
-		tkErr := r.db.DeleteGitRepoTestKitchenResultsByRepo(ctx, gr.Name, gr.GitRepoURL)
-		if tkErr != nil {
-			r.logf("WARN", "deleting test kitchen results for git repo %s (%s): %v", gr.Name, gr.GitRepoURL, tkErr)
-			lastErr = tkErr
-		} else {
-			invalidated++
-		}
-	}
-
-	if lastErr != nil && invalidated == 0 {
-		WriteInternalError(w, "Failed to invalidate git repo test kitchen results.")
-		return
-	}
-
-	if r.hub != nil {
-		r.hub.Broadcast(NewEvent(EventGitRepoStatusChanged, map[string]any{
-			"git_repo_name":     repoName,
-			"action":            "rescan-test-kitchen",
-			"repos_invalidated": invalidated,
-		}))
-	}
-
-	r.logf("INFO", "git repo test kitchen rescan requested for %s — %d repo(s) invalidated", repoName, invalidated)
-
-	triggered := r.triggerCollectionInBackground()
-
-	msg := "Test Kitchen results invalidated"
-	if triggered {
-		msg += " — collection run triggered."
-	} else {
-		msg += " — rerun will start on the next collection cycle."
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{

@@ -19,7 +19,6 @@ type PurgeStaleTargetVersionResult struct {
 	GitRepoCookstyleResults           int64
 	GitRepoComplexity                 int64
 	GitRepoAutocorrectPreviews        int64
-	GitRepoTestKitchenResults         int64
 	MetricSnapshots                   int64
 }
 
@@ -32,7 +31,6 @@ func (r PurgeStaleTargetVersionResult) Total() int64 {
 		r.GitRepoCookstyleResults +
 		r.GitRepoComplexity +
 		r.GitRepoAutocorrectPreviews +
-		r.GitRepoTestKitchenResults +
 		r.MetricSnapshots
 }
 
@@ -100,11 +98,6 @@ func (db *DB) PurgeStaleTargetVersionData(ctx context.Context, activeVersions []
 				name:  "git_repo_autocorrect_previews",
 				query: "DELETE FROM git_repo_autocorrect_previews WHERE target_chef_version NOT IN (" + notIn + ")",
 				dest:  &result.GitRepoAutocorrectPreviews,
-			},
-			{
-				name:  "git_repo_test_kitchen_results",
-				query: "DELETE FROM git_repo_test_kitchen_results WHERE target_chef_version NOT IN (" + notIn + ")",
-				dest:  &result.GitRepoTestKitchenResults,
 			},
 			{
 				name:  "metric_snapshots",

@@ -262,20 +262,6 @@ type DataStore interface {
 	// given cookstyle result ID. Returns (nil, nil) if no preview exists.
 	GetGitRepoAutocorrectPreview(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoAutocorrectPreview, error)
 
-	// GetLatestGitRepoTestKitchenResult returns the most recent test
-	// kitchen result for the given git repo ID and target Chef version.
-	// Returns (nil, nil) if no result exists.
-	GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
-
-	// ListGitRepoTestKitchenResults returns all test kitchen results for
-	// the given git repo ID, ordered by target_chef_version then
-	// started_at desc.
-	ListGitRepoTestKitchenResults(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoTestKitchenResult, error)
-
-	// ListAllGitRepoTestKitchenResults returns all test kitchen results,
-	// ordered by target_chef_version.
-	ListAllGitRepoTestKitchenResults(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error)
-
 	// DeleteGitRepoCookstyleResultsByRepo removes all cookstyle results for
 	// the given git repo ID.
 	DeleteGitRepoCookstyleResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error
@@ -288,10 +274,6 @@ type DataStore interface {
 	// previews for the given git repo ID.
 	DeleteGitRepoAutocorrectPreviewsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error
 
-	// DeleteGitRepoTestKitchenResultsByRepo removes all test kitchen results
-	// for the given git repo ID. Forces a full retest on the next cycle.
-	DeleteGitRepoTestKitchenResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error
-
 	// DeleteAllGitRepoCookstyleResults removes all git repo cookstyle
 	// results.
 	DeleteAllGitRepoCookstyleResults(ctx context.Context) error
@@ -302,10 +284,6 @@ type DataStore interface {
 	// DeleteAllGitRepoAutocorrectPreviews removes all git repo autocorrect
 	// preview records.
 	DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error
-
-	// DeleteAllGitRepoTestKitchenResults removes all git repo test kitchen
-	// results. Forces a full retest of every repo on the next cycle.
-	DeleteAllGitRepoTestKitchenResults(ctx context.Context) error
 
 	// -----------------------------------------------------------------
 	// Log entries
@@ -653,17 +631,11 @@ type DataStore interface {
 	// ListGitKitchenResults returns all per-instance kitchen results.
 	ListGitKitchenResults(ctx context.Context) ([]datastore.GitKitchenResult, error)
 
-	// ListGitKitchenResultsByBatch returns results for a specific batch.
-	ListGitKitchenResultsByBatch(ctx context.Context, batchID string) ([]datastore.GitKitchenResult, error)
-
 	// ListGitKitchenResultsByRepo returns results for a specific repo.
 	ListGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
 
-	// CountGitKitchenResultsByBatch returns aggregate status counts for a batch.
-	CountGitKitchenResultsByBatch(ctx context.Context, batchID string) (passed, failed, pending, timedOut, errored int, err error)
-
-	// DeleteGitKitchenResultsByBatch removes all results for a batch.
-	DeleteGitKitchenResultsByBatch(ctx context.Context, batchID string) error
+	// DeleteGitKitchenResultsByRepo removes all per-instance kitchen results for a repo.
+	DeleteGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) error
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

@@ -12,7 +12,6 @@ import {
   listExcludedGitRepos,
   excludeGitRepo,
   clearGitRepoExclusion,
-  fetchBatchResults,
   fetchBatchProgress,
 } from "../api";
 import type {
@@ -22,7 +21,6 @@ import type {
   BatchFilters,
   ResolvedCookbook,
   GitRepoListItem,
-  GitKitchenResult,
   BatchProgress,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
@@ -38,22 +36,6 @@ const STATUS_COLORS: Record<string, string> = {
   completed: "bg-green-100 text-green-700",
   cancelled: "bg-red-100 text-red-700",
 };
-
-const RESULT_STATUS_COLORS: Record<string, string> = {
-  passed: "bg-green-100 text-green-800",
-  failed: "bg-red-100 text-red-800",
-  "timed out": "bg-yellow-100 text-yellow-800",
-  errored: "bg-orange-100 text-orange-800",
-  pending: "bg-gray-100 text-gray-500",
-};
-
-function resultStatus(r: GitKitchenResult): string {
-  if (r.error_message) return "errored";
-  if (r.timed_out) return "timed out";
-  if (r.converge_passed === null) return "pending";
-  if (r.converge_passed && r.tests_passed) return "passed";
-  return "failed";
-}
 
 function BatchProgressBar({ progress }: { progress: BatchProgress }) {
   const total = progress.total || 1;
@@ -105,61 +87,6 @@ function BatchProgressBar({ progress }: { progress: BatchProgress }) {
         <span>⏳ {progress.pending} pending</span>
         <span className="font-medium">Total: {progress.total}</span>
       </div>
-    </div>
-  );
-}
-
-function BatchResultsTable({ results }: { results: GitKitchenResult[] }) {
-  if (results.length === 0) {
-    return <p className="text-sm text-gray-500">No results yet.</p>;
-  }
-  return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-            <th className="px-4 py-2">Cookbook</th>
-            <th className="px-4 py-2">Platform</th>
-            <th className="px-4 py-2">Suite</th>
-            <th className="px-4 py-2">Chef Version</th>
-            <th className="px-4 py-2">Status</th>
-            <th className="px-4 py-2 text-right">Duration</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {results.map((r) => {
-            const status = resultStatus(r);
-            const colorCls =
-              RESULT_STATUS_COLORS[status] || "bg-gray-100 text-gray-500";
-            return (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <td className="whitespace-nowrap px-4 py-2 font-medium text-gray-800">
-                  {r.git_repo_name}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-gray-600">
-                  {r.platform_name}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-gray-600">
-                  {r.suite_name}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-gray-600">
-                  {r.target_chef_version}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2">
-                  <span
-                    className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colorCls}`}
-                  >
-                    {status}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-gray-600">
-                  {r.duration_seconds != null ? `${r.duration_seconds}s` : "—"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -487,11 +414,7 @@ function BatchDetailView({
   onBack: () => void;
   busy: boolean;
 }) {
-  const [results, setResults] = useState<GitKitchenResult[]>([]);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "results">(
-    "overview",
-  );
 
   useEffect(() => {
     if (
@@ -499,9 +422,6 @@ function BatchDetailView({
       batch.status === "completed" ||
       batch.status === "cancelled"
     ) {
-      fetchBatchResults(batch.id)
-        .then(setResults)
-        .catch(() => {});
       fetchBatchProgress(batch.id)
         .then(setProgress)
         .catch(() => {});
@@ -510,9 +430,6 @@ function BatchDetailView({
       const interval = setInterval(() => {
         fetchBatchProgress(batch.id)
           .then(setProgress)
-          .catch(() => {});
-        fetchBatchResults(batch.id)
-          .then(setResults)
           .catch(() => {});
       }, 5000);
       return () => clearInterval(interval);
@@ -603,35 +520,13 @@ function BatchDetailView({
         </dl>
       </div>
 
-      {/* Tabs */}
-      {(batch.status === "running" ||
-        batch.status === "completed" ||
-        batch.status === "cancelled") && (
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex gap-4">
-            <button
-              className={`border-b-2 pb-2 text-sm font-medium ${activeTab === "overview" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-              onClick={() => setActiveTab("overview")}
-            >
-              Overview
-            </button>
-            <button
-              className={`border-b-2 pb-2 text-sm font-medium ${activeTab === "results" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-              onClick={() => setActiveTab("results")}
-            >
-              Results ({results.length})
-            </button>
-          </nav>
-        </div>
-      )}
-
       {/* Progress bar */}
       {progress && progress.total > 0 && (
         <BatchProgressBar progress={progress} />
       )}
 
       {/* Estimate summary */}
-      {activeTab === "overview" && est && (
+      {est && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -711,9 +606,6 @@ function BatchDetailView({
           )}
         </div>
       )}
-
-      {/* Results tab */}
-      {activeTab === "results" && <BatchResultsTable results={results} />}
 
       {/* Action buttons */}
       <div className="flex items-center gap-3">

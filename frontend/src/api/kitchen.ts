@@ -13,10 +13,7 @@ import type {
   KitchenBatchRequest,
   GitRepoExcludeRequest,
   GitRepoListItem,
-  GitKitchenResult,
   BatchProgress,
-  GitKitchenRunRequest,
-  GitKitchenTriggerResponse,
   KitchenAnalysisCookbook,
 } from "../types";
 import { apiFetch, buildUrl, ApiError } from "./client";
@@ -204,40 +201,8 @@ export async function listExcludedGitRepos(): Promise<GitRepoListItem[]> {
   return apiFetch<GitRepoListItem[]>("/git-repos/excluded");
 }
 
-export async function listGitKitchenResults(params?: {
-  repo?: string;
-  batch_id?: string;
-}): Promise<GitKitchenResult[]> {
-  const search = new URLSearchParams();
-  if (params?.repo) search.set("repo", params.repo);
-  if (params?.batch_id) search.set("batch_id", params.batch_id);
-  const qs = search.toString();
-  const path = qs ? `/git-kitchen-results?${qs}` : "/git-kitchen-results";
-  return apiFetch<GitKitchenResult[]>(path);
-}
-
-export async function getGitKitchenResult(id: string): Promise<GitKitchenResult> {
-  return apiFetch<GitKitchenResult>(`/git-kitchen-results/${id}`);
-}
-
-export async function fetchBatchResults(batchId: string): Promise<GitKitchenResult[]> {
-  return apiFetch<GitKitchenResult[]>(`/kitchen/batches/${batchId}/results`);
-}
-
 export async function fetchBatchProgress(batchId: string): Promise<BatchProgress> {
   return apiFetch<BatchProgress>(`/kitchen/batches/${batchId}/progress`);
-}
-
-export async function triggerGitKitchenRun(
-  req: GitKitchenRunRequest,
-): Promise<GitKitchenTriggerResponse> {
-  const res = await fetch(buildUrl("/kitchen/git-run"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) throw new Error(`Failed to trigger git kitchen run: ${res.status}`);
-  return res.json() as Promise<GitKitchenTriggerResponse>;
 }
 
 export async function fetchKitchenAnalysisCookbook(
