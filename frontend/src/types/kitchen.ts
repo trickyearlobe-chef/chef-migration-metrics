@@ -196,3 +196,56 @@ export interface KitchenSuiteInfo {
   name: string;
   run_list?: string[];
 }
+
+export type GitKitchenInstanceStatus = "mapped" | "unmapped" | "skipped" | "excluded";
+
+export interface GitKitchenPlannedInstance {
+  instance_name: string;
+  suite_name: string;
+  platform_name: string;
+  status: GitKitchenInstanceStatus;
+  status_reason: string;
+  image_name?: string;
+}
+
+export interface GitKitchenPlanResult {
+  git_repo_name: string;
+  git_repo_url: string;
+  commit_sha: string;
+  instances: GitKitchenPlannedInstance[];
+  total: number;
+  mapped: number;
+  unmapped: number;
+  skipped: number;
+  excluded: number;
+}
+
+export interface GitKitchenResult {
+  id: string;
+  git_repo_name: string;
+  git_repo_url: string;
+  target_chef_version: string;
+  commit_sha: string;
+  platform_name: string;
+  suite_name: string;
+  instance_name: string;
+  driver_used?: string;
+  passed: boolean | null;
+  timed_out: boolean;
+  output?: string;
+  duration_seconds?: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface GitKitchenRunRequest {
+  git_repo_name: string;
+  instance_name: string;
+  target_chef_version: string;
+}
+
+export interface GitKitchenRunResponse {
+  message: string;
+}

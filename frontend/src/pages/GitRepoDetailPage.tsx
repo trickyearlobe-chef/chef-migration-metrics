@@ -9,6 +9,7 @@ import type { GitRepoDetailResponse } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
 import { CookstyleResultRow } from "../components/CookstyleResultRow";
+import { GitKitchenSection } from "../components/GitKitchenSection";
 
 export function GitRepoDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -330,6 +331,13 @@ export function GitRepoDetailPage() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Git Kitchen instances */}
+                {gr.has_test_suite && (
+                  <div className="mt-4">
+                    <GitKitchenSection repoName={gr.name} />
                   </div>
                 )}
               </div>
