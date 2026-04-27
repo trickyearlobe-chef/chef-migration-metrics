@@ -528,3 +528,214 @@ func TestFunctional_GetProductionPlatformsForCookbook_EmptyName(t *testing.T) {
 		t.Fatal("expected error for empty cookbook name")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ListClonedGitRepos / DeleteStaleGitRepos
+// ---------------------------------------------------------------------------
+
+func TestFunctional_ListClonedGitRepos_FiltersNonOK(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	cleanupTestData(t, db,
+		"DELETE FROM git_repos WHERE name LIKE 'test-lcg-%'",
+	)
+
+	// repo-a: clone_status = 'ok'
+	_, err := db.UpsertGitRepo(ctx, UpsertGitRepoParams{
+		Name:          "test-lcg-repo-a",
+		GitRepoURL:    "git@example.com:org-a/test-lcg-repo-a",
+		LastFetchedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upserting repo-a: %v", err)
+	}
+
+	// repo-b: clone_status = 'failed'
+	_, err = db.UpsertGitRepoFailed(ctx, "test-lcg-repo-b", "git@example.com:org-a/test-lcg-repo-b", "timeout")
+	if err != nil {
+		t.Fatalf("upserting repo-b: %v", err)
+	}
+
+	// repo-c: clone_status = 'pending' (create as ok, then reset)
+	_, err = db.UpsertGitRepo(ctx, UpsertGitRepoParams{
+		Name:          "test-lcg-repo-c",
+		GitRepoURL:    "git@example.com:org-a/test-lcg-repo-c",
+		LastFetchedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upserting repo-c: %v", err)
+	}
+	_, err = db.ResetGitRepoCloneStatus(ctx, "test-lcg-repo-c", "git@example.com:org-a/test-lcg-repo-c")
+	if err != nil {
+		t.Fatalf("resetting repo-c clone status: %v", err)
+	}
+
+	// ListClonedGitRepos should return only 'ok' repos.
+	cloned, err := db.ListClonedGitRepos(ctx)
+	if err != nil {
+		t.Fatalf("listing cloned repos: %v", err)
+	}
+
+	foundCloned := map[string]bool{}
+	for _, r := range cloned {
+		if r.Name == "test-lcg-repo-a" || r.Name == "test-lcg-repo-b" || r.Name == "test-lcg-repo-c" {
+			foundCloned[r.Name] = true
+		}
+	}
+	if !foundCloned["test-lcg-repo-a"] {
+		t.Error("expected test-lcg-repo-a (ok) in ListClonedGitRepos results")
+	}
+	if foundCloned["test-lcg-repo-b"] {
+		t.Error("test-lcg-repo-b (failed) should not appear in ListClonedGitRepos")
+	}
+	if foundCloned["test-lcg-repo-c"] {
+		t.Error("test-lcg-repo-c (pending) should not appear in ListClonedGitRepos")
+	}
+
+	// ListGitRepos should return all 3.
+	all, err := db.ListGitRepos(ctx)
+	if err != nil {
+		t.Fatalf("listing all repos: %v", err)
+	}
+	foundAll := map[string]bool{}
+	for _, r := range all {
+		if r.Name == "test-lcg-repo-a" || r.Name == "test-lcg-repo-b" || r.Name == "test-lcg-repo-c" {
+			foundAll[r.Name] = true
+		}
+	}
+	if len(foundAll) != 3 {
+		t.Errorf("expected 3 test-lcg repos in ListGitRepos, found %d", len(foundAll))
+	}
+}
+
+func TestFunctional_DeleteStaleGitRepos_CleansUpStaleRows(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	cleanupTestData(t, db,
+		"DELETE FROM git_repo_committers WHERE git_repo_url LIKE 'git@example.com:org-%/test-dsg-cookbook'",
+		"DELETE FROM git_repo_cookstyle_results WHERE git_repo_name = 'test-dsg-cookbook'",
+		"DELETE FROM git_repos WHERE name = 'test-dsg-cookbook'",
+	)
+
+	// Insert the "current" repo (org-a, ok).
+	_, err := db.UpsertGitRepo(ctx, UpsertGitRepoParams{
+		Name:          "test-dsg-cookbook",
+		GitRepoURL:    "git@example.com:org-a/test-dsg-cookbook",
+		LastFetchedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upserting org-a repo: %v", err)
+	}
+
+	// Insert the "stale" repo (org-b, failed).
+	_, err = db.UpsertGitRepoFailed(ctx, "test-dsg-cookbook", "git@example.com:org-b/test-dsg-cookbook", "not found")
+	if err != nil {
+		t.Fatalf("upserting org-b repo: %v", err)
+	}
+
+	// Insert a cookstyle result referencing the stale URL.
+	_, err = db.pool.ExecContext(ctx,
+		`INSERT INTO git_repo_cookstyle_results (git_repo_name, git_repo_url, target_chef_version, scanned_at)
+		 VALUES ($1, $2, $3, now())`,
+		"test-dsg-cookbook", "git@example.com:org-b/test-dsg-cookbook", "19.0.0",
+	)
+	if err != nil {
+		t.Fatalf("inserting cookstyle result: %v", err)
+	}
+
+	// Insert a committer referencing the stale URL.
+	_, err = db.pool.ExecContext(ctx,
+		`INSERT INTO git_repo_committers (git_repo_url, author_name, author_email, commit_count, first_commit_at, last_commit_at)
+		 VALUES ($1, $2, $3, $4, now(), now())`,
+		"git@example.com:org-b/test-dsg-cookbook", "Test", "test@example.com", 1,
+	)
+	if err != nil {
+		t.Fatalf("inserting committer: %v", err)
+	}
+
+	// Delete stale repos, keeping org-a.
+	deleted, err := db.DeleteStaleGitRepos(ctx, "test-dsg-cookbook", "git@example.com:org-a/test-dsg-cookbook")
+	if err != nil {
+		t.Fatalf("deleting stale repos: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("expected 1 deleted, got %d", deleted)
+	}
+
+	// Only org-a row should remain.
+	remaining, err := db.ListGitReposByName(ctx, "test-dsg-cookbook")
+	if err != nil {
+		t.Fatalf("listing repos by name: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 remaining repo, got %d", len(remaining))
+	}
+	if remaining[0].GitRepoURL != "git@example.com:org-a/test-dsg-cookbook" {
+		t.Errorf("remaining repo URL: got %q, want org-a", remaining[0].GitRepoURL)
+	}
+
+	// Cookstyle result for org-b should be gone (FK cascade).
+	var cookstyleCount int
+	err = db.pool.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM git_repo_cookstyle_results
+		 WHERE git_repo_name = $1 AND git_repo_url = $2`,
+		"test-dsg-cookbook", "git@example.com:org-b/test-dsg-cookbook",
+	).Scan(&cookstyleCount)
+	if err != nil {
+		t.Fatalf("counting cookstyle results: %v", err)
+	}
+	if cookstyleCount != 0 {
+		t.Errorf("expected 0 cookstyle results for org-b, got %d", cookstyleCount)
+	}
+
+	// Committer for org-b should be gone.
+	var committerCount int
+	err = db.pool.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM git_repo_committers WHERE git_repo_url = $1`,
+		"git@example.com:org-b/test-dsg-cookbook",
+	).Scan(&committerCount)
+	if err != nil {
+		t.Fatalf("counting committers: %v", err)
+	}
+	if committerCount != 0 {
+		t.Errorf("expected 0 committers for org-b, got %d", committerCount)
+	}
+}
+
+func TestFunctional_DeleteStaleGitRepos_NoStaleRows(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	cleanupTestData(t, db,
+		"DELETE FROM git_repos WHERE name = 'test-dsn-cookbook'",
+	)
+
+	_, err := db.UpsertGitRepo(ctx, UpsertGitRepoParams{
+		Name:          "test-dsn-cookbook",
+		GitRepoURL:    "git@example.com:org-a/test-dsn-cookbook",
+		LastFetchedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upserting repo: %v", err)
+	}
+
+	// No stale rows to delete.
+	deleted, err := db.DeleteStaleGitRepos(ctx, "test-dsn-cookbook", "git@example.com:org-a/test-dsn-cookbook")
+	if err != nil {
+		t.Fatalf("deleting stale repos: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted, got %d", deleted)
+	}
+
+	// Row should still exist.
+	remaining, err := db.ListGitReposByName(ctx, "test-dsn-cookbook")
+	if err != nil {
+		t.Fatalf("listing repos: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Errorf("expected 1 remaining repo, got %d", len(remaining))
+	}
+}

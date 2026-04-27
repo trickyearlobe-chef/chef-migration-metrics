@@ -347,6 +347,77 @@ func (db *DB) ResetGitRepoCloneStatus(ctx context.Context, name, gitRepoURL stri
 	return scanGitRepo(db.pool.QueryRowContext(ctx, query, name, gitRepoURL))
 }
 
+// ListClonedGitRepos returns only repos with clone_status = 'ok'.
+// Use this when feeding repos to scanners that need a local clone.
+func (db *DB) ListClonedGitRepos(ctx context.Context) ([]GitRepo, error) {
+	query := `SELECT ` + gitRepoColumns + `
+		FROM git_repos
+		WHERE clone_status = 'ok'
+		ORDER BY name`
+	return scanGitRepos(db.pool.QueryContext(ctx, query))
+}
+
+// DeleteStaleGitRepos removes git_repos rows for a cookbook name where the
+// URL differs from keepURL. This cleans up stale rows left behind when a
+// cookbook migrates between git orgs. FK cascades handle cookstyle,
+// complexity, autocorrect, and kitchen analysis rows. Committers are
+// cleaned up explicitly since they have no FK to git_repos.
+func (db *DB) DeleteStaleGitRepos(ctx context.Context, name, keepURL string) (int64, error) {
+	return db.deleteStaleGitRepos(ctx, name, keepURL)
+}
+
+func (db *DB) deleteStaleGitRepos(ctx context.Context, name, keepURL string) (int64, error) {
+	var deleted int64
+	err := db.Tx(ctx, func(tx *sql.Tx) error {
+		// Find URLs we are about to delete so we can clean up committers.
+		rows, err := tx.QueryContext(ctx,
+			`SELECT git_repo_url FROM git_repos WHERE name = $1 AND git_repo_url != $2`,
+			name, keepURL)
+		if err != nil {
+			return fmt.Errorf("listing stale URLs: %w", err)
+		}
+		var staleURLs []string
+		for rows.Next() {
+			var u string
+			if err := rows.Scan(&u); err != nil {
+				rows.Close()
+				return fmt.Errorf("scanning stale URL: %w", err)
+			}
+			staleURLs = append(staleURLs, u)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterating stale URLs: %w", err)
+		}
+
+		if len(staleURLs) == 0 {
+			return nil
+		}
+
+		// Delete committers for stale URLs (no FK cascade).
+		for _, u := range staleURLs {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM git_repo_committers WHERE git_repo_url = $1`, u); err != nil {
+				return fmt.Errorf("deleting committers for %s: %w", u, err)
+			}
+		}
+
+		// Delete the stale git_repos rows (FK cascades handle the rest).
+		res, err := tx.ExecContext(ctx,
+			`DELETE FROM git_repos WHERE name = $1 AND git_repo_url != $2`,
+			name, keepURL)
+		if err != nil {
+			return fmt.Errorf("deleting stale git repos: %w", err)
+		}
+		deleted, err = res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("checking rows affected: %w", err)
+		}
+		return nil
+	})
+	return deleted, err
+}
+
 // DeleteGitRepo removes a single git repo by its composite primary key
 // (name, git_repo_url). Returns ErrNotFound if no such git repo exists.
 // Cascading deletes handle dependent rows.

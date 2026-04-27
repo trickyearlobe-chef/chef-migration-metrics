@@ -541,6 +541,15 @@ func fetchGitCookbooks(
 				if upsertErr != nil {
 					log.Warn(fmt.Sprintf("git cookbook upsert failed for %s: %v", cbName, upsertErr))
 				} else {
+					// Clean up stale rows from other base URLs for
+					// the same cookbook name. This handles cookbook
+					// migrations between git orgs.
+					if cleaned, cleanErr := db.DeleteStaleGitRepos(ctx, cbName, repoURL); cleanErr != nil {
+						log.Warn(fmt.Sprintf("git cookbook stale cleanup for %s: %v", cbName, cleanErr))
+					} else if cleaned > 0 {
+						log.Info(fmt.Sprintf("git cookbook %s: removed %d stale row(s) from other URLs", cbName, cleaned))
+					}
+
 					verb := "pulled"
 					if repoResult.WasCloned {
 						verb = "cloned"

@@ -1149,7 +1149,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		// clones finish). Repos whose HEAD hasn't changed since the last
 		// scan are skipped automatically by scanOneGitRepo.
 		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
-			existingRepos, listErr := c.db.ListGitRepos(ctx)
+			existingRepos, listErr := c.db.ListClonedGitRepos(ctx)
 			if listErr != nil {
 				log.Warn(fmt.Sprintf("failed to list existing git repos for immediate CookStyle scanning: %v", listErr),
 					logging.WithCollectionRunID(run.OrganisationName))
@@ -1200,7 +1200,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		// skip logic detects repos already scanned in B.1 (same commit SHA)
 		// and skips them, so only repos with new commits are re-scanned.
 		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
-			gitRepos, gitListErr := c.db.ListGitRepos(ctx)
+			gitRepos, gitListErr := c.db.ListClonedGitRepos(ctx)
 			if gitListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list git repos for post-clone CookStyle scanning: %v", gitListErr),
 					logging.WithCollectionRunID(run.OrganisationName))
@@ -1223,7 +1223,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 		// B.3a: Kitchen config analysis — discover platforms, drivers, suites.
 		if c.kitchenAnalyser != nil && c.gitRepoDirFn != nil {
-			analysisRepos, analysisListErr := c.db.ListGitRepos(ctx)
+			analysisRepos, analysisListErr := c.db.ListClonedGitRepos(ctx)
 			if analysisListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list git repos for kitchen analysis: %v", analysisListErr),
 					logging.WithCollectionRunID(run.OrganisationName))
@@ -1245,7 +1245,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 		// B.5: Autocorrect previews for git repos.
 		if c.autocorrectGen != nil && c.gitRepoDirFn != nil {
-			gitReposForAC, gitRepoListErr := c.db.ListGitRepos(ctx)
+			gitReposForAC, gitRepoListErr := c.db.ListClonedGitRepos(ctx)
 			if gitRepoListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list git repos for autocorrect previews: %v", gitRepoListErr),
 					logging.WithCollectionRunID(run.OrganisationName))
@@ -1301,7 +1301,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 		// B.6: Complexity scoring for git repos.
 		if c.complexityScorer != nil && len(c.cfg.TargetChefVersions) > 0 {
-			gitReposForCX, grCXListErr := c.db.ListGitRepos(ctx)
+			gitReposForCX, grCXListErr := c.db.ListClonedGitRepos(ctx)
 			if grCXListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list git repos for complexity scoring: %v", grCXListErr),
 					logging.WithCollectionRunID(run.OrganisationName))
@@ -1403,7 +1403,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	//   - Node snapshots persisted (Step 4)
 	// Non-fatal — errors are logged per repo and do not abort the run.
 	if c.gitRepoDirFn != nil {
-		coverageRepos, covListErr := c.db.ListGitRepos(ctx)
+		coverageRepos, covListErr := c.db.ListClonedGitRepos(ctx)
 		if covListErr != nil {
 			log.Warn(fmt.Sprintf("failed to list git repos for platform coverage: %v", covListErr),
 				logging.WithCollectionRunID(run.OrganisationName))
