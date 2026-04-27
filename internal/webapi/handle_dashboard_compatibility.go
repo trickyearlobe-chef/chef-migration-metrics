@@ -484,49 +484,9 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	// Load git repos — one per cookbook name.
 	gitRepos, err := r.db.ListGitRepos(ctx)
 	if err != nil {
-		r.logf("ERROR", "listing git repos for TK compatibility: %v", err)
-		WriteInternalError(w, "Failed to compute Test Kitchen compatibility.")
+		r.logf("ERROR", "listing git repos for compatibility: %v", err)
+		WriteInternalError(w, "Failed to compute compatibility.")
 		return
-	}
-	repoNameByID := make(map[string]string, len(gitRepos))
-	for _, gr := range gitRepos {
-		repoNameByID[gr.Name] = gr.Name
-	}
-
-	// Load all test kitchen results.
-	tkResults, err := r.db.ListAllGitRepoTestKitchenResults(ctx)
-	if err != nil {
-		r.logf("ERROR", "listing TK results for compatibility: %v", err)
-		WriteInternalError(w, "Failed to compute Test Kitchen compatibility.")
-		return
-	}
-
-	for _, tk := range tkResults {
-		repoName := repoNameByID[tk.GitRepoName]
-		if repoName == "" {
-			continue
-		}
-		if allowedNames != nil && !allowedNames[repoName] {
-			continue
-		}
-		pv, ok := byTV[tk.TargetChefVersion]
-		if !ok {
-			continue
-		}
-		key := tvName{tv: tk.TargetChefVersion, name: repoName}
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		pv.total++
-		switch {
-		case tk.TimedOut:
-			pv.timedOut++
-		case tk.Compatible:
-			pv.passed++
-		default:
-			pv.failed++
-		}
 	}
 
 	// Count untested: git repos with no TK result for a given target

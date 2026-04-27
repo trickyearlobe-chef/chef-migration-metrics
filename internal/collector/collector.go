@@ -52,7 +52,6 @@ type Collector struct {
 	// runs these after cookbook usage analysis (Step 10) as part of the
 	// collection cycle. When nil, the corresponding step is skipped.
 	cookstyleScanner *analysis.CookstyleScanner
-	kitchenScanner   *analysis.KitchenScanner
 	kitchenAnalyser  *analysis.KitchenAnalyser
 	autocorrectGen   *remediation.AutocorrectGenerator
 	complexityScorer *remediation.ComplexityScorer
@@ -103,12 +102,6 @@ func WithClientFactory(f ClientFactory) Option {
 // When set, CookStyle scanning runs after cookbook fetching.
 func WithCookstyleScanner(s *analysis.CookstyleScanner) Option {
 	return func(c *Collector) { c.cookstyleScanner = s }
-}
-
-// WithKitchenScanner sets the Test Kitchen scanner for the collection cycle.
-// When set, Test Kitchen runs after CookStyle scanning.
-func WithKitchenScanner(s *analysis.KitchenScanner) Option {
-	return func(c *Collector) { c.kitchenScanner = s }
 }
 
 // WithKitchenAnalyser sets the Kitchen Analyser for config discovery.
@@ -246,6 +239,9 @@ type ResumeResult struct {
 // migrations have been applied and stale "running" runs have been marked
 // as "interrupted".
 func (c *Collector) ResumeInterruptedRuns(ctx context.Context) (*ResumeResult, error) {
+	if c.db == nil {
+		return nil, fmt.Errorf("collector: database is nil")
+	}
 	log := c.logger.WithScope(logging.ScopeCollectionRun)
 
 	result := &ResumeResult{
@@ -548,6 +544,10 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 		return nil, fmt.Errorf("collector: a collection run is already in progress")
 	}
 	defer c.finishRun()
+
+	if c.db == nil {
+		return nil, fmt.Errorf("collector: database is nil")
+	}
 
 	start := time.Now()
 	log := c.logger.WithScope(logging.ScopeCollectionRun)
@@ -1240,56 +1240,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			}
 		} else if c.kitchenAnalyser != nil && c.gitRepoDirFn == nil {
 			log.Debug("skipping kitchen analysis — no git repo directory resolver configured",
-				logging.WithCollectionRunID(run.OrganisationName))
-		}
-
-		// Load runtime Test Kitchen config from database (admin UI overrides).
-		if c.kitchenScanner != nil {
-			dbSetting, dbErr := c.db.GetRuntimeSetting(ctx, "test_kitchen")
-			if dbErr != nil {
-				log.Warn(fmt.Sprintf("failed to load runtime Test Kitchen config: %v", dbErr),
-					logging.WithCollectionRunID(run.OrganisationName))
-			} else if dbSetting != nil {
-				var dbTKConfig config.TestKitchenConfig
-				if unmarshalErr := json.Unmarshal(dbSetting.Value, &dbTKConfig); unmarshalErr != nil {
-					log.Warn(fmt.Sprintf("failed to parse runtime Test Kitchen config: %v", unmarshalErr),
-						logging.WithCollectionRunID(run.OrganisationName))
-				} else {
-					c.kitchenScanner.SetTestKitchenConfig(dbTKConfig)
-					log.Info(fmt.Sprintf("loaded Test Kitchen config from database (driver=%s, %d platform mappings, saved by %s at %s)",
-						dbTKConfig.EffectiveDriver(), len(dbTKConfig.PlatformMap), dbSetting.UpdatedBy, dbSetting.UpdatedAt.Format(time.RFC3339)),
-						logging.WithCollectionRunID(run.OrganisationName))
-				}
-			} else {
-				// No DB override — ensure we're using the file config.
-				c.kitchenScanner.SetTestKitchenConfig(c.cfg.AnalysisTools.TestKitchen)
-			}
-		}
-
-		// B.4: Test Kitchen for git repos with test suites.
-		if c.kitchenScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 &&
-			c.kitchenScanner.IsEnabled() {
-			log.Info("running Test Kitchen",
-				logging.WithCollectionRunID(run.OrganisationName))
-
-			gitRepos, tkListErr := c.db.ListGitRepos(ctx)
-			if tkListErr != nil {
-				log.Warn(fmt.Sprintf("failed to list git repos for Test Kitchen: %v", tkListErr),
-					logging.WithCollectionRunID(run.OrganisationName))
-			} else {
-				tkBatch := c.kitchenScanner.TestGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
-				log.Info(fmt.Sprintf(
-					"Test Kitchen batch complete (git repos): %d total, %d tested, %d skipped, %d passed, %d failed, %d errors in %s",
-					tkBatch.Total, tkBatch.Tested, tkBatch.Skipped,
-					tkBatch.Passed, tkBatch.Failed, tkBatch.Errors,
-					tkBatch.Duration.Round(time.Millisecond)),
-					logging.WithCollectionRunID(run.OrganisationName))
-			}
-		} else if c.kitchenScanner != nil && !c.kitchenScanner.IsEnabled() {
-			log.Debug("skipping Test Kitchen — disabled via configuration",
-				logging.WithCollectionRunID(run.OrganisationName))
-		} else if c.kitchenScanner != nil && c.gitRepoDirFn == nil {
-			log.Debug("skipping Test Kitchen — no git repo directory resolver configured",
 				logging.WithCollectionRunID(run.OrganisationName))
 		}
 

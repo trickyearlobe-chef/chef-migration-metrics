@@ -113,11 +113,8 @@ type ReadinessDataStore interface {
 	// Server cookbooks — list all for an org (used to build the cookbook ID map)
 	ListServerCookbooksByOrganisation(ctx context.Context, organisationName string) ([]datastore.ServerCookbook, error)
 
-	// Git repos — used to resolve cookbook name to git repo for TK cross-lookup
+	// Git repos — used to resolve cookbook name to git repo for CookStyle cross-lookup
 	GetGitRepoByName(ctx context.Context, name string) (datastore.GitRepo, error)
-
-	// Test Kitchen results (git repo)
-	GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
 
 	// CookStyle results (server cookbook)
 	GetServerCookbookCookstyleResult(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
@@ -137,7 +134,6 @@ type ReadinessDataStore interface {
 	// Bulk-load methods — used by EvaluateOrganisation to replace N+1 queries
 	// with a small number of bulk queries + in-memory lookups.
 	ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
-	ListLatestGitRepoTestKitchenResults(ctx context.Context, targetChefVersions []string) ([]datastore.GitRepoTestKitchenResult, error)
 	ListGitRepoCookstyleResultsByTargetVersions(ctx context.Context, targetChefVersions []string) ([]datastore.GitRepoCookstyleResult, error)
 	ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, organisationID string, targetChefVersions []string) ([]datastore.ServerCookbookCookstyleResult, error)
 	ListServerCookbookComplexities(ctx context.Context, organisationID string, targetChefVersions []string) ([]datastore.ServerCookbookComplexity, error)
@@ -154,7 +150,6 @@ type ReadinessDataStore interface {
 // safe for concurrent reads).
 type readinessCache struct {
 	gitRepos         map[string]datastore.GitRepo                        // name → repo
-	tkResults        map[string]*datastore.GitRepoTestKitchenResult      // gitRepoID|target → result
 	gitCSResults     map[string]*datastore.GitRepoCookstyleResult        // gitRepoID|target → result
 	serverCSResults  map[string]*datastore.ServerCookbookCookstyleResult // cookbookID|target → result
 	serverComplexity map[string]*datastore.ServerCookbookComplexity      // cookbookID|target → complexity
@@ -177,7 +172,6 @@ func buildReadinessCache(
 ) (*readinessCache, error) {
 	cache := &readinessCache{
 		gitRepos:         make(map[string]datastore.GitRepo),
-		tkResults:        make(map[string]*datastore.GitRepoTestKitchenResult),
 		gitCSResults:     make(map[string]*datastore.GitRepoCookstyleResult),
 		serverCSResults:  make(map[string]*datastore.ServerCookbookCookstyleResult),
 		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
@@ -193,17 +187,7 @@ func buildReadinessCache(
 		cache.gitRepos[gr.Name] = gr
 	}
 
-	// 2. Git repo Test Kitchen results (latest per combo)
-	tkResults, err := db.ListLatestGitRepoTestKitchenResults(ctx, targetChefVersions)
-	if err != nil {
-		return nil, fmt.Errorf("readiness: bulk-loading TK results: %w", err)
-	}
-	for i := range tkResults {
-		r := &tkResults[i]
-		cache.tkResults[cacheKey(r.GitRepoName, r.TargetChefVersion)] = r
-	}
-
-	// 3. Git repo CookStyle results
+	// 2. Git repo CookStyle results
 	gitCSResults, err := db.ListGitRepoCookstyleResultsByTargetVersions(ctx, targetChefVersions)
 	if err != nil {
 		return nil, fmt.Errorf("readiness: bulk-loading git CookStyle results: %w", err)
@@ -213,7 +197,7 @@ func buildReadinessCache(
 		cache.gitCSResults[cacheKey(r.GitRepoName, r.TargetChefVersion)] = r
 	}
 
-	// 4. Server cookbook CookStyle results (org-scoped, includes NULL target versions)
+	// 3. Server cookbook CookStyle results (org-scoped, includes NULL target versions)
 	serverCSResults, err := db.ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx, organisationID, targetChefVersions)
 	if err != nil {
 		return nil, fmt.Errorf("readiness: bulk-loading server CookStyle results: %w", err)
@@ -223,7 +207,7 @@ func buildReadinessCache(
 		cache.serverCSResults[cacheKey(r.OrganisationName+"/"+r.CookbookName+"/"+r.CookbookVersion, r.TargetChefVersion)] = r
 	}
 
-	// 5. Server cookbook complexity (org-scoped)
+	// 4. Server cookbook complexity (org-scoped)
 	serverComplexities, err := db.ListServerCookbookComplexities(ctx, organisationID, targetChefVersions)
 	if err != nil {
 		return nil, fmt.Errorf("readiness: bulk-loading server complexities: %w", err)
@@ -233,7 +217,7 @@ func buildReadinessCache(
 		cache.serverComplexity[cacheKey(c.OrganisationName+"/"+c.CookbookName+"/"+c.CookbookVersion, c.TargetChefVersion)] = c
 	}
 
-	// 6. Git repo complexity
+	// 5. Git repo complexity
 	gitComplexities, err := db.ListGitRepoComplexities(ctx, targetChefVersions)
 	if err != nil {
 		return nil, fmt.Errorf("readiness: bulk-loading git complexities: %w", err)
@@ -534,7 +518,7 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 							bc.Verdicts[i].ComplexityLabel = cc.ComplexityLabel
 						}
 					}
-				case SourceGitCookstyle, SourceGitTestKitchen:
+				case SourceGitCookstyle:
 					if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.Name != "" {
 						if gc := cache.gitComplexity[cacheKey(gitRepo.Name, targetChefVersion)]; gc != nil {
 							bc.Verdicts[i].ComplexityScore = gc.ComplexityScore
@@ -587,11 +571,10 @@ func parseCookbooksAttribute(raw json.RawMessage) map[string]string {
 // evaluation and the pre-loaded cache.
 //
 // Algorithm:
-//  1. Check Git repo Test Kitchen result → verdict
-//  2. Check Git repo CookStyle result → verdict
-//  3. Check Server cookbook CookStyle result → verdict
-//  4. Aggregate: any compatible → compatible; all tested incompatible →
-//     incompatible; no results → untested
+//  1. Check Git repo CookStyle result → verdict
+//  2. Check Server cookbook CookStyle result → verdict
+//  3. Aggregate: any compatible → compatible_cookstyle_only; all tested
+//     incompatible → incompatible; no results → untested
 //
 // This is a package-level function (not a method) because it uses only
 // in-memory cache lookups — no database calls.
@@ -607,27 +590,9 @@ func checkCookbookCompatibility(
 	var anyCompatible bool
 	var anyTested bool
 
-	// --- Source 1: Git repo Test Kitchen ---
+	// --- Source 1: Git repo CookStyle ---
 	gitRepo, hasGitRepo := cache.gitRepos[cookbookName]
 	if hasGitRepo && gitRepo.Name != "" {
-		tkResult := cache.tkResults[cacheKey(gitRepo.Name, targetChefVersion)]
-		if tkResult != nil {
-			anyTested = true
-			v := CookbookSourceVerdict{
-				Source:    SourceGitTestKitchen,
-				Version:   "HEAD",
-				CommitSHA: gitRepo.HeadCommitSHA,
-			}
-			if tkResult.Compatible {
-				v.Status = StatusCompatible
-				anyCompatible = true
-			} else {
-				v.Status = StatusIncompatible
-			}
-			verdicts = append(verdicts, v)
-		}
-
-		// --- Source 2: Git repo CookStyle ---
 		gitCSResult := cache.gitCSResults[cacheKey(gitRepo.Name, targetChefVersion)]
 		if gitCSResult != nil && gitCSResult.ErrorMessage == "" {
 			anyTested = true
@@ -646,7 +611,7 @@ func checkCookbookCompatibility(
 		}
 	}
 
-	// --- Source 3: Server cookbook CookStyle ---
+	// --- Source 2: Server cookbook CookStyle ---
 	if cookbookID != "" {
 		csResult := cache.serverCSResults[cacheKey(cookbookID, targetChefVersion)]
 		if csResult != nil && csResult.ErrorMessage == "" {
@@ -685,42 +650,11 @@ func checkCookbookCompatibility(
 
 	// --- Determine overall status ---
 	if anyCompatible {
-		// Determine primary source for backward compat
-		primarySource := SourceNone
-		for _, v := range verdicts {
-			if v.Status == StatusCompatible || v.Status == StatusCompatibleCookstyleOnly {
-				if v.Source == SourceGitTestKitchen {
-					primarySource = SourceTestKitchen
-					break // TK is highest confidence
-				}
-				if primarySource == SourceNone {
-					primarySource = SourceCookstyle
-				}
-			}
-		}
-		// If TK is the compatible source, return StatusCompatible
-		// If only cookstyle sources are compatible, return StatusCompatibleCookstyleOnly
-		for _, v := range verdicts {
-			if v.Status == StatusCompatible && v.Source == SourceGitTestKitchen {
-				return StatusCompatible, primarySource, verdicts
-			}
-		}
-		return StatusCompatibleCookstyleOnly, primarySource, verdicts
+		return StatusCompatibleCookstyleOnly, SourceCookstyle, verdicts
 	}
 
 	if anyTested {
-		// All tested sources say incompatible
-		primarySource := SourceNone
-		for _, v := range verdicts {
-			if v.Source == SourceGitTestKitchen {
-				primarySource = SourceTestKitchen
-				break
-			}
-			if primarySource == SourceNone {
-				primarySource = SourceCookstyle
-			}
-		}
-		return StatusIncompatible, primarySource, verdicts
+		return StatusIncompatible, SourceCookstyle, verdicts
 	}
 
 	// No results at all

@@ -763,9 +763,6 @@ func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
 	if result.GitRepoAutocorrectPreviews > 0 {
 		app.startup.Info(fmt.Sprintf("  - git_repo_autocorrect_previews: %d", result.GitRepoAutocorrectPreviews))
 	}
-	if result.GitRepoTestKitchenResults > 0 {
-		app.startup.Info(fmt.Sprintf("  - git_repo_test_kitchen_results: %d", result.GitRepoTestKitchenResults))
-	}
 	if result.MetricSnapshots > 0 {
 		app.startup.Info(fmt.Sprintf("  - metric_snapshots: %d", result.MetricSnapshots))
 	}
@@ -821,15 +818,6 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 
 	if toolResult.KitchenEnabled {
 		app.kitchenPath = toolResult.Kitchen.Path
-		tkScanner := analysis.NewKitchenScanner(
-			app.db, app.logger, toolResult.Kitchen.Path,
-			app.cfg.Concurrency.TestKitchenRun,
-			app.cfg.AnalysisTools.TestKitchenTimeoutMinutes,
-			app.cfg.AnalysisTools.TestKitchen,
-			analysis.WithCredentialResolver(app.credResolver),
-		)
-		collOpts = append(collOpts, collector.WithKitchenScanner(tkScanner))
-		app.startup.Info("Test Kitchen scanner enabled")
 	}
 
 	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)

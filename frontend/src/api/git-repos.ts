@@ -43,19 +43,6 @@ export async function requestGitRepoRescan(name: string): Promise<{
   return res.json();
 }
 
-export async function requestGitRepoTestKitchenRescan(name: string): Promise<{
-  git_repo_name: string;
-  repos_invalidated: number;
-  message: string;
-}> {
-  const res = await fetch(
-    `${BASE}/git-repos/${encodeURIComponent(name)}/rescan-test-kitchen`,
-    { method: "POST", headers: { Accept: "application/json" } },
-  );
-  if (!res.ok) throw new Error(`Rescan TK failed: ${res.status}`);
-  return res.json();
-}
-
 export async function resetGitRepo(
   name: string,
 ): Promise<ResetGitCookbookResponse> {

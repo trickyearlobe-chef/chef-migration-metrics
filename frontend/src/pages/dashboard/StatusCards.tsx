@@ -7,7 +7,6 @@ import {
   fetchCookbookCompatibility,
   fetchGitRepoCompatibility,
   fetchTestKitchenCompatibility,
-  listGitKitchenResults,
 } from "../../api";
 import type {
   VersionDistributionResponse,
@@ -16,7 +15,6 @@ import type {
   CookbookCompatibilityResponse,
   GitRepoCompatibilityResponse,
   TestKitchenCompatibilityResponse,
-  GitKitchenResult,
 } from "../../types";
 import {
   LoadingSpinner,
@@ -671,170 +669,6 @@ export function TestKitchenCompatibilityCard({
                   </div>
                 </div>
               ))}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Git Kitchen Per-Instance Results Card
-// ---------------------------------------------------------------------------
-
-function instanceStatus(r: GitKitchenResult): string {
-  if (r.error_message) return "errored";
-  if (r.timed_out) return "timed out";
-  if (r.converge_passed === null) return "pending";
-  if (r.converge_passed && r.tests_passed) return "passed";
-  return "failed";
-}
-
-export function GitKitchenResultsSummaryCard() {
-  const [results, setResults] = useState<GitKitchenResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    listGitKitchenResults()
-      .then((data) => setResults(data || []))
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Compute stats
-  const counts = { passed: 0, failed: 0, pending: 0, timedOut: 0, errored: 0 };
-  for (const r of results) {
-    const s = instanceStatus(r);
-    if (s === "passed") counts.passed++;
-    else if (s === "failed") counts.failed++;
-    else if (s === "pending") counts.pending++;
-    else if (s === "timed out") counts.timedOut++;
-    else if (s === "errored") counts.errored++;
-  }
-  const total = results.length;
-
-  // Unique cookbooks and platforms
-  const cookbooks = new Set(results.map((r) => r.git_repo_name));
-  const platforms = new Set(results.map((r) => r.platform_name));
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between">
-        <h3 className="card-header">Per-Instance Kitchen Results</h3>
-        <Link
-          to="/admin/git-kitchen-results"
-          className="text-xs text-blue-600 hover:underline"
-        >
-          View all →
-        </Link>
-      </div>
-      {loading && <LoadingSpinner message="Loading results…" />}
-      {error && <ErrorAlert message={error} onRetry={load} />}
-      {!loading && !error && (
-        <>
-          {total === 0 ? (
-            <EmptyState
-              title="No per-instance results"
-              description="Run a kitchen batch to see per-instance results."
-            />
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                <div>
-                  <div className="text-lg font-bold tabular-nums text-gray-800">
-                    {total.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500">Instances</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold tabular-nums text-gray-800">
-                    {cookbooks.size.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500">Cookbooks</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold tabular-nums text-gray-800">
-                    {platforms.size.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500">Platforms</div>
-                </div>
-              </div>
-              {/* Progress bar */}
-              {total > 0 && (
-                <div className="flex h-4 overflow-hidden rounded-full bg-gray-100">
-                  {counts.passed > 0 && (
-                    <div
-                      className="bg-green-500"
-                      style={{ width: `${(counts.passed / total) * 100}%` }}
-                      title={`Passed: ${counts.passed}`}
-                    />
-                  )}
-                  {counts.failed > 0 && (
-                    <div
-                      className="bg-red-400"
-                      style={{ width: `${(counts.failed / total) * 100}%` }}
-                      title={`Failed: ${counts.failed}`}
-                    />
-                  )}
-                  {counts.timedOut > 0 && (
-                    <div
-                      className="bg-amber-400"
-                      style={{ width: `${(counts.timedOut / total) * 100}%` }}
-                      title={`Timed out: ${counts.timedOut}`}
-                    />
-                  )}
-                  {counts.errored > 0 && (
-                    <div
-                      className="bg-orange-400"
-                      style={{ width: `${(counts.errored / total) * 100}%` }}
-                      title={`Errored: ${counts.errored}`}
-                    />
-                  )}
-                  {counts.pending > 0 && (
-                    <div
-                      className="bg-gray-300"
-                      style={{ width: `${(counts.pending / total) * 100}%` }}
-                      title={`Pending: ${counts.pending}`}
-                    />
-                  )}
-                </div>
-              )}
-              <div className="flex flex-wrap gap-3 text-xs">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />{" "}
-                  Passed: {counts.passed.toLocaleString()}
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />{" "}
-                  Failed: {counts.failed.toLocaleString()}
-                </span>
-                {counts.timedOut > 0 && (
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />{" "}
-                    Timed out: {counts.timedOut.toLocaleString()}
-                  </span>
-                )}
-                {counts.errored > 0 && (
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />{" "}
-                    Errored: {counts.errored.toLocaleString()}
-                  </span>
-                )}
-                {counts.pending > 0 && (
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />{" "}
-                    Pending: {counts.pending.toLocaleString()}
-                  </span>
-                )}
-              </div>
             </div>
           )}
         </>

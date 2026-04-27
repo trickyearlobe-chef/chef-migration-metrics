@@ -167,31 +167,6 @@ export interface GitRepoExcludeRequest {
   excluded_by: string;
 }
 
-export interface GitKitchenResult {
-  id: string;
-  batch_id?: string;
-  git_repo_name: string;
-  git_repo_url: string;
-  target_chef_version: string;
-  commit_sha: string;
-  platform_name: string;
-  suite_name: string;
-  template_used?: string;
-  driver_used?: string;
-  converge_passed: boolean | null;
-  tests_passed: boolean | null;
-  timed_out: boolean;
-  converge_output?: string;
-  verify_output?: string;
-  destroy_output?: string;
-  duration_seconds?: number;
-  error_message?: string;
-  started_at?: string;
-  completed_at?: string;
-  vm_tracking_id?: string;
-  created_at: string;
-}
-
 export interface BatchProgress {
   passed: number;
   failed: number;
@@ -199,18 +174,6 @@ export interface BatchProgress {
   timed_out: number;
   errored: number;
   total: number;
-}
-
-export interface GitKitchenRunRequest {
-  git_repo_name: string;
-  target_chef_version: string;
-  platform_name: string;
-  suite_name: string;
-}
-
-export interface GitKitchenTriggerResponse {
-  status: string;
-  message: string;
 }
 
 export interface KitchenAnalysisCookbook {
@@ -232,4 +195,57 @@ export interface KitchenPlatformInfo {
 export interface KitchenSuiteInfo {
   name: string;
   run_list?: string[];
+}
+
+export type GitKitchenInstanceStatus = "mapped" | "unmapped" | "skipped" | "excluded";
+
+export interface GitKitchenPlannedInstance {
+  instance_name: string;
+  suite_name: string;
+  platform_name: string;
+  status: GitKitchenInstanceStatus;
+  status_reason: string;
+  image_name?: string;
+}
+
+export interface GitKitchenPlanResult {
+  git_repo_name: string;
+  git_repo_url: string;
+  commit_sha: string;
+  instances: GitKitchenPlannedInstance[];
+  total: number;
+  mapped: number;
+  unmapped: number;
+  skipped: number;
+  excluded: number;
+}
+
+export interface GitKitchenResult {
+  id: string;
+  git_repo_name: string;
+  git_repo_url: string;
+  target_chef_version: string;
+  commit_sha: string;
+  platform_name: string;
+  suite_name: string;
+  instance_name: string;
+  driver_used?: string;
+  passed: boolean | null;
+  timed_out: boolean;
+  output?: string;
+  duration_seconds?: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface GitKitchenRunRequest {
+  git_repo_name: string;
+  instance_name: string;
+  target_chef_version: string;
+}
+
+export interface GitKitchenRunResponse {
+  message: string;
 }

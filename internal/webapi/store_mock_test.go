@@ -64,17 +64,12 @@ type mockStore struct {
 	ListGitRepoComplexitiesByRepoFn                     func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoComplexity, error)
 	ListAllGitRepoComplexitiesFn                        func(ctx context.Context) ([]datastore.GitRepoComplexity, error)
 	GetGitRepoAutocorrectPreviewFn                      func(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoAutocorrectPreview, error)
-	GetLatestGitRepoTestKitchenResultFn                 func(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error)
-	ListGitRepoTestKitchenResultsFn                     func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoTestKitchenResult, error)
-	ListAllGitRepoTestKitchenResultsFn                  func(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error)
 	DeleteGitRepoCookstyleResultsByRepoFn               func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteGitRepoComplexitiesByRepoFn                   func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteGitRepoAutocorrectPreviewsByRepoFn            func(ctx context.Context, gitRepoName, gitRepoURL string) error
-	DeleteGitRepoTestKitchenResultsByRepoFn             func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteAllGitRepoCookstyleResultsFn                  func(ctx context.Context) error
 	DeleteAllGitRepoComplexitiesFn                      func(ctx context.Context) error
 	DeleteAllGitRepoAutocorrectPreviewsFn               func(ctx context.Context) error
-	DeleteAllGitRepoTestKitchenResultsFn                func(ctx context.Context) error
 	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
 	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
 	GetLogEntryFn                                       func(ctx context.Context, id int64) (datastore.LogEntry, error)
@@ -157,10 +152,8 @@ type mockStore struct {
 	UpsertGitKitchenResultFn         func(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error)
 	GetGitKitchenResultFn            func(ctx context.Context, id string) (datastore.GitKitchenResult, error)
 	ListGitKitchenResultsFn          func(ctx context.Context) ([]datastore.GitKitchenResult, error)
-	ListGitKitchenResultsByBatchFn   func(ctx context.Context, batchID string) ([]datastore.GitKitchenResult, error)
 	ListGitKitchenResultsByRepoFn    func(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
-	CountGitKitchenResultsByBatchFn  func(ctx context.Context, batchID string) (int, int, int, int, int, error)
-	DeleteGitKitchenResultsByBatchFn func(ctx context.Context, batchID string) error
+	DeleteGitKitchenResultsByRepoFn  func(ctx context.Context, gitRepoName string) error
 }
 
 // compile-time check
@@ -518,27 +511,6 @@ func (m *mockStore) GetGitRepoAutocorrectPreview(ctx context.Context, gitRepoNam
 	return nil, nil
 }
 
-func (m *mockStore) GetLatestGitRepoTestKitchenResult(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error) {
-	if m.GetLatestGitRepoTestKitchenResultFn != nil {
-		return m.GetLatestGitRepoTestKitchenResultFn(ctx, gitRepoName, gitRepoURL, targetChefVersion)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) ListGitRepoTestKitchenResults(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoTestKitchenResult, error) {
-	if m.ListGitRepoTestKitchenResultsFn != nil {
-		return m.ListGitRepoTestKitchenResultsFn(ctx, gitRepoName, gitRepoURL)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) ListAllGitRepoTestKitchenResults(ctx context.Context) ([]datastore.GitRepoTestKitchenResult, error) {
-	if m.ListAllGitRepoTestKitchenResultsFn != nil {
-		return m.ListAllGitRepoTestKitchenResultsFn(ctx)
-	}
-	return nil, nil
-}
-
 func (m *mockStore) DeleteGitRepoCookstyleResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error {
 	if m.DeleteGitRepoCookstyleResultsByRepoFn != nil {
 		return m.DeleteGitRepoCookstyleResultsByRepoFn(ctx, gitRepoName, gitRepoURL)
@@ -577,20 +549,6 @@ func (m *mockStore) DeleteAllGitRepoComplexities(ctx context.Context) error {
 func (m *mockStore) DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error {
 	if m.DeleteAllGitRepoAutocorrectPreviewsFn != nil {
 		return m.DeleteAllGitRepoAutocorrectPreviewsFn(ctx)
-	}
-	return nil
-}
-
-func (m *mockStore) DeleteGitRepoTestKitchenResultsByRepo(ctx context.Context, gitRepoName, gitRepoURL string) error {
-	if m.DeleteGitRepoTestKitchenResultsByRepoFn != nil {
-		return m.DeleteGitRepoTestKitchenResultsByRepoFn(ctx, gitRepoName, gitRepoURL)
-	}
-	return nil
-}
-
-func (m *mockStore) DeleteAllGitRepoTestKitchenResults(ctx context.Context) error {
-	if m.DeleteAllGitRepoTestKitchenResultsFn != nil {
-		return m.DeleteAllGitRepoTestKitchenResultsFn(ctx)
 	}
 	return nil
 }
@@ -1171,13 +1129,6 @@ func (m *mockStore) ListGitKitchenResults(ctx context.Context) ([]datastore.GitK
 	return nil, nil
 }
 
-func (m *mockStore) ListGitKitchenResultsByBatch(ctx context.Context, batchID string) ([]datastore.GitKitchenResult, error) {
-	if m.ListGitKitchenResultsByBatchFn != nil {
-		return m.ListGitKitchenResultsByBatchFn(ctx, batchID)
-	}
-	return nil, nil
-}
-
 func (m *mockStore) ListGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error) {
 	if m.ListGitKitchenResultsByRepoFn != nil {
 		return m.ListGitKitchenResultsByRepoFn(ctx, gitRepoName)
@@ -1185,16 +1136,9 @@ func (m *mockStore) ListGitKitchenResultsByRepo(ctx context.Context, gitRepoName
 	return nil, nil
 }
 
-func (m *mockStore) CountGitKitchenResultsByBatch(ctx context.Context, batchID string) (int, int, int, int, int, error) {
-	if m.CountGitKitchenResultsByBatchFn != nil {
-		return m.CountGitKitchenResultsByBatchFn(ctx, batchID)
-	}
-	return 0, 0, 0, 0, 0, nil
-}
-
-func (m *mockStore) DeleteGitKitchenResultsByBatch(ctx context.Context, batchID string) error {
-	if m.DeleteGitKitchenResultsByBatchFn != nil {
-		return m.DeleteGitKitchenResultsByBatchFn(ctx, batchID)
+func (m *mockStore) DeleteGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) error {
+	if m.DeleteGitKitchenResultsByRepoFn != nil {
+		return m.DeleteGitKitchenResultsByRepoFn(ctx, gitRepoName)
 	}
 	return nil
 }

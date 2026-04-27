@@ -615,9 +615,6 @@ func TestHandleCookbookDetail_GitBeforeChefServer(t *testing.T) {
 		ListGitRepoCookstyleResultsFn: func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoCookstyleResult, error) {
 			return nil, nil
 		},
-		ListGitRepoTestKitchenResultsFn: func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoTestKitchenResult, error) {
-			return nil, nil
-		},
 	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()

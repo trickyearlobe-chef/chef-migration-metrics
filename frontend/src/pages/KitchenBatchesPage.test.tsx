@@ -9,7 +9,6 @@ import KitchenBatchesPage from "./KitchenBatchesPage";
 import type {
   KitchenBatch,
   KitchenBatchDetail,
-  GitKitchenResult,
   BatchProgress,
   GitRepoListItem,
 } from "../types";
@@ -128,43 +127,6 @@ const mockProgress: BatchProgress = {
   total: 7,
 };
 
-const mockResults: GitKitchenResult[] = [
-  {
-    id: "r1",
-    batch_id: "batch-2",
-    git_repo_name: "myapp",
-    git_repo_url: "https://example.com/myapp.git",
-    target_chef_version: "18.4.2",
-    commit_sha: "abcdef1234567890",
-    platform_name: "ubuntu-22.04",
-    suite_name: "default",
-    converge_passed: true,
-    tests_passed: true,
-    timed_out: false,
-    duration_seconds: 120,
-    started_at: "2025-01-02T00:06:00Z",
-    completed_at: "2025-01-02T00:08:00Z",
-    created_at: "2025-01-02T00:05:00Z",
-  },
-  {
-    id: "r2",
-    batch_id: "batch-2",
-    git_repo_name: "myapp",
-    git_repo_url: "https://example.com/myapp.git",
-    target_chef_version: "18.4.2",
-    commit_sha: "bbbbbbbb22222222",
-    platform_name: "centos-9",
-    suite_name: "default",
-    converge_passed: true,
-    tests_passed: false,
-    timed_out: false,
-    duration_seconds: 95,
-    started_at: "2025-01-02T00:06:00Z",
-    completed_at: "2025-01-02T00:07:35Z",
-    created_at: "2025-01-02T00:05:00Z",
-  },
-];
-
 const mockExcludedRepos: GitRepoListItem[] = [
   {
     id: "repo-1",
@@ -179,7 +141,6 @@ const mockExcludedRepos: GitRepoListItem[] = [
 function setupDefaultMocks() {
   vi.mocked(api.listKitchenBatches).mockResolvedValue(mockBatches);
   vi.mocked(api.listExcludedGitRepos).mockResolvedValue(mockExcludedRepos);
-  vi.mocked(api.fetchBatchResults).mockResolvedValue(mockResults);
   vi.mocked(api.fetchBatchProgress).mockResolvedValue(mockProgress);
   vi.mocked(api.createKitchenBatch).mockResolvedValue(mockDraftBatch);
   vi.mocked(api.getKitchenBatch).mockResolvedValue(mockDraftDetail);
@@ -405,44 +366,6 @@ describe("KitchenBatchesPage", () => {
     expect(screen.getByText(/2 pending/)).toBeInTheDocument();
     expect(screen.getByText(/1 timed out/)).toBeInTheDocument();
     expect(screen.getByText(/Total: 7/)).toBeInTheDocument();
-  });
-
-  // 12. Results tab renders results table
-  it("results tab renders results table", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
-    render(<KitchenBatchesPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Running Batch")).toBeInTheDocument();
-    });
-
-    const viewButtons = screen.getAllByText("View");
-    await user.click(viewButtons[1]);
-
-    // Wait for the tabs to appear
-    await waitFor(() => {
-      expect(screen.getByText("Overview")).toBeInTheDocument();
-    });
-
-    // Wait for results to load so the tab shows the count
-    await waitFor(() => {
-      expect(screen.getByText(/Results \(2\)/)).toBeInTheDocument();
-    });
-
-    // Click the Results tab
-    await user.click(screen.getByText(/Results \(2\)/));
-
-    // The results table should show result rows
-    const table = screen.getByRole("table");
-    expect(within(table).getByText("Cookbook")).toBeInTheDocument();
-    expect(within(table).getByText("Platform")).toBeInTheDocument();
-    expect(within(table).getByText("Suite")).toBeInTheDocument();
-    expect(within(table).getByText("Chef Version")).toBeInTheDocument();
-    expect(within(table).getAllByText("myapp")).toHaveLength(2);
-    expect(within(table).getByText("ubuntu-22.04")).toBeInTheDocument();
-    expect(within(table).getByText("centos-9")).toBeInTheDocument();
-    expect(within(table).getByText("120s")).toBeInTheDocument();
-    expect(within(table).getByText("95s")).toBeInTheDocument();
   });
 
   // 13. ExcludedCookbooksSection renders when expanded

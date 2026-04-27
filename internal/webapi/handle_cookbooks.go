@@ -251,9 +251,8 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 	}
 
 	type gitRepoDetail struct {
-		GitRepo     datastore.GitRepo                    `json:"git_repo"`
-		Cookstyle   []datastore.GitRepoCookstyleResult   `json:"cookstyle,omitempty"`
-		TestKitchen []datastore.GitRepoTestKitchenResult `json:"test_kitchen,omitempty"`
+		GitRepo   datastore.GitRepo                  `json:"git_repo"`
+		Cookstyle []datastore.GitRepoCookstyleResult `json:"cookstyle,omitempty"`
 	}
 
 	serverDetails := make([]serverVersionDetail, 0, len(serverCookbooks))
@@ -279,13 +278,6 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 			r.logf("WARN", "listing cookstyle results for git repo %s: %v", gr.Name, csErr)
 		} else {
 			detail.Cookstyle = cookstyle
-		}
-
-		tk, tkErr := r.db.ListGitRepoTestKitchenResults(ctx, gr.Name, gr.GitRepoURL)
-		if tkErr != nil {
-			r.logf("WARN", "listing test kitchen results for git repo %s: %v", gr.Name, tkErr)
-		} else {
-			detail.TestKitchen = tk
 		}
 
 		gitDetails = append(gitDetails, detail)

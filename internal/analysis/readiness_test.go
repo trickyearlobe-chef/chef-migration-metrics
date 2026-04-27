@@ -30,7 +30,6 @@ type fakeReadinessDS struct {
 	cookbookIDs     map[string]map[string]string // name → version → id
 	serverCookbooks []datastore.ServerCookbook
 	gitRepos        map[string]datastore.GitRepo // name → GitRepo
-	tkResults       map[string]*datastore.GitRepoTestKitchenResult
 	csResults       map[string]*datastore.ServerCookbookCookstyleResult
 	complexities    map[string]*datastore.ServerCookbookComplexity
 	gitCSResults    map[string]*datastore.GitRepoCookstyleResult
@@ -41,7 +40,6 @@ type fakeReadinessDS struct {
 	listSnapshotsErr       error
 	listServerCookbooksErr error
 	gitRepoErr             error
-	tkErr                  error
 	csErr                  error
 	complexityErr          error
 	gitCSErr               error
@@ -56,7 +54,6 @@ func newFakeReadinessDS() *fakeReadinessDS {
 	return &fakeReadinessDS{
 		cookbookIDs:     make(map[string]map[string]string),
 		gitRepos:        make(map[string]datastore.GitRepo),
-		tkResults:       make(map[string]*datastore.GitRepoTestKitchenResult),
 		csResults:       make(map[string]*datastore.ServerCookbookCookstyleResult),
 		complexities:    make(map[string]*datastore.ServerCookbookComplexity),
 		gitCSResults:    make(map[string]*datastore.GitRepoCookstyleResult),
@@ -89,24 +86,12 @@ func (f *fakeReadinessDS) GetGitRepoByName(_ context.Context, name string) (data
 	return gr, nil
 }
 
-func tkKey(gitRepoName, targetChefVersion string) string {
-	return gitRepoName + "|" + targetChefVersion
-}
-
 func csKey(orgName, cookbookName, cookbookVersion, targetChefVersion string) string {
 	return orgName + "/" + cookbookName + "/" + cookbookVersion + "|" + targetChefVersion
 }
 
 func ccKey(orgName, cookbookName, cookbookVersion, targetChefVersion string) string {
 	return orgName + "/" + cookbookName + "/" + cookbookVersion + "|" + targetChefVersion
-}
-
-func (f *fakeReadinessDS) GetLatestGitRepoTestKitchenResult(_ context.Context, gitRepoName, _, targetChefVersion string) (*datastore.GitRepoTestKitchenResult, error) {
-	if f.tkErr != nil {
-		return nil, f.tkErr
-	}
-	r := f.tkResults[tkKey(gitRepoName, targetChefVersion)]
-	return r, nil
 }
 
 func (f *fakeReadinessDS) GetServerCookbookCookstyleResult(_ context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
@@ -176,23 +161,6 @@ func (f *fakeReadinessDS) ListGitRepos(_ context.Context) ([]datastore.GitRepo, 
 		repos = append(repos, gr)
 	}
 	return repos, nil
-}
-
-func (f *fakeReadinessDS) ListLatestGitRepoTestKitchenResults(_ context.Context, targetChefVersions []string) ([]datastore.GitRepoTestKitchenResult, error) {
-	if f.tkErr != nil {
-		return nil, f.tkErr
-	}
-	tvSet := make(map[string]bool, len(targetChefVersions))
-	for _, tv := range targetChefVersions {
-		tvSet[tv] = true
-	}
-	var results []datastore.GitRepoTestKitchenResult
-	for _, r := range f.tkResults {
-		if r != nil && tvSet[r.TargetChefVersion] {
-			results = append(results, *r)
-		}
-	}
-	return results, nil
 }
 
 func (f *fakeReadinessDS) ListGitRepoCookstyleResultsByTargetVersions(_ context.Context, targetChefVersions []string) ([]datastore.GitRepoCookstyleResult, error) {
@@ -269,7 +237,6 @@ func (f *fakeReadinessDS) ListGitRepoComplexities(_ context.Context, targetChefV
 func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 	cache := &readinessCache{
 		gitRepos:         make(map[string]datastore.GitRepo),
-		tkResults:        make(map[string]*datastore.GitRepoTestKitchenResult),
 		gitCSResults:     make(map[string]*datastore.GitRepoCookstyleResult),
 		serverCSResults:  make(map[string]*datastore.ServerCookbookCookstyleResult),
 		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
@@ -277,9 +244,6 @@ func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 	}
 	for name, gr := range f.gitRepos {
 		cache.gitRepos[name] = gr
-	}
-	for k, v := range f.tkResults {
-		cache.tkResults[k] = v
 	}
 	for k, v := range f.gitCSResults {
 		cache.gitCSResults[k] = v
@@ -312,16 +276,6 @@ func (f *fakeReadinessDS) addCookbookID(name, version, orgName string) {
 		Name:             name,
 		Version:          version,
 	})
-}
-
-func (f *fakeReadinessDS) addTKResult(gitRepoName, targetChefVersion string, convergePassed, testsPassed bool) {
-	f.tkResults[tkKey(gitRepoName, targetChefVersion)] = &datastore.GitRepoTestKitchenResult{
-		GitRepoName:       gitRepoName,
-		TargetChefVersion: targetChefVersion,
-		ConvergePassed:    convergePassed,
-		TestsPassed:       testsPassed,
-		Compatible:        convergePassed && testsPassed,
-	}
 }
 
 func (f *fakeReadinessDS) addCSResult(orgName, cookbookName, cookbookVersion, targetChefVersion string, passed bool) {
@@ -1015,62 +969,58 @@ func TestLookupCookbookID_NilMap(t *testing.T) {
 // checkCookbookCompatibility tests
 // ---------------------------------------------------------------------------
 
-// NOTE: Test Kitchen results are no longer checked in checkCookbookCompatibility
-// because TK results live in git_repo_test_kitchen_results keyed by git_repo_id,
-// and we lack a server-cookbook-to-git-repo mapping. TK-only cookbooks now appear
-// as untested. The tests below verify the current (cookstyle-only) behaviour.
+// NOTE: Test Kitchen results have been removed from checkCookbookCompatibility.
+// All compatibility evaluation is now based on CookStyle results only.
+// Cookbooks with no CookStyle results appear as untested.
 
-func TestCheckCookbookCompatibility_TKOnlyIsCompatible(t *testing.T) {
-	// With multi-source evaluation, a passing TK result via git repo makes
-	// the cookbook compatible even without a CS result.
+func TestCheckCookbookCompatibility_TKOnlyIsUntested(t *testing.T) {
+	// With TK removed, a cookbook with only a git repo (no CookStyle results)
+	// is untested.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
-	ds.addTKResult("apt", "18.0", true, true)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
-	if status != StatusCompatible {
-		t.Errorf("expected %s (TK passes via git repo), got %s", StatusCompatible, status)
+	if status != StatusUntested {
+		t.Errorf("expected %s (no TK or CS results), got %s", StatusUntested, status)
 	}
-	if source != SourceTestKitchen {
-		t.Errorf("expected %s, got %s", SourceTestKitchen, source)
+	if source != SourceNone {
+		t.Errorf("expected %s, got %s", SourceNone, source)
 	}
 }
 
-func TestCheckCookbookCompatibility_TKConvergeFailIsIncompatible(t *testing.T) {
-	// With multi-source evaluation, a failing TK result (converge fail) via
-	// git repo makes the cookbook incompatible.
+func TestCheckCookbookCompatibility_TKConvergeFailIsUntested(t *testing.T) {
+	// With TK removed, a cookbook with only a git repo (no CookStyle results)
+	// is untested regardless of what TK would have reported.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
-	ds.addTKResult("apt", "18.0", false, false)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
-	if status != StatusIncompatible {
-		t.Errorf("expected %s (TK converge fail via git repo), got %s", StatusIncompatible, status)
+	if status != StatusUntested {
+		t.Errorf("expected %s (no CookStyle results), got %s", StatusUntested, status)
 	}
-	if source != SourceTestKitchen {
-		t.Errorf("expected %s, got %s", SourceTestKitchen, source)
+	if source != SourceNone {
+		t.Errorf("expected %s, got %s", SourceNone, source)
 	}
 }
 
-func TestCheckCookbookCompatibility_TKTestFailIsIncompatible(t *testing.T) {
-	// With multi-source evaluation, a failing TK result (test fail) via
-	// git repo makes the cookbook incompatible.
+func TestCheckCookbookCompatibility_TKTestFailIsUntested(t *testing.T) {
+	// With TK removed, a cookbook with only a git repo (no CookStyle results)
+	// is untested regardless of what TK would have reported.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
-	ds.addTKResult("apt", "18.0", true, false)
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
-	if status != StatusIncompatible {
-		t.Errorf("expected %s (TK test fail via git repo), got %s", StatusIncompatible, status)
+	if status != StatusUntested {
+		t.Errorf("expected %s (no CookStyle results), got %s", StatusUntested, status)
 	}
-	if source != SourceTestKitchen {
-		t.Errorf("expected %s, got %s", SourceTestKitchen, source)
+	if source != SourceNone {
+		t.Errorf("expected %s, got %s", SourceNone, source)
 	}
 }
 
@@ -1149,26 +1099,23 @@ func TestCheckCookbookCompatibility_CookbookNotInInventory(t *testing.T) {
 	}
 }
 
-func TestCheckCookbookCompatibility_CSCheckedWhenTKPresent(t *testing.T) {
-	// With multi-source evaluation, both TK and CS are checked independently.
-	// TK passes, CS fails → overall compatible because TK is a compatible source.
+func TestCheckCookbookCompatibility_CSFailWhenGitRepoExists(t *testing.T) {
+	// Server CS fails with git repo present but no git CS result → incompatible.
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addGitRepo("apt", "abc123")
-	ds.addTKResult("apt", "18.0", true, true)              // TK passes
 	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false) // server CS fails
 
 	cache := ds.buildFakeCache()
 	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
-	if status != StatusCompatible {
-		t.Errorf("expected %s (TK passes overrides CS fail), got %s", StatusCompatible, status)
+	if status != StatusIncompatible {
+		t.Errorf("expected %s (CS fails, no TK), got %s", StatusIncompatible, status)
 	}
-	if source != SourceTestKitchen {
-		t.Errorf("expected %s, got %s", SourceTestKitchen, source)
+	if source != SourceCookstyle {
+		t.Errorf("expected %s, got %s", SourceCookstyle, source)
 	}
-	// Should have verdicts from TK and server CS (at least 2).
-	if len(verdicts) < 2 {
-		t.Errorf("expected at least 2 verdicts, got %d", len(verdicts))
+	if len(verdicts) < 1 {
+		t.Errorf("expected at least 1 verdict, got %d", len(verdicts))
 	}
 }
 
@@ -1205,18 +1152,17 @@ func TestCheckCookbookCompatibility_MultiSource_AllIncompatible(t *testing.T) {
 	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
 	ds.addGitRepo("apt", "abc123")
 	ds.addGitCSResult("apt", "18.0", false)
-	ds.addTKResult("apt", "18.0", false, false)
 
 	cache := ds.buildFakeCache()
 	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
 	if status != StatusIncompatible {
 		t.Errorf("expected incompatible, got %s", status)
 	}
-	if source != SourceTestKitchen {
-		t.Errorf("expected primary source test_kitchen, got %s", source)
+	if source != SourceCookstyle {
+		t.Errorf("expected primary source cookstyle, got %s", source)
 	}
-	if len(verdicts) != 3 {
-		t.Fatalf("expected 3 verdicts, got %d", len(verdicts))
+	if len(verdicts) != 2 {
+		t.Fatalf("expected 2 verdicts, got %d", len(verdicts))
 	}
 }
 
@@ -1262,21 +1208,20 @@ func TestCheckCookbookCompatibility_MultiSource_VerdictFields(t *testing.T) {
 	}
 }
 
-func TestCheckCookbookCompatibility_MultiSource_TKCompatibleOverridesCSFail(t *testing.T) {
-	// TK passes, server CS fails → compatible (TK win)
+func TestCheckCookbookCompatibility_MultiSource_CSFailOnly(t *testing.T) {
+	// Server CS fails, no other sources → incompatible
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false) // server CS fails
 	ds.addGitRepo("apt", "abc123")
-	ds.addTKResult("apt", "18.0", true, true) // TK passes
 
 	cache := ds.buildFakeCache()
 	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
-	if status != StatusCompatible {
-		t.Errorf("expected compatible (TK passes), got %s", status)
+	if status != StatusIncompatible {
+		t.Errorf("expected incompatible (CS fails, no TK), got %s", status)
 	}
-	if source != SourceTestKitchen {
-		t.Errorf("expected primary source test_kitchen, got %s", source)
+	if source != SourceCookstyle {
+		t.Errorf("expected primary source cookstyle, got %s", source)
 	}
 }
 
@@ -1899,7 +1844,6 @@ func TestEvaluateOrganisation_ConcurrencyBounded(t *testing.T) {
 func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addGitRepo("apt", "sha-abc")
-	ds.addTKResult("apt", "18.0", true, true)
 	ds.addGitCSResult("apt", "18.0", true)
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
@@ -1921,13 +1865,6 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 		t.Error("expected git repo 'apt' in cache")
 	} else if gr.HeadCommitSHA != "sha-abc" {
 		t.Errorf("expected HeadCommitSHA 'sha-abc', got %q", gr.HeadCommitSHA)
-	}
-
-	// TK results
-	if tk := cache.tkResults[cacheKey("apt", "18.0")]; tk == nil {
-		t.Error("expected TK result in cache")
-	} else if !tk.Compatible {
-		t.Error("expected TK result to be compatible")
 	}
 
 	// Git CS results
@@ -2013,23 +1950,6 @@ func TestEvaluateOrganisation_BulkLoadError_GitRepos(t *testing.T) {
 	}
 }
 
-func TestEvaluateOrganisation_BulkLoadError_TKResults(t *testing.T) {
-	ds := newFakeReadinessDS()
-	ds.snapshots = []datastore.NodeSnapshot{
-		makeSnapshot("org-1", "node-1", false, nil, nil),
-	}
-	ds.tkErr = fmt.Errorf("connection refused")
-
-	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
-	if err == nil {
-		t.Fatal("expected error from bulk-load failure")
-	}
-	if !contains(err.Error(), "bulk-loading TK results") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func TestEvaluateOrganisation_BulkLoadError_ServerCSResults(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
@@ -2099,7 +2019,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitComplexities(t *testing.T) {
 }
 
 func TestEvaluateOrganisation_EmptyCache(t *testing.T) {
-	// No CookStyle/TK/complexity data at all — all cookbooks should show as untested
+	// No CookStyle/complexity data at all — all cookbooks should show as untested
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
 		makeSnapshot("org-1", "node-1", false,
@@ -2199,7 +2119,7 @@ func TestPersistResult_Success(t *testing.T) {
 		AllCookbooksCompatible: false,
 		SufficientDiskSpace:    &sufficient,
 		BlockingCookbooks: []BlockingCookbook{
-			{Name: "nginx", Version: "2.0.0", Reason: StatusIncompatible, Source: SourceTestKitchen, ComplexityScore: 30, ComplexityLabel: "high"},
+			{Name: "nginx", Version: "2.0.0", Reason: StatusIncompatible, Source: SourceCookstyle, ComplexityScore: 30, ComplexityLabel: "high"},
 		},
 		AvailableDiskMB: &availMB,
 		RequiredDiskMB:  2048,
@@ -2292,12 +2212,12 @@ func TestBlockingCookbook_JSON(t *testing.T) {
 		Name:            "nginx",
 		Version:         "2.0.0",
 		Reason:          StatusIncompatible,
-		Source:          SourceTestKitchen,
+		Source:          SourceCookstyle,
 		ComplexityScore: 45,
 		ComplexityLabel: "high",
 		Verdicts: []CookbookSourceVerdict{
 			{
-				Source:    SourceGitTestKitchen,
+				Source:    SourceGitCookstyle,
 				Status:    StatusIncompatible,
 				Version:   "HEAD",
 				CommitSHA: "abc123",
@@ -2326,8 +2246,8 @@ func TestBlockingCookbook_JSON(t *testing.T) {
 	if len(decoded.Verdicts) != 2 {
 		t.Fatalf("expected 2 verdicts, got %d", len(decoded.Verdicts))
 	}
-	if decoded.Verdicts[0].Source != SourceGitTestKitchen {
-		t.Errorf("expected first verdict source %s, got %s", SourceGitTestKitchen, decoded.Verdicts[0].Source)
+	if decoded.Verdicts[0].Source != SourceGitCookstyle {
+		t.Errorf("expected first verdict source %s, got %s", SourceGitCookstyle, decoded.Verdicts[0].Source)
 	}
 	if decoded.Verdicts[0].CommitSHA != "abc123" {
 		t.Errorf("expected commit SHA abc123, got %s", decoded.Verdicts[0].CommitSHA)

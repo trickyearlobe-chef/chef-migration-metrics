@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
@@ -111,9 +112,9 @@ type Router struct {
 	// Nil when not configured — the trigger endpoint returns 503.
 	nodeKitchenRunner NodeKitchenRunner
 
-	// gitKitchenRunner orchestrates on-demand Git Kitchen runs.
+	// gitKitchenScheduler orchestrates on-demand Git Kitchen runs.
 	// Nil when not configured — the trigger endpoint returns 503.
-	gitKitchenRunner GitKitchenRunner // set via WithGitKitchenRunner
+	gitKitchenScheduler *gitkitchen.Scheduler
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -225,9 +226,9 @@ func WithNodeKitchenRunner(runner NodeKitchenRunner) RouterOption {
 	return func(r *Router) { r.nodeKitchenRunner = runner }
 }
 
-// WithGitKitchenRunner sets the runner used by the Git Kitchen trigger endpoint.
-func WithGitKitchenRunner(runner GitKitchenRunner) RouterOption {
-	return func(r *Router) { r.gitKitchenRunner = runner }
+// WithGitKitchenScheduler sets the scheduler used by the Git Kitchen run endpoint.
+func WithGitKitchenScheduler(s *gitkitchen.Scheduler) RouterOption {
+	return func(r *Router) { r.gitKitchenScheduler = s }
 }
 
 // NewRouter creates a new Router with all routes registered. The EventHub
@@ -261,7 +262,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 		r.triggerCollection != nil,
 		r.hypervisor != nil,
 		r.nodeKitchenRunner != nil,
-		r.gitKitchenRunner != nil,
+		r.gitKitchenScheduler != nil,
 	)
 
 	r.registerRoutes()
@@ -511,12 +512,12 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
 	r.protect("/api/v1/kitchen/batches/", r.handleKitchenBatchDetail)
 
-	// Git Kitchen manual trigger
-	r.adminOnly("/api/v1/kitchen/git-run", r.handleGitKitchenRun)
-
-	// Git Kitchen Results (per-instance)
-	r.protect("/api/v1/git-kitchen-results", r.handleGitKitchenResults)
-	r.protect("/api/v1/git-kitchen-results/", r.handleGitKitchenResultDetail)
+	// -----------------------------------------------------------------
+	// Git Kitchen endpoints
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/kitchen/git/instances", r.handleGitKitchenInstances)
+	r.protect("/api/v1/kitchen/git/results", r.handleGitKitchenResults)
+	r.adminOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun)
 
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
@@ -528,7 +529,6 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
-	r.adminOnly("/api/v1/admin/rerun-all-test-kitchen", r.handleAdminRerunAllTestKitchen)
 	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames)
 	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset)
 

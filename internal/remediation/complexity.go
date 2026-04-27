@@ -506,13 +506,10 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		return result
 	}
 
-	// Step 2: Load Test Kitchen result (git repos only).
-	tkResult, tkErr := s.db.GetLatestGitRepoTestKitchenResult(ctx, repo.Name, repo.GitRepoURL, targetChefVersion)
-
-	// If neither CookStyle nor Test Kitchen results exist, this repo has
-	// not been scanned yet. Skip scoring so the cookbook remains "untested"
-	// rather than appearing "compatible" with zero offenses.
-	if csResult == nil && (tkErr != nil || tkResult == nil) {
+	// If no CookStyle result exists, this repo has not been scanned yet.
+	// Skip scoring so the cookbook remains "untested" rather than appearing
+	// "compatible" with zero offenses.
+	if csResult == nil {
 		result.Skipped = true
 		return result
 	}
@@ -522,7 +519,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		offenseSummary = classifyOffenses(csResult.Offences, csResult.DeprecationCount, csResult.CorrectnessCount)
 	}
 
-	// Step 3: Load auto-correct preview for manual fix count.
+	// Step 2: Load auto-correct preview for manual fix count.
 	if csResult != nil {
 		preview, previewErr := s.db.GetGitRepoAutocorrectPreview(ctx, csResult.GitRepoName, csResult.GitRepoURL, csResult.TargetChefVersion)
 		if previewErr == nil && preview != nil {
@@ -531,24 +528,16 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		}
 	}
 
-	// Step 4: Build Test Kitchen summary from the result loaded earlier.
-	var tkSummary TestKitchenSummary
-	if tkErr == nil && tkResult != nil {
-		tkSummary.HasResult = true
-		tkSummary.ConvergePassed = tkResult.ConvergePassed
-		tkSummary.TestsPassed = tkResult.TestsPassed
-	}
-
-	// Step 5: Look up blast radius.
+	// Step 3: Look up blast radius.
 	blast := blastRadii[repo.Name]
 
-	// Step 6: Compute score.
+	// Step 4: Compute score.
 	input := ComplexityInput{
 		CookbookName:      repo.Name,
 		GitRepoURL:        repo.GitRepoURL,
 		TargetChefVersion: targetChefVersion,
 		Cookstyle:         offenseSummary,
-		TestKitchen:       tkSummary,
+		TestKitchen:       TestKitchenSummary{},
 		Blast:             blast,
 	}
 
