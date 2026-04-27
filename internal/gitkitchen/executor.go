@@ -1,0 +1,183 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package gitkitchen
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+)
+
+// KitchenExecutor runs kitchen CLI commands.
+type KitchenExecutor interface {
+	Run(ctx context.Context, dir string, extraEnv []string, args ...string) (stdout, stderr string, exitCode int, err error)
+}
+
+// CredentialResolver resolves kitchen credentials to environment variables.
+type CredentialResolver interface {
+	ResolveKitchenCredentials(ctx context.Context, tkConfig config.TestKitchenConfig) (envVars map[string][]byte, cleanup func(), err error)
+}
+
+// RunInstanceParams holds input for a single git kitchen instance run.
+type RunInstanceParams struct {
+	GitRepoName       string
+	GitRepoURL        string
+	RepoDir           string // path to the local git clone (read-only)
+	InstanceName      string // e.g. "default-ubuntu-2204"
+	SuiteName         string
+	PlatformName      string
+	TargetChefVersion string
+	CommitSHA         string
+}
+
+// RunInstanceResult holds the output of a single instance run.
+type RunInstanceResult struct {
+	Passed          *bool
+	TimedOut        bool
+	Output          string // combined stdout+stderr
+	DurationSeconds *int
+	ErrorMessage    string
+	DriverUsed      string
+}
+
+// RunInstance executes a single Test Kitchen instance for a git-cloned cookbook.
+func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.TestKitchenConfig,
+	executor KitchenExecutor, credResolver CredentialResolver) RunInstanceResult {
+
+	start := time.Now()
+
+	// Create isolated workspace
+	workDir, err := copyRepoToWorkspace(params.RepoDir)
+	if err != nil {
+		return RunInstanceResult{
+			ErrorMessage: fmt.Sprintf("gitkitchen: creating workspace: %v", err),
+			DriverUsed:   tkConfig.Driver,
+		}
+	}
+	defer os.RemoveAll(workDir)
+
+	// Back up existing .kitchen.local.yml if present
+	localOverlayPath := filepath.Join(workDir, ".kitchen.local.yml")
+	if _, statErr := os.Stat(localOverlayPath); statErr == nil {
+		bakPath := localOverlayPath + ".bak"
+		if renameErr := os.Rename(localOverlayPath, bakPath); renameErr != nil {
+			return RunInstanceResult{
+				ErrorMessage: fmt.Sprintf("gitkitchen: backing up existing overlay: %v", renameErr),
+				DriverUsed:   tkConfig.Driver,
+			}
+		}
+	}
+
+	// Generate overlay
+	overlay, err := generateOverlay(tkConfig, params.PlatformName, params.TargetChefVersion)
+	if err != nil {
+		return RunInstanceResult{
+			ErrorMessage: fmt.Sprintf("gitkitchen: generating overlay: %v", err),
+			DriverUsed:   tkConfig.Driver,
+		}
+	}
+	if overlay != "" {
+		if writeErr := os.WriteFile(localOverlayPath, []byte(overlay), 0644); writeErr != nil {
+			return RunInstanceResult{
+				ErrorMessage: fmt.Sprintf("gitkitchen: writing overlay: %v", writeErr),
+				DriverUsed:   tkConfig.Driver,
+			}
+		}
+	}
+
+	// Resolve credentials
+	credEnvVars, cleanup, err := credResolver.ResolveKitchenCredentials(ctx, tkConfig)
+	if err != nil {
+		return RunInstanceResult{
+			ErrorMessage: fmt.Sprintf("gitkitchen: resolving credentials: %v", err),
+			DriverUsed:   tkConfig.Driver,
+		}
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	// Build env var slice from credentials
+	extraEnv := buildEnvSlice(credEnvVars)
+
+	// Run kitchen test
+	stdout, stderr, exitCode, execErr := executor.Run(ctx, workDir, extraEnv,
+		"test", params.InstanceName, "--destroy=always", "--no-color")
+
+	duration := int(time.Since(start).Seconds())
+	output := combineOutput(stdout, stderr)
+
+	result := RunInstanceResult{
+		Output:          output,
+		DurationSeconds: intPtr(duration),
+		DriverUsed:      tkConfig.Driver,
+	}
+
+	if execErr != nil {
+		result.ErrorMessage = fmt.Sprintf("gitkitchen: executor error: %v", execErr)
+		// Passed remains nil — unknown state
+	} else {
+		passed := exitCode == 0
+		result.Passed = boolPtr(passed)
+	}
+
+	return result
+}
+
+// copyRepoToWorkspace creates a temporary directory and copies the repo contents into it.
+func copyRepoToWorkspace(repoDir string) (string, error) {
+	workDir, err := os.MkdirTemp("", "cmm-gitkitchen-*")
+	if err != nil {
+		return "", fmt.Errorf("creating temp dir: %w", err)
+	}
+
+	// Use cp -a to preserve structure
+	cmd := exec.Command("cp", "-a", repoDir+"/.", workDir)
+	if out, cpErr := cmd.CombinedOutput(); cpErr != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("copying repo: %s: %w", strings.TrimSpace(string(out)), cpErr)
+	}
+
+	return workDir, nil
+}
+
+// buildEnvSlice converts a credential map to KEY=VALUE strings.
+func buildEnvSlice(creds map[string][]byte) []string {
+	if len(creds) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(creds))
+	for k := range creds {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	env := make([]string, 0, len(creds))
+	for _, k := range keys {
+		env = append(env, fmt.Sprintf("%s=%s", k, string(creds[k])))
+	}
+	return env
+}
+
+// combineOutput merges stdout and stderr into a single string.
+func combineOutput(stdout, stderr string) string {
+	var parts []string
+	if stdout != "" {
+		parts = append(parts, stdout)
+	}
+	if stderr != "" {
+		parts = append(parts, stderr)
+	}
+	return strings.Join(parts, "")
+}
+
+func boolPtr(v bool) *bool { return &v }
+func intPtr(v int) *int    { return &v }
