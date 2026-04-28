@@ -19,6 +19,7 @@ import type {
   GitKitchenResult,
   GitKitchenRunRequest,
   GitKitchenRunResponse,
+  SweepResult,
 } from "../types";
 import { apiFetch, buildUrl, ApiError } from "./client";
 
@@ -248,4 +249,10 @@ export async function triggerGitKitchenRun(
   });
   if (!res.ok) throw new Error(`Failed to trigger git kitchen run: ${res.status}`);
   return res.json();
+}
+
+export async function runOrphanSweep(dryRun: boolean): Promise<SweepResult> {
+  return apiFetch<SweepResult>(`/kitchen/orphan-sweep?dry_run=${dryRun}`, {
+    method: "POST",
+  });
 }
