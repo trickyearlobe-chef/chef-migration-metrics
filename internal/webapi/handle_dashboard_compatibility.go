@@ -427,6 +427,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 		TargetChefVersion        string  `json:"target_chef_version"`
 		TotalRepos               int     `json:"total_repos"`
 		PassedRepos              int     `json:"passed_repos"`
+		PartialRepos             int     `json:"partial_repos"`
 		FailedRepos              int     `json:"failed_repos"`
 		TimedOutRepos            int     `json:"timed_out_repos"`
 		UntestedRepos            int     `json:"untested_repos"`
@@ -464,6 +465,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	type perVersion struct {
 		total               int
 		passed              int
+		partial             int
 		failed              int
 		timedOut            int
 		untested            int
@@ -535,7 +537,9 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 
 			s := tkByRepo[gr.Name]
 			if s != nil && s.total > 0 {
-				if s.failed > 0 {
+				if s.passed > 0 && s.failed > 0 {
+					pv.partial++
+				} else if s.failed > 0 {
 					pv.failed++
 				} else {
 					pv.passed++
@@ -562,6 +566,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 			TargetChefVersion:        tv,
 			TotalRepos:               pv.total,
 			PassedRepos:              pv.passed,
+			PartialRepos:             pv.partial,
 			FailedRepos:              pv.failed,
 			TimedOutRepos:            pv.timedOut,
 			UntestedRepos:            pv.untested,

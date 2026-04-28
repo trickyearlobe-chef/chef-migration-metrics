@@ -602,6 +602,16 @@ export function TestKitchenCompatibilityCard({
                         }}
                         title={`Passed: ${c.passed_repos}`}
                       />
+                      {c.partial_repos > 0 && (
+                        <Link
+                          to={`/git-repos?tk_status=partial&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                          className="bg-orange-400 transition-all duration-500 hover:bg-orange-500"
+                          style={{
+                            width: `${(c.partial_repos / c.total_repos) * 100}%`,
+                          }}
+                          title={`Partial: ${c.partial_repos}`}
+                        />
+                      )}
                       <Link
                         to={`/git-repos?tk_status=failed&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                         className="bg-red-400 transition-all duration-500 hover:bg-red-500"
@@ -642,6 +652,15 @@ export function TestKitchenCompatibilityCard({
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
                       Passed: {c.passed_repos.toLocaleString()}
                     </Link>
+                    {c.partial_repos > 0 && (
+                      <Link
+                        to={`/git-repos?tk_status=partial&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />
+                        Partial: {c.partial_repos.toLocaleString()}
+                      </Link>
+                    )}
                     <Link
                       to={`/git-repos?tk_status=failed&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"

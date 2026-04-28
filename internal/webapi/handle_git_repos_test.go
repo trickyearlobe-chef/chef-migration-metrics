@@ -222,4 +222,54 @@ func TestHandleGitRepos_PostMethodRejected(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Tests: TK partial status — repos with mixed pass/fail are "partial"
+// ---------------------------------------------------------------------------
+
+func TestHandleGitRepos_TKPartialStatus(t *testing.T) {
+	store := defaultGitRepoMockStore()
+	r := newGitRepoTestRouter(store)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos", nil)
+	r.ServeHTTP(w, req)
+
+	resp := decodeGitRepoListResponse(t, w)
+
+	tkStatusMap := make(map[string]string)
+	for _, d := range resp.Data {
+		tkStatusMap[d.Name] = d.TKStatus
+	}
+
+	// cookbook-a: 2 passed, 0 failed → "passed"
+	if tkStatusMap["cookbook-a"] != "passed" {
+		t.Errorf("cookbook-a: expected tk_status=passed, got %q", tkStatusMap["cookbook-a"])
+	}
+	// cookbook-b: 1 passed, 1 failed → "partial"
+	if tkStatusMap["cookbook-b"] != "partial" {
+		t.Errorf("cookbook-b: expected tk_status=partial, got %q", tkStatusMap["cookbook-b"])
+	}
+	// cookbook-c: no results → "untested"
+	if tkStatusMap["cookbook-c"] != "untested" {
+		t.Errorf("cookbook-c: expected tk_status=untested, got %q", tkStatusMap["cookbook-c"])
+	}
+}
+
+func TestHandleGitRepos_TKStatusFilter_Partial(t *testing.T) {
+	store := defaultGitRepoMockStore()
+	r := newGitRepoTestRouter(store)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos?tk_status=partial", nil)
+	r.ServeHTTP(w, req)
+
+	resp := decodeGitRepoListResponse(t, w)
+
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 repo with partial status, got %d", len(resp.Data))
+	}
+	if resp.Data[0].Name != "cookbook-b" {
+		t.Errorf("expected cookbook-b, got %q", resp.Data[0].Name)
+	}
+}
 
