@@ -384,6 +384,7 @@ Under `analysis_tools.test_kitchen.node_kitchens`:
 - Platform/suite matrix view: rows = cookbooks, columns = platforms. Cells show pass/fail/untested.
 - Batch view: group results by batch run with aggregate stats.
 - Filter by: platform, status, batch, cookbook pattern.
+- Repos with a mix of passed and failed instances show as **partial** (orange) in the dashboard summary and git repo list. Repos where all instances failed show as **failed** (red). Repos where all passed show as **passed** (green).
 
 ### Node Kitchen Results
 

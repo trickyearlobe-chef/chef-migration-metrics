@@ -915,13 +915,17 @@ If `organisation` is provided, only that organisation's copy is rescanned. If om
 
 #### `GET /api/v1/git-repos`
 
-Returns a paginated list of all known git repos with optional name filtering.
+Returns a paginated list of all known git repos with optional filtering.
 
 **Query parameters:**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Substring filter on repo name |
+| `tk_status` | string | Comma-separated TK status filter: `passed`, `partial`, `failed`, `untested` |
+| `target_chef_version` | string | Filter cookstyle results by target Chef version |
+| `sort` | string | Sort field: `name` (default) |
+| `order` | string | Sort direction: `asc` (default), `desc` |
 | `page` | integer | Page number (default: 1) |
 | `per_page` | integer | Items per page (default: 50) |
 
@@ -931,22 +935,19 @@ Returns a paginated list of all known git repos with optional name filtering.
 {
   "data": [
     {
-      "id": 42,
+      "id": "nginx",
       "name": "nginx",
-      "git_repo_url": "https://github.com/myorg/nginx-cookbook.git",
-      "head_commit_sha": "a1b2c3d4e5f67890abcdef1234567890abcdef12",
+      "git_repo_url": "https://github.com/example-corp/nginx-cookbook.git",
+      "head_commit_sha": "a1b2c3d4",
       "default_branch": "main",
       "has_test_suite": true,
-      "last_fetched_at": "2024-06-15T14:30:00Z"
-    },
-    {
-      "id": 43,
-      "name": "base",
-      "git_repo_url": "https://github.com/myorg/base-cookbook.git",
-      "head_commit_sha": "b2c3d4e5f67890abcdef1234567890abcdef1234",
-      "default_branch": "main",
-      "has_test_suite": false,
-      "last_fetched_at": "2024-06-15T14:32:00Z"
+      "clone_status": "ok",
+      "last_fetched_at": "2024-06-15T14:30:00Z",
+      "compatibility": "compatible",
+      "target_chef_version": "18.0.0",
+      "tk_status": "partial",
+      "tk_passed": 3,
+      "tk_total": 5
     }
   ],
   "pagination": {
@@ -957,6 +958,15 @@ Returns a paginated list of all known git repos with optional name filtering.
   }
 }
 ```
+
+**TK Status values:**
+
+| Value | Meaning |
+|-------|---------|
+| `passed` | All Test Kitchen instances passed |
+| `partial` | Mix of passed and failed instances |
+| `failed` | All tested instances failed (none passed) |
+| `untested` | No Test Kitchen results available |
 
 ### Get Git Repo Detail
 
