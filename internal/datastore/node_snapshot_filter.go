@@ -596,6 +596,8 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		switch f.StaleTier {
 		case "fresh":
 			where += fmt.Sprintf(" AND cn.ohai_time > extract(epoch from now()) - %d", warningSeconds)
+		case "stale":
+			where += fmt.Sprintf(" AND (cn.ohai_time <= extract(epoch from now()) - %d OR cn.ohai_time = 0 OR cn.ohai_time IS NULL)", warningSeconds)
 		case "warning":
 			where += fmt.Sprintf(" AND cn.ohai_time <= extract(epoch from now()) - %d AND cn.ohai_time > extract(epoch from now()) - %d", warningSeconds, criticalSeconds)
 		case "critical":

@@ -272,7 +272,7 @@ func (db *DB) getBlockingCookbooks(ctx context.Context, orgName, roleName, targe
 			AND csr.cookbook_name = sc.name
 			AND csr.cookbook_version = sc.version
 			AND csr.target_chef_version = $1
-		LEFT JOIN server_cookbook_complexities scc
+		LEFT JOIN server_cookbook_complexity scc
 			ON scc.organisation_name = sc.organisation_name
 			AND scc.cookbook_name = sc.name
 			AND scc.cookbook_version = sc.version

@@ -328,6 +328,22 @@ func TestBuildNodeSnapshotFilterQuery_StaleNil(t *testing.T) {
 	}
 }
 
+func TestBuildNodeSnapshotFilterQuery_StaleTier(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		StaleTier:         "stale",
+		StaleWarningHours: 24,
+		StaleCriticalDays: 7,
+	})
+
+	where := extractWhere(q)
+	if !strings.Contains(where, "ohai_time <=") {
+		t.Errorf("stale tier should filter on ohai_time, got WHERE:\n%s", where)
+	}
+	if strings.Contains(where, "is_stale") {
+		t.Error("stale tier should not use is_stale boolean filter")
+	}
+}
+
 func TestBuildNodeSnapshotFilterQuery_Pagination(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
 		Limit:  25,
