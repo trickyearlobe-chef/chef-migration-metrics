@@ -2,199 +2,133 @@
 
 ## TL;DR
 
-Enhance the existing Test Kitchen config platform map to be data-driven. Discovered platforms from the kitchen analyser and templates from the hypervisor are presented together so operators can map platforms to templates using exact names or glob patterns, configure transport per mapping, skip irrelevant platforms, and see unmapped platform warnings. Stored via existing `runtime_settings` mechanism.
+Data-driven platform mapping. Platforms are auto-discovered from two sources (kitchen analysis + node data) and presented in a table where each platform defaults to "skip" with a dropdown to select a VM image. No manual entry, no pattern/glob matching, no per-platform transport overrides.
 
 ## Problem
 
-The current platform map is a manually-maintained list of `{kitchen_name, image}` pairs. Operators must know every platform name across ~2000 cookbooks and type them by hand. There is no visibility into which platforms are unmapped, no way to map groups of similar names with a single rule, and no connection to the hypervisor templates that the VMs will actually be cloned from.
+Operators must map discovered kitchen platform names to hypervisor VM images so Test Kitchen knows which template to clone. Previously this was a manual editor requiring operators to type platform names — error-prone across ~2000 cookbooks. The new design auto-discovers platforms and presents them for mapping.
 
 ## Scope
 
 ### In Scope
 
-- Enhanced `PlatformMapEntry` with pattern support, skip flag, and transport override
-- Glob pattern matching (`*` wildcard) for group mappings, first-match-wins
-- API endpoint returning merged platform mapping status (discovered + mapped + templates)
-- Validation: warn on unmapped discovered platforms
-- Frontend: data-driven platform mapping section in `AdminTestKitchenPage.tsx`
-- Backward compatibility: existing exact-match entries work unchanged
+- Data-driven discovered platforms table (replaces manual editor)
+- Two discovery sources merged: kitchen analyser platforms + node platform/version combos
+- Each platform: skip (default) or map to an image via dropdown
+- Explicit skip entries persisted (`skip: true`) — distinct from "not configured"
+- Source badges (kitchen / nodes / both) and OS family badges
+- Mapping status summary (mapped / unmapped / skipped counts)
 
 ### Out of Scope
 
-- New database tables (uses existing `runtime_settings`)
-- Regex support (glob only — simpler, sufficient for platform name patterns)
+- Pattern/glob matching (exact names only — platforms come from discovery)
+- Per-platform transport overrides (auth is configured at image level)
+- Manual "add platform" button (all platforms come from discovery)
 - Auto-mapping suggestions (future enhancement)
 - Per-cookbook mapping overrides
 
 ## Data Model
 
-### Enhanced PlatformMapEntry
+### PlatformMapEntry (unchanged)
 
-Extends the existing `config.PlatformMapEntry` struct. New fields are additive — existing configs with only `kitchen_name` + `image` continue to work.
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `kitchen_name` | string | required | Exact platform name or glob pattern (e.g. `rhel*`, `windows-201*`) |
-| `image` | string | required unless skip | Name of an `ImageEntry` in the images list |
-| `is_pattern` | bool | false | When true, `kitchen_name` is a glob pattern |
-| `skip` | bool | false | When true, this platform is explicitly excluded from TK runs |
-| `transport` | PlatformMapTransport | nil | Per-mapping transport override (overrides image-level transport) |
-
-### Pattern Matching Semantics
-
-- Patterns use glob syntax: `*` matches any sequence of characters, `?` matches a single character.
-- Entries are evaluated **in order** — first match wins.
-- Exact matches (non-pattern entries) are checked first regardless of position.
-- A platform that matches no entry is "unmapped".
-- A skipped entry counts as "mapped" for validation purposes (explicitly handled).
-
-### PlatformMappingStatus (API Response)
-
-The status endpoint returns a unified view combining three data sources:
+Uses existing `config.PlatformMapEntry`. Only `kitchen_name`, `image`, and `skip` are used by the data-driven UI.
 
 | Field | Type | Description |
 |---|---|---|
-| `discovered_platforms` | []DiscoveredPlatformStatus | All platforms from kitchen analyser with mapping info |
+| `kitchen_name` | string | Exact platform name from discovery |
+| `image` | string | Name of an `ImageEntry` (empty when skip is true) |
+| `skip` | bool | When true, platform is explicitly excluded from TK runs |
+
+### PlatformMappingStatus (API Response)
+
+| Field | Type | Description |
+|---|---|---|
+| `discovered_platforms` | []DiscoveredPlatformStatus | All platforms with mapping info |
 | `templates` | []Template | Available hypervisor templates |
-| `unmapped_count` | int | Number of discovered platforms with no matching entry |
-| `skipped_count` | int | Number of discovered platforms matched by a skip rule |
-| `mapped_count` | int | Number of discovered platforms with a non-skip mapping |
+| `unmapped_count` | int | Platforms with no mapping entry |
+| `skipped_count` | int | Platforms with explicit skip |
+| `mapped_count` | int | Platforms mapped to an image |
 
 ### DiscoveredPlatformStatus
 
 | Field | Type | Description |
 |---|---|---|
-| `platform_name` | string | Raw platform name from kitchen configs |
+| `platform_name` | string | Raw platform name |
 | `normalised_name` | string | Normalised name from analyser |
 | `os_family` | string | OS family (rhel, windows, debian, suse, other) |
-| `cookbook_count` | int | Number of cookbooks using this platform |
+| `cookbook_count` | int | Cookbooks using this platform (kitchen source) |
+| `node_count` | int | Nodes with this platform (node source) |
+| `source` | string | `kitchen`, `nodes`, or `both` |
 | `transport_type` | string | Transport from kitchen configs (ssh, winrm) |
 | `mapping_status` | string | `mapped`, `skipped`, or `unmapped` |
-| `matched_entry_index` | int | Index of the matching PlatformMapEntry (-1 if unmapped) |
-| `matched_image` | string | Image name from the matching entry (empty if unmapped/skipped) |
+| `matched_entry_index` | int | Index of matching PlatformMapEntry (-1 if unmapped) |
+| `matched_image` | string | Image name (empty if unmapped/skipped) |
 
 ## API
 
 ### GET /api/v1/admin/platform-mapping/status
 
-Returns the platform mapping status. Admin-only.
+Returns platform mapping status. Admin-only.
 
 Combines:
-1. Discovered platforms from `ListDiscoveredPlatforms`
-2. Current platform map entries from effective TK config (DB or file)
-3. Templates from the hypervisor (if configured)
+1. Kitchen discovered platforms from `ListDiscoveredPlatforms`
+2. Node platform/version combos from `CountNodePlatformDistribution`
+3. Current platform map entries from effective TK config
+4. Templates from the hypervisor (if configured)
 
-Response `200 OK`:
+Merge logic: kitchen platforms checked first; if a matching node platform exists, source becomes "both". Remaining node-only platforms appended sorted alphabetically.
 
-```
-{
-  "discovered_platforms": [
-    {
-      "platform_name": "rhel7-chef16",
-      "normalised_name": "rhel-7",
-      "os_family": "rhel",
-      "cookbook_count": 145,
-      "transport_type": "ssh",
-      "mapping_status": "mapped",
-      "matched_entry_index": 0,
-      "matched_image": "rhel7-template"
-    },
-    {
-      "platform_name": "custom-test-box",
-      "normalised_name": "custom-test-box",
-      "os_family": "other",
-      "cookbook_count": 2,
-      "transport_type": "",
-      "mapping_status": "unmapped",
-      "matched_entry_index": -1,
-      "matched_image": ""
-    }
-  ],
-  "templates": [...],
-  "unmapped_count": 5,
-  "skipped_count": 3,
-  "mapped_count": 72
-}
-```
+### PUT /api/v1/admin/test-kitchen/config
 
-### PUT /api/v1/admin/test-kitchen/config (enhanced validation)
-
-The existing save endpoint gains additional validation warnings:
-- Warn when discovered platforms are unmapped (not an error — config can still be saved)
-- Warn when a pattern matches zero discovered platforms (likely typo)
-- Warn when multiple patterns could match the same platform (order-dependent)
-
-These are returned as `warnings` in the response, not blocking errors.
+Existing save endpoint. The frontend sends the full `platform_map` array containing one entry per discovered platform — either `{kitchen_name, image}` for mapped or `{kitchen_name, skip: true}` for skipped.
 
 ## Frontend
 
-### Enhanced Platform Map Section
+### Data-Driven Platform Map Section
 
-Replaces the simple kitchen_name + image table in `AdminTestKitchenPage.tsx`.
+Located in `AdminTestKitchenPage.tsx` as `PlatformMapSection`.
 
 **Layout:**
-1. **Mapping Status Banner** — summary: "72 mapped, 3 skipped, 5 unmapped" with colour coding
-2. **Mapping Rules Table** — ordered list of platform map entries (exact and pattern):
-   - Drag handle for reordering (affects pattern match priority)
-   - Kitchen name input (text, with pattern toggle)
-   - Pattern toggle (checkbox — enables glob matching)
-   - Image dropdown (populated from images list)
-   - Skip toggle (checkbox — disables image dropdown when checked)
-   - Transport override (expandable: username, password credential dropdown, SSH key credential dropdown)
-   - Remove button
-3. **Unmapped Platforms Panel** — discovered platforms with no matching rule, sorted by cookbook count descending. Each row shows platform name, normalised name, OS family badge, cookbook count. Quick-action button to add an exact mapping rule for the platform.
-4. **Add Rule** button — appends a new empty mapping entry
+1. **Status Summary** — "N mapped, N unmapped, N skipped" badges
+2. **Discovered Platforms Table** — one row per discovered platform:
+   - Platform name (text)
+   - Source badge (kitchen / nodes / both)
+   - OS family badge
+   - Cookbook count and node count
+   - Image dropdown: "— skip —" (default) + all configured images
 
 ### Data Flow
 
-On page load:
-1. Fetch TK config (existing `fetchTestKitchenConfig`)
-2. Fetch platform mapping status (`GET /api/v1/admin/platform-mapping/status`)
-3. Fetch credentials (existing, for transport dropdowns)
+On page load: fetch TK config, platform mapping status, credentials.
 
-On save:
-1. Save via existing `PUT /api/v1/admin/test-kitchen/config`
-2. Re-fetch platform mapping status to update unmapped panel
+State: `platformMappings: Record<string, string>` maps platform_name → image_name (empty string = skip).
 
-### Interaction Details
+On dropdown change: update `platformMappings`, sync to `config.platform_map` array.
 
-- Clicking "Add mapping" on an unmapped platform pre-fills the kitchen_name
-- Pattern entries show a visual indicator (e.g. `*` icon) and a tooltip showing which discovered platforms they match
-- Skipped entries are visually dimmed
-- Unmapped platform count shown as a badge on the section header
+On save: existing save handler sends `config.platform_map` to backend.
 
-## Validation
+### Round-Trip
 
-### Client-Side
-
-- kitchen_name required on every entry
-- image required when skip is false
-- No duplicate exact kitchen_name values
-- Pattern entries must contain at least one `*` or `?` when is_pattern is true
-
-### Server-Side
-
-- All client-side checks repeated
-- Warn (not error) on unmapped discovered platforms
-- Warn on zero-match patterns
-- Warn on overlapping patterns
+- Mapped platform → `{kitchen_name: "rhel-9", image: "rhel9-tmpl"}`
+- Skipped platform → `{kitchen_name: "rhel-9", skip: true}`
 
 ## Testing
 
-### Backend
+### Backend (13 tests)
 
-- Pattern matching: exact match, glob with `*`, glob with `?`, first-match-wins ordering, exact-match priority over patterns, skip entries, no match
-- Status endpoint: empty platforms, empty config, full mapping, partial mapping, with/without hypervisor
-- Enhanced validation: unmapped warning, zero-match pattern warning, overlapping pattern warning
+- Status endpoint: empty platforms, empty config, full/partial mapping
+- Node platform merging: node-only, kitchen+node overlap, mapped status
+- Pattern matching: exact match, glob fallback, skip entries
 
-### Frontend
+### Frontend (9 tests)
 
-- Mapping status banner renders correct counts
-- Unmapped platforms panel shows correct platforms
-- Add-mapping from unmapped platform pre-fills kitchen_name
-- Skip toggle disables image dropdown
-- Pattern toggle enables glob matching
-- Reordering updates match priority
+- Discovered platforms render in table
+- Source / OS family badges display correctly
+- Cookbook and node counts shown
+- Pre-selects mapped images; unmapped default to skip
+- Image selection updates config state
+- Mapping status badges render
+- Empty state when no platforms discovered
 
 ## Related Specifications
 
