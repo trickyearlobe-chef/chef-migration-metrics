@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -669,4 +670,85 @@ func removeLocalGitClone(r *Router, cookbookName string) bool {
 	}
 	r.logf("INFO", "removed local git clone for %s at %s", cookbookName, repoDir)
 	return true
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/git-repos/excluded
+// ---------------------------------------------------------------------------
+
+// handleListExcludedGitRepos returns all git repos excluded from kitchen
+// testing.
+func (r *Router) handleListExcludedGitRepos(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	repos, err := r.db.ListExcludedGitRepos(req.Context())
+	if err != nil {
+		r.logf("ERROR", "git-repos: listing excluded repos: %v", err)
+		WriteInternalError(w, "Failed to list excluded git repos.")
+		return
+	}
+	if repos == nil {
+		repos = []datastore.GitRepo{}
+	}
+	WriteJSON(w, http.StatusOK, repos)
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/git-repos/:name/exclude
+// ---------------------------------------------------------------------------
+
+// handleGitRepoExclude marks a git repo as excluded from kitchen testing.
+func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, name string) {
+	if !requirePOST(w, req) {
+		return
+	}
+
+	var body struct {
+		Reason     string `json:"reason"`
+		ExcludedBy string `json:"excluded_by"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
+		return
+	}
+
+	err := r.db.SetGitRepoKitchenExclusion(req.Context(), name, body.Reason, body.ExcludedBy)
+	if err != nil {
+		if errors.Is(err, datastore.ErrNotFound) {
+			WriteNotFound(w, fmt.Sprintf("Git repo %q not found.", name))
+			return
+		}
+		r.logf("ERROR", "git-repos: excluding repo %s: %v", name, err)
+		WriteInternalError(w, "Failed to exclude git repo.")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{
+		"message": fmt.Sprintf("Git repo %q excluded from kitchen testing.", name),
+	})
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/v1/git-repos/:name/exclude
+// ---------------------------------------------------------------------------
+
+// handleGitRepoClearExclusion removes the kitchen exclusion flag from a
+// git repo.
+func (r *Router) handleGitRepoClearExclusion(w http.ResponseWriter, req *http.Request, name string) {
+	if !requireMethod(w, req, http.MethodDelete) {
+		return
+	}
+
+	err := r.db.ClearGitRepoKitchenExclusion(req.Context(), name)
+	if err != nil {
+		if errors.Is(err, datastore.ErrNotFound) {
+			WriteNotFound(w, fmt.Sprintf("Git repo %q not found.", name))
+			return
+		}
+		r.logf("ERROR", "git-repos: clearing exclusion for repo %s: %v", name, err)
+		WriteInternalError(w, "Failed to clear git repo exclusion.")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
