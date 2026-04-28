@@ -58,7 +58,7 @@ The application ships with the following default mappings. These are loaded into
 | Platform | Version Prefix | Display Name |
 |---|---|---|
 | windows | 10.0.26200 | Win11 25H2 |
-| windows | 10.0.26100 | Win11 24H2 |
+| windows | 10.0.26100 | Win11 24H2 / Server 2025 |
 | windows | 10.0.22631 | Win11 23H2 |
 | windows | 10.0.22621 | Win11 22H2 |
 | windows | 10.0.22000 | Win11 21H2 |
@@ -91,9 +91,7 @@ The application ships with the following default mappings. These are loaded into
 
 Most Linux distributions use readable major.minor versioning (e.g. `redhat 9.3`, `centos 7`) and do not need display name mappings. Ubuntu is included because its YY.MM versioning is less intuitive and codenames are widely used. Admins can add mappings for any platform via the admin UI.
 
-Note: The `10.0.17763` prefix maps to both Win10 1809 and Server 2019 because Ohai reports the same build number for both. This is a known limitation — the display name includes both possibilities. Admins can override if their fleet is exclusively one or the other.
-
-Note: The `10.0.26100` prefix maps to both Win11 24H2 and Server 2025 in some builds. The defaults list them separately using more specific prefixes where possible (`10.0.26334` for Server 2025). Admins should adjust based on their fleet.
+Note: The `10.0.17763` prefix maps to both Win10 1809 and Server 2019 because Ohai reports the same build number for both. Similarly, `10.0.26100` is shared between Win11 24H2 and some Server 2025 builds. These display names include both possibilities. The more-specific `10.0.26334` prefix distinguishes Server 2025 builds that report a higher build number. Admins can override if their fleet is exclusively one or the other.
 
 ### Keeping Defaults Current
 
