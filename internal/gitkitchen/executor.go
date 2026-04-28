@@ -5,10 +5,12 @@ package gitkitchen
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +44,7 @@ type RunInstanceParams struct {
 type RunInstanceResult struct {
 	Passed          *bool
 	TimedOut        bool
+	NetworkTimeout  bool
 	Output          string // combined stdout+stderr
 	DurationSeconds *int
 	ErrorMessage    string
@@ -123,6 +126,13 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 
 	if execErr != nil {
 		result.ErrorMessage = fmt.Sprintf("gitkitchen: executor error: %v", execErr)
+		if errors.Is(execErr, context.DeadlineExceeded) {
+			result.TimedOut = true
+			if !hasConvergeActivity(output) {
+				result.NetworkTimeout = true
+				result.ErrorMessage = "probable DHCP/network timeout"
+			}
+		}
 		// Passed remains nil — unknown state
 	} else {
 		passed := exitCode == 0
@@ -181,3 +191,18 @@ func combineOutput(stdout, stderr string) string {
 
 func boolPtr(v bool) *bool { return &v }
 func intPtr(v int) *int    { return &v }
+
+// convergePatterns matches lines that indicate Chef converge activity started.
+var convergePatterns = regexp.MustCompile(
+	`(?i)(Converging \d+ resource|` +
+		`\* \S+\[.*\] action |` +
+		`Recipe: |` +
+		`Starting Chef (Infra )?Client|` +
+		`resolving cookbooks)`)
+
+// hasConvergeActivity returns true if the combined output contains evidence
+// that Chef actually began converging. Used to distinguish network/DHCP
+// timeouts (VM never booted) from real test failures.
+func hasConvergeActivity(output string) bool {
+	return convergePatterns.MatchString(output)
+}

@@ -495,7 +495,14 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 			errMsg := ""
 			if result.Passed == nil || !*result.Passed {
 				status = "failed"
-				if result.ErrorMessage != "" {
+				if result.NetworkTimeout {
+					status = "network_timeout"
+					errMsg = result.ErrorMessage
+					r.logf("WARN", "kitchen-batches: network timeout on %s platform %s", repoName, inst.PlatformName)
+				} else if result.TimedOut {
+					status = "timed_out"
+					errMsg = result.ErrorMessage
+				} else if result.ErrorMessage != "" {
 					status = "errored"
 					errMsg = result.ErrorMessage
 				}
