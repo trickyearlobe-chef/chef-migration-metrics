@@ -149,6 +149,20 @@ function setupDefaultMocks() {
   vi.mocked(api.deleteKitchenBatch).mockResolvedValue(undefined);
   vi.mocked(api.excludeGitRepo).mockResolvedValue(undefined);
   vi.mocked(api.clearGitRepoExclusion).mockResolvedValue(undefined);
+  vi.mocked(api.fetchTestKitchenConfig).mockResolvedValue({
+    config: {
+      enabled: false,
+      driver: "",
+      timeout_minutes: 30,
+      driver_settings: {},
+      driver_secrets: {},
+      image_field_name: "",
+      chef_license_key_credential: "",
+      images: [],
+      platform_map: [],
+    },
+    source: "database",
+  });
 }
 
 describe("KitchenBatchesPage", () => {
