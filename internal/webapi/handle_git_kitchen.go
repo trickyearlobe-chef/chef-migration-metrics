@@ -187,7 +187,7 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 	bgCtx := context.WithoutCancel(ctx)
 
 	go func() {
-		_, runErr := r.gitKitchenScheduler.RunOne(bgCtx, plan, body.InstanceName, cfg)
+		_, runErr := r.gitKitchenScheduler.RunOne(bgCtx, plan, body.InstanceName, cfg, tkCfg)
 		if runErr != nil {
 			r.logf("ERROR", "git kitchen run async: %v", runErr)
 		}

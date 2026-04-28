@@ -1121,7 +1121,6 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			&nodekitchen.DefaultExecutor{Path: app.kitchenPath},
 			&nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
 			app.db,
-			app.cfg.AnalysisTools.TestKitchen,
 			func(name, _ string) string {
 				return filepath.Join(app.cfg.Storage.GitCookbookDir, name)
 			},
