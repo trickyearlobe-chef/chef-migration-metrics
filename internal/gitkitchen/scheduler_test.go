@@ -506,3 +506,154 @@ func TestScheduler_RunOne_UsesCallerTKConfig(t *testing.T) {
 		t.Errorf("expected runFn to receive driver %q, got %q", "proxmox-caller", receivedDriver)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// RunBatch tests
+// ---------------------------------------------------------------------------
+
+func testPlanNamed(name string, instances []PlannedInstance) *PlanResult {
+	return &PlanResult{
+		GitRepoName: name,
+		GitRepoURL:  "https://git.example.com/org/" + name + ".git",
+		CommitSHA:   "abc123",
+		Instances:   instances,
+		Total:       len(instances),
+	}
+}
+
+func TestScheduler_RunBatch_MultiRepo(t *testing.T) {
+	store := &mockResultStore{}
+	exec := &schedulerMockExecutor{
+		results: map[string]mockExecResult{},
+	}
+
+	plans := []*PlanResult{
+		testPlanNamed("cookbook-a", []PlannedInstance{
+			mappedInstance("default-ubuntu-2204"),
+		}),
+		testPlanNamed("cookbook-b", []PlannedInstance{
+			mappedInstance("default-ubuntu-2204"),
+			mappedInstance("default-centos-8"),
+		}),
+	}
+
+	s := newTestScheduler(exec, store)
+	result, err := s.RunBatch(context.Background(), plans, testSchedulerConfig(), testTKConfig(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Total != 3 {
+		t.Errorf("total = %d, want 3", result.Total)
+	}
+	if result.Passed != 3 {
+		t.Errorf("passed = %d, want 3", result.Passed)
+	}
+
+	// Verify all 3 results were persisted.
+	store.mu.Lock()
+	if len(store.results) != 3 {
+		t.Errorf("stored results = %d, want 3", len(store.results))
+	}
+	store.mu.Unlock()
+}
+
+func TestScheduler_RunBatch_SkipsNonMapped(t *testing.T) {
+	store := &mockResultStore{}
+	exec := &schedulerMockExecutor{}
+
+	plans := []*PlanResult{
+		testPlanNamed("cookbook-a", []PlannedInstance{
+			mappedInstance("default-ubuntu-2204"),
+			{InstanceName: "default-win-2022", SuiteName: "default", PlatformName: "win-2022", Status: InstanceStatusUnmapped},
+		}),
+	}
+
+	s := newTestScheduler(exec, store)
+	result, err := s.RunBatch(context.Background(), plans, testSchedulerConfig(), testTKConfig(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Total != 1 {
+		t.Errorf("total = %d, want 1 (only mapped)", result.Total)
+	}
+}
+
+func TestScheduler_RunBatch_ProgressCallback(t *testing.T) {
+	store := &mockResultStore{}
+	exec := &schedulerMockExecutor{}
+
+	plans := []*PlanResult{
+		testPlanNamed("cookbook-a", []PlannedInstance{mappedInstance("default-ubuntu-2204")}),
+		testPlanNamed("cookbook-b", []PlannedInstance{mappedInstance("default-centos-8")}),
+	}
+
+	var progressCalls []string
+	cb := func(completed, total int, repoName string, inst PlannedInstance, _ RunInstanceResult) {
+		progressCalls = append(progressCalls, fmt.Sprintf("%s/%s:%d/%d", repoName, inst.InstanceName, completed, total))
+	}
+
+	s := newTestScheduler(exec, store)
+	cfg := testSchedulerConfig()
+	cfg.MaxConcurrency = 1 // force sequential for deterministic order
+	_, err := s.RunBatch(context.Background(), plans, cfg, testTKConfig(), cb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(progressCalls) != 2 {
+		t.Fatalf("progress calls = %d, want 2; got %v", len(progressCalls), progressCalls)
+	}
+}
+
+func TestScheduler_RunBatch_Cancellation_GracefulDrain(t *testing.T) {
+	store := &mockResultStore{}
+	exec := &schedulerMockExecutor{
+		delay: 50 * time.Millisecond,
+	}
+
+	plans := []*PlanResult{
+		testPlanNamed("cookbook-a", []PlannedInstance{
+			mappedInstance("inst-1"),
+			mappedInstance("inst-2"),
+			mappedInstance("inst-3"),
+			mappedInstance("inst-4"),
+		}),
+	}
+
+	cfg := testSchedulerConfig()
+	cfg.MaxConcurrency = 1
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	s := newTestScheduler(exec, store)
+	result, err := s.RunBatch(ctx, plans, cfg, testTKConfig(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// With 50ms delay and 100ms timeout at concurrency 1, we expect ~2 to
+	// execute and the rest to be cancelled.
+	if result.Cancelled == 0 {
+		t.Errorf("expected some cancelled instances, got 0")
+	}
+	if result.Total != 4 {
+		t.Errorf("total = %d, want 4", result.Total)
+	}
+}
+
+func TestScheduler_RunBatch_EmptyPlans(t *testing.T) {
+	store := &mockResultStore{}
+	exec := &schedulerMockExecutor{}
+	s := newTestScheduler(exec, store)
+
+	result, err := s.RunBatch(context.Background(), nil, testSchedulerConfig(), testTKConfig(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Total != 0 {
+		t.Errorf("total = %d, want 0", result.Total)
+	}
+}

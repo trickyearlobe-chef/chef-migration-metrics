@@ -5,6 +5,7 @@ package webapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
@@ -128,5 +129,49 @@ func (r *Router) handleHypervisorCleanup(w http.ResponseWriter, req *http.Reques
 		WriteInternalError(w, "Orphan cleanup failed.")
 		return
 	}
+	WriteJSON(w, http.StatusOK, result)
+}
+
+// handleOrphanSweep performs a hypervisor-side orphan sweep by listing VMs
+// directly from the hypervisor and destroying those exceeding the age
+// threshold based on the timestamp embedded in their names.
+//
+//	POST /api/v1/kitchen/orphan-sweep?dry_run=true
+func (r *Router) handleOrphanSweep(w http.ResponseWriter, req *http.Request) {
+	if !requirePOST(w, req) {
+		return
+	}
+
+	if r.hypervisor == nil {
+		WriteJSON(w, http.StatusOK, &hypervisor.SweepResult{
+			Details: []hypervisor.SweepDetail{},
+		})
+		return
+	}
+
+	// dry_run defaults to true for safety.
+	dryRun := true
+	if req.URL.Query().Get("dry_run") == "false" {
+		dryRun = false
+	}
+
+	cfg := r.liveConfig().AnalysisTools.TestKitchen
+	prefix := cfg.EffectiveVMNamePrefix()
+	ageThreshold := cfg.EffectiveOrphanSweepAge()
+
+	ctx := req.Context()
+	result, err := hypervisor.SweepOrphanVMs(ctx, r.hypervisor, prefix, ageThreshold, dryRun)
+	if err != nil {
+		r.logf("ERROR", "orphan sweep failed: %v", err)
+		WriteInternalError(w, "Orphan sweep failed.")
+		return
+	}
+
+	r.hub.Broadcast(Event{
+		Type:      "orphan_sweep_complete",
+		Timestamp: time.Now().UTC(),
+		Data:      result,
+	})
+
 	WriteJSON(w, http.StatusOK, result)
 }

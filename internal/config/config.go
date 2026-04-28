@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -249,6 +250,15 @@ type TestKitchenConfig struct {
 	// MaxConcurrentVMs is the global ceiling on concurrent VMs across
 	// all batches. Defaults to 10.
 	MaxConcurrentVMs int `yaml:"max_concurrent_vms" json:"max_concurrent_vms"`
+
+	// OrphanSweepIntervalMinutes controls how often the background
+	// hypervisor-side orphan sweep runs. 0 = default (30 min), -1 =
+	// disabled. Minimum 5 minutes when positive.
+	OrphanSweepIntervalMinutes int `yaml:"orphan_sweep_interval_minutes" json:"orphan_sweep_interval_minutes"`
+
+	// OrphanSweepAgeMinutes is the minimum VM age before a VM is
+	// eligible for sweep destruction. 0 = default (2× timeout).
+	OrphanSweepAgeMinutes int `yaml:"orphan_sweep_age_minutes" json:"orphan_sweep_age_minutes"`
 }
 
 // ImageEntry defines a single infrastructure image in the image registry.
@@ -400,6 +410,30 @@ func (c TestKitchenConfig) EffectiveHypervisorType() string {
 	default:
 		return ""
 	}
+}
+
+// EffectiveOrphanSweepInterval returns the sweep interval duration.
+// Returns 30 min if 0, 0 (disabled) if -1, minimum 5 min when positive.
+func (tk *TestKitchenConfig) EffectiveOrphanSweepInterval() time.Duration {
+	switch {
+	case tk.OrphanSweepIntervalMinutes < 0:
+		return 0
+	case tk.OrphanSweepIntervalMinutes == 0:
+		return 30 * time.Minute
+	case tk.OrphanSweepIntervalMinutes < 5:
+		return 5 * time.Minute
+	default:
+		return time.Duration(tk.OrphanSweepIntervalMinutes) * time.Minute
+	}
+}
+
+// EffectiveOrphanSweepAge returns the minimum VM age before sweep
+// destruction. Returns 2× EffectiveTimeoutMinutes if 0.
+func (tk *TestKitchenConfig) EffectiveOrphanSweepAge() time.Duration {
+	if tk.OrphanSweepAgeMinutes > 0 {
+		return time.Duration(tk.OrphanSweepAgeMinutes) * time.Minute
+	}
+	return time.Duration(2*tk.EffectiveTimeoutMinutes()) * time.Minute
 }
 
 // ---------------------------------------------------------------------------

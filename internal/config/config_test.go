@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -3238,4 +3239,61 @@ analysis_tools:
     max_concurrent_vms: -1
 `
 	expectParseError(t, yaml, "max_concurrent_vms must be >= 0")
+}
+
+// ---------------------------------------------------------------------------
+// EffectiveOrphanSweepInterval
+// ---------------------------------------------------------------------------
+
+func TestTestKitchenConfig_EffectiveOrphanSweepInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    int
+		expected time.Duration
+	}{
+		{"zero returns default 30min", 0, 30 * time.Minute},
+		{"negative disables", -1, 0},
+		{"below minimum clamped to 5min", 3, 5 * time.Minute},
+		{"exactly 5min allowed", 5, 5 * time.Minute},
+		{"custom value", 15, 15 * time.Minute},
+		{"large value", 120, 120 * time.Minute},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tk := &TestKitchenConfig{OrphanSweepIntervalMinutes: tc.input}
+			got := tk.EffectiveOrphanSweepInterval()
+			if got != tc.expected {
+				t.Errorf("EffectiveOrphanSweepInterval() = %v, want %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EffectiveOrphanSweepAge
+// ---------------------------------------------------------------------------
+
+func TestTestKitchenConfig_EffectiveOrphanSweepAge(t *testing.T) {
+	tests := []struct {
+		name           string
+		ageMinutes     int
+		timeoutMinutes int
+		expected       time.Duration
+	}{
+		{"zero uses 2x default timeout (30)", 0, 0, 60 * time.Minute},
+		{"zero uses 2x configured timeout", 0, 45, 90 * time.Minute},
+		{"explicit value", 120, 30, 120 * time.Minute},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tk := &TestKitchenConfig{
+				OrphanSweepAgeMinutes: tc.ageMinutes,
+				TimeoutMinutes:        tc.timeoutMinutes,
+			}
+			got := tk.EffectiveOrphanSweepAge()
+			if got != tc.expected {
+				t.Errorf("EffectiveOrphanSweepAge() = %v, want %v", got, tc.expected)
+			}
+		})
+	}
 }

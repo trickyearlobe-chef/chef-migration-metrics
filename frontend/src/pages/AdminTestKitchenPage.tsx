@@ -5,6 +5,7 @@ import {
   deleteTestKitchenConfig,
   fetchCredentials,
   fetchPlatformMappingStatus,
+  runOrphanSweep,
   ApiError,
 } from "../api";
 import type {
@@ -14,6 +15,7 @@ import type {
   PlatformMapTransport,
   Credential,
   PlatformMappingStatusResponse,
+  SweepResult,
 } from "../types";
 
 const DRIVERS = ["proxmox", "vcenter", "vra", "ec2", "vagrant"];
@@ -1025,6 +1027,9 @@ export function AdminTestKitchenPage() {
         saving={saving}
       />
 
+      {/* Section 7: Orphan Sweep */}
+      <OrphanSweepSection />
+
       {/* Footer: Save + Revert */}
       <div className="flex items-center justify-between border-t border-gray-200 pt-4">
         <button
@@ -1049,6 +1054,152 @@ export function AdminTestKitchenPage() {
           {saving ? "Saving…" : "Save Configuration"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function OrphanSweepSection() {
+  const [dryRun, setDryRun] = useState(true);
+  const [sweeping, setSweeping] = useState(false);
+  const [result, setResult] = useState<SweepResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSweep() {
+    setSweeping(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await runOrphanSweep(dryRun);
+      setResult(res);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Sweep failed");
+    } finally {
+      setSweeping(false);
+    }
+  }
+
+  function formatAge(seconds: number): string {
+    const mins = Math.round(seconds / 60);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    const rem = mins % 60;
+    return `${hrs}h ${rem}m`;
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500">
+        VM Orphan Sweep
+      </h3>
+      <p className="mb-4 text-xs text-gray-400">
+        Scan the hypervisor for stale Test Kitchen VMs and optionally destroy
+        them.
+      </p>
+
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="sweep-dry-run"
+            checked={dryRun}
+            onChange={(e) => setDryRun(e.target.checked)}
+            disabled={sweeping}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label
+            htmlFor="sweep-dry-run"
+            className="text-sm font-medium text-gray-700"
+          >
+            Dry Run
+          </label>
+        </div>
+        <button
+          type="button"
+          onClick={handleSweep}
+          disabled={sweeping}
+          className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+        >
+          {sweeping ? "Sweeping…" : "Run Sweep"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap gap-3 text-sm">
+            {result.dry_run && (
+              <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                dry run
+              </span>
+            )}
+            <span className="text-gray-600">
+              Scanned: <strong>{result.scanned}</strong>
+            </span>
+            <span className="text-gray-600">
+              Destroyed: <strong>{result.destroyed}</strong>
+            </span>
+            <span className="text-gray-600">
+              Too young: <strong>{result.skipped_too_young}</strong>
+            </span>
+            <span className="text-gray-600">
+              Unparsed: <strong>{result.skipped_unparsed}</strong>
+            </span>
+            {result.errors > 0 && (
+              <span className="text-red-600">
+                Errors: <strong>{result.errors}</strong>
+              </span>
+            )}
+          </div>
+
+          {result.details.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500">
+                    <th className="pb-2 pr-3 font-medium">VM Name</th>
+                    <th className="pb-2 pr-3 font-medium">Age</th>
+                    <th className="pb-2 pr-3 font-medium">Action</th>
+                    <th className="pb-2 font-medium">Error</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {result.details.map((d, i) => (
+                    <tr key={i}>
+                      <td className="py-1.5 pr-3 font-medium text-gray-800">
+                        {d.vm_name}
+                      </td>
+                      <td className="py-1.5 pr-3 tabular-nums text-gray-600">
+                        {formatAge(d.age_seconds)}
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        <span
+                          className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            d.action === "destroyed"
+                              ? "bg-red-100 text-red-700"
+                              : d.action === "would_destroy"
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {d.action}
+                        </span>
+                      </td>
+                      <td className="py-1.5 text-red-600">
+                        {d.error ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -388,3 +388,27 @@ func TestHandleGitKitchenRun_ContextDetachedFromRequest(t *testing.T) {
 		t.Log("goroutine did not reach store upsert (expected with nil executor)")
 	}
 }
+
+func TestHandleGitKitchenRun_POST_DisabledReturns409(t *testing.T) {
+	disabled := false
+	store := &mockStore{}
+
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen.Enabled = &disabled
+
+	sched := gitkitchen.NewScheduler(nil, nil, nil,
+		func(name, url string) string { return "/repos/" + name })
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+
+	body := `{"git_repo_name":"my-cookbook","instance_name":"default-ubuntu-2204","target_chef_version":"18.5.0"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}

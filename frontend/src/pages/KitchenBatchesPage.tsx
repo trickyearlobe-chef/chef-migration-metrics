@@ -13,6 +13,7 @@ import {
   excludeGitRepo,
   clearGitRepoExclusion,
   fetchBatchProgress,
+  fetchTestKitchenConfig,
 } from "../api";
 import type {
   KitchenBatch,
@@ -32,9 +33,11 @@ import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700",
   previewing: "bg-blue-100 text-blue-700",
+  preparing: "bg-indigo-100 text-indigo-700",
   running: "bg-yellow-100 text-yellow-800",
   completed: "bg-green-100 text-green-700",
   cancelled: "bg-red-100 text-red-700",
+  failed: "bg-red-200 text-red-800",
 };
 
 function BatchProgressBar({ progress }: { progress: BatchProgress }) {
@@ -64,6 +67,13 @@ function BatchProgressBar({ progress }: { progress: BatchProgress }) {
             title={`Timed out: ${progress.timed_out}`}
           />
         )}
+        {progress.network_timeout > 0 && (
+          <div
+            className="bg-violet-400"
+            style={{ width: pct(progress.network_timeout) }}
+            title={`Network timeout: ${progress.network_timeout}`}
+          />
+        )}
         {progress.errored > 0 && (
           <div
             className="bg-orange-400"
@@ -83,6 +93,7 @@ function BatchProgressBar({ progress }: { progress: BatchProgress }) {
         <span>✅ {progress.passed} passed</span>
         <span>❌ {progress.failed} failed</span>
         <span>⏱ {progress.timed_out} timed out</span>
+        <span>🔌 {progress.network_timeout} network timeout</span>
         <span>⚠️ {progress.errored} errored</span>
         <span>⏳ {progress.pending} pending</span>
         <span className="font-medium">Total: {progress.total}</span>
@@ -419,14 +430,16 @@ function BatchDetailView({
   useEffect(() => {
     if (
       batch.status === "running" ||
+      batch.status === "preparing" ||
       batch.status === "completed" ||
-      batch.status === "cancelled"
+      batch.status === "cancelled" ||
+      batch.status === "failed"
     ) {
       fetchBatchProgress(batch.id)
         .then(setProgress)
         .catch(() => {});
     }
-    if (batch.status === "running") {
+    if (batch.status === "running" || batch.status === "preparing") {
       const interval = setInterval(() => {
         fetchBatchProgress(batch.id)
           .then(setProgress)
@@ -614,14 +627,15 @@ function BatchDetailView({
             {busy ? "Starting…" : "Run Batch"}
           </button>
         )}
-        {(batch.status === "running" || batch.status === "previewing") && (
+        {(batch.status === "running" || batch.status === "previewing" || batch.status === "preparing") && (
           <button className={BTN_DANGER} disabled={busy} onClick={onCancel}>
             {busy ? "Cancelling…" : "Cancel Batch"}
           </button>
         )}
         {(batch.status === "draft" ||
           batch.status === "completed" ||
-          batch.status === "cancelled") && (
+          batch.status === "cancelled" ||
+          batch.status === "failed") && (
           <button className={BTN_DANGER} disabled={busy} onClick={onDelete}>
             Delete
           </button>
@@ -855,6 +869,7 @@ export default function KitchenBatchesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tkEnabled, setTkEnabled] = useState<boolean | null>(null);
 
   const loadBatches = useCallback(async () => {
     setLoading(true);
@@ -871,6 +886,9 @@ export default function KitchenBatchesPage() {
 
   useEffect(() => {
     loadBatches();
+    fetchTestKitchenConfig()
+      .then((res) => setTkEnabled(res.config.enabled === true))
+      .catch(() => setTkEnabled(false));
   }, [loadBatches]);
 
   async function handleCreate(form: BatchFormData) {
@@ -1071,14 +1089,21 @@ export default function KitchenBatchesPage() {
                         </button>
                         {b.status === "draft" && (
                           <button
-                            className="text-sm font-medium text-green-600 hover:text-green-800"
+                            className="text-sm font-medium text-green-600 hover:text-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
                             onClick={() => handleView(b.id)}
+                            disabled={tkEnabled !== true}
+                            title={
+                              tkEnabled !== true
+                                ? "Enable Test Kitchen in settings to run batches"
+                                : "Run batch"
+                            }
                           >
                             Run
                           </button>
                         )}
                         {(b.status === "running" ||
-                          b.status === "previewing") && (
+                          b.status === "previewing" ||
+                          b.status === "preparing") && (
                           <button
                             className="text-sm font-medium text-red-600 hover:text-red-800"
                             onClick={async () => {
@@ -1099,7 +1124,8 @@ export default function KitchenBatchesPage() {
                         )}
                         {(b.status === "draft" ||
                           b.status === "completed" ||
-                          b.status === "cancelled") && (
+                          b.status === "cancelled" ||
+                          b.status === "failed") && (
                           <button
                             className="text-sm font-medium text-red-600 hover:text-red-800"
                             onClick={async () => {

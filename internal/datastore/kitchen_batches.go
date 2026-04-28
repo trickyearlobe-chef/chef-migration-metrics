@@ -17,10 +17,12 @@ import (
 
 const (
 	BatchStatusDraft      = "draft"
+	BatchStatusPreparing  = "preparing"
 	BatchStatusPreviewing = "previewing"
 	BatchStatusRunning    = "running"
 	BatchStatusCompleted  = "completed"
 	BatchStatusCancelled  = "cancelled"
+	BatchStatusFailed     = "failed"
 )
 
 // ---------------------------------------------------------------------------
@@ -429,4 +431,25 @@ func scanKitchenBatches(rows *sql.Rows, err error) ([]KitchenBatch, error) {
 		return nil, fmt.Errorf("datastore: iterating kitchen batch rows: %w", err)
 	}
 	return batches, nil
+}
+
+// CancelStaleBatches transitions any batches in "running" or "preparing"
+// status to "cancelled" with a completed_at timestamp. This is called at
+// startup to clean up batches that were interrupted by a process restart.
+// Returns the number of batches cancelled.
+func (db *DB) CancelStaleBatches(ctx context.Context, now time.Time) (int, error) {
+	const query = `
+		UPDATE kitchen_batches
+		SET status = 'cancelled', completed_at = $1
+		WHERE status IN ('running', 'preparing')`
+
+	res, err := db.q().ExecContext(ctx, query, now)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: cancelling stale batches: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("datastore: rows affected: %w", err)
+	}
+	return int(n), nil
 }

@@ -12,8 +12,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 )
+
+// noopResultStore satisfies gitkitchen.ResultStore for handler tests
+// where background goroutine execution is not under test.
+type noopResultStore struct{}
+
+func (noopResultStore) UpsertGitKitchenResult(_ context.Context, _ datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error) {
+	return datastore.GitKitchenResult{}, nil
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/kitchen/batches
@@ -421,6 +431,9 @@ func TestHandleCancelKitchenBatch_Success(t *testing.T) {
 				CreatedAt: time.Now(),
 			}, nil
 		},
+		CancelPendingBatchInstancesFn: func(_ context.Context, _ string) (int, error) {
+			return 0, nil
+		},
 	}
 	r := newTestRouterWithMock(store)
 
@@ -573,5 +586,352 @@ func TestHandleListExcludedGitRepos_Success(t *testing.T) {
 	}
 	if len(repos) != 2 {
 		t.Fatalf("len = %d, want 2", len(repos))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/kitchen/batches/:id/run — IsEnabled gate
+// ---------------------------------------------------------------------------
+
+func TestHandleRunKitchenBatch_DisabledReturns409(t *testing.T) {
+	disabled := false
+	store := &mockStore{
+		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{
+				ID:     id,
+				Name:   "My batch",
+				Status: datastore.BatchStatusDraft,
+				DryRun: true,
+			}, nil
+		},
+	}
+
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen.Enabled = &disabled
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, cfg, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/run", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Batch execution wiring tests
+// ---------------------------------------------------------------------------
+
+func TestHandleRunKitchenBatch_NonDryRun_Returns202(t *testing.T) {
+	statusCalls := []string{}
+	store := &mockStore{
+		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{
+				ID:     id,
+				Name:   "Real batch",
+				Status: datastore.BatchStatusDraft,
+				DryRun: false,
+				Filters: datastore.BatchFilters{
+					CookbookNames:      []string{"my-cookbook"},
+					TargetChefVersions: []string{"18.5.0"},
+				},
+				CreatedAt: time.Now(),
+			}, nil
+		},
+		UpdateKitchenBatchStatusFn: func(_ context.Context, id string, status string, _ time.Time) (datastore.KitchenBatch, error) {
+			statusCalls = append(statusCalls, status)
+			return datastore.KitchenBatch{
+				ID:        id,
+				Name:      "Real batch",
+				Status:    status,
+				CreatedAt: time.Now(),
+			}, nil
+		},
+		ListGitReposFn: func(_ context.Context) ([]datastore.GitRepo, error) {
+			return []datastore.GitRepo{
+				{Name: "my-cookbook", GitRepoURL: "https://git.example.com/my-cookbook.git", HasTestSuite: true},
+			}, nil
+		},
+		GetKitchenAnalysisResultByNameFn: func(_ context.Context, name string) (*datastore.KitchenAnalysisResult, error) {
+			return &datastore.KitchenAnalysisResult{
+				GitRepoName:   name,
+				GitRepoURL:    "https://git.example.com/" + name + ".git",
+				HeadCommitSHA: "abc123",
+				Platforms:     json.RawMessage(`[{"name":"ubuntu-22.04"}]`),
+				Suites:        json.RawMessage(`[{"name":"default"}]`),
+			}, nil
+		},
+		CreateBatchInstancesFn: func(_ context.Context, params []datastore.CreateBatchInstanceParams) ([]datastore.KitchenBatchInstance, error) {
+			result := make([]datastore.KitchenBatchInstance, len(params))
+			for i, p := range params {
+				result[i] = datastore.KitchenBatchInstance{
+					ID:           "inst-" + p.InstanceName,
+					BatchID:      p.BatchID,
+					GitRepoName:  p.GitRepoName,
+					InstanceName: p.InstanceName,
+					Status:       "pending",
+				}
+			}
+			return result, nil
+		},
+		UpdateBatchInstanceStatusFn: func(_ context.Context, _ string, _ string, _ string, _ time.Time) error {
+			return nil
+		},
+		UpdateKitchenBatchStatusIfCurrentFn: func(_ context.Context, _ string, _, _ string, _ time.Time) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{Status: "completed"}, nil
+		},
+		CancelPendingBatchInstancesFn: func(_ context.Context, _ string) (int, error) {
+			return 0, nil
+		},
+	}
+
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen.PlatformMap = []config.PlatformMapEntry{
+		{KitchenName: "ubuntu-22.04", Image: "ubuntu-2204-template"},
+	}
+
+	noopRun := func(_ context.Context, _ gitkitchen.RunInstanceParams, _ config.TestKitchenConfig,
+		_ gitkitchen.KitchenExecutor, _ gitkitchen.CredentialResolver) gitkitchen.RunInstanceResult {
+		passed := true
+		return gitkitchen.RunInstanceResult{Passed: &passed}
+	}
+	sched := gitkitchen.NewScheduler(nil, nil, noopResultStore{},
+		func(name, url string) string { return "/repos/" + name },
+		gitkitchen.WithRunFn(noopRun))
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/run", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	// Cancel the background goroutine and wait for it to exit.
+	t.Cleanup(func() {
+		r.batchMu.Lock()
+		if fn, ok := r.runningBatch["test-uuid-1"]; ok {
+			fn()
+		}
+		r.batchMu.Unlock()
+		// Wait for the goroutine to remove itself from runningBatch.
+		for i := 0; i < 100; i++ {
+			time.Sleep(50 * time.Millisecond)
+			r.batchMu.Lock()
+			_, running := r.runningBatch["test-uuid-1"]
+			r.batchMu.Unlock()
+			if !running {
+				return
+			}
+		}
+		t.Log("WARN: background batch goroutine did not exit within 5s")
+	})
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	// First status transition should be to "preparing".
+	if len(statusCalls) == 0 || statusCalls[0] != "preparing" {
+		t.Errorf("first status transition = %v, want [preparing, ...]", statusCalls)
+	}
+}
+
+func TestHandleRunKitchenBatch_SingleRunningGuard(t *testing.T) {
+	store := &mockStore{
+		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{
+				ID:     id,
+				Name:   "Batch 2",
+				Status: datastore.BatchStatusDraft,
+				DryRun: false,
+			}, nil
+		},
+	}
+
+	cfg := testConfig()
+	sched := gitkitchen.NewScheduler(nil, nil, nil,
+		func(name, url string) string { return "/repos/" + name })
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+
+	// Simulate an already-running batch in the map.
+	r.batchMu.Lock()
+	r.runningBatch["existing-batch"] = func() {}
+	r.batchMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-2/run", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
+
+func TestHandleRunKitchenBatch_NoScheduler(t *testing.T) {
+	store := &mockStore{
+		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{
+				ID:     id,
+				Name:   "Batch",
+				Status: datastore.BatchStatusDraft,
+				DryRun: false,
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/run", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	}
+}
+
+func TestHandleCancelKitchenBatch_CallsCancelFunc(t *testing.T) {
+	cancelCalled := false
+	store := &mockStore{
+		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{
+				ID:     id,
+				Name:   "Running batch",
+				Status: datastore.BatchStatusRunning,
+			}, nil
+		},
+		UpdateKitchenBatchStatusFn: func(_ context.Context, id string, status string, _ time.Time) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{ID: id, Status: status}, nil
+		},
+		CancelPendingBatchInstancesFn: func(_ context.Context, _ string) (int, error) {
+			return 3, nil
+		},
+	}
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, testConfig(), hub)
+
+	// Register a fake cancel function.
+	r.batchMu.Lock()
+	r.runningBatch["test-uuid-1"] = func() { cancelCalled = true }
+	r.batchMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/cancel", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !cancelCalled {
+		t.Error("expected cancel function to be called")
+	}
+
+	// Cancel should NOT remove from runningBatch (goroutine does that on exit).
+	r.batchMu.Lock()
+	_, stillInMap := r.runningBatch["test-uuid-1"]
+	r.batchMu.Unlock()
+	if !stillInMap {
+		t.Error("batch should remain in runningBatch until goroutine exits")
+	}
+}
+
+func TestHandleCancelKitchenBatch_PreparingStatus(t *testing.T) {
+	store := &mockStore{
+		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{
+				ID:     id,
+				Name:   "Preparing batch",
+				Status: "preparing",
+			}, nil
+		},
+		UpdateKitchenBatchStatusFn: func(_ context.Context, id string, status string, _ time.Time) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{ID: id, Status: status}, nil
+		},
+		CancelPendingBatchInstancesFn: func(_ context.Context, _ string) (int, error) {
+			return 0, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/cancel", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/kitchen/batches/:id/progress
+// ---------------------------------------------------------------------------
+
+func TestHandleBatchProgress_Success(t *testing.T) {
+	store := &mockStore{
+		CountBatchInstancesByStatusFn: func(_ context.Context, _ string) (map[string]int, error) {
+			return map[string]int{
+				"pending": 5,
+				"running": 2,
+				"passed":  10,
+				"failed":  1,
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/batches/test-uuid-1/progress", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]int
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result["total"] != 18 {
+		t.Errorf("total = %d, want 18", result["total"])
+	}
+	if result["passed"] != 10 {
+		t.Errorf("passed = %d, want 10", result["passed"])
+	}
+	if result["pending"] != 5 {
+		t.Errorf("pending = %d, want 5", result["pending"])
+	}
+}
+
+func TestHandleBatchProgress_Empty(t *testing.T) {
+	store := &mockStore{
+		CountBatchInstancesByStatusFn: func(_ context.Context, _ string) (map[string]int, error) {
+			return map[string]int{}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/batches/test-uuid-1/progress", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]int
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result["total"] != 0 {
+		t.Errorf("total = %d, want 0", result["total"])
 	}
 }

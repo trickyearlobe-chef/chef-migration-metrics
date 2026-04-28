@@ -164,6 +164,11 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
 	}
 
+	if !tkCfg.IsEnabled() {
+		WriteError(w, http.StatusConflict, "conflict", "Test Kitchen is disabled.")
+		return
+	}
+
 	analysis, err := r.db.GetKitchenAnalysisResultByName(ctx, body.GitRepoName)
 	if err != nil {
 		r.logf("ERROR", "git kitchen run: lookup %q: %v", body.GitRepoName, err)

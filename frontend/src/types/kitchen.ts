@@ -132,7 +132,7 @@ export interface KitchenBatch {
   max_count: number | null;
   max_concurrent_vms: number | null;
   dry_run: boolean;
-  status: "draft" | "previewing" | "running" | "completed" | "cancelled";
+  status: "draft" | "previewing" | "preparing" | "running" | "completed" | "cancelled" | "failed";
   created_by?: string;
   created_at: string;
   started_at?: string;
@@ -176,8 +176,27 @@ export interface BatchProgress {
   failed: number;
   pending: number;
   timed_out: number;
+  network_timeout: number;
   errored: number;
   total: number;
+}
+
+export interface SweepResult {
+  scanned: number;
+  destroyed: number;
+  skipped_too_young: number;
+  skipped_unparsed: number;
+  errors: number;
+  dry_run: boolean;
+  details: SweepDetail[];
+}
+
+export interface SweepDetail {
+  vm_name: string;
+  hypervisor_id: string;
+  age_seconds: number;
+  action: string;
+  error?: string;
 }
 
 export interface KitchenAnalysisCookbook {

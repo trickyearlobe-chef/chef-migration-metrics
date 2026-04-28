@@ -144,6 +144,16 @@ type mockStore struct {
 	UpdateKitchenBatchFn       func(ctx context.Context, id string, p datastore.UpdateKitchenBatchParams) (datastore.KitchenBatch, error)
 	UpdateKitchenBatchStatusFn func(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error)
 	DeleteKitchenBatchFn       func(ctx context.Context, id string) error
+	UpdateKitchenBatchStatusIfCurrentFn func(ctx context.Context, id string, expectedStatus string, newStatus string, now time.Time) (datastore.KitchenBatch, error)
+	CancelStaleBatchesFn func(ctx context.Context, now time.Time) (int, error)
+
+	// Kitchen Batch Instances
+	CreateBatchInstanceFn          func(ctx context.Context, p datastore.CreateBatchInstanceParams) (datastore.KitchenBatchInstance, error)
+	CreateBatchInstancesFn         func(ctx context.Context, params []datastore.CreateBatchInstanceParams) ([]datastore.KitchenBatchInstance, error)
+	ListBatchInstancesFn           func(ctx context.Context, batchID string) ([]datastore.KitchenBatchInstance, error)
+	UpdateBatchInstanceStatusFn    func(ctx context.Context, id string, status string, errorMessage string, now time.Time) error
+	CountBatchInstancesByStatusFn  func(ctx context.Context, batchID string) (map[string]int, error)
+	CancelPendingBatchInstancesFn  func(ctx context.Context, batchID string) (int, error)
 
 	// Git Repo Kitchen Exclusions
 	SetGitRepoKitchenExclusionFn   func(ctx context.Context, name string, reason string, excludedBy string) error
@@ -1109,6 +1119,62 @@ func (m *mockStore) DeleteKitchenBatch(ctx context.Context, id string) error {
 		return m.DeleteKitchenBatchFn(ctx, id)
 	}
 	panic("mockStore.DeleteKitchenBatchFn not set")
+}
+
+func (m *mockStore) UpdateKitchenBatchStatusIfCurrent(ctx context.Context, id string, expectedStatus string, newStatus string, now time.Time) (datastore.KitchenBatch, error) {
+	if m.UpdateKitchenBatchStatusIfCurrentFn != nil {
+		return m.UpdateKitchenBatchStatusIfCurrentFn(ctx, id, expectedStatus, newStatus, now)
+	}
+	panic("mockStore.UpdateKitchenBatchStatusIfCurrentFn not set")
+}
+
+func (m *mockStore) CancelStaleBatches(ctx context.Context, now time.Time) (int, error) {
+	if m.CancelStaleBatchesFn != nil {
+		return m.CancelStaleBatchesFn(ctx, now)
+	}
+	return 0, nil // no-op for tests — startup cleanup is not under test
+}
+
+func (m *mockStore) CreateBatchInstance(ctx context.Context, p datastore.CreateBatchInstanceParams) (datastore.KitchenBatchInstance, error) {
+	if m.CreateBatchInstanceFn != nil {
+		return m.CreateBatchInstanceFn(ctx, p)
+	}
+	panic("mockStore.CreateBatchInstanceFn not set")
+}
+
+func (m *mockStore) CreateBatchInstances(ctx context.Context, params []datastore.CreateBatchInstanceParams) ([]datastore.KitchenBatchInstance, error) {
+	if m.CreateBatchInstancesFn != nil {
+		return m.CreateBatchInstancesFn(ctx, params)
+	}
+	panic("mockStore.CreateBatchInstancesFn not set")
+}
+
+func (m *mockStore) ListBatchInstances(ctx context.Context, batchID string) ([]datastore.KitchenBatchInstance, error) {
+	if m.ListBatchInstancesFn != nil {
+		return m.ListBatchInstancesFn(ctx, batchID)
+	}
+	panic("mockStore.ListBatchInstancesFn not set")
+}
+
+func (m *mockStore) UpdateBatchInstanceStatus(ctx context.Context, id string, status string, errorMessage string, now time.Time) error {
+	if m.UpdateBatchInstanceStatusFn != nil {
+		return m.UpdateBatchInstanceStatusFn(ctx, id, status, errorMessage, now)
+	}
+	panic("mockStore.UpdateBatchInstanceStatusFn not set")
+}
+
+func (m *mockStore) CountBatchInstancesByStatus(ctx context.Context, batchID string) (map[string]int, error) {
+	if m.CountBatchInstancesByStatusFn != nil {
+		return m.CountBatchInstancesByStatusFn(ctx, batchID)
+	}
+	panic("mockStore.CountBatchInstancesByStatusFn not set")
+}
+
+func (m *mockStore) CancelPendingBatchInstances(ctx context.Context, batchID string) (int, error) {
+	if m.CancelPendingBatchInstancesFn != nil {
+		return m.CancelPendingBatchInstancesFn(ctx, batchID)
+	}
+	panic("mockStore.CancelPendingBatchInstancesFn not set")
 }
 
 func (m *mockStore) SetGitRepoKitchenExclusion(ctx context.Context, name string, reason string, excludedBy string) error {

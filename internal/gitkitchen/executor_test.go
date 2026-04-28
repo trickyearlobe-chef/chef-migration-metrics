@@ -303,4 +303,94 @@ func TestRunInstance_ContextCancelled(t *testing.T) {
 	if result.ErrorMessage == "" {
 		t.Error("expected ErrorMessage to be set")
 	}
+	if result.TimedOut {
+		t.Error("context.Canceled should NOT set TimedOut")
+	}
+}
+
+func TestRunInstance_DeadlineExceeded_SetsTimedOut(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	exec := &mockExecutor{
+		err:    context.DeadlineExceeded,
+		stdout: "Waiting for SSH access...\n",
+	}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	result := RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	if !result.TimedOut {
+		t.Error("expected TimedOut to be true on DeadlineExceeded")
+	}
+	if result.Passed != nil {
+		t.Error("expected Passed to be nil on timeout")
+	}
+	if result.ErrorMessage == "" {
+		t.Error("expected ErrorMessage to be set")
+	}
+}
+
+func TestRunInstance_NetworkTimeout_NoConvergeActivity(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	// Timeout with output that has no converge activity — should be classified as network timeout.
+	exec := &mockExecutor{
+		err:    context.DeadlineExceeded,
+		stdout: "Waiting for SSH access on 10.0.0.1\nConnection timed out\n",
+	}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	result := RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	if !result.TimedOut {
+		t.Error("expected TimedOut to be true")
+	}
+	if !result.NetworkTimeout {
+		t.Error("expected NetworkTimeout to be true when timed out with no converge output")
+	}
+	if !strings.Contains(result.ErrorMessage, "DHCP/network timeout") {
+		t.Errorf("expected network timeout error message, got: %s", result.ErrorMessage)
+	}
+}
+
+func TestRunInstance_Timeout_WithConvergeActivity_NotNetworkTimeout(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	// Timeout but output DOES contain converge activity — not a network timeout.
+	exec := &mockExecutor{
+		err:    context.DeadlineExceeded,
+		stdout: "Converging 5 resources\n  * package[curl] action install\n  * file[/tmp/test] action create\n",
+	}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	result := RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	if !result.TimedOut {
+		t.Error("expected TimedOut to be true")
+	}
+	if result.NetworkTimeout {
+		t.Error("expected NetworkTimeout to be false when converge activity is present")
+	}
+}
+
+func TestIsConvergeOutput(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"empty", "", false},
+		{"ssh waiting only", "Waiting for SSH access...\n", false},
+		{"converge header", "Converging 3 resources\n", true},
+		{"resource action", "  * package[curl] action install\n", true},
+		{"recipe compile", "  Recipe: my_cookbook::default\n", true},
+		{"chef client run", "Starting Chef Infra Client, version 18.4.2\n", true},
+		{"chef run start", "Starting Chef Client, version 17.0.0\n", true},
+		{"resolving cookbooks", "resolving cookbooks for run list\n", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasConvergeActivity(tt.output)
+			if got != tt.want {
+				t.Errorf("hasConvergeActivity(%q) = %v, want %v", tt.output, got, tt.want)
+			}
+		})
+	}
 }
