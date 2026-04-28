@@ -177,6 +177,59 @@ func TestHandleGitKitchenInstances_GET_NotFound(t *testing.T) {
 	}
 }
 
+func TestHandleGitKitchenInstances_GET_UsesDBConfig(t *testing.T) {
+	// The DB-stored platform map includes the mapping; the file config does not.
+	// This verifies the handler prefers the DB config over the file config.
+	dbTKConfig := config.TestKitchenConfig{
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-22.04", Image: "db-template"},
+		},
+	}
+	dbBytes, _ := json.Marshal(dbTKConfig)
+
+	store := &mockStore{
+		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
+			if key == "test_kitchen" {
+				return &datastore.RuntimeSetting{Key: key, Value: dbBytes}, nil
+			}
+			return nil, nil
+		},
+		GetKitchenAnalysisResultByNameFn: func(_ context.Context, _ string) (*datastore.KitchenAnalysisResult, error) {
+			return &datastore.KitchenAnalysisResult{
+				GitRepoName:   "my-cookbook",
+				GitRepoURL:    "https://git.example.com/my-cookbook.git",
+				HeadCommitSHA: "abc123",
+				Platforms:     json.RawMessage(`[{"name":"ubuntu-22.04"}]`),
+				Suites:        json.RawMessage(`[{"name":"default"}]`),
+			}, nil
+		},
+	}
+
+	// File config has NO platform map — if the handler reads from file, it would be unmapped.
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen.PlatformMap = nil
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/git/instances?repo=my-cookbook", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var plan gitkitchen.PlanResult
+	if err := json.NewDecoder(w.Body).Decode(&plan); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if plan.Mapped != 1 {
+		t.Fatalf("mapped = %d, want 1 (DB config should take priority over file config)", plan.Mapped)
+	}
+	if plan.Instances[0].ImageName != "db-template" {
+		t.Errorf("image = %q, want %q", plan.Instances[0].ImageName, "db-template")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/v1/kitchen/git/run
 // ---------------------------------------------------------------------------
