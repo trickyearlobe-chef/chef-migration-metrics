@@ -335,16 +335,20 @@ export function GitReposPage() {
                           variant={
                             repo.tk_status === "passed"
                               ? "compatible"
-                              : repo.tk_status === "failed"
-                                ? "incompatible"
-                                : repo.tk_status === "timed_out"
+                              : repo.tk_status === "partial"
+                                ? "warning"
+                                : repo.tk_status === "failed"
                                   ? "incompatible"
-                                  : "untested"
+                                  : repo.tk_status === "timed_out"
+                                    ? "incompatible"
+                                    : "untested"
                           }
                           label={
                             repo.tk_status === "timed_out"
                               ? "Timed Out"
-                              : (repo.tk_status ?? "untested")
+                              : repo.tk_status === "partial"
+                                ? "Partial"
+                                : (repo.tk_status ?? "untested")
                           }
                           size="sm"
                         />

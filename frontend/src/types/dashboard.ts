@@ -129,6 +129,7 @@ export interface TestKitchenCompatibilitySummary {
   target_chef_version: string;
   total_repos: number;
   passed_repos: number;
+  partial_repos: number;
   failed_repos: number;
   timed_out_repos: number;
   untested_repos: number;
