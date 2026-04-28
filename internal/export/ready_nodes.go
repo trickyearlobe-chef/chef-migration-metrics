@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/platform"
 )
 
 // ReadyNodeExportParams holds the parameters for generating a ready node
@@ -40,18 +41,23 @@ type ReadyNodeExportParams struct {
 	// the export data is returned in-memory via ExportResult.Data (used for
 	// synchronous inline exports).
 	OutputPath string
+
+	// PlatformDisplayMappings provides platform/version → friendly name
+	// mappings used to populate PlatformDisplayName in export rows.
+	PlatformDisplayMappings []platform.DisplayNameMapping
 }
 
 // readyNodeRow is the flattened row shape for ready node exports.
 type readyNodeRow struct {
-	NodeName        string `json:"node_name"`
-	Organisation    string `json:"organisation"`
-	Environment     string `json:"environment"`
-	Platform        string `json:"platform"`
-	PlatformVersion string `json:"platform_version"`
-	ChefVersion     string `json:"chef_version"`
-	PolicyName      string `json:"policy_name"`
-	PolicyGroup     string `json:"policy_group"`
+	NodeName            string `json:"node_name"`
+	Organisation        string `json:"organisation"`
+	Environment         string `json:"environment"`
+	Platform            string `json:"platform"`
+	PlatformVersion     string `json:"platform_version"`
+	PlatformDisplayName string `json:"platform_display_name"`
+	ChefVersion         string `json:"chef_version"`
+	PolicyName          string `json:"policy_name"`
+	PolicyGroup         string `json:"policy_group"`
 }
 
 // GenerateReadyNodeExport generates an export of nodes that are ready for
@@ -81,15 +87,20 @@ func GenerateReadyNodeExport(ctx context.Context, db DataStore, params ReadyNode
 	// Flatten into export rows.
 	exportRows := make([]readyNodeRow, 0, len(rows))
 	for _, r := range rows {
+		var displayName string
+		if name, ok := platform.ResolveName(r.node.Platform, r.node.PlatformVersion, params.PlatformDisplayMappings); ok {
+			displayName = name
+		}
 		exportRows = append(exportRows, readyNodeRow{
-			NodeName:        r.node.NodeName,
-			Organisation:    orgNameByID[r.node.OrganisationName],
-			Environment:     r.node.ChefEnvironment,
-			Platform:        r.node.Platform,
-			PlatformVersion: r.node.PlatformVersion,
-			ChefVersion:     r.node.ChefVersion,
-			PolicyName:      r.node.PolicyName,
-			PolicyGroup:     r.node.PolicyGroup,
+			NodeName:            r.node.NodeName,
+			Organisation:        orgNameByID[r.node.OrganisationName],
+			Environment:         r.node.ChefEnvironment,
+			Platform:            r.node.Platform,
+			PlatformVersion:     r.node.PlatformVersion,
+			PlatformDisplayName: displayName,
+			ChefVersion:         r.node.ChefVersion,
+			PolicyName:          r.node.PolicyName,
+			PolicyGroup:         r.node.PolicyGroup,
 		})
 	}
 
@@ -237,7 +248,7 @@ func renderReadyNodeCSV(rows []readyNodeRow) ([]byte, error) {
 	// Header row.
 	header := []string{
 		"node_name", "organisation", "environment", "platform",
-		"platform_version", "chef_version", "policy_name", "policy_group",
+		"platform_version", "platform_display_name", "chef_version", "policy_name", "policy_group",
 	}
 	if err := w.Write(header); err != nil {
 		return nil, fmt.Errorf("export: writing CSV header: %w", err)
@@ -250,6 +261,7 @@ func renderReadyNodeCSV(rows []readyNodeRow) ([]byte, error) {
 			r.Environment,
 			r.Platform,
 			r.PlatformVersion,
+			r.PlatformDisplayName,
 			r.ChefVersion,
 			r.PolicyName,
 			r.PolicyGroup,

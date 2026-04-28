@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/platform"
 )
 
 // ---------------------------------------------------------------------------
@@ -351,6 +352,148 @@ func TestGenerateReadyNodeExport_WriteToDisk(t *testing.T) {
 	}
 }
 
+func TestGenerateReadyNodeExport_PlatformDisplayName_CSV(t *testing.T) {
+	store := &fakeStore{
+		orgs: []datastore.Organisation{{Name: "org-a"}},
+		nodesByOrg: map[string][]datastore.NodeSnapshot{
+			"org-a": {
+				{
+					OrganisationName: "org-a",
+					NodeName:         "win01",
+					ChefEnvironment:  "production",
+					ChefVersion:      "17.0.0",
+					Platform:         "windows",
+					PlatformVersion:  "10.0.22631",
+					CollectedAt:      time.Now(),
+				},
+				{
+					OrganisationName: "org-a",
+					NodeName:         "lin01",
+					ChefEnvironment:  "production",
+					ChefVersion:      "17.0.0",
+					Platform:         "redhat",
+					PlatformVersion:  "8.5",
+					CollectedAt:      time.Now(),
+				},
+			},
+		},
+		readiness: map[string][]datastore.NodeReadiness{
+			"org-a/win01": {{
+				OrganisationName:  "org-a",
+				NodeName:          "win01",
+				TargetChefVersion: "18.0.0",
+				IsReady:           true,
+			}},
+			"org-a/lin01": {{
+				OrganisationName:  "org-a",
+				NodeName:          "lin01",
+				TargetChefVersion: "18.0.0",
+				IsReady:           true,
+			}},
+		},
+	}
+
+	result, err := GenerateReadyNodeExport(context.Background(), store, ReadyNodeExportParams{
+		TargetChefVersion:       "18.0.0",
+		Format:                  "csv",
+		PlatformDisplayMappings: platform.DefaultMappings,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	r := csv.NewReader(strings.NewReader(string(result.Data)))
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("parsing CSV: %v", err)
+	}
+
+	// Verify header includes platform_display_name.
+	if records[0][5] != "platform_display_name" {
+		t.Errorf("header[5] = %q, want platform_display_name", records[0][5])
+	}
+
+	// Find win01 and lin01 rows.
+	for _, row := range records[1:] {
+		switch row[0] {
+		case "win01":
+			if row[5] != "Win11 23H2" {
+				t.Errorf("win01 platform_display_name = %q, want %q", row[5], "Win11 23H2")
+			}
+		case "lin01":
+			if row[5] != "" {
+				t.Errorf("lin01 platform_display_name = %q, want empty (no mapping)", row[5])
+			}
+		}
+	}
+}
+
+func TestGenerateReadyNodeExport_PlatformDisplayName_JSON(t *testing.T) {
+	store := &fakeStore{
+		orgs: []datastore.Organisation{{Name: "org-a"}},
+		nodesByOrg: map[string][]datastore.NodeSnapshot{
+			"org-a": {{
+				OrganisationName: "org-a",
+				NodeName:         "win01",
+				ChefEnvironment:  "production",
+				ChefVersion:      "17.0.0",
+				Platform:         "windows",
+				PlatformVersion:  "10.0.22631",
+				CollectedAt:      time.Now(),
+			}},
+		},
+		readiness: map[string][]datastore.NodeReadiness{
+			"org-a/win01": {{
+				OrganisationName:  "org-a",
+				NodeName:          "win01",
+				TargetChefVersion: "18.0.0",
+				IsReady:           true,
+			}},
+		},
+	}
+
+	result, err := GenerateReadyNodeExport(context.Background(), store, ReadyNodeExportParams{
+		TargetChefVersion:       "18.0.0",
+		Format:                  "json",
+		PlatformDisplayMappings: platform.DefaultMappings,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var rows []readyNodeRow
+	if err := json.Unmarshal(result.Data, &rows); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].PlatformDisplayName != "Win11 23H2" {
+		t.Errorf("PlatformDisplayName = %q, want %q", rows[0].PlatformDisplayName, "Win11 23H2")
+	}
+}
+
+func TestGenerateReadyNodeExport_PlatformDisplayName_NoMappings(t *testing.T) {
+	store := testStore()
+	result, err := GenerateReadyNodeExport(context.Background(), store, ReadyNodeExportParams{
+		TargetChefVersion: "18.0.0",
+		Format:            "json",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var rows []readyNodeRow
+	if err := json.Unmarshal(result.Data, &rows); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	for _, row := range rows {
+		if row.PlatformDisplayName != "" {
+			t.Errorf("expected empty PlatformDisplayName with no mappings, got %q for %s", row.PlatformDisplayName, row.NodeName)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Blocked node export tests
 // ---------------------------------------------------------------------------
@@ -378,7 +521,7 @@ func TestGenerateBlockedNodeExport_CSV(t *testing.T) {
 		t.Fatalf("CSV rows = %d, want 2", len(records))
 	}
 	// Verify blocking_cookbooks column contains "legacy-db".
-	blockingCol := records[1][9] // blocking_cookbooks is column index 9
+	blockingCol := records[1][10] // blocking_cookbooks is column index 10
 	if !strings.Contains(blockingCol, "legacy-db") {
 		t.Errorf("blocking_cookbooks = %q, want to contain legacy-db", blockingCol)
 	}
@@ -440,6 +583,53 @@ func TestGenerateBlockedNodeExport_ComplexityScore(t *testing.T) {
 	// db01 is blocked by legacy-db (cb-1) which has complexity score 75.
 	if len(rows) > 0 && rows[0].ComplexityScore != 75 {
 		t.Errorf("ComplexityScore = %d, want 75", rows[0].ComplexityScore)
+	}
+}
+
+func TestGenerateBlockedNodeExport_PlatformDisplayName_JSON(t *testing.T) {
+	store := &fakeStore{
+		orgs: []datastore.Organisation{{Name: "org-a"}},
+		nodesByOrg: map[string][]datastore.NodeSnapshot{
+			"org-a": {{
+				OrganisationName: "org-a",
+				NodeName:         "win-blocked",
+				ChefEnvironment:  "production",
+				ChefVersion:      "16.0.0",
+				Platform:         "windows",
+				PlatformVersion:  "10.0.22631",
+				CollectedAt:      time.Now(),
+			}},
+		},
+		readiness: map[string][]datastore.NodeReadiness{
+			"org-a/win-blocked": {{
+				OrganisationName:       "org-a",
+				NodeName:               "win-blocked",
+				TargetChefVersion:      "18.0.0",
+				IsReady:                false,
+				AllCookbooksCompatible: false,
+				BlockingCookbooks:      json.RawMessage(`["old-cookbook"]`),
+			}},
+		},
+	}
+
+	result, err := GenerateBlockedNodeExport(context.Background(), store, BlockedNodeExportParams{
+		TargetChefVersion:       "18.0.0",
+		Format:                  "json",
+		PlatformDisplayMappings: platform.DefaultMappings,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var rows []blockedNodeRow
+	if err := json.Unmarshal(result.Data, &rows); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].PlatformDisplayName != "Win11 23H2" {
+		t.Errorf("PlatformDisplayName = %q, want %q", rows[0].PlatformDisplayName, "Win11 23H2")
 	}
 }
 

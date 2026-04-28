@@ -110,7 +110,9 @@ export function NodesPage() {
   const [policyNameOptions, setPolicyNameOptions] = useState<string[]>([]);
   const [policyGroupOptions, setPolicyGroupOptions] = useState<string[]>([]);
   const [environmentOptions, setEnvironmentOptions] = useState<string[]>([]);
-  const [platformOptions, setPlatformOptions] = useState<string[]>([]);
+  const [platformOptions, setPlatformOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
 
   // Clear the search params after they have been consumed so the URL stays
   // clean and subsequent filter changes don't conflict with the initial params.
@@ -146,7 +148,14 @@ export function NodesPage() {
       .catch(() => setEnvironmentOptions([]));
 
     fetchFilterPlatforms(org)
-      .then((res) => setPlatformOptions(res.data ?? []))
+      .then((res) =>
+        setPlatformOptions(
+          (res.data ?? []).map((p) => ({
+            value: p.value,
+            label: p.display_name || p.value,
+          })),
+        ),
+      )
       .catch(() => setPlatformOptions([]));
   }, [selectedOrg]);
 
@@ -302,7 +311,7 @@ export function NodesPage() {
           label="Platform"
           selected={platforms}
           onChange={setPlatforms}
-          options={platformOptions.map((o) => ({ value: o, label: o }))}
+          options={platformOptions}
         />
         <FilterInput
           label="Chef Version"

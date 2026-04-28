@@ -84,12 +84,56 @@ func TestResolveName_EmptyMappings(t *testing.T) {
 }
 
 func TestResolveName_LinuxVersions(t *testing.T) {
-	name, ok := ResolveName("centos", "8.5.2111", DefaultMappings)
+	name, ok := ResolveName("ubuntu", "22.04.3", DefaultMappings)
 	if !ok {
 		t.Fatal("expected match, got none")
 	}
-	if name != "CentOS 8 (EOL)" {
-		t.Errorf("got %q, want %q", name, "CentOS 8 (EOL)")
+	if name != "Ubuntu 22.04 LTS (Jammy)" {
+		t.Errorf("got %q, want %q", name, "Ubuntu 22.04 LTS (Jammy)")
+	}
+}
+
+func TestResolveName_UbuntuLTS(t *testing.T) {
+	tests := []struct {
+		version string
+		want    string
+	}{
+		{"26.04", "Ubuntu 26.04 LTS (Plucky)"},
+		{"24.04.1", "Ubuntu 24.04 LTS (Noble)"},
+		{"22.04", "Ubuntu 22.04 LTS (Jammy)"},
+		{"20.04.6", "Ubuntu 20.04 LTS (Focal)"},
+		{"18.04.5", "Ubuntu 18.04 LTS (Bionic) — EOL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			name, ok := ResolveName("ubuntu", tt.version, DefaultMappings)
+			if !ok {
+				t.Fatalf("version %q: expected match, got none", tt.version)
+			}
+			if name != tt.want {
+				t.Errorf("version %q: got %q, want %q", tt.version, name, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveName_Win11_24H2_ServerOverlap(t *testing.T) {
+	// 10.0.26100 matches Win11 24H2 / Server 2025 (ambiguous)
+	name, ok := ResolveName("windows", "10.0.26100.1234", DefaultMappings)
+	if !ok {
+		t.Fatal("expected match, got none")
+	}
+	if name != "Win11 24H2 / Server 2025" {
+		t.Errorf("got %q, want %q", name, "Win11 24H2 / Server 2025")
+	}
+
+	// 10.0.26334 is more specific — matches Server 2025
+	name, ok = ResolveName("windows", "10.0.26334.5678", DefaultMappings)
+	if !ok {
+		t.Fatal("expected match for Server 2025, got none")
+	}
+	if name != "Win Server 2025" {
+		t.Errorf("got %q, want %q", name, "Win Server 2025")
 	}
 }
 

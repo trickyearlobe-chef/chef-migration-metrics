@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/platform"
 )
 
 // BlockedNodeExportParams holds the parameters for generating a blocked node
@@ -41,23 +42,28 @@ type BlockedNodeExportParams struct {
 	// the export data is returned in-memory via ExportResult.Data (used for
 	// synchronous inline exports).
 	OutputPath string
+
+	// PlatformDisplayMappings provides platform/version → friendly name
+	// mappings used to populate PlatformDisplayName in export rows.
+	PlatformDisplayMappings []platform.DisplayNameMapping
 }
 
 // blockedNodeRow is the flattened row shape for blocked node exports.
 // It extends the basic node info with blocking reasons and complexity scores.
 type blockedNodeRow struct {
-	NodeName          string   `json:"node_name"`
-	Organisation      string   `json:"organisation"`
-	Environment       string   `json:"environment"`
-	Platform          string   `json:"platform"`
-	PlatformVersion   string   `json:"platform_version"`
-	ChefVersion       string   `json:"chef_version"`
-	PolicyName        string   `json:"policy_name"`
-	PolicyGroup       string   `json:"policy_group"`
-	TargetChefVersion string   `json:"target_chef_version"`
-	BlockingCookbooks []string `json:"blocking_cookbooks"`
-	BlockingReasons   []string `json:"blocking_reasons"`
-	ComplexityScore   int      `json:"complexity_score"`
+	NodeName            string   `json:"node_name"`
+	Organisation        string   `json:"organisation"`
+	Environment         string   `json:"environment"`
+	Platform            string   `json:"platform"`
+	PlatformVersion     string   `json:"platform_version"`
+	PlatformDisplayName string   `json:"platform_display_name"`
+	ChefVersion         string   `json:"chef_version"`
+	PolicyName          string   `json:"policy_name"`
+	PolicyGroup         string   `json:"policy_group"`
+	TargetChefVersion   string   `json:"target_chef_version"`
+	BlockingCookbooks   []string `json:"blocking_cookbooks"`
+	BlockingReasons     []string `json:"blocking_reasons"`
+	ComplexityScore     int      `json:"complexity_score"`
 }
 
 // GenerateBlockedNodeExport generates an export of nodes that are blocked
@@ -163,6 +169,7 @@ func collectBlockedNodes(ctx context.Context, db DataStore, params BlockedNodeEx
 						node, nr, orgNameByID[node.OrganisationName],
 						params.TargetChefVersion,
 						complexityByCookbookID, cookbookIDByName,
+						params.PlatformDisplayMappings,
 					)
 					results = append(results, row)
 				}
@@ -199,6 +206,7 @@ func buildBlockedNodeRow(
 	orgName, targetVersion string,
 	complexityByCookbookID map[string]int,
 	cookbookIDByName map[string]string,
+	mappings []platform.DisplayNameMapping,
 ) blockedNodeRow {
 	// Parse blocking cookbooks from the JSONB field.
 	blockingCookbooks := parseBlockingCookbooks(nr.BlockingCookbooks)
@@ -214,19 +222,26 @@ func buildBlockedNodeRow(
 		}
 	}
 
+	// Resolve platform display name.
+	var displayName string
+	if name, ok := platform.ResolveName(node.Platform, node.PlatformVersion, mappings); ok {
+		displayName = name
+	}
+
 	return blockedNodeRow{
-		NodeName:          node.NodeName,
-		Organisation:      orgName,
-		Environment:       node.ChefEnvironment,
-		Platform:          node.Platform,
-		PlatformVersion:   node.PlatformVersion,
-		ChefVersion:       node.ChefVersion,
-		PolicyName:        node.PolicyName,
-		PolicyGroup:       node.PolicyGroup,
-		TargetChefVersion: targetVersion,
-		BlockingCookbooks: blockingCookbooks,
-		BlockingReasons:   blockingReasons,
-		ComplexityScore:   totalComplexity,
+		NodeName:            node.NodeName,
+		Organisation:        orgName,
+		Environment:         node.ChefEnvironment,
+		Platform:            node.Platform,
+		PlatformVersion:     node.PlatformVersion,
+		PlatformDisplayName: displayName,
+		ChefVersion:         node.ChefVersion,
+		PolicyName:          node.PolicyName,
+		PolicyGroup:         node.PolicyGroup,
+		TargetChefVersion:   targetVersion,
+		BlockingCookbooks:   blockingCookbooks,
+		BlockingReasons:     blockingReasons,
+		ComplexityScore:     totalComplexity,
 	}
 }
 
@@ -358,7 +373,7 @@ func renderBlockedNodeCSV(rows []blockedNodeRow) ([]byte, error) {
 
 	header := []string{
 		"node_name", "organisation", "environment", "platform",
-		"platform_version", "chef_version", "policy_name", "policy_group",
+		"platform_version", "platform_display_name", "chef_version", "policy_name", "policy_group",
 		"target_chef_version", "blocking_cookbooks", "blocking_reasons",
 		"complexity_score",
 	}
@@ -373,6 +388,7 @@ func renderBlockedNodeCSV(rows []blockedNodeRow) ([]byte, error) {
 			r.Environment,
 			r.Platform,
 			r.PlatformVersion,
+			r.PlatformDisplayName,
 			r.ChefVersion,
 			r.PolicyName,
 			r.PolicyGroup,
