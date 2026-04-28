@@ -36,7 +36,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
 
   const refreshResults = useCallback(() => {
     fetchGitKitchenResults(repoName)
-      .then(setResults)
+      .then((r) => setResults(r ?? []))
       .catch(() => {});
   }, [repoName]);
 
@@ -49,7 +49,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
     ])
       .then(([planData, resultsData]) => {
         setPlan(planData);
-        setResults(resultsData);
+        setResults(resultsData ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
