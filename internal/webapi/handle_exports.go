@@ -386,21 +386,25 @@ func (r *Router) handleExportDownload(w http.ResponseWriter, req *http.Request, 
 func (r *Router) generateExport(ctx context.Context, body exportRequest, maxRows int, outputPath string) (*export.ExportResult, error) {
 	switch body.ExportType {
 	case datastore.ExportTypeReadyNodes:
+		mappings, _ := r.loadPlatformDisplayNames(ctx)
 		return export.GenerateReadyNodeExport(ctx, r.db, export.ReadyNodeExportParams{
-			TargetChefVersion: body.TargetChefVersion,
-			Format:            body.Format,
-			Filters:           body.Filters,
-			MaxRows:           maxRows,
-			OutputPath:        outputPath,
+			TargetChefVersion:       body.TargetChefVersion,
+			Format:                  body.Format,
+			Filters:                 body.Filters,
+			MaxRows:                 maxRows,
+			OutputPath:              outputPath,
+			PlatformDisplayMappings: mappings,
 		})
 
 	case datastore.ExportTypeBlockedNodes:
+		mappings, _ := r.loadPlatformDisplayNames(ctx)
 		return export.GenerateBlockedNodeExport(ctx, r.db, export.BlockedNodeExportParams{
-			TargetChefVersion: body.TargetChefVersion,
-			Format:            body.Format,
-			Filters:           body.Filters,
-			MaxRows:           maxRows,
-			OutputPath:        outputPath,
+			TargetChefVersion:       body.TargetChefVersion,
+			Format:                  body.Format,
+			Filters:                 body.Filters,
+			MaxRows:                 maxRows,
+			OutputPath:              outputPath,
+			PlatformDisplayMappings: mappings,
 		})
 
 	case datastore.ExportTypeCookbookRemediation:
