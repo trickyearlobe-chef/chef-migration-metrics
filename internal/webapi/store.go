@@ -106,6 +106,15 @@ type DataStore interface {
 	// limit rows are returned.
 	ListMetricSnapshotsByOrganisationAndVersion(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error)
 
+	// ListDailyMetricSnapshotsByOrganisation returns at most one snapshot per
+	// calendar day (the latest) for the given organisation and snapshot type.
+	ListDailyMetricSnapshotsByOrganisation(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
+
+	// ListDailyMetricSnapshotsByOrganisationAndVersion returns at most one
+	// snapshot per calendar day for the given organisation, snapshot type,
+	// and target Chef version.
+	ListDailyMetricSnapshotsByOrganisationAndVersion(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error)
+
 	// GetNodeSnapshotByName returns the most recent snapshot for a node
 	// identified by organisation ID and node name. Returns
 	// datastore.ErrNotFound if no such snapshot exists.
