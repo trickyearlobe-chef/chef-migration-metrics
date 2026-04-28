@@ -208,7 +208,7 @@ export function CompatibilityBadge({
   switch (status) {
     case "compatible":
       variant = "compatible";
-      label = confidence === "high" ? "Compatible" : "Compatible";
+      label = "Compatible";
       break;
     case "cookstyle_only":
       variant = "cookstyle_only";
