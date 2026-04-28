@@ -518,6 +518,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs)
 	r.adminOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM)
 	r.adminOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
+	r.adminOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep)
 
 	// -----------------------------------------------------------------
 	// Node Kitchen endpoints

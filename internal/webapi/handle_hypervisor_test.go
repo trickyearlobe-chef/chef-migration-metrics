@@ -495,3 +495,112 @@ func TestHandleHypervisorCleanup_InternalError(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// handleOrphanSweep
+// ---------------------------------------------------------------------------
+
+func TestHandleOrphanSweep_DryRunDefault(t *testing.T) {
+	now := time.Now()
+	oldTS := now.Add(-2 * time.Hour).Unix()
+
+	hyp := &mockHypervisorClient{
+		managedVMs: []hypervisor.ManagedVM{
+			{HypervisorID: "vm-1", Name: fmt.Sprintf("cmm-cookbook-suite-ubuntu-%d", oldTS)},
+		},
+	}
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, hyp)
+
+	// No dry_run param → defaults to true.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/orphan-sweep", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var result hypervisor.SweepResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !result.DryRun {
+		t.Error("expected DryRun=true by default")
+	}
+	if result.Destroyed != 0 {
+		t.Errorf("Destroyed = %d, want 0 in dry run", result.Destroyed)
+	}
+	if len(hyp.destroyed) != 0 {
+		t.Errorf("hypervisor.destroyed = %v, want empty", hyp.destroyed)
+	}
+}
+
+func TestHandleOrphanSweep_DryRunFalse(t *testing.T) {
+	now := time.Now()
+	oldTS := now.Add(-2 * time.Hour).Unix()
+
+	hyp := &mockHypervisorClient{
+		managedVMs: []hypervisor.ManagedVM{
+			{HypervisorID: "vm-1", Name: fmt.Sprintf("cmm-cookbook-suite-ubuntu-%d", oldTS)},
+		},
+	}
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, hyp)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/orphan-sweep?dry_run=false", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var result hypervisor.SweepResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if result.DryRun {
+		t.Error("expected DryRun=false")
+	}
+	if result.Destroyed != 1 {
+		t.Errorf("Destroyed = %d, want 1", result.Destroyed)
+	}
+	if len(hyp.destroyed) != 1 {
+		t.Errorf("hypervisor.destroyed count = %d, want 1", len(hyp.destroyed))
+	}
+}
+
+func TestHandleOrphanSweep_NoHypervisor(t *testing.T) {
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/orphan-sweep", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var result hypervisor.SweepResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if result.Scanned != 0 {
+		t.Errorf("Scanned = %d, want 0", result.Scanned)
+	}
+}
+
+func TestHandleOrphanSweep_MethodNotAllowed(t *testing.T) {
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, &mockHypervisorClient{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/orphan-sweep", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
