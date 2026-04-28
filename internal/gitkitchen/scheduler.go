@@ -63,20 +63,18 @@ type Scheduler struct {
 	executor     KitchenExecutor
 	credResolver CredentialResolver
 	store        ResultStore
-	tkConfig     config.TestKitchenConfig
 	repoDirFn    func(name, url string) string
 	runFn        InstanceRunner // injectable for testing
 }
 
 // NewScheduler creates a new Scheduler.
 func NewScheduler(executor KitchenExecutor, credResolver CredentialResolver,
-	store ResultStore, tkConfig config.TestKitchenConfig,
+	store ResultStore,
 	repoDirFn func(name, url string) string) *Scheduler {
 	return &Scheduler{
 		executor:     executor,
 		credResolver: credResolver,
 		store:        store,
-		tkConfig:     tkConfig,
 		repoDirFn:    repoDirFn,
 		runFn:        RunInstance,
 	}
@@ -84,7 +82,7 @@ func NewScheduler(executor KitchenExecutor, credResolver CredentialResolver,
 
 // RunAll runs all mapped instances from a PlanResult with bounded concurrency.
 func (s *Scheduler) RunAll(ctx context.Context, plan *PlanResult, cfg SchedulerConfig,
-	onProgress ProgressCallback) (*RunAllResult, error) {
+	tkConfig config.TestKitchenConfig, onProgress ProgressCallback) (*RunAllResult, error) {
 
 	start := time.Now()
 
@@ -136,7 +134,7 @@ func (s *Scheduler) RunAll(ctx context.Context, plan *PlanResult, cfg SchedulerC
 				CommitSHA:         plan.CommitSHA,
 			}
 
-			runResult := s.runFn(ctx, params, s.tkConfig, s.executor, s.credResolver)
+			runResult := s.runFn(ctx, params, tkConfig, s.executor, s.credResolver)
 
 			// Classify result.
 			switch {
@@ -194,7 +192,7 @@ func (s *Scheduler) RunAll(ctx context.Context, plan *PlanResult, cfg SchedulerC
 
 // RunOne runs a single specific instance from the plan.
 func (s *Scheduler) RunOne(ctx context.Context, plan *PlanResult, instanceName string,
-	cfg SchedulerConfig) (*RunOneResult, error) {
+	cfg SchedulerConfig, tkConfig config.TestKitchenConfig) (*RunOneResult, error) {
 
 	var found *PlannedInstance
 	for i := range plan.Instances {
@@ -224,7 +222,7 @@ func (s *Scheduler) RunOne(ctx context.Context, plan *PlanResult, instanceName s
 		CommitSHA:         plan.CommitSHA,
 	}
 
-	runResult := s.runFn(ctx, params, s.tkConfig, s.executor, s.credResolver)
+	runResult := s.runFn(ctx, params, tkConfig, s.executor, s.credResolver)
 
 	upsertParams := buildUpsertParams(plan, *found, cfg, runResult)
 	dbResult, err := s.store.UpsertGitKitchenResult(ctx, upsertParams)

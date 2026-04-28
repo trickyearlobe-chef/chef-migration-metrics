@@ -253,7 +253,7 @@ func TestHandleGitKitchenRun_POST_Success(t *testing.T) {
 	}
 
 	// Create a scheduler with a no-op runner for testing.
-	sched := gitkitchen.NewScheduler(nil, nil, nil, cfg.AnalysisTools.TestKitchen,
+	sched := gitkitchen.NewScheduler(nil, nil, nil,
 		func(name, url string) string { return "/repos/" + name })
 
 	hub := NewEventHub()
@@ -284,7 +284,7 @@ func TestHandleGitKitchenRun_POST_NoScheduler(t *testing.T) {
 }
 
 func TestHandleGitKitchenRun_POST_MissingFields(t *testing.T) {
-	sched := gitkitchen.NewScheduler(nil, nil, nil, config.TestKitchenConfig{},
+	sched := gitkitchen.NewScheduler(nil, nil, nil,
 		func(name, url string) string { return "/repos/" + name })
 
 	hub := NewEventHub()
@@ -350,7 +350,7 @@ func TestHandleGitKitchenRun_ContextDetachedFromRequest(t *testing.T) {
 	// context before returning the error. Actually, we need the runFn to
 	// succeed enough to reach the upsert. Use NewScheduler with nil
 	// executor — RunInstance will error but scheduler still upserts.
-	sched := gitkitchen.NewScheduler(nil, nil, store, cfg.AnalysisTools.TestKitchen,
+	sched := gitkitchen.NewScheduler(nil, nil, store,
 		func(name, url string) string { return "/repos/" + name })
 
 	hub := NewEventHub()

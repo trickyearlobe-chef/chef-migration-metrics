@@ -130,12 +130,15 @@ func testSchedulerConfig() SchedulerConfig {
 	}
 }
 
+func testTKConfig() config.TestKitchenConfig {
+	return config.TestKitchenConfig{Driver: "proxmox"}
+}
+
 func newTestScheduler(exec *schedulerMockExecutor, store *mockResultStore) *Scheduler {
 	s := NewScheduler(
 		exec,
 		&schedulerMockCredResolver{},
 		store,
-		config.TestKitchenConfig{Driver: "proxmox"},
 		func(name, url string) string { return "/repos/" + name },
 	)
 	// Override runFn to bypass filesystem operations and call executor directly.
@@ -181,7 +184,7 @@ func TestScheduler_RunAll_Success(t *testing.T) {
 	})
 
 	s := newTestScheduler(exec, store)
-	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), nil)
+	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), testTKConfig(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,7 +223,7 @@ func TestScheduler_RunAll_MixedResults(t *testing.T) {
 	})
 
 	s := newTestScheduler(exec, store)
-	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), nil)
+	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), testTKConfig(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -252,7 +255,7 @@ func TestScheduler_RunAll_SkipsNonMapped(t *testing.T) {
 	})
 
 	s := newTestScheduler(exec, store)
-	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), nil)
+	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), testTKConfig(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -296,7 +299,7 @@ func TestScheduler_RunAll_ContextCancelled(t *testing.T) {
 
 	cfg := SchedulerConfig{MaxConcurrency: 1, TargetChefVersion: "18.4.2"}
 	s := newTestScheduler(exec, store)
-	result, err := s.RunAll(ctx, plan, cfg, nil)
+	result, err := s.RunAll(ctx, plan, cfg, testTKConfig(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -329,7 +332,7 @@ func TestScheduler_RunAll_Progress(t *testing.T) {
 	}
 
 	s := newTestScheduler(exec, store)
-	_, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), onProgress)
+	_, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), testTKConfig(), onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -364,7 +367,7 @@ func TestScheduler_RunAll_ConcurrencyBound(t *testing.T) {
 
 	cfg := SchedulerConfig{MaxConcurrency: 2, TargetChefVersion: "18.4.2"}
 	s := newTestScheduler(exec, store)
-	_, err := s.RunAll(context.Background(), plan, cfg, nil)
+	_, err := s.RunAll(context.Background(), plan, cfg, testTKConfig(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -389,7 +392,7 @@ func TestScheduler_RunOne_Success(t *testing.T) {
 	})
 
 	s := newTestScheduler(exec, store)
-	result, err := s.RunOne(context.Background(), plan, "default-ubuntu-2204", testSchedulerConfig())
+	result, err := s.RunOne(context.Background(), plan, "default-ubuntu-2204", testSchedulerConfig(), testTKConfig())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -420,7 +423,7 @@ func TestScheduler_RunOne_NotFound(t *testing.T) {
 	})
 
 	s := newTestScheduler(exec, store)
-	_, err := s.RunOne(context.Background(), plan, "nonexistent-instance", testSchedulerConfig())
+	_, err := s.RunOne(context.Background(), plan, "nonexistent-instance", testSchedulerConfig(), testTKConfig())
 	if err == nil {
 		t.Fatal("expected error for not-found instance")
 	}
@@ -438,7 +441,7 @@ func TestScheduler_RunOne_NotMapped(t *testing.T) {
 	})
 
 	s := newTestScheduler(exec, store)
-	_, err := s.RunOne(context.Background(), plan, "default-centos-8", testSchedulerConfig())
+	_, err := s.RunOne(context.Background(), plan, "default-centos-8", testSchedulerConfig(), testTKConfig())
 	if err == nil {
 		t.Fatal("expected error for unmapped instance")
 	}
@@ -462,12 +465,44 @@ func TestScheduler_RunAll_StoreError(t *testing.T) {
 	})
 
 	s := newTestScheduler(exec, store)
-	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), nil)
+	result, err := s.RunAll(context.Background(), plan, testSchedulerConfig(), testTKConfig(), nil)
 	if err != nil {
 		t.Fatalf("RunAll should not return error on store failures, got: %v", err)
 	}
 
 	if result.Errors != 2 {
 		t.Errorf("expected 2 errors (store failures), got %d", result.Errors)
+	}
+}
+
+func TestScheduler_RunOne_UsesCallerTKConfig(t *testing.T) {
+	store := &mockResultStore{}
+	exec := &schedulerMockExecutor{
+		results: map[string]mockExecResult{
+			"default-ubuntu-2204": {exitCode: 0},
+		},
+	}
+
+	plan := testPlan([]PlannedInstance{mappedInstance("default-ubuntu-2204")})
+
+	s := newTestScheduler(exec, store)
+
+	// Capture what tkConfig the runFn receives.
+	var receivedDriver string
+	s.runFn = func(_ context.Context, _ RunInstanceParams, tkConfig config.TestKitchenConfig,
+		_ KitchenExecutor, _ CredentialResolver) RunInstanceResult {
+		receivedDriver = tkConfig.Driver
+		passed := true
+		return RunInstanceResult{Passed: &passed, DriverUsed: tkConfig.Driver}
+	}
+
+	callerCfg := config.TestKitchenConfig{Driver: "proxmox-caller"}
+	_, err := s.RunOne(context.Background(), plan, "default-ubuntu-2204", testSchedulerConfig(), callerCfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if receivedDriver != "proxmox-caller" {
+		t.Errorf("expected runFn to receive driver %q, got %q", "proxmox-caller", receivedDriver)
 	}
 }
