@@ -13,6 +13,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "./Feedback";
 import { StatusBadge } from "./StatusBadge";
+import { useGlobalFilters } from "../context/GlobalFilterContext";
 
 const statusVariantMap: Record<GitKitchenInstanceStatus, "compatible" | "warning" | "untested" | "incompatible"> = {
   mapped: "compatible",
@@ -22,6 +23,7 @@ const statusVariantMap: Record<GitKitchenInstanceStatus, "compatible" | "warning
 };
 
 export function GitKitchenSection({ repoName }: { repoName: string }) {
+  const { targetChefVersion } = useGlobalFilters();
   const [plan, setPlan] = useState<GitKitchenPlanResult | null>(null);
   const [results, setResults] = useState<GitKitchenResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       const resp = await triggerGitKitchenRun({
         git_repo_name: repoName,
         instance_name: instanceName,
-        target_chef_version: "",
+        target_chef_version: targetChefVersion,
       });
       setRunMessage(resp.message);
     } catch (e: unknown) {

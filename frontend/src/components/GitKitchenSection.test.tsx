@@ -10,6 +10,17 @@ import type { GitKitchenPlanResult, GitKitchenResult } from "../types";
 
 vi.mock("../api");
 
+vi.mock("../context/GlobalFilterContext", () => ({
+  useGlobalFilters: () => ({
+    targetChefVersion: "19.1.164",
+    targetVersions: ["19.1.164"],
+    setTargetChefVersion: vi.fn(),
+    staleStatus: "all",
+    setStaleStatus: vi.fn(),
+    versionsLoading: false,
+  }),
+}));
+
 const basePlan: GitKitchenPlanResult = {
   git_repo_name: "example-cookbook",
   git_repo_url: "https://git.example.com/example-cookbook",
@@ -158,7 +169,7 @@ describe("GitKitchenSection", () => {
       expect(api.triggerGitKitchenRun).toHaveBeenCalledWith({
         git_repo_name: "example-cookbook",
         instance_name: "default-ubuntu-2204",
-        target_chef_version: "",
+        target_chef_version: "19.1.164",
       }),
     );
     await waitFor(() =>
