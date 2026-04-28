@@ -166,7 +166,7 @@ function InstanceRow({
         <td className="px-2 py-1">
           <StatusBadge
             variant={statusVariantMap[inst.status]}
-            label={inst.status}
+            label={inst.status === "excluded" ? "skipped" : inst.status}
             size="sm"
           />
         </td>

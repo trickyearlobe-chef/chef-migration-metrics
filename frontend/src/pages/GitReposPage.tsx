@@ -278,6 +278,7 @@ export function GitReposPage() {
                     />
                     <th>Compatibility</th>
                     <th>TK Status</th>
+                    <th>TK Results</th>
                     <th>Head Commit</th>
                     <th>Default Branch</th>
                     <th>Last Fetched</th>
@@ -347,6 +348,13 @@ export function GitReposPage() {
                           }
                           size="sm"
                         />
+                      </td>
+                      <td>
+                        <span className="text-xs text-gray-600">
+                          {repo.tk_total != null && repo.tk_total > 0
+                            ? `${repo.tk_passed ?? 0}/${repo.tk_total}`
+                            : "—"}
+                        </span>
                       </td>
                       <td>
                         <span className="font-mono text-xs text-gray-600">
