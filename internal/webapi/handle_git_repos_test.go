@@ -48,6 +48,8 @@ type gitRepoListResponse struct {
 		LastFetchedAt     string `json:"last_fetched_at"`
 		Compatibility     string `json:"compatibility"`
 		TKStatus          string `json:"tk_status"`
+		TKPassed          int    `json:"tk_passed"`
+		TKTotal           int    `json:"tk_total"`
 		TargetChefVersion string `json:"target_chef_version"`
 	} `json:"data"`
 	Pagination struct {
@@ -92,6 +94,18 @@ func sampleCookstyleResults() []datastore.GitRepoCookstyleResult {
 	}
 }
 
+func sampleKitchenResults() []datastore.GitKitchenResult {
+	passed := true
+	failed := false
+	return []datastore.GitKitchenResult{
+		{GitRepoName: "cookbook-a", InstanceName: "default-ubuntu-2404", Passed: &passed},
+		{GitRepoName: "cookbook-a", InstanceName: "default-rocky-9", Passed: &passed},
+		{GitRepoName: "cookbook-b", InstanceName: "default-ubuntu-2404", Passed: &passed},
+		{GitRepoName: "cookbook-b", InstanceName: "default-rocky-9", Passed: &failed},
+		// cookbook-c and cookbook-d have no kitchen results → "untested"
+	}
+}
+
 func defaultGitRepoMockStore() *mockStore {
 	return &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
@@ -99,6 +113,9 @@ func defaultGitRepoMockStore() *mockStore {
 		},
 		ListAllGitRepoCookstyleResultsFn: func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error) {
 			return sampleCookstyleResults(), nil
+		},
+		ListGitKitchenResultsFn: func(ctx context.Context) ([]datastore.GitKitchenResult, error) {
+			return sampleKitchenResults(), nil
 		},
 	}
 }
