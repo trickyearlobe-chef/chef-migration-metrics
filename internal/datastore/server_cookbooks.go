@@ -165,11 +165,11 @@ func (db *DB) BulkUpsertServerCookbooks(ctx context.Context, params []UpsertServ
 // Mark active/stale
 // ---------------------------------------------------------------------------
 
-// MarkServerCookbooksActiveForOrg sets is_active = true for the named
-// cookbooks (by name) within the given organisation, and is_active = false
-// for all others. Called after a collection run to reflect which cookbooks
-// are actually in use by at least one node.
-func (db *DB) MarkServerCookbooksActiveForOrg(ctx context.Context, organisationName string, activeNames []string) error {
+// MarkServerCookbooksActiveForOrg sets is_active = true for the specified
+// cookbook name+version pairs within the given organisation, and is_active = false
+// for all others. Called after a collection run to reflect which specific
+// cookbook versions are actually in use by at least one non-stale node.
+func (db *DB) MarkServerCookbooksActiveForOrg(ctx context.Context, organisationName string, activeVersions map[string]map[string]bool) error {
 	return db.Tx(ctx, func(tx *sql.Tx) error {
 		// Deactivate all server cookbooks for this org.
 		_, err := tx.ExecContext(ctx,
@@ -181,16 +181,29 @@ func (db *DB) MarkServerCookbooksActiveForOrg(ctx context.Context, organisationN
 			return fmt.Errorf("datastore: deactivating server cookbooks: %w", err)
 		}
 
-		if len(activeNames) == 0 {
+		if len(activeVersions) == 0 {
 			return nil
 		}
 
-		// Activate the ones that are in use.
+		// Build (name, version) pairs and activate only exact matches.
+		names := make([]string, 0)
+		versions := make([]string, 0)
+		for name, vers := range activeVersions {
+			for ver := range vers {
+				names = append(names, name)
+				versions = append(versions, ver)
+			}
+		}
+
 		_, err = tx.ExecContext(ctx,
 			`UPDATE server_cookbooks SET is_active = TRUE, updated_at = now()
-			 WHERE organisation_name = $1 AND name = ANY($2)`,
+			 WHERE organisation_name = $1
+			   AND (name, version) IN (
+			     SELECT unnest($2::text[]), unnest($3::text[])
+			   )`,
 			organisationName,
-			stringSliceToArray(activeNames),
+			stringSliceToArray(names),
+			stringSliceToArray(versions),
 		)
 		if err != nil {
 			return fmt.Errorf("datastore: activating server cookbooks: %w", err)
