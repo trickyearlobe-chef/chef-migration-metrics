@@ -618,6 +618,9 @@ type DataStore interface {
 	// Returns ErrNotFound if batch doesn't exist or status doesn't match.
 	UpdateKitchenBatchStatusIfCurrent(ctx context.Context, id string, expectedStatus string, newStatus string, now time.Time) (datastore.KitchenBatch, error)
 
+	// CancelStaleBatches transitions running/preparing batches to cancelled.
+	CancelStaleBatches(ctx context.Context, now time.Time) (int, error)
+
 	// -----------------------------------------------------------------
 	// Kitchen Batch Instances
 	// -----------------------------------------------------------------

@@ -17,6 +17,14 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 )
 
+// noopResultStore satisfies gitkitchen.ResultStore for handler tests
+// where background goroutine execution is not under test.
+type noopResultStore struct{}
+
+func (noopResultStore) UpsertGitKitchenResult(_ context.Context, _ datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error) {
+	return datastore.GitKitchenResult{}, nil
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/v1/kitchen/batches
 // ---------------------------------------------------------------------------
@@ -686,8 +694,14 @@ func TestHandleRunKitchenBatch_NonDryRun_Returns202(t *testing.T) {
 		{KitchenName: "ubuntu-22.04", Image: "ubuntu-2204-template"},
 	}
 
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
+	noopRun := func(_ context.Context, _ gitkitchen.RunInstanceParams, _ config.TestKitchenConfig,
+		_ gitkitchen.KitchenExecutor, _ gitkitchen.CredentialResolver) gitkitchen.RunInstanceResult {
+		passed := true
+		return gitkitchen.RunInstanceResult{Passed: &passed}
+	}
+	sched := gitkitchen.NewScheduler(nil, nil, noopResultStore{},
+		func(name, url string) string { return "/repos/" + name },
+		gitkitchen.WithRunFn(noopRun))
 
 	hub := NewEventHub()
 	go hub.Run()
@@ -696,6 +710,26 @@ func TestHandleRunKitchenBatch_NonDryRun_Returns202(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/run", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
+	// Cancel the background goroutine and wait for it to exit.
+	t.Cleanup(func() {
+		r.batchMu.Lock()
+		if fn, ok := r.runningBatch["test-uuid-1"]; ok {
+			fn()
+		}
+		r.batchMu.Unlock()
+		// Wait for the goroutine to remove itself from runningBatch.
+		for i := 0; i < 100; i++ {
+			time.Sleep(50 * time.Millisecond)
+			r.batchMu.Lock()
+			_, running := r.runningBatch["test-uuid-1"]
+			r.batchMu.Unlock()
+			if !running {
+				return
+			}
+		}
+		t.Log("WARN: background batch goroutine did not exit within 5s")
+	})
 
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())

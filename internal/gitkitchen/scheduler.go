@@ -77,17 +77,29 @@ type Scheduler struct {
 	runFn        InstanceRunner // injectable for testing
 }
 
+// SchedulerOption configures a Scheduler.
+type SchedulerOption func(*Scheduler)
+
+// WithRunFn overrides the instance runner. Use in tests to avoid real OS commands.
+func WithRunFn(fn InstanceRunner) SchedulerOption {
+	return func(s *Scheduler) { s.runFn = fn }
+}
+
 // NewScheduler creates a new Scheduler.
 func NewScheduler(executor KitchenExecutor, credResolver CredentialResolver,
 	store ResultStore,
-	repoDirFn func(name, url string) string) *Scheduler {
-	return &Scheduler{
+	repoDirFn func(name, url string) string, opts ...SchedulerOption) *Scheduler {
+	s := &Scheduler{
 		executor:     executor,
 		credResolver: credResolver,
 		store:        store,
 		repoDirFn:    repoDirFn,
 		runFn:        RunInstance,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // RunAll runs all mapped instances from a PlanResult with bounded concurrency.

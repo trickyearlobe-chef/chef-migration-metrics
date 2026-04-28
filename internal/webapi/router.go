@@ -277,6 +277,16 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 
 	r.registerRoutes()
 
+	// Clean up batches stranded by a previous process crash/restart.
+	if r.db != nil {
+		n, err := r.db.CancelStaleBatches(context.Background(), time.Now().UTC())
+		if err != nil {
+			r.logf("ERROR", "router: failed to cancel stale batches: %v", err)
+		} else if n > 0 {
+			r.logf("INFO", "router: cancelled %d stale batches from previous run", n)
+		}
+	}
+
 	// Wrap the entire mux with the timing middleware when a recorder is
 	// present. This captures latency for all routes (protect + adminOnly)
 	// while excluding nothing — the overhead is <1µs per request.

@@ -145,6 +145,7 @@ type mockStore struct {
 	UpdateKitchenBatchStatusFn func(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error)
 	DeleteKitchenBatchFn       func(ctx context.Context, id string) error
 	UpdateKitchenBatchStatusIfCurrentFn func(ctx context.Context, id string, expectedStatus string, newStatus string, now time.Time) (datastore.KitchenBatch, error)
+	CancelStaleBatchesFn func(ctx context.Context, now time.Time) (int, error)
 
 	// Kitchen Batch Instances
 	CreateBatchInstanceFn          func(ctx context.Context, p datastore.CreateBatchInstanceParams) (datastore.KitchenBatchInstance, error)
@@ -1125,6 +1126,13 @@ func (m *mockStore) UpdateKitchenBatchStatusIfCurrent(ctx context.Context, id st
 		return m.UpdateKitchenBatchStatusIfCurrentFn(ctx, id, expectedStatus, newStatus, now)
 	}
 	panic("mockStore.UpdateKitchenBatchStatusIfCurrentFn not set")
+}
+
+func (m *mockStore) CancelStaleBatches(ctx context.Context, now time.Time) (int, error) {
+	if m.CancelStaleBatchesFn != nil {
+		return m.CancelStaleBatchesFn(ctx, now)
+	}
+	return 0, nil // no-op for tests — startup cleanup is not under test
 }
 
 func (m *mockStore) CreateBatchInstance(ctx context.Context, p datastore.CreateBatchInstanceParams) (datastore.KitchenBatchInstance, error) {
