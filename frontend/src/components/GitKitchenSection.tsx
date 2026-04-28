@@ -30,6 +30,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
   const [error, setError] = useState<string | null>(null);
   const [runningInstance, setRunningInstance] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [expandedInstance, setExpandedInstance] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -101,41 +102,19 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
           <tbody>
             {plan.instances.map((inst) => {
               const result = latestResult(inst.instance_name);
+              const isExpanded = expandedInstance === inst.instance_name;
               return (
-                <tr
+                <InstanceRow
                   key={inst.instance_name}
-                  className="border-b border-gray-100"
-                >
-                  <td className="px-2 py-1 font-mono">{inst.instance_name}</td>
-                  <td className="px-2 py-1">{inst.suite_name}</td>
-                  <td className="px-2 py-1">{inst.platform_name}</td>
-                  <td className="px-2 py-1">
-                    <StatusBadge
-                      variant={statusVariantMap[inst.status]}
-                      label={inst.status}
-                      size="sm"
-                    />
-                  </td>
-                  <td className="px-2 py-1 text-gray-500">
-                    {inst.image_name ?? "—"}
-                  </td>
-                  <td className="px-2 py-1">
-                    <ResultBadge result={result} />
-                  </td>
-                  <td className="px-2 py-1">
-                    {inst.status === "mapped" && (
-                      <button
-                        onClick={() => handleRun(inst.instance_name)}
-                        disabled={runningInstance === inst.instance_name}
-                        className="rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                      >
-                        {runningInstance === inst.instance_name
-                          ? "Running…"
-                          : "Run"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                  inst={inst}
+                  result={result}
+                  isExpanded={isExpanded}
+                  onToggleOutput={() =>
+                    setExpandedInstance(isExpanded ? null : inst.instance_name)
+                  }
+                  onRun={() => handleRun(inst.instance_name)}
+                  isRunning={runningInstance === inst.instance_name}
+                />
               );
             })}
           </tbody>
@@ -145,19 +124,100 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
   );
 }
 
-function ResultBadge({ result }: { result?: GitKitchenResult }) {
+function InstanceRow({
+  inst,
+  result,
+  isExpanded,
+  onToggleOutput,
+  onRun,
+  isRunning,
+}: {
+  inst: GitKitchenPlanResult["instances"][0];
+  result?: GitKitchenResult;
+  isExpanded: boolean;
+  onToggleOutput: () => void;
+  onRun: () => void;
+  isRunning: boolean;
+}) {
+  return (
+    <>
+      <tr className="border-b border-gray-100">
+        <td className="px-2 py-1 font-mono">{inst.instance_name}</td>
+        <td className="px-2 py-1">{inst.suite_name}</td>
+        <td className="px-2 py-1">{inst.platform_name}</td>
+        <td className="px-2 py-1">
+          <StatusBadge
+            variant={statusVariantMap[inst.status]}
+            label={inst.status}
+            size="sm"
+          />
+        </td>
+        <td className="px-2 py-1 text-gray-500">
+          {inst.image_name ?? "—"}
+        </td>
+        <td className="px-2 py-1">
+          <ResultBadge result={result} onClick={result ? onToggleOutput : undefined} />
+        </td>
+        <td className="px-2 py-1">
+          {inst.status === "mapped" && (
+            <button
+              onClick={onRun}
+              disabled={isRunning}
+              className="rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              {isRunning ? "Running…" : "Run"}
+            </button>
+          )}
+        </td>
+      </tr>
+      {isExpanded && result && (
+        <tr className="border-b border-gray-200 bg-gray-50">
+          <td colSpan={7} className="px-2 py-2">
+            <div className="flex items-center gap-2 mb-1 text-[10px] text-gray-500">
+              <span>Duration: {result.duration_seconds ?? "—"}s</span>
+              <span>·</span>
+              <span>Target: {result.target_chef_version}</span>
+              <span>·</span>
+              <span>Commit: {result.commit_sha?.slice(0, 8)}</span>
+              {result.error_message && (
+                <>
+                  <span>·</span>
+                  <span className="text-red-600">Error: {result.error_message}</span>
+                </>
+              )}
+            </div>
+            <pre className="max-h-80 overflow-auto rounded bg-gray-900 p-2 text-[10px] leading-tight text-gray-200 whitespace-pre-wrap">
+              {result.output || "(no output captured)"}
+            </pre>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function ResultBadge({ result, onClick }: { result?: GitKitchenResult; onClick?: () => void }) {
   if (!result) return <span className="text-gray-400">—</span>;
+
+  const clickProps = onClick
+    ? { onClick, role: "button" as const, tabIndex: 0, className: "cursor-pointer" }
+    : {};
+
   if (result.passed === true) {
     return (
-      <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-800">
-        ✓ Passed
+      <span {...clickProps}>
+        <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-800">
+          ✓ Passed
+        </span>
       </span>
     );
   }
   if (result.passed === false) {
     return (
-      <span className="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
-        ✗ Failed
+      <span {...clickProps}>
+        <span className="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
+          ✗ Failed
+        </span>
       </span>
     );
   }
