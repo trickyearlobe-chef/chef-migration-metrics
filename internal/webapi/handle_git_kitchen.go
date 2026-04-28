@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -140,8 +141,14 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 		TargetChefVersion: body.TargetChefVersion,
 	}
 
+	// Detach from the HTTP request context so the kitchen run is not
+	// cancelled when the response is sent. A cancelled context would kill
+	// the kitchen process mid-flight, potentially orphaning VMs on the
+	// hypervisor before the destroy phase completes.
+	bgCtx := context.WithoutCancel(ctx)
+
 	go func() {
-		_, runErr := r.gitKitchenScheduler.RunOne(ctx, plan, body.InstanceName, cfg)
+		_, runErr := r.gitKitchenScheduler.RunOne(bgCtx, plan, body.InstanceName, cfg)
 		if runErr != nil {
 			r.logf("ERROR", "git kitchen run async: %v", runErr)
 		}
