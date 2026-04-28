@@ -194,7 +194,7 @@ function dotColor(variant: BadgeVariant): string {
 /** Renders the appropriate compatibility badge for a given status string. */
 export function CompatibilityBadge({
   status,
-  confidence,
+  confidence: _confidence,
   size = "md",
 }: {
   status: string;
@@ -208,7 +208,7 @@ export function CompatibilityBadge({
   switch (status) {
     case "compatible":
       variant = "compatible";
-      label = confidence === "high" ? "Compatible" : "Compatible";
+      label = "Compatible";
       break;
     case "cookstyle_only":
       variant = "cookstyle_only";
