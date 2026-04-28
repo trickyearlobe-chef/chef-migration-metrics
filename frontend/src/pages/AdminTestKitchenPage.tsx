@@ -821,6 +821,40 @@ export function AdminTestKitchenPage() {
                 </div>
               </div>
 
+              {/* Baked-in Chef toggle */}
+              <div className="mb-3">
+                <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={img.install_method === "baked_in"}
+                    onChange={(e) =>
+                      updateImage(idx, {
+                        install_method: e.target.checked ? "baked_in" : "download",
+                        chef_client_path: e.target.checked ? (img.chef_client_path || "/opt/chef/bin/chef-client") : "",
+                      })
+                    }
+                    disabled={saving}
+                    className="rounded border-gray-300"
+                  />
+                  Chef is baked into this image (no download/install needed)
+                </label>
+                {img.install_method === "baked_in" && (
+                  <div className="mt-2">
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      chef-client binary path
+                    </label>
+                    <input
+                      type="text"
+                      value={img.chef_client_path ?? ""}
+                      onChange={(e) => updateImage(idx, { chef_client_path: e.target.value })}
+                      placeholder="/opt/chef/bin/chef-client"
+                      disabled={saving}
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Chef Download URLs */}
               <div className="mb-3">
                 <label className="mb-1 block text-xs font-medium text-gray-600">

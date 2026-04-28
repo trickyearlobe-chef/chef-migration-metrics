@@ -218,3 +218,80 @@ func TestGenerateOverlay_TransportCredentials(t *testing.T) {
 		t.Errorf("expected transport ssh_key ERB ref, got:\n%s", overlay)
 	}
 }
+
+func TestGenerateOverlay_BakedIn_Chef19(t *testing.T) {
+	tkConfig := config.TestKitchenConfig{
+		Driver:                   "proxmox",
+		ChefLicenseKeyCredential: "my-license",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "alma-10", Image: "alma10"},
+		},
+		Images: []config.ImageEntry{
+			{
+				Name:           "alma10",
+				ID:             "200",
+				InstallMethod:  "baked_in",
+				ChefClientPath: "/opt/chef/bin/chef-client",
+			},
+		},
+	}
+
+	overlay, err := generateOverlay(tkConfig, "alma-10", "19.2.12")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(overlay, "  name: chef-ice\n") {
+		t.Errorf("expected provisioner name chef-ice, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "require_chef_omnibus: false") {
+		t.Errorf("expected require_chef_omnibus: false, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "chef_client_path: /opt/chef/bin/chef-client") {
+		t.Errorf("expected chef_client_path, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>") {
+		t.Errorf("expected chef_license_key, got:\n%s", overlay)
+	}
+	// Must NOT contain product_version or product_name (no download).
+	if strings.Contains(overlay, "product_version") {
+		t.Error("baked_in should not set product_version")
+	}
+	if strings.Contains(overlay, "product_name") {
+		t.Error("baked_in should not set product_name")
+	}
+}
+
+func TestGenerateOverlay_BakedIn_Chef18(t *testing.T) {
+	tkConfig := config.TestKitchenConfig{
+		Driver: "proxmox",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "centos-7", Image: "centos7"},
+		},
+		Images: []config.ImageEntry{
+			{
+				Name:           "centos7",
+				ID:             "101",
+				InstallMethod:  "baked_in",
+				ChefClientPath: "/usr/bin/chef-client",
+			},
+		},
+	}
+
+	overlay, err := generateOverlay(tkConfig, "centos-7", "18.4.2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(overlay, "require_chef_omnibus: false") {
+		t.Errorf("expected require_chef_omnibus: false, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "chef_client_path: /usr/bin/chef-client") {
+		t.Errorf("expected chef_client_path, got:\n%s", overlay)
+	}
+	// Chef <19 baked_in should NOT use chef-ice provisioner.
+	if strings.Contains(overlay, "name: chef-ice") {
+		t.Error("Chef 18 baked_in should not use chef-ice provisioner")
+	}
+	if strings.Contains(overlay, "product_version") {
+		t.Error("baked_in should not set product_version")
+	}
+}
