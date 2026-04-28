@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/batch"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -296,6 +297,30 @@ func (r *Router) handleRunKitchenBatch(w http.ResponseWriter, req *http.Request,
 	if b.Status != "draft" {
 		WriteError(w, http.StatusConflict, "conflict",
 			fmt.Sprintf("Batch is not in draft status (current: %s).", b.Status))
+		return
+	}
+
+	// Resolve effective TK config and check enabled gate.
+	var tkCfg config.TestKitchenConfig
+	setting, settingErr := r.db.GetRuntimeSetting(ctx, "test_kitchen")
+	if settingErr != nil {
+		r.logf("ERROR", "kitchen-batches: load runtime setting: %v", settingErr)
+		WriteInternalError(w, "Failed to load Test Kitchen configuration.")
+		return
+	}
+	if setting != nil {
+		if unmarshalErr := json.Unmarshal(setting.Value, &tkCfg); unmarshalErr != nil {
+			r.logf("ERROR", "kitchen-batches: parse stored config: %v", unmarshalErr)
+			WriteInternalError(w, "Failed to parse stored Test Kitchen configuration.")
+			return
+		}
+	} else {
+		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
+	}
+	_ = tkCfg // used in later Phase 6 execution wiring
+
+	if !tkCfg.IsEnabled() {
+		WriteError(w, http.StatusConflict, "conflict", "Test Kitchen is disabled.")
 		return
 	}
 

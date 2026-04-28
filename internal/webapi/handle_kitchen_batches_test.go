@@ -575,3 +575,36 @@ func TestHandleListExcludedGitRepos_Success(t *testing.T) {
 		t.Fatalf("len = %d, want 2", len(repos))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/kitchen/batches/:id/run — IsEnabled gate
+// ---------------------------------------------------------------------------
+
+func TestHandleRunKitchenBatch_DisabledReturns409(t *testing.T) {
+	disabled := false
+	store := &mockStore{
+		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
+			return datastore.KitchenBatch{
+				ID:     id,
+				Name:   "My batch",
+				Status: datastore.BatchStatusDraft,
+				DryRun: true,
+			}, nil
+		},
+	}
+
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen.Enabled = &disabled
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, cfg, hub)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/run", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
