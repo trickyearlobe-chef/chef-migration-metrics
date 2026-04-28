@@ -122,7 +122,7 @@
     }
 
     .battery-bar-track {
-        @apply flex h-full items-center overflow-hidden rounded;
+        @apply relative flex h-full items-center overflow-hidden rounded;
         min-width: fit-content;
     }
 
