@@ -256,8 +256,9 @@ export function RolesPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
+                      className="text-right"
                     />
-                    <th>Cookbooks</th>
+                    <th className="text-right">Cookbooks</th>
                     <SortableColumnHeader
                       label="Compatibility"
                       field="incompatible_cookbook_count"
