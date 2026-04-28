@@ -256,9 +256,8 @@ export function RolesPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
-                      className="text-right"
                     />
-                    <th className="text-right">Cookbooks</th>
+                    <th>Cookbooks</th>
                     <SortableColumnHeader
                       label="Compatibility"
                       field="incompatible_cookbook_count"
@@ -284,12 +283,12 @@ export function RolesPage() {
                           {role.organisations?.join(", ") || "—"}
                         </span>
                       </td>
-                      <td className="text-right">
+                      <td>
                         <span className="text-sm text-gray-700">
                           {role.node_count.toLocaleString()}
                         </span>
                       </td>
-                      <td className="text-right">
+                      <td>
                         <span className="text-sm text-gray-700">
                           {role.total_cookbook_count}
                         </span>
