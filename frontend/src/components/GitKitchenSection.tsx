@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   fetchGitKitchenInstances,
   fetchGitKitchenResults,
@@ -14,6 +14,7 @@ import type {
 import { LoadingSpinner, ErrorAlert } from "./Feedback";
 import { StatusBadge } from "./StatusBadge";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
+import { useWebSocket } from "../hooks/useWebSocket";
 
 const statusVariantMap: Record<GitKitchenInstanceStatus, "compatible" | "warning" | "untested" | "incompatible"> = {
   mapped: "compatible",
@@ -24,6 +25,7 @@ const statusVariantMap: Record<GitKitchenInstanceStatus, "compatible" | "warning
 
 export function GitKitchenSection({ repoName }: { repoName: string }) {
   const { targetChefVersion } = useGlobalFilters();
+  const { onEvent } = useWebSocket();
   const [plan, setPlan] = useState<GitKitchenPlanResult | null>(null);
   const [results, setResults] = useState<GitKitchenResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +33,12 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
   const [runningInstance, setRunningInstance] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState<string | null>(null);
   const [expandedInstance, setExpandedInstance] = useState<string | null>(null);
+
+  const refreshResults = useCallback(() => {
+    fetchGitKitchenResults(repoName)
+      .then(setResults)
+      .catch(() => {});
+  }, [repoName]);
 
   useEffect(() => {
     setLoading(true);
@@ -46,6 +54,16 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [repoName]);
+
+  useEffect(() => {
+    return onEvent("git_kitchen_run_complete", (data) => {
+      const evt = data as { git_repo_name?: string };
+      if (evt.git_repo_name === repoName) {
+        refreshResults();
+        setRunningInstance(null);
+      }
+    });
+  }, [repoName, onEvent, refreshResults]);
 
   if (loading) return <LoadingSpinner message="Loading kitchen instances…" />;
   if (error) return <ErrorAlert message={error} />;
@@ -67,9 +85,9 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
         target_chef_version: targetChefVersion,
       });
       setRunMessage(resp.message);
+      // runningInstance stays set — cleared by WebSocket event
     } catch (e: unknown) {
       setRunMessage(`Run failed: ${(e as Error).message}`);
-    } finally {
       setRunningInstance(null);
     }
   }

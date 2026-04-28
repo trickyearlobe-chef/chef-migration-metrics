@@ -187,10 +187,18 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 	bgCtx := context.WithoutCancel(ctx)
 
 	go func() {
-		_, runErr := r.gitKitchenScheduler.RunOne(bgCtx, plan, body.InstanceName, cfg, tkCfg)
+		result, runErr := r.gitKitchenScheduler.RunOne(bgCtx, plan, body.InstanceName, cfg, tkCfg)
 		if runErr != nil {
 			r.logf("ERROR", "git kitchen run async: %v", runErr)
 		}
+		evt := map[string]any{
+			"git_repo_name": body.GitRepoName,
+			"instance_name": body.InstanceName,
+		}
+		if result != nil {
+			evt["passed"] = result.Result.Passed
+		}
+		r.hub.Broadcast(NewEvent(EventGitKitchenRunComplete, evt))
 	}()
 
 	WriteJSON(w, http.StatusAccepted, map[string]string{

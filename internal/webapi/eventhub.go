@@ -51,6 +51,9 @@ const (
 	// Notification events.
 	EventNotificationSent   = "notification_sent"
 	EventNotificationFailed = "notification_failed"
+
+	// Git kitchen events.
+	EventGitKitchenRunComplete = "git_kitchen_run_complete"
 )
 
 // ---------------------------------------------------------------------------
