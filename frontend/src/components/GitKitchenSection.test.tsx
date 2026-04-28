@@ -176,4 +176,54 @@ describe("GitKitchenSection", () => {
       expect(screen.getByText("Run queued")).toBeInTheDocument(),
     );
   });
+
+  it("expands output when clicking a result badge", async () => {
+    const resultWithOutput: GitKitchenResult = {
+      ...baseResult,
+      passed: false,
+      output: "Converging recipe[default]...\nERROR: package[nginx] failed",
+      error_message: "converge failed",
+      duration_seconds: 45,
+    };
+    vi.mocked(api.fetchGitKitchenResults).mockResolvedValue([resultWithOutput]);
+    const user = userEvent.setup();
+    render(<GitKitchenSection repoName="example-cookbook" />);
+    await waitFor(() =>
+      expect(screen.getByText("✗ Failed")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Converging recipe/)).not.toBeInTheDocument();
+    await user.click(screen.getByText("✗ Failed"));
+    expect(screen.getByText(/Converging recipe/)).toBeInTheDocument();
+    expect(screen.getByText(/ERROR: package\[nginx\] failed/)).toBeInTheDocument();
+    expect(screen.getByText(/Duration: 45s/)).toBeInTheDocument();
+    expect(screen.getByText(/Error: converge failed/)).toBeInTheDocument();
+  });
+
+  it("collapses output when clicking the badge again", async () => {
+    vi.mocked(api.fetchGitKitchenResults).mockResolvedValue([
+      { ...baseResult, passed: false, output: "some output" },
+    ]);
+    const user = userEvent.setup();
+    render(<GitKitchenSection repoName="example-cookbook" />);
+    await waitFor(() =>
+      expect(screen.getByText("✗ Failed")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByText("✗ Failed"));
+    expect(screen.getByText("some output")).toBeInTheDocument();
+    await user.click(screen.getByText("✗ Failed"));
+    expect(screen.queryByText("some output")).not.toBeInTheDocument();
+  });
+
+  it("shows placeholder when result has no output", async () => {
+    vi.mocked(api.fetchGitKitchenResults).mockResolvedValue([
+      { ...baseResult, passed: true, output: undefined },
+    ]);
+    const user = userEvent.setup();
+    render(<GitKitchenSection repoName="example-cookbook" />);
+    await waitFor(() =>
+      expect(screen.getByText("✓ Passed")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByText("✓ Passed"));
+    expect(screen.getByText("(no output captured)")).toBeInTheDocument();
+  });
 });
