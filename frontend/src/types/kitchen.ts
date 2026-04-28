@@ -12,6 +12,8 @@ export interface ImageEntry {
   driver_settings?: Record<string, unknown>;
   transport?: PlatformMapTransport | null;
   chef_download_urls?: Record<string, string>;
+  install_method?: "download" | "baked_in";
+  chef_client_path?: string;
 }
 
 export interface PlatformMapEntry {

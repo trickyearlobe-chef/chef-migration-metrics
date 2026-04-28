@@ -88,9 +88,23 @@ func generateOverlay(tkConfig config.TestKitchenConfig, platformName, targetChef
 
 	// Provisioner block
 	major := chefMajorVersion(targetChefVersion)
+	bakedIn := imgOK && img.EffectiveInstallMethod() == "baked_in"
 	buf.WriteString("\nprovisioner:\n")
-	if major >= 19 {
-		// Chef 19+ uses the chef-ice provisioner gem.
+	if bakedIn {
+		if major >= 19 {
+			buf.WriteString("  name: chef-ice\n")
+		}
+		buf.WriteString("  require_chef_omnibus: false\n")
+		if img.ChefClientPath != "" {
+			fmt.Fprintf(&buf, "  chef_client_path: %s\n", yamlScalar(img.ChefClientPath))
+		}
+		if tkConfig.ChefLicenseKeyCredential != "" {
+			if major >= 19 {
+				buf.WriteString("  chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>\n")
+			}
+		}
+		buf.WriteString("  chef_license: accept\n")
+	} else if major >= 19 {
 		buf.WriteString("  name: chef-ice\n")
 		if targetChefVersion != "" {
 			fmt.Fprintf(&buf, "  product_version: %q\n", targetChefVersion)
