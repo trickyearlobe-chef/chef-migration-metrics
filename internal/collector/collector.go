@@ -770,6 +770,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// which can be very expensive when there are many stale nodes.
 	allCookbookNames := make(map[string]bool)
 	activeCookbookNames := make(map[string]bool)
+	activeCookbookVersions := make(map[string]map[string]bool) // name → set of versions
 
 	// Build NodeRecord slice for usage analysis (populated alongside snapshot params).
 	nodeRecords := make([]analysis.NodeRecord, 0, len(searchRows))
@@ -792,10 +793,14 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		// checked in.
 		nodeIsStale := nd.IsStale(staleThreshold)
 		cbVersions := nd.CookbookVersions()
-		for cbName := range cbVersions {
+		for cbName, cbVer := range cbVersions {
 			allCookbookNames[cbName] = true
 			if !nodeIsStale {
 				activeCookbookNames[cbName] = true
+				if activeCookbookVersions[cbName] == nil {
+					activeCookbookVersions[cbName] = make(map[string]bool)
+				}
+				activeCookbookVersions[cbName][cbVer] = true
 			}
 		}
 
@@ -1001,11 +1006,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	cookbooks = upserted
 
 	// Mark active/unused cookbooks for this organisation.
-	activeNames := make([]string, 0, len(activeCookbookNames))
-	for name := range activeCookbookNames {
-		activeNames = append(activeNames, name)
-	}
-	if err := c.db.MarkServerCookbooksActiveForOrg(ctx, org.Name, activeNames); err != nil {
+	if err := c.db.MarkServerCookbooksActiveForOrg(ctx, org.Name, activeCookbookVersions); err != nil {
 		log.Warn(fmt.Sprintf("failed to mark active cookbooks: %v", err),
 			logging.WithCollectionRunID(run.OrganisationName))
 	}
