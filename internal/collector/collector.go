@@ -37,6 +37,14 @@ import (
 // injected as a dependency to allow testing with mock clients.
 type ClientFactory func(ctx context.Context, org datastore.Organisation) (*chefapi.Client, error)
 
+// orgResult holds the outcome of collecting a single organisation.
+type orgResult struct {
+	OrgName   string
+	Nodes     int
+	Cookbooks int
+	Err       error
+}
+
 // Collector orchestrates periodic data collection from Chef Infra Server
 // organisations. It is safe for concurrent use — only one collection run
 // may be active at a time.
@@ -433,13 +441,6 @@ func (c *Collector) runForOrganisations(ctx context.Context, orgs map[string]dat
 		concurrency = 1
 	}
 
-	type orgResult struct {
-		OrgName   string
-		Nodes     int
-		Cookbooks int
-		Err       error
-	}
-
 	resultsCh := make(chan orgResult, len(orgList))
 	sem := make(chan struct{}, concurrency)
 
@@ -576,13 +577,6 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 	concurrency := c.cfg.Concurrency.OrganisationCollection
 	if concurrency <= 0 {
 		concurrency = 1
-	}
-
-	type orgResult struct {
-		OrgName   string
-		Nodes     int
-		Cookbooks int
-		Err       error
 	}
 
 	resultsCh := make(chan orgResult, len(orgs))
