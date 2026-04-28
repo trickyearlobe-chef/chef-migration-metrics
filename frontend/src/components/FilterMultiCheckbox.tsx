@@ -8,6 +8,7 @@ interface FilterMultiCheckboxProps {
   options: { value: string; label: string; count?: number }[];
   selected: string[];
   onChange: (selected: string[]) => void;
+  compact?: boolean;
 }
 
 export function FilterMultiCheckbox({
@@ -15,6 +16,7 @@ export function FilterMultiCheckbox({
   options,
   selected,
   onChange,
+  compact = false,
 }: FilterMultiCheckboxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,21 +59,31 @@ export function FilterMultiCheckbox({
   const buttonLabel =
     selected.length > 0 ? `${label} (${selected.length})` : label;
 
+  const wrapperClass = compact
+    ? "relative flex items-center gap-1.5"
+    : "relative";
+
+  const labelClass = compact
+    ? "text-xs font-medium text-gray-500"
+    : "mb-1 block text-xs font-medium text-gray-500";
+
+  const buttonClass = compact
+    ? "block w-28 rounded-md border border-gray-300 bg-white px-1.5 py-1 text-left text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+    : "block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+
   return (
-    <div ref={containerRef} className="relative">
-      <label className="mb-1 block text-xs font-medium text-gray-500">
-        {label}
-      </label>
+    <div ref={containerRef} className={wrapperClass}>
+      <label className={labelClass}>{label}</label>
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
-        className="block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className={buttonClass}
       >
         {buttonLabel}
       </button>
 
       {isOpen && (
-        <div className="absolute z-10 mt-1 max-h-60 w-56 overflow-auto rounded-md border border-gray-300 bg-white py-1 shadow-lg">
+        <div className="absolute left-0 top-full z-10 mt-1 max-h-60 w-56 overflow-auto rounded-md border border-gray-300 bg-white py-1 shadow-lg">
           {options.map((opt) => (
             <label
               key={opt.value}
@@ -97,7 +109,7 @@ export function FilterMultiCheckbox({
         </div>
       )}
 
-      {selected.length > 0 && (
+      {!compact && selected.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {selected.map((value) => {
             const opt = options.find((o) => o.value === value);

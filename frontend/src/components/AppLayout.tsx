@@ -46,6 +46,7 @@ function GlobalFilterBar() {
         options={STALENESS_OPTIONS}
         selected={staleTiers}
         onChange={setStaleTiers}
+        compact
       />
     </div>
   );
