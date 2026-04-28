@@ -129,6 +129,7 @@ export function PlatformDistributionCard({
               {data.distribution.map((v) => {
                 const pct =
                   data.total_nodes > 0 ? (v.count / data.total_nodes) * 100 : 0;
+                const label = v.display_name ?? v.platform;
                 return (
                   <Link
                     key={v.platform}
@@ -136,7 +137,7 @@ export function PlatformDistributionCard({
                     className="bar-chart-row hover:bg-gray-50 rounded transition-colors"
                   >
                     <span className="bar-chart-label" title={v.platform}>
-                      {v.platform}
+                      {label}
                     </span>
                     <div className="bar-chart-track">
                       <div

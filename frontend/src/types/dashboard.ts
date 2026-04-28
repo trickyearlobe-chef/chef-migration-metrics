@@ -13,6 +13,7 @@ export interface VersionDistributionResponse {
 
 export interface PlatformCount {
   platform: string;
+  display_name?: string | null;
   count: number;
   percent: number;
 }
