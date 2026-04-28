@@ -87,18 +87,26 @@ func generateOverlay(tkConfig config.TestKitchenConfig, platformName, targetChef
 	}
 
 	// Provisioner block
-	buf.WriteString("\nprovisioner:\n")
-	buf.WriteString("  require_chef_omnibus: true\n")
 	major := chefMajorVersion(targetChefVersion)
+	buf.WriteString("\nprovisioner:\n")
 	if major >= 19 {
-		buf.WriteString("  product_name: chef-ice\n")
+		// Chef 19+ uses the chef-ice provisioner gem.
+		buf.WriteString("  name: chef-ice\n")
+		if targetChefVersion != "" {
+			fmt.Fprintf(&buf, "  product_version: %q\n", targetChefVersion)
+		}
+		if tkConfig.ChefLicenseKeyCredential != "" {
+			buf.WriteString("  chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>\n")
+		}
+		buf.WriteString("  chef_license: accept\n")
 	} else {
+		buf.WriteString("  require_chef_omnibus: true\n")
 		buf.WriteString("  product_name: chef\n")
+		if targetChefVersion != "" {
+			fmt.Fprintf(&buf, "  product_version: %q\n", targetChefVersion)
+		}
+		buf.WriteString("  chef_license: accept-no-persist\n")
 	}
-	if targetChefVersion != "" {
-		fmt.Fprintf(&buf, "  product_version: %q\n", targetChefVersion)
-	}
-	buf.WriteString("  chef_license: accept-no-persist\n")
 	hasContent = true
 
 	if !hasContent {

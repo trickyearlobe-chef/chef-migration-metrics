@@ -101,7 +101,8 @@ func TestGenerateOverlay_SkippedPlatform(t *testing.T) {
 
 func TestGenerateOverlay_ChefIce(t *testing.T) {
 	tkConfig := config.TestKitchenConfig{
-		Driver: "proxmox",
+		Driver:                   "proxmox",
+		ChefLicenseKeyCredential: "my-license",
 		PlatformMap: []config.PlatformMapEntry{
 			{KitchenName: "ubuntu-2204", Image: "ubuntu22"},
 		},
@@ -114,11 +115,50 @@ func TestGenerateOverlay_ChefIce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(overlay, "product_name: chef-ice") {
-		t.Error("expected product_name chef-ice for version >= 19")
+	// Must use chef-ice provisioner, not chef_zero with product_name.
+	if !strings.Contains(overlay, "  name: chef-ice\n") {
+		t.Errorf("expected provisioner name chef-ice for version >= 19, got:\n%s", overlay)
 	}
-	if strings.Contains(overlay, "product_name: chef\n") {
-		t.Error("should not contain bare 'product_name: chef' for version >= 19")
+	if !strings.Contains(overlay, "product_version: \"19.0.1\"") {
+		t.Errorf("expected product_version in overlay, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "chef_license_key: <%= ENV['CMM_TK_CHEF_LICENSE_KEY'] %>") {
+		t.Errorf("expected chef_license_key ERB ref, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "chef_license: accept") {
+		t.Errorf("expected chef_license: accept, got:\n%s", overlay)
+	}
+	// Must NOT contain chef_zero-style settings.
+	if strings.Contains(overlay, "require_chef_omnibus") {
+		t.Error("chef-ice provisioner should not set require_chef_omnibus")
+	}
+	if strings.Contains(overlay, "product_name:") {
+		t.Error("chef-ice provisioner should not set product_name")
+	}
+}
+
+func TestGenerateOverlay_ChefIce_NoLicenseCredential(t *testing.T) {
+	tkConfig := config.TestKitchenConfig{
+		Driver: "proxmox",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-2204", Image: "ubuntu22"},
+		},
+		Images: []config.ImageEntry{
+			{Name: "ubuntu22", ID: "tpl-ubuntu22"},
+		},
+	}
+
+	overlay, err := generateOverlay(tkConfig, "ubuntu-2204", "19.2.12")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Without a license credential, chef_license_key line should be omitted.
+	if strings.Contains(overlay, "chef_license_key") {
+		t.Error("should not emit chef_license_key when credential is not configured")
+	}
+	// Should still use chef-ice provisioner.
+	if !strings.Contains(overlay, "  name: chef-ice\n") {
+		t.Errorf("expected provisioner name chef-ice, got:\n%s", overlay)
 	}
 }
 
