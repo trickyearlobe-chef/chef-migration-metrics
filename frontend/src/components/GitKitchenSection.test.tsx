@@ -21,6 +21,17 @@ vi.mock("../context/GlobalFilterContext", () => ({
   }),
 }));
 
+vi.mock("../hooks/useWebSocket", () => ({
+  useWebSocket: () => ({
+    status: "connected",
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    onEvent: vi.fn(() => vi.fn()),
+    disconnect: vi.fn(),
+    reconnect: vi.fn(),
+  }),
+}));
+
 const basePlan: GitKitchenPlanResult = {
   git_repo_name: "example-cookbook",
   git_repo_url: "https://git.example.com/example-cookbook",
