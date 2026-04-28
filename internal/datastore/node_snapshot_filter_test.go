@@ -330,7 +330,7 @@ func TestBuildNodeSnapshotFilterQuery_StaleNil(t *testing.T) {
 
 func TestBuildNodeSnapshotFilterQuery_StaleTier(t *testing.T) {
 	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
-		StaleTier:         "stale",
+		StaleTiers:        []string{"stale"},
 		StaleWarningHours: 24,
 		StaleCriticalDays: 7,
 	})
@@ -338,6 +338,22 @@ func TestBuildNodeSnapshotFilterQuery_StaleTier(t *testing.T) {
 	where := extractWhere(q)
 	if !strings.Contains(where, "ohai_time <=") {
 		t.Errorf("stale tier should filter on ohai_time, got WHERE:\n%s", where)
+	}
+	if strings.Contains(where, "is_stale") {
+		t.Error("stale tier should not use is_stale boolean filter")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_StaleTierMulti(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		StaleTiers:        []string{"warning", "critical"},
+		StaleWarningHours: 24,
+		StaleCriticalDays: 7,
+	})
+
+	where := extractWhere(q)
+	if !strings.Contains(where, " OR ") {
+		t.Errorf("multi-tier filter should use OR, got WHERE:\n%s", where)
 	}
 	if strings.Contains(where, "is_stale") {
 		t.Error("stale tier should not use is_stale boolean filter")

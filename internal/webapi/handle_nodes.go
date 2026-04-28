@@ -528,18 +528,31 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	f.TargetChefVersion = q.Get("target_chef_version")
 	f.ReadinessFilter = q.Get("readiness_filter")
 
-	// Map the stale parameter — supports legacy bool and tier values.
-	switch q.Get("stale") {
+	// Map the stale parameter — supports legacy bool, single tier, or comma-separated tiers.
+	staleParam := q.Get("stale")
+	switch staleParam {
 	case "true":
 		v := true
 		f.Stale = &v
 	case "false":
 		v := false
 		f.Stale = &v
-	case "stale", "fresh", "warning", "critical":
-		f.StaleTier = q.Get("stale")
-		f.StaleWarningHours = warningHours
-		f.StaleCriticalDays = criticalDays
+	case "":
+		// no filter
+	default:
+		valid := map[string]bool{"stale": true, "fresh": true, "warning": true, "critical": true}
+		var tiers []string
+		for _, t := range strings.Split(staleParam, ",") {
+			t = strings.TrimSpace(t)
+			if valid[t] {
+				tiers = append(tiers, t)
+			}
+		}
+		if len(tiers) > 0 {
+			f.StaleTiers = tiers
+			f.StaleWarningHours = warningHours
+			f.StaleCriticalDays = criticalDays
+		}
 	}
 
 	return f

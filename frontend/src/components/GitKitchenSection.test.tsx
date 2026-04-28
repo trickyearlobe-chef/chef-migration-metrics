@@ -15,8 +15,8 @@ vi.mock("../context/GlobalFilterContext", () => ({
     targetChefVersion: "19.1.164",
     targetVersions: ["19.1.164"],
     setTargetChefVersion: vi.fn(),
-    staleStatus: "all",
-    setStaleStatus: vi.fn(),
+    staleTiers: [],
+    setStaleTiers: vi.fn(),
     versionsLoading: false,
   }),
 }));

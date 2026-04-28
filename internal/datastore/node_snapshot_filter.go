@@ -70,14 +70,14 @@ type NodeSnapshotFilter struct {
 
 	// Stale filters by exact boolean match on is_stale.
 	// nil means no filter (return both stale and fresh nodes).
-	// Ignored when StaleTier is set.
+	// Ignored when StaleTiers is set.
 	Stale *bool
 
-	// StaleTier filters by computed staleness tier. Values: "fresh", "warning", "critical".
+	// StaleTiers filters by computed staleness tier. Values: "fresh", "warning", "critical".
 	// Empty means no tier filter. When set, Stale is ignored.
-	StaleTier string
+	StaleTiers []string
 	// StaleWarningHours and StaleCriticalDays are the tier thresholds for
-	// SQL-level staleness tier computation. Only used when StaleTier is set.
+	// SQL-level staleness tier computation. Only used when StaleTiers is set.
 	StaleWarningHours int
 	StaleCriticalDays int
 
@@ -590,18 +590,33 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		args = append(args, f.Role)
 	}
 
-	if f.StaleTier != "" {
+	if len(f.StaleTiers) > 0 {
 		warningSeconds := f.StaleWarningHours * 3600
 		criticalSeconds := f.StaleCriticalDays * 86400
-		switch f.StaleTier {
-		case "fresh":
-			where += fmt.Sprintf(" AND cn.ohai_time > extract(epoch from now()) - %d", warningSeconds)
-		case "stale":
-			where += fmt.Sprintf(" AND (cn.ohai_time <= extract(epoch from now()) - %d OR cn.ohai_time = 0 OR cn.ohai_time IS NULL)", warningSeconds)
-		case "warning":
-			where += fmt.Sprintf(" AND cn.ohai_time <= extract(epoch from now()) - %d AND cn.ohai_time > extract(epoch from now()) - %d", warningSeconds, criticalSeconds)
-		case "critical":
-			where += fmt.Sprintf(" AND (cn.ohai_time <= extract(epoch from now()) - %d OR cn.ohai_time = 0 OR cn.ohai_time IS NULL)", criticalSeconds)
+
+		// Build a set for quick lookup.
+		tierSet := make(map[string]bool, len(f.StaleTiers))
+		for _, t := range f.StaleTiers {
+			tierSet[t] = true
+		}
+
+		// Build OR conditions for each requested tier.
+		var tierConds []string
+		if tierSet["fresh"] {
+			tierConds = append(tierConds, fmt.Sprintf("cn.ohai_time > extract(epoch from now()) - %d", warningSeconds))
+		}
+		if tierSet["warning"] {
+			tierConds = append(tierConds, fmt.Sprintf("(cn.ohai_time <= extract(epoch from now()) - %d AND cn.ohai_time > extract(epoch from now()) - %d)", warningSeconds, criticalSeconds))
+		}
+		if tierSet["critical"] {
+			tierConds = append(tierConds, fmt.Sprintf("(cn.ohai_time <= extract(epoch from now()) - %d OR cn.ohai_time = 0 OR cn.ohai_time IS NULL)", criticalSeconds))
+		}
+		// Legacy single-value "stale" = warning + critical.
+		if tierSet["stale"] && !tierSet["warning"] && !tierSet["critical"] {
+			tierConds = append(tierConds, fmt.Sprintf("(cn.ohai_time <= extract(epoch from now()) - %d OR cn.ohai_time = 0 OR cn.ohai_time IS NULL)", warningSeconds))
+		}
+		if len(tierConds) > 0 {
+			where += " AND (" + strings.Join(tierConds, " OR ") + ")"
 		}
 	} else if f.Stale != nil {
 		where += " AND cn.is_stale = " + nextArg()
