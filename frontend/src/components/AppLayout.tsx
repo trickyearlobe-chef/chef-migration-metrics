@@ -1,16 +1,23 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { OrgSelector } from "./OrgSelector";
 import { HealthBadge } from "./HealthBadge";
+import { FilterMultiCheckbox } from "./FilterMultiCheckbox";
 import { useAuth } from "../context/AuthContext";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
+
+const STALENESS_OPTIONS = [
+  { value: "fresh", label: "Fresh" },
+  { value: "warning", label: "Missing" },
+  { value: "critical", label: "Gone" },
+];
 
 function GlobalFilterBar() {
   const {
     targetVersions,
     targetChefVersion,
     setTargetChefVersion,
-    staleStatus,
-    setStaleStatus,
+    staleTiers,
+    setStaleTiers,
     versionsLoading,
   } = useGlobalFilters();
 
@@ -34,20 +41,12 @@ function GlobalFilterBar() {
           </select>
         </div>
       )}
-      <div className="flex items-center gap-1.5">
-        <label className="text-xs font-medium text-gray-500">Staleness</label>
-        <select
-          value={staleStatus}
-          onChange={(e) =>
-            setStaleStatus(e.target.value as "all" | "stale" | "fresh")
-          }
-          className="block w-20 rounded-md border border-gray-300 bg-white px-1.5 py-1 text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="all">All</option>
-          <option value="fresh">Fresh</option>
-          <option value="stale">Stale</option>
-        </select>
-      </div>
+      <FilterMultiCheckbox
+        label="Staleness"
+        options={STALENESS_OPTIONS}
+        selected={staleTiers}
+        onChange={setStaleTiers}
+      />
     </div>
   );
 }

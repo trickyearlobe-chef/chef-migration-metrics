@@ -55,7 +55,7 @@ const READINESS_OPTIONS: { value: string; label: string }[] = [
 
 export function NodesPage() {
   const { selectedOrg } = useOrg();
-  const { staleStatus } = useGlobalFilters();
+  const { staleTiers } = useGlobalFilters();
   const [nodes, setNodes] = useState<NodeListItem[]>([]);
   const [pagination, setPagination] = useState<PaginationType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -175,8 +175,7 @@ export function NodesPage() {
     if (roles.length > 0) filters.role = roles.join(",");
     if (policyNames.length > 0) filters.policy_name = policyNames.join(",");
     if (policyGroups.length > 0) filters.policy_group = policyGroups.join(",");
-    if (staleStatus === "stale") filters.stale = "stale";
-    else if (staleStatus === "fresh") filters.stale = "fresh";
+    if (staleTiers.length > 0) filters.stale = staleTiers.join(",");
     if (sortField) filters.sort = sortField;
     if (sortOrder) filters.order = sortOrder;
     if (selectedTargetVersion)
@@ -200,7 +199,7 @@ export function NodesPage() {
     roles,
     policyNames,
     policyGroups,
-    staleStatus,
+    staleTiers,
     readinessFilter,
     selectedTargetVersion,
     page,
@@ -224,7 +223,7 @@ export function NodesPage() {
     roles,
     policyNames,
     policyGroups,
-    staleStatus,
+    staleTiers,
     readinessFilter,
     selectedTargetVersion,
     sortField,
@@ -269,8 +268,7 @@ export function NodesPage() {
   if (policyNames.length > 0) exportFilters.policy_name = policyNames.join(",");
   if (policyGroups.length > 0)
     exportFilters.policy_group = policyGroups.join(",");
-  if (staleStatus === "stale") exportFilters.stale = "stale";
-  else if (staleStatus === "fresh") exportFilters.stale = "fresh";
+  if (staleTiers.length > 0) exportFilters.stale = staleTiers.join(",");
 
   return (
     <div className="space-y-4">

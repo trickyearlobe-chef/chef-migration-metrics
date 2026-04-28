@@ -15,22 +15,23 @@ import { highestSemver } from "../semver";
 
 // ---------------------------------------------------------------------------
 // Global filter context — stores cross-cutting filters (target Chef version
-// and staleness tier) that apply across multiple pages. Values are persisted
+// and staleness tiers) that apply across multiple pages. Values are persisted
 // in URL search params so that bookmarking / link-sharing restores state.
 //
-// URL params: ?target_chef_version=18.5.0&stale_status=fresh
+// URL params: ?target_chef_version=18.5.0&stale_tiers=fresh,warning
 // ---------------------------------------------------------------------------
 
-type StaleStatus = "all" | "stale" | "fresh";
-
 const PARAM_TARGET_VERSION = "target_chef_version";
-const PARAM_STALE_STATUS = "stale_status";
+const PARAM_STALE_TIERS = "stale_tiers";
 
-const VALID_STALE_STATUSES: readonly StaleStatus[] = ["all", "stale", "fresh"];
-const DEFAULT_STALE_STATUS: StaleStatus = "all";
+const VALID_STALE_TIERS = ["fresh", "warning", "critical"] as const;
 
-function isValidStaleStatus(value: string): value is StaleStatus {
-  return (VALID_STALE_STATUSES as readonly string[]).includes(value);
+function parseStaleParam(raw: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => (VALID_STALE_TIERS as readonly string[]).includes(s));
 }
 
 export interface GlobalFilterContextValue {
@@ -40,10 +41,10 @@ export interface GlobalFilterContextValue {
   targetChefVersion: string;
   /** Change the selected target Chef version. */
   setTargetChefVersion: (v: string) => void;
-  /** Current staleness filter. */
-  staleStatus: StaleStatus;
-  /** Change the staleness filter. */
-  setStaleStatus: (s: StaleStatus) => void;
+  /** Current staleness tier filters (empty = all). */
+  staleTiers: string[];
+  /** Change the staleness tier filters. */
+  setStaleTiers: (tiers: string[]) => void;
   /** True while the version list is being fetched. */
   versionsLoading: boolean;
 }
@@ -57,21 +58,21 @@ export function GlobalFilterProvider({ children }: { children: ReactNode }) {
 
   // Read initial values from URL params.
   const urlVersion = searchParams.get(PARAM_TARGET_VERSION) ?? "";
-  const urlStale = searchParams.get(PARAM_STALE_STATUS) ?? "";
+  const urlStaleTiers = searchParams.get(PARAM_STALE_TIERS) ?? "";
 
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
   const [targetChefVersion, setTargetChefVersionState] = useState<string>(
     urlVersion,
   );
-  const [staleStatus, setStaleStatusState] = useState<StaleStatus>(
-    isValidStaleStatus(urlStale) ? urlStale : DEFAULT_STALE_STATUS,
+  const [staleTiers, setStaleTiersState] = useState<string[]>(
+    parseStaleParam(urlStaleTiers),
   );
   const [versionsLoading, setVersionsLoading] = useState(true);
 
   // Sync URL params whenever filter values change. Preserves existing
   // non-global params so page-specific params are not overwritten.
   const syncParams = useCallback(
-    (version: string, stale: StaleStatus) => {
+    (version: string, tiers: string[]) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -83,11 +84,11 @@ export function GlobalFilterProvider({ children }: { children: ReactNode }) {
             next.delete(PARAM_TARGET_VERSION);
           }
 
-          // Set or remove stale_status (omit default "all").
-          if (stale && stale !== DEFAULT_STALE_STATUS) {
-            next.set(PARAM_STALE_STATUS, stale);
+          // Set or remove stale_tiers (omit when empty = "all").
+          if (tiers.length > 0) {
+            next.set(PARAM_STALE_TIERS, tiers.join(","));
           } else {
-            next.delete(PARAM_STALE_STATUS);
+            next.delete(PARAM_STALE_TIERS);
           }
 
           return next;
@@ -101,15 +102,15 @@ export function GlobalFilterProvider({ children }: { children: ReactNode }) {
   const setTargetChefVersion = useCallback(
     (v: string) => {
       setTargetChefVersionState(v);
-      syncParams(v, staleStatus);
+      syncParams(v, staleTiers);
     },
-    [staleStatus, syncParams],
+    [staleTiers, syncParams],
   );
 
-  const setStaleStatus = useCallback(
-    (s: StaleStatus) => {
-      setStaleStatusState(s);
-      syncParams(targetChefVersion, s);
+  const setStaleTiers = useCallback(
+    (tiers: string[]) => {
+      setStaleTiersState(tiers);
+      syncParams(targetChefVersion, tiers);
     },
     [targetChefVersion, syncParams],
   );
@@ -133,7 +134,7 @@ export function GlobalFilterProvider({ children }: { children: ReactNode }) {
             // Auto-select highest version.
             const highest = highestSemver(versions) ?? versions[0];
             setTargetChefVersionState(highest);
-            syncParams(highest, staleStatus);
+            syncParams(highest, staleTiers);
           }
         }
       })
@@ -160,8 +161,8 @@ export function GlobalFilterProvider({ children }: { children: ReactNode }) {
         targetVersions,
         targetChefVersion,
         setTargetChefVersion,
-        staleStatus,
-        setStaleStatus,
+        staleTiers,
+        setStaleTiers,
         versionsLoading,
       }}
     >
