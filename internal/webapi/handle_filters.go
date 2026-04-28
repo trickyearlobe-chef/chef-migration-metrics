@@ -6,8 +6,10 @@ package webapi
 import (
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	platformPkg "github.com/trickyearlobe-chef/chef-migration-metrics/internal/platform"
 )
 
 // ---------------------------------------------------------------------------
@@ -133,7 +135,7 @@ func (r *Router) handleFilterPolicyGroups(w http.ResponseWriter, req *http.Reque
 }
 
 // handleFilterPlatforms handles GET /api/v1/filters/platforms.
-// Returns combined "platform platform_version" strings.
+// Returns platform entries with optional display names.
 func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -163,7 +165,27 @@ func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request)
 	if values == nil {
 		values = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
+
+	mappings, _ := r.loadPlatformDisplayNames(req.Context())
+
+	type platformFilterEntry struct {
+		Value       string  `json:"value"`
+		DisplayName *string `json:"display_name"`
+	}
+
+	entries := make([]platformFilterEntry, 0, len(values))
+	for _, v := range values {
+		entry := platformFilterEntry{Value: v}
+		parts := splitPlatformValue(v)
+		if parts.platform != "" && parts.version != "" {
+			if name, ok := platformPkg.ResolveName(parts.platform, parts.version, mappings); ok {
+				entry.DisplayName = &name
+			}
+		}
+		entries = append(entries, entry)
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{"data": entries})
 }
 
 // handleFilterTargetChefVersions handles GET /api/v1/filters/target-chef-versions.
@@ -214,4 +236,22 @@ func (r *Router) filterOrgIDs(req *http.Request) (datastore.NodeSnapshotFilter, 
 		orgIDs = append(orgIDs, org.Name)
 	}
 	return datastore.NodeSnapshotFilter{OrganisationNames: orgIDs}, nil
+}
+
+type platformParts struct {
+	platform string
+	version  string
+}
+
+// splitPlatformValue splits a combined "platform version" string back into
+// its platform and version components.
+func splitPlatformValue(combined string) platformParts {
+	idx := strings.IndexByte(combined, ' ')
+	if idx < 0 {
+		return platformParts{platform: combined}
+	}
+	return platformParts{
+		platform: combined[:idx],
+		version:  combined[idx+1:],
+	}
 }

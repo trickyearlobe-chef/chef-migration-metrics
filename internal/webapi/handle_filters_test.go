@@ -429,7 +429,7 @@ func TestHandleFilterPlatforms_HappyPath(t *testing.T) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListDistinctNodeValuesFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error) {
-			return []string{"centos", "ubuntu"}, nil
+			return []string{"windows 10.0.22631", "ubuntu 22.04"}, nil
 		},
 	}
 	r := newTestRouterWithMock(store)
@@ -441,13 +441,30 @@ func TestHandleFilterPlatforms_HappyPath(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 	var body struct {
-		Data []string `json:"data"`
+		Data []struct {
+			Value       string  `json:"value"`
+			DisplayName *string `json:"display_name"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(body.Data) != 2 {
 		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+	// Windows should get a display name from defaults.
+	if body.Data[0].Value != "windows 10.0.22631" {
+		t.Errorf("data[0].value = %q, want %q", body.Data[0].Value, "windows 10.0.22631")
+	}
+	if body.Data[0].DisplayName == nil || *body.Data[0].DisplayName != "Win11 23H2" {
+		t.Errorf("data[0].display_name = %v, want %q", body.Data[0].DisplayName, "Win11 23H2")
+	}
+	// Ubuntu should also get a display name.
+	if body.Data[1].Value != "ubuntu 22.04" {
+		t.Errorf("data[1].value = %q, want %q", body.Data[1].Value, "ubuntu 22.04")
+	}
+	if body.Data[1].DisplayName == nil || *body.Data[1].DisplayName != "Ubuntu 22.04 LTS (Jammy)" {
+		t.Errorf("data[1].display_name = %v, want %q", body.Data[1].DisplayName, "Ubuntu 22.04 LTS (Jammy)")
 	}
 }
 

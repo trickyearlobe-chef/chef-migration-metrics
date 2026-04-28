@@ -49,8 +49,13 @@ export interface FilterStringResponse {
   data: string[];
 }
 
+export interface FilterPlatformEntry {
+  value: string;
+  display_name: string | null;
+}
+
 export interface FilterPlatformsResponse {
-  data: string[];
+  data: FilterPlatformEntry[];
 }
 
 export type CompatibilityStatus =
