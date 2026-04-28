@@ -341,7 +341,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 	// raw snapshots have been deduplicated.
 	if !ownerFilterActive {
 		for _, org := range orgs {
-			metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 10)
+			metrics, err := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 365)
 			if err != nil {
 				r.logf("WARN", "listing metric snapshots for org %s in version trend: %v", org.Name, err)
 				continue
@@ -384,7 +384,7 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 	// This avoids querying live node_snapshots (which suffers from the
 	// sawtooth problem during mid-collection updates).
 	for _, org := range orgs {
-		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 10)
+		metrics, err := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 365)
 		if err != nil {
 			r.logf("WARN", "listing metric snapshots for org %s in ownership-filtered version trend: %v", org.Name, err)
 			continue

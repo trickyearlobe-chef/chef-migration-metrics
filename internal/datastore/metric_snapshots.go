@@ -135,9 +135,58 @@ func (db *DB) listMetricSnapshotsByOrganisationAndVersion(ctx context.Context, q
 	return scanMetricSnapshots(q.QueryContext(ctx, query, args...))
 }
 
-// ---------------------------------------------------------------------------
-// Retention
-// ---------------------------------------------------------------------------
+// ListDailyMetricSnapshotsByOrganisation returns at most one snapshot per
+// calendar day (the latest) for the given organisation and snapshot_type,
+// ordered by day DESC. If limit > 0, the result set is capped.
+func (db *DB) ListDailyMetricSnapshotsByOrganisation(ctx context.Context, organisationName, snapshotType string, limit int) ([]MetricSnapshot, error) {
+	return db.listDailyMetricSnapshotsByOrganisation(ctx, db.q(), organisationName, snapshotType, limit)
+}
+
+func (db *DB) listDailyMetricSnapshotsByOrganisation(ctx context.Context, q queryable, organisationName, snapshotType string, limit int) ([]MetricSnapshot, error) {
+	query := `
+		SELECT DISTINCT ON (date_trunc('day', snapshot_at))
+		       id, collection_run_org, organisation_name, snapshot_type,
+		       target_chef_version, data, snapshot_at, created_at
+		FROM metric_snapshots
+		WHERE organisation_name = $1
+		  AND snapshot_type = $2
+		ORDER BY date_trunc('day', snapshot_at) DESC, snapshot_at DESC
+	`
+	args := []any{organisationName, snapshotType}
+
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	return scanMetricSnapshots(q.QueryContext(ctx, query, args...))
+}
+
+// ListDailyMetricSnapshotsByOrganisationAndVersion returns at most one
+// snapshot per calendar day (the latest) for the given organisation,
+// snapshot_type, and target_chef_version, ordered by day DESC.
+func (db *DB) ListDailyMetricSnapshotsByOrganisationAndVersion(ctx context.Context, organisationName, snapshotType, targetChefVersion string, limit int) ([]MetricSnapshot, error) {
+	return db.listDailyMetricSnapshotsByOrganisationAndVersion(ctx, db.q(), organisationName, snapshotType, targetChefVersion, limit)
+}
+
+func (db *DB) listDailyMetricSnapshotsByOrganisationAndVersion(ctx context.Context, q queryable, organisationName, snapshotType, targetChefVersion string, limit int) ([]MetricSnapshot, error) {
+	query := `
+		SELECT DISTINCT ON (date_trunc('day', snapshot_at))
+		       id, collection_run_org, organisation_name, snapshot_type,
+		       target_chef_version, data, snapshot_at, created_at
+		FROM metric_snapshots
+		WHERE organisation_name = $1
+		  AND snapshot_type = $2
+		  AND target_chef_version = $3
+		ORDER BY date_trunc('day', snapshot_at) DESC, snapshot_at DESC
+	`
+	args := []any{organisationName, snapshotType, targetChefVersion}
+
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	return scanMetricSnapshots(q.QueryContext(ctx, query, args...))
+}
 
 // PurgeMetricSnapshotsOlderThan deletes metric snapshots with snapshot_at
 // before the given cutoff time. Returns the number of rows deleted.

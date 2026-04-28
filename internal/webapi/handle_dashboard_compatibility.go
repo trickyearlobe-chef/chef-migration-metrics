@@ -489,9 +489,37 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 		return
 	}
 
-	// Count untested: git repos with no TK result for a given target
-	// version. Split into clone-failed vs pending-scan so the dashboard
-	// can explain *why* a repo is untested.
+	// Load kitchen results to compute per-repo TK status.
+	type repoTKInfo struct {
+		passed  int
+		failed  int
+		total   int
+	}
+	tkByRepo := make(map[string]*repoTKInfo)
+	allResults, tkErr := r.db.ListGitKitchenResults(ctx)
+	if tkErr != nil {
+		r.logf("WARN", "listing git kitchen results for TK dashboard: %v", tkErr)
+	} else {
+		for _, res := range allResults {
+			if res.Passed == nil {
+				continue
+			}
+			s := tkByRepo[res.GitRepoName]
+			if s == nil {
+				s = &repoTKInfo{}
+				tkByRepo[res.GitRepoName] = s
+			}
+			s.total++
+			if *res.Passed {
+				s.passed++
+			} else {
+				s.failed++
+			}
+		}
+	}
+
+	// Count repos per target version. Start all as untested, then
+	// reclassify based on kitchen results.
 	for _, gr := range gitRepos {
 		if allowedNames != nil && !allowedNames[gr.Name] {
 			continue
@@ -504,11 +532,21 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 			seen[key] = true
 			pv := byTV[tv]
 			pv.total++
-			pv.untested++
-			if gr.CloneStatus == "failed" {
-				pv.untestedCloneFailed++
+
+			s := tkByRepo[gr.Name]
+			if s != nil && s.total > 0 {
+				if s.failed > 0 {
+					pv.failed++
+				} else {
+					pv.passed++
+				}
 			} else {
-				pv.untestedPendingScan++
+				pv.untested++
+				if gr.CloneStatus == "failed" {
+					pv.untestedCloneFailed++
+				} else {
+					pv.untestedPendingScan++
+				}
 			}
 		}
 	}

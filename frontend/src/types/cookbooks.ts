@@ -110,6 +110,8 @@ export interface GitRepoListItem {
   compatibility?: CompatibilityStatus;
   target_chef_version?: string;
   tk_status?: string;
+  tk_passed?: number;
+  tk_total?: number;
 }
 
 export type GitRepoListResponse = PaginatedResponse<GitRepoListItem>;

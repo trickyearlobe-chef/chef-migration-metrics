@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 )
 
@@ -84,6 +85,9 @@ func (r *Router) handleGitKitchenResults(w http.ResponseWriter, req *http.Reques
 			WriteInternalError(w, "Failed to retrieve git kitchen results.")
 			return
 		}
+		if results == nil {
+			results = []datastore.GitKitchenResult{}
+		}
 		WriteJSON(w, http.StatusOK, results)
 		return
 	}
@@ -93,6 +97,9 @@ func (r *Router) handleGitKitchenResults(w http.ResponseWriter, req *http.Reques
 		r.logf("ERROR", "git kitchen results: %v", err)
 		WriteInternalError(w, "Failed to retrieve git kitchen results.")
 		return
+	}
+	if results == nil {
+		results = []datastore.GitKitchenResult{}
 	}
 	WriteJSON(w, http.StatusOK, results)
 }

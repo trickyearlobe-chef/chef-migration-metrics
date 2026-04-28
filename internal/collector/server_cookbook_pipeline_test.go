@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
@@ -296,6 +297,25 @@ func TestDownloadCookbook_SignatureCompiles(t *testing.T) {
 // client panics inside GetCookbookVersionManifest (it's not nil-safe), so
 // we use recover to catch the panic after the directory has been created.
 
+// runDownloadCookbookWithNilClient calls downloadCookbook with a nil
+// chefapi client in a separate goroutine with a hard timeout. The nil
+// client causes the goroutine to get stuck rather than panicking, so
+// we bound it with a channel timeout instead of relying on recover.
+func runDownloadCookbookWithNilClient(cb datastore.ServerCookbook, cacheDir string, deleteAfterScan bool) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { _ = recover() }()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, _ = downloadCookbook(ctx, nil, nil, cb, cacheDir, deleteAfterScan)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+	}
+}
+
 func TestDownloadCookbook_UsesCacheDir_WhenRetaining(t *testing.T) {
 	cacheDir := t.TempDir()
 	cb := datastore.ServerCookbook{
@@ -304,12 +324,9 @@ func TestDownloadCookbook_UsesCacheDir_WhenRetaining(t *testing.T) {
 		Version:          "5.1.0",
 	}
 
-	// nil client panics in the Chef API layer, but the cache directory
-	// is created before the manifest fetch attempt.
-	func() {
-		defer func() { _ = recover() }()
-		_, _ = downloadCookbook(context.Background(), nil, nil, cb, cacheDir, false)
-	}()
+	// nil client will fail in the Chef API layer, but the cache
+	// directory is created before the manifest fetch attempt.
+	runDownloadCookbookWithNilClient(cb, cacheDir, false)
 
 	expected := filepath.Join(cacheDir, "org-abc", "nginx", "5.1.0")
 	info, statErr := os.Stat(expected)
@@ -329,11 +346,8 @@ func TestDownloadCookbook_UsesTempDir_WhenDeleting(t *testing.T) {
 		Version:          "3.0.0",
 	}
 
-	// nil client panics, but we only care about which directory was used.
-	func() {
-		defer func() { _ = recover() }()
-		_, _ = downloadCookbook(context.Background(), nil, nil, cb, cacheDir, true)
-	}()
+	// nil client fails, but we only care about which directory was used.
+	runDownloadCookbookWithNilClient(cb, cacheDir, true)
 
 	// The cache directory should NOT have been populated.
 	persistentPath := filepath.Join(cacheDir, "org-xyz", "apache2", "3.0.0")
@@ -351,11 +365,8 @@ func TestDownloadCookbook_UsesTempDir_WhenCacheDirEmpty(t *testing.T) {
 
 	// Empty cookbookCacheDir with deleteAfterScan=false should still
 	// fall back to os.MkdirTemp rather than panicking on directory creation.
-	func() {
-		defer func() { _ = recover() }()
-		_, _ = downloadCookbook(context.Background(), nil, nil, cb, "", false)
-	}()
-	// Success = no panic from directory creation (the client panic is recovered).
+	runDownloadCookbookWithNilClient(cb, "", false)
+	// Success = no panic from directory creation.
 }
 
 // ---------------------------------------------------------------------------

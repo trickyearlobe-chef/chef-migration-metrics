@@ -36,7 +36,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
 
   const refreshResults = useCallback(() => {
     fetchGitKitchenResults(repoName)
-      .then(setResults)
+      .then((r) => setResults(r ?? []))
       .catch(() => {});
   }, [repoName]);
 
@@ -49,7 +49,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
     ])
       .then(([planData, resultsData]) => {
         setPlan(planData);
-        setResults(resultsData);
+        setResults(resultsData ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -166,7 +166,7 @@ function InstanceRow({
         <td className="px-2 py-1">
           <StatusBadge
             variant={statusVariantMap[inst.status]}
-            label={inst.status}
+            label={inst.status === "excluded" ? "skipped" : inst.status}
             size="sm"
           />
         </td>

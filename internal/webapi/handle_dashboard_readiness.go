@@ -189,7 +189,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 	snapshotFound := false
 	for _, org := range orgs {
 		for _, tv := range targetVersions {
-			metrics, mErr := r.db.ListMetricSnapshotsByOrganisationAndVersion(ctx, org.Name, "readiness_summary", tv, 10)
+			metrics, mErr := r.db.ListDailyMetricSnapshotsByOrganisationAndVersion(ctx, org.Name, "readiness_summary", tv, 365)
 			if mErr != nil {
 				r.logf("WARN", "listing readiness snapshots for org %s version %s: %v", org.Name, tv, mErr)
 				continue

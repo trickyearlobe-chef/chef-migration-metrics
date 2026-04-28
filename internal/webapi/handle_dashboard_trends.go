@@ -41,7 +41,7 @@ func (r *Router) handleDashboardComplexityTrend(w http.ResponseWriter, req *http
 	snapshotFound := false
 	for _, org := range orgs {
 		for _, tv := range targetVersions {
-			metrics, mErr := r.db.ListMetricSnapshotsByOrganisationAndVersion(ctx, org.Name, "complexity_summary", tv, 10)
+			metrics, mErr := r.db.ListDailyMetricSnapshotsByOrganisationAndVersion(ctx, org.Name, "complexity_summary", tv, 365)
 			if mErr != nil {
 				r.logf("WARN", "listing complexity snapshots for org %s version %s: %v", org.Name, tv, mErr)
 				continue
@@ -165,7 +165,7 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 	// chef_version_distribution snapshots contain stale/fresh counts
 	// alongside the version distribution data.
 	for _, org := range orgs {
-		metrics, err := r.db.ListMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 10)
+		metrics, err := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 365)
 		if err != nil {
 			r.logf("WARN", "listing metric snapshots for org %s in stale trend: %v", org.Name, err)
 			continue

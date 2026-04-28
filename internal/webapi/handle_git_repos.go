@@ -146,6 +146,56 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		repos = filtered
 	}
 
+	// Build TK status map from git_kitchen_results.
+	type tkSummary struct {
+		Passed int
+		Failed int
+		Total  int
+	}
+	tkByRepo := make(map[string]*tkSummary)
+	allResults, tkErr := r.db.ListGitKitchenResults(ctx)
+	if tkErr != nil {
+		r.logf("WARN", "listing git kitchen results for repo list: %v", tkErr)
+	} else {
+		for _, res := range allResults {
+			if res.Passed == nil {
+				continue // still running
+			}
+			s := tkByRepo[res.GitRepoName]
+			if s == nil {
+				s = &tkSummary{}
+				tkByRepo[res.GitRepoName] = s
+			}
+			s.Total++
+			if *res.Passed {
+				s.Passed++
+			} else {
+				s.Failed++
+			}
+		}
+	}
+
+	// Apply optional TK status filter.
+	tkStatusFilter := queryString(req, "tk_status", "")
+	if tkStatusFilter != "" {
+		filtered := repos[:0]
+		for _, gr := range repos {
+			s := tkByRepo[gr.Name]
+			status := "untested"
+			if s != nil && s.Total > 0 {
+				if s.Failed > 0 {
+					status = "failed"
+				} else {
+					status = "passed"
+				}
+			}
+			if status == tkStatusFilter {
+				filtered = append(filtered, gr)
+			}
+		}
+		repos = filtered
+	}
+
 	// Sort the results.
 	sortField := queryString(req, "sort", "name")
 	sortOrder := queryString(req, "order", "asc")
@@ -167,6 +217,9 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		LastFetchedAt     string `json:"last_fetched_at,omitempty"`
 		Compatibility     string `json:"compatibility"`
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
+		TKStatus          string `json:"tk_status"`
+		TKPassed          int    `json:"tk_passed"`
+		TKTotal           int    `json:"tk_total"`
 	}
 
 	result := make([]gitRepoResp, 0, len(page))
@@ -174,6 +227,17 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		c := compatByName[gr.Name]
 		if c == "" {
 			c = "untested"
+		}
+		tkStatus := "untested"
+		var tkPassed, tkTotal int
+		if s := tkByRepo[gr.Name]; s != nil && s.Total > 0 {
+			tkTotal = s.Total
+			tkPassed = s.Passed
+			if s.Failed > 0 {
+				tkStatus = "failed"
+			} else {
+				tkStatus = "passed"
+			}
 		}
 		resp := gitRepoResp{
 			ID:                gr.Name,
@@ -186,6 +250,9 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			CloneError:        gr.CloneError,
 			Compatibility:     c,
 			TargetChefVersion: targetChefVersion,
+			TKStatus:          tkStatus,
+			TKPassed:          tkPassed,
+			TKTotal:           tkTotal,
 		}
 		if !gr.LastFetchedAt.IsZero() {
 			resp.LastFetchedAt = gr.LastFetchedAt.Format("2006-01-02T15:04:05Z")

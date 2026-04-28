@@ -536,7 +536,7 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	case "false":
 		v := false
 		f.Stale = &v
-	case "fresh", "warning", "critical":
+	case "stale", "fresh", "warning", "critical":
 		f.StaleTier = q.Get("stale")
 		f.StaleWarningHours = warningHours
 		f.StaleCriticalDays = criticalDays
