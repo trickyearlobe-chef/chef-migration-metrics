@@ -105,9 +105,9 @@ func (r *Router) handleKitchenBatchDetail(w http.ResponseWriter, req *http.Reque
 		WriteNotFound(w, "Batch results endpoint has been removed.")
 		return
 	}
-	// /api/v1/kitchen/batches/:id/progress — removed (git kitchen rebuild)
+	// /api/v1/kitchen/batches/:id/progress
 	if len(segments) == 2 && segments[1] == "progress" {
-		WriteNotFound(w, "Batch progress endpoint has been removed.")
+		r.handleBatchProgress(w, req, id)
 		return
 	}
 
@@ -375,6 +375,40 @@ func (r *Router) handleRunKitchenBatch(w http.ResponseWriter, req *http.Request,
 		Estimate:     estimate,
 	}
 	WriteJSON(w, http.StatusAccepted, resp)
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/kitchen/batches/:id/progress
+// ---------------------------------------------------------------------------
+
+func (r *Router) handleBatchProgress(w http.ResponseWriter, req *http.Request, id string) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	counts, err := r.db.CountBatchInstancesByStatus(req.Context(), id)
+	if err != nil {
+		r.logf("ERROR", "kitchen-batches: counting instances for %s: %v", id, err)
+		WriteInternalError(w, "Failed to retrieve batch progress.")
+		return
+	}
+
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]int{
+		"total":           total,
+		"pending":         counts["pending"],
+		"running":         counts["running"],
+		"passed":          counts["passed"],
+		"failed":          counts["failed"],
+		"errored":         counts["errored"],
+		"timed_out":       counts["timed_out"],
+		"network_timeout": counts["network_timeout"],
+		"cancelled":       counts["cancelled"],
+	})
 }
 
 // handleRunDryRunBatch handles the dry-run path: resolve, preview, complete.

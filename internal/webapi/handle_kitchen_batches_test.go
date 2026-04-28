@@ -836,3 +836,68 @@ func TestHandleCancelKitchenBatch_PreparingStatus(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/kitchen/batches/:id/progress
+// ---------------------------------------------------------------------------
+
+func TestHandleBatchProgress_Success(t *testing.T) {
+	store := &mockStore{
+		CountBatchInstancesByStatusFn: func(_ context.Context, _ string) (map[string]int, error) {
+			return map[string]int{
+				"pending": 5,
+				"running": 2,
+				"passed":  10,
+				"failed":  1,
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/batches/test-uuid-1/progress", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]int
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result["total"] != 18 {
+		t.Errorf("total = %d, want 18", result["total"])
+	}
+	if result["passed"] != 10 {
+		t.Errorf("passed = %d, want 10", result["passed"])
+	}
+	if result["pending"] != 5 {
+		t.Errorf("pending = %d, want 5", result["pending"])
+	}
+}
+
+func TestHandleBatchProgress_Empty(t *testing.T) {
+	store := &mockStore{
+		CountBatchInstancesByStatusFn: func(_ context.Context, _ string) (map[string]int, error) {
+			return map[string]int{}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/batches/test-uuid-1/progress", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]int
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result["total"] != 0 {
+		t.Errorf("total = %d, want 0", result["total"])
+	}
+}
