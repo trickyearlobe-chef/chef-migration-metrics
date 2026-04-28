@@ -54,6 +54,8 @@ const (
 
 	// Git kitchen events.
 	EventGitKitchenRunComplete = "git_kitchen_run_complete"
+	EventBatchProgress         = "batch_progress"
+	EventBatchComplete         = "batch_complete"
 )
 
 // ---------------------------------------------------------------------------

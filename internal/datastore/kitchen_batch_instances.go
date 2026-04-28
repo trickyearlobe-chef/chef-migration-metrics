@@ -227,7 +227,7 @@ func (db *DB) CancelPendingBatchInstances(ctx context.Context, batchID string) (
 func (db *DB) cancelPendingBatchInstances(ctx context.Context, q queryable, batchID string) (int, error) {
 	const query = `
 		UPDATE kitchen_batch_instances
-		SET status = 'cancelled'
+		SET status = 'cancelled', completed_at = now()
 		WHERE batch_id = $1 AND status = 'pending'`
 
 	res, err := q.ExecContext(ctx, query, batchID)

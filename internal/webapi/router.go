@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/pprof"
+	"sync"
 
 	"path"
 	"strings"
@@ -115,6 +116,14 @@ type Router struct {
 	// gitKitchenScheduler orchestrates on-demand Git Kitchen runs.
 	// Nil when not configured — the trigger endpoint returns 503.
 	gitKitchenScheduler *gitkitchen.Scheduler
+
+	// batchMu guards runningBatch. Only held for fast map reads/writes.
+	batchMu sync.Mutex
+	// runningBatch maps batch ID to its cancel function for active batches.
+	// Entries are added when a batch launches and removed only when the
+	// background goroutine finishes — NOT on cancel (so in-flight workers
+	// that are draining still block new batch starts).
+	runningBatch map[string]context.CancelFunc
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -238,11 +247,12 @@ func WithGitKitchenScheduler(s *gitkitchen.Scheduler) RouterOption {
 // returns 404.
 func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOption) *Router {
 	r := &Router{
-		mux:     http.NewServeMux(),
-		hub:     hub,
-		db:      db,
-		cfg:     cfg,
-		version: "dev",
+		mux:          http.NewServeMux(),
+		hub:          hub,
+		db:           db,
+		cfg:          cfg,
+		version:      "dev",
+		runningBatch: make(map[string]context.CancelFunc),
 	}
 	for _, opt := range opts {
 		opt(r)
