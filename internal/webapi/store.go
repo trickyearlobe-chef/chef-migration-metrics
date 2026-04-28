@@ -614,6 +614,32 @@ type DataStore interface {
 	// DeleteKitchenBatch removes a batch (only draft/completed/cancelled).
 	DeleteKitchenBatch(ctx context.Context, id string) error
 
+	// UpdateKitchenBatchStatusIfCurrent is a CAS-style status transition.
+	// Returns ErrNotFound if batch doesn't exist or status doesn't match.
+	UpdateKitchenBatchStatusIfCurrent(ctx context.Context, id string, expectedStatus string, newStatus string, now time.Time) (datastore.KitchenBatch, error)
+
+	// -----------------------------------------------------------------
+	// Kitchen Batch Instances
+	// -----------------------------------------------------------------
+
+	// CreateBatchInstance inserts a single batch instance.
+	CreateBatchInstance(ctx context.Context, p datastore.CreateBatchInstanceParams) (datastore.KitchenBatchInstance, error)
+
+	// CreateBatchInstances bulk-inserts batch instances in a transaction.
+	CreateBatchInstances(ctx context.Context, params []datastore.CreateBatchInstanceParams) ([]datastore.KitchenBatchInstance, error)
+
+	// ListBatchInstances returns all instances for a batch.
+	ListBatchInstances(ctx context.Context, batchID string) ([]datastore.KitchenBatchInstance, error)
+
+	// UpdateBatchInstanceStatus transitions an instance to a new status.
+	UpdateBatchInstanceStatus(ctx context.Context, id string, status string, errorMessage string, now time.Time) error
+
+	// CountBatchInstancesByStatus returns status counts for a batch.
+	CountBatchInstancesByStatus(ctx context.Context, batchID string) (map[string]int, error)
+
+	// CancelPendingBatchInstances cancels all pending instances for a batch.
+	CancelPendingBatchInstances(ctx context.Context, batchID string) (int, error)
+
 	// -----------------------------------------------------------------
 	// Git Repo Kitchen Exclusions
 	// -----------------------------------------------------------------
