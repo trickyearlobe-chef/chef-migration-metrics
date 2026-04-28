@@ -6,9 +6,32 @@ package webapi
 import (
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/platform"
 )
+
+type dashboardPlatformCount struct {
+	Platform    string  `json:"platform"`
+	DisplayName *string `json:"display_name"`
+	Count       int     `json:"count"`
+	Percent     float64 `json:"percent"`
+}
+
+func resolveDashboardPlatformDisplayNames(result []dashboardPlatformCount, mappings []platform.DisplayNameMapping) {
+	for i := range result {
+		idx := strings.IndexByte(result[i].Platform, ' ')
+		if idx < 0 {
+			continue
+		}
+		plat := result[i].Platform[:idx]
+		ver := result[i].Platform[idx+1:]
+		if name, ok := platform.ResolveName(plat, ver, mappings); ok {
+			result[i].DisplayName = &name
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Dashboard — platform distribution endpoints
@@ -62,14 +85,8 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		return
 	}
 
-	type platformCount struct {
-		Platform string  `json:"platform"`
-		Count    int     `json:"count"`
-		Percent  float64 `json:"percent"`
-	}
-
-	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) platformCount {
-		return platformCount{Platform: label, Count: count, Percent: pct}
+	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) dashboardPlatformCount {
+		return dashboardPlatformCount{Platform: label, Count: count, Percent: pct}
 	})
 
 	// Sort by count descending, then platform ascending for stability.
@@ -79,6 +96,10 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		}
 		return result[i].Platform < result[j].Platform
 	})
+
+	// Resolve display names.
+	mappings, _ := r.loadPlatformDisplayNames(ctx)
+	resolveDashboardPlatformDisplayNames(result, mappings)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"total_nodes":  totalNodes,
@@ -133,14 +154,8 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 		totalNodes++
 	}
 
-	type platformCount struct {
-		Platform string  `json:"platform"`
-		Count    int     `json:"count"`
-		Percent  float64 `json:"percent"`
-	}
-
-	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) platformCount {
-		return platformCount{Platform: label, Count: count, Percent: pct}
+	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) dashboardPlatformCount {
+		return dashboardPlatformCount{Platform: label, Count: count, Percent: pct}
 	})
 
 	sort.Slice(result, func(i, j int) bool {
@@ -149,6 +164,10 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 		}
 		return result[i].Platform < result[j].Platform
 	})
+
+	// Resolve display names.
+	mappings, _ := r.loadPlatformDisplayNames(ctx)
+	resolveDashboardPlatformDisplayNames(result, mappings)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"total_nodes":  totalNodes,
