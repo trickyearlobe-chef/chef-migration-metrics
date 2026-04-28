@@ -33,6 +33,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
@@ -1114,6 +1115,19 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		}
 		routerOpts = append(routerOpts, webapi.WithNodeKitchenRunner(factory))
 		app.startup.Info("Node Kitchen runner factory enabled")
+
+		// Wire Git Kitchen scheduler using the same kitchen binary and credentials.
+		gitKitchenSched := gitkitchen.NewScheduler(
+			&nodekitchen.DefaultExecutor{Path: app.kitchenPath},
+			&nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
+			app.db,
+			app.cfg.AnalysisTools.TestKitchen,
+			func(name, _ string) string {
+				return filepath.Join(app.cfg.Storage.GitCookbookDir, name)
+			},
+		)
+		routerOpts = append(routerOpts, webapi.WithGitKitchenScheduler(gitKitchenSched))
+		app.startup.Info("Git Kitchen scheduler enabled")
 	} else {
 		app.startup.Info("Node Kitchen runner not available (kitchen binary not found)")
 	}
