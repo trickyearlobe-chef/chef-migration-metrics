@@ -18,6 +18,8 @@ type DisplayNameMapping struct {
 // DefaultMappings contains all built-in platform display name mappings.
 var DefaultMappings = []DisplayNameMapping{
 	// Windows Desktop
+	{Platform: "windows", VersionPrefix: "10.0.26200", DisplayName: "Win11 25H2"},
+	{Platform: "windows", VersionPrefix: "10.0.26100", DisplayName: "Win11 24H2 / Server 2025"},
 	{Platform: "windows", VersionPrefix: "10.0.22631", DisplayName: "Win11 23H2"},
 	{Platform: "windows", VersionPrefix: "10.0.22621", DisplayName: "Win11 22H2"},
 	{Platform: "windows", VersionPrefix: "10.0.22000", DisplayName: "Win11 21H2"},
@@ -31,23 +33,16 @@ var DefaultMappings = []DisplayNameMapping{
 	{Platform: "windows", VersionPrefix: "6.2.9200", DisplayName: "Win8 / Server 2012"},
 	{Platform: "windows", VersionPrefix: "6.1.7601", DisplayName: "Win7 SP1 / Server 2008 R2"},
 
-	// Windows Server
+	// Windows Server (more-specific prefixes where distinguishable)
 	{Platform: "windows", VersionPrefix: "10.0.20348", DisplayName: "Win Server 2022"},
-	{Platform: "windows", VersionPrefix: "10.0.26100", DisplayName: "Win Server 2025"},
+	{Platform: "windows", VersionPrefix: "10.0.26334", DisplayName: "Win Server 2025"},
 
-	// Linux — CentOS
-	{Platform: "centos", VersionPrefix: "8", DisplayName: "CentOS 8 (EOL)"},
-	{Platform: "centos", VersionPrefix: "7", DisplayName: "CentOS 7 (EOL)"},
-	{Platform: "centos", VersionPrefix: "6", DisplayName: "CentOS 6 (EOL)"},
-
-	// Linux — Oracle
-	{Platform: "oracle", VersionPrefix: "7", DisplayName: "Oracle Linux 7"},
-	{Platform: "oracle", VersionPrefix: "8", DisplayName: "Oracle Linux 8"},
-	{Platform: "oracle", VersionPrefix: "9", DisplayName: "Oracle Linux 9"},
-
-	// Linux — Amazon
-	{Platform: "amazon", VersionPrefix: "2023", DisplayName: "Amazon Linux 2023"},
-	{Platform: "amazon", VersionPrefix: "2", DisplayName: "Amazon Linux 2"},
+	// Ubuntu LTS releases
+	{Platform: "ubuntu", VersionPrefix: "26.04", DisplayName: "Ubuntu 26.04 LTS (Plucky)"},
+	{Platform: "ubuntu", VersionPrefix: "24.04", DisplayName: "Ubuntu 24.04 LTS (Noble)"},
+	{Platform: "ubuntu", VersionPrefix: "22.04", DisplayName: "Ubuntu 22.04 LTS (Jammy)"},
+	{Platform: "ubuntu", VersionPrefix: "20.04", DisplayName: "Ubuntu 20.04 LTS (Focal)"},
+	{Platform: "ubuntu", VersionPrefix: "18.04", DisplayName: "Ubuntu 18.04 LTS (Bionic) — EOL"},
 }
 
 // ResolveName finds the best matching display name for the given platform

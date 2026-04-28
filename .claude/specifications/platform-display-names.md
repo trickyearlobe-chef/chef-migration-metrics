@@ -57,6 +57,8 @@ The application ships with the following default mappings. These are loaded into
 
 | Platform | Version Prefix | Display Name |
 |---|---|---|
+| windows | 10.0.26200 | Win11 25H2 |
+| windows | 10.0.26100 | Win11 24H2 |
 | windows | 10.0.22631 | Win11 23H2 |
 | windows | 10.0.22621 | Win11 22H2 |
 | windows | 10.0.22000 | Win11 21H2 |
@@ -75,22 +77,27 @@ The application ships with the following default mappings. These are loaded into
 | Platform | Version Prefix | Display Name |
 |---|---|---|
 | windows | 10.0.20348 | Win Server 2022 |
-| windows | 10.0.26100 | Win Server 2025 |
+| windows | 10.0.26334 | Win Server 2025 |
 
-**Linux (notable):**
+**Ubuntu:**
 
 | Platform | Version Prefix | Display Name |
 |---|---|---|
-| centos | 8 | CentOS 8 (EOL) |
-| centos | 7 | CentOS 7 (EOL) |
-| centos | 6 | CentOS 6 (EOL) |
-| oracle | 7 | Oracle Linux 7 |
-| oracle | 8 | Oracle Linux 8 |
-| oracle | 9 | Oracle Linux 9 |
-| amazon | 2023 | Amazon Linux 2023 |
-| amazon | 2 | Amazon Linux 2 |
+| ubuntu | 26.04 | Ubuntu 26.04 LTS (Plucky) |
+| ubuntu | 24.04 | Ubuntu 24.04 LTS (Noble) |
+| ubuntu | 22.04 | Ubuntu 22.04 LTS (Jammy) |
+| ubuntu | 20.04 | Ubuntu 20.04 LTS (Focal) |
+| ubuntu | 18.04 | Ubuntu 18.04 LTS (Bionic) — EOL |
+
+Most Linux distributions use readable major.minor versioning (e.g. `redhat 9.3`, `centos 7`) and do not need display name mappings. Ubuntu is included because its YY.MM versioning is less intuitive and codenames are widely used. Admins can add mappings for any platform via the admin UI.
 
 Note: The `10.0.17763` prefix maps to both Win10 1809 and Server 2019 because Ohai reports the same build number for both. This is a known limitation — the display name includes both possibilities. Admins can override if their fleet is exclusively one or the other.
+
+Note: The `10.0.26100` prefix maps to both Win11 24H2 and Server 2025 in some builds. The defaults list them separately using more specific prefixes where possible (`10.0.26334` for Server 2025). Admins should adjust based on their fleet.
+
+### Keeping Defaults Current
+
+The built-in defaults are compiled into the application and updated with each release. Between releases, admins can add new Windows builds immediately via the admin UI as they appear in their fleet. The "Reset to Defaults" action brings back the latest shipped set — useful after upgrading to pick up newly added mappings without losing custom entries (a merge strategy may be offered in future).
 
 ## Display Behaviour
 
