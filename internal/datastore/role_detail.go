@@ -43,6 +43,8 @@ type RoleChainNode struct {
 	Name                string           `json:"name"`
 	Type                string           `json:"type"` // "role" or "cookbook"
 	CompatibilityStatus string           `json:"compatibility_status,omitempty"`
+	Source              string           `json:"source,omitempty"`    // "server", "git", "both"
+	TKStatus            string           `json:"tk_status,omitempty"` // "passed", "failed", "partial", "untested"
 	Children            []*RoleChainNode `json:"children,omitempty"`
 }
 
@@ -143,6 +145,28 @@ func (db *DB) GetRoleDetail(ctx context.Context, roleName, targetChefVersion str
 	if targetChefVersion != "" {
 		compatMap, _ := db.getCookbookCompatMap(ctx, orgs[0], targetChefVersion)
 		setChainCompatibility(chain, compatMap)
+	}
+
+	// 7. Set source (server/git/both) and TK status on cookbook nodes.
+	if len(cookbookSet) > 0 {
+		cbNames := make([]string, 0, len(cookbookSet))
+		for name := range cookbookSet {
+			cbNames = append(cbNames, name)
+		}
+		serverNames, _ := db.getServerCookbookNames(ctx, orgs, cbNames)
+		gitNames, _ := db.getGitRepoCookbookNames(ctx, cbNames)
+		setChainSources(chain, serverNames, gitNames)
+
+		if targetChefVersion != "" {
+			gitCBNames := make([]string, 0, len(gitNames))
+			for name := range gitNames {
+				gitCBNames = append(gitCBNames, name)
+			}
+			if len(gitCBNames) > 0 {
+				tkMap, _ := db.getGitKitchenStatusMap(ctx, gitCBNames, targetChefVersion)
+				setChainTKStatus(chain, tkMap)
+			}
+		}
 	}
 
 	if directCookbooks == nil {
@@ -520,5 +544,137 @@ func setChainCompatibility(node *RoleChainNode, compatMap map[string]string) {
 	}
 	for _, child := range node.Children {
 		setChainCompatibility(child, compatMap)
+	}
+}
+
+// getServerCookbookNames returns the set of cookbook names (from the provided
+// candidates) that exist in server_cookbooks for any of the given orgs.
+func (db *DB) getServerCookbookNames(ctx context.Context, orgs []string, candidates []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if len(candidates) == 0 || len(orgs) == 0 {
+		return result, nil
+	}
+	rows, err := db.pool.QueryContext(ctx,
+		`SELECT DISTINCT name FROM server_cookbooks
+		 WHERE name = ANY($1) AND organisation_name = ANY($2)`,
+		pq.Array(candidates), pq.Array(orgs),
+	)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return result, err
+		}
+		result[name] = true
+	}
+	return result, rows.Err()
+}
+
+// getGitRepoCookbookNames returns the set of cookbook names (from the provided
+// candidates) that exist in git_repos (global, not org-scoped).
+func (db *DB) getGitRepoCookbookNames(ctx context.Context, candidates []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if len(candidates) == 0 {
+		return result, nil
+	}
+	rows, err := db.pool.QueryContext(ctx,
+		`SELECT DISTINCT name FROM git_repos WHERE name = ANY($1)`,
+		pq.Array(candidates),
+	)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return result, err
+		}
+		result[name] = true
+	}
+	return result, rows.Err()
+}
+
+// getGitKitchenStatusMap returns aggregate TK status per cookbook name for a
+// given target version. Derived from git_kitchen_results:
+//   - all passed → "passed"
+//   - all failed → "failed"
+//   - mix → "partial"
+//   - no results → not in map
+func (db *DB) getGitKitchenStatusMap(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error) {
+	result := make(map[string]string)
+	if len(cookbookNames) == 0 {
+		return result, nil
+	}
+	rows, err := db.pool.QueryContext(ctx,
+		`SELECT git_repo_name,
+		        COUNT(*) FILTER (WHERE passed = true) AS passed_count,
+		        COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count
+		 FROM git_kitchen_results
+		 WHERE git_repo_name = ANY($1)
+		   AND target_chef_version = $2
+		 GROUP BY git_repo_name`,
+		pq.Array(cookbookNames), targetVersion,
+	)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var passed, failed int
+		if err := rows.Scan(&name, &passed, &failed); err != nil {
+			return result, err
+		}
+		switch {
+		case passed > 0 && failed > 0:
+			result[name] = "partial"
+		case failed > 0:
+			result[name] = "failed"
+		case passed > 0:
+			result[name] = "passed"
+		}
+	}
+	return result, rows.Err()
+}
+
+// setChainSources sets Source on cookbook nodes based on whether the cookbook
+// exists as a server cookbook, git repo, or both.
+func setChainSources(node *RoleChainNode, serverNames, gitNames map[string]bool) {
+	if node == nil {
+		return
+	}
+	if node.Type == "cookbook" {
+		inServer := serverNames[node.Name]
+		inGit := gitNames[node.Name]
+		switch {
+		case inServer && inGit:
+			node.Source = "both"
+		case inGit:
+			node.Source = "git"
+		default:
+			node.Source = "server"
+		}
+	}
+	for _, child := range node.Children {
+		setChainSources(child, serverNames, gitNames)
+	}
+}
+
+// setChainTKStatus sets TKStatus on cookbook nodes that have Test Kitchen results.
+func setChainTKStatus(node *RoleChainNode, tkMap map[string]string) {
+	if node == nil {
+		return
+	}
+	if node.Type == "cookbook" {
+		if status, ok := tkMap[node.Name]; ok {
+			node.TKStatus = status
+		}
+	}
+	for _, child := range node.Children {
+		setChainTKStatus(child, tkMap)
 	}
 }

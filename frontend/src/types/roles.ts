@@ -52,6 +52,8 @@ export interface RoleChainNode {
   name: string;
   type: "role" | "cookbook";
   compatibility_status?: string;
+  source?: "server" | "git" | "both";
+  tk_status?: "passed" | "failed" | "partial" | "untested";
   children?: RoleChainNode[];
 }
 

@@ -10,7 +10,7 @@ import type {
   RoleGraphResponse,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
-import { CompatibilityBadge } from "../components/StatusBadge";
+import { CookStyleBadge, TKBadge } from "../components/StatusBadge";
 import {
   ForceGraph,
   adaptRoleGraphNodes,
@@ -188,16 +188,25 @@ function RoleChainTree({
   const indent = depth * 1.25;
   const isRole = node.type === "role";
 
-  const statusColor =
-    node.compatibility_status === "incompatible"
-      ? "text-red-600"
-      : node.compatibility_status === "untested"
-        ? "text-gray-400"
-        : "text-green-600";
-
   const linkTarget = isRole
     ? `/roles/${encodeURIComponent(node.name)}`
     : `/cookbooks/${encodeURIComponent(node.name)}`;
+
+  const sourceIcon = isRole
+    ? "📁"
+    : node.source === "both"
+      ? "📦🔀"
+      : node.source === "git"
+        ? "🔀"
+        : "📦";
+
+  const sourceTitle = isRole
+    ? "Role"
+    : node.source === "both"
+      ? "Server cookbook + Git repo"
+      : node.source === "git"
+        ? "Git repo only"
+        : "Server cookbook only";
 
   return (
     <div>
@@ -205,16 +214,25 @@ function RoleChainTree({
         className="flex items-center gap-1.5 py-0.5"
         style={{ paddingLeft: `${indent}rem` }}
       >
-        <span className="text-xs text-gray-400">{isRole ? "📁" : "📦"}</span>
+        <span className="text-xs text-gray-400" title={sourceTitle}>
+          {sourceIcon}
+        </span>
         <Link
           to={linkTarget}
-          className={`text-sm hover:underline ${isRole ? "font-medium text-blue-600" : statusColor}`}
+          className={`text-sm hover:underline ${isRole ? "font-medium text-blue-600" : "text-gray-800"}`}
         >
           {node.name}
         </Link>
-        {!isRole && node.compatibility_status && (
-          <CompatibilityBadge status={node.compatibility_status} size="sm" />
+        {!isRole && (
+          <CookStyleBadge
+            status={node.compatibility_status ?? "untested"}
+            size="sm"
+          />
         )}
+        {!isRole &&
+          (node.source === "git" || node.source === "both") && (
+            <TKBadge status={node.tk_status ?? "untested"} size="sm" />
+          )}
       </div>
       {node.children?.map((child, i) => (
         <RoleChainTree

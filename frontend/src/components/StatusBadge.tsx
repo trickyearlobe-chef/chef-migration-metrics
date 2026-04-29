@@ -38,7 +38,14 @@ type BadgeVariant =
   | "healthy"
   | "unhealthy"
   | "unknown"
-  | "scan_error";
+  | "scan_error"
+  | "cs_compatible"
+  | "cs_incompatible"
+  | "cs_untested"
+  | "tk_passed"
+  | "tk_failed"
+  | "tk_partial"
+  | "tk_untested";
 
 interface StatusBadgeProps {
   /** The status variant to display. Determines colour and default label. */
@@ -78,6 +85,17 @@ const variantStyles: Record<BadgeVariant, string> = {
   unhealthy: "bg-red-100 text-red-800 ring-red-600/20",
   unknown: "bg-gray-100 text-gray-600 ring-gray-500/20",
   scan_error: "bg-orange-100 text-orange-800 ring-orange-600/20",
+
+  // CookStyle signal (low confidence — static analysis)
+  cs_compatible: "bg-green-100 text-green-800 ring-green-600/20",
+  cs_incompatible: "bg-red-100 text-red-800 ring-red-600/20",
+  cs_untested: "bg-gray-100 text-gray-600 ring-gray-500/20",
+
+  // Test Kitchen signal (high confidence for passes)
+  tk_passed: "bg-green-100 text-green-800 ring-green-600/20",
+  tk_failed: "bg-red-100 text-red-800 ring-red-600/20",
+  tk_partial: "bg-orange-100 text-orange-800 ring-orange-600/20",
+  tk_untested: "bg-gray-100 text-gray-600 ring-gray-500/20",
 };
 
 const variantLabels: Record<BadgeVariant, string> = {
@@ -100,6 +118,13 @@ const variantLabels: Record<BadgeVariant, string> = {
   unhealthy: "Unhealthy",
   unknown: "Unknown",
   scan_error: "Scan Error",
+  cs_compatible: "CS ✓",
+  cs_incompatible: "CS ✗",
+  cs_untested: "CS ?",
+  tk_passed: "TK ✓",
+  tk_failed: "TK ✗",
+  tk_partial: "TK ~",
+  tk_untested: "TK ?",
 };
 
 /** Short descriptor shown as a tooltip on hover for compatibility statuses. */
@@ -115,6 +140,13 @@ const variantTooltips: Partial<Record<BadgeVariant, string>> = {
     "Critical remediation complexity — significant manual effort required",
   scan_error:
     "CookStyle crashed before completing the scan — check the error details",
+  cs_compatible: "CookStyle (static analysis) passed — low confidence, linting only",
+  cs_incompatible: "CookStyle found deprecated API usage for the target Chef version",
+  cs_untested: "No CookStyle scan results available",
+  tk_passed: "Test Kitchen converge + verify passed — high confidence",
+  tk_failed: "Test Kitchen failed — may be a real issue or infrastructure noise",
+  tk_partial: "Test Kitchen: some platforms passed, some failed",
+  tk_untested: "No Test Kitchen results available",
 };
 
 /**
@@ -155,12 +187,18 @@ export function StatusBadge({
         .join(" ")}
       title={tooltip}
     >
-      {/* Dot indicator for compatibility statuses to make the distinction
-          between green (TK pass) and amber (CookStyle) unmissable per spec */}
+      {/* Dot indicator for compatibility and CS/TK signal badges */}
       {(variant === "compatible" ||
         variant === "cookstyle_only" ||
         variant === "incompatible" ||
-        variant === "untested") && (
+        variant === "untested" ||
+        variant === "cs_compatible" ||
+        variant === "cs_incompatible" ||
+        variant === "cs_untested" ||
+        variant === "tk_passed" ||
+        variant === "tk_failed" ||
+        variant === "tk_partial" ||
+        variant === "tk_untested") && (
         <span
           className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor(variant)}`}
           aria-hidden="true"
@@ -175,12 +213,20 @@ export function StatusBadge({
 function dotColor(variant: BadgeVariant): string {
   switch (variant) {
     case "compatible":
+    case "cs_compatible":
+    case "tk_passed":
       return "bg-green-500";
     case "cookstyle_only":
       return "bg-amber-500";
     case "incompatible":
+    case "cs_incompatible":
+    case "tk_failed":
       return "bg-red-500";
+    case "tk_partial":
+      return "bg-orange-500";
     case "untested":
+    case "cs_untested":
+    case "tk_untested":
       return "bg-gray-400";
     default:
       return "bg-gray-400";
@@ -292,4 +338,54 @@ export function StaleBadge({
 
   // critical
   return <StatusBadge variant="stale" label={`Gone${ageLabel}`} size={size} />;
+}
+
+/** Renders a CookStyle signal badge from a compatibility status string. */
+export function CookStyleBadge({
+  status,
+  size = "md",
+}: {
+  status: string;
+  size?: "sm" | "md";
+}) {
+  let variant: BadgeVariant;
+  switch (status) {
+    case "compatible":
+    case "cookstyle_only":
+      variant = "cs_compatible";
+      break;
+    case "incompatible":
+      variant = "cs_incompatible";
+      break;
+    default:
+      variant = "cs_untested";
+      break;
+  }
+  return <StatusBadge variant={variant} size={size} />;
+}
+
+/** Renders a Test Kitchen signal badge from a TK status string. */
+export function TKBadge({
+  status,
+  size = "md",
+}: {
+  status: string;
+  size?: "sm" | "md";
+}) {
+  let variant: BadgeVariant;
+  switch (status) {
+    case "passed":
+      variant = "tk_passed";
+      break;
+    case "failed":
+      variant = "tk_failed";
+      break;
+    case "partial":
+      variant = "tk_partial";
+      break;
+    default:
+      variant = "tk_untested";
+      break;
+  }
+  return <StatusBadge variant={variant} size={size} />;
 }
