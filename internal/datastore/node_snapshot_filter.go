@@ -107,6 +107,16 @@ type NodeSnapshotFilter struct {
 	// readiness filter. Ignored when TargetChefVersion is empty.
 	ReadinessFilter string
 
+	// CookstyleStatusFilter filters by materialised cookstyle_status on
+	// node_readiness. Comma-separated values: "passed", "failed", "unknown".
+	// Requires TargetChefVersion.
+	CookstyleStatusFilter string
+
+	// KitchenStatusFilter filters by materialised kitchen_status on
+	// node_readiness. Comma-separated values: "passed", "failed", "partial",
+	// "unknown". Requires TargetChefVersion.
+	KitchenStatusFilter string
+
 	// TargetChefVersion is the target Chef version used to JOIN with
 	// node_readiness for readiness filtering and data enrichment. When set
 	// (even without ReadinessFilter), a LEFT JOIN to node_readiness is
@@ -640,7 +650,29 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		case "disk_unknown":
 			where += " AND (nr.sufficient_disk_space IS NULL)"
 		}
+
+		if f.CookstyleStatusFilter != "" {
+			where += " AND COALESCE(nr.cookstyle_status, '') = ANY(" + nextArg() + ")"
+			args = append(args, pq.Array(splitCSV(f.CookstyleStatusFilter)))
+		}
+		if f.KitchenStatusFilter != "" {
+			where += " AND COALESCE(nr.kitchen_status, '') = ANY(" + nextArg() + ")"
+			args = append(args, pq.Array(splitCSV(f.KitchenStatusFilter)))
+		}
 	}
 
 	return cte, join, where, args
+}
+
+// splitCSV splits a comma-separated string into trimmed non-empty values.
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

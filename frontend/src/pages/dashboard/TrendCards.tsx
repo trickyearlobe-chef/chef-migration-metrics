@@ -70,6 +70,9 @@ export function VersionDistributionTrendCard({
   return (
     <div className="card">
       <h3 className="card-header">Version Distribution — Trend</h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Number of nodes running each Chef client version over time. Shows migration progress as nodes move to newer versions.
+      </p>
       {loading && <LoadingSpinner message="Loading version trend…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
@@ -190,6 +193,9 @@ export function ReadinessTrendCard({
   return (
     <div className="card">
       <h3 className="card-header">Node Readiness — Trend</h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Percentage of nodes where all cookbooks are CookStyle-compatible and disk space is sufficient. A node is "ready" when it can accept the target Chef version.
+      </p>
       {loading && <LoadingSpinner message="Loading readiness trend…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
@@ -329,14 +335,17 @@ export function ComplexityTrendCard({
 
   return (
     <div className="card">
-      <h3 className="card-header">Complexity Score — Trend</h3>
+      <h3 className="card-header">CookStyle Complexity — Trend</h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Average CookStyle offence severity across all cookbooks. Lower is better — tracks progress as cookbooks are remediated.
+      </p>
       {loading && <LoadingSpinner message="Loading complexity trend…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
         <div className="space-y-6">
           <TrendChart
             series={scoreSeries}
-            yLabel="Avg complexity"
+            yLabel="Avg offence severity"
             showArea={true}
             height={220}
           />
@@ -435,6 +444,9 @@ export function StaleTrendCard({ organisation }: { organisation?: string }) {
   return (
     <div className="card">
       <h3 className="card-header">Stale Nodes — Trend</h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Nodes that have stopped checking in. "Missing" nodes may be temporarily offline; "Gone" nodes have not reported for an extended period.
+      </p>
       {loading && <LoadingSpinner message="Loading stale node trend…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (

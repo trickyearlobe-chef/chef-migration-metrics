@@ -110,10 +110,13 @@ export function RolesPage() {
   const [compatibility, setCompatibility] = useState<string[]>(
     searchParams.get("compatibility_status")?.split(",").filter(Boolean) ?? [],
   );
+  const [tkStatus, setTkStatus] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
-  const { sortField, sortOrder, handleSort } = useSort({
+  const { sortField, sortOrder, handleSort } = useSort<
+    "name" | "node_count" | "incompatible_cookbook_count" | "tk_status"
+  >({
     defaultField: "name",
     defaultOrder: "asc",
     descendingFields: ["node_count", "incompatible_cookbook_count"],
@@ -145,6 +148,7 @@ export function RolesPage() {
     if (nameFilter) filters.name = nameFilter;
     if (compatibility.length > 0)
       filters.compatibility_status = compatibility.join(",");
+    if (tkStatus.length > 0) filters.tk_status = tkStatus.join(",");
     if (selectedTargetVersion)
       filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
@@ -162,6 +166,7 @@ export function RolesPage() {
     selectedOrg,
     nameFilter,
     compatibility,
+    tkStatus,
     selectedTargetVersion,
     page,
     sortField,
@@ -178,17 +183,21 @@ export function RolesPage() {
     selectedOrg,
     nameFilter,
     compatibility,
+    tkStatus,
     selectedTargetVersion,
     sortField,
     sortOrder,
   ]);
 
   const activeFilterCount =
-    (nameFilter ? 1 : 0) + (compatibility.length > 0 ? 1 : 0);
+    (nameFilter ? 1 : 0) +
+    (compatibility.length > 0 ? 1 : 0) +
+    (tkStatus.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNameFilter("");
     setCompatibility([]);
+    setTkStatus([]);
   };
 
   return (
@@ -216,6 +225,17 @@ export function RolesPage() {
           ]}
           selected={compatibility}
           onChange={setCompatibility}
+        />
+        <FilterMultiCheckbox
+          label="Test Kitchen"
+          options={[
+            { value: "passed", label: "Passed" },
+            { value: "failed", label: "Failed" },
+            { value: "partial", label: "Partial" },
+            { value: "untested", label: "Untested" },
+          ]}
+          selected={tkStatus}
+          onChange={setTkStatus}
         />
         {activeFilterCount > 0 && (
           <button
@@ -265,7 +285,13 @@ export function RolesPage() {
                       currentOrder={sortOrder}
                       onSort={handleSort}
                     />
-                    <th>Test Kitchen</th>
+                    <SortableColumnHeader
+                      label="Test Kitchen"
+                      field="tk_status"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                   </tr>
                 </thead>
                 <tbody>

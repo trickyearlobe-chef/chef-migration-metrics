@@ -13,6 +13,7 @@ export interface RoleFilterQuery {
   name?: string;
   organisation?: string;
   compatibility_status?: string;
+  tk_status?: string;
   target_chef_version?: string;
   sort?: string;
   order?: string;

@@ -24,9 +24,8 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StaleBadge } from "../components/StatusBadge";
+import { StaleBadge, CookStyleBadge, TKBadge, DiskBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
-import { CheckStatusIcons } from "../components/CheckStatusIcons";
 import { PlatformLabel } from "../components/PlatformLabel";
 
 function formatOhaiTime(ohaiTime?: number): string {
@@ -88,6 +87,8 @@ export function NodesPage() {
   const [readinessFilter, setReadinessFilter] = useState<string[]>(
     searchParams.get("readiness")?.split(",").filter(Boolean) ?? [],
   );
+  const [cookstyleFilter, setCookstyleFilter] = useState<string[]>([]);
+  const [kitchenFilter, setKitchenFilter] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -182,6 +183,10 @@ export function NodesPage() {
       filters.target_chef_version = selectedTargetVersion;
     if (readinessFilter.length > 0)
       filters.readiness_filter = readinessFilter.join(",");
+    if (cookstyleFilter.length > 0)
+      filters.cookstyle_status = cookstyleFilter.join(",");
+    if (kitchenFilter.length > 0)
+      filters.kitchen_status = kitchenFilter.join(",");
 
     fetchNodes(filters)
       .then((res) => {
@@ -201,6 +206,8 @@ export function NodesPage() {
     policyGroups,
     staleTiers,
     readinessFilter,
+    cookstyleFilter,
+    kitchenFilter,
     selectedTargetVersion,
     page,
     sortField,
@@ -225,6 +232,8 @@ export function NodesPage() {
     policyGroups,
     staleTiers,
     readinessFilter,
+    cookstyleFilter,
+    kitchenFilter,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -239,7 +248,9 @@ export function NodesPage() {
     (roles.length > 0 ? 1 : 0) +
     (policyNames.length > 0 ? 1 : 0) +
     (policyGroups.length > 0 ? 1 : 0) +
-    (readinessFilter.length > 0 ? 1 : 0);
+    (readinessFilter.length > 0 ? 1 : 0) +
+    (cookstyleFilter.length > 0 ? 1 : 0) +
+    (kitchenFilter.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNodeName("");
@@ -250,6 +261,8 @@ export function NodesPage() {
     setPolicyNames([]);
     setPolicyGroups([]);
     setReadinessFilter([]);
+    setCookstyleFilter([]);
+    setKitchenFilter([]);
   };
 
   // Readiness filtering is now handled server-side via readiness_filter and
@@ -341,6 +354,27 @@ export function NodesPage() {
           onChange={setReadinessFilter}
           options={READINESS_OPTIONS}
         />
+        <FilterMultiCheckbox
+          label="CookStyle"
+          selected={cookstyleFilter}
+          onChange={setCookstyleFilter}
+          options={[
+            { value: "passed", label: "Passed" },
+            { value: "failed", label: "Failed" },
+            { value: "unknown", label: "Unknown" },
+          ]}
+        />
+        <FilterMultiCheckbox
+          label="Test Kitchen"
+          selected={kitchenFilter}
+          onChange={setKitchenFilter}
+          options={[
+            { value: "passed", label: "Passed" },
+            { value: "failed", label: "Failed" },
+            { value: "partial", label: "Partial" },
+            { value: "unknown", label: "Unknown" },
+          ]}
+        />
         {activeFilterCount > 0 && (
           <button
             onClick={clearFilters}
@@ -397,7 +431,9 @@ export function NodesPage() {
                       onSort={handleSort}
                     />
                     <th>Status</th>
-                    <th>Checks</th>
+                    <th>Disk</th>
+                    <th>CookStyle</th>
+                    <th>TK</th>
                     <SortableColumnHeader
                       label="Ohai Time"
                       field="ohai_time"
@@ -408,7 +444,16 @@ export function NodesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayNodes.map((node) => (
+                  {displayNodes.map((node) => {
+                    const readinessEntry = selectedTargetVersion
+                      ? node.readiness?.find(
+                          (r) =>
+                            r.target_chef_version === selectedTargetVersion,
+                        )
+                      : node.readiness?.[0];
+                    const csStatus = readinessEntry?.cookstyle_status ?? "unknown";
+                    const csMapped = csStatus === "passed" || csStatus === "warnings" ? "compatible" : csStatus === "failed" || csStatus === "scan_error" ? "incompatible" : "untested";
+                    return (
                     <tr
                       key={node.id}
                       className={node.is_stale ? "bg-purple-50/50" : ""}
@@ -446,33 +491,26 @@ export function NodesPage() {
                         />
                       </td>
                       <td>
-                        {(() => {
-                          const entry = selectedTargetVersion
-                            ? node.readiness?.find(
-                                (r) =>
-                                  r.target_chef_version ===
-                                  selectedTargetVersion,
-                              )
-                            : node.readiness?.[0];
-                          return (
-                            <CheckStatusIcons
-                              diskStatus={entry?.disk_status ?? "unknown"}
-                              cookstyleStatus={
-                                entry?.cookstyle_status ?? "unknown"
-                              }
-                              kitchenStatus={entry?.kitchen_status ?? "unknown"}
-                              diskDetail={entry?.disk_detail ?? null}
-                              cookstyleDetail={entry?.cookstyle_detail ?? null}
-                              kitchenDetail={entry?.kitchen_detail ?? null}
-                            />
-                          );
-                        })()}
+                        <span title={readinessEntry?.disk_detail ?? "Disk: unknown"}>
+                          <DiskBadge status={readinessEntry?.disk_status ?? "unknown"} size="sm" />
+                        </span>
+                      </td>
+                      <td>
+                        <span title={readinessEntry?.cookstyle_detail ?? "CookStyle: unknown"}>
+                          <CookStyleBadge status={csMapped} size="sm" />
+                        </span>
+                      </td>
+                      <td>
+                        <span title={readinessEntry?.kitchen_detail ?? "Test Kitchen: unknown"}>
+                          <TKBadge status={readinessEntry?.kitchen_status ?? "unknown"} size="sm" />
+                        </span>
                       </td>
                       <td className="text-xs text-gray-400">
                         {formatOhaiTime(node.ohai_time)}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

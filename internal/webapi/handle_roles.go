@@ -18,8 +18,9 @@ import (
 //   - name: case-insensitive substring match
 //   - organisation: comma-separated org names
 //   - compatibility_status: compatible, incompatible, untested, all
+//   - tk_status: comma-separated TK statuses (passed, failed, partial, untested)
 //   - target_chef_version: target version for compatibility evaluation
-//   - sort: name (default), node_count, incompatible_cookbook_count
+//   - sort: name (default), node_count, incompatible_cookbook_count, tk_status
 //   - order: asc (default) or desc
 //   - page, per_page: pagination
 func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
@@ -47,16 +48,27 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 	}
 
 	pg := ParsePagination(req)
+	tkFilter := queryString(req, "tk_status", "")
+	sortField := queryString(req, "sort", "name")
 
 	f := datastore.RoleFilter{
 		OrganisationNames:   orgNames,
 		Name:                queryString(req, "name", ""),
 		CompatibilityStatus: queryString(req, "compatibility_status", ""),
 		TargetChefVersion:   targetChefVersion,
-		Sort:                queryString(req, "sort", "name"),
+		Sort:                sortField,
 		SortOrder:           queryString(req, "order", "asc"),
 		Limit:               pg.Limit(),
 		Offset:              pg.Offset(),
+	}
+
+	// When TK filter or TK sort is active, disable SQL pagination —
+	// TK status is computed post-query, so we must fetch all rows first.
+	tkFilterActive := tkFilter != ""
+	tkSortActive := sortField == "tk_status"
+	if tkFilterActive || tkSortActive {
+		f.Limit = 0
+		f.Offset = 0
 	}
 
 	rows, total, summary, err := r.db.ListRolesFiltered(ctx, f)
@@ -82,6 +94,38 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 				rows[i].TKStatus = status
 			}
 		}
+	}
+
+	// Apply TK status filter in memory.
+	if tkFilterActive {
+		allowed := make(map[string]bool)
+		for _, v := range strings.Split(tkFilter, ",") {
+			allowed[strings.TrimSpace(v)] = true
+		}
+		filtered := make([]datastore.RoleFilterRow, 0, len(rows))
+		for _, row := range rows {
+			tkVal := row.TKStatus
+			if tkVal == "" {
+				tkVal = "untested"
+			}
+			if allowed[tkVal] {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+		total = len(rows)
+	}
+
+	// Apply TK sort in memory.
+	if tkSortActive {
+		sortOrder := queryString(req, "order", "asc")
+		sortRolesByTK(rows, sortOrder)
+	}
+
+	// Paginate in memory if we disabled SQL pagination.
+	if tkFilterActive || tkSortActive {
+		pageRows, _ := PaginateSlice(rows, pg)
+		rows = pageRows
 	}
 
 	type roleResp struct {
@@ -119,6 +163,30 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		"data":       result,
 		"summary":    summary,
 		"pagination": NewPaginationResponse(pg, total),
+	})
+}
+
+// sortRolesByTK sorts role rows by TK status in a deterministic order.
+func sortRolesByTK(rows []datastore.RoleFilterRow, order string) {
+	rank := map[string]int{
+		"failed":   0,
+		"partial":  1,
+		"passed":   2,
+		"untested": 3,
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		ri := rank[rows[i].TKStatus]
+		rj := rank[rows[j].TKStatus]
+		if _, ok := rank[rows[i].TKStatus]; !ok {
+			ri = 3
+		}
+		if _, ok := rank[rows[j].TKStatus]; !ok {
+			rj = 3
+		}
+		if order == "desc" {
+			return ri > rj
+		}
+		return ri < rj
 	})
 }
 

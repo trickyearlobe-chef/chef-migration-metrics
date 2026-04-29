@@ -45,7 +45,10 @@ type BadgeVariant =
   | "tk_passed"
   | "tk_failed"
   | "tk_partial"
-  | "tk_untested";
+  | "tk_untested"
+  | "disk_sufficient"
+  | "disk_insufficient"
+  | "disk_unknown";
 
 interface StatusBadgeProps {
   /** The status variant to display. Determines colour and default label. */
@@ -96,6 +99,11 @@ const variantStyles: Record<BadgeVariant, string> = {
   tk_failed: "bg-red-100 text-red-800 ring-red-600/20",
   tk_partial: "bg-orange-100 text-orange-800 ring-orange-600/20",
   tk_untested: "bg-gray-100 text-gray-600 ring-gray-500/20",
+
+  // Disk space signal
+  disk_sufficient: "bg-green-100 text-green-800 ring-green-600/20",
+  disk_insufficient: "bg-red-100 text-red-800 ring-red-600/20",
+  disk_unknown: "bg-gray-100 text-gray-600 ring-gray-500/20",
 };
 
 const variantLabels: Record<BadgeVariant, string> = {
@@ -125,6 +133,9 @@ const variantLabels: Record<BadgeVariant, string> = {
   tk_failed: "TK ✗",
   tk_partial: "TK ~",
   tk_untested: "TK ?",
+  disk_sufficient: "Disk ✓",
+  disk_insufficient: "Disk ✗",
+  disk_unknown: "Disk ?",
 };
 
 /** Short descriptor shown as a tooltip on hover for compatibility statuses. */
@@ -147,6 +158,9 @@ const variantTooltips: Partial<Record<BadgeVariant, string>> = {
   tk_failed: "Test Kitchen failed — may be a real issue or infrastructure noise",
   tk_partial: "Test Kitchen: some platforms passed, some failed",
   tk_untested: "No Test Kitchen results available",
+  disk_sufficient: "Sufficient disk space for upgrade",
+  disk_insufficient: "Insufficient disk space — upgrade may fail",
+  disk_unknown: "Disk space not yet checked",
 };
 
 /**
@@ -198,7 +212,10 @@ export function StatusBadge({
         variant === "tk_passed" ||
         variant === "tk_failed" ||
         variant === "tk_partial" ||
-        variant === "tk_untested") && (
+        variant === "tk_untested" ||
+        variant === "disk_sufficient" ||
+        variant === "disk_insufficient" ||
+        variant === "disk_unknown") && (
         <span
           className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor(variant)}`}
           aria-hidden="true"
@@ -215,18 +232,21 @@ function dotColor(variant: BadgeVariant): string {
     case "compatible":
     case "cs_compatible":
     case "tk_passed":
+    case "disk_sufficient":
       return "bg-green-500";
     case "cookstyle_only":
       return "bg-amber-500";
     case "incompatible":
     case "cs_incompatible":
     case "tk_failed":
+    case "disk_insufficient":
       return "bg-red-500";
     case "tk_partial":
       return "bg-orange-500";
     case "untested":
     case "cs_untested":
     case "tk_untested":
+    case "disk_unknown":
       return "bg-gray-400";
     default:
       return "bg-gray-400";
@@ -385,6 +405,29 @@ export function TKBadge({
       break;
     default:
       variant = "tk_untested";
+      break;
+  }
+  return <StatusBadge variant={variant} size={size} />;
+}
+
+/** Renders a Disk space signal badge from a disk status string. */
+export function DiskBadge({
+  status,
+  size = "md",
+}: {
+  status: string;
+  size?: "sm" | "md";
+}) {
+  let variant: BadgeVariant;
+  switch (status) {
+    case "sufficient":
+      variant = "disk_sufficient";
+      break;
+    case "insufficient":
+      variant = "disk_insufficient";
+      break;
+    default:
+      variant = "disk_unknown";
       break;
   }
   return <StatusBadge variant={variant} size={size} />;

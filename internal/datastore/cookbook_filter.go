@@ -33,6 +33,11 @@ type CookbookFilter struct {
 	// Values: "compatible", "incompatible", "scan_error", "untested".
 	Compatibility string
 
+	// TKStatus filters by Test Kitchen status derived from matching git repos.
+	// Values: "passed", "failed", "partial", "untested", "no_repo".
+	// Supports comma-separated multi-select.
+	TKStatus string
+
 	// TargetChefVersion is used for the cookstyle results JOIN.
 	// When empty, all cookbooks get "untested" compatibility.
 	TargetChefVersion string
@@ -44,7 +49,7 @@ type CookbookFilter struct {
 	Offset int
 
 	// Sort field: "name" (default), "version", "compatibility", "active",
-	// "download_status".
+	// "download_status", "tk_status".
 	Sort string
 
 	// SortOrder: "asc" (default) or "desc".
@@ -62,6 +67,7 @@ type CookbookFilterRow struct {
 	DownloadStatus   string `json:"download_status"`
 	DownloadError    string `json:"download_error,omitempty"`
 	Compatibility    string `json:"compatibility"` // "compatible", "incompatible", "scan_error", "untested"
+	TKStatus         string `json:"tk_status"`     // "passed", "failed", "partial", "untested", "no_repo"
 }
 
 // buildCookbookFilterQuery constructs the SQL query and args for
@@ -138,19 +144,50 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 		args = append(args, f.DownloadStatus)
 	}
 
+	sb.WriteString("),\n")
+
+	// --- CTE: TK status per cookbook name from matching git repos ---
+	sb.WriteString("tk AS (\n")
+	if f.TargetChefVersion != "" {
+		tkArg := nextArg()
+		sb.WriteString("  SELECT gr.name,\n")
+		sb.WriteString("    CASE\n")
+		sb.WriteString("      WHEN COUNT(gkr.id) = 0 THEN 'untested'\n")
+		sb.WriteString("      WHEN COUNT(*) FILTER (WHERE gkr.passed = true) > 0\n")
+		sb.WriteString("        AND COUNT(*) FILTER (WHERE gkr.passed = false) > 0 THEN 'partial'\n")
+		sb.WriteString("      WHEN COUNT(*) FILTER (WHERE gkr.passed = false) > 0 THEN 'failed'\n")
+		sb.WriteString("      ELSE 'passed'\n")
+		sb.WriteString("    END AS tk_status\n")
+		sb.WriteString("  FROM git_repos gr\n")
+		sb.WriteString("  LEFT JOIN git_kitchen_results gkr\n")
+		sb.WriteString("    ON gkr.git_repo_name = gr.name\n")
+		sb.WriteString("    AND gkr.target_chef_version = " + tkArg + "\n")
+		sb.WriteString("  GROUP BY gr.name\n")
+		args = append(args, f.TargetChefVersion)
+	} else {
+		sb.WriteString("  SELECT name, 'untested'::text AS tk_status FROM git_repos\n")
+	}
 	sb.WriteString(")\n")
 
-	// --- Outer SELECT with optional compatibility filter ---
+	// --- Outer SELECT with optional compatibility and TK filter ---
 	sb.WriteString("SELECT cb.organisation_name, cb.name, cb.version,\n")
 	sb.WriteString("       cb.is_active, cb.is_stale_cookbook, cb.download_status,\n")
 	sb.WriteString("       cb.download_error, cb.compatibility,\n")
+	sb.WriteString("       COALESCE(tk.tk_status, 'no_repo') AS tk_status,\n")
 	sb.WriteString("       COUNT(*) OVER() AS total_count\n")
 	sb.WriteString("  FROM cb\n")
+	sb.WriteString("  LEFT JOIN tk ON tk.name = cb.name\n")
 	sb.WriteString(" WHERE 1=1\n")
 
 	if f.Compatibility != "" {
 		sb.WriteString("   AND cb.compatibility = " + nextArg() + "\n")
 		args = append(args, f.Compatibility)
+	}
+
+	if f.TKStatus != "" {
+		tkValues := strings.Split(f.TKStatus, ",")
+		sb.WriteString("   AND COALESCE(tk.tk_status, 'no_repo') = ANY(" + nextArg() + ")\n")
+		args = append(args, pq.Array(tkValues))
 	}
 
 	// --- ORDER BY ---
@@ -164,6 +201,8 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 		sortExpr = "cb.is_active"
 	case "download_status":
 		sortExpr = "cb.download_status"
+	case "tk_status":
+		sortExpr = "COALESCE(tk.tk_status, 'no_repo')"
 	default: // "name" or empty
 		sortExpr = "LOWER(cb.name), cb.version"
 	}
@@ -218,6 +257,7 @@ func (db *DB) ListCookbooksFiltered(ctx context.Context, f CookbookFilter) ([]Co
 			&r.DownloadStatus,
 			&downloadError,
 			&r.Compatibility,
+			&r.TKStatus,
 			&rowTotal,
 		); err != nil {
 			return nil, 0, fmt.Errorf("datastore: scanning filtered cookbook row: %w", err)
