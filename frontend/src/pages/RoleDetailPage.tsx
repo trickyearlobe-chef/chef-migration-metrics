@@ -245,6 +245,11 @@ function RoleChainTree({
           (node.source === "git" || node.source === "both") && (
             <TKBadge status={node.tk_status ?? "untested"} size="sm" />
           )}
+        {!isRole && node.complexity_score != null && node.complexity_score > 0 && (
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700">
+            {node.complexity_score} CS offenses
+          </span>
+        )}
       </div>
       {node.children?.map((child, i) => (
         <RoleChainTree

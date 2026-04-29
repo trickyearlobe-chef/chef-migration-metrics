@@ -45,6 +45,7 @@ type RoleChainNode struct {
 	CompatibilityStatus string           `json:"compatibility_status,omitempty"`
 	Source              string           `json:"source,omitempty"`    // "server", "git", "both"
 	TKStatus            string           `json:"tk_status,omitempty"` // "passed", "failed", "partial", "untested"
+	ComplexityScore     int              `json:"complexity_score,omitempty"`
 	Children            []*RoleChainNode `json:"children,omitempty"`
 }
 
@@ -145,6 +146,16 @@ func (db *DB) GetRoleDetail(ctx context.Context, roleName, targetChefVersion str
 	if targetChefVersion != "" {
 		compatMap, _ := db.getCookbookCompatMap(ctx, orgs[0], targetChefVersion)
 		setChainCompatibility(chain, compatMap)
+	}
+
+	// 6b. Set complexity scores on chain tree cookbook nodes.
+	if targetChefVersion != "" && len(cookbookSet) > 0 {
+		cbNames := make([]string, 0, len(cookbookSet))
+		for name := range cookbookSet {
+			cbNames = append(cbNames, name)
+		}
+		complexityMap, _ := db.getCookbookComplexityMap(ctx, orgs[0], targetChefVersion, cbNames)
+		setChainComplexity(chain, complexityMap)
 	}
 
 	// 7. Set source (server/git/both) and TK status on cookbook nodes.
@@ -545,6 +556,51 @@ func setChainCompatibility(node *RoleChainNode, compatMap map[string]string) {
 	for _, child := range node.Children {
 		setChainCompatibility(child, compatMap)
 	}
+}
+
+func setChainComplexity(node *RoleChainNode, complexityMap map[string]int) {
+	if node == nil {
+		return
+	}
+	if node.Type == "cookbook" {
+		if score, ok := complexityMap[node.Name]; ok {
+			node.ComplexityScore = score
+		}
+	}
+	for _, child := range node.Children {
+		setChainComplexity(child, complexityMap)
+	}
+}
+
+// getCookbookComplexityMap returns a map of cookbook name → complexity_score
+// for all named cookbooks that have complexity data in the given org/target.
+func (db *DB) getCookbookComplexityMap(ctx context.Context, org, targetChefVersion string, names []string) (map[string]int, error) {
+	result := make(map[string]int)
+	if len(names) == 0 {
+		return result, nil
+	}
+	rows, err := db.pool.QueryContext(ctx,
+		`SELECT cookbook_name, complexity_score
+		 FROM server_cookbook_complexity
+		 WHERE organisation_name = $1
+		   AND target_chef_version = $2
+		   AND cookbook_name = ANY($3)
+		   AND complexity_score > 0`,
+		org, targetChefVersion, pq.Array(names),
+	)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var score int
+		if err := rows.Scan(&name, &score); err != nil {
+			continue
+		}
+		result[name] = score
+	}
+	return result, nil
 }
 
 // getServerCookbookNames returns the set of cookbook names (from the provided

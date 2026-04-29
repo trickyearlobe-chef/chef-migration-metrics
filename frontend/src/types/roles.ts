@@ -55,6 +55,7 @@ export interface RoleChainNode {
   compatibility_status?: string;
   source?: "server" | "git" | "both";
   tk_status?: "passed" | "failed" | "partial" | "untested";
+  complexity_score?: number;
   children?: RoleChainNode[];
 }
 
