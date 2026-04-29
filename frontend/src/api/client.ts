@@ -86,6 +86,8 @@ export interface NodeFilterQuery extends PaginationQuery {
   role?: string;
   stale?: string;
   readiness_filter?: string;
+  cookstyle_status?: string;
+  kitchen_status?: string;
   target_chef_version?: string;
   sort?: string;
   order?: string;

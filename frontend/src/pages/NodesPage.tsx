@@ -87,6 +87,8 @@ export function NodesPage() {
   const [readinessFilter, setReadinessFilter] = useState<string[]>(
     searchParams.get("readiness")?.split(",").filter(Boolean) ?? [],
   );
+  const [cookstyleFilter, setCookstyleFilter] = useState<string[]>([]);
+  const [kitchenFilter, setKitchenFilter] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -181,6 +183,10 @@ export function NodesPage() {
       filters.target_chef_version = selectedTargetVersion;
     if (readinessFilter.length > 0)
       filters.readiness_filter = readinessFilter.join(",");
+    if (cookstyleFilter.length > 0)
+      filters.cookstyle_status = cookstyleFilter.join(",");
+    if (kitchenFilter.length > 0)
+      filters.kitchen_status = kitchenFilter.join(",");
 
     fetchNodes(filters)
       .then((res) => {
@@ -200,6 +206,8 @@ export function NodesPage() {
     policyGroups,
     staleTiers,
     readinessFilter,
+    cookstyleFilter,
+    kitchenFilter,
     selectedTargetVersion,
     page,
     sortField,
@@ -224,6 +232,8 @@ export function NodesPage() {
     policyGroups,
     staleTiers,
     readinessFilter,
+    cookstyleFilter,
+    kitchenFilter,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -238,7 +248,9 @@ export function NodesPage() {
     (roles.length > 0 ? 1 : 0) +
     (policyNames.length > 0 ? 1 : 0) +
     (policyGroups.length > 0 ? 1 : 0) +
-    (readinessFilter.length > 0 ? 1 : 0);
+    (readinessFilter.length > 0 ? 1 : 0) +
+    (cookstyleFilter.length > 0 ? 1 : 0) +
+    (kitchenFilter.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNodeName("");
@@ -249,6 +261,8 @@ export function NodesPage() {
     setPolicyNames([]);
     setPolicyGroups([]);
     setReadinessFilter([]);
+    setCookstyleFilter([]);
+    setKitchenFilter([]);
   };
 
   // Readiness filtering is now handled server-side via readiness_filter and
@@ -339,6 +353,27 @@ export function NodesPage() {
           selected={readinessFilter}
           onChange={setReadinessFilter}
           options={READINESS_OPTIONS}
+        />
+        <FilterMultiCheckbox
+          label="CookStyle"
+          selected={cookstyleFilter}
+          onChange={setCookstyleFilter}
+          options={[
+            { value: "passed", label: "Passed" },
+            { value: "failed", label: "Failed" },
+            { value: "unknown", label: "Unknown" },
+          ]}
+        />
+        <FilterMultiCheckbox
+          label="Test Kitchen"
+          selected={kitchenFilter}
+          onChange={setKitchenFilter}
+          options={[
+            { value: "passed", label: "Passed" },
+            { value: "failed", label: "Failed" },
+            { value: "partial", label: "Partial" },
+            { value: "unknown", label: "Unknown" },
+          ]}
         />
         {activeFilterCount > 0 && (
           <button

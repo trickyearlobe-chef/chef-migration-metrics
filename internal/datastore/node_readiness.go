@@ -27,6 +27,8 @@ type NodeReadiness struct {
 	AvailableDiskMB        *int            `json:"available_disk_mb"`     // nil = unknown
 	RequiredDiskMB         *int            `json:"required_disk_mb"`      // nil = not set
 	StaleData              bool            `json:"stale_data"`
+	CookstyleStatus        string          `json:"cookstyle_status"`
+	KitchenStatus          string          `json:"kitchen_status"`
 	EvaluatedAt            time.Time       `json:"evaluated_at"`
 	CreatedAt              time.Time       `json:"created_at"`
 	UpdatedAt              time.Time       `json:"updated_at"`
@@ -46,6 +48,8 @@ type UpsertNodeReadinessParams struct {
 	AvailableDiskMB        *int            // nil = unknown
 	RequiredDiskMB         *int            // nil = not set
 	StaleData              bool
+	CookstyleStatus        string // "passed", "failed", "unknown"
+	KitchenStatus          string // "passed", "failed", "partial", "unknown"
 	EvaluatedAt            time.Time
 }
 
@@ -56,7 +60,8 @@ type UpsertNodeReadinessParams struct {
 const nrColumns = `organisation_name, node_name,
        target_chef_version, is_ready, all_cookbooks_compatible,
        sufficient_disk_space, blocking_cookbooks, available_disk_mb,
-       required_disk_mb, stale_data, evaluated_at, created_at, updated_at`
+       required_disk_mb, stale_data, cookstyle_status, kitchen_status,
+       evaluated_at, created_at, updated_at`
 
 // latestReadinessForOrg returns a SQL fragment that restricts results to the
 // single most recent node_readiness row for each (node_name, target_chef_version)
@@ -337,8 +342,9 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 			organisation_name, node_name,
 			target_chef_version, is_ready, all_cookbooks_compatible,
 			sufficient_disk_space, blocking_cookbooks, available_disk_mb,
-			required_disk_mb, stale_data, evaluated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			required_disk_mb, stale_data, cookstyle_status, kitchen_status,
+			evaluated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (organisation_name, node_name, target_chef_version)
 		DO UPDATE SET
 			is_ready                = EXCLUDED.is_ready,
@@ -348,6 +354,8 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 			available_disk_mb       = EXCLUDED.available_disk_mb,
 			required_disk_mb        = EXCLUDED.required_disk_mb,
 			stale_data              = EXCLUDED.stale_data,
+			cookstyle_status        = EXCLUDED.cookstyle_status,
+			kitchen_status          = EXCLUDED.kitchen_status,
 			evaluated_at            = EXCLUDED.evaluated_at,
 			updated_at              = now()
 		RETURNING ` + nrColumns + `
@@ -364,6 +372,8 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 		nullIntPtr(p.AvailableDiskMB),
 		nullIntPtr(p.RequiredDiskMB),
 		p.StaleData,
+		p.CookstyleStatus,
+		p.KitchenStatus,
 		p.EvaluatedAt,
 	))
 	if err != nil {
@@ -444,6 +454,8 @@ func scanNodeReadiness(row interface{ Scan(dest ...any) error }) (NodeReadiness,
 		&availableDisk,
 		&requiredDisk,
 		&r.StaleData,
+		&r.CookstyleStatus,
+		&r.KitchenStatus,
 		&r.EvaluatedAt,
 		&r.CreatedAt,
 		&r.UpdatedAt,

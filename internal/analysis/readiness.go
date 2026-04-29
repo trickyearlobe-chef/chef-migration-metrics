@@ -96,6 +96,8 @@ type ReadinessResult struct {
 	AvailableDiskMB        *int // nil = unknown
 	RequiredDiskMB         int
 	StaleData              bool
+	CookstyleStatus        string // "passed", "failed", "unknown"
+	KitchenStatus          string // "passed", "failed", "partial", "unknown"
 	EvaluatedAt            time.Time
 }
 
@@ -449,6 +451,12 @@ func (e *ReadinessEvaluator) evaluateOne(
 	diskOK := result.SufficientDiskSpace != nil && *result.SufficientDiskSpace
 	result.IsReady = result.AllCookbooksCompatible && diskOK
 
+	// --- Materialised check statuses ---
+	result.CookstyleStatus = deriveCookstyleStatusFromBlocking(
+		result.AllCookbooksCompatible, result.StaleData, blockingCookbooks)
+	result.KitchenStatus = deriveKitchenStatusFromBlocking(
+		result.AllCookbooksCompatible, result.StaleData, blockingCookbooks)
+
 	return result
 }
 
@@ -533,6 +541,117 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 	}
 
 	return blocking
+}
+
+// deriveCookstyleStatusFromBlocking computes the CookStyle check status from
+// the evaluated blocking cookbooks list.
+func deriveCookstyleStatusFromBlocking(allCompatible, stale bool, blocking []BlockingCookbook) string {
+	if stale {
+		return "unknown"
+	}
+	if allCompatible && len(blocking) == 0 {
+		return "passed"
+	}
+
+	csFailCount := 0
+	hasCookstyleVerdict := false
+	for _, b := range blocking {
+		for _, v := range b.Verdicts {
+			if isCookstyleVerdictSource(v.Source) {
+				hasCookstyleVerdict = true
+				if v.Status == StatusIncompatible {
+					csFailCount++
+					break
+				}
+			}
+		}
+	}
+
+	if csFailCount > 0 {
+		return "failed"
+	}
+
+	if len(blocking) > 0 && !hasCookstyleVerdict {
+		allTKOnly := true
+		for _, b := range blocking {
+			if !hasOnlyTKFailure(b) {
+				allTKOnly = false
+				break
+			}
+		}
+		if allTKOnly {
+			return "passed"
+		}
+		return "unknown"
+	}
+
+	if hasCookstyleVerdict && csFailCount == 0 {
+		return "passed"
+	}
+	return "unknown"
+}
+
+// deriveKitchenStatusFromBlocking computes the Test Kitchen check status from
+// the evaluated blocking cookbooks list.
+func deriveKitchenStatusFromBlocking(allCompatible, stale bool, blocking []BlockingCookbook) string {
+	if stale {
+		return "unknown"
+	}
+	if allCompatible && len(blocking) == 0 {
+		return "passed"
+	}
+
+	tkFailCount := 0
+	tkTestedCount := 0
+	noTKVerdictCount := 0
+
+	for _, b := range blocking {
+		hasTK := false
+		for _, v := range b.Verdicts {
+			if v.Source == SourceGitTestKitchen {
+				hasTK = true
+				tkTestedCount++
+				if v.Status == StatusIncompatible {
+					tkFailCount++
+				}
+				break
+			}
+		}
+		if !hasTK {
+			noTKVerdictCount++
+		}
+	}
+
+	if tkFailCount > 0 {
+		return "failed"
+	}
+	if tkTestedCount > 0 && noTKVerdictCount > 0 {
+		return "partial"
+	}
+	if len(blocking) > 0 && tkTestedCount == 0 {
+		return "unknown"
+	}
+	return "unknown"
+}
+
+// isCookstyleVerdictSource returns true if the verdict source is a cookstyle check.
+func isCookstyleVerdictSource(source string) bool {
+	return source == SourceServerCookstyle || source == SourceGitCookstyle
+}
+
+// hasOnlyTKFailure returns true if the blocking entry has only a
+// git_test_kitchen incompatible verdict and no cookstyle failures.
+func hasOnlyTKFailure(b BlockingCookbook) bool {
+	hasTKFail := false
+	for _, v := range b.Verdicts {
+		if isCookstyleVerdictSource(v.Source) && v.Status == StatusIncompatible {
+			return false
+		}
+		if v.Source == SourceGitTestKitchen && v.Status == StatusIncompatible {
+			hasTKFail = true
+		}
+	}
+	return hasTKFail
 }
 
 // parseCookbooksAttribute parses the automatic.cookbooks JSONB into a map
@@ -1004,6 +1123,8 @@ func (e *ReadinessEvaluator) persistResult(ctx context.Context, result Readiness
 		AvailableDiskMB:        result.AvailableDiskMB,
 		RequiredDiskMB:         &requiredDiskMB,
 		StaleData:              result.StaleData,
+		CookstyleStatus:        result.CookstyleStatus,
+		KitchenStatus:          result.KitchenStatus,
 		EvaluatedAt:            result.EvaluatedAt,
 	})
 	return err

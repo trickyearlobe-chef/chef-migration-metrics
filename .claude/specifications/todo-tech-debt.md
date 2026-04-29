@@ -29,7 +29,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Frontend — Nodes List Per-Column Filtering
 
-- [ ] Disk, CookStyle, and TK columns on the Nodes list currently use badges (visual improvement) but lack individual column filters. Adding per-column filters requires server-side support because statuses are derived in Go (`check_status.go`) from `node_readiness` fields + `blocking_cookbooks` JSON, not stored as queryable columns. **Strategic fix:** materialise `disk_status`, `cookstyle_status`, `kitchen_status` as columns on `node_readiness` (populated by the derivation logic), then add SQL WHERE clauses and frontend FilterMultiCheckbox per column. The existing composite "Readiness" filter remains functional as a stopgap.
+- [x] Disk, CookStyle, and TK columns on the Nodes list now have individual badge columns. CookStyle and TK are filterable via materialised `cookstyle_status` and `kitchen_status` columns on `node_readiness`. Disk filtering still uses the existing composite `disk_blocked`/`disk_unknown` readiness filter. **Remaining:** Disk-specific standalone filter could be added if needed.
 
 ## Phasing Notes
 

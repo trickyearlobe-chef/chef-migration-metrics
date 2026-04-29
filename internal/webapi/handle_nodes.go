@@ -527,6 +527,8 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	// Readiness filter push-down — requires target_chef_version.
 	f.TargetChefVersion = q.Get("target_chef_version")
 	f.ReadinessFilter = q.Get("readiness_filter")
+	f.CookstyleStatusFilter = q.Get("cookstyle_status")
+	f.KitchenStatusFilter = q.Get("kitchen_status")
 
 	// Map the stale parameter — supports legacy bool, single tier, or comma-separated tiers.
 	staleParam := q.Get("stale")
@@ -591,6 +593,13 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 		for nodeName, recs := range bulk {
 			for _, rec := range recs {
 				cs := deriveCheckStatus(rec)
+				// Prefer materialised status columns when available.
+				if rec.CookstyleStatus != "" {
+					cs.CookstyleStatus = rec.CookstyleStatus
+				}
+				if rec.KitchenStatus != "" {
+					cs.KitchenStatus = rec.KitchenStatus
+				}
 				result[nodeName] = append(result[nodeName], nodeReadinessSummaryEntry{
 					TargetChefVersion:      rec.TargetChefVersion,
 					IsReady:                rec.IsReady,
