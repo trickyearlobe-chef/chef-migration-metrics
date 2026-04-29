@@ -152,37 +152,6 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
         </div>
       )}
 
-      {/* Exclude dialog */}
-      {excludeTarget && (
-        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-800 mb-1">
-            Exclude {excludeTarget.suite} / {excludeTarget.platform}
-          </p>
-          <textarea
-            value={excludeReason}
-            onChange={(e) => setExcludeReason(e.target.value)}
-            placeholder="Reason for excluding this instance (min 10 chars)…"
-            className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs"
-            rows={2}
-          />
-          <div className="mt-1 flex gap-2">
-            <button
-              onClick={handleExcludeSubmit}
-              disabled={excludeReason.trim().length < 10 || excludeSubmitting}
-              className="rounded border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200 disabled:opacity-50"
-            >
-              {excludeSubmitting ? "Saving…" : "Confirm Exclusion"}
-            </button>
-            <button
-              onClick={() => { setExcludeTarget(null); setExcludeReason(""); }}
-              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="overflow-x-auto">
         <table className="min-w-full text-xs">
           <thead>
@@ -200,6 +169,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
             {plan.instances.map((inst) => {
               const result = latestResult(inst.instance_name);
               const isExpanded = expandedInstance === inst.instance_name;
+              const isTarget = excludeTarget?.suite === inst.suite_name && excludeTarget?.platform === inst.platform_name;
               return (
                 <InstanceRow
                   key={inst.instance_name}
@@ -212,6 +182,12 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
                   onRun={() => handleRun(inst.instance_name)}
                   onExclude={() => setExcludeTarget({ suite: inst.suite_name, platform: inst.platform_name })}
                   isRunning={runningInstance === inst.instance_name}
+                  isExcludeTarget={isTarget}
+                  excludeReason={isTarget ? excludeReason : ""}
+                  onExcludeReasonChange={setExcludeReason}
+                  onExcludeSubmit={handleExcludeSubmit}
+                  onExcludeCancel={() => { setExcludeTarget(null); setExcludeReason(""); }}
+                  excludeSubmitting={excludeSubmitting}
                 />
               );
             })}
@@ -255,6 +231,12 @@ function InstanceRow({
   onRun,
   onExclude,
   isRunning,
+  isExcludeTarget,
+  excludeReason,
+  onExcludeReasonChange,
+  onExcludeSubmit,
+  onExcludeCancel,
+  excludeSubmitting,
 }: {
   inst: GitKitchenPlanResult["instances"][0];
   result?: GitKitchenResult;
@@ -263,6 +245,12 @@ function InstanceRow({
   onRun: () => void;
   onExclude: () => void;
   isRunning: boolean;
+  isExcludeTarget: boolean;
+  excludeReason: string;
+  onExcludeReasonChange: (v: string) => void;
+  onExcludeSubmit: () => void;
+  onExcludeCancel: () => void;
+  excludeSubmitting: boolean;
 }) {
   const statusLabel = inst.status === "user_excluded" ? "excluded" : inst.status === "excluded" ? "skipped" : inst.status;
 
@@ -300,7 +288,7 @@ function InstanceRow({
               {isRunning ? "Running…" : "Run"}
             </button>
           )}
-          {inst.status === "mapped" && result?.passed === false && (
+          {inst.status === "mapped" && result?.passed === false && !isExcludeTarget && (
             <button
               onClick={onExclude}
               className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
@@ -311,6 +299,38 @@ function InstanceRow({
           )}
         </td>
       </tr>
+      {isExcludeTarget && (
+        <tr className="border-b border-amber-200 bg-amber-50">
+          <td colSpan={7} className="px-2 py-2">
+            <p className="text-xs font-medium text-amber-800 mb-1">
+              Exclude <span className="font-mono">{inst.suite_name}/{inst.platform_name}</span> — provide a reason:
+            </p>
+            <textarea
+              value={excludeReason}
+              onChange={(e) => onExcludeReasonChange(e.target.value)}
+              placeholder="Why is this instance being excluded? (min 10 chars)"
+              className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs"
+              rows={2}
+              autoFocus
+            />
+            <div className="mt-1 flex gap-2">
+              <button
+                onClick={onExcludeSubmit}
+                disabled={excludeReason.trim().length < 10 || excludeSubmitting}
+                className="rounded border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200 disabled:opacity-50"
+              >
+                {excludeSubmitting ? "Saving…" : "Confirm Exclusion"}
+              </button>
+              <button
+                onClick={onExcludeCancel}
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </td>
+        </tr>
+      )}
       {isExpanded && result && (
         <tr className="border-b border-gray-200 bg-gray-50">
           <td colSpan={7} className="px-2 py-2">
