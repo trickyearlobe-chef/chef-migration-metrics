@@ -744,9 +744,11 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 		ID                  string `json:"id"`
 		Type                string `json:"type"`
 		Name                string `json:"name"`
+		Version             string `json:"version,omitempty"`
 		CompatibilityStatus string `json:"compatibility_status,omitempty"`
 		TKStatus            string `json:"tk_status,omitempty"`
 		ComplexityLabel     string `json:"complexity_label,omitempty"`
+		ComplexityScore     int    `json:"complexity_score,omitempty"`
 		Source              string `json:"source,omitempty"`
 	}
 	type graphEdge struct {
@@ -821,11 +823,15 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 
 	// Annotate cookbook nodes with compatibility and TK status.
 	allCompatible := readiness != nil && readiness.AllCookbooksCompatible
+	var nonBlockingCookbooks []string
 	for id, n := range nodeMap {
 		if n.Type != "cookbook" {
 			continue
 		}
 		if bc, blocked := blockingMap[n.Name]; blocked {
+			n.Version = bc.Version
+			n.ComplexityLabel = bc.ComplexityLabel
+			n.ComplexityScore = bc.ComplexityScore
 			// Determine status from verdicts.
 			csStatus := "compatible"
 			tkStatus := "untested"
@@ -846,15 +852,31 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 		} else if allCompatible {
 			n.CompatibilityStatus = "compatible"
 			n.TKStatus = "passed"
+			nonBlockingCookbooks = append(nonBlockingCookbooks, n.Name)
 		} else if readiness != nil {
 			// Not blocking → CookStyle compatible; TK unknown.
 			n.CompatibilityStatus = "compatible"
 			n.TKStatus = "untested"
+			nonBlockingCookbooks = append(nonBlockingCookbooks, n.Name)
 		} else {
 			n.CompatibilityStatus = "untested"
 			n.TKStatus = "untested"
+			nonBlockingCookbooks = append(nonBlockingCookbooks, n.Name)
 		}
 		nodeMap[id] = n
+	}
+
+	// Fill in complexity scores for non-blocking cookbooks from the DB.
+	if len(nonBlockingCookbooks) > 0 && targetChefVersion != "" {
+		complexityMap, _ := r.db.GetCookbookComplexityMap(ctx, orgName, targetChefVersion, nonBlockingCookbooks)
+		for id, n := range nodeMap {
+			if n.Type == "cookbook" && n.ComplexityScore == 0 {
+				if score, ok := complexityMap[n.Name]; ok {
+					n.ComplexityScore = score
+					nodeMap[id] = n
+				}
+			}
+		}
 	}
 
 	// Convert to sorted slices.

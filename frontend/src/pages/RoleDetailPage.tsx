@@ -134,7 +134,7 @@ function BlockingCookbooksTable({ detail }: { detail: RoleDetailResponse }) {
                           : "bg-green-100 text-green-800 ring-green-600/20"
                   }`}
                 >
-                  {cb.complexity_label} ({cb.complexity_score})
+                  {cb.complexity_score} CS offenses
                 </span>
               </td>
               <td className="text-right text-sm">{cb.auto_correctable}</td>
@@ -245,6 +245,11 @@ function RoleChainTree({
           (node.source === "git" || node.source === "both") && (
             <TKBadge status={node.tk_status ?? "untested"} size="sm" />
           )}
+        {!isRole && node.complexity_score != null && node.complexity_score > 0 && (
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700">
+            {node.complexity_score} CS offenses
+          </span>
+        )}
       </div>
       {node.children?.map((child, i) => (
         <RoleChainTree

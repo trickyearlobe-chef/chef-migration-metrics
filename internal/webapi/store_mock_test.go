@@ -653,6 +653,10 @@ func (m *mockStore) ListRoleDependenciesByOrg(ctx context.Context, organisationI
 	return nil, nil
 }
 
+func (m *mockStore) GetCookbookComplexityMap(_ context.Context, _, _ string, _ []string) (map[string]int, error) {
+	return nil, nil
+}
+
 func (m *mockStore) CountDependenciesByRole(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error) {
 	if m.CountDependenciesByRoleFn != nil {
 		return m.CountDependenciesByRoleFn(ctx, organisationID)

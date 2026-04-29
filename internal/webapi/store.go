@@ -333,6 +333,9 @@ type DataStore interface {
 	// organisation, ordered by role_name, dependency_type, dependency_name.
 	ListRoleDependenciesByOrg(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
 
+	// GetCookbookComplexityMap returns complexity scores for named cookbooks.
+	GetCookbookComplexityMap(ctx context.Context, org, targetChefVersion string, names []string) (map[string]int, error)
+
 	// CountDependenciesByRole returns the number of cookbook and role
 	// dependencies for each role in the given organisation, ordered by
 	// total dependency count descending.
