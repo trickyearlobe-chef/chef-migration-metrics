@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { PlatformCoverageCard } from "../components/PlatformCoverageCard";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
 import { CookstyleResultRow } from "../components/CookstyleResultRow";
 
 /** Small helper – renders a label/value row in the metadata grid. */
@@ -140,25 +140,47 @@ export function CookbookDetailPage() {
       {hasGitRepos && (
         <div className="card">
           <div className="flex items-center justify-between">
-            <div>
+            <div className="min-w-0 flex-1">
               <h4 className="text-sm font-medium text-gray-600">
                 Git Repository
               </h4>
-              <p className="mt-1 text-sm text-gray-500">
-                This cookbook also has a git repository source. View CookStyle
-                results, Test Kitchen results, committers, and remediation
-                detail on the git repo page.
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {data.git_repos.map((gd, idx) => (
-                  <span
-                    key={idx}
-                    className="text-xs text-gray-400 truncate max-w-sm"
-                    title={gd.git_repo.git_repo_url}
-                  >
-                    {gd.git_repo.git_repo_url}
-                  </span>
-                ))}
+              <div className="mt-2 space-y-2">
+                {data.git_repos.map((gd, idx) => {
+                  const csStatus = gd.cookstyle && gd.cookstyle.length > 0
+                    ? (gd.cookstyle[0].passed ? "compatible" : "incompatible")
+                    : "untested";
+                  const tkStatus = gd.git_repo.tk_status ?? "untested";
+                  const offenses = gd.cookstyle?.[0]?.offence_count;
+                  const target = gd.cookstyle?.[0]?.target_chef_version;
+                  const scanned = gd.cookstyle?.[0]?.scanned_at;
+                  return (
+                    <div key={idx} className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="text-xs text-gray-400 truncate max-w-sm"
+                        title={gd.git_repo.git_repo_url}
+                      >
+                        {gd.git_repo.git_repo_url}
+                      </span>
+                      <CookStyleBadge status={csStatus} size="sm" />
+                      <TKBadge status={tkStatus} size="sm" />
+                      {offenses != null && offenses > 0 && (
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700">
+                          {offenses} CS offenses
+                        </span>
+                      )}
+                      {target && (
+                        <span className="text-[10px] text-gray-400">
+                          Target: {target}
+                        </span>
+                      )}
+                      {scanned && (
+                        <span className="text-[10px] text-gray-400">
+                          Scanned: {new Date(scanned).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <Link
