@@ -65,12 +65,30 @@ export function ForceGraph({
     const width = 900;
     const height = 600;
 
-    // Separate roles and cookbooks for initial positioning.
-    // Place roles on the left side and cookbooks on the right.
+    // Separate roles, cookbooks, and run_list_entries for initial positioning.
+    // Place run_list entries on the left, roles in the middle, cookbooks on the right.
+    const runListEntries = nodes.filter((n) => n.type === "run_list_entry");
     const roles = nodes.filter((n) => n.type === "role");
     const cookbooks = nodes.filter((n) => n.type === "cookbook");
 
     const simNodes: SimNode[] = [];
+
+    runListEntries.forEach((n, i) => {
+      const angle = (i / Math.max(runListEntries.length, 1)) * Math.PI * 2;
+      const radius = Math.min(width, height) * 0.15;
+      simNodes.push({
+        id: n.id,
+        name: n.name,
+        type: n.type,
+        compatibility_status: n.compatibility_status,
+        x: width * 0.2 + Math.cos(angle) * radius + (Math.random() - 0.5) * 30,
+        y: height * 0.5 + Math.sin(angle) * radius + (Math.random() - 0.5) * 30,
+        vx: 0,
+        vy: 0,
+        fx: null,
+        fy: null,
+      });
+    });
 
     roles.forEach((n, i) => {
       const angle = (i / Math.max(roles.length, 1)) * Math.PI * 2;
@@ -482,10 +500,12 @@ export function ForceGraph({
   };
 
   // Node radius
-  const nodeRadius = (n: SimNode) => (n.type === "role" ? 8 : 6);
-  // Node fill colour — roles are blue, cookbooks coloured by compatibility_status
+  const nodeRadius = (n: SimNode) =>
+    n.type === "role" ? 8 : n.type === "run_list_entry" ? 10 : 6;
+  // Node fill colour — roles are blue, run_list_entry purple, cookbooks coloured by compatibility_status
   const getNodeFill = (n: SimNode): string => {
     if (n.type === "role") return "#3b82f6";
+    if (n.type === "run_list_entry") return "#8b5cf6";
     switch (n.compatibility_status) {
       case "incompatible":
         return "#ef4444";
@@ -688,8 +708,15 @@ export function ForceGraph({
                   />
                 )}
 
-                {/* Node shape: square for roles, circle for cookbooks */}
-                {isRole ? (
+                {/* Node shape: diamond for run_list_entry, square for roles, circle for cookbooks */}
+                {n.type === "run_list_entry" ? (
+                  <polygon
+                    points={`0,${-r} ${r},0 0,${r} ${-r},0`}
+                    fill={fill}
+                    stroke={isSelected ? "#6d28d9" : "white"}
+                    strokeWidth={isSelected ? 2.5 : 1.5}
+                  />
+                ) : isRole ? (
                   <rect
                     x={-r}
                     y={-r}

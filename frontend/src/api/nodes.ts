@@ -6,6 +6,7 @@ import type {
   NodeDiskDetailResponse,
   NodesByVersionResponse,
   NodesByCookbookResponse,
+  NodeDependencyGraphResponse,
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
 import type { NodeFilterQuery } from "./client";
@@ -64,5 +65,18 @@ export function fetchNodesByCookbook(
     buildUrl(`/nodes/by-cookbook/${encodeURIComponent(cookbookName)}`, {
       organisation,
     }),
+  );
+}
+
+export function fetchNodeDependencyGraph(
+  org: string,
+  name: string,
+  targetChefVersion?: string,
+): Promise<NodeDependencyGraphResponse> {
+  return apiFetch<NodeDependencyGraphResponse>(
+    buildUrl(
+      `/nodes/${encodeURIComponent(org)}/${encodeURIComponent(name)}/dependency-graph`,
+      { target_chef_version: targetChefVersion },
+    ),
   );
 }

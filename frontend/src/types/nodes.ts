@@ -144,3 +144,30 @@ export interface NodeDiskDetailResponse {
   platform: string;
   disks: DiskEntry[];
 }
+
+export interface NodeGraphNode {
+  id: string;
+  type: string;
+  name: string;
+  compatibility_status?: string;
+  tk_status?: string;
+  complexity_label?: string;
+  source?: string;
+}
+
+export interface NodeGraphEdge {
+  from: string;
+  to: string;
+  type: string;
+}
+
+export interface NodeDependencyGraphResponse {
+  nodes: NodeGraphNode[];
+  edges: NodeGraphEdge[];
+  metadata: {
+    total_roles: number;
+    total_cookbooks: number;
+    incompatible_cookbooks: number;
+    tk_failed_cookbooks: number;
+  };
+}

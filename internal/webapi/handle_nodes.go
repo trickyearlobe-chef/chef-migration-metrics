@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -263,6 +264,12 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	segs := pathSegments(req.URL.Path, "/api/v1/nodes/")
 	if len(segs) < 2 {
 		WriteNotFound(w, "Node detail requires /api/v1/nodes/:organisation/:name.")
+		return
+	}
+
+	// Check for /nodes/:org/:name/dependency-graph
+	if len(segs) >= 3 && segs[len(segs)-1] == "dependency-graph" {
+		r.handleNodeDependencyGraph(w, req)
 		return
 	}
 
@@ -637,4 +644,263 @@ func nodeUsesCookbook(n datastore.NodeSnapshot, cookbookName string) bool {
 	}
 	_, ok := m[cookbookName]
 	return ok
+}
+
+// handleNodeDependencyGraph handles GET /api/v1/nodes/:org/:name/dependency-graph
+// Returns the node's dependency tree (run_list → roles → cookbooks) with
+// per-cookbook CookStyle and TK status.
+func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	segs := pathSegments(req.URL.Path, "/api/v1/nodes/")
+	if len(segs) < 3 {
+		WriteNotFound(w, "Dependency graph requires /api/v1/nodes/:org/:name/dependency-graph.")
+		return
+	}
+
+	orgName := segs[0]
+	// Node name is everything between org and "dependency-graph".
+	nodeName := strings.Join(segs[1:len(segs)-1], "/")
+
+	ctx := req.Context()
+
+	targetChefVersion := queryString(req, "target_chef_version", "")
+	if targetChefVersion == "" {
+		targetChefVersion = r.defaultTargetVersion()
+	}
+
+	// Resolve organisation.
+	org, err := r.db.GetOrganisationByName(ctx, orgName)
+	if errors.Is(err, datastore.ErrNotFound) {
+		WriteNotFound(w, fmt.Sprintf("Organisation %q not found.", orgName))
+		return
+	}
+	if err != nil {
+		r.logf("ERROR", "getting organisation for node dep graph %s: %v", orgName, err)
+		WriteInternalError(w, "Failed to get organisation.")
+		return
+	}
+
+	// Get the node snapshot (for run_list).
+	snapshot, err := r.db.GetNodeSnapshotByName(ctx, org.Name, nodeName)
+	if errors.Is(err, datastore.ErrNotFound) {
+		WriteNotFound(w, fmt.Sprintf("Node %q not found in organisation %q.", nodeName, orgName))
+		return
+	}
+	if err != nil {
+		r.logf("ERROR", "getting node snapshot for dep graph %s/%s: %v", orgName, nodeName, err)
+		WriteInternalError(w, "Failed to get node.")
+		return
+	}
+
+	// Get readiness data for the target version.
+	readinessRecords, err := r.db.ListNodeReadinessByNodeName(ctx, org.Name, nodeName)
+	if err != nil {
+		r.logf("WARN", "listing readiness for node dep graph %s/%s: %v", orgName, nodeName, err)
+	}
+
+	// Find the readiness record matching the target version.
+	var readiness *datastore.NodeReadiness
+	for i := range readinessRecords {
+		if readinessRecords[i].TargetChefVersion == targetChefVersion {
+			readiness = &readinessRecords[i]
+			break
+		}
+	}
+
+	// Parse the node's run_list.
+	var runList []string
+	if len(snapshot.RunList) > 0 {
+		_ = json.Unmarshal(snapshot.RunList, &runList)
+	}
+
+	// Get all role dependencies for the org.
+	deps, err := r.db.ListRoleDependenciesByOrg(ctx, org.Name)
+	if err != nil {
+		r.logf("ERROR", "listing role deps for node dep graph %s/%s: %v", orgName, nodeName, err)
+		WriteInternalError(w, "Failed to load dependency data.")
+		return
+	}
+
+	// Build adjacency map (role → dependencies).
+	adj := make(map[string][]datastore.RoleDependency)
+	for _, d := range deps {
+		adj[d.RoleName] = append(adj[d.RoleName], d)
+	}
+
+	// Build blocking cookbook lookup from readiness data.
+	blockingMap := make(map[string]blockingEntry)
+	if readiness != nil {
+		blocking := parseBlockingCookbooks(readiness.BlockingCookbooks)
+		for _, b := range blocking {
+			blockingMap[b.Name] = b
+		}
+	}
+
+	// Graph node/edge types.
+	type graphNode struct {
+		ID                  string `json:"id"`
+		Type                string `json:"type"`
+		Name                string `json:"name"`
+		CompatibilityStatus string `json:"compatibility_status,omitempty"`
+		TKStatus            string `json:"tk_status,omitempty"`
+		ComplexityLabel     string `json:"complexity_label,omitempty"`
+		Source              string `json:"source,omitempty"`
+	}
+	type graphEdge struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+		Type string `json:"type"`
+	}
+
+	nodeMap := make(map[string]graphNode)
+	var edges []graphEdge
+	visited := make(map[string]bool)
+
+	// Walk a role recursively, expanding its dependencies.
+	var walkRole func(role, parentID string)
+	walkRole = func(role, parentID string) {
+		roleID := "role:" + role
+		if _, ok := nodeMap[roleID]; !ok {
+			nodeMap[roleID] = graphNode{ID: roleID, Type: "role", Name: role}
+		}
+		edges = append(edges, graphEdge{From: parentID, To: roleID, Type: "includes_role"})
+
+		if visited[role] {
+			return
+		}
+		visited[role] = true
+
+		for _, d := range adj[role] {
+			targetID := d.DependencyType + ":" + d.DependencyName
+			edgeType := "includes_" + d.DependencyType
+
+			if _, ok := nodeMap[targetID]; !ok {
+				nodeMap[targetID] = graphNode{
+					ID:   targetID,
+					Type: d.DependencyType,
+					Name: d.DependencyName,
+				}
+			}
+
+			edges = append(edges, graphEdge{From: roleID, To: targetID, Type: edgeType})
+
+			if d.DependencyType == "role" {
+				if !visited[d.DependencyName] {
+					walkRole(d.DependencyName, roleID)
+				}
+			}
+		}
+	}
+
+	// Process run_list entries.
+	for _, entry := range runList {
+		entryID := "run_list_entry:" + entry
+		nodeMap[entryID] = graphNode{ID: entryID, Type: "run_list_entry", Name: entry}
+
+		// Parse run_list entry format: "role[name]" or "recipe[cookbook::recipe]"
+		if strings.HasPrefix(entry, "role[") && strings.HasSuffix(entry, "]") {
+			roleName := entry[5 : len(entry)-1]
+			walkRole(roleName, entryID)
+		} else if strings.HasPrefix(entry, "recipe[") && strings.HasSuffix(entry, "]") {
+			recipeName := entry[7 : len(entry)-1]
+			// Extract cookbook name from recipe (cookbook::recipe or just cookbook)
+			cbName := recipeName
+			if idx := strings.Index(recipeName, "::"); idx >= 0 {
+				cbName = recipeName[:idx]
+			}
+			cbID := "cookbook:" + cbName
+			if _, ok := nodeMap[cbID]; !ok {
+				nodeMap[cbID] = graphNode{ID: cbID, Type: "cookbook", Name: cbName}
+			}
+			edges = append(edges, graphEdge{From: entryID, To: cbID, Type: "includes_cookbook"})
+		}
+	}
+
+	// Annotate cookbook nodes with compatibility and TK status.
+	allCompatible := readiness != nil && readiness.AllCookbooksCompatible
+	for id, n := range nodeMap {
+		if n.Type != "cookbook" {
+			continue
+		}
+		if bc, blocked := blockingMap[n.Name]; blocked {
+			// Determine status from verdicts.
+			csStatus := "compatible"
+			tkStatus := "untested"
+			for _, v := range bc.Verdicts {
+				if isCookstyleSource(v.Source) && v.Status == "incompatible" {
+					csStatus = "incompatible"
+				}
+				if v.Source == "git_test_kitchen" {
+					if v.Status == "incompatible" {
+						tkStatus = "failed"
+					} else if v.Status == "compatible" {
+						tkStatus = "passed"
+					}
+				}
+			}
+			n.CompatibilityStatus = csStatus
+			n.TKStatus = tkStatus
+		} else if allCompatible {
+			n.CompatibilityStatus = "compatible"
+			n.TKStatus = "passed"
+		} else if readiness != nil {
+			// Not blocking → CookStyle compatible; TK unknown.
+			n.CompatibilityStatus = "compatible"
+			n.TKStatus = "untested"
+		} else {
+			n.CompatibilityStatus = "untested"
+			n.TKStatus = "untested"
+		}
+		nodeMap[id] = n
+	}
+
+	// Convert to sorted slices.
+	nodes := make([]graphNode, 0, len(nodeMap))
+	for _, n := range nodeMap {
+		nodes = append(nodes, n)
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].Type != nodes[j].Type {
+			return nodes[i].Type < nodes[j].Type
+		}
+		return nodes[i].Name < nodes[j].Name
+	})
+
+	if edges == nil {
+		edges = []graphEdge{}
+	}
+
+	// Compute metadata.
+	roleCount := 0
+	cookbookCount := 0
+	incompatibleCount := 0
+	tkFailedCount := 0
+	for _, n := range nodes {
+		switch n.Type {
+		case "role":
+			roleCount++
+		case "cookbook":
+			cookbookCount++
+			if n.CompatibilityStatus == "incompatible" {
+				incompatibleCount++
+			}
+			if n.TKStatus == "failed" {
+				tkFailedCount++
+			}
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"nodes": nodes,
+		"edges": edges,
+		"metadata": map[string]any{
+			"total_roles":            roleCount,
+			"total_cookbooks":        cookbookCount,
+			"incompatible_cookbooks": incompatibleCount,
+			"tk_failed_cookbooks":    tkFailedCount,
+		},
+	})
 }

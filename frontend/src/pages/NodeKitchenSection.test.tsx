@@ -88,6 +88,11 @@ describe("NodeKitchenSection", () => {
       data: ["18.5.0", "19.1.0"],
     });
     vi.mocked(api.fetchNodeKitchenRuns).mockResolvedValue([]);
+    vi.mocked(api.fetchNodeDependencyGraph).mockResolvedValue({
+      nodes: [],
+      edges: [],
+      metadata: { total_roles: 0, total_cookbooks: 0, incompatible_cookbooks: 0, tk_failed_cookbooks: 0 },
+    });
   });
 
   afterEach(() => {

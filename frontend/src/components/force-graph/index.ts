@@ -7,4 +7,6 @@ export {
   adaptDependencyEdges,
   adaptRoleGraphNodes,
   adaptRoleGraphEdges,
+  adaptNodeGraphNodes,
+  adaptNodeGraphEdges,
 } from "./adapters";

@@ -3,8 +3,9 @@
 export interface GraphNode {
   id: string;
   name: string;
-  type: "role" | "cookbook";
+  type: "role" | "cookbook" | "run_list_entry";
   compatibility_status?: string;
+  tk_status?: string;
   complexity_label?: string;
 }
 
@@ -17,7 +18,7 @@ export interface GraphEdge {
 export interface SimNode {
   id: string;
   name: string;
-  type: "role" | "cookbook";
+  type: "role" | "cookbook" | "run_list_entry";
   compatibility_status?: string;
   x: number;
   y: number;
