@@ -207,6 +207,21 @@ func (db *DB) CancelKitchenRun(ctx context.Context, id string) error {
 	return checkRowsAffected(result, id)
 }
 
+// CancelKitchenRunsByBatch cancels all queued items for a batch. Running items
+// are not affected (they need to be cancelled via the queue manager).
+// Returns the number of items cancelled.
+func (db *DB) CancelKitchenRunsByBatch(ctx context.Context, batchID string) (int64, error) {
+	result, err := db.pool.ExecContext(ctx, `
+		UPDATE kitchen_run_queue
+		SET status = 'cancelled', completed_at = now()
+		WHERE batch_id = $1 AND status = 'queued'`, batchID)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: cancel kitchen runs by batch: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return n, nil
+}
+
 // ---------------------------------------------------------------------------
 // Retry
 // ---------------------------------------------------------------------------
@@ -258,6 +273,7 @@ type KitchenQueueFilter struct {
 	RepoName string
 	RunType  string
 	Statuses []string
+	BatchID  string
 	Limit    int
 }
 
@@ -291,6 +307,11 @@ func (db *DB) ListKitchenQueue(ctx context.Context, f KitchenQueueFilter) ([]Kit
 		argN++
 		query += fmt.Sprintf(" AND status = ANY($%d::TEXT[])", argN)
 		args = append(args, f.Statuses)
+	}
+	if f.BatchID != "" {
+		argN++
+		query += fmt.Sprintf(" AND batch_id = $%d::UUID", argN)
+		args = append(args, f.BatchID)
 	}
 
 	query += " ORDER BY priority DESC, enqueued_at DESC"

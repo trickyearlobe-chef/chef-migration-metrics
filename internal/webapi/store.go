@@ -721,6 +721,9 @@ type DataStore interface {
 	// CancelKitchenRun transitions a queued or running item to cancelled.
 	CancelKitchenRun(ctx context.Context, id string) error
 
+	// CancelKitchenRunsByBatch cancels all queued items for a batch.
+	CancelKitchenRunsByBatch(ctx context.Context, batchID string) (int64, error)
+
 	// RetryKitchenRun re-enqueues a failed/interrupted/cancelled item.
 	RetryKitchenRun(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
 

@@ -174,16 +174,17 @@ type mockStore struct {
 	DeleteGitKitchenResultsByRepoFn  func(ctx context.Context, gitRepoName string) error
 
 	// Kitchen Run Queue
-	EnqueueKitchenRunFn          func(ctx context.Context, p datastore.EnqueueKitchenRunParams) (*datastore.KitchenQueueItem, error)
-	ClaimNextKitchenRunFn        func(ctx context.Context) (*datastore.KitchenQueueItem, error)
-	CompleteKitchenRunFn         func(ctx context.Context, id string, output string) error
-	FailKitchenRunFn             func(ctx context.Context, id string, errMsg string, output string) error
-	CancelKitchenRunFn           func(ctx context.Context, id string) error
-	RetryKitchenRunFn            func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
-	ListKitchenQueueFn           func(ctx context.Context, f datastore.KitchenQueueFilter) ([]datastore.KitchenQueueItem, error)
-	GetKitchenQueueItemFn        func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
-	GetKitchenQueueStatsFn       func(ctx context.Context) (*datastore.KitchenQueueStats, error)
-	MarkInterruptedKitchenRunsFn func(ctx context.Context) (int64, error)
+	EnqueueKitchenRunFn            func(ctx context.Context, p datastore.EnqueueKitchenRunParams) (*datastore.KitchenQueueItem, error)
+	ClaimNextKitchenRunFn          func(ctx context.Context) (*datastore.KitchenQueueItem, error)
+	CompleteKitchenRunFn           func(ctx context.Context, id string, output string) error
+	FailKitchenRunFn               func(ctx context.Context, id string, errMsg string, output string) error
+	CancelKitchenRunFn             func(ctx context.Context, id string) error
+	CancelKitchenRunsByBatchFn     func(ctx context.Context, batchID string) (int64, error)
+	RetryKitchenRunFn              func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
+	ListKitchenQueueFn             func(ctx context.Context, f datastore.KitchenQueueFilter) ([]datastore.KitchenQueueItem, error)
+	GetKitchenQueueItemFn          func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
+	GetKitchenQueueStatsFn         func(ctx context.Context) (*datastore.KitchenQueueStats, error)
+	MarkInterruptedKitchenRunsFn   func(ctx context.Context) (int64, error)
 }
 
 // compile-time check
@@ -1356,6 +1357,13 @@ func (m *mockStore) CancelKitchenRun(ctx context.Context, id string) error {
 		return m.CancelKitchenRunFn(ctx, id)
 	}
 	return nil
+}
+
+func (m *mockStore) CancelKitchenRunsByBatch(ctx context.Context, batchID string) (int64, error) {
+	if m.CancelKitchenRunsByBatchFn != nil {
+		return m.CancelKitchenRunsByBatchFn(ctx, batchID)
+	}
+	return 0, nil
 }
 
 func (m *mockStore) RetryKitchenRun(ctx context.Context, id string) (*datastore.KitchenQueueItem, error) {
