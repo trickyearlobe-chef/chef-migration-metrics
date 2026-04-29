@@ -31,6 +31,10 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [x] Disk, CookStyle, and TK columns on the Nodes list now have individual badge columns. CookStyle and TK are filterable via materialised `cookstyle_status` and `kitchen_status` columns on `node_readiness`. Disk filtering still uses the existing composite `disk_blocked`/`disk_unknown` readiness filter. **Remaining:** Disk-specific standalone filter could be added if needed.
 
+## Kitchen Queue — Live Output Streaming
+
+- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (already available via `GET /kitchen/queue/:id`) covers 90% of the use case.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
