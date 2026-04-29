@@ -24,9 +24,8 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StaleBadge } from "../components/StatusBadge";
+import { StaleBadge, CookStyleBadge, TKBadge, DiskBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
-import { CheckStatusIcons } from "../components/CheckStatusIcons";
 import { PlatformLabel } from "../components/PlatformLabel";
 
 function formatOhaiTime(ohaiTime?: number): string {
@@ -397,7 +396,9 @@ export function NodesPage() {
                       onSort={handleSort}
                     />
                     <th>Status</th>
-                    <th>Checks</th>
+                    <th>Disk</th>
+                    <th>CookStyle</th>
+                    <th>TK</th>
                     <SortableColumnHeader
                       label="Ohai Time"
                       field="ohai_time"
@@ -408,7 +409,16 @@ export function NodesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayNodes.map((node) => (
+                  {displayNodes.map((node) => {
+                    const readinessEntry = selectedTargetVersion
+                      ? node.readiness?.find(
+                          (r) =>
+                            r.target_chef_version === selectedTargetVersion,
+                        )
+                      : node.readiness?.[0];
+                    const csStatus = readinessEntry?.cookstyle_status ?? "unknown";
+                    const csMapped = csStatus === "passed" || csStatus === "warnings" ? "compatible" : csStatus === "failed" || csStatus === "scan_error" ? "incompatible" : "untested";
+                    return (
                     <tr
                       key={node.id}
                       className={node.is_stale ? "bg-purple-50/50" : ""}
@@ -446,33 +456,26 @@ export function NodesPage() {
                         />
                       </td>
                       <td>
-                        {(() => {
-                          const entry = selectedTargetVersion
-                            ? node.readiness?.find(
-                                (r) =>
-                                  r.target_chef_version ===
-                                  selectedTargetVersion,
-                              )
-                            : node.readiness?.[0];
-                          return (
-                            <CheckStatusIcons
-                              diskStatus={entry?.disk_status ?? "unknown"}
-                              cookstyleStatus={
-                                entry?.cookstyle_status ?? "unknown"
-                              }
-                              kitchenStatus={entry?.kitchen_status ?? "unknown"}
-                              diskDetail={entry?.disk_detail ?? null}
-                              cookstyleDetail={entry?.cookstyle_detail ?? null}
-                              kitchenDetail={entry?.kitchen_detail ?? null}
-                            />
-                          );
-                        })()}
+                        <span title={readinessEntry?.disk_detail ?? "Disk: unknown"}>
+                          <DiskBadge status={readinessEntry?.disk_status ?? "unknown"} size="sm" />
+                        </span>
+                      </td>
+                      <td>
+                        <span title={readinessEntry?.cookstyle_detail ?? "CookStyle: unknown"}>
+                          <CookStyleBadge status={csMapped} size="sm" />
+                        </span>
+                      </td>
+                      <td>
+                        <span title={readinessEntry?.kitchen_detail ?? "Test Kitchen: unknown"}>
+                          <TKBadge status={readinessEntry?.kitchen_status ?? "unknown"} size="sm" />
+                        </span>
                       </td>
                       <td className="text-xs text-gray-400">
                         {formatOhaiTime(node.ohai_time)}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
