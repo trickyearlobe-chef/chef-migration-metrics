@@ -56,6 +56,7 @@ type RoleFilterRow struct {
 	IncompatibleCount       int      `json:"incompatible_count"`
 	UntestedCount           int      `json:"untested_count"`
 	CompatibilityStatus     string   `json:"compatibility_status"` // "compatible", "incompatible", "untested"
+	TKStatus                string   `json:"tk_status,omitempty"`  // "passed", "failed", "partial" (set by handler)
 }
 
 // RoleFilterSummary provides aggregate counts for the summary bar.
@@ -367,4 +368,94 @@ func (db *DB) ListRolesFiltered(ctx context.Context, f RoleFilter) ([]RoleFilter
 	}
 
 	return results, totalCount, summary, nil
+}
+
+// GetRoleTKStatuses returns the aggregate TK status per role for a set of
+// role names. Uses a recursive CTE to find each role's transitive cookbook
+// set, joins to git_repos and git_kitchen_results, then aggregates per role
+// using worst-of logic: any failed → "failed", any partial → "partial",
+// all passed → "passed", no TK data → not in map.
+func (db *DB) GetRoleTKStatuses(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error) {
+	result := make(map[string]string)
+	if len(roleNames) == 0 || len(orgNames) == 0 || targetVersion == "" {
+		return result, nil
+	}
+
+	query := `
+WITH RECURSIVE transitive_deps AS (
+  SELECT rd.organisation_name, rd.role_name AS root_role,
+         rd.dependency_type, rd.dependency_name,
+         1 AS depth, ARRAY[rd.role_name] AS visited
+  FROM role_dependencies rd
+  WHERE rd.organisation_name = ANY($1)
+    AND rd.role_name = ANY($2)
+  UNION ALL
+  SELECT td.organisation_name, td.root_role,
+         rd2.dependency_type, rd2.dependency_name,
+         td.depth + 1, td.visited || rd2.role_name
+  FROM transitive_deps td
+  JOIN role_dependencies rd2
+    ON rd2.organisation_name = td.organisation_name
+    AND rd2.role_name = td.dependency_name
+  WHERE td.dependency_type = 'role'
+    AND td.depth < 50
+    AND NOT rd2.role_name = ANY(td.visited)
+),
+role_cookbooks AS (
+  SELECT DISTINCT root_role AS role_name, dependency_name AS cookbook_name
+  FROM transitive_deps
+  WHERE dependency_type = 'cookbook'
+),
+cookbook_tk AS (
+  SELECT rc.role_name, gkr.git_repo_name,
+    COUNT(*) FILTER (WHERE gkr.passed = true) AS p,
+    COUNT(*) FILTER (WHERE gkr.passed = false OR gkr.timed_out = true) AS f
+  FROM role_cookbooks rc
+  JOIN git_repos gr ON gr.name = rc.cookbook_name
+  JOIN git_kitchen_results gkr
+    ON gkr.git_repo_name = gr.name
+    AND gkr.target_chef_version = $3
+  GROUP BY rc.role_name, gkr.git_repo_name
+),
+cookbook_status AS (
+  SELECT role_name,
+    CASE
+      WHEN p > 0 AND f > 0 THEN 'partial'
+      WHEN f > 0 THEN 'failed'
+      WHEN p > 0 THEN 'passed'
+    END AS status
+  FROM cookbook_tk
+)
+SELECT role_name,
+  COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
+  COUNT(*) FILTER (WHERE status = 'partial') AS partial_count,
+  COUNT(*) FILTER (WHERE status = 'passed') AS passed_count
+FROM cookbook_status
+WHERE status IS NOT NULL
+GROUP BY role_name`
+
+	rows, err := db.pool.QueryContext(ctx, query,
+		pq.Array(orgNames), pq.Array(roleNames), targetVersion,
+	)
+	if err != nil {
+		return result, fmt.Errorf("datastore: querying role TK statuses: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name string
+		var failed, partial, passed int
+		if err := rows.Scan(&name, &failed, &partial, &passed); err != nil {
+			return result, err
+		}
+		switch {
+		case failed > 0:
+			result[name] = "failed"
+		case partial > 0:
+			result[name] = "partial"
+		case passed > 0:
+			result[name] = "passed"
+		}
+	}
+	return result, rows.Err()
 }

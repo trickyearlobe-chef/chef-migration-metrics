@@ -70,6 +70,20 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		rows = []datastore.RoleFilterRow{}
 	}
 
+	// Enrich rows with TK status from git_kitchen_results.
+	if targetChefVersion != "" && len(rows) > 0 {
+		roleNames := make([]string, 0, len(rows))
+		for _, row := range rows {
+			roleNames = append(roleNames, row.RoleName)
+		}
+		tkMap, _ := r.db.GetRoleTKStatuses(ctx, roleNames, orgNames, targetChefVersion)
+		for i := range rows {
+			if status, ok := tkMap[rows[i].RoleName]; ok {
+				rows[i].TKStatus = status
+			}
+		}
+	}
+
 	type roleResp struct {
 		RoleName                string   `json:"role_name"`
 		Organisations           []string `json:"organisations"`
@@ -81,6 +95,7 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		CompatibleCount         int      `json:"compatible_count"`
 		IncompatibleCount       int      `json:"incompatible_count"`
 		UntestedCount           int      `json:"untested_count"`
+		TKStatus                string   `json:"tk_status,omitempty"`
 	}
 
 	result := make([]roleResp, 0, len(rows))
@@ -96,6 +111,7 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 			CompatibleCount:         row.CompatibleCount,
 			IncompatibleCount:       row.IncompatibleCount,
 			UntestedCount:           row.UntestedCount,
+			TKStatus:                row.TKStatus,
 		})
 	}
 

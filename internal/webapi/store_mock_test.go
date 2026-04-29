@@ -76,6 +76,7 @@ type mockStore struct {
 	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
 	GetLogEntryFn                                       func(ctx context.Context, id int64) (datastore.LogEntry, error)
 	ListRolesFilteredFn                                 func(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error)
+	GetRoleTKStatusesFn                                 func(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error)
 	GetRoleDetailFn                                     func(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error)
 	ListRoleDependenciesByOrgFn                         func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
 	CountDependenciesByRoleFn                           func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
@@ -621,6 +622,13 @@ func (m *mockStore) ListRolesFiltered(ctx context.Context, f datastore.RoleFilte
 		return m.ListRolesFilteredFn(ctx, f)
 	}
 	return nil, 0, datastore.RoleFilterSummary{}, nil
+}
+
+func (m *mockStore) GetRoleTKStatuses(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error) {
+	if m.GetRoleTKStatusesFn != nil {
+		return m.GetRoleTKStatusesFn(ctx, roleNames, orgNames, targetVersion)
+	}
+	return nil, nil
 }
 
 func (m *mockStore) GetRoleDetail(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error) {

@@ -21,6 +21,7 @@ export interface RoleListItem {
   compatible_count: number;
   incompatible_count: number;
   untested_count: number;
+  tk_status?: string;
 }
 
 export interface RoleSummary {
