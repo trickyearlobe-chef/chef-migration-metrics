@@ -230,6 +230,8 @@ func (db *DB) ListGitKitchenStatusesByTargetVersions(ctx context.Context, target
 		if err := rows.Scan(&name, &target, &passed, &failed); err != nil {
 			return nil, fmt.Errorf("datastore: scanning git kitchen status row: %w", err)
 		}
+		// Mirrors gitkitchen.ComputeTKStatus — duplicated here because
+		// datastore cannot import gitkitchen (circular dependency).
 		switch {
 		case passed > 0 && failed > 0:
 			result[name+"|"+target] = "partial"
