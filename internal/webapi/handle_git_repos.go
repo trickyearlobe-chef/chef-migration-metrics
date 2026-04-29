@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -209,7 +209,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			s := tkByRepo[gr.Name]
 			status := "untested"
 			if s != nil && s.Total > 0 {
-				status = gitkitchen.ComputeTKStatus(s.Passed, s.Failed)
+				status = tkstatus.ComputeTKStatus(s.Passed, s.Failed)
 			}
 			if allowed[status] {
 				filtered = append(filtered, gr)
@@ -230,7 +230,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		if s := tkByRepo[gr.Name]; s != nil && s.Total > 0 {
 			tkTotal = s.Total
 			tkPassed = s.Passed
-			tkStatus = gitkitchen.ComputeTKStatus(s.Passed, s.Failed)
+			tkStatus = tkstatus.ComputeTKStatus(s.Passed, s.Failed)
 		}
 		resp := gitRepoResp{
 			ID:                gr.Name,

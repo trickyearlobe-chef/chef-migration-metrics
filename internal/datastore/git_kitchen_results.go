@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -196,11 +198,12 @@ func (db *DB) ListActiveGitKitchenResults(ctx context.Context) ([]GitKitchenResu
 // Delete
 // ---------------------------------------------------------------------------
 
-// ListGitKitchenStatusesByTargetVersions returns an aggregate pass/fail/partial
-// status for every (git_repo_name, target_chef_version) combination in the
-// requested target versions. The returned map is keyed by "repoName|targetVersion".
-func (db *DB) ListGitKitchenStatusesByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]string, error) {
-	result := make(map[string]string)
+// ListGitKitchenCountsByTargetVersions returns raw pass/fail counts for every
+// (git_repo_name, target_chef_version) combination. The map is keyed by
+// "repoName|targetVersion". Callers use tkstatus.ComputeTKStatus to derive
+// the status string.
+func (db *DB) ListGitKitchenCountsByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]tkstatus.Counts, error) {
+	result := make(map[string]tkstatus.Counts)
 	if len(targetChefVersions) == 0 {
 		return result, nil
 	}
@@ -217,29 +220,22 @@ func (db *DB) ListGitKitchenStatusesByTargetVersions(ctx context.Context, target
 	       COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count
 	FROM git_kitchen_results_active
 	WHERE target_chef_version IN (` + joinStrings(placeholders, ", ") + `)
-	GROUP BY git_repo_name, target_chef_version`
+	GROUP BY git_repo_name, target_chef_version
+	HAVING COUNT(*) FILTER (WHERE passed = true) > 0
+	    OR COUNT(*) FILTER (WHERE passed = false OR timed_out = true) > 0`
 
 	rows, err := db.q().QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("datastore: listing git kitchen statuses by target versions: %w", err)
+		return nil, fmt.Errorf("datastore: listing git kitchen counts by target versions: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var name, target string
 		var passed, failed int
 		if err := rows.Scan(&name, &target, &passed, &failed); err != nil {
-			return nil, fmt.Errorf("datastore: scanning git kitchen status row: %w", err)
+			return nil, fmt.Errorf("datastore: scanning git kitchen count row: %w", err)
 		}
-		// Mirrors gitkitchen.ComputeTKStatus — duplicated here because
-		// datastore cannot import gitkitchen (circular dependency).
-		switch {
-		case passed > 0 && failed > 0:
-			result[name+"|"+target] = "partial"
-		case failed > 0:
-			result[name+"|"+target] = "failed"
-		case passed > 0:
-			result[name+"|"+target] = "passed"
-		}
+		result[name+"|"+target] = tkstatus.Counts{Passed: passed, Failed: failed}
 	}
 	return result, rows.Err()
 }

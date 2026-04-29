@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -235,7 +236,7 @@ func (f *fakeReadinessDS) ListGitRepoComplexities(_ context.Context, targetChefV
 	return results, nil
 }
 
-func (f *fakeReadinessDS) ListGitKitchenStatusesByTargetVersions(_ context.Context, targetChefVersions []string) (map[string]string, error) {
+func (f *fakeReadinessDS) ListGitKitchenCountsByTargetVersions(_ context.Context, targetChefVersions []string) (map[string]tkstatus.Counts, error) {
 	if f.gitTKErr != nil {
 		return nil, f.gitTKErr
 	}
@@ -243,11 +244,18 @@ func (f *fakeReadinessDS) ListGitKitchenStatusesByTargetVersions(_ context.Conte
 	for _, tv := range targetChefVersions {
 		tvSet[tv] = true
 	}
-	result := make(map[string]string)
+	result := make(map[string]tkstatus.Counts)
 	for k, v := range f.gitTKStatuses {
 		parts := strings.SplitN(k, "|", 2)
 		if len(parts) == 2 && tvSet[parts[1]] {
-			result[k] = v
+			switch v {
+			case "passed":
+				result[k] = tkstatus.Counts{Passed: 1}
+			case "failed":
+				result[k] = tkstatus.Counts{Failed: 1}
+			case "partial":
+				result[k] = tkstatus.Counts{Passed: 1, Failed: 1}
+			}
 		}
 	}
 	return result, nil
@@ -2229,7 +2237,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitTK(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from bulk-load failure")
 	}
-	if !contains(err.Error(), "bulk-loading git TK statuses") {
+	if !contains(err.Error(), "bulk-loading git TK counts") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

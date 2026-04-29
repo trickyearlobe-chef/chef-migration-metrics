@@ -6,7 +6,7 @@ package webapi
 import (
 	"net/http"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -539,7 +539,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 
 			s := tkByRepo[gr.Name]
 			if s != nil && s.total > 0 {
-				switch gitkitchen.ComputeTKStatus(s.passed, s.failed) {
+				switch tkstatus.ComputeTKStatus(s.passed, s.failed) {
 				case "partial":
 					pv.partial++
 				case "failed":

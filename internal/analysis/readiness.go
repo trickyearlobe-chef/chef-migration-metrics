@@ -15,6 +15,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -141,8 +142,8 @@ type ReadinessDataStore interface {
 	ListServerCookbookComplexities(ctx context.Context, organisationID string, targetChefVersions []string) ([]datastore.ServerCookbookComplexity, error)
 	ListGitRepoComplexities(ctx context.Context, targetChefVersions []string) ([]datastore.GitRepoComplexity, error)
 
-	// Bulk-load git Test Kitchen aggregate statuses
-	ListGitKitchenStatusesByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]string, error)
+	// Bulk-load git Test Kitchen aggregate counts
+	ListGitKitchenCountsByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]tkstatus.Counts, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -234,12 +235,16 @@ func buildReadinessCache(
 		cache.gitComplexity[cacheKey(c.GitRepoName, c.TargetChefVersion)] = c
 	}
 
-	// 6. Git Test Kitchen aggregate statuses
-	gitTKStatuses, err := db.ListGitKitchenStatusesByTargetVersions(ctx, targetChefVersions)
+	// 6. Git Test Kitchen aggregate statuses (convert counts → status at fill time)
+	gitTKCounts, err := db.ListGitKitchenCountsByTargetVersions(ctx, targetChefVersions)
 	if err != nil {
-		return nil, fmt.Errorf("readiness: bulk-loading git TK statuses: %w", err)
+		return nil, fmt.Errorf("readiness: bulk-loading git TK counts: %w", err)
 	}
-	cache.gitTKStatuses = gitTKStatuses
+	for k, c := range gitTKCounts {
+		if s := c.Status(); s != "" {
+			cache.gitTKStatuses[k] = s
+		}
+	}
 
 	return cache, nil
 }
