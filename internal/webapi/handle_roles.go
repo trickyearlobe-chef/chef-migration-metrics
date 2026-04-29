@@ -439,3 +439,10 @@ func db_getCookbookCompatMapViaDetail(detail *datastore.RoleDetail) (map[string]
 
 	return compatMap, incompatible
 }
+
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return err == datastore.ErrNotFound || err.Error() == "not found"
+}
