@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
@@ -116,6 +117,11 @@ type Router struct {
 	// gitKitchenScheduler orchestrates on-demand Git Kitchen runs.
 	// Nil when not configured — the trigger endpoint returns 503.
 	gitKitchenScheduler *gitkitchen.Scheduler
+
+	// kitchenQueue manages the DB-backed queue and worker pool for all
+	// kitchen runs (git and node). Nil when not configured — handlers
+	// fall back to direct dispatch (legacy mode).
+	kitchenQueue *kitchenqueue.Manager
 
 	// batchMu guards runningBatch. Only held for fast map reads/writes.
 	batchMu sync.Mutex
@@ -238,6 +244,13 @@ func WithNodeKitchenRunner(runner NodeKitchenRunner) RouterOption {
 // WithGitKitchenScheduler sets the scheduler used by the Git Kitchen run endpoint.
 func WithGitKitchenScheduler(s *gitkitchen.Scheduler) RouterOption {
 	return func(r *Router) { r.gitKitchenScheduler = s }
+}
+
+// WithKitchenQueue sets the kitchen queue manager for bounded-concurrency
+// kitchen execution. When set, handlers enqueue items instead of spawning
+// goroutines directly.
+func WithKitchenQueue(m *kitchenqueue.Manager) RouterOption {
+	return func(r *Router) { r.kitchenQueue = m }
 }
 
 // NewRouter creates a new Router with all routes registered. The EventHub
@@ -536,6 +549,11 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll)
 	r.protect("/api/v1/kitchen/git/exclusions", r.handleKitchenExclusions)
 	r.protect("/api/v1/kitchen/git/exclusions/", r.handleDeleteKitchenExclusion)
+
+	// Kitchen queue endpoints
+	r.protect("/api/v1/kitchen/queue", r.handleKitchenQueueList)
+	r.protect("/api/v1/kitchen/queue/stats", r.handleKitchenQueueStats)
+	r.protect("/api/v1/kitchen/queue/", r.handleKitchenQueueRouting)
 
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)

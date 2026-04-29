@@ -120,8 +120,8 @@ type gitKitchenRunRequest struct {
 }
 
 // handleGitKitchenRun handles POST /api/v1/kitchen/git/run.
-// It validates the request, plans the repo, and dispatches a single instance
-// run asynchronously via the scheduler.
+// It validates the request, plans the repo, and enqueues a single instance
+// via the kitchen queue (or falls back to direct dispatch if queue is not configured).
 func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 	if !requirePOST(w, req) {
 		return
@@ -202,15 +202,64 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Find the requested instance in the plan
+	var found *gitkitchen.PlannedInstance
+	for i := range plan.Instances {
+		if plan.Instances[i].InstanceName == body.InstanceName {
+			found = &plan.Instances[i]
+			break
+		}
+	}
+	if found == nil {
+		WriteNotFound(w, "Instance not found in plan.")
+		return
+	}
+	if found.Status != gitkitchen.InstanceStatusMapped {
+		WriteBadRequest(w, "Instance is not runnable (status: "+string(found.Status)+").")
+		return
+	}
+
+	// Enqueue via kitchen queue if available
+	if r.kitchenQueue != nil {
+		item, enqErr := r.db.EnqueueKitchenRun(ctx, datastore.EnqueueKitchenRunParams{
+			RunType:           "git",
+			GitRepoName:       plan.GitRepoName,
+			GitRepoURL:        plan.GitRepoURL,
+			SuiteName:         found.SuiteName,
+			PlatformName:      found.PlatformName,
+			InstanceName:      found.InstanceName,
+			TargetChefVersion: body.TargetChefVersion,
+			HeadCommitSHA:     plan.CommitSHA,
+			Priority:          20,
+		})
+		if enqErr != nil {
+			if enqErr == datastore.ErrAlreadyExists {
+				WriteJSON(w, http.StatusConflict, map[string]string{
+					"message": "Instance is already queued or running",
+				})
+				return
+			}
+			r.logf("ERROR", "git kitchen run: enqueue: %v", enqErr)
+			WriteInternalError(w, "Failed to enqueue kitchen run.")
+			return
+		}
+
+		r.hub.Broadcast(NewEvent("kitchen_queue_update", item))
+
+		WriteJSON(w, http.StatusAccepted, map[string]any{
+			"message":  "Run queued for instance " + body.InstanceName,
+			"queue_id": item.ID,
+			"status":   item.Status,
+		})
+		return
+	}
+
+	// Legacy fallback: direct dispatch via goroutine
 	cfg := gitkitchen.SchedulerConfig{
 		MaxConcurrency:    1,
 		TargetChefVersion: body.TargetChefVersion,
 	}
 
-	// Detach from the HTTP request context so the kitchen run is not
-	// cancelled when the response is sent. A cancelled context would kill
-	// the kitchen process mid-flight, potentially orphaning VMs on the
-	// hypervisor before the destroy phase completes.
 	bgCtx := context.WithoutCancel(ctx)
 
 	go func() {
@@ -244,8 +293,8 @@ type gitKitchenRunAllRequest struct {
 }
 
 // handleGitKitchenRunAll handles POST /api/v1/kitchen/git/run-all.
-// It plans the repo and dispatches all mapped (non-excluded) instances
-// concurrently via the scheduler.
+// It plans the repo and enqueues all mapped (non-excluded) instances
+// via the kitchen queue (or falls back to direct dispatch).
 func (r *Router) handleGitKitchenRunAll(w http.ResponseWriter, req *http.Request) {
 	if !requirePOST(w, req) {
 		return
@@ -321,18 +370,56 @@ func (r *Router) handleGitKitchenRunAll(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	// Count mapped instances that will be dispatched.
-	var mappedCount int
+	// Collect mapped instances
+	var mapped []gitkitchen.PlannedInstance
 	for _, inst := range plan.Instances {
 		if inst.Status == gitkitchen.InstanceStatusMapped {
-			mappedCount++
+			mapped = append(mapped, inst)
 		}
 	}
-	if mappedCount == 0 {
+	if len(mapped) == 0 {
 		WriteBadRequest(w, "No mapped instances to run (all may be excluded or unmapped).")
 		return
 	}
 
+	// Enqueue via kitchen queue if available
+	if r.kitchenQueue != nil {
+		var queued []string
+		var skipped int
+		for _, inst := range mapped {
+			item, enqErr := r.db.EnqueueKitchenRun(ctx, datastore.EnqueueKitchenRunParams{
+				RunType:           "git",
+				GitRepoName:       plan.GitRepoName,
+				GitRepoURL:        plan.GitRepoURL,
+				SuiteName:         inst.SuiteName,
+				PlatformName:      inst.PlatformName,
+				InstanceName:      inst.InstanceName,
+				TargetChefVersion: body.TargetChefVersion,
+				HeadCommitSHA:     plan.CommitSHA,
+				Priority:          10,
+			})
+			if enqErr != nil {
+				if enqErr == datastore.ErrAlreadyExists {
+					skipped++
+					continue
+				}
+				r.logf("ERROR", "git kitchen run-all: enqueue %s: %v", inst.InstanceName, enqErr)
+				continue
+			}
+			queued = append(queued, item.ID)
+			r.hub.Broadcast(NewEvent("kitchen_queue_update", item))
+		}
+
+		WriteJSON(w, http.StatusAccepted, map[string]any{
+			"message":        "Instances queued for execution",
+			"queued_count":   len(queued),
+			"skipped_count":  skipped,
+			"queue_ids":      queued,
+		})
+		return
+	}
+
+	// Legacy fallback: direct dispatch via goroutine
 	cfg := gitkitchen.SchedulerConfig{
 		MaxConcurrency:    2,
 		TargetChefVersion: body.TargetChefVersion,
@@ -355,7 +442,7 @@ func (r *Router) handleGitKitchenRunAll(w http.ResponseWriter, req *http.Request
 
 	WriteJSON(w, http.StatusAccepted, map[string]any{
 		"message":        "Run dispatched for all mapped instances",
-		"instance_count": mappedCount,
+		"instance_count": len(mapped),
 	})
 }
 
