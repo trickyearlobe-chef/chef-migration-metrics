@@ -359,7 +359,7 @@ function ReadinessDependencyTree({
               <TKBadge status={node.tk_status ?? "untested"} size="sm" />
             </>
           )}
-          {isCookbook && node.complexity_label && (
+          {isCookbook && node.complexity_score != null && node.complexity_score > 0 && (
             <span
               className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                 node.complexity_label === "critical"
@@ -371,8 +371,7 @@ function ReadinessDependencyTree({
                       : "bg-green-100 text-green-700"
               }`}
             >
-              {node.complexity_label}
-              {node.complexity_score ? ` (${node.complexity_score})` : ""}
+              {node.complexity_score} CS offenses
             </span>
           )}
         </div>
