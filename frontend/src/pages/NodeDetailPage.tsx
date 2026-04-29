@@ -14,7 +14,7 @@ import type {
   NodeKitchenRun,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
-import { StaleBadge, StatusBadge } from "../components/StatusBadge";
+import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
 
 // Helper to build the disk detail link for a node.
 function diskDetailPath(org: string, name: string): string {
@@ -601,6 +601,15 @@ function ReadinessCard({
 }) {
   const ready = r.is_ready;
 
+  const diskStatus: string = r.sufficient_disk_space === true
+    ? "sufficient"
+    : r.sufficient_disk_space === false
+      ? "insufficient"
+      : "unknown";
+  const csStatus: string = r.cookstyle_status ?? (r.all_cookbooks_compatible ? "passed" : "unknown");
+  const csMapped: string = csStatus === "passed" ? "compatible" : csStatus === "failed" ? "incompatible" : "untested";
+  const tkStatus: string = r.kitchen_status ?? "unknown";
+
   return (
     <div
       className={`rounded-lg border p-4 ${ready ? "border-green-200 bg-green-50/30" : "border-red-200 bg-red-50/20"}`}
@@ -616,11 +625,14 @@ function ReadinessCard({
             Evaluated {new Date(r.evaluated_at).toLocaleString()}
           </div>
         </div>
-        {r.stale_data && (
-          <span className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-            ⚠ Stale data
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          <DiskBadge status={diskStatus} size="sm" />
+          <CookStyleBadge status={csMapped} size="sm" />
+          <TKBadge status={tkStatus} size="sm" />
+          {r.stale_data && (
+            <StaleBadge isStale size="sm" />
+          )}
+        </div>
       </div>
 
       {/* Overall verdict */}
