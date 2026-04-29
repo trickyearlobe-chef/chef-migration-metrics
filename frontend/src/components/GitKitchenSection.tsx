@@ -5,11 +5,15 @@ import {
   fetchGitKitchenInstances,
   fetchGitKitchenResults,
   triggerGitKitchenRun,
+  fetchKitchenExclusions,
+  createKitchenExclusion,
+  deleteKitchenExclusion,
 } from "../api";
 import type {
   GitKitchenPlanResult,
   GitKitchenResult,
   GitKitchenInstanceStatus,
+  KitchenInstanceExclusion,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "./Feedback";
 import { StatusBadge } from "./StatusBadge";
@@ -21,6 +25,7 @@ const statusVariantMap: Record<GitKitchenInstanceStatus, "compatible" | "warning
   unmapped: "warning",
   skipped: "untested",
   excluded: "incompatible",
+  user_excluded: "incompatible",
 };
 
 export function GitKitchenSection({ repoName }: { repoName: string }) {
@@ -28,15 +33,27 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
   const { onEvent } = useWebSocket();
   const [plan, setPlan] = useState<GitKitchenPlanResult | null>(null);
   const [results, setResults] = useState<GitKitchenResult[]>([]);
+  const [exclusions, setExclusions] = useState<KitchenInstanceExclusion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runningInstance, setRunningInstance] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState<string | null>(null);
   const [expandedInstance, setExpandedInstance] = useState<string | null>(null);
+  const [excludeTarget, setExcludeTarget] = useState<{ suite: string; platform: string } | null>(null);
+  const [excludeReason, setExcludeReason] = useState("");
+  const [excludeSubmitting, setExcludeSubmitting] = useState(false);
 
-  const refreshResults = useCallback(() => {
-    fetchGitKitchenResults(repoName)
-      .then((r) => setResults(r ?? []))
+  const refreshData = useCallback(() => {
+    Promise.all([
+      fetchGitKitchenInstances(repoName),
+      fetchGitKitchenResults(repoName),
+      fetchKitchenExclusions(repoName),
+    ])
+      .then(([planData, resultsData, exclData]) => {
+        setPlan(planData);
+        setResults(resultsData ?? []);
+        setExclusions(exclData ?? []);
+      })
       .catch(() => {});
   }, [repoName]);
 
@@ -46,10 +63,12 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
     Promise.all([
       fetchGitKitchenInstances(repoName),
       fetchGitKitchenResults(repoName),
+      fetchKitchenExclusions(repoName),
     ])
-      .then(([planData, resultsData]) => {
+      .then(([planData, resultsData, exclData]) => {
         setPlan(planData);
         setResults(resultsData ?? []);
+        setExclusions(exclData ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -59,11 +78,11 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
     return onEvent("git_kitchen_run_complete", (data) => {
       const evt = data as { git_repo_name?: string };
       if (evt.git_repo_name === repoName) {
-        refreshResults();
+        refreshData();
         setRunningInstance(null);
       }
     });
-  }, [repoName, onEvent, refreshResults]);
+  }, [repoName, onEvent, refreshData]);
 
   if (loading) return <LoadingSpinner message="Loading kitchen instances…" />;
   if (error) return <ErrorAlert message={error} />;
@@ -85,10 +104,39 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
         target_chef_version: targetChefVersion,
       });
       setRunMessage(resp.message);
-      // runningInstance stays set — cleared by WebSocket event
     } catch (e: unknown) {
       setRunMessage(`Run failed: ${(e as Error).message}`);
       setRunningInstance(null);
+    }
+  }
+
+  async function handleExcludeSubmit() {
+    if (!excludeTarget || !plan) return;
+    setExcludeSubmitting(true);
+    try {
+      await createKitchenExclusion({
+        git_repo_name: plan.git_repo_name,
+        git_repo_url: plan.git_repo_url,
+        suite_name: excludeTarget.suite,
+        platform_name: excludeTarget.platform,
+        reason: excludeReason.trim(),
+      });
+      setExcludeTarget(null);
+      setExcludeReason("");
+      refreshData();
+    } catch (e: unknown) {
+      setRunMessage(`Exclude failed: ${(e as Error).message}`);
+    } finally {
+      setExcludeSubmitting(false);
+    }
+  }
+
+  async function handleRemoveExclusion(id: string) {
+    try {
+      await deleteKitchenExclusion(id);
+      refreshData();
+    } catch (e: unknown) {
+      setRunMessage(`Remove exclusion failed: ${(e as Error).message}`);
     }
   }
 
@@ -101,6 +149,37 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       {runMessage && (
         <div className="mb-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
           {runMessage}
+        </div>
+      )}
+
+      {/* Exclude dialog */}
+      {excludeTarget && (
+        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-800 mb-1">
+            Exclude {excludeTarget.suite} / {excludeTarget.platform}
+          </p>
+          <textarea
+            value={excludeReason}
+            onChange={(e) => setExcludeReason(e.target.value)}
+            placeholder="Reason for excluding this instance (min 10 chars)…"
+            className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs"
+            rows={2}
+          />
+          <div className="mt-1 flex gap-2">
+            <button
+              onClick={handleExcludeSubmit}
+              disabled={excludeReason.trim().length < 10 || excludeSubmitting}
+              className="rounded border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200 disabled:opacity-50"
+            >
+              {excludeSubmitting ? "Saving…" : "Confirm Exclusion"}
+            </button>
+            <button
+              onClick={() => { setExcludeTarget(null); setExcludeReason(""); }}
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -131,6 +210,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
                     setExpandedInstance(isExpanded ? null : inst.instance_name)
                   }
                   onRun={() => handleRun(inst.instance_name)}
+                  onExclude={() => setExcludeTarget({ suite: inst.suite_name, platform: inst.platform_name })}
                   isRunning={runningInstance === inst.instance_name}
                 />
               );
@@ -138,6 +218,31 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
           </tbody>
         </table>
       </div>
+
+      {/* Current exclusions */}
+      {exclusions.length > 0 && (
+        <div className="mt-4">
+          <h5 className="text-xs font-medium text-gray-500 mb-1">
+            Manual Exclusions ({exclusions.length})
+          </h5>
+          <div className="space-y-1">
+            {exclusions.map((ex) => (
+              <div key={ex.id} className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs">
+                <span className="font-mono text-amber-800">{ex.suite_name}/{ex.platform_name}</span>
+                <span className="text-gray-600 flex-1">{ex.reason}</span>
+                <span className="text-gray-400 whitespace-nowrap">by {ex.excluded_by}</span>
+                <button
+                  onClick={() => handleRemoveExclusion(ex.id)}
+                  className="text-red-600 hover:text-red-800 font-medium"
+                  title="Remove exclusion"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -148,6 +253,7 @@ function InstanceRow({
   isExpanded,
   onToggleOutput,
   onRun,
+  onExclude,
   isRunning,
 }: {
   inst: GitKitchenPlanResult["instances"][0];
@@ -155,8 +261,11 @@ function InstanceRow({
   isExpanded: boolean;
   onToggleOutput: () => void;
   onRun: () => void;
+  onExclude: () => void;
   isRunning: boolean;
 }) {
+  const statusLabel = inst.status === "user_excluded" ? "excluded" : inst.status === "excluded" ? "skipped" : inst.status;
+
   return (
     <>
       <tr className="border-b border-gray-100">
@@ -166,9 +275,14 @@ function InstanceRow({
         <td className="px-2 py-1">
           <StatusBadge
             variant={statusVariantMap[inst.status]}
-            label={inst.status === "excluded" ? "skipped" : inst.status}
+            label={statusLabel}
             size="sm"
           />
+          {inst.status === "user_excluded" && (
+            <span className="ml-1 text-[10px] text-gray-500" title={inst.status_reason}>
+              ({inst.status_reason.length > 40 ? inst.status_reason.slice(0, 40) + "…" : inst.status_reason})
+            </span>
+          )}
         </td>
         <td className="px-2 py-1 text-gray-500">
           {inst.image_name ?? "—"}
@@ -176,7 +290,7 @@ function InstanceRow({
         <td className="px-2 py-1">
           <ResultBadge result={result} onClick={result ? onToggleOutput : undefined} />
         </td>
-        <td className="px-2 py-1">
+        <td className="px-2 py-1 flex gap-1">
           {inst.status === "mapped" && (
             <button
               onClick={onRun}
@@ -184,6 +298,15 @@ function InstanceRow({
               className="rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
             >
               {isRunning ? "Running…" : "Run"}
+            </button>
+          )}
+          {inst.status === "mapped" && result?.passed === false && (
+            <button
+              onClick={onExclude}
+              className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+              title="Exclude this instance from future runs"
+            >
+              Exclude
             </button>
           )}
         </td>

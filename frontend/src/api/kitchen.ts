@@ -20,6 +20,8 @@ import type {
   GitKitchenRunRequest,
   GitKitchenRunResponse,
   SweepResult,
+  KitchenInstanceExclusion,
+  CreateKitchenExclusionRequest,
 } from "../types";
 import { apiFetch, buildUrl, ApiError } from "./client";
 
@@ -255,4 +257,40 @@ export async function runOrphanSweep(dryRun: boolean): Promise<SweepResult> {
   return apiFetch<SweepResult>(`/kitchen/orphan-sweep?dry_run=${dryRun}`, {
     method: "POST",
   });
+}
+
+// --- Kitchen Instance Exclusions ---
+
+export async function fetchKitchenExclusions(
+  repoName?: string,
+): Promise<KitchenInstanceExclusion[]> {
+  const params = repoName
+    ? `?repo=${encodeURIComponent(repoName)}`
+    : "";
+  return apiFetch<KitchenInstanceExclusion[]>(
+    `/kitchen/git/exclusions${params}`,
+  );
+}
+
+export async function createKitchenExclusion(
+  req: CreateKitchenExclusionRequest,
+): Promise<KitchenInstanceExclusion> {
+  const res = await fetch(buildUrl("/kitchen/git/exclusions"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(msg || `Failed to create exclusion: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteKitchenExclusion(id: string): Promise<void> {
+  const res = await fetch(buildUrl(`/kitchen/git/exclusions/${id}`), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Failed to delete exclusion: ${res.status}`);
 }

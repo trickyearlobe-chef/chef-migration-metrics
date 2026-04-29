@@ -220,7 +220,7 @@ export interface KitchenSuiteInfo {
   run_list?: string[];
 }
 
-export type GitKitchenInstanceStatus = "mapped" | "unmapped" | "skipped" | "excluded";
+export type GitKitchenInstanceStatus = "mapped" | "unmapped" | "skipped" | "excluded" | "user_excluded";
 
 export interface GitKitchenPlannedInstance {
   instance_name: string;
@@ -241,6 +241,7 @@ export interface GitKitchenPlanResult {
   unmapped: number;
   skipped: number;
   excluded: number;
+  user_excluded: number;
 }
 
 export interface GitKitchenResult {
@@ -271,4 +272,23 @@ export interface GitKitchenRunRequest {
 
 export interface GitKitchenRunResponse {
   message: string;
+}
+
+export interface KitchenInstanceExclusion {
+  id: string;
+  git_repo_name: string;
+  git_repo_url: string;
+  suite_name: string;
+  platform_name: string;
+  reason: string;
+  excluded_by: string;
+  created_at: string;
+}
+
+export interface CreateKitchenExclusionRequest {
+  git_repo_name: string;
+  git_repo_url: string;
+  suite_name: string;
+  platform_name: string;
+  reason: string;
 }

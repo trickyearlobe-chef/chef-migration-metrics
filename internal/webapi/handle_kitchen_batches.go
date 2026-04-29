@@ -584,7 +584,13 @@ func (r *Router) prepareBatchInstances(
 			continue
 		}
 
-		plan, err := gitkitchen.PlanRepo(*analysis, tkCfg.PlatformMap)
+		exclusions, exclErr := r.loadInstanceExclusions(ctx, cb.Name)
+		if exclErr != nil {
+			r.logf("WARN", "kitchen-batches: skipping repo %q (exclusion error): %v", cb.Name, exclErr)
+			continue
+		}
+
+		plan, err := gitkitchen.PlanRepo(*analysis, tkCfg.PlatformMap, exclusions...)
 		if err != nil {
 			r.logf("WARN", "kitchen-batches: skipping repo %q (plan error): %v", cb.Name, err)
 			continue

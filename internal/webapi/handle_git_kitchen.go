@@ -58,7 +58,15 @@ func (r *Router) handleGitKitchenInstances(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	plan, err := gitkitchen.PlanRepo(*analysis, tkCfg.PlatformMap)
+	// Load user exclusions for this repo.
+	exclusions, exclErr := r.loadInstanceExclusions(ctx, repoName)
+	if exclErr != nil {
+		r.logf("ERROR", "git kitchen instances: load exclusions for %q: %v", repoName, exclErr)
+		WriteInternalError(w, "Failed to load kitchen exclusions.")
+		return
+	}
+
+	plan, err := gitkitchen.PlanRepo(*analysis, tkCfg.PlatformMap, exclusions...)
 	if err != nil {
 		r.logf("ERROR", "git kitchen instances: plan %q: %v", repoName, err)
 		WriteInternalError(w, "Failed to plan kitchen instances.")
@@ -180,7 +188,14 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	plan, err := gitkitchen.PlanRepo(*analysis, tkCfg.PlatformMap)
+	exclusions, exclErr := r.loadInstanceExclusions(ctx, body.GitRepoName)
+	if exclErr != nil {
+		r.logf("ERROR", "git kitchen run: load exclusions for %q: %v", body.GitRepoName, exclErr)
+		WriteInternalError(w, "Failed to load kitchen exclusions.")
+		return
+	}
+
+	plan, err := gitkitchen.PlanRepo(*analysis, tkCfg.PlatformMap, exclusions...)
 	if err != nil {
 		r.logf("ERROR", "git kitchen run: plan %q: %v", body.GitRepoName, err)
 		WriteInternalError(w, "Failed to plan kitchen instances.")
@@ -216,4 +231,25 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 	WriteJSON(w, http.StatusAccepted, map[string]string{
 		"message": "Run dispatched for instance " + body.InstanceName,
 	})
+}
+
+// loadInstanceExclusions fetches exclusions for a repo and converts them to
+// the planner's InstanceExclusion type.
+func (r *Router) loadInstanceExclusions(ctx context.Context, repoName string) ([]gitkitchen.InstanceExclusion, error) {
+	dbExclusions, err := r.db.ListKitchenExclusions(ctx, repoName)
+	if err != nil {
+		return nil, err
+	}
+	if len(dbExclusions) == 0 {
+		return nil, nil
+	}
+	result := make([]gitkitchen.InstanceExclusion, len(dbExclusions))
+	for i, e := range dbExclusions {
+		result[i] = gitkitchen.InstanceExclusion{
+			SuiteName:    e.SuiteName,
+			PlatformName: e.PlatformName,
+			Reason:       e.Reason,
+		}
+	}
+	return result, nil
 }

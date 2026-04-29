@@ -668,6 +668,19 @@ type DataStore interface {
 	ListExcludedGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
 
 	// -----------------------------------------------------------------
+	// Kitchen Instance Exclusions (per suite+platform)
+	// -----------------------------------------------------------------
+
+	// CreateKitchenExclusion inserts a manual instance exclusion.
+	CreateKitchenExclusion(ctx context.Context, p datastore.CreateKitchenExclusionParams) (datastore.KitchenInstanceExclusion, error)
+
+	// ListKitchenExclusions returns exclusions, optionally filtered by repo name.
+	ListKitchenExclusions(ctx context.Context, repoName string) ([]datastore.KitchenInstanceExclusion, error)
+
+	// DeleteKitchenExclusion removes an exclusion by ID. Returns false if not found.
+	DeleteKitchenExclusion(ctx context.Context, id string) (bool, error)
+
+	// -----------------------------------------------------------------
 	// Git Kitchen Results (per-instance)
 	// -----------------------------------------------------------------
 
