@@ -24,6 +24,9 @@ import type {
   SweepResult,
   KitchenInstanceExclusion,
   CreateKitchenExclusionRequest,
+  KitchenQueueItem,
+  KitchenQueueListResponse,
+  KitchenQueueEnqueueResponse,
 } from "../types";
 import { apiFetch, buildUrl, ApiError } from "./client";
 
@@ -307,4 +310,41 @@ export async function deleteKitchenExclusion(id: string): Promise<void> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to delete exclusion: ${res.status}`);
+}
+
+// --- Kitchen Run Queue ---
+
+export function fetchKitchenQueue(params?: {
+  repo?: string;
+  type?: "git" | "node";
+  status?: string;
+}): Promise<KitchenQueueListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.repo) searchParams.set("repo", params.repo);
+  if (params?.type) searchParams.set("type", params.type);
+  if (params?.status) searchParams.set("status", params.status);
+  const qs = searchParams.toString();
+  return apiFetch<KitchenQueueListResponse>(
+    buildUrl(`/kitchen/queue${qs ? `?${qs}` : ""}`),
+  );
+}
+
+export function fetchKitchenQueueItem(id: string): Promise<KitchenQueueItem> {
+  return apiFetch<KitchenQueueItem>(buildUrl(`/kitchen/queue/${id}`));
+}
+
+export function cancelKitchenQueueItem(id: string): Promise<{ message: string; id: string }> {
+  return apiFetch<{ message: string; id: string }>(buildUrl(`/kitchen/queue/${id}/cancel`), {
+    method: "POST",
+  });
+}
+
+export function retryKitchenQueueItem(id: string): Promise<KitchenQueueEnqueueResponse> {
+  return apiFetch<KitchenQueueEnqueueResponse>(buildUrl(`/kitchen/queue/${id}/retry`), {
+    method: "POST",
+  });
+}
+
+export function fetchKitchenQueueStats(): Promise<KitchenQueueListResponse["stats"]> {
+  return apiFetch<KitchenQueueListResponse["stats"]>(buildUrl("/kitchen/queue/stats"));
 }

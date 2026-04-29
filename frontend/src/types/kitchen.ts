@@ -277,11 +277,16 @@ export interface GitKitchenRunAllRequest {
 
 export interface GitKitchenRunResponse {
   message: string;
+  queue_id?: string;
+  status?: string;
 }
 
 export interface GitKitchenRunAllResponse {
   message: string;
-  instance_count: number;
+  instance_count?: number;
+  queued_count?: number;
+  skipped_count?: number;
+  queue_ids?: string[];
 }
 
 export interface KitchenInstanceExclusion {
@@ -301,4 +306,52 @@ export interface CreateKitchenExclusionRequest {
   suite_name: string;
   platform_name: string;
   reason: string;
+}
+
+export interface KitchenQueueItem {
+  id: string;
+  run_type: "git" | "node";
+  git_repo_name?: string;
+  git_repo_url?: string;
+  suite_name?: string;
+  platform_name?: string;
+  instance_name?: string;
+  target_chef_version: string;
+  head_commit_sha?: string;
+  node_name?: string;
+  organisation_name?: string;
+  cookbook_source?: string;
+  batch_id?: string;
+  priority: number;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  enqueued_at: string;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+  output?: string;
+  retry_of?: string;
+}
+
+export interface KitchenQueueStats {
+  queued: number;
+  running: number;
+  workers_active: number;
+}
+
+export interface KitchenQueueListResponse {
+  items: KitchenQueueItem[];
+  stats: KitchenQueueStats;
+}
+
+export interface KitchenQueueEnqueueResponse {
+  message: string;
+  queue_id: string;
+  status: string;
+}
+
+export interface KitchenQueueRunAllResponse {
+  message: string;
+  queued_count: number;
+  skipped_count: number;
+  queue_ids: string[];
 }
