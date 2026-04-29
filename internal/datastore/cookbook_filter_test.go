@@ -22,8 +22,14 @@ func TestBuildCookbookFilterQuery_NoFilters(t *testing.T) {
 	if !strings.Contains(q, "WITH cb AS") {
 		t.Error("query missing CTE")
 	}
+	if !strings.Contains(q, "tk AS") {
+		t.Error("query missing TK CTE")
+	}
 	if !strings.Contains(q, "COUNT(*) OVER()") {
 		t.Error("query missing COUNT(*) OVER()")
+	}
+	if !strings.Contains(q, "LEFT JOIN tk ON") {
+		t.Error("query missing LEFT JOIN tk")
 	}
 	if !strings.Contains(q, "ORDER BY") {
 		t.Error("query missing ORDER BY")
@@ -47,11 +53,18 @@ func TestBuildCookbookFilterQuery_WithTargetVersion(t *testing.T) {
 	if !strings.Contains(q, "csr.target_chef_version") {
 		t.Error("query missing csr.target_chef_version condition")
 	}
-	if len(args) != 1 {
-		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
+	if !strings.Contains(q, "gkr.target_chef_version") {
+		t.Error("query missing TK CTE target_chef_version condition")
+	}
+	// $1 = cookstyle target, $2 = TK target
+	if len(args) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
 	}
 	if args[0] != "18.5.0" {
 		t.Errorf("args[0] = %v, want 18.5.0", args[0])
+	}
+	if args[1] != "18.5.0" {
+		t.Errorf("args[1] = %v, want 18.5.0", args[1])
 	}
 }
 
@@ -60,14 +73,18 @@ func TestBuildCookbookFilterQuery_WithoutTargetVersion(t *testing.T) {
 		TargetChefVersion: "",
 	})
 
-	if strings.Contains(q, "LEFT JOIN") {
-		t.Error("query should not contain LEFT JOIN when TargetChefVersion is empty")
-	}
 	if strings.Contains(q, "server_cookbook_cookstyle_results") {
 		t.Error("query should not reference server_cookbook_cookstyle_results when TargetChefVersion is empty")
 	}
 	if !strings.Contains(q, "'untested' AS compatibility") {
 		t.Error("query missing 'untested' AS compatibility")
+	}
+	// TK CTE still present but with no gkr join
+	if !strings.Contains(q, "tk AS") {
+		t.Error("query missing TK CTE")
+	}
+	if !strings.Contains(q, "LEFT JOIN tk ON") {
+		t.Error("query missing LEFT JOIN tk")
 	}
 }
 
@@ -122,18 +139,18 @@ func TestBuildCookbookFilterQuery_CompatibilityFilter(t *testing.T) {
 		TargetChefVersion: "18.5.0",
 	})
 
-	// $1 = target_chef_version, $2 = compatibility
-	if !strings.Contains(q, "cb.compatibility = $2") {
+	// $1 = cookstyle target, $2 = TK target, $3 = compatibility
+	if !strings.Contains(q, "cb.compatibility = $3") {
 		t.Errorf("query missing outer compatibility filter, got:\n%s", q)
 	}
-	if len(args) != 2 {
-		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
+	if len(args) != 3 {
+		t.Fatalf("expected 3 args, got %d: %v", len(args), args)
 	}
 	if args[0] != "18.5.0" {
 		t.Errorf("args[0] = %v, want 18.5.0", args[0])
 	}
-	if args[1] != "incompatible" {
-		t.Errorf("args[1] = %v, want incompatible", args[1])
+	if args[2] != "incompatible" {
+		t.Errorf("args[2] = %v, want incompatible", args[2])
 	}
 }
 
@@ -186,6 +203,31 @@ func TestBuildCookbookFilterQuery_SortName(t *testing.T) {
 	}
 }
 
+func TestBuildCookbookFilterQuery_SortTKStatus(t *testing.T) {
+	q, _ := buildCookbookFilterQuery(CookbookFilter{
+		Sort: "tk_status",
+	})
+
+	if !strings.Contains(q, "ORDER BY COALESCE(tk.tk_status, 'no_repo')") {
+		t.Errorf("query missing ORDER BY tk_status, got:\n%s", q)
+	}
+}
+
+func TestBuildCookbookFilterQuery_TKStatusFilter(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		TKStatus:          "passed,failed",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "COALESCE(tk.tk_status, 'no_repo') = ANY(") {
+		t.Errorf("query missing TK status filter, got:\n%s", q)
+	}
+	// $1 = cookstyle target, $2 = TK target, $3 = tk_status array
+	if len(args) != 3 {
+		t.Fatalf("expected 3 args, got %d: %v", len(args), args)
+	}
+}
+
 func TestBuildCookbookFilterQuery_SortCompatibility(t *testing.T) {
 	q, _ := buildCookbookFilterQuery(CookbookFilter{
 		Sort: "compatibility",
@@ -203,6 +245,7 @@ func TestBuildCookbookFilterQuery_AllFilters(t *testing.T) {
 		Active:            boolPtr(true),
 		DownloadStatus:    "ok",
 		Compatibility:     "incompatible",
+		TKStatus:          "passed,failed",
 		TargetChefVersion: "18.5.0",
 		Limit:             20,
 		Offset:            40,
@@ -210,10 +253,11 @@ func TestBuildCookbookFilterQuery_AllFilters(t *testing.T) {
 		SortOrder:         "desc",
 	})
 
-	// $1 = target_chef_version, $2 = org names, $3 = name,
-	// $4 = active, $5 = download_status, $6 = compatibility,
-	// $7 = limit, $8 = offset
-	expectedArgs := 8
+	// $1 = cookstyle target, $2 = org names, $3 = name,
+	// $4 = active, $5 = download_status, $6 = TK target,
+	// $7 = compatibility, $8 = tk_status array,
+	// $9 = limit, $10 = offset
+	expectedArgs := 10
 	if len(args) != expectedArgs {
 		t.Errorf("expected %d args, got %d: %v", expectedArgs, len(args), args)
 	}
@@ -225,7 +269,7 @@ func TestBuildCookbookFilterQuery_AllFilters(t *testing.T) {
 			t.Errorf("query missing placeholder %s", placeholder)
 		}
 	}
-	// $9 should not exist.
+	// Next placeholder should not exist.
 	if strings.Contains(q, fmt.Sprintf("$%d", expectedArgs+1)) {
 		t.Errorf("query contains unexpected placeholder $%d", expectedArgs+1)
 	}
@@ -237,8 +281,11 @@ func TestBuildCookbookFilterQuery_AllFilters(t *testing.T) {
 		"sc.is_active =",
 		"sc.download_status =",
 		"cb.compatibility =",
+		"COALESCE(tk.tk_status, 'no_repo') = ANY(",
 		"LEFT JOIN server_cookbook_cookstyle_results",
 		"csr.target_chef_version",
+		"gkr.target_chef_version",
+		"LEFT JOIN tk ON",
 		"LIMIT",
 		"OFFSET",
 		"ORDER BY",

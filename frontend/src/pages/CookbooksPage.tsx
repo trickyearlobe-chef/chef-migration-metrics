@@ -78,6 +78,9 @@ export function CookbooksPage() {
   const [downloadStatus, setDownloadStatus] = useState<string[]>(
     searchParams.get("download_status")?.split(",").filter(Boolean) ?? [],
   );
+  const [tkStatus, setTkStatus] = useState<string[]>(
+    searchParams.get("tk_status")?.split(",").filter(Boolean) ?? [],
+  );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -85,7 +88,7 @@ export function CookbooksPage() {
   const { sortField, sortOrder, handleSort } = useSort({
     defaultField: "name",
     defaultOrder: "asc",
-    descendingFields: ["version", "compatibility", "active", "download_status"],
+    descendingFields: ["version", "compatibility", "active", "download_status", "tk_status"],
   });
 
   // Target Chef versions loaded from backend config.
@@ -100,7 +103,8 @@ export function CookbooksPage() {
       searchParams.has("active") ||
       searchParams.has("name") ||
       searchParams.has("target_chef_version") ||
-      searchParams.has("download_status")
+      searchParams.has("download_status") ||
+      searchParams.has("tk_status")
     ) {
       setSearchParams({}, { replace: true });
     }
@@ -121,6 +125,8 @@ export function CookbooksPage() {
       filters.compatibility = compatibility.join(",");
     if (downloadStatus.length > 0)
       filters.download_status = downloadStatus.join(",");
+    if (tkStatus.length > 0)
+      filters.tk_status = tkStatus.join(",");
     if (selectedTargetVersion)
       filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
@@ -139,6 +145,7 @@ export function CookbooksPage() {
     nameFilter,
     compatibility,
     downloadStatus,
+    tkStatus,
     selectedTargetVersion,
     page,
     sortField,
@@ -156,6 +163,7 @@ export function CookbooksPage() {
     nameFilter,
     compatibility,
     downloadStatus,
+    tkStatus,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -166,13 +174,15 @@ export function CookbooksPage() {
     (nameFilter ? 1 : 0) +
     (active.length > 0 ? 1 : 0) +
     (compatibility.length > 0 ? 1 : 0) +
-    (downloadStatus.length > 0 ? 1 : 0);
+    (downloadStatus.length > 0 ? 1 : 0) +
+    (tkStatus.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNameFilter("");
     setActive([]);
     setCompatibility([]);
     setDownloadStatus([]);
+    setTkStatus([]);
   };
 
   return (
@@ -215,6 +225,18 @@ export function CookbooksPage() {
           ]}
           selected={downloadStatus}
           onChange={setDownloadStatus}
+        />
+        <FilterMultiCheckbox
+          label="Test Kitchen"
+          options={[
+            { value: "passed", label: "Passed" },
+            { value: "failed", label: "Failed" },
+            { value: "partial", label: "Partial" },
+            { value: "untested", label: "Untested" },
+            { value: "no_repo", label: "No Git Repo" },
+          ]}
+          selected={tkStatus}
+          onChange={setTkStatus}
         />
         {activeFilterCount > 0 && (
           <button
@@ -264,7 +286,13 @@ export function CookbooksPage() {
                       currentOrder={sortOrder}
                       onSort={handleSort}
                     />
-                    <th>Test Kitchen</th>
+                    <SortableColumnHeader
+                      label="Test Kitchen"
+                      field="tk_status"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     <SortableColumnHeader
                       label="Status"
                       field="active"
@@ -317,7 +345,7 @@ export function CookbooksPage() {
                         {cb.tk_status ? (
                           <TKBadge status={cb.tk_status} size="sm" />
                         ) : (
-                          <span className="text-xs text-gray-400">—</span>
+                          <span className="text-xs text-gray-400" title="No matching Git repository found for this cookbook">—</span>
                         )}
                       </td>
                       <td>

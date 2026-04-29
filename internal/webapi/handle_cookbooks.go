@@ -84,6 +84,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		Name:              q.Get("name"),
 		DownloadStatus:    q.Get("download_status"),
 		Compatibility:     q.Get("compatibility"),
+		TKStatus:          q.Get("tk_status"),
 		TargetChefVersion: targetChefVersion,
 		Sort:              queryString(req, "sort", "name"),
 		SortOrder:         queryString(req, "order", "asc"),
@@ -145,22 +146,12 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		TKStatus          string `json:"tk_status,omitempty"`
 	}
 
-	// Look up TK status for cookbooks that have matching git repos.
-	var tkMap map[string]string
-	if targetChefVersion != "" && len(rows) > 0 {
-		names := make(map[string]bool)
-		for _, cb := range rows {
-			names[cb.Name] = true
-		}
-		nameList := make([]string, 0, len(names))
-		for n := range names {
-			nameList = append(nameList, n)
-		}
-		tkMap, _ = r.db.GetCookbookTKStatuses(ctx, nameList, targetChefVersion)
-	}
-
 	result := make([]cookbookResp, 0, len(rows))
 	for _, cb := range rows {
+		tkDisplay := cb.TKStatus
+		if tkDisplay == "no_repo" {
+			tkDisplay = ""
+		}
 		resp := cookbookResp{
 			ID:                cb.OrganisationName + "/" + cb.Name + "/" + cb.Version,
 			OrganisationID:    cb.OrganisationName,
@@ -173,7 +164,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			DownloadError:     cb.DownloadError,
 			Compatibility:     cb.Compatibility,
 			TargetChefVersion: targetChefVersion,
-			TKStatus:          tkMap[cb.Name],
+			TKStatus:          tkDisplay,
 		}
 		result = append(result, resp)
 	}

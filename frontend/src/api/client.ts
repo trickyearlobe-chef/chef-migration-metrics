@@ -97,6 +97,7 @@ export interface CookbookFilterQuery extends PaginationQuery {
   active?: string;
   name?: string;
   compatibility?: string;
+  tk_status?: string;
   download_status?: string;
   target_chef_version?: string;
   complexity_label?: string;
