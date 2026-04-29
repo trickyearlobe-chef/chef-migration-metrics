@@ -42,40 +42,42 @@ function CompatibilitySummary({ detail }: { detail: RoleDetailResponse }) {
   walkTK(detail.nested_role_chain ?? undefined);
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-center">
-          <div className="text-2xl font-bold text-green-700">{compatible}</div>
-          <div className="text-xs text-green-600">CS Compatible</div>
-        </div>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-          <div className="text-2xl font-bold text-red-700">{blocking}</div>
-          <div className="text-xs text-red-600">CS Blocked</div>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
-          <div className="text-2xl font-bold text-gray-700">{total}</div>
-          <div className="text-xs text-gray-600">Total Cookbooks</div>
-        </div>
-      </div>
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <span className="font-medium text-gray-700">{total} cookbooks:</span>
+      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-green-700 ring-1 ring-inset ring-green-600/20">
+        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+        {compatible} CS compatible
+      </span>
+      {blocking > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-red-700 ring-1 ring-inset ring-red-600/20">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+          {blocking} CS blocked
+        </span>
+      )}
       {tkCounts.git > 0 && (
-        <div className="grid grid-cols-4 gap-3">
-          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
-            <div className="text-lg font-bold text-green-700">{tkCounts.passed}</div>
-            <div className="text-[10px] text-green-600">TK Passed</div>
-          </div>
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center">
-            <div className="text-lg font-bold text-red-700">{tkCounts.failed}</div>
-            <div className="text-[10px] text-red-600">TK Failed</div>
-          </div>
-          <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-center">
-            <div className="text-lg font-bold text-orange-700">{tkCounts.partial}</div>
-            <div className="text-[10px] text-orange-600">TK Partial</div>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center">
-            <div className="text-lg font-bold text-gray-700">{tkCounts.untested}</div>
-            <div className="text-[10px] text-gray-600">TK Untested</div>
-          </div>
-        </div>
+        <>
+          <span className="text-gray-300">|</span>
+          {tkCounts.passed > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-green-700 ring-1 ring-inset ring-green-600/20">
+              {tkCounts.passed} TK passed
+            </span>
+          )}
+          {tkCounts.failed > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-red-700 ring-1 ring-inset ring-red-600/20">
+              {tkCounts.failed} TK failed
+            </span>
+          )}
+          {tkCounts.partial > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2.5 py-0.5 text-orange-700 ring-1 ring-inset ring-orange-600/20">
+              {tkCounts.partial} TK partial
+            </span>
+          )}
+          {tkCounts.untested > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-0.5 text-gray-600 ring-1 ring-inset ring-gray-500/20">
+              {tkCounts.untested} TK untested
+            </span>
+          )}
+        </>
       )}
     </div>
   );
@@ -151,70 +153,39 @@ function BlockingCookbooksTable({ detail }: { detail: RoleDetailResponse }) {
 }
 
 function BlastRadiusSection({ detail }: { detail: RoleDetailResponse }) {
+  const items: { label: string; value: string; count: number }[] = [];
+  detail.nodes_by_organisation?.forEach((o) =>
+    items.push({ label: "Org", value: o.organisation, count: o.count }),
+  );
+  detail.nodes_by_environment?.forEach((e) =>
+    items.push({ label: "Env", value: e.environment, count: e.count }),
+  );
+  detail.nodes_by_platform?.forEach((p) =>
+    items.push({
+      label: "Platform",
+      value: `${p.platform} ${p.platform_version}`,
+      count: p.count,
+    }),
+  );
+
+  if (items.length === 0) {
+    return <p className="text-sm text-gray-400 italic">No blast radius data</p>;
+  }
+
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      <div>
-        <h4 className="mb-2 text-sm font-semibold text-gray-700">
-          By Organisation
-        </h4>
-        {detail.nodes_by_organisation?.length > 0 ? (
-          <ul className="space-y-1">
-            {detail.nodes_by_organisation.map((o) => (
-              <li
-                key={o.organisation}
-                className="flex items-center justify-between text-sm"
-              >
-                <span className="text-gray-600">{o.organisation}</span>
-                <span className="font-medium text-gray-800">{o.count}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-400 italic">No data</p>
-        )}
-      </div>
-      <div>
-        <h4 className="mb-2 text-sm font-semibold text-gray-700">
-          By Environment
-        </h4>
-        {detail.nodes_by_environment?.length > 0 ? (
-          <ul className="space-y-1">
-            {detail.nodes_by_environment.map((e) => (
-              <li
-                key={e.environment}
-                className="flex items-center justify-between text-sm"
-              >
-                <span className="text-gray-600">{e.environment}</span>
-                <span className="font-medium text-gray-800">{e.count}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-400 italic">No data</p>
-        )}
-      </div>
-      <div>
-        <h4 className="mb-2 text-sm font-semibold text-gray-700">
-          By Platform
-        </h4>
-        {detail.nodes_by_platform?.length > 0 ? (
-          <ul className="space-y-1">
-            {detail.nodes_by_platform.map((p) => (
-              <li
-                key={`${p.platform}-${p.platform_version}`}
-                className="flex items-center justify-between text-sm"
-              >
-                <span className="text-gray-600">
-                  {p.platform} {p.platform_version}
-                </span>
-                <span className="font-medium text-gray-800">{p.count}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-400 italic">No data</p>
-        )}
-      </div>
+    <div className="flex flex-wrap gap-2 text-sm">
+      {items.map((item) => (
+        <span
+          key={`${item.label}-${item.value}`}
+          className="inline-flex items-center gap-1.5 rounded-full bg-gray-50 px-2.5 py-0.5 text-gray-700 ring-1 ring-inset ring-gray-200"
+        >
+          <span className="text-[10px] font-medium uppercase text-gray-400">
+            {item.label}
+          </span>
+          {item.value}
+          <span className="font-semibold text-gray-900">{item.count}</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -575,55 +546,6 @@ export function RoleDetailPage() {
               </div>
             </section>
           )}
-
-          {/* Direct Dependencies */}
-          <section>
-            <h3 className="mb-3 text-lg font-semibold text-gray-700">
-              Direct Dependencies
-            </h3>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <h4 className="mb-2 text-sm font-semibold text-gray-600">
-                  Cookbooks ({detail.direct_cookbooks?.length ?? 0})
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {detail.direct_cookbooks?.map((cb) => (
-                    <Link
-                      key={cb}
-                      to={`/cookbooks/${encodeURIComponent(cb)}`}
-                      className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-100"
-                    >
-                      {cb}
-                    </Link>
-                  ))}
-                  {(!detail.direct_cookbooks ||
-                    detail.direct_cookbooks.length === 0) && (
-                    <span className="text-sm text-gray-400 italic">None</span>
-                  )}
-                </div>
-              </div>
-              <div>
-                <h4 className="mb-2 text-sm font-semibold text-gray-600">
-                  Nested Roles ({detail.direct_roles?.length ?? 0})
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {detail.direct_roles?.map((r) => (
-                    <Link
-                      key={r}
-                      to={`/roles/${encodeURIComponent(r)}`}
-                      className="rounded bg-purple-50 px-2 py-0.5 text-xs text-purple-700 hover:bg-purple-100"
-                    >
-                      {r}
-                    </Link>
-                  ))}
-                  {(!detail.direct_roles ||
-                    detail.direct_roles.length === 0) && (
-                    <span className="text-sm text-gray-400 italic">None</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
         </>
       ) : (
         <RoleDependencyGraphTab name={name!} targetVersion={targetVersion} />

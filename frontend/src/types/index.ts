@@ -7,7 +7,6 @@ export * from "./nodes";
 export * from "./cookbooks";
 export * from "./git-repos";
 export * from "./remediation";
-export * from "./dependencies";
 export * from "./logs";
 export * from "./exports";
 export * from "./auth";

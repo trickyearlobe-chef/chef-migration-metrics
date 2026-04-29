@@ -25,7 +25,6 @@ import { GitReposPage } from "./pages/GitReposPage";
 import { GitRepoDetailPage } from "./pages/GitRepoDetailPage";
 import { GitRepoRemediationPage } from "./pages/GitRepoRemediationPage";
 import { RemediationPage } from "./pages/RemediationPage";
-import { DependencyGraphPage } from "./pages/dependency-graph";
 import { LogsPage } from "./pages/LogsPage";
 import { OwnersPage } from "./pages/OwnersPage";
 import { OwnerDetailPage } from "./pages/OwnerDetailPage";
@@ -221,7 +220,6 @@ export function App() {
                 element={<OwnershipImportPage />}
               />
               <Route path="/ownership/:name" element={<OwnerDetailPage />} />
-              <Route path="/dependencies" element={<DependencyGraphPage />} />
               <Route path="/logs" element={<LogsPage />} />
 
               {/* Admin-only routes */}

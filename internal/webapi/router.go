@@ -429,12 +429,6 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary)
 
 	// -----------------------------------------------------------------
-	// Dependency graph endpoints (viewer)
-	// -----------------------------------------------------------------
-	r.protect("/api/v1/dependency-graph/table", r.handleDependencyGraphTable)
-	r.protect("/api/v1/dependency-graph", r.handleDependencyGraph)
-
-	// -----------------------------------------------------------------
 	// Export endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/exports", r.handleExports)
