@@ -187,6 +187,52 @@ func (db *DB) listGitKitchenResults(ctx context.Context, q queryable) ([]GitKitc
 // Delete
 // ---------------------------------------------------------------------------
 
+// ListGitKitchenStatusesByTargetVersions returns an aggregate pass/fail/partial
+// status for every (git_repo_name, target_chef_version) combination in the
+// requested target versions. The returned map is keyed by "repoName|targetVersion".
+func (db *DB) ListGitKitchenStatusesByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]string, error) {
+	result := make(map[string]string)
+	if len(targetChefVersions) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, len(targetChefVersions))
+	args := make([]any, len(targetChefVersions))
+	for i, v := range targetChefVersions {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = v
+	}
+
+	query := `SELECT git_repo_name, target_chef_version,
+	       COUNT(*) FILTER (WHERE passed = true) AS passed_count,
+	       COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count
+	FROM git_kitchen_results
+	WHERE target_chef_version IN (` + joinStrings(placeholders, ", ") + `)
+	GROUP BY git_repo_name, target_chef_version`
+
+	rows, err := db.q().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing git kitchen statuses by target versions: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, target string
+		var passed, failed int
+		if err := rows.Scan(&name, &target, &passed, &failed); err != nil {
+			return nil, fmt.Errorf("datastore: scanning git kitchen status row: %w", err)
+		}
+		switch {
+		case passed > 0 && failed > 0:
+			result[name+"|"+target] = "partial"
+		case failed > 0:
+			result[name+"|"+target] = "failed"
+		case passed > 0:
+			result[name+"|"+target] = "passed"
+		}
+	}
+	return result, rows.Err()
+}
+
 // DeleteGitKitchenResultsByRepo removes all git kitchen results for the
 // given repo.
 func (db *DB) DeleteGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) error {

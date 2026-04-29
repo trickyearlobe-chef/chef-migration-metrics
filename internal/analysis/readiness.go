@@ -140,6 +140,9 @@ type ReadinessDataStore interface {
 	ListServerCookbookCookstyleResultsByOrganisationAndVersions(ctx context.Context, organisationID string, targetChefVersions []string) ([]datastore.ServerCookbookCookstyleResult, error)
 	ListServerCookbookComplexities(ctx context.Context, organisationID string, targetChefVersions []string) ([]datastore.ServerCookbookComplexity, error)
 	ListGitRepoComplexities(ctx context.Context, targetChefVersions []string) ([]datastore.GitRepoComplexity, error)
+
+	// Bulk-load git Test Kitchen aggregate statuses
+	ListGitKitchenStatusesByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]string, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +159,7 @@ type readinessCache struct {
 	serverCSResults  map[string]*datastore.ServerCookbookCookstyleResult // cookbookID|target → result
 	serverComplexity map[string]*datastore.ServerCookbookComplexity      // cookbookID|target → complexity
 	gitComplexity    map[string]*datastore.GitRepoComplexity             // gitRepoID|target → complexity
+	gitTKStatuses    map[string]string                                   // repoName|target → "passed"/"failed"/"partial"
 }
 
 // cacheKey builds a lookup key from two components (e.g. ID + target version).
@@ -178,6 +182,7 @@ func buildReadinessCache(
 		serverCSResults:  make(map[string]*datastore.ServerCookbookCookstyleResult),
 		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
 		gitComplexity:    make(map[string]*datastore.GitRepoComplexity),
+		gitTKStatuses:    make(map[string]string),
 	}
 
 	// 1. Git repos (all — small table)
@@ -228,6 +233,13 @@ func buildReadinessCache(
 		c := &gitComplexities[i]
 		cache.gitComplexity[cacheKey(c.GitRepoName, c.TargetChefVersion)] = c
 	}
+
+	// 6. Git Test Kitchen aggregate statuses
+	gitTKStatuses, err := db.ListGitKitchenStatusesByTargetVersions(ctx, targetChefVersions)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading git TK statuses: %w", err)
+	}
+	cache.gitTKStatuses = gitTKStatuses
 
 	return cache, nil
 }
@@ -426,7 +438,7 @@ func (e *ReadinessEvaluator) evaluateOne(
 	}
 
 	// --- Cookbook compatibility ---
-	blockingCookbooks := e.evaluateCookbooks(snapshot, targetChefVersion, cookbookIDMap, cache)
+	blockingCookbooks, tkStats := e.evaluateCookbooks(snapshot, targetChefVersion, cookbookIDMap, cache)
 	result.BlockingCookbooks = blockingCookbooks
 	result.AllCookbooksCompatible = len(blockingCookbooks) == 0
 
@@ -455,7 +467,7 @@ func (e *ReadinessEvaluator) evaluateOne(
 	result.CookstyleStatus = deriveCookstyleStatusFromBlocking(
 		result.AllCookbooksCompatible, result.StaleData, blockingCookbooks)
 	result.KitchenStatus = deriveKitchenStatusFromBlocking(
-		result.AllCookbooksCompatible, result.StaleData, blockingCookbooks)
+		result.AllCookbooksCompatible, result.StaleData, blockingCookbooks, tkStats)
 
 	return result
 }
@@ -471,27 +483,53 @@ type nodeCookbookEntry struct {
 	Version string `json:"version"`
 }
 
+// tkCoverageStats tracks Test Kitchen coverage across all cookbooks on a node.
+type tkCoverageStats struct {
+	totalCookbooks int
+	tkEligible     int // cookbooks with HasTestSuite && !KitchenExcluded
+	tkTested       int // cookbooks where TK result exists (any status)
+	tkPassed       int
+	tkFailed       int
+}
+
 // evaluateCookbooks checks all cookbooks on the node against the target
-// Chef Client version. Returns the list of blocking cookbooks.
+// Chef Client version. Returns the list of blocking cookbooks and TK coverage stats.
 func (e *ReadinessEvaluator) evaluateCookbooks(
 	snapshot datastore.NodeSnapshot,
 	targetChefVersion string,
 	cookbookIDMap map[string]map[string]string,
 	cache *readinessCache,
-) []BlockingCookbook {
+) ([]BlockingCookbook, tkCoverageStats) {
+	var tkStats tkCoverageStats
 	if len(snapshot.Cookbooks) == 0 {
-		return nil
+		return nil, tkStats
 	}
 
 	// Parse the automatic.cookbooks attribute.
 	cookbooks := parseCookbooksAttribute(snapshot.Cookbooks)
 	if len(cookbooks) == 0 {
-		return nil
+		return nil, tkStats
 	}
 
 	var blocking []BlockingCookbook
 
 	for cbName, cbVersion := range cookbooks {
+		tkStats.totalCookbooks++
+
+		// Track TK coverage for this cookbook.
+		if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.Name != "" && gitRepo.HasTestSuite && !gitRepo.KitchenExcluded {
+			tkStats.tkEligible++
+			tkStatus := cache.gitTKStatuses[cacheKey(gitRepo.Name, targetChefVersion)]
+			switch tkStatus {
+			case "passed":
+				tkStats.tkTested++
+				tkStats.tkPassed++
+			case "failed", "partial":
+				tkStats.tkTested++
+				tkStats.tkFailed++
+			}
+		}
+
 		status, source, verdicts := checkCookbookCompatibility(cbName, cbVersion, targetChefVersion, cookbookIDMap, cache)
 
 		switch status {
@@ -540,7 +578,7 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 		}
 	}
 
-	return blocking
+	return blocking, tkStats
 }
 
 // deriveCookstyleStatusFromBlocking computes the CookStyle check status from
@@ -593,43 +631,31 @@ func deriveCookstyleStatusFromBlocking(allCompatible, stale bool, blocking []Blo
 
 // deriveKitchenStatusFromBlocking computes the Test Kitchen check status from
 // the evaluated blocking cookbooks list.
-func deriveKitchenStatusFromBlocking(allCompatible, stale bool, blocking []BlockingCookbook) string {
+func deriveKitchenStatusFromBlocking(allCompatible, stale bool, blocking []BlockingCookbook, tkStats tkCoverageStats) string {
 	if stale {
 		return "unknown"
 	}
-	if allCompatible && len(blocking) == 0 {
-		return "passed"
-	}
-
-	tkFailCount := 0
-	tkTestedCount := 0
-	noTKVerdictCount := 0
-
-	for _, b := range blocking {
-		hasTK := false
-		for _, v := range b.Verdicts {
-			if v.Source == SourceGitTestKitchen {
-				hasTK = true
-				tkTestedCount++
-				if v.Status == StatusIncompatible {
-					tkFailCount++
-				}
-				break
-			}
-		}
-		if !hasTK {
-			noTKVerdictCount++
-		}
-	}
-
-	if tkFailCount > 0 {
+	if tkStats.tkFailed > 0 {
 		return "failed"
 	}
-	if tkTestedCount > 0 && noTKVerdictCount > 0 {
+	if tkStats.tkPassed > 0 && tkStats.tkTested < tkStats.tkEligible {
 		return "partial"
 	}
-	if len(blocking) > 0 && tkTestedCount == 0 {
-		return "unknown"
+	if tkStats.tkEligible > 0 && tkStats.tkTested == tkStats.tkEligible && tkStats.tkFailed == 0 {
+		return "passed"
+	}
+	if tkStats.tkEligible == 0 {
+		if allCompatible && len(blocking) == 0 {
+			return "passed"
+		}
+		// No TK-eligible cookbooks but some blocking — unknown
+		if len(blocking) > 0 {
+			return "unknown"
+		}
+		return "passed"
+	}
+	if allCompatible && len(blocking) == 0 {
+		return "passed"
 	}
 	return "unknown"
 }
@@ -706,7 +732,7 @@ func checkCookbookCompatibility(
 ) (status, source string, verdicts []CookbookSourceVerdict) {
 	cookbookID := lookupCookbookID(cookbookIDMap, cookbookName, cookbookVersion)
 
-	var anyCompatible bool
+	var anyCSCompatible bool // at least one CookStyle source passed
 	var anyTested bool
 
 	// --- Source 1: Git repo CookStyle ---
@@ -722,7 +748,7 @@ func checkCookbookCompatibility(
 			}
 			if gitCSResult.Passed {
 				v.Status = StatusCompatible
-				anyCompatible = true
+				anyCSCompatible = true
 			} else {
 				v.Status = StatusIncompatible
 			}
@@ -741,7 +767,7 @@ func checkCookbookCompatibility(
 			}
 			if csResult.Passed {
 				v.Status = StatusCompatible
-				anyCompatible = true
+				anyCSCompatible = true
 			} else {
 				v.Status = StatusIncompatible
 			}
@@ -758,7 +784,7 @@ func checkCookbookCompatibility(
 				}
 				if csResult.Passed {
 					v.Status = StatusCompatible
-					anyCompatible = true
+					anyCSCompatible = true
 				} else {
 					v.Status = StatusIncompatible
 				}
@@ -767,16 +793,47 @@ func checkCookbookCompatibility(
 		}
 	}
 
-	// --- Determine overall status ---
-	if anyCompatible {
-		return StatusCompatibleCookstyleOnly, SourceCookstyle, verdicts
+	// --- Source 3: Git Test Kitchen ---
+	hasTK := false
+	anyTKFail := false
+	if hasGitRepo && gitRepo.Name != "" && gitRepo.HasTestSuite && !gitRepo.KitchenExcluded {
+		tkStatus := cache.gitTKStatuses[cacheKey(gitRepo.Name, targetChefVersion)]
+		if tkStatus != "" {
+			hasTK = true
+			anyTested = true
+			v := CookbookSourceVerdict{
+				Source:  SourceGitTestKitchen,
+				Version: "HEAD",
+			}
+			switch tkStatus {
+			case "passed":
+				v.Status = StatusCompatible
+			case "failed":
+				v.Status = StatusIncompatible
+				anyTKFail = true
+			case "partial":
+				v.Status = StatusIncompatible
+				anyTKFail = true
+			}
+			verdicts = append(verdicts, v)
+		}
 	}
 
+	// --- Determine overall status ---
+	// TK failure makes the cookbook incompatible even if CookStyle passed.
+	if anyTKFail {
+		return StatusIncompatible, SourceGitTestKitchen, verdicts
+	}
+	// CookStyle must pass for the cookbook to be compatible.
+	if anyCSCompatible && hasTK {
+		return StatusCompatible, SourceCookstyle, verdicts
+	}
+	if anyCSCompatible {
+		return StatusCompatibleCookstyleOnly, SourceCookstyle, verdicts
+	}
 	if anyTested {
 		return StatusIncompatible, SourceCookstyle, verdicts
 	}
-
-	// No results at all
 	return StatusUntested, SourceNone, verdicts
 }
 
