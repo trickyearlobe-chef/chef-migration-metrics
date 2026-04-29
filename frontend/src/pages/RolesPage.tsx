@@ -114,7 +114,9 @@ export function RolesPage() {
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
-  const { sortField, sortOrder, handleSort } = useSort({
+  const { sortField, sortOrder, handleSort } = useSort<
+    "name" | "node_count" | "incompatible_cookbook_count" | "tk_status"
+  >({
     defaultField: "name",
     defaultOrder: "asc",
     descendingFields: ["node_count", "incompatible_cookbook_count"],

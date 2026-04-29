@@ -22,12 +22,32 @@ import (
 // GET /api/v1/git-repos
 //
 // Returns all git repos, optionally filtered by name (substring match),
-// compatibility status, and/or clone status. Each repo includes a
-// compatibility field ("compatible", "incompatible", or "untested")
+// compatibility status, clone status, and/or TK status. Each repo includes
+// a compatibility field ("compatible", "incompatible", or "untested")
 // computed from git repo complexity records for the specified target Chef
 // version.
 //
 // Supports pagination via page/per_page query parameters.
+// Supports sorting via sort/order query parameters on: name, has_test_suite,
+// compatibility, tk_status, last_fetched, git_url, clone_status.
+
+// gitRepoResp is the JSON response item for the git repos list.
+type gitRepoResp struct {
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	GitRepoURL        string `json:"git_repo_url"`
+	HeadCommitSHA     string `json:"head_commit_sha,omitempty"`
+	DefaultBranch     string `json:"default_branch,omitempty"`
+	HasTestSuite      bool   `json:"has_test_suite"`
+	CloneStatus       string `json:"clone_status"`
+	CloneError        string `json:"clone_error,omitempty"`
+	LastFetchedAt     string `json:"last_fetched_at,omitempty"`
+	Compatibility     string `json:"compatibility"`
+	TargetChefVersion string `json:"target_chef_version,omitempty"`
+	TKStatus          string `json:"tk_status"`
+	TKPassed          int    `json:"tk_passed"`
+	TKTotal           int    `json:"tk_total"`
+}
 //
 // Query parameters:
 //   - name: case-insensitive substring filter on repo name
@@ -203,34 +223,9 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		repos = filtered
 	}
 
-	// Sort the results.
-	sortField := queryString(req, "sort", "name")
-	sortOrder := queryString(req, "order", "asc")
-	sortGitRepos(repos, sortField, sortOrder)
-
-	// Paginate.
-	pg := ParsePagination(req)
-	page, total := PaginateSlice(repos, pg)
-
-	type gitRepoResp struct {
-		ID                string `json:"id"`
-		Name              string `json:"name"`
-		GitRepoURL        string `json:"git_repo_url"`
-		HeadCommitSHA     string `json:"head_commit_sha,omitempty"`
-		DefaultBranch     string `json:"default_branch,omitempty"`
-		HasTestSuite      bool   `json:"has_test_suite"`
-		CloneStatus       string `json:"clone_status"`
-		CloneError        string `json:"clone_error,omitempty"`
-		LastFetchedAt     string `json:"last_fetched_at,omitempty"`
-		Compatibility     string `json:"compatibility"`
-		TargetChefVersion string `json:"target_chef_version,omitempty"`
-		TKStatus          string `json:"tk_status"`
-		TKPassed          int    `json:"tk_passed"`
-		TKTotal           int    `json:"tk_total"`
-	}
-
-	result := make([]gitRepoResp, 0, len(page))
-	for _, gr := range page {
+	// Build enriched response objects so we can sort on derived fields.
+	enriched := make([]gitRepoResp, 0, len(repos))
+	for _, gr := range repos {
 		c := compatByName[gr.Name]
 		if c == "" {
 			c = "untested"
@@ -266,8 +261,17 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		if !gr.LastFetchedAt.IsZero() {
 			resp.LastFetchedAt = gr.LastFetchedAt.Format("2006-01-02T15:04:05Z")
 		}
-		result = append(result, resp)
+		enriched = append(enriched, resp)
 	}
+
+	// Sort the enriched results.
+	sortField := queryString(req, "sort", "name")
+	sortOrder := queryString(req, "order", "asc")
+	sortGitRepoResps(enriched, sortField, sortOrder)
+
+	// Paginate.
+	pg := ParsePagination(req)
+	result, total := PaginateSlice(enriched, pg)
 
 	WritePaginated(w, result, pg, total)
 }
@@ -631,14 +635,46 @@ func toLowerASCII(s string) string {
 	return string(b)
 }
 
-func sortGitRepos(items []datastore.GitRepo, field, order string) {
+// sortGitRepoResps sorts enriched git repo response items by the given field.
+func sortGitRepoResps(items []gitRepoResp, field, order string) {
+	statusRank := func(s string) int {
+		switch s {
+		case "failed":
+			return 0
+		case "partial":
+			return 1
+		case "incompatible":
+			return 0
+		case "compatible", "passed":
+			return 2
+		default: // untested, pending, etc.
+			return 3
+		}
+	}
+
 	sort.Slice(items, func(i, j int) bool {
 		var less bool
 		switch field {
 		case "compatibility":
-			// Note: can't sort by compatibility here since it's computed per-name
-			// and not on the GitRepo struct. Fall through to name.
-			less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			ri, rj := statusRank(items[i].Compatibility), statusRank(items[j].Compatibility)
+			if ri != rj {
+				less = ri < rj
+			} else {
+				less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
+		case "tk_status":
+			ri, rj := statusRank(items[i].TKStatus), statusRank(items[j].TKStatus)
+			if ri != rj {
+				less = ri < rj
+			} else {
+				less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+			}
+		case "last_fetched":
+			less = items[i].LastFetchedAt < items[j].LastFetchedAt
+		case "git_url":
+			less = strings.ToLower(items[i].GitRepoURL) < strings.ToLower(items[j].GitRepoURL)
+		case "clone_status":
+			less = items[i].CloneStatus < items[j].CloneStatus
 		case "has_test_suite":
 			less = !items[i].HasTestSuite && items[j].HasTestSuite
 		default: // "name"

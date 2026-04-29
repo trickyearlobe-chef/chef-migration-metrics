@@ -91,7 +91,9 @@ export function GitReposPage() {
   const perPage = DEFAULT_PAGE_SIZE;
 
   // Sort state — default to name ascending.
-  const { sortField, sortOrder, handleSort } = useSort({
+  const { sortField, sortOrder, handleSort } = useSort<
+    "name" | "has_test_suite" | "compatibility" | "tk_status" | "last_fetched" | "git_url" | "clone_status"
+  >({
     defaultField: "name",
     defaultOrder: "asc",
     descendingFields: ["has_test_suite"],
@@ -267,8 +269,20 @@ export function GitReposPage() {
                       currentOrder={sortOrder}
                       onSort={handleSort}
                     />
-                    <th>Git URL</th>
-                    <th>Clone</th>
+                    <SortableColumnHeader
+                      label="Git URL"
+                      field="git_url"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Clone"
+                      field="clone_status"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     <SortableColumnHeader
                       label="Test Suite"
                       field="has_test_suite"
@@ -276,12 +290,30 @@ export function GitReposPage() {
                       currentOrder={sortOrder}
                       onSort={handleSort}
                     />
-                    <th>Compatibility</th>
-                    <th>TK Status</th>
+                    <SortableColumnHeader
+                      label="Compatibility"
+                      field="compatibility"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="TK Status"
+                      field="tk_status"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                     <th>TK Results</th>
                     <th>Head Commit</th>
                     <th>Default Branch</th>
-                    <th>Last Fetched</th>
+                    <SortableColumnHeader
+                      label="Last Fetched"
+                      field="last_fetched"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
                   </tr>
                 </thead>
                 <tbody>
