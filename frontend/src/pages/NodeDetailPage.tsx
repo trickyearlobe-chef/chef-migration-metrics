@@ -5,6 +5,7 @@ import {
   fetchFilterTargetChefVersions,
   fetchNodeKitchenRuns,
   triggerNodeKitchenRun,
+  fetchNodeDependencyGraph,
 } from "../api";
 import type {
   NodeDetailResponse,
@@ -12,9 +13,15 @@ import type {
   BlockingCookbook,
   CookbookSourceVerdict,
   NodeKitchenRun,
+  NodeDependencyGraphResponse,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
-import { StaleBadge, StatusBadge } from "../components/StatusBadge";
+import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
+import {
+  ForceGraph,
+  adaptNodeGraphNodes,
+  adaptNodeGraphEdges,
+} from "../components/force-graph";
 
 // Helper to build the disk detail link for a node.
 function diskDetailPath(org: string, name: string): string {
@@ -601,6 +608,15 @@ function ReadinessCard({
 }) {
   const ready = r.is_ready;
 
+  const diskStatus: string = r.sufficient_disk_space === true
+    ? "sufficient"
+    : r.sufficient_disk_space === false
+      ? "insufficient"
+      : "unknown";
+  const csStatus: string = r.cookstyle_status ?? (r.all_cookbooks_compatible ? "passed" : "unknown");
+  const csMapped: string = csStatus === "passed" ? "compatible" : csStatus === "failed" ? "incompatible" : "untested";
+  const tkStatus: string = r.kitchen_status ?? "unknown";
+
   return (
     <div
       className={`rounded-lg border p-4 ${ready ? "border-green-200 bg-green-50/30" : "border-red-200 bg-red-50/20"}`}
@@ -616,11 +632,14 @@ function ReadinessCard({
             Evaluated {new Date(r.evaluated_at).toLocaleString()}
           </div>
         </div>
-        {r.stale_data && (
-          <span className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-            ⚠ Stale data
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          <DiskBadge status={diskStatus} size="sm" />
+          <CookStyleBadge status={csMapped} size="sm" />
+          <TKBadge status={tkStatus} size="sm" />
+          {r.stale_data && (
+            <StaleBadge isStale size="sm" />
+          )}
+        </div>
       </div>
 
       {/* Overall verdict */}
@@ -1075,61 +1094,301 @@ export function NodeDetailPage() {
         />
       )}
 
-      {/* Run list */}
-      {node.run_list && node.run_list.length > 0 && (
-        <div className="card">
-          <h3 className="card-header">Run List</h3>
-          <div className="flex flex-wrap gap-2">
-            {node.run_list.map((item, i) => (
-              <code
-                key={i}
-                className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700"
-              >
-                {item}
-              </code>
-            ))}
-          </div>
-        </div>
+      {/* Dependency Graph — replaces flat Run List / Roles / Cookbooks panels */}
+      {org && name && (
+        <NodeDependencySection
+          org={org}
+          nodeName={name}
+          targetChefVersion={targetVersions[0]}
+        />
       )}
+    </div>
+  );
+}
 
-      {/* Roles */}
-      {node.roles && node.roles.length > 0 && (
-        <div className="card">
-          <h3 className="card-header">Roles</h3>
-          <div className="flex flex-wrap gap-2">
-            {node.roles.map((role) => (
-              <Link
-                key={role}
-                to={`/roles/${encodeURIComponent(role)}`}
-                className="badge badge-compatible transition-colors hover:opacity-80"
-              >
-                {role}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
+// ---------------------------------------------------------------------------
+// Node Dependency Section — tree + graph views of run_list → roles → cookbooks
+// ---------------------------------------------------------------------------
 
-      {/* Raw Cookbooks — kept as a secondary reference below readiness */}
-      {node.cookbooks && Object.keys(node.cookbooks).length > 0 && (
-        <div className="card">
-          <h3 className="card-header">Cookbooks (Raw)</h3>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(node.cookbooks).map(([name, info]) => (
-              <Link
-                key={name}
-                to={`/cookbooks/${encodeURIComponent(name)}`}
-                className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100"
-              >
-                {name}{" "}
-                {typeof info === "object" && info && "version" in info
-                  ? `@${(info as Record<string, string>).version}`
-                  : ""}
-              </Link>
-            ))}
+type DepViewMode = "tree" | "graph";
+
+function NodeDependencySection({
+  org,
+  nodeName,
+  targetChefVersion,
+}: {
+  org: string;
+  nodeName: string;
+  targetChefVersion?: string;
+}) {
+  const [graphData, setGraphData] =
+    useState<NodeDependencyGraphResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<DepViewMode>("tree");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<
+    "all" | "role" | "cookbook"
+  >("all");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchNodeDependencyGraph(org, nodeName, targetChefVersion)
+      .then((res) => {
+        setGraphData(res);
+        setSelectedNodeId(null);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [org, nodeName, targetChefVersion]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) return <LoadingSpinner message="Loading dependency graph…" />;
+  if (error) return <ErrorAlert message={error} onRetry={load} />;
+  if (!graphData || graphData.nodes.length === 0) {
+    return (
+      <div className="card">
+        <h3 className="card-header">Dependencies</h3>
+        <p className="text-sm text-gray-500 italic">
+          No dependency data available.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card space-y-4">
+      {/* Header with view toggle */}
+      <div className="flex items-center justify-between">
+        <h3 className="card-header mb-0">Dependencies</h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode("tree")}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              viewMode === "tree"
+                ? "bg-blue-100 text-blue-800"
+                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+            }`}
+          >
+            Tree
+          </button>
+          <button
+            onClick={() => setViewMode("graph")}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              viewMode === "graph"
+                ? "bg-blue-100 text-blue-800"
+                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+            }`}
+          >
+            Graph
+          </button>
+        </div>
+      </div>
+
+      {/* Metadata summary */}
+      <div className="flex flex-wrap gap-4 text-sm">
+        <span className="rounded-full bg-blue-50 px-3 py-1 font-medium text-blue-700">
+          {graphData.metadata.total_roles} Roles
+        </span>
+        <span className="rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700">
+          {graphData.metadata.total_cookbooks} Cookbooks
+        </span>
+        {graphData.metadata.incompatible_cookbooks > 0 && (
+          <span className="rounded-full bg-red-50 px-3 py-1 font-medium text-red-700">
+            {graphData.metadata.incompatible_cookbooks} CS Incompatible
+          </span>
+        )}
+        {graphData.metadata.tk_failed_cookbooks > 0 && (
+          <span className="rounded-full bg-orange-50 px-3 py-1 font-medium text-orange-700">
+            {graphData.metadata.tk_failed_cookbooks} TK Failed
+          </span>
+        )}
+      </div>
+
+      {/* View content */}
+      {viewMode === "tree" ? (
+        <NodeDependencyTree graphData={graphData} />
+      ) : (
+        <div className="space-y-3">
+          {/* Search and filters */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="Search nodes…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-md border border-gray-300 py-1.5 pl-3 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500">Show:</span>
+              {(["all", "role", "cookbook"] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setFilterType(type)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    filterType === type
+                      ? type === "role"
+                        ? "bg-blue-100 text-blue-800"
+                        : type === "cookbook"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-gray-200 text-gray-800"
+                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                  }`}
+                >
+                  {type === "all"
+                    ? "All"
+                    : type === "role"
+                      ? "Roles"
+                      : "Cookbooks"}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rotate-45 bg-purple-500" />
+              Run List Entry
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-sm bg-blue-500" />
+              Role
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full bg-emerald-500" />
+              Compatible
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full bg-red-500" />
+              Incompatible
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full bg-gray-400" />
+              Untested
+            </span>
+          </div>
+
+          {/* Graph */}
+          <ForceGraph
+            nodes={adaptNodeGraphNodes(graphData.nodes)}
+            edges={adaptNodeGraphEdges(graphData.edges)}
+            searchTerm={searchTerm}
+            filterType={filterType}
+            selectedNodeId={selectedNodeId}
+            hoveredNodeId={hoveredNodeId}
+            onSelectNode={setSelectedNodeId}
+            onHoverNode={setHoveredNodeId}
+          />
         </div>
       )}
+    </div>
+  );
+}
+
+// Tree view for node dependencies
+function NodeDependencyTree({
+  graphData,
+}: {
+  graphData: NodeDependencyGraphResponse;
+}) {
+  // Build adjacency: from → children
+  const childrenOf = new Map<string, string[]>();
+  for (const edge of graphData.edges) {
+    const existing = childrenOf.get(edge.from) ?? [];
+    existing.push(edge.to);
+    childrenOf.set(edge.from, existing);
+  }
+
+  // Build node lookup
+  const nodeById = new Map(graphData.nodes.map((n) => [n.id, n]));
+
+  // Find root nodes (run_list_entries)
+  const roots = graphData.nodes.filter((n) => n.type === "run_list_entry");
+
+  function renderNode(nodeId: string, depth: number, visited: Set<string>) {
+    if (visited.has(nodeId)) return null;
+    visited.add(nodeId);
+
+    const node = nodeById.get(nodeId);
+    if (!node) return null;
+
+    const indent = depth * 1.25;
+    const children = childrenOf.get(nodeId) ?? [];
+    const isRole = node.type === "role";
+    const isCookbook = node.type === "cookbook";
+    const isRunList = node.type === "run_list_entry";
+
+    const linkTarget = isRole
+      ? `/roles/${encodeURIComponent(node.name)}`
+      : isCookbook
+        ? `/cookbooks/${encodeURIComponent(node.name)}`
+        : undefined;
+
+    const icon = isRunList ? "📋" : isRole ? "📁" : "📦";
+    const iconTitle = isRunList
+      ? "Run list entry"
+      : isRole
+        ? "Role"
+        : "Cookbook";
+
+    return (
+      <div key={nodeId}>
+        <div
+          className="flex items-center gap-1.5 py-0.5"
+          style={{ paddingLeft: `${indent}rem` }}
+        >
+          <span className="text-xs text-gray-400" title={iconTitle}>
+            {icon}
+          </span>
+          {linkTarget ? (
+            <Link
+              to={linkTarget}
+              className={`text-sm hover:underline ${
+                isRole
+                  ? "font-medium text-blue-600"
+                  : "text-gray-800"
+              }`}
+            >
+              {node.name}
+            </Link>
+          ) : (
+            <span className="text-sm font-medium text-purple-700">
+              {node.name}
+            </span>
+          )}
+          {isCookbook && (
+            <>
+              <CookStyleBadge
+                status={node.compatibility_status ?? "untested"}
+                size="sm"
+              />
+              <TKBadge status={node.tk_status ?? "untested"} size="sm" />
+            </>
+          )}
+        </div>
+        {children.map((childId) => renderNode(childId, depth + 1, visited))}
+      </div>
+    );
+  }
+
+  if (roots.length === 0) {
+    return (
+      <p className="text-sm text-gray-500 italic">No run list entries found.</p>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      {roots.map((root) => renderNode(root.id, 0, new Set<string>()))}
     </div>
   );
 }

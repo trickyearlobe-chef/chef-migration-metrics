@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,6 +35,7 @@ type fakeReadinessDS struct {
 	complexities    map[string]*datastore.ServerCookbookComplexity
 	gitCSResults    map[string]*datastore.GitRepoCookstyleResult
 	gitComplexities map[string]*datastore.GitRepoComplexity
+	gitTKStatuses   map[string]string // repoName|target → "passed"/"failed"/"partial"
 	upserted        []datastore.UpsertNodeReadinessParams
 
 	// Error injection
@@ -44,6 +46,7 @@ type fakeReadinessDS struct {
 	complexityErr          error
 	gitCSErr               error
 	gitComplexityErr       error
+	gitTKErr               error
 	upsertErr              error
 
 	// Call counters
@@ -58,6 +61,7 @@ func newFakeReadinessDS() *fakeReadinessDS {
 		complexities:    make(map[string]*datastore.ServerCookbookComplexity),
 		gitCSResults:    make(map[string]*datastore.GitRepoCookstyleResult),
 		gitComplexities: make(map[string]*datastore.GitRepoComplexity),
+		gitTKStatuses:   make(map[string]string),
 	}
 }
 
@@ -231,6 +235,24 @@ func (f *fakeReadinessDS) ListGitRepoComplexities(_ context.Context, targetChefV
 	return results, nil
 }
 
+func (f *fakeReadinessDS) ListGitKitchenStatusesByTargetVersions(_ context.Context, targetChefVersions []string) (map[string]string, error) {
+	if f.gitTKErr != nil {
+		return nil, f.gitTKErr
+	}
+	tvSet := make(map[string]bool, len(targetChefVersions))
+	for _, tv := range targetChefVersions {
+		tvSet[tv] = true
+	}
+	result := make(map[string]string)
+	for k, v := range f.gitTKStatuses {
+		parts := strings.SplitN(k, "|", 2)
+		if len(parts) == 2 && tvSet[parts[1]] {
+			result[k] = v
+		}
+	}
+	return result, nil
+}
+
 // buildFakeCache constructs a readinessCache directly from the fake's in-memory
 // maps without going through the bulk-load DB path. This lets unit tests for
 // checkCookbookCompatibility and evaluateOne work with the cache directly.
@@ -241,6 +263,7 @@ func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 		serverCSResults:  make(map[string]*datastore.ServerCookbookCookstyleResult),
 		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
 		gitComplexity:    make(map[string]*datastore.GitRepoComplexity),
+		gitTKStatuses:    make(map[string]string),
 	}
 	for name, gr := range f.gitRepos {
 		cache.gitRepos[name] = gr
@@ -256,6 +279,9 @@ func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 	}
 	for k, v := range f.gitComplexities {
 		cache.gitComplexity[k] = v
+	}
+	for k, v := range f.gitTKStatuses {
+		cache.gitTKStatuses[k] = v
 	}
 	return cache
 }
@@ -312,6 +338,22 @@ func (f *fakeReadinessDS) addGitRepo(name, headSHA string) {
 		Name:          name,
 		HeadCommitSHA: headSHA,
 	}
+}
+
+func (f *fakeReadinessDS) addGitRepoWithTK(name, headSHA string, hasTestSuite, kitchenExcluded bool) {
+	f.gitRepos[name] = datastore.GitRepo{
+		Name:            name,
+		HeadCommitSHA:   headSHA,
+		HasTestSuite:    hasTestSuite,
+		KitchenExcluded: kitchenExcluded,
+	}
+}
+
+func (f *fakeReadinessDS) addGitTKStatus(repoName, targetVersion, status string) {
+	if f.gitTKStatuses == nil {
+		f.gitTKStatuses = make(map[string]string)
+	}
+	f.gitTKStatuses[repoName+"|"+targetVersion] = status
 }
 
 // ---------------------------------------------------------------------------
@@ -1323,6 +1365,158 @@ func TestCheckCookbookCompatibility_ErrorResultDoesNotOverrideGoodResult(t *test
 }
 
 // ---------------------------------------------------------------------------
+// checkCookbookCompatibility — TK integration tests
+// ---------------------------------------------------------------------------
+
+func TestCheckCookbookCompatibility_CSPass_TKPass(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, false)
+	ds.addGitTKStatus("apt", "18.0", "passed")
+
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusCompatible {
+		t.Errorf("expected %s, got %s", StatusCompatible, status)
+	}
+	if source != SourceCookstyle {
+		t.Errorf("expected source %s, got %s", SourceCookstyle, source)
+	}
+}
+
+func TestCheckCookbookCompatibility_CSPass_TKFail(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, false)
+	ds.addGitTKStatus("apt", "18.0", "failed")
+
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusIncompatible {
+		t.Errorf("expected %s, got %s", StatusIncompatible, status)
+	}
+	if source != SourceGitTestKitchen {
+		t.Errorf("expected source %s, got %s", SourceGitTestKitchen, source)
+	}
+}
+
+func TestCheckCookbookCompatibility_CSPass_TKPartial(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, false)
+	ds.addGitTKStatus("apt", "18.0", "partial")
+
+	cache := ds.buildFakeCache()
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusIncompatible {
+		t.Errorf("expected %s, got %s", StatusIncompatible, status)
+	}
+}
+
+func TestCheckCookbookCompatibility_CSFail_TKPass(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, false)
+	ds.addGitTKStatus("apt", "18.0", "passed")
+
+	cache := ds.buildFakeCache()
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusIncompatible {
+		t.Errorf("expected %s, got %s", StatusIncompatible, status)
+	}
+	if source != SourceCookstyle {
+		t.Errorf("expected source %s, got %s", SourceCookstyle, source)
+	}
+}
+
+func TestCheckCookbookCompatibility_CSFail_TKFail(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", false)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, false)
+	ds.addGitTKStatus("apt", "18.0", "failed")
+
+	cache := ds.buildFakeCache()
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusIncompatible {
+		t.Errorf("expected %s, got %s", StatusIncompatible, status)
+	}
+}
+
+func TestCheckCookbookCompatibility_CSPass_NoTKResults(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, false)
+	// No TK status in cache
+
+	cache := ds.buildFakeCache()
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusCompatibleCookstyleOnly {
+		t.Errorf("expected %s, got %s", StatusCompatibleCookstyleOnly, status)
+	}
+}
+
+func TestCheckCookbookCompatibility_CSPass_TKExcluded(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, true) // KitchenExcluded = true
+	ds.addGitTKStatus("apt", "18.0", "failed")         // TK failed, but excluded
+
+	cache := ds.buildFakeCache()
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusCompatibleCookstyleOnly {
+		t.Errorf("expected %s (TK excluded), got %s", StatusCompatibleCookstyleOnly, status)
+	}
+}
+
+func TestCheckCookbookCompatibility_CSPass_NoTestSuite(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addGitRepoWithTK("apt", "sha-abc", false, false) // HasTestSuite = false
+	ds.addGitTKStatus("apt", "18.0", "failed")
+
+	cache := ds.buildFakeCache()
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusCompatibleCookstyleOnly {
+		t.Errorf("expected %s (no test suite), got %s", StatusCompatibleCookstyleOnly, status)
+	}
+}
+
+func TestCheckCookbookCompatibility_TKPass_Verdicts(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
+	ds.addGitRepoWithTK("apt", "sha-abc", true, false)
+	ds.addGitTKStatus("apt", "18.0", "passed")
+
+	cache := ds.buildFakeCache()
+	_, _, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+
+	foundTK := false
+	for _, v := range verdicts {
+		if v.Source == SourceGitTestKitchen {
+			foundTK = true
+			if v.Status != StatusCompatible {
+				t.Errorf("expected TK verdict status %s, got %s", StatusCompatible, v.Status)
+			}
+			if v.Version != "HEAD" {
+				t.Errorf("expected TK verdict version HEAD, got %s", v.Version)
+			}
+		}
+	}
+	if !foundTK {
+		t.Error("expected a git_test_kitchen verdict in results")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // evaluateOne — integration tests
 // ---------------------------------------------------------------------------
 
@@ -1894,6 +2088,11 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 	} else if gc.ComplexityScore != 10 {
 		t.Errorf("expected complexity score 10, got %d", gc.ComplexityScore)
 	}
+
+	// Git TK statuses (none added — should be empty but present)
+	if cache.gitTKStatuses == nil {
+		t.Error("expected gitTKStatuses map to be initialised")
+	}
 }
 
 func TestBuildReadinessCache_FiltersTargetVersions(t *testing.T) {
@@ -2014,6 +2213,23 @@ func TestEvaluateOrganisation_BulkLoadError_GitComplexities(t *testing.T) {
 		t.Fatal("expected error from bulk-load failure")
 	}
 	if !contains(err.Error(), "bulk-loading git complexities") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluateOrganisation_BulkLoadError_GitTK(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.snapshots = []datastore.NodeSnapshot{
+		makeSnapshot("org-1", "node-1", false, nil, nil),
+	}
+	ds.gitTKErr = fmt.Errorf("connection refused")
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	if err == nil {
+		t.Fatal("expected error from bulk-load failure")
+	}
+	if !contains(err.Error(), "bulk-loading git TK statuses") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

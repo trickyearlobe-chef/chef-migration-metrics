@@ -11,13 +11,8 @@ export interface NodeReadinessSummary {
   blocking_cookbook_count: number;
   stale_data: boolean;
   disk_status?: "sufficient" | "insufficient" | "unknown";
-  cookstyle_status?:
-    | "passed"
-    | "failed"
-    | "warnings"
-    | "scan_error"
-    | "unknown";
-  kitchen_status?: "passed" | "failed" | "partial" | "scan_error" | "unknown";
+  cookstyle_status?: "passed" | "failed" | "unknown";
+  kitchen_status?: "passed" | "failed" | "partial" | "unknown";
   disk_detail?: string | null;
   cookstyle_detail?: string | null;
   kitchen_detail?: string | null;
@@ -94,6 +89,8 @@ export interface NodeReadiness {
   available_disk_mb: number | null;
   required_disk_mb: number | null;
   stale_data: boolean;
+  cookstyle_status?: string;
+  kitchen_status?: string;
   evaluated_at: string;
   created_at: string;
   updated_at: string;
@@ -146,4 +143,31 @@ export interface NodeDiskDetailResponse {
   organisation_name: string;
   platform: string;
   disks: DiskEntry[];
+}
+
+export interface NodeGraphNode {
+  id: string;
+  type: string;
+  name: string;
+  compatibility_status?: string;
+  tk_status?: string;
+  complexity_label?: string;
+  source?: string;
+}
+
+export interface NodeGraphEdge {
+  from: string;
+  to: string;
+  type: string;
+}
+
+export interface NodeDependencyGraphResponse {
+  nodes: NodeGraphNode[];
+  edges: NodeGraphEdge[];
+  metadata: {
+    total_roles: number;
+    total_cookbooks: number;
+    incompatible_cookbooks: number;
+    tk_failed_cookbooks: number;
+  };
 }

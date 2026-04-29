@@ -452,7 +452,7 @@ export function NodesPage() {
                         )
                       : node.readiness?.[0];
                     const csStatus = readinessEntry?.cookstyle_status ?? "unknown";
-                    const csMapped = csStatus === "passed" || csStatus === "warnings" ? "compatible" : csStatus === "failed" || csStatus === "scan_error" ? "incompatible" : "untested";
+                    const csMapped = csStatus === "passed" ? "compatible" : csStatus === "failed" ? "incompatible" : "untested";
                     return (
                     <tr
                       key={node.id}

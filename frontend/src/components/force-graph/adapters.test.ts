@@ -3,11 +3,14 @@
 import { describe, it, expect } from "vitest";
 import type { DependencyGraphNode, DependencyGraphEdge } from "../../types/dependencies";
 import type { RoleGraphNode, RoleGraphEdge } from "../../types/roles";
+import type { NodeGraphNode, NodeGraphEdge } from "../../types/nodes";
 import {
   adaptDependencyNodes,
   adaptDependencyEdges,
   adaptRoleGraphNodes,
   adaptRoleGraphEdges,
+  adaptNodeGraphNodes,
+  adaptNodeGraphEdges,
 } from "./adapters";
 
 describe("adaptDependencyNodes", () => {
@@ -128,5 +131,63 @@ describe("adaptRoleGraphEdges", () => {
 
   it("returns an empty array for empty input", () => {
     expect(adaptRoleGraphEdges([])).toEqual([]);
+  });
+});
+
+describe("adaptNodeGraphNodes", () => {
+  it("passes through id, name, type, compatibility_status, and tk_status", () => {
+    const input: NodeGraphNode[] = [
+      {
+        id: "run_list_entry:role[web]",
+        name: "role[web]",
+        type: "run_list_entry",
+      },
+      {
+        id: "cookbook:nginx",
+        name: "nginx",
+        type: "cookbook",
+        compatibility_status: "incompatible",
+        tk_status: "failed",
+      },
+    ];
+    const result = adaptNodeGraphNodes(input);
+    expect(result).toEqual([
+      {
+        id: "run_list_entry:role[web]",
+        name: "role[web]",
+        type: "run_list_entry",
+        compatibility_status: undefined,
+        tk_status: undefined,
+      },
+      {
+        id: "cookbook:nginx",
+        name: "nginx",
+        type: "cookbook",
+        compatibility_status: "incompatible",
+        tk_status: "failed",
+      },
+    ]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(adaptNodeGraphNodes([])).toEqual([]);
+  });
+});
+
+describe("adaptNodeGraphEdges", () => {
+  it("maps from to source and to to target", () => {
+    const input: NodeGraphEdge[] = [
+      { from: "run_list_entry:role[web]", to: "role:web", type: "includes_role" },
+      { from: "role:web", to: "cookbook:nginx", type: "includes_cookbook" },
+    ];
+    const result = adaptNodeGraphEdges(input);
+    expect(result).toEqual([
+      { source: "run_list_entry:role[web]", target: "role:web", type: "includes_role" },
+      { source: "role:web", target: "cookbook:nginx", type: "includes_cookbook" },
+    ]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(adaptNodeGraphEdges([])).toEqual([]);
   });
 });
