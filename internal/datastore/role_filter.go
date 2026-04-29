@@ -412,7 +412,7 @@ cookbook_tk AS (
     COUNT(*) FILTER (WHERE gkr.passed = false OR gkr.timed_out = true) AS f
   FROM role_cookbooks rc
   JOIN git_repos gr ON gr.name = rc.cookbook_name
-  JOIN git_kitchen_results gkr
+  JOIN git_kitchen_results_active gkr
     ON gkr.git_repo_name = gr.name
     AND gkr.target_chef_version = $3
   GROUP BY rc.role_name, gkr.git_repo_name

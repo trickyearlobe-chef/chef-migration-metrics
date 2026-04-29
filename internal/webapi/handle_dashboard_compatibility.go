@@ -498,7 +498,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 		total   int
 	}
 	tkByRepo := make(map[string]*repoTKInfo)
-	allResults, tkErr := r.db.ListGitKitchenResults(ctx)
+	allResults, tkErr := r.db.ListActiveGitKitchenResults(ctx)
 	if tkErr != nil {
 		r.logf("WARN", "listing git kitchen results for TK dashboard: %v", tkErr)
 	} else {

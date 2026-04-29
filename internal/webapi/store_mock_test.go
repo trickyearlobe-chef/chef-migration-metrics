@@ -169,6 +169,7 @@ type mockStore struct {
 	UpsertGitKitchenResultFn         func(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error)
 	GetGitKitchenResultFn            func(ctx context.Context, id string) (datastore.GitKitchenResult, error)
 	ListGitKitchenResultsFn          func(ctx context.Context) ([]datastore.GitKitchenResult, error)
+	ListActiveGitKitchenResultsFn    func(ctx context.Context) ([]datastore.GitKitchenResult, error)
 	ListGitKitchenResultsByRepoFn    func(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
 	DeleteGitKitchenResultsByRepoFn  func(ctx context.Context, gitRepoName string) error
 }
@@ -1259,6 +1260,13 @@ func (m *mockStore) GetGitKitchenResult(ctx context.Context, id string) (datasto
 func (m *mockStore) ListGitKitchenResults(ctx context.Context) ([]datastore.GitKitchenResult, error) {
 	if m.ListGitKitchenResultsFn != nil {
 		return m.ListGitKitchenResultsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListActiveGitKitchenResults(ctx context.Context) ([]datastore.GitKitchenResult, error) {
+	if m.ListActiveGitKitchenResultsFn != nil {
+		return m.ListActiveGitKitchenResultsFn(ctx)
 	}
 	return nil, nil
 }

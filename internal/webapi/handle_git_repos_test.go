@@ -117,6 +117,9 @@ func defaultGitRepoMockStore() *mockStore {
 		ListGitKitchenResultsFn: func(ctx context.Context) ([]datastore.GitKitchenResult, error) {
 			return sampleKitchenResults(), nil
 		},
+		ListActiveGitKitchenResultsFn: func(ctx context.Context) ([]datastore.GitKitchenResult, error) {
+			return sampleKitchenResults(), nil
+		},
 	}
 }
 
