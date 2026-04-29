@@ -5,6 +5,8 @@ package webapi
 
 import (
 	"net/http"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -537,11 +539,12 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 
 			s := tkByRepo[gr.Name]
 			if s != nil && s.total > 0 {
-				if s.passed > 0 && s.failed > 0 {
+				switch tkstatus.ComputeTKStatus(s.passed, s.failed) {
+				case "partial":
 					pv.partial++
-				} else if s.failed > 0 {
+				case "failed":
 					pv.failed++
-				} else {
+				case "passed":
 					pv.passed++
 				}
 			} else {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // RoleDetail is the full detail view for a single role, used by the
@@ -410,10 +411,10 @@ func collectPaths(roleName string, adj map[string][]RoleDependency, visited map[
 // getRoleBlastRadius computes node counts by org, environment, and platform
 // for nodes that have this role.
 func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []OrgCount, []EnvCount, []PlatformCount, error) {
-	// Total node count
+	// Total node count (DISTINCT to avoid counting duplicates across snapshots).
 	var totalCount int
 	err := db.pool.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM node_snapshots WHERE roles @> to_jsonb(ARRAY[$1])`,
+		`SELECT COUNT(DISTINCT organisation_name || '/' || node_name) FROM node_snapshots WHERE roles @> to_jsonb(ARRAY[$1])`,
 		roleName,
 	).Scan(&totalCount)
 	if err != nil {
@@ -422,9 +423,9 @@ func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []O
 
 	// By organisation
 	orgRows, err := db.pool.QueryContext(ctx,
-		`SELECT organisation_name, COUNT(*) FROM node_snapshots
+		`SELECT organisation_name, COUNT(DISTINCT node_name) FROM node_snapshots
 		 WHERE roles @> to_jsonb(ARRAY[$1])
-		 GROUP BY organisation_name ORDER BY COUNT(*) DESC`,
+		 GROUP BY organisation_name ORDER BY COUNT(DISTINCT node_name) DESC`,
 		roleName,
 	)
 	if err != nil {
@@ -443,9 +444,9 @@ func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []O
 
 	// By environment
 	envRows, err := db.pool.QueryContext(ctx,
-		`SELECT chef_environment, COUNT(*) FROM node_snapshots
+		`SELECT chef_environment, COUNT(DISTINCT organisation_name || '/' || node_name) FROM node_snapshots
 		 WHERE roles @> to_jsonb(ARRAY[$1])
-		 GROUP BY chef_environment ORDER BY COUNT(*) DESC`,
+		 GROUP BY chef_environment ORDER BY COUNT(DISTINCT organisation_name || '/' || node_name) DESC`,
 		roleName,
 	)
 	if err != nil {
@@ -464,9 +465,9 @@ func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []O
 
 	// By platform
 	platRows, err := db.pool.QueryContext(ctx,
-		`SELECT platform, COALESCE(platform_version, ''), COUNT(*) FROM node_snapshots
+		`SELECT platform, COALESCE(platform_version, ''), COUNT(DISTINCT organisation_name || '/' || node_name) FROM node_snapshots
 		 WHERE roles @> to_jsonb(ARRAY[$1])
-		 GROUP BY platform, platform_version ORDER BY COUNT(*) DESC`,
+		 GROUP BY platform, platform_version ORDER BY COUNT(DISTINCT organisation_name || '/' || node_name) DESC`,
 		roleName,
 	)
 	if err != nil {
@@ -492,7 +493,7 @@ func (db *DB) getCookbookCompatMap(ctx context.Context, orgName, targetChefVersi
 	const query = `
 		SELECT sc.name,
 			CASE
-				WHEN csr.error_message IS NOT NULL AND csr.error_message != '' THEN 'untested'
+				WHEN csr.error_message IS NOT NULL AND csr.error_message != '' THEN 'scan_error'
 				WHEN csr.passed = true THEN 'compatible'
 				WHEN csr.passed = false THEN 'incompatible'
 				ELSE 'untested'
@@ -655,11 +656,7 @@ func (db *DB) getGitRepoCookbookNames(ctx context.Context, candidates []string) 
 }
 
 // getGitKitchenStatusMap returns aggregate TK status per cookbook name for a
-// given target version. Derived from git_kitchen_results:
-//   - all passed → "passed"
-//   - all failed → "failed"
-//   - mix → "partial"
-//   - no results → not in map
+// given target version. Uses tkstatus.ComputeTKStatus for status derivation.
 func (db *DB) getGitKitchenStatusMap(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error) {
 	result := make(map[string]string)
 	if len(cookbookNames) == 0 {
@@ -672,7 +669,9 @@ func (db *DB) getGitKitchenStatusMap(ctx context.Context, cookbookNames []string
 		 FROM git_kitchen_results_active
 		 WHERE git_repo_name = ANY($1)
 		   AND target_chef_version = $2
-		 GROUP BY git_repo_name`,
+		 GROUP BY git_repo_name
+		 HAVING COUNT(*) FILTER (WHERE passed = true) > 0
+		     OR COUNT(*) FILTER (WHERE passed = false OR timed_out = true) > 0`,
 		pq.Array(cookbookNames), targetVersion,
 	)
 	if err != nil {
@@ -685,13 +684,8 @@ func (db *DB) getGitKitchenStatusMap(ctx context.Context, cookbookNames []string
 		if err := rows.Scan(&name, &passed, &failed); err != nil {
 			return result, err
 		}
-		switch {
-		case passed > 0 && failed > 0:
-			result[name] = "partial"
-		case failed > 0:
-			result[name] = "failed"
-		case passed > 0:
-			result[name] = "passed"
+		if s := tkstatus.ComputeTKStatus(passed, failed); s != "" {
+			result[name] = s
 		}
 	}
 	return result, rows.Err()
