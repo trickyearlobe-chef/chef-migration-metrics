@@ -5,6 +5,7 @@ import {
   fetchGitKitchenInstances,
   fetchGitKitchenResults,
   triggerGitKitchenRun,
+  triggerGitKitchenRunAll,
   fetchKitchenExclusions,
   createKitchenExclusion,
   deleteKitchenExclusion,
@@ -37,6 +38,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runningInstance, setRunningInstance] = useState<string | null>(null);
+  const [runningAll, setRunningAll] = useState(false);
   const [runMessage, setRunMessage] = useState<string | null>(null);
   const [expandedInstance, setExpandedInstance] = useState<string | null>(null);
   const [excludeTarget, setExcludeTarget] = useState<{ suite: string; platform: string } | null>(null);
@@ -80,6 +82,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       if (evt.git_repo_name === repoName) {
         refreshData();
         setRunningInstance(null);
+        setRunningAll(false);
       }
     });
   }, [repoName, onEvent, refreshData]);
@@ -107,6 +110,21 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
     } catch (e: unknown) {
       setRunMessage(`Run failed: ${(e as Error).message}`);
       setRunningInstance(null);
+    }
+  }
+
+  async function handleRunAll() {
+    setRunningAll(true);
+    setRunMessage(null);
+    try {
+      const resp = await triggerGitKitchenRunAll({
+        git_repo_name: repoName,
+        target_chef_version: targetChefVersion,
+      });
+      setRunMessage(`${resp.message} (${resp.instance_count} instances)`);
+    } catch (e: unknown) {
+      setRunMessage(`Run all failed: ${(e as Error).message}`);
+      setRunningAll(false);
     }
   }
 
@@ -142,9 +160,19 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
 
   return (
     <div>
-      <h4 className="mb-2 text-sm font-medium text-gray-600">
-        Test Kitchen Instances
-      </h4>
+      <div className="mb-2 flex items-center justify-between">
+        <h4 className="text-sm font-medium text-gray-600">
+          Test Kitchen Instances
+        </h4>
+        <button
+          onClick={handleRunAll}
+          disabled={runningAll || !!runningInstance}
+          className="inline-flex items-center gap-1.5 rounded-md border border-green-300 bg-white px-3 py-1 text-xs font-medium text-green-700 shadow-sm hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title="Run all mapped (non-excluded) instances for this repo"
+        >
+          {runningAll ? "Running…" : "Run All Suites"}
+        </button>
+      </div>
 
       {runMessage && (
         <div className="mb-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">

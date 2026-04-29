@@ -19,6 +19,8 @@ import type {
   GitKitchenResult,
   GitKitchenRunRequest,
   GitKitchenRunResponse,
+  GitKitchenRunAllRequest,
+  GitKitchenRunAllResponse,
   SweepResult,
   KitchenInstanceExclusion,
   CreateKitchenExclusionRequest,
@@ -250,6 +252,18 @@ export async function triggerGitKitchenRun(
     body: JSON.stringify(req),
   });
   if (!res.ok) throw new Error(`Failed to trigger git kitchen run: ${res.status}`);
+  return res.json();
+}
+
+export async function triggerGitKitchenRunAll(
+  req: GitKitchenRunAllRequest,
+): Promise<GitKitchenRunAllResponse> {
+  const res = await fetch(buildUrl("/kitchen/git/run-all"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`Failed to trigger run-all: ${res.status}`);
   return res.json();
 }
 

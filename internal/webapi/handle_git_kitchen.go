@@ -233,6 +233,132 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// ---------------------------------------------------------------------------
+// POST /api/v1/kitchen/git/run-all
+// ---------------------------------------------------------------------------
+
+// gitKitchenRunAllRequest is the request body for POST /api/v1/kitchen/git/run-all.
+type gitKitchenRunAllRequest struct {
+	GitRepoName       string `json:"git_repo_name"`
+	TargetChefVersion string `json:"target_chef_version"`
+}
+
+// handleGitKitchenRunAll handles POST /api/v1/kitchen/git/run-all.
+// It plans the repo and dispatches all mapped (non-excluded) instances
+// concurrently via the scheduler.
+func (r *Router) handleGitKitchenRunAll(w http.ResponseWriter, req *http.Request) {
+	if !requirePOST(w, req) {
+		return
+	}
+
+	if r.gitKitchenScheduler == nil {
+		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
+			"Git kitchen scheduler is not configured.")
+		return
+	}
+
+	var body gitKitchenRunAllRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		WriteBadRequest(w, "Invalid JSON request body.")
+		return
+	}
+
+	if body.GitRepoName == "" {
+		WriteBadRequest(w, "git_repo_name is required")
+		return
+	}
+	if body.TargetChefVersion == "" {
+		WriteBadRequest(w, "target_chef_version is required")
+		return
+	}
+
+	ctx := req.Context()
+
+	var tkCfg config.TestKitchenConfig
+	setting, settingErr := r.db.GetRuntimeSetting(ctx, "test_kitchen")
+	if settingErr != nil {
+		r.logf("ERROR", "git kitchen run-all: load runtime setting: %v", settingErr)
+		WriteInternalError(w, "Failed to load Test Kitchen configuration.")
+		return
+	}
+	if setting != nil {
+		if unmarshalErr := json.Unmarshal(setting.Value, &tkCfg); unmarshalErr != nil {
+			r.logf("ERROR", "git kitchen run-all: parse stored config: %v", unmarshalErr)
+			WriteInternalError(w, "Failed to parse stored Test Kitchen configuration.")
+			return
+		}
+	} else {
+		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
+	}
+
+	if !tkCfg.IsEnabled() {
+		WriteError(w, http.StatusConflict, "conflict", "Test Kitchen is disabled.")
+		return
+	}
+
+	analysis, err := r.db.GetKitchenAnalysisResultByName(ctx, body.GitRepoName)
+	if err != nil {
+		r.logf("ERROR", "git kitchen run-all: lookup %q: %v", body.GitRepoName, err)
+		WriteInternalError(w, "Failed to retrieve kitchen analysis.")
+		return
+	}
+	if analysis == nil {
+		WriteNotFound(w, "No kitchen analysis found for repo.")
+		return
+	}
+
+	exclusions, exclErr := r.loadInstanceExclusions(ctx, body.GitRepoName)
+	if exclErr != nil {
+		r.logf("ERROR", "git kitchen run-all: load exclusions for %q: %v", body.GitRepoName, exclErr)
+		WriteInternalError(w, "Failed to load kitchen exclusions.")
+		return
+	}
+
+	plan, err := gitkitchen.PlanRepo(*analysis, tkCfg.PlatformMap, exclusions...)
+	if err != nil {
+		r.logf("ERROR", "git kitchen run-all: plan %q: %v", body.GitRepoName, err)
+		WriteInternalError(w, "Failed to plan kitchen instances.")
+		return
+	}
+
+	// Count mapped instances that will be dispatched.
+	var mappedCount int
+	for _, inst := range plan.Instances {
+		if inst.Status == gitkitchen.InstanceStatusMapped {
+			mappedCount++
+		}
+	}
+	if mappedCount == 0 {
+		WriteBadRequest(w, "No mapped instances to run (all may be excluded or unmapped).")
+		return
+	}
+
+	cfg := gitkitchen.SchedulerConfig{
+		MaxConcurrency:    2,
+		TargetChefVersion: body.TargetChefVersion,
+	}
+
+	bgCtx := context.WithoutCancel(ctx)
+
+	go func() {
+		_, runErr := r.gitKitchenScheduler.RunAll(bgCtx, plan, cfg, tkCfg, func(completed, total int, instance gitkitchen.PlannedInstance, result gitkitchen.RunInstanceResult) {
+			r.hub.Broadcast(NewEvent(EventGitKitchenRunComplete, map[string]any{
+				"git_repo_name": body.GitRepoName,
+				"instance_name": instance.InstanceName,
+				"passed":        result.Passed,
+			}))
+		})
+		if runErr != nil {
+			r.logf("ERROR", "git kitchen run-all async: %v", runErr)
+		}
+	}()
+
+	WriteJSON(w, http.StatusAccepted, map[string]any{
+		"message":        "Run dispatched for all mapped instances",
+		"instance_count": mappedCount,
+	})
+}
+
 // loadInstanceExclusions fetches exclusions for a repo and converts them to
 // the planner's InstanceExclusion type.
 func (r *Router) loadInstanceExclusions(ctx context.Context, repoName string) ([]gitkitchen.InstanceExclusion, error) {

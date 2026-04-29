@@ -533,6 +533,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/kitchen/git/instances", r.handleGitKitchenInstances)
 	r.protect("/api/v1/kitchen/git/results", r.handleGitKitchenResults)
 	r.adminOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun)
+	r.adminOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll)
 	r.protect("/api/v1/kitchen/git/exclusions", r.handleKitchenExclusions)
 	r.protect("/api/v1/kitchen/git/exclusions/", r.handleDeleteKitchenExclusion)
 

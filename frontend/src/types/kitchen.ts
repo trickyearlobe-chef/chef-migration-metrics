@@ -270,8 +270,18 @@ export interface GitKitchenRunRequest {
   target_chef_version: string;
 }
 
+export interface GitKitchenRunAllRequest {
+  git_repo_name: string;
+  target_chef_version: string;
+}
+
 export interface GitKitchenRunResponse {
   message: string;
+}
+
+export interface GitKitchenRunAllResponse {
+  message: string;
+  instance_count: number;
 }
 
 export interface KitchenInstanceExclusion {

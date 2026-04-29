@@ -412,3 +412,116 @@ func TestHandleGitKitchenRun_POST_DisabledReturns409(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/kitchen/git/run-all
+// ---------------------------------------------------------------------------
+
+func TestHandleGitKitchenRunAll_POST_Success(t *testing.T) {
+	store := &mockStore{
+		GetKitchenAnalysisResultByNameFn: func(_ context.Context, name string) (*datastore.KitchenAnalysisResult, error) {
+			return &datastore.KitchenAnalysisResult{
+				GitRepoName:   name,
+				GitRepoURL:    "https://git.example.com/" + name + ".git",
+				HeadCommitSHA: "abc123",
+				Platforms:     json.RawMessage(`[{"name":"ubuntu-22.04"}]`),
+				Suites:        json.RawMessage(`[{"name":"default"},{"name":"service"}]`),
+			}, nil
+		},
+	}
+
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen.PlatformMap = []config.PlatformMapEntry{
+		{KitchenName: "ubuntu-22.04", Image: "ubuntu-2204-template"},
+	}
+
+	sched := gitkitchen.NewScheduler(nil, nil, nil,
+		func(name, url string) string { return "/repos/" + name })
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+
+	body := `{"git_repo_name":"my-cookbook","target_chef_version":"18.5.0"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run-all", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["instance_count"] != float64(2) {
+		t.Fatalf("instance_count = %v, want 2", resp["instance_count"])
+	}
+}
+
+func TestHandleGitKitchenRunAll_POST_NoScheduler(t *testing.T) {
+	r := newTestRouterWithMock(&mockStore{})
+
+	body := `{"git_repo_name":"my-cookbook","target_chef_version":"18.5.0"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run-all", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	}
+}
+
+func TestHandleGitKitchenRunAll_POST_MissingFields(t *testing.T) {
+	sched := gitkitchen.NewScheduler(nil, nil, nil,
+		func(name, url string) string { return "/repos/" + name })
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(&mockStore{}, testConfig(), hub, WithGitKitchenScheduler(sched))
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"missing git_repo_name", `{"target_chef_version":"18.5.0"}`},
+		{"missing target_chef_version", `{"git_repo_name":"x"}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run-all", bytes.NewBufferString(tc.body))
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleGitKitchenRunAll_POST_DisabledReturns409(t *testing.T) {
+	disabled := false
+	store := &mockStore{}
+
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen.Enabled = &disabled
+
+	sched := gitkitchen.NewScheduler(nil, nil, nil,
+		func(name, url string) string { return "/repos/" + name })
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+
+	body := `{"git_repo_name":"my-cookbook","target_chef_version":"18.5.0"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run-all", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
