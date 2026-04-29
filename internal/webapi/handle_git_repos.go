@@ -167,14 +167,14 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		repos = filtered
 	}
 
-	// Build TK status map from git_kitchen_results.
+	// Build TK status map from active (non-excluded) git kitchen results.
 	type tkSummary struct {
 		Passed int
 		Failed int
 		Total  int
 	}
 	tkByRepo := make(map[string]*tkSummary)
-	allResults, tkErr := r.db.ListGitKitchenResults(ctx)
+	allResults, tkErr := r.db.ListActiveGitKitchenResults(ctx)
 	if tkErr != nil {
 		r.logf("WARN", "listing git kitchen results for repo list: %v", tkErr)
 	} else {

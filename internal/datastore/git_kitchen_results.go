@@ -183,6 +183,15 @@ func (db *DB) listGitKitchenResults(ctx context.Context, q queryable) ([]GitKitc
 	return scanGitKitchenResults(q.QueryContext(ctx, query))
 }
 
+// ListActiveGitKitchenResults returns results excluding user-excluded instances.
+// Use this for aggregate status computation to stay consistent with SQL views.
+func (db *DB) ListActiveGitKitchenResults(ctx context.Context) ([]GitKitchenResult, error) {
+	query := `SELECT ` + gkrColumns + `
+		FROM git_kitchen_results_active
+		ORDER BY git_repo_name, target_chef_version, platform_name, suite_name`
+	return scanGitKitchenResults(db.q().QueryContext(ctx, query))
+}
+
 // ---------------------------------------------------------------------------
 // Delete
 // ---------------------------------------------------------------------------
@@ -206,7 +215,7 @@ func (db *DB) ListGitKitchenStatusesByTargetVersions(ctx context.Context, target
 	query := `SELECT git_repo_name, target_chef_version,
 	       COUNT(*) FILTER (WHERE passed = true) AS passed_count,
 	       COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count
-	FROM git_kitchen_results
+	FROM git_kitchen_results_active
 	WHERE target_chef_version IN (` + joinStrings(placeholders, ", ") + `)
 	GROUP BY git_repo_name, target_chef_version`
 

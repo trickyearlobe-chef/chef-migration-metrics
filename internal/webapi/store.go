@@ -693,6 +693,9 @@ type DataStore interface {
 	// ListGitKitchenResults returns all per-instance kitchen results.
 	ListGitKitchenResults(ctx context.Context) ([]datastore.GitKitchenResult, error)
 
+	// ListActiveGitKitchenResults returns results excluding user-excluded instances.
+	ListActiveGitKitchenResults(ctx context.Context) ([]datastore.GitKitchenResult, error)
+
 	// ListGitKitchenResultsByRepo returns results for a specific repo.
 	ListGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
 
