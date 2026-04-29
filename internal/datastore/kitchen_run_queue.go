@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // ---------------------------------------------------------------------------
@@ -305,8 +307,8 @@ func (db *DB) ListKitchenQueue(ctx context.Context, f KitchenQueueFilter) ([]Kit
 	}
 	if len(f.Statuses) > 0 {
 		argN++
-		query += fmt.Sprintf(" AND status = ANY($%d::TEXT[])", argN)
-		args = append(args, f.Statuses)
+		query += fmt.Sprintf(" AND status = ANY($%d)", argN)
+		args = append(args, pq.Array(f.Statuses))
 	}
 	if f.BatchID != "" {
 		argN++
