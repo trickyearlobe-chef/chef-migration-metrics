@@ -102,7 +102,8 @@ describe("RolesPage", () => {
     expect(within(table).getByText("Name")).toBeInTheDocument();
     expect(within(table).getByText("Nodes")).toBeInTheDocument();
     expect(within(table).getByText("Cookbooks")).toBeInTheDocument();
-    expect(within(table).getByText("Compatibility")).toBeInTheDocument();
+    expect(within(table).getByText("CookStyle")).toBeInTheDocument();
+    expect(within(table).getByText("Test Kitchen")).toBeInTheDocument();
   });
 
   it("role names are links to role detail pages", async () => {

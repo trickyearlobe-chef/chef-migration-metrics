@@ -10,7 +10,7 @@ import type {
   RoleGraphResponse,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
-import { CompatibilityBadge } from "../components/StatusBadge";
+import { CookStyleBadge, TKBadge } from "../components/StatusBadge";
 import {
   ForceGraph,
   adaptRoleGraphNodes,
@@ -22,20 +22,61 @@ function CompatibilitySummary({ detail }: { detail: RoleDetailResponse }) {
   const blocking = detail.blocking_cookbooks?.length ?? 0;
   const compatible = total - blocking;
 
+  // Walk chain tree to collect TK status counts.
+  const tkCounts = { passed: 0, failed: 0, partial: 0, untested: 0, git: 0 };
+  function walkTK(node: RoleChainNode | undefined) {
+    if (!node) return;
+    if (node.type === "cookbook") {
+      const hasGit = node.source === "git" || node.source === "both";
+      if (hasGit) {
+        tkCounts.git++;
+        const s = node.tk_status ?? "untested";
+        if (s === "passed") tkCounts.passed++;
+        else if (s === "failed") tkCounts.failed++;
+        else if (s === "partial") tkCounts.partial++;
+        else tkCounts.untested++;
+      }
+    }
+    node.children?.forEach(walkTK);
+  }
+  walkTK(detail.nested_role_chain ?? undefined);
+
   return (
-    <div className="grid grid-cols-3 gap-4">
-      <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-center">
-        <div className="text-2xl font-bold text-green-700">{compatible}</div>
-        <div className="text-xs text-green-600">Compatible</div>
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-center">
+          <div className="text-2xl font-bold text-green-700">{compatible}</div>
+          <div className="text-xs text-green-600">CS Compatible</div>
+        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+          <div className="text-2xl font-bold text-red-700">{blocking}</div>
+          <div className="text-xs text-red-600">CS Blocked</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
+          <div className="text-2xl font-bold text-gray-700">{total}</div>
+          <div className="text-xs text-gray-600">Total Cookbooks</div>
+        </div>
       </div>
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-        <div className="text-2xl font-bold text-red-700">{blocking}</div>
-        <div className="text-xs text-red-600">Blocked</div>
-      </div>
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
-        <div className="text-2xl font-bold text-gray-700">{total}</div>
-        <div className="text-xs text-gray-600">Total Cookbooks</div>
-      </div>
+      {tkCounts.git > 0 && (
+        <div className="grid grid-cols-4 gap-3">
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
+            <div className="text-lg font-bold text-green-700">{tkCounts.passed}</div>
+            <div className="text-[10px] text-green-600">TK Passed</div>
+          </div>
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center">
+            <div className="text-lg font-bold text-red-700">{tkCounts.failed}</div>
+            <div className="text-[10px] text-red-600">TK Failed</div>
+          </div>
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-center">
+            <div className="text-lg font-bold text-orange-700">{tkCounts.partial}</div>
+            <div className="text-[10px] text-orange-600">TK Partial</div>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center">
+            <div className="text-lg font-bold text-gray-700">{tkCounts.untested}</div>
+            <div className="text-[10px] text-gray-600">TK Untested</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -188,16 +229,25 @@ function RoleChainTree({
   const indent = depth * 1.25;
   const isRole = node.type === "role";
 
-  const statusColor =
-    node.compatibility_status === "incompatible"
-      ? "text-red-600"
-      : node.compatibility_status === "untested"
-        ? "text-gray-400"
-        : "text-green-600";
-
   const linkTarget = isRole
     ? `/roles/${encodeURIComponent(node.name)}`
     : `/cookbooks/${encodeURIComponent(node.name)}`;
+
+  const sourceIcon = isRole
+    ? "📁"
+    : node.source === "both"
+      ? "📦🔀"
+      : node.source === "git"
+        ? "🔀"
+        : "📦";
+
+  const sourceTitle = isRole
+    ? "Role"
+    : node.source === "both"
+      ? "Server cookbook + Git repo"
+      : node.source === "git"
+        ? "Git repo only"
+        : "Server cookbook only";
 
   return (
     <div>
@@ -205,16 +255,25 @@ function RoleChainTree({
         className="flex items-center gap-1.5 py-0.5"
         style={{ paddingLeft: `${indent}rem` }}
       >
-        <span className="text-xs text-gray-400">{isRole ? "📁" : "📦"}</span>
+        <span className="text-xs text-gray-400" title={sourceTitle}>
+          {sourceIcon}
+        </span>
         <Link
           to={linkTarget}
-          className={`text-sm hover:underline ${isRole ? "font-medium text-blue-600" : statusColor}`}
+          className={`text-sm hover:underline ${isRole ? "font-medium text-blue-600" : "text-gray-800"}`}
         >
           {node.name}
         </Link>
-        {!isRole && node.compatibility_status && (
-          <CompatibilityBadge status={node.compatibility_status} size="sm" />
+        {!isRole && (
+          <CookStyleBadge
+            status={node.compatibility_status ?? "untested"}
+            size="sm"
+          />
         )}
+        {!isRole &&
+          (node.source === "git" || node.source === "both") && (
+            <TKBadge status={node.tk_status ?? "untested"} size="sm" />
+          )}
       </div>
       {node.children?.map((child, i) => (
         <RoleChainTree

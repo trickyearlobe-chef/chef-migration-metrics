@@ -15,7 +15,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { CompatibilityBadge } from "../components/StatusBadge";
+import { CookStyleBadge, TKBadge } from "../components/StatusBadge";
 import type { RoleFilterQuery } from "../api/roles";
 
 function SummaryBar({
@@ -208,7 +208,7 @@ export function RolesPage() {
           placeholder="Filter by name"
         />
         <FilterMultiCheckbox
-          label="Compatibility"
+          label="CookStyle"
           options={[
             { value: "compatible", label: "Compatible" },
             { value: "incompatible", label: "Incompatible" },
@@ -259,12 +259,13 @@ export function RolesPage() {
                     />
                     <th>Cookbooks</th>
                     <SortableColumnHeader
-                      label="Compatibility"
+                      label="CookStyle"
                       field="incompatible_cookbook_count"
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
                     />
+                    <th>Test Kitchen</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -294,10 +295,17 @@ export function RolesPage() {
                         </span>
                       </td>
                       <td>
-                        <CompatibilityBadge
+                        <CookStyleBadge
                           status={role.compatibility_status ?? "untested"}
                           size="sm"
                         />
+                      </td>
+                      <td>
+                        {role.tk_status ? (
+                          <TKBadge status={role.tk_status} size="sm" />
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

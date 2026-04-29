@@ -23,6 +23,7 @@ export interface CookbookListItem {
   download_status: string;
   download_error?: string;
   compatibility?: CompatibilityStatus;
+  tk_status?: string;
   target_chef_version?: string;
   maintainer?: string;
   description?: string;

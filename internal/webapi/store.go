@@ -317,6 +317,14 @@ type DataStore interface {
 	// compatibility status, total count, and summary counts.
 	ListRolesFiltered(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error)
 
+	// GetRoleTKStatuses returns the aggregate TK status per role for a set
+	// of role names, based on transitive cookbook dependencies with TK results.
+	GetRoleTKStatuses(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error)
+
+	// GetCookbookTKStatuses returns aggregate TK status for server cookbooks
+	// that have matching git repos with Test Kitchen results.
+	GetCookbookTKStatuses(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error)
+
 	// GetRoleDetail returns the full detail view for a single role including
 	// dependencies, blocking cookbooks, blast radius, and nested role chain.
 	GetRoleDetail(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error)

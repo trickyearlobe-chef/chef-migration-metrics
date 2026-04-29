@@ -21,6 +21,7 @@ export interface RoleListItem {
   compatible_count: number;
   incompatible_count: number;
   untested_count: number;
+  tk_status?: string;
 }
 
 export interface RoleSummary {
@@ -52,6 +53,8 @@ export interface RoleChainNode {
   name: string;
   type: "role" | "cookbook";
   compatibility_status?: string;
+  source?: "server" | "git" | "both";
+  tk_status?: "passed" | "failed" | "partial" | "untested";
   children?: RoleChainNode[];
 }
 
