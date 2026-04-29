@@ -154,7 +154,7 @@ func (db *DB) GetRoleDetail(ctx context.Context, roleName, targetChefVersion str
 		for name := range cookbookSet {
 			cbNames = append(cbNames, name)
 		}
-		complexityMap, _ := db.getCookbookComplexityMap(ctx, orgs[0], targetChefVersion, cbNames)
+		complexityMap, _ := db.GetCookbookComplexityMap(ctx, orgs[0], targetChefVersion, cbNames)
 		setChainComplexity(chain, complexityMap)
 	}
 
@@ -572,9 +572,9 @@ func setChainComplexity(node *RoleChainNode, complexityMap map[string]int) {
 	}
 }
 
-// getCookbookComplexityMap returns a map of cookbook name → complexity_score
+// GetCookbookComplexityMap returns a map of cookbook name → complexity_score
 // for all named cookbooks that have complexity data in the given org/target.
-func (db *DB) getCookbookComplexityMap(ctx context.Context, org, targetChefVersion string, names []string) (map[string]int, error) {
+func (db *DB) GetCookbookComplexityMap(ctx context.Context, org, targetChefVersion string, names []string) (map[string]int, error) {
 	result := make(map[string]int)
 	if len(names) == 0 {
 		return result, nil

@@ -823,6 +823,7 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 
 	// Annotate cookbook nodes with compatibility and TK status.
 	allCompatible := readiness != nil && readiness.AllCookbooksCompatible
+	var nonBlockingCookbooks []string
 	for id, n := range nodeMap {
 		if n.Type != "cookbook" {
 			continue
@@ -851,15 +852,31 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 		} else if allCompatible {
 			n.CompatibilityStatus = "compatible"
 			n.TKStatus = "passed"
+			nonBlockingCookbooks = append(nonBlockingCookbooks, n.Name)
 		} else if readiness != nil {
 			// Not blocking → CookStyle compatible; TK unknown.
 			n.CompatibilityStatus = "compatible"
 			n.TKStatus = "untested"
+			nonBlockingCookbooks = append(nonBlockingCookbooks, n.Name)
 		} else {
 			n.CompatibilityStatus = "untested"
 			n.TKStatus = "untested"
+			nonBlockingCookbooks = append(nonBlockingCookbooks, n.Name)
 		}
 		nodeMap[id] = n
+	}
+
+	// Fill in complexity scores for non-blocking cookbooks from the DB.
+	if len(nonBlockingCookbooks) > 0 && targetChefVersion != "" {
+		complexityMap, _ := r.db.GetCookbookComplexityMap(ctx, orgName, targetChefVersion, nonBlockingCookbooks)
+		for id, n := range nodeMap {
+			if n.Type == "cookbook" && n.ComplexityScore == 0 {
+				if score, ok := complexityMap[n.Name]; ok {
+					n.ComplexityScore = score
+					nodeMap[id] = n
+				}
+			}
+		}
 	}
 
 	// Convert to sorted slices.
