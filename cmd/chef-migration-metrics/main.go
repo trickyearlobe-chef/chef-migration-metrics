@@ -34,6 +34,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
@@ -110,6 +111,9 @@ type serverApp struct {
 
 	// Export cleanup stop function.
 	stopExportCleanup func()
+
+	// Kitchen queue manager (bounded concurrency for TK runs).
+	kitchenQueue *kitchenqueue.Manager
 }
 
 // dbRefChecker implements configstore.CredentialReferenceChecker by querying
@@ -1127,6 +1131,49 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		)
 		routerOpts = append(routerOpts, webapi.WithGitKitchenScheduler(gitKitchenSched))
 		app.startup.Info("Git Kitchen scheduler enabled")
+
+		// Wire kitchen run queue (bounded concurrency worker pool).
+		queueScoped := logger.WithScope(logging.ScopeTestKitchenRun)
+		gitExecutor := kitchenqueue.NewGitKitchenExecutor(kitchenqueue.GitKitchenExecutorConfig{
+			KitchenExecutor: &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
+			CredResolver:    &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
+			Store:           app.db,
+			RepoDirFn: func(name, _ string) string {
+				return filepath.Join(app.cfg.Storage.GitCookbookDir, name)
+			},
+			TKConfigFn: func() config.TestKitchenConfig {
+				return app.cfg.AnalysisTools.TestKitchen
+			},
+		})
+		app.kitchenQueue = kitchenqueue.New(app.db, gitExecutor,
+			kitchenqueue.WithWorkerCount(app.cfg.Concurrency.TestKitchenRun),
+			kitchenqueue.WithLogFunc(func(level, msg string, args ...any) {
+				formatted := fmt.Sprintf(msg, args...)
+				switch level {
+				case "WARN":
+					queueScoped.Warn(formatted)
+				case "ERROR":
+					queueScoped.Error(formatted)
+				default:
+					queueScoped.Info(formatted)
+				}
+			}),
+			kitchenqueue.WithEventListener(func(item *datastore.KitchenQueueItem) {
+				app.hub.Broadcast(webapi.NewEvent("kitchen_queue_update", map[string]any{
+					"id":            item.ID,
+					"status":        item.Status,
+					"git_repo_name": item.GitRepoName,
+					"run_type":      item.RunType,
+					"instance_name": item.InstanceName,
+				}))
+			}),
+		)
+		if err := app.kitchenQueue.Start(context.Background()); err != nil {
+			app.startup.Error(fmt.Sprintf("kitchen queue start failed: %v", err))
+			return serverResult{}, err
+		}
+		routerOpts = append(routerOpts, webapi.WithKitchenQueue(app.kitchenQueue))
+		app.startup.Info(fmt.Sprintf("Kitchen queue started with %d workers", app.cfg.Concurrency.TestKitchenRun))
 	} else {
 		app.startup.Info("Node Kitchen runner not available (kitchen binary not found)")
 	}
@@ -1272,6 +1319,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 	app.startup.Info("stopping collection scheduler...")
 	app.sched.Stop()
 	app.startup.Info("collection scheduler stopped")
+
+	// Stop kitchen queue workers (drain running items with timeout).
+	if app.kitchenQueue != nil {
+		app.startup.Info("stopping kitchen queue workers...")
+		app.kitchenQueue.Stop(shutdownTimeout)
+		app.startup.Info("kitchen queue stopped")
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
