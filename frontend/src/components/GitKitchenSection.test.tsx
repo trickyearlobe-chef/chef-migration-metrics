@@ -72,6 +72,7 @@ const basePlan: GitKitchenPlanResult = {
   unmapped: 1,
   skipped: 1,
   excluded: 1,
+  user_excluded: 0,
 };
 
 const baseResult: GitKitchenResult = {
@@ -93,6 +94,7 @@ describe("GitKitchenSection", () => {
   beforeEach(() => {
     vi.mocked(api.fetchGitKitchenInstances).mockResolvedValue(basePlan);
     vi.mocked(api.fetchGitKitchenResults).mockResolvedValue([baseResult]);
+    vi.mocked(api.fetchKitchenExclusions).mockResolvedValue([]);
   });
 
   afterEach(() => {

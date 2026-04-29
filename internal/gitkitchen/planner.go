@@ -17,10 +17,11 @@ import (
 type InstanceStatus string
 
 const (
-	InstanceStatusMapped   InstanceStatus = "mapped"
-	InstanceStatusUnmapped InstanceStatus = "unmapped"
-	InstanceStatusSkipped  InstanceStatus = "skipped"
-	InstanceStatusExcluded InstanceStatus = "excluded"
+	InstanceStatusMapped       InstanceStatus = "mapped"
+	InstanceStatusUnmapped     InstanceStatus = "unmapped"
+	InstanceStatusSkipped      InstanceStatus = "skipped"
+	InstanceStatusExcluded     InstanceStatus = "excluded"
+	InstanceStatusUserExcluded InstanceStatus = "user_excluded"
 )
 
 // PlannedInstance represents one expandable instance from a kitchen config.
@@ -35,15 +36,16 @@ type PlannedInstance struct {
 
 // PlanResult holds the full expansion of a repo's kitchen config.
 type PlanResult struct {
-	GitRepoName string            `json:"git_repo_name"`
-	GitRepoURL  string            `json:"git_repo_url"`
-	CommitSHA   string            `json:"commit_sha"`
-	Instances   []PlannedInstance `json:"instances"`
-	Total       int               `json:"total"`
-	Mapped      int               `json:"mapped"`
-	Unmapped    int               `json:"unmapped"`
-	Skipped     int               `json:"skipped"`
-	Excluded    int               `json:"excluded"`
+	GitRepoName  string            `json:"git_repo_name"`
+	GitRepoURL   string            `json:"git_repo_url"`
+	CommitSHA    string            `json:"commit_sha"`
+	Instances    []PlannedInstance `json:"instances"`
+	Total        int               `json:"total"`
+	Mapped       int               `json:"mapped"`
+	Unmapped     int               `json:"unmapped"`
+	Skipped      int               `json:"skipped"`
+	Excluded     int               `json:"excluded"`
+	UserExcluded int               `json:"user_excluded"`
 }
 
 // formatInstanceName forms a Test Kitchen style instance name from suite and
@@ -56,8 +58,21 @@ func formatInstanceName(suite, platform string) string {
 	return s + "-" + p
 }
 
+// InstanceExclusion represents a user-supplied exclusion for a specific
+// suite+platform combination.
+type InstanceExclusion struct {
+	SuiteName    string
+	PlatformName string
+	Reason       string
+}
+
+// exclusionKey returns the lookup key for an exclusion.
+func exclusionKey(suite, platform string) string {
+	return suite + "\x00" + platform
+}
+
 // PlanRepo expands a kitchen analysis result into planned instances.
-func PlanRepo(ar datastore.KitchenAnalysisResult, platformMap []config.PlatformMapEntry) (*PlanResult, error) {
+func PlanRepo(ar datastore.KitchenAnalysisResult, platformMap []config.PlatformMapEntry, exclusions ...InstanceExclusion) (*PlanResult, error) {
 	var platforms []analysis.KitchenPlatform
 	if err := json.Unmarshal(ar.Platforms, &platforms); err != nil {
 		return nil, fmt.Errorf("gitkitchen: unmarshal platforms: %w", err)
@@ -76,6 +91,12 @@ func PlanRepo(ar datastore.KitchenAnalysisResult, platformMap []config.PlatformM
 
 	if len(suites) == 0 || len(platforms) == 0 {
 		return result, nil
+	}
+
+	// Build exclusion lookup map.
+	exclMap := make(map[string]string, len(exclusions))
+	for _, ex := range exclusions {
+		exclMap[exclusionKey(ex.SuiteName, ex.PlatformName)] = ex.Reason
 	}
 
 	for _, suite := range suites {
@@ -110,9 +131,16 @@ func PlanRepo(ar datastore.KitchenAnalysisResult, platformMap []config.PlatformM
 				inst.StatusReason = fmt.Sprintf("platform %q mapping has skip=true", plat.Name)
 				result.Skipped++
 			default:
-				inst.Status = InstanceStatusMapped
-				inst.ImageName = m.Entry.Image
-				result.Mapped++
+				// Check user exclusion before marking as mapped.
+				if reason, ok := exclMap[exclusionKey(suite.Name, plat.Name)]; ok {
+					inst.Status = InstanceStatusUserExcluded
+					inst.StatusReason = reason
+					result.UserExcluded++
+				} else {
+					inst.Status = InstanceStatusMapped
+					inst.ImageName = m.Entry.Image
+					result.Mapped++
+				}
 			}
 
 			if inst.Status == InstanceStatusUnmapped {
