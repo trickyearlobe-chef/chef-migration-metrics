@@ -10,7 +10,7 @@ import { fetchGitRepos } from "../api";
 import type { GitRepoListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
+import { StatusBadge, CookStyleBadge } from "../components/StatusBadge";
 
 // ---------------------------------------------------------------------------
 // Git Repos list page — paginated table from GET /api/v1/git-repos showing
@@ -206,7 +206,7 @@ export function GitReposPage() {
           placeholder="Filter by name"
         />
         <FilterMultiCheckbox
-          label="Compatibility"
+          label="CookStyle"
           options={[
             { value: "compatible", label: "Compatible" },
             { value: "incompatible", label: "Incompatible" },
@@ -291,7 +291,7 @@ export function GitReposPage() {
                       onSort={handleSort}
                     />
                     <SortableColumnHeader
-                      label="Compatibility"
+                      label="CookStyle"
                       field="compatibility"
                       currentField={sortField}
                       currentOrder={sortOrder}
@@ -357,7 +357,7 @@ export function GitReposPage() {
                         )}
                       </td>
                       <td>
-                        <CompatibilityBadge
+                        <CookStyleBadge
                           status={repo.compatibility ?? "untested"}
                           size="sm"
                         />
