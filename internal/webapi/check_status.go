@@ -46,11 +46,13 @@ type checkStatusResult struct {
 
 // blockingEntry is a minimal struct for parsing the blocking_cookbooks JSON.
 type blockingEntry struct {
-	Name     string `json:"name"`
-	Version  string `json:"version"`
-	Reason   string `json:"reason"`
-	Source   string `json:"source"`
-	Verdicts []struct {
+	Name            string `json:"name"`
+	Version         string `json:"version"`
+	Reason          string `json:"reason"`
+	Source          string `json:"source"`
+	ComplexityScore int    `json:"complexity_score"`
+	ComplexityLabel string `json:"complexity_label"`
+	Verdicts        []struct {
 		Source string `json:"source"`
 		Status string `json:"status"`
 	} `json:"verdicts"`

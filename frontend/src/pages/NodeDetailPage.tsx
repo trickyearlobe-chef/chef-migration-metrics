@@ -11,211 +11,15 @@ import type {
   NodeDetailResponse,
   NodeReadiness,
   BlockingCookbook,
-  CookbookSourceVerdict,
   NodeKitchenRun,
   NodeDependencyGraphResponse,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
-import {
-  ForceGraph,
-  adaptNodeGraphNodes,
-  adaptNodeGraphEdges,
-} from "../components/force-graph";
 
 // Helper to build the disk detail link for a node.
 function diskDetailPath(org: string, name: string): string {
   return `/nodes/${encodeURIComponent(org)}/${encodeURIComponent(name)}/disks`;
-}
-
-// ---------------------------------------------------------------------------
-// Node detail page — shows full information for a single node including
-// readiness status per target Chef version with per-source verdicts,
-// a full cookbook compatibility table, and disk space analysis.
-// ---------------------------------------------------------------------------
-
-// Human-readable labels for verdict sources.
-const SOURCE_LABELS: Record<string, string> = {
-  server_cookstyle: "Server CookStyle",
-  git_cookstyle: "Git Repo CookStyle",
-  git_test_kitchen: "Git Repo Test Kitchen",
-  cookstyle: "CookStyle",
-  test_kitchen: "Test Kitchen",
-  none: "None",
-};
-
-const STATUS_ICON: Record<string, { icon: string; color: string; bg: string }> =
-  {
-    compatible: { icon: "✓", color: "text-green-600", bg: "bg-green-50" },
-    compatible_cookstyle_only: {
-      icon: "✓",
-      color: "text-green-500",
-      bg: "bg-green-50",
-    },
-    incompatible: { icon: "✗", color: "text-red-600", bg: "bg-red-50" },
-    untested: { icon: "?", color: "text-gray-400", bg: "bg-gray-50" },
-    unknown: { icon: "—", color: "text-gray-300", bg: "bg-gray-50" },
-  };
-
-function sourceLabel(source: string): string {
-  return SOURCE_LABELS[source] || source;
-}
-
-function statusIcon(status: string) {
-  return STATUS_ICON[status] || STATUS_ICON.unknown;
-}
-
-function statusLabel(status: string): string {
-  switch (status) {
-    case "compatible":
-      return "Compatible";
-    case "compatible_cookstyle_only":
-      return "Compatible (CookStyle only)";
-    case "incompatible":
-      return "Incompatible";
-    case "untested":
-      return "Untested";
-    default:
-      return status || "Unknown";
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Verdict row for a single source
-// ---------------------------------------------------------------------------
-
-function VerdictRow({ verdict }: { verdict: CookbookSourceVerdict }) {
-  const si = statusIcon(verdict.status);
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className={`font-bold ${si.color}`}>{si.icon}</span>
-      <span className="font-medium text-gray-700">
-        {sourceLabel(verdict.source)}
-      </span>
-      <span className="text-gray-400">—</span>
-      <span className={si.color}>{statusLabel(verdict.status)}</span>
-      {verdict.version && (
-        <span className="text-gray-400">
-          v{verdict.version}
-          {verdict.commit_sha && (
-            <span className="ml-1 font-mono text-[10px]">
-              ({verdict.commit_sha.slice(0, 7)})
-            </span>
-          )}
-        </span>
-      )}
-      {verdict.complexity_label && (
-        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
-          complexity: {verdict.complexity_label}
-          {verdict.complexity_score ? ` (${verdict.complexity_score})` : ""}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Blocking cookbook card with expandable verdicts
-// ---------------------------------------------------------------------------
-
-function BlockingCookbookCard({ bc }: { bc: BlockingCookbook }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasVerdicts = bc.verdicts && bc.verdicts.length > 0;
-
-  const serverIncompat = bc.verdicts?.find(
-    (v) => v.source === "server_cookstyle" && v.status === "incompatible",
-  );
-  const gitCompat = bc.verdicts?.find(
-    (v) =>
-      (v.source === "git_cookstyle" || v.source === "git_test_kitchen") &&
-      (v.status === "compatible" || v.status === "compatible_cookstyle_only"),
-  );
-  const showActionHint = serverIncompat && gitCompat;
-
-  return (
-    <div className="rounded-lg border border-red-100 bg-red-50/30 p-3">
-      {/* Header */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Link
-          to={`/cookbooks/${encodeURIComponent(bc.name)}`}
-          className="font-medium text-red-700 hover:text-red-900 hover:underline"
-        >
-          {bc.name}
-        </Link>
-        <span className="text-xs text-gray-500">@{bc.version}</span>
-        <span
-          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-            bc.reason === "incompatible"
-              ? "bg-red-100 text-red-700"
-              : "bg-gray-100 text-gray-600"
-          }`}
-        >
-          {bc.reason}
-        </span>
-        {bc.complexity_label && (
-          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
-            {bc.complexity_label}
-            {bc.complexity_score ? ` (${bc.complexity_score})` : ""}
-          </span>
-        )}
-        {hasVerdicts && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="ml-auto text-xs text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            {expanded
-              ? "Hide verdicts"
-              : `Show verdicts (${bc.verdicts!.length})`}
-          </button>
-        )}
-      </div>
-
-      {/* Action hint */}
-      {showActionHint && (
-        <div className="mt-2 flex items-start gap-1.5 rounded border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs text-blue-700">
-          <span className="mt-0.5 shrink-0">💡</span>
-          <span>
-            A compatible version exists in{" "}
-            <Link
-              to={`/git-repos/${encodeURIComponent(bc.name)}`}
-              className="font-medium underline hover:text-blue-900"
-            >
-              git
-            </Link>{" "}
-            — upload to Chef Server to resolve.
-          </span>
-        </div>
-      )}
-
-      {/* Expandable verdicts */}
-      {expanded && hasVerdicts && (
-        <div className="mt-2 space-y-1 border-t border-red-100 pt-2">
-          {bc.verdicts!.map((v, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <VerdictRow verdict={v} />
-              {(v.source === "git_cookstyle" ||
-                v.source === "git_test_kitchen") && (
-                <Link
-                  to={`/git-repos/${encodeURIComponent(bc.name)}`}
-                  className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline"
-                >
-                  view repo →
-                </Link>
-              )}
-              {v.source === "server_cookstyle" && (
-                <Link
-                  to={`/cookbooks/${encodeURIComponent(bc.name)}`}
-                  className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline"
-                >
-                  view cookbook →
-                </Link>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -347,264 +151,19 @@ function formatMB(mb: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Cookbook compatibility table — shows EVERY cookbook on the node with status
-// ---------------------------------------------------------------------------
-
-interface CookbookRow {
-  name: string;
-  version: string;
-  status: string; // "compatible", "incompatible", "untested", "unknown"
-  source: string;
-  blocking?: BlockingCookbook;
-}
-
-function buildCookbookRows(
-  nodeCookbooks: Record<string, unknown> | null,
-  blockingCookbooks: BlockingCookbook[] | null,
-): CookbookRow[] {
-  if (!nodeCookbooks) return [];
-
-  // Index blocking cookbooks by name for O(1) lookup.
-  const blockingByName = new Map<string, BlockingCookbook>();
-  if (blockingCookbooks) {
-    for (const bc of blockingCookbooks) {
-      blockingByName.set(bc.name, bc);
-    }
-  }
-
-  const rows: CookbookRow[] = [];
-  for (const [name, info] of Object.entries(nodeCookbooks)) {
-    const version =
-      typeof info === "object" && info && "version" in info
-        ? String((info as Record<string, string>).version)
-        : "";
-
-    const bc = blockingByName.get(name);
-    if (bc) {
-      rows.push({
-        name,
-        version: bc.version || version,
-        status: bc.reason, // "incompatible" or "untested"
-        source: bc.source,
-        blocking: bc,
-      });
-    } else {
-      // Not in the blocking list → compatible (or at least not blocking).
-      rows.push({
-        name,
-        version,
-        status: "compatible",
-        source: "",
-      });
-    }
-  }
-
-  // Sort: incompatible first, then untested, then compatible. Within each group, alphabetical.
-  const ORDER: Record<string, number> = {
-    incompatible: 0,
-    untested: 1,
-    compatible: 2,
-    compatible_cookstyle_only: 2,
-  };
-  rows.sort((a, b) => {
-    const oa = ORDER[a.status] ?? 3;
-    const ob = ORDER[b.status] ?? 3;
-    if (oa !== ob) return oa - ob;
-    return a.name.localeCompare(b.name);
-  });
-
-  return rows;
-}
-
-function CookbookCompatibilityTable({
-  nodeCookbooks,
-  r,
-}: {
-  nodeCookbooks: Record<string, unknown> | null;
-  r: NodeReadiness;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const rows = buildCookbookRows(nodeCookbooks, r.blocking_cookbooks);
-
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">📦</span>
-          <span className="text-sm font-medium text-gray-600">
-            Cookbook Compatibility
-          </span>
-          <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-            No cookbooks
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-gray-500">
-          This node has no cookbooks in its run list.
-        </p>
-      </div>
-    );
-  }
-
-  const incompatible = rows.filter((r) => r.status === "incompatible").length;
-  const untested = rows.filter((r) => r.status === "untested").length;
-  const compatible = rows.length - incompatible - untested;
-
-  const blocking = rows.filter(
-    (r) => r.status === "incompatible" || r.status === "untested",
-  );
-  const nonBlocking = rows.filter(
-    (r) => r.status !== "incompatible" && r.status !== "untested",
-  );
-  const displayedNonBlocking = showAll ? nonBlocking : [];
-
-  const allCompatible = incompatible === 0 && untested === 0;
-  const borderColor = allCompatible ? "border-green-200" : "border-red-200";
-  const bgColor = allCompatible ? "bg-green-50" : "bg-red-50/30";
-
-  return (
-    <div className={`rounded-lg border ${borderColor} ${bgColor} p-3`}>
-      {/* Summary header */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-lg">📦</span>
-        <span className="text-sm font-medium text-gray-700">
-          Cookbook Compatibility
-        </span>
-        {allCompatible ? (
-          <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700">
-            All {rows.length} compatible
-          </span>
-        ) : (
-          <>
-            {incompatible > 0 && (
-              <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
-                {incompatible} incompatible
-              </span>
-            )}
-            {untested > 0 && (
-              <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-                {untested} untested
-              </span>
-            )}
-            {compatible > 0 && (
-              <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700">
-                {compatible} compatible
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Compatibility bar */}
-      {rows.length > 0 && (
-        <div className="mt-2 flex h-2 w-full overflow-hidden rounded-full bg-gray-200">
-          {incompatible > 0 && (
-            <div
-              className="h-full bg-red-500"
-              style={{ width: `${(incompatible / rows.length) * 100}%` }}
-              title={`${incompatible} incompatible`}
-            />
-          )}
-          {untested > 0 && (
-            <div
-              className="h-full bg-gray-400"
-              style={{ width: `${(untested / rows.length) * 100}%` }}
-              title={`${untested} untested`}
-            />
-          )}
-          {compatible > 0 && (
-            <div
-              className="h-full bg-green-500"
-              style={{ width: `${(compatible / rows.length) * 100}%` }}
-              title={`${compatible} compatible`}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Blocking cookbooks — always shown */}
-      {blocking.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {blocking.map((row) =>
-            row.blocking ? (
-              <BlockingCookbookCard key={row.name} bc={row.blocking} />
-            ) : (
-              <div
-                key={row.name}
-                className="flex items-center gap-2 rounded border border-red-100 bg-red-50 px-2 py-1.5 text-xs"
-              >
-                <span className={`font-bold ${statusIcon(row.status).color}`}>
-                  {statusIcon(row.status).icon}
-                </span>
-                <Link
-                  to={`/cookbooks/${encodeURIComponent(row.name)}`}
-                  className="font-medium text-gray-700 hover:text-blue-600 hover:underline"
-                >
-                  {row.name}
-                </Link>
-                {row.version && (
-                  <span className="text-gray-400">@{row.version}</span>
-                )}
-                <span
-                  className={`rounded px-1 py-0.5 text-[10px] ${statusIcon(row.status).bg} ${statusIcon(row.status).color}`}
-                >
-                  {row.status}
-                </span>
-              </div>
-            ),
-          )}
-        </div>
-      )}
-
-      {/* Compatible cookbooks — toggle */}
-      {nonBlocking.length > 0 && (
-        <div className="mt-2">
-          <button
-            onClick={() => setShowAll(!showAll)}
-            className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            {showAll
-              ? `Hide ${nonBlocking.length} compatible cookbook${nonBlocking.length !== 1 ? "s" : ""}`
-              : `Show ${nonBlocking.length} compatible cookbook${nonBlocking.length !== 1 ? "s" : ""}`}
-          </button>
-
-          {showAll && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {displayedNonBlocking.map((row) => (
-                <Link
-                  key={row.name}
-                  to={`/cookbooks/${encodeURIComponent(row.name)}`}
-                  className="flex items-center gap-1 rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700 hover:bg-green-100"
-                  title={row.version ? `${row.name}@${row.version}` : row.name}
-                >
-                  <span className="font-bold text-green-500">✓</span>
-                  {row.name}
-                  {row.version && (
-                    <span className="text-green-400">@{row.version}</span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Readiness card for one target version
 // ---------------------------------------------------------------------------
 
 function ReadinessCard({
   r,
-  nodeCookbooks,
   org,
   nodeName,
+  targetChefVersion,
 }: {
   r: NodeReadiness;
-  nodeCookbooks: Record<string, unknown> | null;
   org?: string;
   nodeName?: string;
+  targetChefVersion?: string;
 }) {
   const ready = r.is_ready;
 
@@ -667,10 +226,189 @@ function ReadinessCard({
         )}
       </div>
 
-      {/* Analysis panels */}
+      {/* Analysis panels: dependency tree + disk */}
       <div className="mt-4 space-y-3">
-        <CookbookCompatibilityTable nodeCookbooks={nodeCookbooks} r={r} />
+        {org && nodeName && (
+          <ReadinessDependencyTree
+            org={org}
+            nodeName={nodeName}
+            targetChefVersion={targetChefVersion}
+            blockingCookbooks={r.blocking_cookbooks}
+          />
+        )}
         <DiskSpacePanel r={r} org={org} nodeName={nodeName} />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dependency tree embedded in readiness — shows run_list → roles → cookbooks
+// with version, complexity, and CS/TK badges on cookbook nodes.
+// ---------------------------------------------------------------------------
+
+function ReadinessDependencyTree({
+  org,
+  nodeName,
+  targetChefVersion,
+  blockingCookbooks,
+}: {
+  org: string;
+  nodeName: string;
+  targetChefVersion?: string;
+  blockingCookbooks?: BlockingCookbook[] | null;
+}) {
+  const [graphData, setGraphData] =
+    useState<NodeDependencyGraphResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchNodeDependencyGraph(org, nodeName, targetChefVersion)
+      .then(setGraphData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [org, nodeName, targetChefVersion]);
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+        <span className="text-xs text-gray-400">Loading dependency tree…</span>
+      </div>
+    );
+  }
+
+  if (!graphData || graphData.nodes.length === 0) {
+    return null;
+  }
+
+  const incompatibleCount = graphData.metadata.incompatible_cookbooks;
+  const tkFailedCount = graphData.metadata.tk_failed_cookbooks;
+  const allGood = incompatibleCount === 0 && tkFailedCount === 0;
+
+  // Build adjacency and node lookup.
+  const childrenOf = new Map<string, string[]>();
+  for (const edge of graphData.edges) {
+    const existing = childrenOf.get(edge.from) ?? [];
+    existing.push(edge.to);
+    childrenOf.set(edge.from, existing);
+  }
+  const nodeById = new Map(graphData.nodes.map((n) => [n.id, n]));
+  const roots = graphData.nodes.filter((n) => n.type === "run_list_entry");
+
+  // Build blocking cookbook lookup for expandable verdicts.
+  const blockingByName = new Map<string, BlockingCookbook>();
+  if (blockingCookbooks) {
+    for (const bc of blockingCookbooks) {
+      blockingByName.set(bc.name, bc);
+    }
+  }
+
+  function renderNode(nodeId: string, depth: number, visited: Set<string>) {
+    if (visited.has(nodeId)) return null;
+    visited.add(nodeId);
+
+    const node = nodeById.get(nodeId);
+    if (!node) return null;
+
+    const indent = depth * 1.25;
+    const children = childrenOf.get(nodeId) ?? [];
+    const isRole = node.type === "role";
+    const isCookbook = node.type === "cookbook";
+    const isRunList = node.type === "run_list_entry";
+    const isBlocking = isCookbook && blockingByName.has(node.name);
+
+    const linkTarget = isRole
+      ? `/roles/${encodeURIComponent(node.name)}`
+      : isCookbook
+        ? `/cookbooks/${encodeURIComponent(node.name)}`
+        : undefined;
+
+    const icon = isRunList ? "📋" : isRole ? "📁" : "📦";
+
+    return (
+      <div key={nodeId}>
+        <div
+          className={`flex flex-wrap items-center gap-1.5 py-0.5 ${isBlocking ? "rounded bg-red-50/50" : ""}`}
+          style={{ paddingLeft: `${indent}rem` }}
+        >
+          <span className="text-xs text-gray-400">{icon}</span>
+          {linkTarget ? (
+            <Link
+              to={linkTarget}
+              className={`text-sm hover:underline ${
+                isRole ? "font-medium text-blue-600" : isBlocking ? "font-medium text-red-700" : "text-gray-800"
+              }`}
+            >
+              {node.name}
+            </Link>
+          ) : (
+            <span className="text-sm font-medium text-purple-700">
+              {node.name}
+            </span>
+          )}
+          {isCookbook && node.version && (
+            <span className="text-xs text-gray-400">@{node.version}</span>
+          )}
+          {isCookbook && (
+            <>
+              <CookStyleBadge
+                status={node.compatibility_status ?? "untested"}
+                size="sm"
+              />
+              <TKBadge status={node.tk_status ?? "untested"} size="sm" />
+            </>
+          )}
+          {isCookbook && node.complexity_label && (
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                node.complexity_label === "critical"
+                  ? "bg-red-100 text-red-700"
+                  : node.complexity_label === "high"
+                    ? "bg-orange-100 text-orange-700"
+                    : node.complexity_label === "medium"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-green-100 text-green-700"
+              }`}
+            >
+              {node.complexity_label}
+              {node.complexity_score ? ` (${node.complexity_score})` : ""}
+            </span>
+          )}
+        </div>
+        {children.map((childId) => renderNode(childId, depth + 1, visited))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`rounded-lg border p-3 ${allGood ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50/30"}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-lg">📦</span>
+        <span className="text-sm font-medium text-gray-700">
+          Cookbook Dependencies
+        </span>
+        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+          {graphData.metadata.total_roles} roles
+        </span>
+        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+          {graphData.metadata.total_cookbooks} cookbooks
+        </span>
+        {incompatibleCount > 0 && (
+          <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+            {incompatibleCount} CS incompatible
+          </span>
+        )}
+        {tkFailedCount > 0 && (
+          <span className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">
+            {tkFailedCount} TK failed
+          </span>
+        )}
+      </div>
+      <div className="mt-2 space-y-0.5">
+        {roots.map((root) => renderNode(root.id, 0, new Set<string>()))}
       </div>
     </div>
   );
@@ -699,9 +437,9 @@ function ReadinessSection({
           <ReadinessCard
             key={r.id}
             r={r}
-            nodeCookbooks={data.node.cookbooks}
             org={org}
             nodeName={nodeName}
+            targetChefVersion={r.target_chef_version}
           />
         ))}
       </div>
@@ -1035,51 +773,61 @@ export function NodeDetailPage() {
         />
       </div>
 
-      {/* Info grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <InfoCard
-          label="Organisation"
-          value={data.organisation_name || node.organisation_id}
-        />
-        <InfoCard label="Environment" value={node.chef_environment || "—"} />
-        <InfoCard label="Chef Version" value={node.chef_version || "—"} />
-        <InfoCard
-          label="Platform"
-          value={`${node.platform || "—"} ${node.platform_version || ""}`}
-        />
-        <InfoCard label="Platform Family" value={node.platform_family || "—"} />
-        <InfoCard
-          label="Policy"
-          value={
-            node.policy_name
-              ? `${node.policy_name} / ${node.policy_group}`
-              : "—"
-          }
-        />
-        <InfoCard
-          label="Last Collected"
-          value={new Date(node.collected_at).toLocaleString()}
-        />
-        <InfoCard
-          label="Ohai Time"
-          value={
-            node.ohai_time
-              ? new Date(Number(node.ohai_time) * 1000).toLocaleString()
-              : "—"
-          }
-        />
-        <Link
-          to={diskDetailPath(org!, name!)}
-          className="stat-card group flex items-center gap-2 hover:border-blue-300 hover:bg-blue-50/50"
-        >
-          <span className="text-lg">💾</span>
-          <div>
-            <span className="stat-label">Filesystem</span>
-            <span className="mt-1 text-sm font-medium text-blue-600 group-hover:text-blue-800">
-              View Disk Details →
+      {/* Info bar — compact two-line summary */}
+      <div className="card p-3">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span>
+            <span className="text-gray-400">Org:</span>{" "}
+            <span className="font-medium text-gray-800">
+              {data.organisation_name || node.organisation_id}
             </span>
-          </div>
-        </Link>
+          </span>
+          <span>
+            <span className="text-gray-400">Env:</span>{" "}
+            <span className="font-medium text-gray-800">
+              {node.chef_environment || "—"}
+            </span>
+          </span>
+          <span>
+            <span className="text-gray-400">Chef:</span>{" "}
+            <span className="font-medium text-gray-800">
+              {node.chef_version || "—"}
+            </span>
+          </span>
+          <span>
+            <span className="text-gray-400">Platform:</span>{" "}
+            <span className="font-medium text-gray-800">
+              {node.platform || "—"} {node.platform_version || ""}
+              {node.platform_family ? ` (${node.platform_family})` : ""}
+            </span>
+          </span>
+          {node.policy_name && (
+            <span>
+              <span className="text-gray-400">Policy:</span>{" "}
+              <span className="font-medium text-gray-800">
+                {node.policy_name} / {node.policy_group}
+              </span>
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-400">
+          <span>
+            Collected:{" "}
+            {new Date(node.collected_at).toLocaleString()}
+          </span>
+          <span>
+            Ohai:{" "}
+            {node.ohai_time
+              ? new Date(Number(node.ohai_time) * 1000).toLocaleString()
+              : "—"}
+          </span>
+          <Link
+            to={diskDetailPath(org!, name!)}
+            className="text-blue-500 hover:text-blue-700 hover:underline"
+          >
+            Filesystem Details →
+          </Link>
+        </div>
       </div>
 
       {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
@@ -1093,311 +841,8 @@ export function NodeDetailPage() {
           targetVersions={targetVersions}
         />
       )}
-
-      {/* Dependency Graph — replaces flat Run List / Roles / Cookbooks panels */}
-      {org && name && (
-        <NodeDependencySection
-          org={org}
-          nodeName={name}
-          targetChefVersion={targetVersions[0]}
-        />
-      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Node Dependency Section — tree + graph views of run_list → roles → cookbooks
-// ---------------------------------------------------------------------------
 
-type DepViewMode = "tree" | "graph";
-
-function NodeDependencySection({
-  org,
-  nodeName,
-  targetChefVersion,
-}: {
-  org: string;
-  nodeName: string;
-  targetChefVersion?: string;
-}) {
-  const [graphData, setGraphData] =
-    useState<NodeDependencyGraphResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<DepViewMode>("tree");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState<
-    "all" | "role" | "cookbook"
-  >("all");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    fetchNodeDependencyGraph(org, nodeName, targetChefVersion)
-      .then((res) => {
-        setGraphData(res);
-        setSelectedNodeId(null);
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [org, nodeName, targetChefVersion]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  if (loading) return <LoadingSpinner message="Loading dependency graph…" />;
-  if (error) return <ErrorAlert message={error} onRetry={load} />;
-  if (!graphData || graphData.nodes.length === 0) {
-    return (
-      <div className="card">
-        <h3 className="card-header">Dependencies</h3>
-        <p className="text-sm text-gray-500 italic">
-          No dependency data available.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="card space-y-4">
-      {/* Header with view toggle */}
-      <div className="flex items-center justify-between">
-        <h3 className="card-header mb-0">Dependencies</h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode("tree")}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              viewMode === "tree"
-                ? "bg-blue-100 text-blue-800"
-                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-            }`}
-          >
-            Tree
-          </button>
-          <button
-            onClick={() => setViewMode("graph")}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              viewMode === "graph"
-                ? "bg-blue-100 text-blue-800"
-                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-            }`}
-          >
-            Graph
-          </button>
-        </div>
-      </div>
-
-      {/* Metadata summary */}
-      <div className="flex flex-wrap gap-4 text-sm">
-        <span className="rounded-full bg-blue-50 px-3 py-1 font-medium text-blue-700">
-          {graphData.metadata.total_roles} Roles
-        </span>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700">
-          {graphData.metadata.total_cookbooks} Cookbooks
-        </span>
-        {graphData.metadata.incompatible_cookbooks > 0 && (
-          <span className="rounded-full bg-red-50 px-3 py-1 font-medium text-red-700">
-            {graphData.metadata.incompatible_cookbooks} CS Incompatible
-          </span>
-        )}
-        {graphData.metadata.tk_failed_cookbooks > 0 && (
-          <span className="rounded-full bg-orange-50 px-3 py-1 font-medium text-orange-700">
-            {graphData.metadata.tk_failed_cookbooks} TK Failed
-          </span>
-        )}
-      </div>
-
-      {/* View content */}
-      {viewMode === "tree" ? (
-        <NodeDependencyTree graphData={graphData} />
-      ) : (
-        <div className="space-y-3">
-          {/* Search and filters */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="Search nodes…"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full rounded-md border border-gray-300 py-1.5 pl-3 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-gray-500">Show:</span>
-              {(["all", "role", "cookbook"] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setFilterType(type)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                    filterType === type
-                      ? type === "role"
-                        ? "bg-blue-100 text-blue-800"
-                        : type === "cookbook"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-gray-200 text-gray-800"
-                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
-                >
-                  {type === "all"
-                    ? "All"
-                    : type === "role"
-                      ? "Roles"
-                      : "Cookbooks"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Legend */}
-          <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rotate-45 bg-purple-500" />
-              Run List Entry
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-sm bg-blue-500" />
-              Role
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-full bg-emerald-500" />
-              Compatible
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-full bg-red-500" />
-              Incompatible
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded-full bg-gray-400" />
-              Untested
-            </span>
-          </div>
-
-          {/* Graph */}
-          <ForceGraph
-            nodes={adaptNodeGraphNodes(graphData.nodes)}
-            edges={adaptNodeGraphEdges(graphData.edges)}
-            searchTerm={searchTerm}
-            filterType={filterType}
-            selectedNodeId={selectedNodeId}
-            hoveredNodeId={hoveredNodeId}
-            onSelectNode={setSelectedNodeId}
-            onHoverNode={setHoveredNodeId}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Tree view for node dependencies
-function NodeDependencyTree({
-  graphData,
-}: {
-  graphData: NodeDependencyGraphResponse;
-}) {
-  // Build adjacency: from → children
-  const childrenOf = new Map<string, string[]>();
-  for (const edge of graphData.edges) {
-    const existing = childrenOf.get(edge.from) ?? [];
-    existing.push(edge.to);
-    childrenOf.set(edge.from, existing);
-  }
-
-  // Build node lookup
-  const nodeById = new Map(graphData.nodes.map((n) => [n.id, n]));
-
-  // Find root nodes (run_list_entries)
-  const roots = graphData.nodes.filter((n) => n.type === "run_list_entry");
-
-  function renderNode(nodeId: string, depth: number, visited: Set<string>) {
-    if (visited.has(nodeId)) return null;
-    visited.add(nodeId);
-
-    const node = nodeById.get(nodeId);
-    if (!node) return null;
-
-    const indent = depth * 1.25;
-    const children = childrenOf.get(nodeId) ?? [];
-    const isRole = node.type === "role";
-    const isCookbook = node.type === "cookbook";
-    const isRunList = node.type === "run_list_entry";
-
-    const linkTarget = isRole
-      ? `/roles/${encodeURIComponent(node.name)}`
-      : isCookbook
-        ? `/cookbooks/${encodeURIComponent(node.name)}`
-        : undefined;
-
-    const icon = isRunList ? "📋" : isRole ? "📁" : "📦";
-    const iconTitle = isRunList
-      ? "Run list entry"
-      : isRole
-        ? "Role"
-        : "Cookbook";
-
-    return (
-      <div key={nodeId}>
-        <div
-          className="flex items-center gap-1.5 py-0.5"
-          style={{ paddingLeft: `${indent}rem` }}
-        >
-          <span className="text-xs text-gray-400" title={iconTitle}>
-            {icon}
-          </span>
-          {linkTarget ? (
-            <Link
-              to={linkTarget}
-              className={`text-sm hover:underline ${
-                isRole
-                  ? "font-medium text-blue-600"
-                  : "text-gray-800"
-              }`}
-            >
-              {node.name}
-            </Link>
-          ) : (
-            <span className="text-sm font-medium text-purple-700">
-              {node.name}
-            </span>
-          )}
-          {isCookbook && (
-            <>
-              <CookStyleBadge
-                status={node.compatibility_status ?? "untested"}
-                size="sm"
-              />
-              <TKBadge status={node.tk_status ?? "untested"} size="sm" />
-            </>
-          )}
-        </div>
-        {children.map((childId) => renderNode(childId, depth + 1, visited))}
-      </div>
-    );
-  }
-
-  if (roots.length === 0) {
-    return (
-      <p className="text-sm text-gray-500 italic">No run list entries found.</p>
-    );
-  }
-
-  return (
-    <div className="space-y-1">
-      {roots.map((root) => renderNode(root.id, 0, new Set<string>()))}
-    </div>
-  );
-}
-
-function InfoCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="stat-card">
-      <span className="stat-label">{label}</span>
-      <span className="mt-1 text-sm font-medium text-gray-800">{value}</span>
-    </div>
-  );
-}

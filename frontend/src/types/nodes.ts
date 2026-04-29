@@ -149,9 +149,11 @@ export interface NodeGraphNode {
   id: string;
   type: string;
   name: string;
+  version?: string;
   compatibility_status?: string;
   tk_status?: string;
   complexity_label?: string;
+  complexity_score?: number;
   source?: string;
 }
 
