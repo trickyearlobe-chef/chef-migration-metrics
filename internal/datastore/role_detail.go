@@ -678,3 +678,24 @@ func setChainTKStatus(node *RoleChainNode, tkMap map[string]string) {
 		setChainTKStatus(child, tkMap)
 	}
 }
+
+// GetCookbookTKStatuses returns aggregate TK status for server cookbooks
+// that have matching git repos. Combines git repo name lookup with
+// git_kitchen_results aggregation in a single call.
+func (db *DB) GetCookbookTKStatuses(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error) {
+	if len(cookbookNames) == 0 || targetVersion == "" {
+		return make(map[string]string), nil
+	}
+	gitNames, err := db.getGitRepoCookbookNames(ctx, cookbookNames)
+	if err != nil {
+		return nil, err
+	}
+	gitList := make([]string, 0, len(gitNames))
+	for name := range gitNames {
+		gitList = append(gitList, name)
+	}
+	if len(gitList) == 0 {
+		return make(map[string]string), nil
+	}
+	return db.getGitKitchenStatusMap(ctx, gitList, targetVersion)
+}

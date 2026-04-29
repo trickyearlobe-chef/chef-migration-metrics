@@ -142,6 +142,21 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		DownloadError     string `json:"download_error,omitempty"`
 		Compatibility     string `json:"compatibility"`
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
+		TKStatus          string `json:"tk_status,omitempty"`
+	}
+
+	// Look up TK status for cookbooks that have matching git repos.
+	var tkMap map[string]string
+	if targetChefVersion != "" && len(rows) > 0 {
+		names := make(map[string]bool)
+		for _, cb := range rows {
+			names[cb.Name] = true
+		}
+		nameList := make([]string, 0, len(names))
+		for n := range names {
+			nameList = append(nameList, n)
+		}
+		tkMap, _ = r.db.GetCookbookTKStatuses(ctx, nameList, targetChefVersion)
 	}
 
 	result := make([]cookbookResp, 0, len(rows))
@@ -158,6 +173,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			DownloadError:     cb.DownloadError,
 			Compatibility:     cb.Compatibility,
 			TargetChefVersion: targetChefVersion,
+			TKStatus:          tkMap[cb.Name],
 		}
 		result = append(result, resp)
 	}

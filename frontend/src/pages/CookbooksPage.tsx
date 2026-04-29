@@ -11,7 +11,7 @@ import { fetchCookbooks, type CookbookFilterQuery } from "../api";
 import type { CookbookListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StatusBadge, CompatibilityBadge } from "../components/StatusBadge";
+import { StatusBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
 
 /** Render a coloured download-status pill with optional error tooltip. */
 function DownloadStatusBadge({
@@ -258,12 +258,13 @@ export function CookbooksPage() {
                     />
                     {!selectedOrg && <th>Organisation</th>}
                     <SortableColumnHeader
-                      label="Compatibility"
+                      label="CookStyle"
                       field="compatibility"
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
                     />
+                    <th>Test Kitchen</th>
                     <SortableColumnHeader
                       label="Status"
                       field="active"
@@ -307,10 +308,17 @@ export function CookbooksPage() {
                         </td>
                       )}
                       <td>
-                        <CompatibilityBadge
+                        <CookStyleBadge
                           status={cb.compatibility ?? "untested"}
                           size="sm"
                         />
+                      </td>
+                      <td>
+                        {cb.tk_status ? (
+                          <TKBadge status={cb.tk_status} size="sm" />
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
                       </td>
                       <td>
                         <div className="flex gap-1">
