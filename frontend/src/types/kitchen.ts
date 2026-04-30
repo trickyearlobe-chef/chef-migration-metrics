@@ -36,21 +36,6 @@ export interface TestKitchenConfig {
   platform_map: PlatformMapEntry[];
 }
 
-export interface TestKitchenConfigResponse {
-  config: TestKitchenConfig;
-  source: "database" | "file";
-  updated_at?: string;
-  updated_by?: string;
-}
-
-export interface TestKitchenConfigSaveResponse {
-  config: TestKitchenConfig;
-  source: string;
-  updated_at?: string;
-  updated_by?: string;
-  warnings?: string[];
-}
-
 export interface DiscoveredPlatformStatus {
   platform_name: string;
   normalised_name: string;

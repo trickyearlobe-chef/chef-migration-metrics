@@ -19,10 +19,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] `DataStore` interface has 138+ methods (`webapi/store.go`) — consider splitting into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, etc.) composed into the full interface.
 
-## Config Store — runtime_settings Split-Brain
-
-- [ ] The Test Kitchen UI saves config to an unencrypted `runtime_settings` table (plain JSON) instead of writing through `config_store` (encrypted). This violates the design principle that all config is encrypted at rest with `secret` flag controlling display suppression. `runtime_settings` is the tactical shortcut; `config_store` is the strategic store. **Current tactical state:** All kitchen execution paths (`buildHypervisorClient`, `TKConfigFn` in queue executor, `TKConfigFn` in node kitchen runner) read from `runtime_settings` because the UI writes there and `config_store.analysis_tools` is stale (dokken from April 1 yaml-migration, never updated since). **Strategic fix:** (1) Make the TK config UI write through `config_store` (key `analysis_tools`) with encryption, using the `secret` flag for credential fields. (2) Remove `runtime_settings.test_kitchen` row. (3) Revert all `loadTestKitchenRuntime()` calls in main.go back to reading from `app.cfg.AnalysisTools.TestKitchen`. (4) Remove `loadTestKitchenRuntime()` helper. (5) Remove the runtime-settings read paths from kitchen handlers (`handle_git_kitchen.go`, `handle_kitchen_batches.go`, `handle_platform_mapping.go`). These should read from `liveConfig()` once config_store is the single source.
-
 ## Database
 
 - [ ] Migrations 0001–0009 establish natural composite keys; migrations 0013–0016 reintroduce UUID PKs for `vm_tracking`, `node_kitchen_runs`, `kitchen_batches`, `git_kitchen_results`. This is a deliberate choice (these tables model ephemeral operational records, not domain entities) but should be documented in `project-conventions.md` under a "Primary Key Strategy" section.

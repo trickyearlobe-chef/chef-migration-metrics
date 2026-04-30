@@ -21,15 +21,6 @@ import (
 // Helpers
 // ---------------------------------------------------------------------------
 
-func tkConfigJSON(t *testing.T, cfg config.TestKitchenConfig) json.RawMessage {
-	t.Helper()
-	b, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatalf("tkConfigJSON: %v", err)
-	}
-	return b
-}
-
 func decodePlatformMappingResponse(t *testing.T, rec *httptest.ResponseRecorder) PlatformMappingStatusResponse {
 	t.Helper()
 	var resp PlatformMappingStatusResponse
@@ -51,12 +42,10 @@ func TestHandlePlatformMappingStatus_AllMapped(t *testing.T) {
 			{KitchenName: "windows-2022", Image: "win-tmpl"},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{
 				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
@@ -65,7 +54,7 @@ func TestHandlePlatformMappingStatus_AllMapped(t *testing.T) {
 			}, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()
@@ -101,12 +90,10 @@ func TestHandlePlatformMappingStatus_SomeUnmapped(t *testing.T) {
 			{KitchenName: "ubuntu-22.04", Image: "ubuntu-tmpl"},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{
 				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
@@ -115,7 +102,7 @@ func TestHandlePlatformMappingStatus_SomeUnmapped(t *testing.T) {
 			}, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()
@@ -164,12 +151,10 @@ func TestHandlePlatformMappingStatus_WithSkip(t *testing.T) {
 			{KitchenName: "windows-2022", Skip: true},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{
 				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
@@ -178,7 +163,7 @@ func TestHandlePlatformMappingStatus_WithSkip(t *testing.T) {
 			}, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()
@@ -217,12 +202,10 @@ func TestHandlePlatformMappingStatus_PatternMatch(t *testing.T) {
 			{KitchenName: "rhel*", Image: "rhel-tmpl", IsPattern: true},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{
 				{PlatformName: "rhel7-chef16", NormalisedName: "rhel7-chef16", OSFamily: "rhel", CookbookCount: 25},
@@ -231,7 +214,7 @@ func TestHandlePlatformMappingStatus_PatternMatch(t *testing.T) {
 			}, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()
@@ -275,17 +258,15 @@ func TestHandlePlatformMappingStatus_NoDiscoveredPlatforms(t *testing.T) {
 			{KitchenName: "ubuntu-22.04", Image: "ubuntu-tmpl"},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{}, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()
@@ -328,9 +309,6 @@ func TestHandlePlatformMappingStatus_NoDiscoveredPlatforms(t *testing.T) {
 
 func TestHandlePlatformMappingStatus_NoConfig(t *testing.T) {
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return nil, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{
 				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
@@ -338,7 +316,7 @@ func TestHandlePlatformMappingStatus_NoConfig(t *testing.T) {
 			}, nil
 		},
 	}
-	// File config has empty platform_map by default via testConfig().
+	// testConfig() has empty platform_map, so all platforms are unmapped.
 	r := newTestRouterWithHypervisor(store, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
@@ -365,13 +343,7 @@ func TestHandlePlatformMappingStatus_NoConfig(t *testing.T) {
 
 func TestHandlePlatformMappingStatus_WithTemplates(t *testing.T) {
 	now := time.Now().UTC()
-	tkCfg := config.TestKitchenConfig{}
-	cfgBytes := tkConfigJSON(t, tkCfg)
-
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return nil, nil
 		},
@@ -405,13 +377,7 @@ func TestHandlePlatformMappingStatus_WithTemplates(t *testing.T) {
 }
 
 func TestHandlePlatformMappingStatus_NoHypervisor(t *testing.T) {
-	tkCfg := config.TestKitchenConfig{}
-	cfgBytes := tkConfigJSON(t, tkCfg)
-
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return nil, nil
 		},
@@ -463,9 +429,6 @@ func TestHandlePlatformMappingStatus_MethodNotAllowed(t *testing.T) {
 
 func TestHandlePlatformMappingStatus_DBError(t *testing.T) {
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return nil, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return nil, fmt.Errorf("connection refused")
 		},
@@ -495,12 +458,10 @@ func TestHandlePlatformMappingStatus_NodePlatforms(t *testing.T) {
 			{KitchenName: "ubuntu-22.04", Image: "ubuntu-tmpl"},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{
 				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
@@ -513,7 +474,7 @@ func TestHandlePlatformMappingStatus_NodePlatforms(t *testing.T) {
 			}, 23, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()
@@ -571,12 +532,10 @@ func TestHandlePlatformMappingStatus_NodeAndKitchenOverlap(t *testing.T) {
 			{KitchenName: "ubuntu-22.04", Image: "ubuntu-tmpl"},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return []datastore.KitchenDiscoveredPlatform{
 				{PlatformName: "ubuntu-22.04", NormalisedName: "ubuntu-22.04", OSFamily: "debian", CookbookCount: 50},
@@ -590,7 +549,7 @@ func TestHandlePlatformMappingStatus_NodeAndKitchenOverlap(t *testing.T) {
 			}, 25, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()
@@ -642,12 +601,10 @@ func TestHandlePlatformMappingStatus_NodePlatformsMapped(t *testing.T) {
 			{KitchenName: "windows 2022", Skip: true},
 		},
 	}
-	cfgBytes := tkConfigJSON(t, tkCfg)
 
+	cfg := testConfig()
+	cfg.AnalysisTools.TestKitchen = tkCfg
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			return &datastore.RuntimeSetting{Key: key, Value: cfgBytes}, nil
-		},
 		ListDiscoveredPlatformsFn: func(_ context.Context) ([]datastore.KitchenDiscoveredPlatform, error) {
 			return nil, nil
 		},
@@ -658,7 +615,7 @@ func TestHandlePlatformMappingStatus_NodePlatformsMapped(t *testing.T) {
 			}, 23, nil
 		},
 	}
-	r := newTestRouterWithHypervisor(store, nil)
+	r := newTestRouterWithHypervisorAndConfig(store, cfg, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/platform-mapping/status", nil)
 	rec := httptest.NewRecorder()

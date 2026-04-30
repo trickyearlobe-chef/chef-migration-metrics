@@ -887,7 +887,7 @@ export default function KitchenBatchesPage() {
   useEffect(() => {
     loadBatches();
     fetchTestKitchenConfig()
-      .then((res) => setTkEnabled(res.config.enabled === true))
+      .then((res) => setTkEnabled(res.enabled === true))
       .catch(() => setTkEnabled(false));
   }, [loadBatches]);
 

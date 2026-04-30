@@ -9,7 +9,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -995,17 +994,7 @@ func (app *serverApp) setupExports() error {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) buildHypervisorClient() (hypervisor.Hypervisor, error) {
-	// Read TK config from runtime_settings (where the UI saves it) rather
-	// than the stale config_store assembly.
-	tk, err := app.loadTestKitchenRuntime()
-	if err != nil {
-		return nil, fmt.Errorf("loading runtime TK config: %w", err)
-	}
-	if tk == nil {
-		// No runtime setting saved yet — fall back to assembled config.
-		fallback := app.cfg.AnalysisTools.TestKitchen
-		tk = &fallback
-	}
+	tk := app.configHolder.Get().AnalysisTools.TestKitchen
 
 	hypType := tk.EffectiveHypervisorType()
 	if hypType == "" {
@@ -1026,23 +1015,6 @@ func (app *serverApp) buildHypervisorClient() (hypervisor.Hypervisor, error) {
 	}
 
 	return hypervisor.NewFromConfig(hypType, tk.DriverSettings, resolvedSecrets)
-}
-
-// loadTestKitchenRuntime reads the TK config from runtime_settings (the source
-// the UI writes to). Returns nil when no runtime setting exists.
-func (app *serverApp) loadTestKitchenRuntime() (*config.TestKitchenConfig, error) {
-	setting, err := app.db.GetRuntimeSetting(context.Background(), "test_kitchen")
-	if err != nil {
-		return nil, err
-	}
-	if setting == nil {
-		return nil, nil
-	}
-	var tk config.TestKitchenConfig
-	if err := json.Unmarshal(setting.Value, &tk); err != nil {
-		return nil, fmt.Errorf("unmarshalling test_kitchen runtime setting: %w", err)
-	}
-	return &tk, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1119,14 +1091,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		app.startup.Warn(fmt.Sprintf("hypervisor client not available: %v", hypErr))
 	} else if hyp != nil {
 		routerOpts = append(routerOpts, webapi.WithHypervisor(hyp))
-		tkRT, _ := app.loadTestKitchenRuntime()
-		if tkRT != nil {
-			app.startup.Info(fmt.Sprintf("hypervisor client initialised (type=%s)", tkRT.EffectiveHypervisorType()))
-		} else {
-			app.startup.Info("hypervisor client initialised")
-		}
+		app.startup.Info(fmt.Sprintf("hypervisor client initialised (type=%s)",
+			app.configHolder.Get().AnalysisTools.TestKitchen.EffectiveHypervisorType()))
 	} else {
-		app.startup.Info("hypervisor not configured (no driver/hypervisor_type in runtime settings)")
+		app.startup.Info("hypervisor not configured (no driver/hypervisor_type in analysis tools config)")
 	}
 
 	// Wire Node Kitchen runner factory when kitchen binary is available.
@@ -1187,10 +1155,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			CredResolver:   &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
 			Logger:         nkLogger,
 			TKConfigFn: func() config.TestKitchenConfig {
-				if tk, err := app.loadTestKitchenRuntime(); err == nil && tk != nil {
-					return *tk
-				}
-				return app.cfg.AnalysisTools.TestKitchen
+				return app.configHolder.Get().AnalysisTools.TestKitchen
 			},
 			GitCookbookDir: app.cfg.Storage.GitCookbookDir,
 			Concurrency:    app.cfg.Concurrency.CookbookDownload,
@@ -1220,10 +1185,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 				return filepath.Join(app.cfg.Storage.GitCookbookDir, name)
 			},
 			TKConfigFn: func() config.TestKitchenConfig {
-				if tk, err := app.loadTestKitchenRuntime(); err == nil && tk != nil {
-					return *tk
-				}
-				return app.cfg.AnalysisTools.TestKitchen
+				return app.configHolder.Get().AnalysisTools.TestKitchen
 			},
 		})
 		app.kitchenQueue = kitchenqueue.New(app.db, gitExecutor,

@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -240,7 +241,9 @@ func queryLegacyCredentials(ctx context.Context, db LegacyDB) ([]legacyCredentia
 	return result, nil
 }
 
-// queryLegacyRuntimeSettings reads all rows from the legacy runtime_settings table.
+// queryLegacyRuntimeSettings reads all rows from the legacy runtime_settings
+// table. Returns an empty slice (not an error) when the table no longer exists,
+// which happens after migration 0025 drops it.
 func queryLegacyRuntimeSettings(ctx context.Context, db LegacyDB) ([]legacyRuntimeSettingRow, error) {
 	query := `
 		SELECT key, value, updated_at, updated_by
@@ -249,6 +252,11 @@ func queryLegacyRuntimeSettings(ctx context.Context, db LegacyDB) ([]legacyRunti
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
+		// pg error 42P01 = undefined_table. The table was dropped by migration
+		// 0025 — treat this as "no rows to migrate" rather than a fatal error.
+		if isUndefinedTable(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("query legacy runtime_settings: %w", err)
 	}
 	defer rows.Close()
@@ -266,6 +274,17 @@ func queryLegacyRuntimeSettings(ctx context.Context, db LegacyDB) ([]legacyRunti
 	}
 
 	return result, nil
+}
+
+// isUndefinedTable reports whether err is a PostgreSQL "undefined_table"
+// error (SQLSTATE 42P01).
+func isUndefinedTable(err error) bool {
+	type sqlstater interface{ SQLState() string }
+	var se sqlstater
+	if errors.As(err, &se) {
+		return se.SQLState() == "42P01"
+	}
+	return false
 }
 
 // countLegacyCredentials returns the number of rows in the legacy credentials

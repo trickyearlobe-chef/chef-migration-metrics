@@ -5,7 +5,6 @@ package webapi
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -571,20 +570,6 @@ type DataStore interface {
 
 	// CountTrackedVMsByStatus returns VM counts grouped by status.
 	CountTrackedVMsByStatus(ctx context.Context) (map[string]int, error)
-
-	// -----------------------------------------------------------------
-	// Runtime Settings
-	// -----------------------------------------------------------------
-
-	// GetRuntimeSetting retrieves a runtime setting by key.
-	// Returns (nil, nil) when the key does not exist.
-	GetRuntimeSetting(ctx context.Context, key string) (*datastore.RuntimeSetting, error)
-
-	// SetRuntimeSetting creates or updates a runtime setting.
-	SetRuntimeSetting(ctx context.Context, key string, value json.RawMessage, updatedBy string) error
-
-	// DeleteRuntimeSetting removes a runtime setting by key (idempotent).
-	DeleteRuntimeSetting(ctx context.Context, key string) error
 
 	// -----------------------------------------------------------------
 	// Node Kitchen Runs
