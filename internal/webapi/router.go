@@ -363,7 +363,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	if r.cfg.Server.WebSocket.IsEnabled() {
 		wsHandler := NewWebSocketHandler(r.hub, r.webSocketOpts()...)
-		r.mux.Handle("/api/v1/ws", wsHandler)
+		r.protect("/api/v1/ws", wsHandler.ServeHTTP)
 		r.logf("INFO", "WebSocket endpoint enabled at /api/v1/ws (max_connections=%d)",
 			r.cfg.Server.WebSocket.MaxConnections)
 	} else {
