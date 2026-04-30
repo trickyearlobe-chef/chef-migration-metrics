@@ -92,9 +92,7 @@ describe("AdminTestKitchenPage — Platform Map Section", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fetchTestKitchenConfig).mockResolvedValue({
-      config: { ...defaultConfig },
-      source: "database",
-      updated_at: "2025-01-01T00:00:00Z",
+      ...defaultConfig,
     });
     vi.mocked(fetchCredentials).mockResolvedValue({ data: [], total: 0 });
     vi.mocked(fetchPlatformMappingStatus).mockResolvedValue({
@@ -183,8 +181,8 @@ describe("AdminTestKitchenPage — Platform Map Section", () => {
   it("updates config when image is selected", async () => {
     const user = userEvent.setup();
     vi.mocked(saveTestKitchenConfig).mockResolvedValue({
-      config: defaultConfig,
-      source: "database",
+      value: defaultConfig,
+      restartRequired: false,
     });
 
     render(<AdminTestKitchenPage />);

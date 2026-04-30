@@ -198,9 +198,6 @@ function RemoveButton({
 
 export function AdminTestKitchenPage() {
   const [config, setConfig] = useState<TestKitchenConfig>(emptyConfig());
-  const [source, setSource] = useState<"database" | "file">("file");
-  const [updatedAt, setUpdatedAt] = useState<string | undefined>();
-  const [updatedBy, setUpdatedBy] = useState<string | undefined>();
 
   // Top-level driver state.
   const [driverSettings, setDriverSettings] = useState<KVPair[]>([]);
@@ -229,16 +226,8 @@ export function AdminTestKitchenPage() {
     useState<PlatformMappingStatusResponse | null>(null);
 
   const applyConfig = useCallback(
-    (
-      c: TestKitchenConfig,
-      src: "database" | "file",
-      at?: string,
-      by?: string,
-    ) => {
+    (c: TestKitchenConfig) => {
       setConfig(c);
-      setSource(src);
-      setUpdatedAt(at);
-      setUpdatedBy(by);
       const ds = recordToKV(c.driver_settings);
       setDriverSettings(ds.length > 0 ? ds : []);
       const sec = recordToKV(c.driver_secrets);
@@ -268,12 +257,7 @@ export function AdminTestKitchenPage() {
     Promise.all([fetchTestKitchenConfig(), fetchCredentials({ per_page: 500 })])
       .then(([tkRes, credRes]) => {
         if (cancelled) return;
-        applyConfig(
-          tkRes.config,
-          tkRes.source,
-          tkRes.updated_at,
-          tkRes.updated_by,
-        );
+        applyConfig(tkRes);
         setCredentials(credRes.data ?? []);
       })
       .catch((err: unknown) => {
@@ -448,13 +432,8 @@ export function AdminTestKitchenPage() {
 
     try {
       const res = await saveTestKitchenConfig(payload);
-      applyConfig(
-        res.config,
-        res.source as "database" | "file",
-        res.updated_at,
-        res.updated_by,
-      );
-      setWarnings(res.warnings ?? []);
+      applyConfig(res.value);
+      setWarnings([]);
       setSuccess("Configuration saved successfully.");
       loadMappingStatus();
     } catch (err: unknown) {
@@ -472,7 +451,7 @@ export function AdminTestKitchenPage() {
   async function handleRevert() {
     if (
       !window.confirm(
-        "This will delete the database configuration and revert to the file-based config. Continue?",
+        "This will reset the Test Kitchen configuration to defaults. Continue?",
       )
     )
       return;
@@ -484,7 +463,7 @@ export function AdminTestKitchenPage() {
 
     try {
       await deleteTestKitchenConfig();
-      setSuccess("Reverted to file configuration.");
+      setSuccess("Test Kitchen configuration reset to defaults.");
       loadConfig();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -545,14 +524,7 @@ export function AdminTestKitchenPage() {
             Test Kitchen Configuration
           </h2>
           <p className="text-sm text-gray-500">
-            Currently using:{" "}
-            <span className="font-medium text-gray-700">{source} config</span>
-            {updatedBy && (
-              <span className="ml-2 text-gray-400">
-                · last saved by {updatedBy}
-                {updatedAt && <> at {new Date(updatedAt).toLocaleString()}</>}
-              </span>
-            )}
+            Configuration is stored in the encrypted database config store.
           </p>
         </div>
       </div>
@@ -1030,20 +1002,16 @@ export function AdminTestKitchenPage() {
       {/* Section 7: Orphan Sweep */}
       <OrphanSweepSection />
 
-      {/* Footer: Save + Revert */}
+      {/* Footer: Save + Reset */}
       <div className="flex items-center justify-between border-t border-gray-200 pt-4">
         <button
           type="button"
           onClick={handleRevert}
-          disabled={saving || source === "file"}
-          title={
-            source === "file"
-              ? "Already using file config"
-              : "Delete database config and revert to file"
-          }
+          disabled={saving}
+          title="Clear Test Kitchen configuration and reset to defaults"
           className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
         >
-          Revert to File Config
+          Reset to Defaults
         </button>
         <button
           type="button"

@@ -5,7 +5,6 @@ package webapi
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -124,9 +123,6 @@ type mockStore struct {
 	GetKitchenAnalysisResultByNameFn                    func(ctx context.Context, gitRepoName string) (*datastore.KitchenAnalysisResult, error)
 	ListDiscoveredPlatformsFn                           func(ctx context.Context) ([]datastore.KitchenDiscoveredPlatform, error)
 	ListDiscoveredPlatformsFilteredFn                   func(ctx context.Context, osFamily string, minCount int) ([]datastore.KitchenDiscoveredPlatform, error)
-	GetRuntimeSettingFn                                 func(ctx context.Context, key string) (*datastore.RuntimeSetting, error)
-	SetRuntimeSettingFn                                 func(ctx context.Context, key string, value json.RawMessage, updatedBy string) error
-	DeleteRuntimeSettingFn                              func(ctx context.Context, key string) error
 	ListTrackedVMsFn                                    func(ctx context.Context) ([]datastore.TrackedVM, error)
 	ListTrackedVMsFilteredFn                            func(ctx context.Context, status string) ([]datastore.TrackedVM, error)
 	GetTrackedVMFn                                      func(ctx context.Context, id string) (*datastore.TrackedVM, error)
@@ -1012,27 +1008,6 @@ func (m *mockStore) ListDiscoveredPlatformsFiltered(ctx context.Context, osFamil
 		return m.ListDiscoveredPlatformsFilteredFn(ctx, osFamily, minCount)
 	}
 	return nil, nil
-}
-
-func (m *mockStore) GetRuntimeSetting(ctx context.Context, key string) (*datastore.RuntimeSetting, error) {
-	if m.GetRuntimeSettingFn != nil {
-		return m.GetRuntimeSettingFn(ctx, key)
-	}
-	return nil, nil
-}
-
-func (m *mockStore) SetRuntimeSetting(ctx context.Context, key string, value json.RawMessage, updatedBy string) error {
-	if m.SetRuntimeSettingFn != nil {
-		return m.SetRuntimeSettingFn(ctx, key, value, updatedBy)
-	}
-	return nil
-}
-
-func (m *mockStore) DeleteRuntimeSetting(ctx context.Context, key string) error {
-	if m.DeleteRuntimeSettingFn != nil {
-		return m.DeleteRuntimeSettingFn(ctx, key)
-	}
-	return nil
 }
 
 // ---------------------------------------------------------------------------

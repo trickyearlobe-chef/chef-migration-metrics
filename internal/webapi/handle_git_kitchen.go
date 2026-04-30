@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 )
@@ -29,23 +28,7 @@ func (r *Router) handleGitKitchenInstances(w http.ResponseWriter, req *http.Requ
 
 	ctx := req.Context()
 
-	// Resolve effective TK config: database override first, then file.
-	var tkCfg config.TestKitchenConfig
-	setting, settingErr := r.db.GetRuntimeSetting(ctx, "test_kitchen")
-	if settingErr != nil {
-		r.logf("ERROR", "git kitchen instances: load runtime setting: %v", settingErr)
-		WriteInternalError(w, "Failed to load Test Kitchen configuration.")
-		return
-	}
-	if setting != nil {
-		if unmarshalErr := json.Unmarshal(setting.Value, &tkCfg); unmarshalErr != nil {
-			r.logf("ERROR", "git kitchen instances: parse stored config: %v", unmarshalErr)
-			WriteInternalError(w, "Failed to parse stored Test Kitchen configuration.")
-			return
-		}
-	} else {
-		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
-	}
+	tkCfg := r.liveConfig().AnalysisTools.TestKitchen
 
 	analysis, err := r.db.GetKitchenAnalysisResultByName(ctx, repoName)
 	if err != nil {
@@ -154,23 +137,8 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 
 	ctx := req.Context()
 
-	// Resolve effective TK config: database override first, then file.
-	var tkCfg config.TestKitchenConfig
-	setting, settingErr := r.db.GetRuntimeSetting(ctx, "test_kitchen")
-	if settingErr != nil {
-		r.logf("ERROR", "git kitchen run: load runtime setting: %v", settingErr)
-		WriteInternalError(w, "Failed to load Test Kitchen configuration.")
-		return
-	}
-	if setting != nil {
-		if unmarshalErr := json.Unmarshal(setting.Value, &tkCfg); unmarshalErr != nil {
-			r.logf("ERROR", "git kitchen run: parse stored config: %v", unmarshalErr)
-			WriteInternalError(w, "Failed to parse stored Test Kitchen configuration.")
-			return
-		}
-	} else {
-		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
-	}
+	// Resolve effective TK config from live config.
+	tkCfg := r.liveConfig().AnalysisTools.TestKitchen
 
 	if !tkCfg.IsEnabled() {
 		WriteError(w, http.StatusConflict, "conflict", "Test Kitchen is disabled.")
@@ -323,22 +291,8 @@ func (r *Router) handleGitKitchenRunAll(w http.ResponseWriter, req *http.Request
 
 	ctx := req.Context()
 
-	var tkCfg config.TestKitchenConfig
-	setting, settingErr := r.db.GetRuntimeSetting(ctx, "test_kitchen")
-	if settingErr != nil {
-		r.logf("ERROR", "git kitchen run-all: load runtime setting: %v", settingErr)
-		WriteInternalError(w, "Failed to load Test Kitchen configuration.")
-		return
-	}
-	if setting != nil {
-		if unmarshalErr := json.Unmarshal(setting.Value, &tkCfg); unmarshalErr != nil {
-			r.logf("ERROR", "git kitchen run-all: parse stored config: %v", unmarshalErr)
-			WriteInternalError(w, "Failed to parse stored Test Kitchen configuration.")
-			return
-		}
-	} else {
-		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
-	}
+	// Resolve effective TK config from live config.
+	tkCfg := r.liveConfig().AnalysisTools.TestKitchen
 
 	if !tkCfg.IsEnabled() {
 		WriteError(w, http.StatusConflict, "conflict", "Test Kitchen is disabled.")

@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
 
@@ -49,23 +48,8 @@ func (r *Router) handlePlatformMappingStatus(w http.ResponseWriter, req *http.Re
 
 	ctx := req.Context()
 
-	// Resolve effective Test Kitchen config: database override first, then file.
-	var tkCfg config.TestKitchenConfig
-	setting, err := r.db.GetRuntimeSetting(ctx, "test_kitchen")
-	if err != nil {
-		r.logf("ERROR", "platform-mapping-status: load runtime setting: %v", err)
-		WriteInternalError(w, "Failed to load Test Kitchen configuration.")
-		return
-	}
-	if setting != nil {
-		if unmarshalErr := json.Unmarshal(setting.Value, &tkCfg); unmarshalErr != nil {
-			r.logf("ERROR", "platform-mapping-status: parse stored config: %v", unmarshalErr)
-			WriteInternalError(w, "Failed to parse stored Test Kitchen configuration.")
-			return
-		}
-	} else {
-		tkCfg = r.liveConfig().AnalysisTools.TestKitchen
-	}
+	// Resolve effective Test Kitchen config from live config.
+	tkCfg := r.liveConfig().AnalysisTools.TestKitchen
 
 	// Fetch discovered platforms from kitchen analysis.
 	platforms, err := r.db.ListDiscoveredPlatforms(ctx)

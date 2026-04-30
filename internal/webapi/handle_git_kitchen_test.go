@@ -177,23 +177,10 @@ func TestHandleGitKitchenInstances_GET_NotFound(t *testing.T) {
 	}
 }
 
-func TestHandleGitKitchenInstances_GET_UsesDBConfig(t *testing.T) {
-	// The DB-stored platform map includes the mapping; the file config does not.
-	// This verifies the handler prefers the DB config over the file config.
-	dbTKConfig := config.TestKitchenConfig{
-		PlatformMap: []config.PlatformMapEntry{
-			{KitchenName: "ubuntu-22.04", Image: "db-template"},
-		},
-	}
-	dbBytes, _ := json.Marshal(dbTKConfig)
-
+func TestHandleGitKitchenInstances_GET_UsesLiveConfig(t *testing.T) {
+	// liveConfig() is the single source of truth — whatever is in the router
+	// config (loaded from config_store on startup) is used for platform mapping.
 	store := &mockStore{
-		GetRuntimeSettingFn: func(_ context.Context, key string) (*datastore.RuntimeSetting, error) {
-			if key == "test_kitchen" {
-				return &datastore.RuntimeSetting{Key: key, Value: dbBytes}, nil
-			}
-			return nil, nil
-		},
 		GetKitchenAnalysisResultByNameFn: func(_ context.Context, _ string) (*datastore.KitchenAnalysisResult, error) {
 			return &datastore.KitchenAnalysisResult{
 				GitRepoName:   "my-cookbook",
@@ -205,9 +192,10 @@ func TestHandleGitKitchenInstances_GET_UsesDBConfig(t *testing.T) {
 		},
 	}
 
-	// File config has NO platform map — if the handler reads from file, it would be unmapped.
 	cfg := testConfig()
-	cfg.AnalysisTools.TestKitchen.PlatformMap = nil
+	cfg.AnalysisTools.TestKitchen.PlatformMap = []config.PlatformMapEntry{
+		{KitchenName: "ubuntu-22.04", Image: "live-template"},
+	}
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/git/instances?repo=my-cookbook", nil)
@@ -223,10 +211,10 @@ func TestHandleGitKitchenInstances_GET_UsesDBConfig(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if plan.Mapped != 1 {
-		t.Fatalf("mapped = %d, want 1 (DB config should take priority over file config)", plan.Mapped)
+		t.Fatalf("mapped = %d, want 1", plan.Mapped)
 	}
-	if plan.Instances[0].ImageName != "db-template" {
-		t.Errorf("image = %q, want %q", plan.Instances[0].ImageName, "db-template")
+	if plan.Instances[0].ImageName != "live-template" {
+		t.Errorf("image = %q, want %q", plan.Instances[0].ImageName, "live-template")
 	}
 }
 

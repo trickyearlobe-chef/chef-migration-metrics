@@ -2,8 +2,6 @@
 
 import type {
   TestKitchenConfig,
-  TestKitchenConfigResponse,
-  TestKitchenConfigSaveResponse,
   PlatformMappingStatusResponse,
   NodeKitchenRun,
   NodeKitchenRunRequest,
@@ -29,18 +27,19 @@ import type {
   KitchenQueueEnqueueResponse,
 } from "../types";
 import { apiFetch, buildUrl, ApiError } from "./client";
+import { decodePutConfigResponse } from "./config";
+import type { PutConfigResponse } from "./config";
 
-export function fetchTestKitchenConfig(): Promise<TestKitchenConfigResponse> {
-  return apiFetch<TestKitchenConfigResponse>(
-    buildUrl("/admin/test-kitchen/config"),
+export function fetchTestKitchenConfig(): Promise<TestKitchenConfig> {
+  return apiFetch<TestKitchenConfig>(
+    buildUrl("/admin/config/test-kitchen"),
   );
 }
 
 export async function saveTestKitchenConfig(
   config: TestKitchenConfig,
-): Promise<TestKitchenConfigSaveResponse> {
-  const url = buildUrl("/admin/test-kitchen/config");
-  const res = await fetch(url, {
+): Promise<PutConfigResponse<TestKitchenConfig>> {
+  const res = await fetch(buildUrl("/admin/config/test-kitchen"), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -48,24 +47,11 @@ export async function saveTestKitchenConfig(
     },
     body: JSON.stringify(config),
   });
-  if (res.ok) return res.json() as Promise<TestKitchenConfigSaveResponse>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try { const p = JSON.parse(errBody); message = p.message || p.error || message; } catch { /* ignore */ }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
+  return decodePutConfigResponse<TestKitchenConfig>(res);
 }
 
 export async function deleteTestKitchenConfig(): Promise<void> {
-  const url = buildUrl(
-    "/admin/test-kitchen/config?confirm=true",
-  );
-  const res = await fetch(url, {
+  const res = await fetch(buildUrl("/admin/config/test-kitchen"), {
     method: "DELETE",
     headers: { Accept: "application/json" },
   });

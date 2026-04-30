@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 )
@@ -55,6 +56,16 @@ func (m *mockHypervisorClient) Type() string { return "mock" }
 
 func newTestRouterWithHypervisor(store *mockStore, hyp hypervisor.Hypervisor) *Router {
 	cfg := testConfig()
+	hub := NewEventHub()
+	go hub.Run()
+	opts := []RouterOption{}
+	if hyp != nil {
+		opts = append(opts, WithHypervisor(hyp))
+	}
+	return NewRouter(store, cfg, hub, opts...)
+}
+
+func newTestRouterWithHypervisorAndConfig(store *mockStore, cfg *config.Config, hyp hypervisor.Hypervisor) *Router {
 	hub := NewEventHub()
 	go hub.Run()
 	opts := []RouterOption{}
