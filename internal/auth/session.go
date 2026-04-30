@@ -255,7 +255,10 @@ func SetSessionCookie(w http.ResponseWriter, r *http.Request, token string, expi
 		Path:     "/",
 		Expires:  expiresAt,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		// SameSite=Strict prevents the cookie from being sent on any cross-site
+		// request. Safe for the current local-login SPA flow. If SAML is added
+		// in future, this will need revisiting as IdP redirects use cross-site POST.
+		SameSite: http.SameSiteStrictMode,
 		Secure:   isSecureRequest(r),
 	})
 }
@@ -270,7 +273,7 @@ func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   isSecureRequest(r),
 	})
 }

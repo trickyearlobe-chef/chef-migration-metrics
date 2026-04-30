@@ -593,8 +593,12 @@ func TestSetSessionCookie(t *testing.T) {
 		if !found.HttpOnly {
 			t.Error("expected HttpOnly flag to be set")
 		}
-		if found.SameSite != http.SameSiteLaxMode {
-			t.Errorf("expected SameSite=Lax, got %v", found.SameSite)
+		// SameSite=Strict is used for the local-login SPA flow.
+		// NOTE: If SAML authentication is added in future, this will need
+		// revisiting — SAML IdP redirects back via a cross-site POST, which
+		// SameSite=Strict would block. See security spec for details.
+		if found.SameSite != http.SameSiteStrictMode {
+			t.Errorf("expected SameSite=Strict, got %v", found.SameSite)
 		}
 		if found.Secure {
 			t.Error("expected Secure=false for plain HTTP request")
