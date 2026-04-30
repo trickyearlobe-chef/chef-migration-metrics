@@ -39,8 +39,8 @@ func TestHSTSMiddleware_AddsHeaderOnTLS(t *testing.T) {
 	if hsts == "" {
 		t.Fatal("expected Strict-Transport-Security header, got empty")
 	}
-	if !strings.Contains(hsts, "max-age=31536000") {
-		t.Errorf("HSTS header missing max-age=31536000: %q", hsts)
+	if !strings.Contains(hsts, "max-age=63072000") {
+		t.Errorf("HSTS header missing max-age=63072000: %q", hsts)
 	}
 	if !strings.Contains(hsts, "includeSubDomains") {
 		t.Errorf("HSTS header missing includeSubDomains: %q", hsts)

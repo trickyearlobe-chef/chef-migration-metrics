@@ -279,7 +279,7 @@ func (l *Listener) redirectHandler() http.Handler {
 
 // HSTSMiddleware wraps an http.Handler and adds the Strict-Transport-Security
 // header to every response when the request was served over TLS. The HSTS
-// max-age is set to 1 year (31536000 seconds) with includeSubDomains, which
+// max-age is set to 2 years (63072000 seconds) with includeSubDomains, which
 // is the recommended configuration for production deployments.
 //
 // The header is NOT added to plain HTTP responses (e.g. the redirect
@@ -291,7 +291,7 @@ func HSTSMiddleware(next http.Handler) http.Handler {
 		// In a reverse-proxy setup, the proxy should set X-Forwarded-Proto
 		// but we only set HSTS when we know for certain it's TLS.
 		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)
 	})
