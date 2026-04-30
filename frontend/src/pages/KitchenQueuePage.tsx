@@ -16,7 +16,7 @@ const STATUS_COLORS: Record<string, string> = {
   interrupted: "bg-orange-100 text-orange-700",
 };
 
-const ALL_STATUSES = ["all", "queued", "running", "completed", "failed", "cancelled", "interrupted"] as const;
+const ALL_STATUSES = ["active", "all", "queued", "running", "completed", "failed", "cancelled", "interrupted"] as const;
 
 function formatTime(iso?: string): string {
   if (!iso) return "—";
@@ -39,7 +39,7 @@ export default function KitchenQueuePage() {
   const [stats, setStats] = useState<KitchenQueueStats>({ queued: 0, running: 0, workers_active: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("active");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [repoFilter, setRepoFilter] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -50,7 +50,11 @@ export default function KitchenQueuePage() {
   const loadQueue = useCallback(async () => {
     try {
       const params: { repo?: string; type?: "git" | "node"; status?: string } = {};
-      if (statusFilter !== "all") params.status = statusFilter;
+      if (statusFilter === "active") {
+        params.status = "queued,running";
+      } else if (statusFilter !== "all") {
+        params.status = statusFilter;
+      }
       if (typeFilter !== "all") params.type = typeFilter as "git" | "node";
       if (repoFilter.trim()) params.repo = repoFilter.trim();
 
@@ -147,7 +151,7 @@ export default function KitchenQueuePage() {
           >
             {ALL_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                {s === "active" ? "Active (Queued + Running)" : s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
               </option>
             ))}
           </select>

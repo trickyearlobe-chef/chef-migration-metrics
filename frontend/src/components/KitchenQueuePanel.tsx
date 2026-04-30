@@ -31,7 +31,7 @@ export function KitchenQueuePanel({ repoName }: KitchenQueuePanelProps) {
     try {
       const resp = await fetchKitchenQueue({
         repo: repoName,
-        status: "queued,running,failed,interrupted",
+        status: "queued,running",
       });
       setItems(resp.items);
       setStats(resp.stats);

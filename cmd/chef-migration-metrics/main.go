@@ -115,7 +115,8 @@ type serverApp struct {
 	stopExportCleanup func()
 
 	// Kitchen queue manager (bounded concurrency for TK runs).
-	kitchenQueue *kitchenqueue.Manager
+	kitchenQueue            *kitchenqueue.Manager
+	stopKitchenQueueCleanup func()
 }
 
 // dbRefChecker implements configstore.CredentialReferenceChecker by querying
@@ -1254,6 +1255,18 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		}
 		routerOpts = append(routerOpts, webapi.WithKitchenQueue(app.kitchenQueue))
 		app.startup.Info(fmt.Sprintf("Kitchen queue started with %d workers", app.cfg.Concurrency.TestKitchenRun))
+
+		// Start periodic cleanup of completed queue items (24h retention).
+		queueCleanupLog := func(level, msg string) {
+			switch level {
+			case "ERROR":
+				queueScoped.Error(msg)
+			default:
+				queueScoped.Info(msg)
+			}
+		}
+		app.stopKitchenQueueCleanup = kitchenqueue.StartCleanupTicker(app.db, 1*time.Hour, 24*time.Hour, queueCleanupLog)
+		app.startup.Info("kitchen queue cleanup ticker started (retention: 24h)")
 	} else {
 		app.startup.Info("Node Kitchen runner not available (kitchen binary not found)")
 	}
@@ -1514,6 +1527,11 @@ func run() int {
 		return 1
 	}
 	defer app.stopExportCleanup()
+	defer func() {
+		if app.stopKitchenQueueCleanup != nil {
+			app.stopKitchenQueueCleanup()
+		}
+	}()
 
 	// Phase 16: HTTP server.
 	srv, err := app.setupAndServeHTTP()

@@ -442,3 +442,18 @@ func checkRowsAffected(result sql.Result, id string) error {
 	}
 	return nil
 }
+
+// PurgeCompletedKitchenRuns deletes terminal queue items (completed, failed,
+// cancelled, interrupted) whose completed_at is older than the given cutoff.
+// Returns the number of rows deleted.
+func (db *DB) PurgeCompletedKitchenRuns(ctx context.Context, olderThan time.Time) (int64, error) {
+	result, err := db.pool.ExecContext(ctx, `
+		DELETE FROM kitchen_run_queue
+		WHERE status IN ('completed', 'failed', 'cancelled', 'interrupted')
+		  AND completed_at < $1`, olderThan)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: purge completed kitchen runs: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return n, nil
+}
