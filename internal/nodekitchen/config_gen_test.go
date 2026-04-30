@@ -235,7 +235,7 @@ func TestGenerateOverlay_MatchingPlatform(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateOverlay(tkConfig, "centos-7")
+	out, err := GenerateOverlay(tkConfig, OverlayParams{PlatformName: "centos-7", NodeName: "test-node", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestGenerateOverlay_NoMatch(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateOverlay(tkConfig, "ubuntu-22.04")
+	out, err := GenerateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-22.04", NodeName: "test-node", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestGenerateOverlay_SkipEntry(t *testing.T) {
 		},
 	}
 
-	_, err := GenerateOverlay(tkConfig, "centos-7")
+	_, err := GenerateOverlay(tkConfig, OverlayParams{PlatformName: "centos-7", NodeName: "test-node", SuiteName: "default"})
 	if err == nil {
 		t.Fatal("expected error for skipped platform")
 	}
@@ -285,7 +285,7 @@ func TestGenerateOverlay_SkipEntry(t *testing.T) {
 }
 
 func TestGenerateOverlay_NilConfig(t *testing.T) {
-	out, err := GenerateOverlay(nil, "centos-7")
+	out, err := GenerateOverlay(nil, OverlayParams{PlatformName: "centos-7"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestGenerateOverlay_PatternMatch(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateOverlay(tkConfig, "centos-7")
+	out, err := GenerateOverlay(tkConfig, OverlayParams{PlatformName: "centos-7", NodeName: "test-node", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestGenerateOverlay_TransportOverride(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateOverlay(tkConfig, "centos-7")
+	out, err := GenerateOverlay(tkConfig, OverlayParams{PlatformName: "centos-7", NodeName: "test-node", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestGenerateOverlay_SSHKeyTransport(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateOverlay(tkConfig, "rhel-9")
+	out, err := GenerateOverlay(tkConfig, OverlayParams{PlatformName: "rhel-9", NodeName: "test-node", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -513,7 +513,7 @@ func TestGenerateOverlay_DriverSettingsOrdered(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateOverlay(tkConfig, "centos-7")
+	out, err := GenerateOverlay(tkConfig, OverlayParams{PlatformName: "centos-7", NodeName: "test-node", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

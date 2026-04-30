@@ -92,7 +92,7 @@ func (c *ProxmoxClient) ListManagedVMs(ctx context.Context, prefix string) ([]Ma
 		if vm.Template == 1 {
 			continue
 		}
-		if prefix != "" && !strings.HasPrefix(vm.Name, prefix) {
+		if !matchesKitchenPrefix(vm.Name, prefix) {
 			continue
 		}
 		managed = append(managed, ManagedVM{
@@ -101,9 +101,23 @@ func (c *ProxmoxClient) ListManagedVMs(ctx context.Context, prefix string) ([]Ma
 			PowerState:   proxmoxPowerState(vm.Status),
 			CPUCount:     vm.CPU,
 			MemoryMB:     int(vm.MaxMem / 1048576),
+			Uptime:       time.Duration(vm.Uptime) * time.Second,
 		})
 	}
 	return managed, nil
+}
+
+// matchesKitchenPrefix returns true if the VM name matches the configured
+// prefix or the legacy "kitchen-" prefix used by Test Kitchen drivers.
+// When prefix is empty, all VMs match (inventory mode).
+func matchesKitchenPrefix(name, prefix string) bool {
+	if prefix == "" {
+		return true
+	}
+	if strings.HasPrefix(name, prefix) {
+		return true
+	}
+	return strings.HasPrefix(name, "kitchen-")
 }
 
 // DestroyVM stops (if running) and deletes a VM by its VMID.

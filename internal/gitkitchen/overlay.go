@@ -9,15 +9,27 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 )
+
+// OverlayParams provides context for VM naming in the generated overlay.
+type OverlayParams struct {
+	PlatformName      string
+	TargetChefVersion string
+	CookbookName      string // used for VM naming (vcenter)
+	SuiteName         string // used for VM naming (vcenter)
+}
 
 // generateOverlay produces the contents of a .kitchen.local.yml overlay
 // for a git kitchen run. Returns empty string and nil error when no
 // platform match is found.
-func generateOverlay(tkConfig config.TestKitchenConfig, platformName, targetChefVersion string) (string, error) {
+func generateOverlay(tkConfig config.TestKitchenConfig, params OverlayParams) (string, error) {
+	platformName := params.PlatformName
+	targetChefVersion := params.TargetChefVersion
 	result := config.MatchPlatform(platformName, tkConfig.PlatformMap)
 	if result.Entry == nil {
 		return "", nil
@@ -48,6 +60,19 @@ func generateOverlay(tkConfig config.TestKitchenConfig, platformName, targetChef
 			envName := driverSecretEnvVar(k)
 			fmt.Fprintf(&buf, "  %s: <%%= ENV['%s'] %%>\n", k, envName)
 		}
+
+		// Inject VM naming for orphan sweep compatibility.
+		vmPrefix := tkConfig.EffectiveVMNamePrefix()
+		switch strings.ToLower(tkConfig.Driver) {
+		case "proxmox":
+			fmt.Fprintf(&buf, "  vm_name_prefix: \"%s-\"\n", vmPrefix)
+		case "vcenter":
+			vmName := hypervisor.GenerateVMName(
+				vmPrefix, params.CookbookName, params.SuiteName, platformName, time.Now(),
+			)
+			fmt.Fprintf(&buf, "  vm_name: %s\n", yamlScalar(vmName))
+		}
+
 		hasContent = true
 	}
 

@@ -12,9 +12,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 )
 
 // KitchenGenConfig holds all parameters needed to generate the kitchen config files.
@@ -93,12 +95,21 @@ func GenerateKitchenYML(cfg KitchenGenConfig) (string, error) {
 	return buf.String(), nil
 }
 
+// OverlayParams provides context for VM naming in the generated overlay.
+type OverlayParams struct {
+	PlatformName string
+	NodeName     string // used as "cookbook" component in VM naming
+	SuiteName    string // defaults to "default" for node kitchen
+}
+
 // GenerateOverlay produces the contents of a .kitchen.local.yml overlay.
 // Returns empty string and nil error when no platform match is found.
-func GenerateOverlay(tkConfig *config.TestKitchenConfig, platformName string) (string, error) {
+func GenerateOverlay(tkConfig *config.TestKitchenConfig, params OverlayParams) (string, error) {
 	if tkConfig == nil {
 		return "", nil
 	}
+
+	platformName := params.PlatformName
 
 	result := config.MatchPlatform(platformName, tkConfig.PlatformMap)
 	if result.Entry == nil {
@@ -130,6 +141,23 @@ func GenerateOverlay(tkConfig *config.TestKitchenConfig, platformName string) (s
 			envName := driverSecretEnvVar(k)
 			fmt.Fprintf(&buf, "  %s: <%%= ENV['%s'] %%>\n", k, envName)
 		}
+
+		// Inject VM naming for orphan sweep compatibility.
+		vmPrefix := tkConfig.EffectiveVMNamePrefix()
+		suiteName := params.SuiteName
+		if suiteName == "" {
+			suiteName = "default"
+		}
+		switch strings.ToLower(tkConfig.Driver) {
+		case "proxmox":
+			fmt.Fprintf(&buf, "  vm_name_prefix: \"%s-\"\n", vmPrefix)
+		case "vcenter":
+			vmName := hypervisor.GenerateVMName(
+				vmPrefix, params.NodeName, suiteName, platformName, time.Now(),
+			)
+			fmt.Fprintf(&buf, "  vm_name: %s\n", yamlScalar(vmName))
+		}
+
 		hasContent = true
 	}
 

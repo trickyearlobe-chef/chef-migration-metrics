@@ -212,3 +212,99 @@ func (e *errListHypervisor) DestroyVM(_ context.Context, _ string) error {
 }
 
 func (e *errListHypervisor) Type() string { return "mock-err" }
+
+func TestSweepOrphanVMs_UptimeFallback_KitchenVMs(t *testing.T) {
+	hyp := &mockHypervisor{
+		managedVMs: []ManagedVM{
+			// Old kitchen VM — uptime exceeds threshold (orphan).
+			{HypervisorID: "146", Name: "kitchen-config-amazonlinux-2-efebd23e", Uptime: 3 * time.Hour},
+			// Young kitchen VM — uptime below threshold (active run).
+			{HypervisorID: "113", Name: "kitchen-cron-resource-fedora-latest-c4fd114d", Uptime: 5 * time.Minute},
+			// Non-kitchen, non-CMM VM — should be skipped as unparsed.
+			{HypervisorID: "108", Name: "homeassistant", Uptime: 24 * time.Hour},
+		},
+	}
+
+	result, err := SweepOrphanVMs(context.Background(), hyp, "cmm", 1*time.Hour, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Scanned != 3 {
+		t.Errorf("Scanned = %d, want 3", result.Scanned)
+	}
+	if result.SkippedTooYoung != 1 {
+		t.Errorf("SkippedTooYoung = %d, want 1 (young kitchen VM)", result.SkippedTooYoung)
+	}
+	if result.SkippedUnparsed != 1 {
+		t.Errorf("SkippedUnparsed = %d, want 1 (homeassistant)", result.SkippedUnparsed)
+	}
+
+	// Dry run — nothing destroyed, but old kitchen VM flagged.
+	var wouldDestroy int
+	for _, d := range result.Details {
+		if d.Action == "would_destroy" {
+			wouldDestroy++
+			if d.VMName != "kitchen-config-amazonlinux-2-efebd23e" {
+				t.Errorf("expected would_destroy for kitchen-config-amazonlinux-2-efebd23e, got %s", d.VMName)
+			}
+		}
+	}
+	if wouldDestroy != 1 {
+		t.Errorf("would_destroy count = %d, want 1", wouldDestroy)
+	}
+}
+
+func TestSweepOrphanVMs_UptimeFallback_PoweredOff(t *testing.T) {
+	// Powered off kitchen VM has zero uptime — should be skipped (safe default).
+	hyp := &mockHypervisor{
+		managedVMs: []ManagedVM{
+			{HypervisorID: "146", Name: "kitchen-config-amazonlinux-2-efebd23e", Uptime: 0},
+		},
+	}
+
+	result, err := SweepOrphanVMs(context.Background(), hyp, "cmm", 1*time.Hour, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.SkippedUnparsed != 1 {
+		t.Errorf("SkippedUnparsed = %d, want 1 (zero uptime = unknown age)", result.SkippedUnparsed)
+	}
+}
+
+func TestVmAge_CMM_Named(t *testing.T) {
+	now := time.Now()
+	ts := now.Add(-90 * time.Minute).Unix()
+	vm := ManagedVM{Name: fmt.Sprintf("cmm-cookbook-suite-ubuntu-%d", ts)}
+
+	age, ok := vmAge(vm, "cmm", now.Unix())
+	if !ok {
+		t.Fatal("expected age to be known for CMM-named VM")
+	}
+	// Allow 1s tolerance for test execution time.
+	if age < 89*time.Minute || age > 91*time.Minute {
+		t.Errorf("age = %v, want ~90m", age)
+	}
+}
+
+func TestVmAge_KitchenFallback(t *testing.T) {
+	vm := ManagedVM{Name: "kitchen-test-ubuntu-abcd1234", Uptime: 2 * time.Hour}
+
+	age, ok := vmAge(vm, "cmm", time.Now().Unix())
+	if !ok {
+		t.Fatal("expected age to be known for kitchen-* VM with uptime")
+	}
+	if age != 2*time.Hour {
+		t.Errorf("age = %v, want 2h", age)
+	}
+}
+
+func TestVmAge_Unknown(t *testing.T) {
+	vm := ManagedVM{Name: "nexus", Uptime: 24 * time.Hour}
+
+	_, ok := vmAge(vm, "cmm", time.Now().Unix())
+	if ok {
+		t.Error("expected age to be unknown for non-kitchen, non-CMM VM")
+	}
+}

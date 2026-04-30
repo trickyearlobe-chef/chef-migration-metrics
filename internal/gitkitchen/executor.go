@@ -80,7 +80,12 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 	}
 
 	// Generate overlay
-	overlay, err := generateOverlay(tkConfig, params.PlatformName, params.TargetChefVersion)
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      params.PlatformName,
+		TargetChefVersion: params.TargetChefVersion,
+		CookbookName:      params.GitRepoName,
+		SuiteName:         params.SuiteName,
+	})
 	if err != nil {
 		return RunInstanceResult{
 			ErrorMessage: fmt.Sprintf("gitkitchen: generating overlay: %v", err),

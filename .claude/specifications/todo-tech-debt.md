@@ -35,6 +35,14 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (already available via `GET /kitchen/queue/:id`) covers 90% of the use case.
 
+## Kitchen Queue — Live Output Streaming
+
+- [ ] Queue items only show output after completion. Adding real-time SSE streaming for in-progress runs would improve visibility. Deferred because no existing SSE infrastructure in the project — would need a new transport layer.
+
+## Kitchen — Cloud Driver Orphan Detection
+
+- [ ] The orphan sweep relies on VM naming conventions (embedded timestamp) and Proxmox uptime as fallback. Cloud drivers (EC2, GCE, Azure) name instances differently and don't expose uptime in the same way. **Strategic fix:** Use cloud-native tagging (e.g. `cmm-created-at: <timestamp>` tag on EC2 instances) and query by tag for orphan detection. Each cloud driver would need a sweep adapter. Only needed when Test Kitchen is used with cloud drivers at scale.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
