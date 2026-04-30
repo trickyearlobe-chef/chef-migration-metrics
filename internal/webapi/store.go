@@ -701,6 +701,43 @@ type DataStore interface {
 
 	// DeleteGitKitchenResultsByRepo removes all per-instance kitchen results for a repo.
 	DeleteGitKitchenResultsByRepo(ctx context.Context, gitRepoName string) error
+
+	// -----------------------------------------------------------------
+	// Kitchen Run Queue
+	// -----------------------------------------------------------------
+
+	// EnqueueKitchenRun adds an item to the queue.
+	EnqueueKitchenRun(ctx context.Context, p datastore.EnqueueKitchenRunParams) (*datastore.KitchenQueueItem, error)
+
+	// ClaimNextKitchenRun atomically claims the highest-priority queued item.
+	ClaimNextKitchenRun(ctx context.Context) (*datastore.KitchenQueueItem, error)
+
+	// CompleteKitchenRun marks a running item as completed.
+	CompleteKitchenRun(ctx context.Context, id string, output string) error
+
+	// FailKitchenRun marks a running item as failed.
+	FailKitchenRun(ctx context.Context, id string, errMsg string, output string) error
+
+	// CancelKitchenRun transitions a queued or running item to cancelled.
+	CancelKitchenRun(ctx context.Context, id string) error
+
+	// CancelKitchenRunsByBatch cancels all queued items for a batch.
+	CancelKitchenRunsByBatch(ctx context.Context, batchID string) (int64, error)
+
+	// RetryKitchenRun re-enqueues a failed/interrupted/cancelled item.
+	RetryKitchenRun(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
+
+	// ListKitchenQueue returns queue items matching the filter.
+	ListKitchenQueue(ctx context.Context, f datastore.KitchenQueueFilter) ([]datastore.KitchenQueueItem, error)
+
+	// GetKitchenQueueItem returns a single queue item by ID.
+	GetKitchenQueueItem(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
+
+	// GetKitchenQueueStats returns counts of queued and running items.
+	GetKitchenQueueStats(ctx context.Context) (*datastore.KitchenQueueStats, error)
+
+	// MarkInterruptedKitchenRuns marks in-flight items as interrupted on startup.
+	MarkInterruptedKitchenRuns(ctx context.Context) (int64, error)
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.

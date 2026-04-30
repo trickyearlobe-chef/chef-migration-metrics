@@ -444,7 +444,8 @@ func (r *Router) handleRunDryRunBatch(w http.ResponseWriter, ctx context.Context
 }
 
 // executeBatch runs in a background goroutine. It resolves repos, plans
-// instances, persists batch instance records, then executes via the scheduler.
+// instances, persists batch instance records, then either enqueues via the
+// kitchen run queue (preferred) or falls back to the scheduler for execution.
 func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkCfg config.TestKitchenConfig, estimate *batch.BatchEstimate) {
 	batchID := b.ID
 
@@ -476,8 +477,199 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 		return // someone cancelled while we were preparing
 	}
 
-	// Phase 3: execute.
-	concurrency := 2 // conservative default
+	// Phase 3: execute via queue or fallback to scheduler.
+	if r.kitchenQueue != nil {
+		r.executeBatchViaQueue(ctx, batchID, plans, instanceMap, b)
+	} else {
+		r.executeBatchViaScheduler(ctx, batchID, plans, instanceMap, b, tkCfg)
+	}
+}
+
+// executeBatchViaQueue enqueues each batch instance into the kitchen run queue
+// and polls for completion. The queue ensures bounded concurrency with other
+// ad-hoc and run-all requests.
+func (r *Router) executeBatchViaQueue(ctx context.Context, batchID string, plans []*gitkitchen.PlanResult, instanceMap map[string]string, b datastore.KitchenBatch) {
+	targetVersion := r.batchTargetVersion(b)
+
+	// Enqueue all mapped instances.
+	enqueued := 0
+	skipped := 0
+	for _, plan := range plans {
+		for _, inst := range plan.Instances {
+			if inst.Status != gitkitchen.InstanceStatusMapped {
+				continue
+			}
+
+			_, err := r.db.EnqueueKitchenRun(ctx, datastore.EnqueueKitchenRunParams{
+				RunType:           "git",
+				GitRepoName:       plan.GitRepoName,
+				GitRepoURL:        plan.GitRepoURL,
+				SuiteName:         inst.SuiteName,
+				PlatformName:      inst.PlatformName,
+				InstanceName:      inst.InstanceName,
+				TargetChefVersion: targetVersion,
+				HeadCommitSHA:     plan.CommitSHA,
+				BatchID:           batchID,
+				Priority:          5,
+			})
+			if err != nil {
+				// Dedup collision — instance already queued/running.
+				instKey := plan.GitRepoName + "/" + inst.InstanceName
+				if instID, ok := instanceMap[instKey]; ok {
+					_ = r.db.UpdateBatchInstanceStatus(ctx, instID, "cancelled", "already queued or running", time.Now().UTC())
+				}
+				skipped++
+				continue
+			}
+			enqueued++
+		}
+	}
+
+	r.logf("INFO", "kitchen-batches: batch %s enqueued %d items (skipped %d dedup)", batchID, enqueued, skipped)
+
+	if enqueued == 0 {
+		r.finalizeBatch(ctx, batchID)
+		return
+	}
+
+	// Poll for completion: check all queue items for this batch until all are terminal.
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Batch was cancelled — cancel all queued items.
+			n, _ := r.db.CancelKitchenRunsByBatch(ctx, batchID)
+			r.logf("INFO", "kitchen-batches: batch %s cancelled, cancelled %d queued items", batchID, n)
+			// Cancel running items via manager.
+			r.cancelRunningBatchItems(ctx, batchID)
+			r.finalizeBatch(ctx, batchID)
+			return
+		case <-ticker.C:
+			done := r.syncBatchProgress(ctx, batchID, instanceMap)
+			if done {
+				r.finalizeBatch(ctx, batchID)
+				return
+			}
+		}
+	}
+}
+
+// syncBatchProgress checks queue items for this batch and updates batch
+// instance records. Returns true when all items are terminal.
+func (r *Router) syncBatchProgress(ctx context.Context, batchID string, instanceMap map[string]string) bool {
+	items, err := r.db.ListKitchenQueue(ctx, datastore.KitchenQueueFilter{
+		BatchID: batchID,
+		Limit:   500,
+	})
+	if err != nil {
+		r.logf("ERROR", "kitchen-batches: polling queue for batch %s: %v", batchID, err)
+		return false
+	}
+
+	allTerminal := true
+	for _, item := range items {
+		switch item.Status {
+		case "queued", "running":
+			allTerminal = false
+		case "completed", "failed", "cancelled", "interrupted":
+			// Map to batch instance status.
+			instKey := item.GitRepoName + "/" + item.InstanceName
+			if instID, ok := instanceMap[instKey]; ok {
+				status := r.queueStatusToBatchStatus(item)
+				_ = r.db.UpdateBatchInstanceStatus(ctx, instID, status, item.ErrorMessage, time.Now().UTC())
+				// Remove from map to avoid re-processing.
+				delete(instanceMap, instKey)
+
+				// Broadcast progress.
+				passed := status == "passed"
+				r.hub.Broadcast(NewEvent(EventBatchProgress, map[string]any{
+					"batch_id":      batchID,
+					"instance_name": item.InstanceName,
+					"git_repo_name": item.GitRepoName,
+					"passed":        passed,
+				}))
+			}
+		}
+	}
+
+	return allTerminal
+}
+
+// queueStatusToBatchStatus maps a terminal queue item status to the
+// corresponding batch instance status.
+func (r *Router) queueStatusToBatchStatus(item datastore.KitchenQueueItem) string {
+	switch item.Status {
+	case "completed":
+		return "passed"
+	case "failed":
+		if item.ErrorMessage != "" {
+			return "errored"
+		}
+		return "failed"
+	case "cancelled":
+		return "cancelled"
+	case "interrupted":
+		return "cancelled"
+	default:
+		return "failed"
+	}
+}
+
+// cancelRunningBatchItems finds currently-running queue items for a batch
+// and signals the queue manager to cancel them.
+func (r *Router) cancelRunningBatchItems(ctx context.Context, batchID string) {
+	if r.kitchenQueue == nil {
+		return
+	}
+	items, err := r.db.ListKitchenQueue(ctx, datastore.KitchenQueueFilter{
+		BatchID:  batchID,
+		Statuses: []string{"running"},
+		Limit:    100,
+	})
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		r.kitchenQueue.CancelItem(item.ID)
+	}
+}
+
+// finalizeBatch determines the final status and updates the batch record.
+func (r *Router) finalizeBatch(ctx context.Context, batchID string) {
+	// Cancel any remaining pending batch instances.
+	_, _ = r.db.CancelPendingBatchInstances(ctx, batchID)
+
+	finalStatus := "completed"
+	if ctx.Err() != nil {
+		finalStatus = "cancelled"
+	}
+	_, casErr := r.db.UpdateKitchenBatchStatusIfCurrent(ctx, batchID, "running", finalStatus, time.Now().UTC())
+	if casErr != nil {
+		r.logf("WARN", "kitchen-batches: CAS running→%s for %s failed: %v", finalStatus, batchID, casErr)
+	}
+
+	// Broadcast completion.
+	counts, _ := r.db.CountBatchInstancesByStatus(ctx, batchID)
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+	r.hub.Broadcast(NewEvent(EventBatchComplete, map[string]any{
+		"batch_id": batchID,
+		"status":   finalStatus,
+		"total":    total,
+		"passed":   counts["passed"],
+		"failed":   counts["failed"],
+		"errored":  counts["errored"],
+	}))
+}
+
+// executeBatchViaScheduler is the legacy path when no kitchen queue is
+// available. It calls RunBatch directly with its own semaphore concurrency.
+func (r *Router) executeBatchViaScheduler(ctx context.Context, batchID string, plans []*gitkitchen.PlanResult, instanceMap map[string]string, b datastore.KitchenBatch, tkCfg config.TestKitchenConfig) {
+	concurrency := 2
 	if b.MaxConcurrentVMs != nil && *b.MaxConcurrentVMs > 0 {
 		concurrency = *b.MaxConcurrentVMs
 	}
@@ -488,7 +680,6 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 	}
 
 	progressCB := func(completed, total int, repoName string, inst gitkitchen.PlannedInstance, result gitkitchen.RunInstanceResult) {
-		// Update instance status in DB.
 		instKey := repoName + "/" + inst.InstanceName
 		if instID, ok := instanceMap[instKey]; ok {
 			status := "passed"
@@ -510,7 +701,6 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 			_ = r.db.UpdateBatchInstanceStatus(ctx, instID, status, errMsg, time.Now().UTC())
 		}
 
-		// Broadcast progress.
 		passed := result.Passed != nil && *result.Passed
 		r.hub.Broadcast(NewEvent(EventBatchProgress, map[string]any{
 			"batch_id":      batchID,
@@ -527,21 +717,18 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 		r.logf("ERROR", "kitchen-batches: running batch %s: %v", batchID, runErr)
 	}
 
-	// Phase 4: finalise.
 	// Cancel any remaining pending instances.
 	_, _ = r.db.CancelPendingBatchInstances(ctx, batchID)
 
-	// Determine final status via CAS.
 	finalStatus := "completed"
 	if ctx.Err() != nil {
 		finalStatus = "cancelled"
 	}
-	_, casErr = r.db.UpdateKitchenBatchStatusIfCurrent(ctx, batchID, "running", finalStatus, time.Now().UTC())
+	_, casErr := r.db.UpdateKitchenBatchStatusIfCurrent(ctx, batchID, "running", finalStatus, time.Now().UTC())
 	if casErr != nil {
 		r.logf("WARN", "kitchen-batches: CAS running→%s for %s failed (already transitioned): %v", finalStatus, batchID, casErr)
 	}
 
-	// Broadcast completion.
 	evtData := map[string]any{
 		"batch_id": batchID,
 		"status":   finalStatus,

@@ -226,7 +226,11 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) RunResult {
 	if node.PlatformVersion != "" {
 		overlayPlatform = node.Platform + "-" + node.PlatformVersion
 	}
-	overlay, err := GenerateOverlay(&r.deps.TKConfig, overlayPlatform)
+	overlay, err := GenerateOverlay(&r.deps.TKConfig, OverlayParams{
+		PlatformName: overlayPlatform,
+		NodeName:     req.NodeName,
+		SuiteName:    "default",
+	})
 	if err != nil {
 		r.failRun(ctx, &result, startedAt, err)
 		return result

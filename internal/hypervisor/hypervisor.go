@@ -81,6 +81,10 @@ type ManagedVM struct {
 
 	// CreatedAt is the VM creation time (if available from hypervisor).
 	CreatedAt time.Time `json:"created_at,omitempty"`
+
+	// Uptime is the VM's uptime as reported by the hypervisor (seconds).
+	// Used as a fallback for age detection when the VM name lacks a timestamp.
+	Uptime time.Duration `json:"uptime,omitempty"`
 }
 
 // VMStatus represents the lifecycle status of a CMM-tracked VM.

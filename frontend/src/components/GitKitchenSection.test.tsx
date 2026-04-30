@@ -95,6 +95,10 @@ describe("GitKitchenSection", () => {
     vi.mocked(api.fetchGitKitchenInstances).mockResolvedValue(basePlan);
     vi.mocked(api.fetchGitKitchenResults).mockResolvedValue([baseResult]);
     vi.mocked(api.fetchKitchenExclusions).mockResolvedValue([]);
+    vi.mocked(api.fetchKitchenQueue).mockResolvedValue({
+      items: [],
+      stats: { queued: 0, running: 0, completed: 0, failed: 0, cancelled: 0 },
+    });
   });
 
   afterEach(() => {

@@ -54,6 +54,39 @@ func (r *Router) handleNodeKitchenTrigger(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
+	// Enqueue via kitchen queue if available
+	if r.kitchenQueue != nil {
+		item, enqErr := r.db.EnqueueKitchenRun(req.Context(), datastore.EnqueueKitchenRunParams{
+			RunType:           "node",
+			NodeName:          body.NodeName,
+			OrganisationName:  body.OrganisationName,
+			TargetChefVersion: body.TargetChefVersion,
+			CookbookSource:    body.CookbookSource,
+			Priority:          20,
+		})
+		if enqErr != nil {
+			if enqErr == datastore.ErrAlreadyExists {
+				WriteJSON(w, http.StatusConflict, map[string]string{
+					"message": "Node kitchen run is already queued or running",
+				})
+				return
+			}
+			r.logf("ERROR", "node kitchen trigger: enqueue: %v", enqErr)
+			WriteInternalError(w, "Failed to enqueue node kitchen run.")
+			return
+		}
+
+		r.hub.Broadcast(NewEvent("kitchen_queue_update", item))
+
+		WriteJSON(w, http.StatusAccepted, map[string]any{
+			"status":   "queued",
+			"queue_id": item.ID,
+			"message":  fmt.Sprintf("Node Kitchen run queued for %s/%s.", body.OrganisationName, body.NodeName),
+		})
+		return
+	}
+
+	// Legacy fallback: direct dispatch
 	go r.nodeKitchenRunner.Run(context.Background(), body)
 
 	WriteJSON(w, http.StatusAccepted, map[string]string{

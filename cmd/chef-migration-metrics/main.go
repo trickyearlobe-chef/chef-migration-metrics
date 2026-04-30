@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,8 +33,10 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
@@ -110,6 +113,9 @@ type serverApp struct {
 
 	// Export cleanup stop function.
 	stopExportCleanup func()
+
+	// Kitchen queue manager (bounded concurrency for TK runs).
+	kitchenQueue *kitchenqueue.Manager
 }
 
 // dbRefChecker implements configstore.CredentialReferenceChecker by querying
@@ -984,6 +990,61 @@ func (app *serverApp) setupExports() error {
 }
 
 // ---------------------------------------------------------------------------
+// Phase: hypervisor client construction.
+// ---------------------------------------------------------------------------
+
+func (app *serverApp) buildHypervisorClient() (hypervisor.Hypervisor, error) {
+	// Read TK config from runtime_settings (where the UI saves it) rather
+	// than the stale config_store assembly.
+	tk, err := app.loadTestKitchenRuntime()
+	if err != nil {
+		return nil, fmt.Errorf("loading runtime TK config: %w", err)
+	}
+	if tk == nil {
+		// No runtime setting saved yet — fall back to assembled config.
+		fallback := app.cfg.AnalysisTools.TestKitchen
+		tk = &fallback
+	}
+
+	hypType := tk.EffectiveHypervisorType()
+	if hypType == "" {
+		return nil, nil
+	}
+
+	// Resolve driver secrets needed for hypervisor auth.
+	resolvedSecrets := make(map[string]string, len(tk.DriverSecrets))
+	for key, credName := range tk.DriverSecrets {
+		resolved, err := app.credResolver.Resolve(context.Background(), secrets.CredentialSource{
+			CredentialName: credName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolving driver secret %q (credential %q): %w", key, credName, err)
+		}
+		resolvedSecrets[key] = string(resolved.Plaintext)
+		secrets.ZeroBytes(resolved.Plaintext)
+	}
+
+	return hypervisor.NewFromConfig(hypType, tk.DriverSettings, resolvedSecrets)
+}
+
+// loadTestKitchenRuntime reads the TK config from runtime_settings (the source
+// the UI writes to). Returns nil when no runtime setting exists.
+func (app *serverApp) loadTestKitchenRuntime() (*config.TestKitchenConfig, error) {
+	setting, err := app.db.GetRuntimeSetting(context.Background(), "test_kitchen")
+	if err != nil {
+		return nil, err
+	}
+	if setting == nil {
+		return nil, nil
+	}
+	var tk config.TestKitchenConfig
+	if err := json.Unmarshal(setting.Value, &tk); err != nil {
+		return nil, fmt.Errorf("unmarshalling test_kitchen runtime setting: %w", err)
+	}
+	return &tk, nil
+}
+
+// ---------------------------------------------------------------------------
 // Phase: HTTP server setup and serve.
 // ---------------------------------------------------------------------------
 
@@ -1050,6 +1111,21 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 
 	if app.cfgStore != nil && app.configHolder != nil {
 		routerOpts = append(routerOpts, webapi.WithConfigStore(app.cfgStore, app.configHolder))
+	}
+
+	// Wire hypervisor client for template discovery and orphan sweep.
+	if hyp, hypErr := app.buildHypervisorClient(); hypErr != nil {
+		app.startup.Warn(fmt.Sprintf("hypervisor client not available: %v", hypErr))
+	} else if hyp != nil {
+		routerOpts = append(routerOpts, webapi.WithHypervisor(hyp))
+		tkRT, _ := app.loadTestKitchenRuntime()
+		if tkRT != nil {
+			app.startup.Info(fmt.Sprintf("hypervisor client initialised (type=%s)", tkRT.EffectiveHypervisorType()))
+		} else {
+			app.startup.Info("hypervisor client initialised")
+		}
+	} else {
+		app.startup.Info("hypervisor not configured (no driver/hypervisor_type in runtime settings)")
 	}
 
 	// Wire Node Kitchen runner factory when kitchen binary is available.
@@ -1127,6 +1203,49 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		)
 		routerOpts = append(routerOpts, webapi.WithGitKitchenScheduler(gitKitchenSched))
 		app.startup.Info("Git Kitchen scheduler enabled")
+
+		// Wire kitchen run queue (bounded concurrency worker pool).
+		queueScoped := logger.WithScope(logging.ScopeTestKitchenRun)
+		gitExecutor := kitchenqueue.NewGitKitchenExecutor(kitchenqueue.GitKitchenExecutorConfig{
+			KitchenExecutor: &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
+			CredResolver:    &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
+			Store:           app.db,
+			RepoDirFn: func(name, _ string) string {
+				return filepath.Join(app.cfg.Storage.GitCookbookDir, name)
+			},
+			TKConfigFn: func() config.TestKitchenConfig {
+				return app.cfg.AnalysisTools.TestKitchen
+			},
+		})
+		app.kitchenQueue = kitchenqueue.New(app.db, gitExecutor,
+			kitchenqueue.WithWorkerCount(app.cfg.Concurrency.TestKitchenRun),
+			kitchenqueue.WithLogFunc(func(level, msg string, args ...any) {
+				formatted := fmt.Sprintf(msg, args...)
+				switch level {
+				case "WARN":
+					queueScoped.Warn(formatted)
+				case "ERROR":
+					queueScoped.Error(formatted)
+				default:
+					queueScoped.Info(formatted)
+				}
+			}),
+			kitchenqueue.WithEventListener(func(item *datastore.KitchenQueueItem) {
+				app.hub.Broadcast(webapi.NewEvent("kitchen_queue_update", map[string]any{
+					"id":            item.ID,
+					"status":        item.Status,
+					"git_repo_name": item.GitRepoName,
+					"run_type":      item.RunType,
+					"instance_name": item.InstanceName,
+				}))
+			}),
+		)
+		if err := app.kitchenQueue.Start(context.Background()); err != nil {
+			app.startup.Error(fmt.Sprintf("kitchen queue start failed: %v", err))
+			return serverResult{}, err
+		}
+		routerOpts = append(routerOpts, webapi.WithKitchenQueue(app.kitchenQueue))
+		app.startup.Info(fmt.Sprintf("Kitchen queue started with %d workers", app.cfg.Concurrency.TestKitchenRun))
 	} else {
 		app.startup.Info("Node Kitchen runner not available (kitchen binary not found)")
 	}
@@ -1272,6 +1391,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 	app.startup.Info("stopping collection scheduler...")
 	app.sched.Stop()
 	app.startup.Info("collection scheduler stopped")
+
+	// Stop kitchen queue workers (drain running items with timeout).
+	if app.kitchenQueue != nil {
+		app.startup.Info("stopping kitchen queue workers...")
+		app.kitchenQueue.Stop(shutdownTimeout)
+		app.startup.Info("kitchen queue stopped")
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()

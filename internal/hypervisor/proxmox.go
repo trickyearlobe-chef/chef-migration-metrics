@@ -18,11 +18,16 @@ import (
 // ProxmoxClient implements the Hypervisor interface for Proxmox VE.
 // This is a minimal proof-of-concept to validate the hypervisor abstraction.
 type ProxmoxClient struct {
-	baseURL     string // e.g. "https://pve.example.com:8006"
-	node        string // Proxmox node name (e.g. "pve1")
-	tokenID     string // API token ID (e.g. "user@pam!token-name")
-	tokenSecret string // API token secret
-	httpClient  *http.Client
+	baseURL  string // e.g. "https://pve.example.com:8006"
+	node     string // Proxmox node name (e.g. "pve1")
+	authFunc func(req *http.Request) // injects auth header into requests
+	httpClient *http.Client
+
+	// Fields retained for test introspection.
+	tokenID     string
+	tokenSecret string
+	username    string
+	password    string
 }
 
 // proxmoxResponse wraps the Proxmox API response format.
@@ -41,22 +46,47 @@ type proxmoxVM struct {
 	Uptime   int64  `json:"uptime"`
 }
 
-// NewProxmoxClient creates a Proxmox hypervisor client.
+// NewProxmoxClient creates a Proxmox hypervisor client using API token auth.
 // The tokenID is in the format "user@realm!tokenname" and tokenSecret is the
 // token value.
 func NewProxmoxClient(baseURL, node, tokenID, tokenSecret string) *ProxmoxClient {
-	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // POC — Proxmox often uses self-signed certs.
-		},
-	}
-	return &ProxmoxClient{
+	httpClient := newProxmoxHTTPClient()
+	c := &ProxmoxClient{
 		baseURL:     strings.TrimRight(baseURL, "/"),
 		node:        node,
 		tokenID:     tokenID,
 		tokenSecret: tokenSecret,
 		httpClient:  httpClient,
+	}
+	c.authFunc = func(req *http.Request) {
+		req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", tokenID, tokenSecret))
+	}
+	return c
+}
+
+// NewProxmoxClientWithPassword creates a Proxmox hypervisor client using
+// username/password ticket auth. The username is in "user@realm" format.
+func NewProxmoxClientWithPassword(baseURL, node, username, password string) *ProxmoxClient {
+	httpClient := newProxmoxHTTPClient()
+	c := &ProxmoxClient{
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		node:       node,
+		username:   username,
+		password:   password,
+		httpClient: httpClient,
+	}
+	c.authFunc = func(req *http.Request) {
+		req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", username, password))
+	}
+	return c
+}
+
+func newProxmoxHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // POC — Proxmox often uses self-signed certs.
+		},
 	}
 }
 
@@ -92,7 +122,7 @@ func (c *ProxmoxClient) ListManagedVMs(ctx context.Context, prefix string) ([]Ma
 		if vm.Template == 1 {
 			continue
 		}
-		if prefix != "" && !strings.HasPrefix(vm.Name, prefix) {
+		if !matchesKitchenPrefix(vm.Name, prefix) {
 			continue
 		}
 		managed = append(managed, ManagedVM{
@@ -101,9 +131,23 @@ func (c *ProxmoxClient) ListManagedVMs(ctx context.Context, prefix string) ([]Ma
 			PowerState:   proxmoxPowerState(vm.Status),
 			CPUCount:     vm.CPU,
 			MemoryMB:     int(vm.MaxMem / 1048576),
+			Uptime:       time.Duration(vm.Uptime) * time.Second,
 		})
 	}
 	return managed, nil
+}
+
+// matchesKitchenPrefix returns true if the VM name matches the configured
+// prefix or the legacy "kitchen-" prefix used by Test Kitchen drivers.
+// When prefix is empty, all VMs match (inventory mode).
+func matchesKitchenPrefix(name, prefix string) bool {
+	if prefix == "" {
+		return true
+	}
+	if strings.HasPrefix(name, prefix) {
+		return true
+	}
+	return strings.HasPrefix(name, "kitchen-")
 }
 
 // DestroyVM stops (if running) and deletes a VM by its VMID.
@@ -154,7 +198,7 @@ func (c *ProxmoxClient) doRequest(ctx context.Context, method, path string) ([]b
 	if err != nil {
 		return nil, fmt.Errorf("proxmox: create request: %w", err)
 	}
-	req.Header.Set("Authorization", fmt.Sprintf("PVEAPIToken=%s=%s", c.tokenID, c.tokenSecret))
+	c.authFunc(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

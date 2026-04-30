@@ -19,6 +19,10 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] `DataStore` interface has 138+ methods (`webapi/store.go`) — consider splitting into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, etc.) composed into the full interface.
 
+## Config Store — runtime_settings Split-Brain
+
+- [ ] The Test Kitchen UI saves config to an unencrypted `runtime_settings` table (plain JSON) instead of writing through `config_store` (encrypted). This violates the design principle that all config is encrypted at rest with `secret` flag controlling display suppression. **Tactical state:** `buildHypervisorClient` reads from `runtime_settings` at startup to match what the UI writes. **Strategic fix:** Migrate TK config UI to write through `config_store` (key `analysis_tools`), using the existing `secret` flag for credential fields. Then delete the `runtime_settings.test_kitchen` row and remove the runtime-settings read paths from kitchen handlers.
+
 ## Database
 
 - [ ] Migrations 0001–0009 establish natural composite keys; migrations 0013–0016 reintroduce UUID PKs for `vm_tracking`, `node_kitchen_runs`, `kitchen_batches`, `git_kitchen_results`. This is a deliberate choice (these tables model ephemeral operational records, not domain entities) but should be documented in `project-conventions.md` under a "Primary Key Strategy" section.
@@ -30,6 +34,18 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 ## Frontend — Nodes List Per-Column Filtering
 
 - [x] Disk, CookStyle, and TK columns on the Nodes list now have individual badge columns. CookStyle and TK are filterable via materialised `cookstyle_status` and `kitchen_status` columns on `node_readiness`. Disk filtering still uses the existing composite `disk_blocked`/`disk_unknown` readiness filter. **Remaining:** Disk-specific standalone filter could be added if needed.
+
+## Kitchen Queue — Live Output Streaming
+
+- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (already available via `GET /kitchen/queue/:id`) covers 90% of the use case.
+
+## Kitchen Queue — Live Output Streaming
+
+- [ ] Queue items only show output after completion. Adding real-time SSE streaming for in-progress runs would improve visibility. Deferred because no existing SSE infrastructure in the project — would need a new transport layer.
+
+## Kitchen — Cloud Driver Orphan Detection
+
+- [ ] The orphan sweep relies on VM naming conventions (embedded timestamp) and Proxmox uptime as fallback. Cloud drivers (EC2, GCE, Azure) name instances differently and don't expose uptime in the same way. **Strategic fix:** Use cloud-native tagging (e.g. `cmm-created-at: <timestamp>` tag on EC2 instances) and query by tag for orphan detection. Each cloud driver would need a sweep adapter. Only needed when Test Kitchen is used with cloud drivers at scale.
 
 ## Phasing Notes
 

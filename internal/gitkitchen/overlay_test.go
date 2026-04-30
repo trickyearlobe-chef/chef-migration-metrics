@@ -31,7 +31,7 @@ func TestGenerateOverlay_ProxmoxDriver(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "ubuntu-2204", "18.4.2")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestGenerateOverlay_NoMatch(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "ubuntu-2204", "18.4.2")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestGenerateOverlay_SkippedPlatform(t *testing.T) {
 		},
 	}
 
-	_, err := generateOverlay(tkConfig, "ubuntu-2204", "18.4.2")
+	_, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err == nil {
 		t.Fatal("expected error for skipped platform")
 	}
@@ -111,7 +111,7 @@ func TestGenerateOverlay_ChefIce(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "ubuntu-2204", "19.0.1")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "19.0.1", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestGenerateOverlay_ChefIce_NoLicenseCredential(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "ubuntu-2204", "19.2.12")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "19.2.12", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestGenerateOverlay_DriverSecrets(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "ubuntu-2204", "18.4.2")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestGenerateOverlay_TransportCredentials(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "ubuntu-2204", "18.4.2")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestGenerateOverlay_BakedIn_Chef19(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "alma-10", "19.2.12")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "alma-10", TargetChefVersion: "19.2.12", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestGenerateOverlay_BakedIn_Chef18(t *testing.T) {
 		},
 	}
 
-	overlay, err := generateOverlay(tkConfig, "centos-7", "18.4.2")
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "centos-7", TargetChefVersion: "18.4.2", CookbookName: "test-cookbook", SuiteName: "default"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,5 +293,57 @@ func TestGenerateOverlay_BakedIn_Chef18(t *testing.T) {
 	}
 	if strings.Contains(overlay, "product_version") {
 		t.Error("baked_in should not set product_version")
+	}
+}
+
+func TestGenerateOverlay_ProxmoxVMNamePrefix(t *testing.T) {
+	tkConfig := config.TestKitchenConfig{
+		Driver: "proxmox",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-2204", Image: "ubuntu22"},
+		},
+		Images: []config.ImageEntry{
+			{Name: "ubuntu22", ID: "local:iso/ubuntu.iso"},
+		},
+	}
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "ubuntu-2204",
+		TargetChefVersion: "18.4.2",
+		CookbookName:      "chef-client",
+		SuiteName:         "default",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(overlay, `vm_name_prefix: "cmm-"`) {
+		t.Errorf("expected vm_name_prefix in proxmox overlay, got:\n%s", overlay)
+	}
+}
+
+func TestGenerateOverlay_VCenterVMName(t *testing.T) {
+	tkConfig := config.TestKitchenConfig{
+		Driver: "vcenter",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: "ubuntu-2204", Image: "ubuntu22"},
+		},
+		Images: []config.ImageEntry{
+			{Name: "ubuntu22", ID: "ubuntu-22.04-template"},
+		},
+	}
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "ubuntu-2204",
+		TargetChefVersion: "18.4.2",
+		CookbookName:      "chef-client",
+		SuiteName:         "default",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(overlay, "vm_name: cmm-") {
+		t.Errorf("expected vm_name with cmm- prefix in vcenter overlay, got:\n%s", overlay)
 	}
 }

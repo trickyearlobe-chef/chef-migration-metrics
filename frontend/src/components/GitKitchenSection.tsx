@@ -5,18 +5,22 @@ import {
   fetchGitKitchenInstances,
   fetchGitKitchenResults,
   triggerGitKitchenRun,
+  triggerGitKitchenRunAll,
   fetchKitchenExclusions,
   createKitchenExclusion,
   deleteKitchenExclusion,
+  fetchKitchenQueue,
 } from "../api";
 import type {
   GitKitchenPlanResult,
   GitKitchenResult,
   GitKitchenInstanceStatus,
   KitchenInstanceExclusion,
+  KitchenQueueItem,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "./Feedback";
 import { StatusBadge } from "./StatusBadge";
+import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 
@@ -34,9 +38,11 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
   const [plan, setPlan] = useState<GitKitchenPlanResult | null>(null);
   const [results, setResults] = useState<GitKitchenResult[]>([]);
   const [exclusions, setExclusions] = useState<KitchenInstanceExclusion[]>([]);
+  const [queueItems, setQueueItems] = useState<KitchenQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runningInstance, setRunningInstance] = useState<string | null>(null);
+  const [runningAll, setRunningAll] = useState(false);
   const [runMessage, setRunMessage] = useState<string | null>(null);
   const [expandedInstance, setExpandedInstance] = useState<string | null>(null);
   const [excludeTarget, setExcludeTarget] = useState<{ suite: string; platform: string } | null>(null);
@@ -48,11 +54,13 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       fetchGitKitchenInstances(repoName),
       fetchGitKitchenResults(repoName),
       fetchKitchenExclusions(repoName),
+      fetchKitchenQueue({ repo: repoName, status: "queued,running" }),
     ])
-      .then(([planData, resultsData, exclData]) => {
+      .then(([planData, resultsData, exclData, queueData]) => {
         setPlan(planData);
         setResults(resultsData ?? []);
         setExclusions(exclData ?? []);
+        setQueueItems(queueData.items ?? []);
       })
       .catch(() => {});
   }, [repoName]);
@@ -64,11 +72,13 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       fetchGitKitchenInstances(repoName),
       fetchGitKitchenResults(repoName),
       fetchKitchenExclusions(repoName),
+      fetchKitchenQueue({ repo: repoName, status: "queued,running" }),
     ])
-      .then(([planData, resultsData, exclData]) => {
+      .then(([planData, resultsData, exclData, queueData]) => {
         setPlan(planData);
         setResults(resultsData ?? []);
         setExclusions(exclData ?? []);
+        setQueueItems(queueData.items ?? []);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -80,6 +90,16 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       if (evt.git_repo_name === repoName) {
         refreshData();
         setRunningInstance(null);
+        setRunningAll(false);
+      }
+    });
+  }, [repoName, onEvent, refreshData]);
+
+  useEffect(() => {
+    return onEvent("kitchen_queue_update", (data) => {
+      const evt = data as { git_repo_name?: string };
+      if (evt.git_repo_name === repoName) {
+        refreshData();
       }
     });
   }, [repoName, onEvent, refreshData]);
@@ -94,6 +114,14 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   }
 
+  function isInstanceBusy(instanceName: string): boolean {
+    return queueItems.some(
+      (q) => q.instance_name === instanceName && (q.status === "queued" || q.status === "running"),
+    );
+  }
+
+  const anyBusy = queueItems.some((q) => q.status === "queued" || q.status === "running");
+
   async function handleRun(instanceName: string) {
     setRunningInstance(instanceName);
     setRunMessage(null);
@@ -104,9 +132,27 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
         target_chef_version: targetChefVersion,
       });
       setRunMessage(resp.message);
+      refreshData();
     } catch (e: unknown) {
       setRunMessage(`Run failed: ${(e as Error).message}`);
       setRunningInstance(null);
+    }
+  }
+
+  async function handleRunAll() {
+    setRunningAll(true);
+    setRunMessage(null);
+    try {
+      const resp = await triggerGitKitchenRunAll({
+        git_repo_name: repoName,
+        target_chef_version: targetChefVersion,
+      });
+      const count = resp.queued_count ?? resp.instance_count ?? 0;
+      setRunMessage(`${resp.message} (${count} instances)`);
+      refreshData();
+    } catch (e: unknown) {
+      setRunMessage(`Run all failed: ${(e as Error).message}`);
+      setRunningAll(false);
     }
   }
 
@@ -142,9 +188,19 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
 
   return (
     <div>
-      <h4 className="mb-2 text-sm font-medium text-gray-600">
-        Test Kitchen Instances
-      </h4>
+      <div className="mb-2 flex items-center justify-between">
+        <h4 className="text-sm font-medium text-gray-600">
+          Test Kitchen Instances
+        </h4>
+        <button
+          onClick={handleRunAll}
+          disabled={runningAll || !!runningInstance || anyBusy}
+          className="inline-flex items-center gap-1.5 rounded-md border border-green-300 bg-white px-3 py-1 text-xs font-medium text-green-700 shadow-sm hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title="Run all mapped (non-excluded) instances for this repo"
+        >
+          {runningAll || anyBusy ? "Running…" : "Run All Suites"}
+        </button>
+      </div>
 
       {runMessage && (
         <div className="mb-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
@@ -181,7 +237,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
                   }
                   onRun={() => handleRun(inst.instance_name)}
                   onExclude={() => setExcludeTarget({ suite: inst.suite_name, platform: inst.platform_name })}
-                  isRunning={runningInstance === inst.instance_name}
+                  isRunning={runningInstance === inst.instance_name || isInstanceBusy(inst.instance_name)}
                   isExcludeTarget={isTarget}
                   excludeReason={isTarget ? excludeReason : ""}
                   onExcludeReasonChange={setExcludeReason}
@@ -219,6 +275,8 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
           </div>
         </div>
       )}
+
+      <KitchenQueuePanel repoName={repoName} />
     </div>
   );
 }

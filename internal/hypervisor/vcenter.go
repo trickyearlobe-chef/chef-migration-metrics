@@ -152,7 +152,7 @@ func (c *VCenterClient) ListManagedVMs(ctx context.Context, prefix string) ([]Ma
 
 	var managed []ManagedVM
 	for _, vm := range vms {
-		if prefix != "" && !strings.HasPrefix(vm.Name, prefix) {
+		if !matchesKitchenPrefix(vm.Name, prefix) {
 			continue
 		}
 		managed = append(managed, ManagedVM{
