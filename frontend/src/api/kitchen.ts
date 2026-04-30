@@ -26,8 +26,8 @@ import type {
   KitchenQueueListResponse,
   KitchenQueueEnqueueResponse,
 } from "../types";
-import { apiFetch, buildUrl, ApiError } from "./client";
-import { decodePutConfigResponse } from "./config";
+import { apiFetch, buildUrl } from "./client";
+import { apiMutateConfig } from "./config";
 import type { PutConfigResponse } from "./config";
 
 export function fetchTestKitchenConfig(): Promise<TestKitchenConfig> {
@@ -36,36 +36,19 @@ export function fetchTestKitchenConfig(): Promise<TestKitchenConfig> {
   );
 }
 
-export async function saveTestKitchenConfig(
+export function saveTestKitchenConfig(
   config: TestKitchenConfig,
 ): Promise<PutConfigResponse<TestKitchenConfig>> {
-  const res = await fetch(buildUrl("/admin/config/test-kitchen"), {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(config),
-  });
-  return decodePutConfigResponse<TestKitchenConfig>(res);
+  return apiMutateConfig<TestKitchenConfig>(
+    buildUrl("/admin/config/test-kitchen"),
+    config,
+  );
 }
 
-export async function deleteTestKitchenConfig(): Promise<void> {
-  const res = await fetch(buildUrl("/admin/config/test-kitchen"), {
+export function deleteTestKitchenConfig(): Promise<void> {
+  return apiFetch<void>(buildUrl("/admin/config/test-kitchen"), {
     method: "DELETE",
-    headers: { Accept: "application/json" },
   });
-  if (res.ok) return;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try { const p = JSON.parse(errBody); message = p.message || p.error || message; } catch { /* ignore */ }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
 export function fetchPlatformMappingStatus(): Promise<PlatformMappingStatusResponse> {
@@ -74,16 +57,14 @@ export function fetchPlatformMappingStatus(): Promise<PlatformMappingStatusRespo
   );
 }
 
-export async function triggerNodeKitchenRun(
+export function triggerNodeKitchenRun(
   req: NodeKitchenRunRequest,
 ): Promise<NodeKitchenTriggerResponse> {
-  const res = await fetch(buildUrl("/kitchen/node-run"), {
+  return apiFetch<NodeKitchenTriggerResponse>(buildUrl("/kitchen/node-run"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) throw new Error(`Failed to trigger node kitchen run: ${res.status}`);
-  return res.json();
 }
 
 export async function fetchNodeKitchenRuns(
@@ -99,24 +80,20 @@ export async function fetchNodeKitchenRun(id: string): Promise<NodeKitchenRun> {
   return apiFetch<NodeKitchenRun>(`/kitchen/node-runs/${id}`);
 }
 
-export async function deleteNodeKitchenRun(id: string): Promise<void> {
-  const res = await fetch(buildUrl(`/kitchen/node-runs/${id}`), {
+export function deleteNodeKitchenRun(id: string): Promise<void> {
+  return apiFetch<void>(buildUrl(`/kitchen/node-runs/${id}`), {
     method: "DELETE",
-    headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to delete node kitchen run: ${res.status}`);
 }
 
-export async function createKitchenBatch(
+export function createKitchenBatch(
   req: KitchenBatchRequest,
 ): Promise<KitchenBatch> {
-  const res = await fetch(buildUrl("/kitchen/batches"), {
+  return apiFetch<KitchenBatch>(buildUrl("/kitchen/batches"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) throw new Error(`Failed to create kitchen batch: ${res.status}`);
-  return res.json() as Promise<KitchenBatch>;
 }
 
 export async function listKitchenBatches(): Promise<KitchenBatch[]> {
@@ -127,72 +104,54 @@ export async function getKitchenBatch(id: string): Promise<KitchenBatchDetail> {
   return apiFetch<KitchenBatchDetail>(`/kitchen/batches/${id}`);
 }
 
-export async function updateKitchenBatch(
+export function updateKitchenBatch(
   id: string,
   req: KitchenBatchRequest,
 ): Promise<KitchenBatch> {
-  const res = await fetch(buildUrl(`/kitchen/batches/${id}`), {
+  return apiFetch<KitchenBatch>(buildUrl(`/kitchen/batches/${id}`), {
     method: "PUT",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) throw new Error(`Failed to update kitchen batch: ${res.status}`);
-  return res.json() as Promise<KitchenBatch>;
 }
 
-export async function runKitchenBatch(id: string): Promise<KitchenBatchDetail> {
-  const res = await fetch(buildUrl(`/kitchen/batches/${id}/run`), {
+export function runKitchenBatch(id: string): Promise<KitchenBatchDetail> {
+  return apiFetch<KitchenBatchDetail>(buildUrl(`/kitchen/batches/${id}/run`), {
     method: "POST",
-    headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to run kitchen batch: ${res.status}`);
-  return res.json() as Promise<KitchenBatchDetail>;
 }
 
-export async function cancelKitchenBatch(id: string): Promise<KitchenBatch> {
-  const res = await fetch(buildUrl(`/kitchen/batches/${id}/cancel`), {
+export function cancelKitchenBatch(id: string): Promise<KitchenBatch> {
+  return apiFetch<KitchenBatch>(buildUrl(`/kitchen/batches/${id}/cancel`), {
     method: "POST",
-    headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to cancel kitchen batch: ${res.status}`);
-  return res.json() as Promise<KitchenBatch>;
 }
 
-export async function deleteKitchenBatch(id: string): Promise<void> {
-  const res = await fetch(buildUrl(`/kitchen/batches/${id}`), {
+export function deleteKitchenBatch(id: string): Promise<void> {
+  return apiFetch<void>(buildUrl(`/kitchen/batches/${id}`), {
     method: "DELETE",
-    headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to delete kitchen batch: ${res.status}`);
 }
 
-export async function excludeGitRepo(
+export function excludeGitRepo(
   name: string,
   req: GitRepoExcludeRequest,
 ): Promise<void> {
-  const res = await fetch(
+  return apiFetch<void>(
     buildUrl(`/git-repos/${encodeURIComponent(name)}/exclude`),
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     },
   );
-  if (!res.ok) throw new Error(`Failed to exclude git repo: ${res.status}`);
 }
 
-export async function clearGitRepoExclusion(name: string): Promise<void> {
-  const res = await fetch(
+export function clearGitRepoExclusion(name: string): Promise<void> {
+  return apiFetch<void>(
     buildUrl(`/git-repos/${encodeURIComponent(name)}/exclude`),
-    {
-      method: "DELETE",
-      headers: { Accept: "application/json" },
-    },
+    { method: "DELETE" },
   );
-  if (!res.ok) throw new Error(`Failed to clear git repo exclusion: ${res.status}`);
 }
 
 export async function listExcludedGitRepos(): Promise<GitRepoListItem[]> {
@@ -232,28 +191,24 @@ export async function fetchGitKitchenResults(
   return apiFetch<GitKitchenResult[]>(`/kitchen/git/results${params}`);
 }
 
-export async function triggerGitKitchenRun(
+export function triggerGitKitchenRun(
   req: GitKitchenRunRequest,
 ): Promise<GitKitchenRunResponse> {
-  const res = await fetch(buildUrl("/kitchen/git/run"), {
+  return apiFetch<GitKitchenRunResponse>(buildUrl("/kitchen/git/run"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) throw new Error(`Failed to trigger git kitchen run: ${res.status}`);
-  return res.json();
 }
 
-export async function triggerGitKitchenRunAll(
+export function triggerGitKitchenRunAll(
   req: GitKitchenRunAllRequest,
 ): Promise<GitKitchenRunAllResponse> {
-  const res = await fetch(buildUrl("/kitchen/git/run-all"), {
+  return apiFetch<GitKitchenRunAllResponse>(buildUrl("/kitchen/git/run-all"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) throw new Error(`Failed to trigger run-all: ${res.status}`);
-  return res.json();
 }
 
 export async function runOrphanSweep(dryRun: boolean): Promise<SweepResult> {
@@ -275,27 +230,20 @@ export async function fetchKitchenExclusions(
   );
 }
 
-export async function createKitchenExclusion(
+export function createKitchenExclusion(
   req: CreateKitchenExclusionRequest,
 ): Promise<KitchenInstanceExclusion> {
-  const res = await fetch(buildUrl("/kitchen/git/exclusions"), {
+  return apiFetch<KitchenInstanceExclusion>(buildUrl("/kitchen/git/exclusions"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error(msg || `Failed to create exclusion: ${res.status}`);
-  }
-  return res.json();
 }
 
-export async function deleteKitchenExclusion(id: string): Promise<void> {
-  const res = await fetch(buildUrl(`/kitchen/git/exclusions/${id}`), {
+export function deleteKitchenExclusion(id: string): Promise<void> {
+  return apiFetch<void>(buildUrl(`/kitchen/git/exclusions/${id}`), {
     method: "DELETE",
-    headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Failed to delete exclusion: ${res.status}`);
 }
 
 // --- Kitchen Run Queue ---

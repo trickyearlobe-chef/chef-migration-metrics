@@ -40,7 +40,10 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (res.ok) {
-    return res.json() as Promise<T>;
+    if (res.status === 204 || res.status === 205) return undefined as T;
+    const text = await res.text();
+    const trimmed = text.trim();
+    return (trimmed ? JSON.parse(trimmed) : undefined) as T;
   }
 
   // Try to extract a structured error message from the JSON body.

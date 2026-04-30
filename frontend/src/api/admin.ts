@@ -7,7 +7,7 @@ import type {
   UpdateUserRequest,
   ResetPasswordRequest,
 } from "../types";
-import { apiFetch, buildUrl, ApiError } from "./client";
+import { apiFetch, buildUrl } from "./client";
 import type { PaginationQuery } from "./client";
 
 export function fetchAdminUsers(
@@ -18,112 +18,45 @@ export function fetchAdminUsers(
   );
 }
 
-export async function createUser(req: CreateUserRequest): Promise<AdminUser> {
-  const url = buildUrl("/admin/users");
-  const res = await fetch(url, {
+export function createUser(req: CreateUserRequest): Promise<AdminUser> {
+  return apiFetch<AdminUser>(buildUrl("/admin/users"), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (res.ok) return res.json() as Promise<AdminUser>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const parsed = JSON.parse(errBody);
-      message = parsed.message || parsed.error || message;
-    } catch { /* ignore */ }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
-export async function updateUser(
+export function updateUser(
   username: string,
   req: UpdateUserRequest,
 ): Promise<AdminUser> {
-  const url = buildUrl(
-    `/admin/users/${encodeURIComponent(username)}`,
-  );
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+  return apiFetch<AdminUser>(
+    buildUrl(`/admin/users/${encodeURIComponent(username)}`),
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
     },
-    body: JSON.stringify(req),
-  });
-  if (res.ok) return res.json() as Promise<AdminUser>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const parsed = JSON.parse(errBody);
-      message = parsed.message || parsed.error || message;
-    } catch { /* ignore */ }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
+  );
 }
 
-export async function resetUserPassword(
+export function resetUserPassword(
   username: string,
   req: ResetPasswordRequest,
 ): Promise<void> {
-  const url = buildUrl(
-    `/admin/users/${encodeURIComponent(username)}/reset-password`,
-  );
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+  return apiFetch<void>(
+    buildUrl(`/admin/users/${encodeURIComponent(username)}/reset-password`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
     },
-    body: JSON.stringify(req),
-  });
-  if (res.ok) return;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const parsed = JSON.parse(errBody);
-      message = parsed.message || parsed.error || message;
-    } catch { /* ignore */ }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
+  );
 }
 
-export async function deleteUser(username: string): Promise<void> {
-  const url = buildUrl(`/admin/users/${encodeURIComponent(username)}`);
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: { Accept: "application/json" },
-  });
-  if (res.ok) return;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const parsed = JSON.parse(errBody);
-      message = parsed.message || parsed.error || message;
-    } catch { /* ignore */ }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
+export function deleteUser(username: string): Promise<void> {
+  return apiFetch<void>(
+    buildUrl(`/admin/users/${encodeURIComponent(username)}`),
+    { method: "DELETE" },
+  );
 }

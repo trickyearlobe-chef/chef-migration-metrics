@@ -7,7 +7,7 @@ import type {
   CookbookCommittersResponse,
   ResetGitCookbookResponse,
 } from "../types";
-import { apiFetch, buildUrl, BASE } from "./client";
+import { apiFetch, buildUrl } from "./client";
 import type { GitRepoFilterQuery, PaginationQuery } from "./client";
 
 export function fetchGitRepos(
@@ -30,28 +30,24 @@ export function fetchGitRepoDetail(
   );
 }
 
-export async function requestGitRepoRescan(name: string): Promise<{
+export function requestGitRepoRescan(name: string): Promise<{
   git_repo_name: string;
   repos_invalidated: number;
   message: string;
 }> {
-  const res = await fetch(
-    `${BASE}/git-repos/${encodeURIComponent(name)}/rescan`,
-    { method: "POST", headers: { Accept: "application/json" } },
+  return apiFetch<{ git_repo_name: string; repos_invalidated: number; message: string }>(
+    buildUrl(`/git-repos/${encodeURIComponent(name)}/rescan`),
+    { method: "POST" },
   );
-  if (!res.ok) throw new Error(`Rescan git repo failed: ${res.status}`);
-  return res.json();
 }
 
-export async function resetGitRepo(
+export function resetGitRepo(
   name: string,
 ): Promise<ResetGitCookbookResponse> {
-  const res = await fetch(
-    `${BASE}/git-repos/${encodeURIComponent(name)}/reset`,
-    { method: "POST", headers: { Accept: "application/json" } },
+  return apiFetch<ResetGitCookbookResponse>(
+    buildUrl(`/git-repos/${encodeURIComponent(name)}/reset`),
+    { method: "POST" },
   );
-  if (!res.ok) throw new Error(`Reset git repo failed: ${res.status}`);
-  return res.json() as Promise<ResetGitCookbookResponse>;
 }
 
 export function fetchGitRepoRemediation(
