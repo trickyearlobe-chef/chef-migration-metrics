@@ -140,7 +140,21 @@ Returns the authenticated user's profile and role.
 
 ---
 
-## Authorisation Middleware
+## Security Response Headers
+
+All responses include the following HTTP security headers:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Prevents browsers from MIME-sniffing a response away from the declared content type |
+| `X-Frame-Options` | `DENY` | Prevents the app from being embedded in an iframe (clickjacking protection) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer information sent to cross-origin destinations |
+
+These are applied by a `SecurityHeadersMiddleware` wrapping the entire router.
+
+---
+
+
 
 After authentication, the middleware checks the user's role against the endpoint's required permission level:
 
