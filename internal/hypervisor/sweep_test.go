@@ -256,10 +256,31 @@ func TestSweepOrphanVMs_UptimeFallback_KitchenVMs(t *testing.T) {
 }
 
 func TestSweepOrphanVMs_UptimeFallback_PoweredOff(t *testing.T) {
-	// Powered off kitchen VM has zero uptime — should be skipped (safe default).
+	// Powered off kitchen VM has zero uptime — should be swept (stopped = orphaned).
 	hyp := &mockHypervisor{
 		managedVMs: []ManagedVM{
-			{HypervisorID: "146", Name: "kitchen-config-amazonlinux-2-efebd23e", Uptime: 0},
+			{HypervisorID: "146", Name: "kitchen-config-amazonlinux-2-efebd23e", Uptime: 0, PowerState: "poweredOff"},
+		},
+	}
+
+	result, err := SweepOrphanVMs(context.Background(), hyp, "cmm", 1*time.Hour, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Scanned != 1 {
+		t.Errorf("Scanned = %d, want 1", result.Scanned)
+	}
+	if len(result.Details) != 1 || result.Details[0].Action != "would_destroy" {
+		t.Errorf("expected would_destroy for powered-off kitchen VM, got %+v", result.Details)
+	}
+}
+
+func TestSweepOrphanVMs_KitchenVM_ZeroUptime_Running(t *testing.T) {
+	// A running kitchen VM with zero uptime (just booted) — age unknown, skip.
+	hyp := &mockHypervisor{
+		managedVMs: []ManagedVM{
+			{HypervisorID: "113", Name: "kitchen-cron-fedora-c4fd114d", Uptime: 0, PowerState: "poweredOn"},
 		},
 	}
 
@@ -269,7 +290,7 @@ func TestSweepOrphanVMs_UptimeFallback_PoweredOff(t *testing.T) {
 	}
 
 	if result.SkippedUnparsed != 1 {
-		t.Errorf("SkippedUnparsed = %d, want 1 (zero uptime = unknown age)", result.SkippedUnparsed)
+		t.Errorf("SkippedUnparsed = %d, want 1 (running + zero uptime = unknown)", result.SkippedUnparsed)
 	}
 }
 

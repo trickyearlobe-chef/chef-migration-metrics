@@ -23,11 +23,11 @@ type SweepResult struct {
 
 // SweepDetail describes the action taken (or skipped) for a single VM.
 type SweepDetail struct {
-	VMName       string        `json:"vm_name"`
-	HypervisorID string        `json:"hypervisor_id"`
-	Age          time.Duration `json:"age_seconds"`
-	Action       string        `json:"action"`
-	Error        string        `json:"error,omitempty"`
+	VMName       string `json:"vm_name"`
+	HypervisorID string `json:"hypervisor_id"`
+	Age          int64  `json:"age_seconds"` // seconds
+	Action       string `json:"action"`
+	Error        string `json:"error,omitempty"`
 }
 
 // SweepOrphanVMs lists all VMs matching prefix on the hypervisor and
@@ -46,6 +46,7 @@ func SweepOrphanVMs(ctx context.Context, hyp Hypervisor, prefix string, ageThres
 	result := &SweepResult{
 		Scanned: len(vms),
 		DryRun:  dryRun,
+		Details: []SweepDetail{},
 	}
 
 	now := time.Now().Unix()
@@ -62,12 +63,14 @@ func SweepOrphanVMs(ctx context.Context, hyp Hypervisor, prefix string, ageThres
 			continue
 		}
 
+		ageSec := int64(age / time.Second)
+
 		if age < ageThreshold {
 			result.SkippedTooYoung++
 			result.Details = append(result.Details, SweepDetail{
 				VMName:       vm.Name,
 				HypervisorID: vm.HypervisorID,
-				Age:          age,
+				Age:          ageSec,
 				Action:       "skipped_too_young",
 			})
 			continue
@@ -77,7 +80,7 @@ func SweepOrphanVMs(ctx context.Context, hyp Hypervisor, prefix string, ageThres
 			result.Details = append(result.Details, SweepDetail{
 				VMName:       vm.Name,
 				HypervisorID: vm.HypervisorID,
-				Age:          age,
+				Age:          ageSec,
 				Action:       "would_destroy",
 			})
 			continue
@@ -88,7 +91,7 @@ func SweepOrphanVMs(ctx context.Context, hyp Hypervisor, prefix string, ageThres
 			result.Details = append(result.Details, SweepDetail{
 				VMName:       vm.Name,
 				HypervisorID: vm.HypervisorID,
-				Age:          age,
+				Age:          ageSec,
 				Action:       "error",
 				Error:        err.Error(),
 			})
@@ -99,7 +102,7 @@ func SweepOrphanVMs(ctx context.Context, hyp Hypervisor, prefix string, ageThres
 		result.Details = append(result.Details, SweepDetail{
 			VMName:       vm.Name,
 			HypervisorID: vm.HypervisorID,
-			Age:          age,
+			Age:          ageSec,
 			Action:       "destroyed",
 		})
 	}
@@ -110,14 +113,21 @@ func SweepOrphanVMs(ctx context.Context, hyp Hypervisor, prefix string, ageThres
 // vmAge determines the age of a VM using the best available signal:
 // 1. If the name parses as a CMM-named VM, use the embedded timestamp.
 // 2. If the name starts with "kitchen-" and has a non-zero uptime, use uptime.
-// 3. Otherwise, age is unknown.
+// 3. If the name starts with "kitchen-" and the VM is powered off, treat as
+//    max age (a stopped kitchen VM is definitionally orphaned).
+// 4. Otherwise, age is unknown.
 func vmAge(vm ManagedVM, prefix string, nowUnix int64) (time.Duration, bool) {
 	comp, ok := ParseVMName(vm.Name, prefix)
 	if ok {
 		return time.Duration(nowUnix-comp.Timestamp) * time.Second, true
 	}
-	if strings.HasPrefix(vm.Name, "kitchen-") && vm.Uptime > 0 {
-		return vm.Uptime, true
+	if strings.HasPrefix(vm.Name, "kitchen-") {
+		if vm.Uptime > 0 {
+			return vm.Uptime, true
+		}
+		if vm.PowerState == "poweredOff" {
+			return time.Duration(nowUnix) * time.Second, true
+		}
 	}
 	return 0, false
 }
