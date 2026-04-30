@@ -203,6 +203,11 @@ func (r *Router) putAdminConfigConcurrency(w http.ResponseWriter, req *http.Requ
 	}
 
 	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency, false)
+
+	// Dynamically adjust kitchen queue worker pool if running.
+	if r.kitchenQueue != nil {
+		r.kitchenQueue.SetWorkerCount(input.TestKitchenRun)
+	}
 }
 
 // ---------------------------------------------------------------------------

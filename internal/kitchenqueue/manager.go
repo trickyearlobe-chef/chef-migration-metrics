@@ -48,14 +48,17 @@ type Manager struct {
 	eventFn  EventListener
 	outputFn OutputListener
 
-	workerCount int
+	workerCount  int
 	pollInterval time.Duration
 
-	mu       sync.Mutex
-	running  map[string]context.CancelFunc // item ID → cancel func
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	mu            sync.Mutex
+	running       map[string]context.CancelFunc // item ID → cancel func
+	targetWorkers int
+	activeWorkers int
+	nextWorkerID  int
+	stopOnce      sync.Once
+	stopCh        chan struct{}
+	wg            sync.WaitGroup
 }
 
 // Option configures a Manager.
@@ -121,10 +124,15 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.log("WARN", "marked %d in-flight items as interrupted on startup", n)
 	}
 
+	m.mu.Lock()
+	m.targetWorkers = m.workerCount
 	for i := 0; i < m.workerCount; i++ {
+		m.activeWorkers++
 		m.wg.Add(1)
-		go m.worker(i)
+		go m.worker(m.nextWorkerID)
+		m.nextWorkerID++
 	}
+	m.mu.Unlock()
 
 	m.log("INFO", "started %d kitchen queue workers", m.workerCount)
 	return nil
@@ -188,6 +196,37 @@ func (m *Manager) RunningCount() int {
 	return n
 }
 
+// SetWorkerCount dynamically adjusts the number of worker goroutines.
+// Scale-up spawns new workers immediately. Scale-down lets excess workers
+// exit gracefully at the top of their next poll cycle.
+func (m *Manager) SetWorkerCount(n int) {
+	if n < 1 {
+		n = 1
+	}
+	m.mu.Lock()
+	old := m.targetWorkers
+	m.targetWorkers = n
+	if n > m.activeWorkers {
+		diff := n - m.activeWorkers
+		for i := 0; i < diff; i++ {
+			m.activeWorkers++
+			m.wg.Add(1)
+			go m.worker(m.nextWorkerID)
+			m.nextWorkerID++
+		}
+	}
+	m.mu.Unlock()
+	m.log("INFO", "worker count adjusted: %d → %d", old, n)
+}
+
+// WorkerCount returns the current target worker count.
+func (m *Manager) WorkerCount() int {
+	m.mu.Lock()
+	n := m.targetWorkers
+	m.mu.Unlock()
+	return n
+}
+
 // worker is the main loop for a single worker goroutine.
 func (m *Manager) worker(id int) {
 	defer m.wg.Done()
@@ -195,9 +234,22 @@ func (m *Manager) worker(id int) {
 	for {
 		select {
 		case <-m.stopCh:
+			m.mu.Lock()
+			m.activeWorkers--
+			m.mu.Unlock()
 			return
 		default:
 		}
+
+		// Scale-down: exit if there are more active workers than target.
+		m.mu.Lock()
+		if m.activeWorkers > m.targetWorkers {
+			m.activeWorkers--
+			m.mu.Unlock()
+			m.log("INFO", "worker %d: scaling down, exiting", id)
+			return
+		}
+		m.mu.Unlock()
 
 		item, err := m.store.ClaimNextKitchenRun(context.Background())
 		if err != nil {
