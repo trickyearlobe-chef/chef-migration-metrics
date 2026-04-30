@@ -584,7 +584,7 @@ func TestSetSessionCookie(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/", nil) // plain HTTP
 		expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
-		SetSessionCookie(w, r, "my-token-value", expires)
+		SetSessionCookie(w, r, "my-token-value", expires, false)
 
 		found := findCookie(t, w.Result().Cookies(), "session")
 		if found.Value != "my-token-value" {
@@ -616,7 +616,7 @@ func TestSetSessionCookie(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
 		r.TLS = &tls.ConnectionState{} // simulate TLS connection
 		expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
-		SetSessionCookie(w, r, "tls-token", expires)
+		SetSessionCookie(w, r, "tls-token", expires, false)
 
 		found := findCookie(t, w.Result().Cookies(), "session")
 		if !found.Secure {
@@ -624,16 +624,29 @@ func TestSetSessionCookie(t *testing.T) {
 		}
 	})
 
-	t.Run("X-Forwarded-Proto https sets Secure=true", func(t *testing.T) {
+	t.Run("X-Forwarded-Proto https sets Secure=true when trusted", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.Header.Set("X-Forwarded-Proto", "https")
 		expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
-		SetSessionCookie(w, r, "proxy-token", expires)
+		SetSessionCookie(w, r, "proxy-token", expires, true) // trustedProxy=true
 
 		found := findCookie(t, w.Result().Cookies(), "session")
 		if !found.Secure {
-			t.Error("expected Secure=true when X-Forwarded-Proto is https")
+			t.Error("expected Secure=true when X-Forwarded-Proto is https and trustedProxy=true")
+		}
+	})
+
+	t.Run("X-Forwarded-Proto https ignored when not trusted", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		expires := time.Date(2025, 7, 1, 12, 0, 0, 0, time.UTC)
+		SetSessionCookie(w, r, "proxy-token", expires, false) // trustedProxy=false
+
+		found := findCookie(t, w.Result().Cookies(), "session")
+		if found.Secure {
+			t.Error("expected Secure=false when X-Forwarded-Proto present but trustedProxy=false")
 		}
 	})
 }
@@ -642,7 +655,7 @@ func TestClearSessionCookie(t *testing.T) {
 	t.Run("plain HTTP sets Secure=false", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		ClearSessionCookie(w, r)
+		ClearSessionCookie(w, r, false)
 
 		found := findCookie(t, w.Result().Cookies(), "session")
 		if found.Value != "" {
@@ -663,7 +676,7 @@ func TestClearSessionCookie(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
 		r.TLS = &tls.ConnectionState{}
-		ClearSessionCookie(w, r)
+		ClearSessionCookie(w, r, false)
 
 		found := findCookie(t, w.Result().Cookies(), "session")
 		if !found.Secure {

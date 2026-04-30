@@ -26,7 +26,7 @@ func TestHSTSMiddleware_AddsHeaderOnTLS(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner)
+	handler := HSTSMiddleware(inner, false) // trustedProxy=false; TLS is direct
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	// Simulate TLS by setting the TLS field.
@@ -47,12 +47,12 @@ func TestHSTSMiddleware_AddsHeaderOnTLS(t *testing.T) {
 	}
 }
 
-func TestHSTSMiddleware_AddsHeaderOnXForwardedProto(t *testing.T) {
+func TestHSTSMiddleware_AddsHeaderOnXForwardedProto_WhenTrusted(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner)
+	handler := HSTSMiddleware(inner, true) // trustedProxy=true
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
@@ -62,7 +62,26 @@ func TestHSTSMiddleware_AddsHeaderOnXForwardedProto(t *testing.T) {
 
 	hsts := rr.Header().Get("Strict-Transport-Security")
 	if hsts == "" {
-		t.Fatal("expected HSTS header with X-Forwarded-Proto: https")
+		t.Fatal("expected HSTS header with X-Forwarded-Proto: https and trustedProxy=true")
+	}
+}
+
+func TestHSTSMiddleware_IgnoresXForwardedProto_WhenNotTrusted(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := HSTSMiddleware(inner, false) // trustedProxy=false
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	hsts := rr.Header().Get("Strict-Transport-Security")
+	if hsts != "" {
+		t.Errorf("expected no HSTS header when trustedProxy=false and no direct TLS, got %q", hsts)
 	}
 }
 
@@ -71,7 +90,7 @@ func TestHSTSMiddleware_NoHeaderOnPlainHTTP(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner)
+	handler := HSTSMiddleware(inner, false)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	// No TLS, no X-Forwarded-Proto.
@@ -92,7 +111,7 @@ func TestHSTSMiddleware_PassesThroughToHandler(t *testing.T) {
 		fmt.Fprint(w, "body content")
 	})
 
-	handler := HSTSMiddleware(inner)
+	handler := HSTSMiddleware(inner, false)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.TLS = &tls.ConnectionState{}
@@ -116,7 +135,7 @@ func TestHSTSMiddleware_XForwardedProtoCaseInsensitive(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner)
+	handler := HSTSMiddleware(inner, true) // trustedProxy=true
 
 	for _, proto := range []string{"HTTPS", "Https", "https", "hTtPs"} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -137,7 +156,7 @@ func TestHSTSMiddleware_NoHeaderOnHTTPXForwardedProto(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner)
+	handler := HSTSMiddleware(inner, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-Proto", "http")

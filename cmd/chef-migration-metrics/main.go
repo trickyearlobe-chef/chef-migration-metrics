@@ -401,6 +401,7 @@ func (app *serverApp) setupAuth(ctx context.Context) error {
 
 	app.localAuth = auth.NewLocalAuthenticator(app.db, app.cfg.Auth.LockoutAttempts,
 		auth.WithLocalAuthLogger(authLogFn),
+		auth.WithTrustedProxy(app.cfg.Server.TrustedProxy),
 	)
 
 	app.authMiddleware = auth.NewMiddleware(app.sessionMgr,
@@ -1171,6 +1172,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			MinVersion:              app.cfg.Server.TLS.MinVersion,
 			HTTPRedirectPort:        app.cfg.Server.TLS.HTTPRedirectPort,
 			GracefulShutdownTimeout: shutdownTimeout,
+			TrustedProxy:            app.cfg.Server.TrustedProxy,
 		}, tlsLog)
 		if tlsErr != nil {
 			app.startup.Error(fmt.Sprintf("TLS listener setup failed: %v", tlsErr))

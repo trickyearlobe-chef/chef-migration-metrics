@@ -578,6 +578,11 @@ type ServerConfig struct {
 	TLS                     TLSConfig       `yaml:"tls"`
 	WebSocket               WebSocketConfig `yaml:"websocket"`
 	GracefulShutdownSeconds int             `yaml:"graceful_shutdown_seconds"`
+	// TrustedProxy controls whether X-Forwarded-Proto is trusted when
+	// determining whether a request arrived over TLS. Set to true only
+	// when the application is deployed behind a trusted reverse proxy.
+	// Default false (safe).
+	TrustedProxy bool `yaml:"trusted_proxy"`
 }
 
 // WebSocketConfig controls the real-time event WebSocket endpoint.
