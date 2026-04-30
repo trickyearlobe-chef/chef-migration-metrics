@@ -394,3 +394,97 @@ func (e *concurrencyTrackingExecutor) Execute(ctx context.Context, item *datasto
 	defer e.current.Add(-1)
 	return e.inner.Execute(ctx, item)
 }
+
+func TestManager_SetWorkerCount_ScaleUp(t *testing.T) {
+	// Start with 1 worker, scale to 3, verify all 3 process items concurrently.
+	items := make([]*datastore.KitchenQueueItem, 6)
+	for i := range items {
+		items[i] = &datastore.KitchenQueueItem{
+			ID:                fmt.Sprintf("scale-%d", i),
+			RunType:           "git",
+			Status:            datastore.QueueStatusQueued,
+			TargetChefVersion: "18",
+		}
+	}
+	store := newMockStore(items...)
+
+	var maxConcurrent atomic.Int32
+	var currentConcurrent atomic.Int32
+	exec := &mockExecutor{delay: 50 * time.Millisecond}
+	trackingExec := &concurrencyTrackingExecutor{
+		inner:         exec,
+		current:       &currentConcurrent,
+		maxConcurrent: &maxConcurrent,
+	}
+
+	mgr := kitchenqueue.New(store, trackingExec,
+		kitchenqueue.WithWorkerCount(1),
+		kitchenqueue.WithPollInterval(5*time.Millisecond),
+	)
+
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Scale up to 3 workers.
+	mgr.SetWorkerCount(3)
+
+	if got := mgr.WorkerCount(); got != 3 {
+		t.Errorf("WorkerCount: got %d, want 3", got)
+	}
+
+	// Wait for all items to complete.
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for items to complete")
+		default:
+		}
+		allDone := true
+		for _, item := range items {
+			if store.getItem(item.ID).Status != datastore.QueueStatusCompleted {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	mgr.Stop(5 * time.Second)
+
+	// With 3 workers and 50ms delay, we should see >1 concurrent executions.
+	if maxConcurrent.Load() < 2 {
+		t.Errorf("expected concurrent execution after scale-up, max was %d", maxConcurrent.Load())
+	}
+}
+
+func TestManager_SetWorkerCount_ScaleDown(t *testing.T) {
+	// Start with 4 workers, scale to 1.
+	store := newMockStore()
+	exec := &mockExecutor{delay: 5 * time.Millisecond}
+
+	mgr := kitchenqueue.New(store, exec,
+		kitchenqueue.WithWorkerCount(4),
+		kitchenqueue.WithPollInterval(5*time.Millisecond),
+	)
+
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Scale down.
+	mgr.SetWorkerCount(1)
+
+	// Allow time for excess workers to exit on their next poll cycle.
+	time.Sleep(100 * time.Millisecond)
+
+	if got := mgr.WorkerCount(); got != 1 {
+		t.Errorf("WorkerCount: got %d, want 1", got)
+	}
+
+	mgr.Stop(5 * time.Second)
+}
