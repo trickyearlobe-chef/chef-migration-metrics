@@ -12,7 +12,7 @@ import type {
   CookbookCommittersResponse,
   CommitterAssignResponse,
 } from "../types";
-import { apiFetch, buildUrl, ApiError } from "./client";
+import { apiFetch, buildUrl } from "./client";
 import type { PaginationQuery } from "./client";
 
 export interface OwnerFilterQuery extends PaginationQuery {
@@ -66,7 +66,7 @@ export function fetchOwnerDetail(
   );
 }
 
-export async function createOwner(body: {
+export function createOwner(body: {
   name: string;
   owner_type: string;
   display_name?: string;
@@ -74,34 +74,14 @@ export async function createOwner(body: {
   contact_channel?: string;
   metadata?: Record<string, unknown>;
 }): Promise<Owner> {
-  const url = buildUrl("/owners");
-  const res = await fetch(url, {
+  return apiFetch<Owner>(buildUrl("/owners"), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (res.ok) return res.json() as Promise<Owner>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
-export async function updateOwner(
+export function updateOwner(
   name: string,
   body: {
     display_name?: string;
@@ -111,55 +91,17 @@ export async function updateOwner(
     metadata?: Record<string, unknown>;
   },
 ): Promise<Owner> {
-  const url = buildUrl(`/owners/${encodeURIComponent(name)}`);
-  const res = await fetch(url, {
+  return apiFetch<Owner>(buildUrl(`/owners/${encodeURIComponent(name)}`), {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (res.ok) return res.json() as Promise<Owner>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
-export async function deleteOwner(name: string): Promise<void> {
-  const url = buildUrl(`/owners/${encodeURIComponent(name)}`);
-  const res = await fetch(url, {
+export function deleteOwner(name: string): Promise<void> {
+  return apiFetch<void>(buildUrl(`/owners/${encodeURIComponent(name)}`), {
     method: "DELETE",
-    headers: { Accept: "application/json" },
   });
-  if (res.ok) return;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
 export function fetchAssignments(
@@ -174,7 +116,7 @@ export function fetchAssignments(
   );
 }
 
-export async function createAssignments(
+export function createAssignments(
   ownerName: string,
   body: {
     assignments: {
@@ -185,94 +127,40 @@ export async function createAssignments(
     }[];
   },
 ): Promise<{ created: number; assignments: unknown[] }> {
-  const url = buildUrl(`/owners/${encodeURIComponent(ownerName)}/assignments`);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+  return apiFetch<{ created: number; assignments: unknown[] }>(
+    buildUrl(`/owners/${encodeURIComponent(ownerName)}/assignments`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-  if (res.ok) return res.json();
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
+  );
 }
 
-export async function deleteAssignment(
+export function deleteAssignment(
   ownerName: string,
   assignmentId: string,
 ): Promise<void> {
-  const url = buildUrl(
-    `/owners/${encodeURIComponent(ownerName)}/assignments/${encodeURIComponent(assignmentId)}`,
+  return apiFetch<void>(
+    buildUrl(
+      `/owners/${encodeURIComponent(ownerName)}/assignments/${encodeURIComponent(assignmentId)}`,
+    ),
+    { method: "DELETE" },
   );
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: { Accept: "application/json" },
-  });
-  if (res.ok) return;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
-export async function reassignOwnership(body: {
+export function reassignOwnership(body: {
   from_owner: string;
   to_owner: string;
   entity_type?: string;
   organisation?: string;
   delete_source_owner?: boolean;
 }): Promise<ReassignResponse> {
-  const url = buildUrl("/ownership/reassign");
-  const res = await fetch(url, {
+  return apiFetch<ReassignResponse>(buildUrl("/ownership/reassign"), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (res.ok) return res.json() as Promise<ReassignResponse>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
 export function fetchOwnershipLookup(params: {
@@ -300,32 +188,13 @@ export async function importOwnership(
   file: File,
   format: "csv" | "json",
 ): Promise<ImportResponse> {
-  const url = buildUrl("/ownership/import");
   const formData = new FormData();
   formData.append("format", format);
   formData.append("file", file);
-
-  const res = await fetch(url, {
+  return apiFetch<ImportResponse>(buildUrl("/ownership/import"), {
     method: "POST",
-    headers: { Accept: "application/json" },
     body: formData,
   });
-  if (res.ok) return res.json() as Promise<ImportResponse>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
 }
 
 export function fetchCookbookCommitters(
@@ -340,7 +209,7 @@ export function fetchCookbookCommitters(
   );
 }
 
-export async function assignCookbookCommitters(
+export function assignCookbookCommitters(
   cookbookName: string,
   body: {
     committers: {
@@ -350,31 +219,12 @@ export async function assignCookbookCommitters(
     }[];
   },
 ): Promise<CommitterAssignResponse> {
-  const url = buildUrl(
-    `/cookbooks/${encodeURIComponent(cookbookName)}/committers/assign`,
-  );
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+  return apiFetch<CommitterAssignResponse>(
+    buildUrl(`/cookbooks/${encodeURIComponent(cookbookName)}/committers/assign`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-  if (res.ok) return res.json() as Promise<CommitterAssignResponse>;
-  let code = res.status;
-  let message = res.statusText || `HTTP ${res.status}`;
-  try {
-    const errBody = await res.text();
-    try {
-      const p = JSON.parse(errBody);
-      message = p.message || p.error || message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(code, message, errBody);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(code, message, "");
-  }
+  );
 }

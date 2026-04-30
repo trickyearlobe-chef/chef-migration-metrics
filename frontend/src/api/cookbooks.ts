@@ -7,7 +7,7 @@ import type {
   CookbookRemediationResponse,
   ResetGitCookbookResponse,
 } from "../types";
-import { apiFetch, buildUrl, BASE } from "./client";
+import { apiFetch, buildUrl } from "./client";
 import type { CookbookFilterQuery } from "./client";
 
 export function fetchCookbooks(
@@ -42,37 +42,30 @@ export function fetchCookbookPlatformCoverage(
   );
 }
 
-export async function requestCookbookRescan(name: string): Promise<{
+export function requestCookbookRescan(name: string): Promise<{
   cookbook_name: string;
   versions_invalidated: number;
   message: string;
 }> {
-  const res = await fetch(
-    `${BASE}/cookbooks/${encodeURIComponent(name)}/rescan`,
-    { method: "POST", headers: { Accept: "application/json" } },
+  return apiFetch<{ cookbook_name: string; versions_invalidated: number; message: string }>(
+    buildUrl(`/cookbooks/${encodeURIComponent(name)}/rescan`),
+    { method: "POST" },
   );
-  if (!res.ok) throw new Error(`Rescan failed: ${res.status}`);
-  return res.json();
 }
 
-export async function rescanAllCookstyle(): Promise<{ message: string }> {
-  const res = await fetch(buildUrl("/admin/rescan-all-cookstyle"), {
+export function rescanAllCookstyle(): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(buildUrl("/admin/rescan-all-cookstyle"), {
     method: "POST",
-    headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Rescan all failed: ${res.status}`);
-  return res.json() as Promise<{ message: string }>;
 }
 
-export async function resetGitCookbook(
+export function resetGitCookbook(
   name: string,
 ): Promise<ResetGitCookbookResponse> {
-  const res = await fetch(
-    `${BASE}/cookbooks/${encodeURIComponent(name)}/reset-git`,
-    { method: "POST", headers: { Accept: "application/json" } },
+  return apiFetch<ResetGitCookbookResponse>(
+    buildUrl(`/cookbooks/${encodeURIComponent(name)}/reset-git`),
+    { method: "POST" },
   );
-  if (!res.ok) throw new Error(`Reset git cookbook failed: ${res.status}`);
-  return res.json() as Promise<ResetGitCookbookResponse>;
 }
 
 export function fetchCookbookRemediation(
