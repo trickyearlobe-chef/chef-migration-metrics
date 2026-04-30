@@ -15,6 +15,10 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] `DownloadStatusBadge` (CookbooksPage) and `CloneStatusBadge` (GitReposPage) are near-identical — unify into a shared component.
 - [ ] ~25 mutation functions in `api.ts` duplicate a 12-line error-handling pattern instead of using `apiFetch` — extend `apiFetch` to support void responses, then migrate.
 
+## Secrets — config_store Master Key Rotation
+
+- [ ] When `CMM_CREDENTIAL_ENCRYPTION_KEY` is rotated, entries in `config_store` (including all credentials) are **not** re-encrypted under the new key. The old `rotateSecrets` function only operated on the now-dropped `credentials` table. **Strategic fix:** implement `Store.RotateKey(ctx, oldKey []byte)` that re-encrypts every `config_store` row under the new derived key within a single transaction.
+
 ## Backend — Code Smells
 
 - [ ] `DataStore` interface has 138+ methods (`webapi/store.go`) — consider splitting into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, etc.) composed into the full interface.
