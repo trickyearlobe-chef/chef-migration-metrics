@@ -100,10 +100,9 @@ type serverApp struct {
 	authMiddleware *auth.Middleware
 
 	// Secrets components.
-	encryptor       *secrets.Encryptor
-	legacyCredStore *secrets.DBCredentialStore
-	credStore       secrets.CredentialStore
-	credResolver    *secrets.CredentialResolver
+	encryptor    *secrets.Encryptor
+	credStore    secrets.CredentialStore
+	credResolver *secrets.CredentialResolver
 
 	// Collector components.
 	coll        *collector.Collector
@@ -486,28 +485,6 @@ func (app *serverApp) setupSecrets(ctx context.Context) error {
 	// Create the config store backed by the database and encryptor.
 	app.cfgStore = configstore.NewStore(app.db, app.encryptor)
 
-	// Create a legacy DBCredentialStore — used for rotation and validation
-	// of credentials that have not yet been migrated to config_store.
-	app.legacyCredStore = secrets.NewDBCredentialStore(app.db.Pool(), app.encryptor)
-
-	credCount, credCountErr := app.legacyCredStore.CredentialCount(ctx)
-	if credCountErr != nil {
-		secretsLog.Warn(fmt.Sprintf("could not count stored credentials: %v", credCountErr))
-	} else if credCount > 0 {
-		secretsLog.Info(fmt.Sprintf("%d stored credential(s) found in legacy table", credCount))
-	}
-
-	// Master key rotation on legacy credentials (if previous key is provided).
-	// Rotation must happen before MigrateFromLegacy re-encrypts them.
-	if err := app.rotateSecrets(ctx, secretsLog); err != nil {
-		return err
-	}
-
-	// Validate all stored credentials can be decrypted.
-	if credCount > 0 {
-		app.validateCredentials(ctx, secretsLog)
-	}
-
 	// Warn on overly permissive key file permissions.
 	app.checkKeyFilePermissions(secretsLog)
 
@@ -521,8 +498,8 @@ func (app *serverApp) setupSecrets(ctx context.Context) error {
 func (app *serverApp) setupConfigStore(ctx context.Context) error {
 	csLog := app.logger.WithScope(logging.ScopeStartup)
 
-	// Run legacy data migration (credentials + runtime_settings → config_store).
-	migrateResult, err := configstore.MigrateFromLegacy(ctx, app.db.Pool(), app.cfgStore, app.encryptor)
+	// Run legacy data migration (runtime_settings → config_store).
+	migrateResult, err := configstore.MigrateFromLegacy(ctx, app.db.Pool(), app.cfgStore)
 	if err != nil {
 		csLog.Error(fmt.Sprintf("legacy data migration failed: %v", err))
 		return err
@@ -530,8 +507,8 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 	if migrateResult.Skipped {
 		csLog.Info(fmt.Sprintf("legacy data migration skipped: %s", migrateResult.SkipReason))
 	} else {
-		csLog.Info(fmt.Sprintf("legacy data migration complete: %d credential(s), %d runtime setting(s) migrated",
-			migrateResult.CredentialsMigrated, migrateResult.RuntimeSettingsMigrated))
+		csLog.Info(fmt.Sprintf("legacy data migration complete: %d runtime setting(s) migrated",
+			migrateResult.RuntimeSettingsMigrated))
 	}
 
 	// Run YAML auto-migration if a full YAML was detected.
@@ -550,8 +527,6 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 	}
 
 	// Assemble config from DB if config_store has config section keys.
-	// Credential-only entries (from MigrateFromLegacy) don't count — we
-	// need actual config sections before we can replace the YAML config.
 	hasSections, hsErr := configstore.HasConfigSections(ctx, app.cfgStore)
 	if hsErr != nil {
 		csLog.Error(fmt.Sprintf("checking config_store sections: %v", hsErr))
@@ -581,7 +556,7 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 		csLog.Info("config_store is empty — using YAML configuration")
 	}
 
-	// Wire up the CredentialStoreAdapter to replace the legacy DBCredentialStore.
+	// Wire up the CredentialStoreAdapter backed by config_store.
 	app.credStore = configstore.NewCredentialStoreAdapter(app.cfgStore, &dbRefChecker{db: app.db})
 	app.credResolver = secrets.NewCredentialResolver(app.credStore)
 	csLog.Info("credential store adapter configured (backed by config_store)")
@@ -590,91 +565,6 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 	app.configHolder = configstore.NewConfigHolder(app.cfg, app.cfgStore)
 
 	return nil
-}
-
-func (app *serverApp) rotateSecrets(ctx context.Context, secretsLog *logging.ScopedLogger) error {
-	if !secrets.NeedsRotation(os.LookupEnv) {
-		return nil
-	}
-
-	if app.encryptor == nil {
-		secretsLog.Error("CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS is set but no current master key is configured — cannot rotate")
-		return fmt.Errorf("previous key set without current key")
-	}
-
-	prevKeyBase64, _ := os.LookupEnv("CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS")
-	prevEncryptor, prevErr := secrets.NewEncryptor(prevKeyBase64)
-	if prevErr != nil {
-		secretsLog.Error(fmt.Sprintf("previous master encryption key is invalid: %v", prevErr))
-		return prevErr
-	}
-	defer prevEncryptor.Close()
-
-	secretsLog.Info("master key rotation requested — re-encrypting stored credentials")
-
-	rotationRows, rrErr := app.legacyCredStore.ListRotationRows(ctx)
-	if rrErr != nil {
-		secretsLog.Error(fmt.Sprintf("failed to read credentials for rotation: %v", rrErr))
-		return rrErr
-	}
-
-	rotationWriter := func(wCtx context.Context, row secrets.RotatedRow) error {
-		return app.legacyCredStore.UpdateEncryptedValueRaw(wCtx, row.Name, row.NewEncryptedValue)
-	}
-
-	result, rotErr := secrets.RotateMasterKey(ctx, rotationRows, app.encryptor, prevEncryptor, rotationWriter)
-	if rotErr != nil {
-		secretsLog.Error(fmt.Sprintf("master key rotation failed: %v", rotErr))
-		return rotErr
-	}
-
-	secretsLog.Info(fmt.Sprintf(
-		"master key rotation complete in %s: %d total, %d re-encrypted, %d already rotated, %d failed",
-		result.Duration.Round(time.Millisecond), result.TotalCredentials,
-		result.ReEncrypted, result.AlreadyRotated, result.Failed,
-	))
-
-	for name, rotItemErr := range result.Errors {
-		secretsLog.Error(fmt.Sprintf("credential %q could not be rotated: %v", name, rotItemErr))
-	}
-
-	if result.Failed > 0 {
-		secretsLog.Warn(fmt.Sprintf(
-			"%d credential(s) failed rotation — they may be undecryptable. "+
-				"Remove CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS to skip rotation on next startup.",
-			result.Failed,
-		))
-	}
-	return nil
-}
-
-func (app *serverApp) validateCredentials(ctx context.Context, secretsLog *logging.ScopedLogger) {
-	rotationRows, rrErr := app.legacyCredStore.ListRotationRows(ctx)
-	if rrErr != nil {
-		secretsLog.Warn(fmt.Sprintf("could not validate stored credentials: %v", rrErr))
-		return
-	}
-	decryptFailures := 0
-	for _, row := range rotationRows {
-		aad, aadErr := secrets.BuildAAD(row.CredentialType, row.Name)
-		if aadErr != nil {
-			secretsLog.Error(fmt.Sprintf("credential %q: failed to build AAD: %v", row.Name, aadErr))
-			decryptFailures++
-			continue
-		}
-		plaintext, decErr := app.encryptor.Decrypt(row.EncryptedValue, aad)
-		if decErr != nil {
-			secretsLog.Error(fmt.Sprintf("credential %q: decryption failed (wrong key or corrupted data)", row.Name))
-			decryptFailures++
-			continue
-		}
-		secrets.ZeroBytes(plaintext)
-	}
-	if decryptFailures > 0 {
-		secretsLog.Warn(fmt.Sprintf("%d of %d credential(s) failed decryption validation", decryptFailures, len(rotationRows)))
-	} else if len(rotationRows) > 0 {
-		secretsLog.Info(fmt.Sprintf("all %d credential(s) passed decryption validation", len(rotationRows)))
-	}
 }
 
 func (app *serverApp) checkKeyFilePermissions(secretsLog *logging.ScopedLogger) {
