@@ -1,0 +1,234 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package hypervisor
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestNewFromConfig_EmptyType(t *testing.T) {
+	h, err := NewFromConfig("", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h != nil {
+		t.Fatal("expected nil hypervisor for empty type")
+	}
+}
+
+func TestNewFromConfig_UnknownType(t *testing.T) {
+	_, err := NewFromConfig("xen", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown type")
+	}
+	if !strings.Contains(err.Error(), "unknown type") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestNewFromConfig_Proxmox(t *testing.T) {
+	settings := map[string]any{
+		"proxmox_url":      "https://pve.example.com:8006",
+		"node":             "pve1",
+		"proxmox_token_id": "user@pam!cmm",
+	}
+	secrets := map[string]string{
+		"proxmox_token_secret": "secret-value",
+	}
+
+	h, err := NewFromConfig("proxmox", settings, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("expected non-nil hypervisor")
+	}
+	pc, ok := h.(*ProxmoxClient)
+	if !ok {
+		t.Fatalf("expected *ProxmoxClient, got %T", h)
+	}
+	if pc.baseURL != "https://pve.example.com:8006" {
+		t.Errorf("baseURL = %q", pc.baseURL)
+	}
+	if pc.node != "pve1" {
+		t.Errorf("node = %q", pc.node)
+	}
+	if pc.tokenID != "user@pam!cmm" {
+		t.Errorf("tokenID = %q", pc.tokenID)
+	}
+	if pc.tokenSecret != "secret-value" {
+		t.Errorf("tokenSecret = %q", pc.tokenSecret)
+	}
+}
+
+func TestNewFromConfig_Proxmox_TokenAuth(t *testing.T) {
+	settings := map[string]any{
+		"proxmox_url":      "https://pve.example.com:8006",
+		"proxmox_node":     "pve1",
+		"proxmox_token_id": "user@pam!cmm",
+	}
+	secrets := map[string]string{
+		"proxmox_token_secret": "token-secret-value",
+	}
+
+	h, err := NewFromConfig("proxmox", settings, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	pc := h.(*ProxmoxClient)
+	if pc.tokenID != "user@pam!cmm" {
+		t.Errorf("tokenID = %q", pc.tokenID)
+	}
+	if pc.tokenSecret != "token-secret-value" {
+		t.Errorf("tokenSecret = %q", pc.tokenSecret)
+	}
+}
+
+func TestNewFromConfig_Proxmox_MissingFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings map[string]any
+		secrets  map[string]string
+		wantErr  string
+	}{
+		{
+			name:     "missing url",
+			settings: map[string]any{"node": "n", "proxmox_token_id": "t"},
+			secrets:  map[string]string{"proxmox_token_secret": "s"},
+			wantErr:  "proxmox_url",
+		},
+		{
+			name:     "missing node",
+			settings: map[string]any{"proxmox_url": "u", "proxmox_token_id": "t"},
+			secrets:  map[string]string{"proxmox_token_secret": "s"},
+			wantErr:  "node",
+		},
+		{
+			name:     "missing auth",
+			settings: map[string]any{"proxmox_url": "u", "node": "n"},
+			secrets:  map[string]string{},
+			wantErr:  "proxmox_username",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewFromConfig("proxmox", tt.settings, tt.secrets)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not mention %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNewFromConfig_VCenter(t *testing.T) {
+	settings := map[string]any{
+		"vcenter_host":     "vcenter.example.com",
+		"vcenter_username": "admin@vsphere.local",
+	}
+	secrets := map[string]string{
+		"vcenter_password": "pass123",
+	}
+
+	h, err := NewFromConfig("vcenter", settings, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("expected non-nil hypervisor")
+	}
+	vc, ok := h.(*VCenterClient)
+	if !ok {
+		t.Fatalf("expected *VCenterClient, got %T", h)
+	}
+	if vc.baseURL != "https://vcenter.example.com" {
+		t.Errorf("baseURL = %q", vc.baseURL)
+	}
+	if vc.username != "admin@vsphere.local" {
+		t.Errorf("username = %q", vc.username)
+	}
+	if vc.password != "pass123" {
+		t.Errorf("password = %q", vc.password)
+	}
+}
+
+func TestNewFromConfig_VCenter_WithScheme(t *testing.T) {
+	settings := map[string]any{
+		"vcenter_host":     "https://vc.example.com",
+		"vcenter_username": "admin",
+	}
+	secrets := map[string]string{
+		"vcenter_password": "pass",
+	}
+
+	h, err := NewFromConfig("vcenter", settings, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	vc := h.(*VCenterClient)
+	if vc.baseURL != "https://vc.example.com" {
+		t.Errorf("baseURL = %q, want no double-scheme", vc.baseURL)
+	}
+}
+
+func TestNewFromConfig_VCenter_MissingFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings map[string]any
+		secrets  map[string]string
+		wantErr  string
+	}{
+		{
+			name:     "missing host",
+			settings: map[string]any{"vcenter_username": "u"},
+			secrets:  map[string]string{"vcenter_password": "p"},
+			wantErr:  "vcenter_host",
+		},
+		{
+			name:     "missing username",
+			settings: map[string]any{"vcenter_host": "h"},
+			secrets:  map[string]string{"vcenter_password": "p"},
+			wantErr:  "vcenter_username",
+		},
+		{
+			name:     "missing password",
+			settings: map[string]any{"vcenter_host": "h", "vcenter_username": "u"},
+			secrets:  map[string]string{},
+			wantErr:  "vcenter_password",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewFromConfig("vcenter", tt.settings, tt.secrets)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not mention %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNewFromConfig_CaseInsensitive(t *testing.T) {
+	settings := map[string]any{
+		"proxmox_url":      "https://pve.example.com:8006",
+		"node":             "pve1",
+		"proxmox_token_id": "user@pam!t",
+	}
+	secrets := map[string]string{"proxmox_token_secret": "s"}
+
+	h, err := NewFromConfig("Proxmox", settings, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("expected non-nil for uppercase type")
+	}
+}
