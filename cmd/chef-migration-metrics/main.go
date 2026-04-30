@@ -1185,7 +1185,12 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			Executor:       &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
 			CredResolver:   &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
 			Logger:         nkLogger,
-			TKConfig:       app.cfg.AnalysisTools.TestKitchen,
+			TKConfigFn: func() config.TestKitchenConfig {
+				if tk, err := app.loadTestKitchenRuntime(); err == nil && tk != nil {
+					return *tk
+				}
+				return app.cfg.AnalysisTools.TestKitchen
+			},
 			GitCookbookDir: app.cfg.Storage.GitCookbookDir,
 			Concurrency:    app.cfg.Concurrency.CookbookDownload,
 		}
@@ -1214,6 +1219,9 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 				return filepath.Join(app.cfg.Storage.GitCookbookDir, name)
 			},
 			TKConfigFn: func() config.TestKitchenConfig {
+				if tk, err := app.loadTestKitchenRuntime(); err == nil && tk != nil {
+					return *tk
+				}
 				return app.cfg.AnalysisTools.TestKitchen
 			},
 		})

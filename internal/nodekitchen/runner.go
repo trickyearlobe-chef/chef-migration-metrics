@@ -47,7 +47,7 @@ type RunnerDeps struct {
 	Executor       KitchenExecutor
 	CredResolver   CredentialResolver
 	Logger         Logger
-	TKConfig       config.TestKitchenConfig
+	TKConfigFn     func() config.TestKitchenConfig
 	GitCookbookDir string
 	Concurrency    int
 }
@@ -226,7 +226,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) RunResult {
 	if node.PlatformVersion != "" {
 		overlayPlatform = node.Platform + "-" + node.PlatformVersion
 	}
-	overlay, err := GenerateOverlay(&r.deps.TKConfig, OverlayParams{
+	tkCfg := r.deps.TKConfigFn()
+	overlay, err := GenerateOverlay(&tkCfg, OverlayParams{
 		PlatformName: overlayPlatform,
 		NodeName:     req.NodeName,
 		SuiteName:    "default",
@@ -247,7 +248,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) RunResult {
 	var credEnv []string
 	if r.deps.CredResolver != nil {
 		r.deps.Logger.Info("resolving credentials")
-		envVars, cleanup, err := r.deps.CredResolver.ResolveKitchenCredentials(ctx, r.deps.TKConfig)
+		envVars, cleanup, err := r.deps.CredResolver.ResolveKitchenCredentials(ctx, tkCfg)
 		if err != nil {
 			r.deps.Logger.Warn(fmt.Sprintf("credential resolution failed, proceeding without credentials: %v", err))
 		} else {

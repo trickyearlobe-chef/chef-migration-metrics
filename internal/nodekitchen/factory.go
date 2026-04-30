@@ -32,7 +32,7 @@ type RunnerFactory struct {
 	Executor       KitchenExecutor
 	CredResolver   CredentialResolver
 	Logger         Logger
-	TKConfig       config.TestKitchenConfig
+	TKConfigFn     func() config.TestKitchenConfig
 	GitCookbookDir string
 	Concurrency    int
 }
@@ -56,7 +56,7 @@ func (f *RunnerFactory) Run(ctx context.Context, req RunRequest) RunResult {
 		Executor:       f.Executor,
 		CredResolver:   f.CredResolver,
 		Logger:         f.Logger,
-		TKConfig:       f.TKConfig,
+		TKConfigFn:     f.TKConfigFn,
 		GitCookbookDir: f.GitCookbookDir,
 		Concurrency:    f.Concurrency,
 	})

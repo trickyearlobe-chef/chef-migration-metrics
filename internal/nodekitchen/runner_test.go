@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -123,6 +124,7 @@ func newTestDeps(db *mockDataStore, exec *mockExecutor, logger *mockLogger) Runn
 		GitLocator:  &mockGitLocator{},
 		Executor:    exec,
 		Logger:      logger,
+		TKConfigFn:  func() config.TestKitchenConfig { return config.TestKitchenConfig{} },
 		Concurrency: 1,
 	}
 }
