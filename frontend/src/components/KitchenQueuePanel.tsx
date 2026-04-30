@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   fetchKitchenQueue,
   cancelKitchenQueueItem,
@@ -43,6 +43,21 @@ export function KitchenQueuePanel({ repoName }: KitchenQueuePanelProps) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Poll every 5s while there are active items (for live duration updates).
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const hasActive = items.some((i) => i.status === "queued" || i.status === "running");
+    if (hasActive) {
+      intervalRef.current = setInterval(refresh, 5000);
+    } else if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [items, refresh]);
 
   useEffect(() => {
     return onEvent("kitchen_queue_update", () => {
