@@ -79,6 +79,7 @@ type mockStore struct {
 	GetCookbookTKStatusesFn                             func(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error)
 	GetRoleDetailFn                                     func(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error)
 	ListRoleDependenciesByOrgFn                         func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
+	ListCookbookDependenciesByOrgFn                     func(ctx context.Context, orgName string) (map[string][]string, error)
 	CountDependenciesByRoleFn                           func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
 	CountRolesPerCookbookFn                             func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
 	InsertExportJobFn                                   func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error)
@@ -662,6 +663,13 @@ func (m *mockStore) GetRoleDetail(ctx context.Context, roleName, targetChefVersi
 func (m *mockStore) ListRoleDependenciesByOrg(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
 	if m.ListRoleDependenciesByOrgFn != nil {
 		return m.ListRoleDependenciesByOrgFn(ctx, organisationID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListCookbookDependenciesByOrg(ctx context.Context, orgName string) (map[string][]string, error) {
+	if m.ListCookbookDependenciesByOrgFn != nil {
+		return m.ListCookbookDependenciesByOrgFn(ctx, orgName)
 	}
 	return nil, nil
 }
