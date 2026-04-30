@@ -55,6 +55,7 @@ var (
 type LocalAuthenticator struct {
 	store           LocalAuthStore
 	lockoutAttempts int
+	trustedProxy    bool
 	logger          func(level, msg string)
 }
 
@@ -65,6 +66,14 @@ type LocalAuthOption func(*LocalAuthenticator)
 func WithLocalAuthLogger(fn func(level, msg string)) LocalAuthOption {
 	return func(a *LocalAuthenticator) {
 		a.logger = fn
+	}
+}
+
+// WithTrustedProxy sets whether X-Forwarded-Proto is trusted when determining
+// if a request arrived over TLS for session cookie security flags.
+func WithTrustedProxy(trusted bool) LocalAuthOption {
+	return func(a *LocalAuthenticator) {
+		a.trustedProxy = trusted
 	}
 }
 
@@ -224,7 +233,7 @@ func (a *LocalAuthenticator) Login(
 	}
 
 	// Set the session cookie.
-	SetSessionCookie(w, r, sess.ID, sess.ExpiresAt)
+	SetSessionCookie(w, r, sess.ID, sess.ExpiresAt, a.trustedProxy)
 
 	return &LoginResponse{
 		Token:     sess.ID,

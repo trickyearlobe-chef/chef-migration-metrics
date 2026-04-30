@@ -279,6 +279,52 @@ func TestNewClient_SSLVerify_FalseWithCustomHTTPClient(t *testing.T) {
 	}
 }
 
+func TestNewClient_SSLVerify_FalseEmitsWarning(t *testing.T) {
+	sslVerify := false
+	var warnings []string
+	_, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		SSLVerify:     &sslVerify,
+		WarnFunc:      func(msg string) { warnings = append(warnings, msg) },
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected a warning when SSLVerify is false, got none")
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(strings.ToLower(w), "ssl") || strings.Contains(strings.ToLower(w), "insecure") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("warning did not mention ssl/insecure: %v", warnings)
+	}
+}
+
+func TestNewClient_SSLVerify_TrueNoWarning(t *testing.T) {
+	sslVerify := true
+	var warnings []string
+	_, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		SSLVerify:     &sslVerify,
+		WarnFunc:      func(msg string) { warnings = append(warnings, msg) },
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings when SSLVerify is true, got: %v", warnings)
+	}
+}
+
 func TestNewClient_TrailingSlashStripped(t *testing.T) {
 	c, err := NewClient(ClientConfig{
 		ServerURL:     "https://chef.example.com/organizations/myorg/",

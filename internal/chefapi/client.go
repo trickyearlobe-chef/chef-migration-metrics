@@ -18,6 +18,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -63,6 +64,11 @@ type ClientConfig struct {
 	// HTTPClient is provided, the default client is configured to
 	// skip TLS verification.
 	HTTPClient *http.Client
+
+	// WarnFunc is an optional callback for warning messages. If nil,
+	// warnings are emitted via log.Printf. Callers can set this to
+	// capture or suppress warnings (e.g. in tests).
+	WarnFunc func(msg string)
 }
 
 // Client is a Chef Infra Server API client that signs all requests using
@@ -118,6 +124,11 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	hc := cfg.HTTPClient
 	if hc == nil {
 		if !sslVerify {
+			warn := cfg.WarnFunc
+			if warn == nil {
+				warn = func(msg string) { log.Printf("WARN: %s", msg) }
+			}
+			warn("chefapi: ssl_verify is false — TLS certificate verification is disabled. Do not use in production.")
 			hc = &http.Client{
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{

@@ -315,11 +315,13 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 // When a perf.Recorder is configured, every request is wrapped by the
 // timing middleware so that latency is captured for all mux-routed paths.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if r.timingHandler != nil {
-		r.timingHandler.ServeHTTP(w, req)
-	} else {
-		r.mux.ServeHTTP(w, req)
-	}
+	SecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if r.timingHandler != nil {
+			r.timingHandler.ServeHTTP(w, req)
+		} else {
+			r.mux.ServeHTTP(w, req)
+		}
+	})).ServeHTTP(w, req)
 }
 
 // Hub returns the EventHub so callers (main, collector, etc.) can broadcast
@@ -363,7 +365,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	if r.cfg.Server.WebSocket.IsEnabled() {
 		wsHandler := NewWebSocketHandler(r.hub, r.webSocketOpts()...)
-		r.mux.Handle("/api/v1/ws", wsHandler)
+		r.protect("/api/v1/ws", wsHandler.ServeHTTP)
 		r.logf("INFO", "WebSocket endpoint enabled at /api/v1/ws (max_connections=%d)",
 			r.cfg.Server.WebSocket.MaxConnections)
 	} else {

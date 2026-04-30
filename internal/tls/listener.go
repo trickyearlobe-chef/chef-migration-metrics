@@ -54,6 +54,10 @@ type ListenerConfig struct {
 	// IdleTimeout is the maximum amount of time to wait for the next
 	// request when keep-alives are enabled.
 	IdleTimeout time.Duration
+
+	// TrustedProxy controls whether X-Forwarded-Proto is trusted for
+	// HSTS detection. Must match the server.trusted_proxy config flag.
+	TrustedProxy bool
 }
 
 // setDefaults fills in zero-valued fields with sensible defaults.
@@ -123,7 +127,7 @@ func NewListener(handler http.Handler, cfg ListenerConfig, log LogFunc) (*Listen
 
 	httpsSrv := &http.Server{
 		Addr:         addr,
-		Handler:      HSTSMiddleware(handler),
+		Handler:      HSTSMiddleware(handler, cfg.TrustedProxy),
 		TLSConfig:    tlsCfg,
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
@@ -279,19 +283,21 @@ func (l *Listener) redirectHandler() http.Handler {
 
 // HSTSMiddleware wraps an http.Handler and adds the Strict-Transport-Security
 // header to every response when the request was served over TLS. The HSTS
-// max-age is set to 1 year (31536000 seconds) with includeSubDomains, which
+// max-age is set to 2 years (63072000 seconds) with includeSubDomains, which
 // is the recommended configuration for production deployments.
 //
 // The header is NOT added to plain HTTP responses (e.g. the redirect
 // listener) because browsers would ignore it on non-secure connections and
 // it could cause confusion during debugging.
-func HSTSMiddleware(next http.Handler) http.Handler {
+//
+// trustedProxy controls whether X-Forwarded-Proto is considered when detecting
+// TLS. Set to true only when the app is behind a trusted reverse proxy.
+func HSTSMiddleware(next http.Handler, trustedProxy bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The TLS field is non-nil when the request was served over TLS.
-		// In a reverse-proxy setup, the proxy should set X-Forwarded-Proto
-		// but we only set HSTS when we know for certain it's TLS.
-		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		secure := r.TLS != nil ||
+			(trustedProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
+		if secure {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)
 	})
