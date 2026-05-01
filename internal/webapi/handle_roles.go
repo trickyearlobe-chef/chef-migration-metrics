@@ -71,7 +71,16 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		f.Offset = 0
 	}
 
-	rows, total, summary, err := r.db.ListRolesFiltered(ctx, f)
+	// Pre-fetch the compat summary from cache so ListRolesFiltered skips its
+	// internal GetRoleCompatSummary call (which is O(all-roles) and slow).
+	summaryFilter := f
+	summaryFilter.CompatibilityStatus = ""
+	summaryFilter.Limit = 0
+	summaryFilter.Offset = 0
+	cachedSummary, compatMap := r.cachedRoleCompatSummary(ctx, summaryFilter)
+	f.PrecomputedCompatMap = compatMap
+
+	rows, total, dbSummary, err := r.db.ListRolesFiltered(ctx, f)
 	if err != nil {
 		r.logf("ERROR", "listing filtered roles: %v", err)
 		WriteInternalError(w, "Failed to list roles.")
@@ -157,6 +166,12 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 			UntestedCount:           row.UntestedCount,
 			TKStatus:                row.TKStatus,
 		})
+	}
+
+	// Use cached summary when available; fall back to summary from ListRolesFiltered.
+	summary := dbSummary
+	if compatMap != nil {
+		summary = cachedSummary
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{

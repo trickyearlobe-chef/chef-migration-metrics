@@ -130,6 +130,10 @@ type Router struct {
 	// background goroutine finishes — NOT on cancel (so in-flight workers
 	// that are draining still block new batch starts).
 	runningBatch map[string]context.CancelFunc
+
+	// roleCompatCache holds in-memory cached results from GetRoleCompatSummary,
+	// keyed by org+name+targetVersion. Each entry expires after 60 seconds.
+	roleCompatCache sync.Map // key: string → *roleCompatCacheEntry
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It

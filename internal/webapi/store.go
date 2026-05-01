@@ -316,6 +316,12 @@ type DataStore interface {
 	// compatibility status, total count, and summary counts.
 	ListRolesFiltered(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error)
 
+	// GetRoleCompatSummary returns aggregate compatibility counts and a
+	// role_name→compat_status map for all roles matching the org and name
+	// filters. CompatibilityStatus, Limit, and Offset in f are ignored.
+	// Used by ListRolesFiltered and by handlers that need the full compat map.
+	GetRoleCompatSummary(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error)
+
 	// GetRoleTKStatuses returns the aggregate TK status per role for a set
 	// of role names, based on transitive cookbook dependencies with TK results.
 	GetRoleTKStatuses(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error)

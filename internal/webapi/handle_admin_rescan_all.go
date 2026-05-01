@@ -155,5 +155,13 @@ func (r *Router) triggerCollectionInBackground() bool {
 	go func() { <-bgCtx.Done(); cancel() }()
 
 	r.logf("INFO", "immediate collection run triggered by rescan request")
+
+	// Invalidate the role compat summary cache so stale summaries are not
+	// served after the rescan clears cookstyle results.
+	r.roleCompatCache.Range(func(k, _ any) bool {
+		r.roleCompatCache.Delete(k)
+		return true
+	})
+
 	return true
 }
