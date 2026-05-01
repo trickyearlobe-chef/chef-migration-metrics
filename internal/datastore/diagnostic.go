@@ -267,7 +267,7 @@ func (db *DB) DependencyDepthStats(ctx context.Context, includeNames bool) (Dept
 
 	// --- Role dependency depths via recursive CTE ---
 	const roleDepthQuery = `
-		WITH RECURSIVE role_depths(organisation_name, root_role, current_role, depth) AS (
+		WITH RECURSIVE role_depths(organisation_name, root_role, visiting_role, depth) AS (
 			SELECT DISTINCT organisation_name, role_name, role_name, 0
 			FROM role_dependencies
 			UNION ALL
@@ -275,7 +275,7 @@ func (db *DB) DependencyDepthStats(ctx context.Context, includeNames bool) (Dept
 			FROM role_depths rd
 			JOIN role_dependencies dep
 			  ON dep.organisation_name = rd.organisation_name
-			  AND dep.role_name = rd.current_role
+			  AND dep.role_name = rd.visiting_role
 			  AND dep.dependency_type = 'role'
 			WHERE rd.depth < 50
 		),
