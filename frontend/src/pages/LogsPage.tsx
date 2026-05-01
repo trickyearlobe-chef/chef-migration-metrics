@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { DEFAULT_PAGE_SIZE, SMALL_PAGE_SIZE } from "../constants";
 import { useOrg } from "../context/OrgContext";
+import { useAuth } from "../context/AuthContext";
 import { FilterSelect } from "../components/FilterInputs";
 import {
   fetchLogs,
@@ -115,24 +116,108 @@ function formatDuration(start: string, end?: string): string {
 // Main page component
 // ---------------------------------------------------------------------------
 
+function DiagnosticBundleButton() {
+  const [open, setOpen] = useState(false);
+  const [includeIdentifiers, setIncludeIdentifiers] = useState(false);
+  const [includeDepthStats, setIncludeDepthStats] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const params = new URLSearchParams();
+  if (includeIdentifiers) params.set("include_identifiers", "true");
+  if (includeDepthStats) params.set("include_depth_stats", "true");
+  const qs = params.toString();
+  const href = `/api/v1/admin/diagnostic-bundle${qs ? `?${qs}` : ""}`;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="flex items-center">
+        <a
+          href={href}
+          download
+          onClick={() => setOpen(false)}
+          className="rounded-l-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+          title="Download diagnostic bundle"
+        >
+          ⬇ Diagnostic Bundle
+        </a>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="rounded-r-md border border-l-0 border-gray-300 bg-white px-1.5 py-1.5 text-xs font-medium text-gray-500 shadow-sm transition-colors hover:bg-gray-50"
+          title="Bundle options"
+          aria-expanded={open}
+        >
+          ▾
+        </button>
+      </div>
+      {open && (
+        <div className="absolute right-0 top-full z-10 mt-1 w-64 rounded-md border border-gray-200 bg-white p-3 shadow-lg">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            Bundle options
+          </p>
+          <label className="flex cursor-pointer items-start gap-2 py-1">
+            <input
+              type="checkbox"
+              checked={includeIdentifiers}
+              onChange={(e) => setIncludeIdentifiers(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-xs text-gray-700">
+              <span className="font-medium">Include identifiers</span>
+              <span className="block text-gray-400">Org, cookbook and role names instead of opaque keys</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 py-1">
+            <input
+              type="checkbox"
+              checked={includeDepthStats}
+              onChange={(e) => setIncludeDepthStats(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-xs text-gray-700">
+              <span className="font-medium">Include depth stats</span>
+              <span className="block text-gray-400">Role and cookbook dependency depth distribution — may be slow on large graphs</span>
+            </span>
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LogsPage() {
   const [tab, setTab] = useState<Tab>("logs");
+  const { isAdmin } = useAuth();
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-gray-800">Logs</h2>
-        <div className="flex rounded-lg bg-gray-100 p-0.5">
-          <TabButton
-            active={tab === "logs"}
-            onClick={() => setTab("logs")}
-            label="Log Entries"
-          />
-          <TabButton
-            active={tab === "runs"}
-            onClick={() => setTab("runs")}
-            label="Collection Runs"
-          />
+        <div className="flex items-center gap-2">
+          {isAdmin && <DiagnosticBundleButton />}
+          <div className="flex rounded-lg bg-gray-100 p-0.5">
+            <TabButton
+              active={tab === "logs"}
+              onClick={() => setTab("logs")}
+              label="Log Entries"
+            />
+            <TabButton
+              active={tab === "runs"}
+              onClick={() => setTab("runs")}
+              label="Collection Runs"
+            />
+          </div>
         </div>
       </div>
       {tab === "logs" ? <LogsTab /> : <CollectionRunsTab />}
