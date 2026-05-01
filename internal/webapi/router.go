@@ -566,6 +566,7 @@ func (r *Router) registerRoutes() {
 	}
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
+	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)
 	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
 	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames)
 	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset)

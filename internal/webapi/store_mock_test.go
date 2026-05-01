@@ -182,6 +182,11 @@ type mockStore struct {
 	GetKitchenQueueItemFn          func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
 	GetKitchenQueueStatsFn         func(ctx context.Context) (*datastore.KitchenQueueStats, error)
 	MarkInterruptedKitchenRunsFn   func(ctx context.Context) (int64, error)
+
+	// Diagnostic bundle
+	ListAppliedMigrationsFn  func(ctx context.Context) ([]datastore.AppliedMigration, error)
+	InventoryStatsFn         func(ctx context.Context, includeNames bool) (datastore.InventoryStatsResult, error)
+	DependencyDepthStatsFn   func(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error)
 }
 
 // compile-time check
@@ -1382,4 +1387,33 @@ func (m *mockStore) MarkInterruptedKitchenRuns(ctx context.Context) (int64, erro
 		return m.MarkInterruptedKitchenRunsFn(ctx)
 	}
 	return 0, nil
+}
+
+func (m *mockStore) ListAppliedMigrations(ctx context.Context) ([]datastore.AppliedMigration, error) {
+	if m.ListAppliedMigrationsFn != nil {
+		return m.ListAppliedMigrationsFn(ctx)
+	}
+	return []datastore.AppliedMigration{}, nil
+}
+
+func (m *mockStore) InventoryStats(ctx context.Context, includeNames bool) (datastore.InventoryStatsResult, error) {
+	if m.InventoryStatsFn != nil {
+		return m.InventoryStatsFn(ctx, includeNames)
+	}
+	return datastore.InventoryStatsResult{
+		NodesByOrg:        map[string]int{},
+		CookbooksByOrg:    map[string]int{},
+		RolesByOrg:        map[string]int{},
+		RoleDepEdgesByOrg: map[string]int{},
+	}, nil
+}
+
+func (m *mockStore) DependencyDepthStats(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error) {
+	if m.DependencyDepthStatsFn != nil {
+		return m.DependencyDepthStatsFn(ctx, includeNames)
+	}
+	return datastore.DepthStatsResult{
+		RoleDepDepthByOrg:     map[string]datastore.OrgDepthStats{},
+		CookbookDepDepthByOrg: map[string]datastore.OrgDepthStats{},
+	}, nil
 }
