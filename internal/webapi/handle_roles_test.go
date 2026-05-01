@@ -620,6 +620,93 @@ func TestHandleRoleDependencyGraph_DBError(t *testing.T) {
 	}
 }
 
+func TestHandleRoleDependencyGraph_CookbookTransitiveDeps(t *testing.T) {
+	// role:webserver → cookbook:nginx; nginx → apt (via ListCookbookDependenciesByOrg).
+	// The graph should include an apt node and an edge nginx→apt.
+	store := &mockStore{
+		GetRoleDetailFn: func(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error) {
+			return &datastore.RoleDetail{
+				RoleName:            "webserver",
+				Organisations:       []string{"prod"},
+				DirectCookbooks:     []string{},
+				DirectRoles:         []string{},
+				TransitiveCookbooks: []string{},
+				BlockingCookbooks:   []datastore.BlockingCookbook{},
+				NodesByOrganisation: []datastore.OrgCount{},
+				NodesByEnvironment:  []datastore.EnvCount{},
+				NodesByPlatform:     []datastore.PlatformCount{},
+			}, nil
+		},
+		ListRoleDependenciesByOrgFn: func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error) {
+			return []datastore.RoleDependency{
+				{OrganisationName: "prod", RoleName: "webserver", DependencyType: "cookbook", DependencyName: "nginx"},
+			}, nil
+		},
+		ListCookbookDependenciesByOrgFn: func(ctx context.Context, orgName string) (map[string][]string, error) {
+			return map[string][]string{
+				"nginx": {"apt"},
+			}, nil
+		},
+	}
+
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/roles/webserver/dependency-graph", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		Nodes []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+			Name string `json:"name"`
+		} `json:"nodes"`
+		Edges []struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+			Type string `json:"type"`
+		} `json:"edges"`
+		Metadata struct {
+			TotalRoles     int `json:"total_roles"`
+			TotalCookbooks int `json:"total_cookbooks"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	// Expect: 1 role (webserver), 2 cookbooks (nginx, apt).
+	if body.Metadata.TotalRoles != 1 {
+		t.Errorf("total_roles = %d, want 1", body.Metadata.TotalRoles)
+	}
+	if body.Metadata.TotalCookbooks != 2 {
+		t.Errorf("total_cookbooks = %d, want 2; nodes = %v", body.Metadata.TotalCookbooks, body.Nodes)
+	}
+
+	// Find the apt node.
+	nodeNames := make(map[string]bool)
+	for _, n := range body.Nodes {
+		nodeNames[n.Name] = true
+	}
+	if !nodeNames["apt"] {
+		t.Errorf("expected apt node in graph, got nodes: %v", body.Nodes)
+	}
+
+	// Find the nginx→apt edge.
+	foundEdge := false
+	for _, e := range body.Edges {
+		if e.From == "cookbook:nginx" && e.To == "cookbook:apt" {
+			foundEdge = true
+		}
+	}
+	if !foundEdge {
+		t.Errorf("expected nginx→apt edge, got edges: %v", body.Edges)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Route registration — verify role routes exist in the mux
 // ---------------------------------------------------------------------------

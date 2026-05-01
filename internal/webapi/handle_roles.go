@@ -290,10 +290,18 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	// Build adjacency map.
+	// Build role adjacency map.
 	adj := make(map[string][]datastore.RoleDependency)
 	for _, d := range deps {
 		adj[d.RoleName] = append(adj[d.RoleName], d)
+	}
+
+	// Load cookbook→cookbook deps for transitive expansion.
+	cbAdj, err := r.db.ListCookbookDependenciesByOrg(ctx, scopeOrg)
+	if err != nil {
+		r.logf("ERROR", "listing cookbook dependencies for role graph %s: %v", roleName, err)
+		WriteInternalError(w, "Failed to load cookbook dependency data.")
+		return
 	}
 
 	// Walk from the role to build the scoped graph.
@@ -313,6 +321,30 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 	nodeMap := make(map[string]graphNode)
 	var edges []graphEdge
 	visited := make(map[string]bool)
+	cbVisited := make(map[string]bool)
+
+	// cbWalk recursively expands cookbook→cookbook edges.
+	var cbWalk func(cbName string)
+	cbWalk = func(cbName string) {
+		if cbVisited[cbName] {
+			return
+		}
+		cbVisited[cbName] = true
+
+		cbID := "cookbook:" + cbName
+		if _, ok := nodeMap[cbID]; !ok {
+			nodeMap[cbID] = graphNode{ID: cbID, Type: "cookbook", Name: cbName}
+		}
+
+		for _, dep := range cbAdj[cbName] {
+			depID := "cookbook:" + dep
+			if _, ok := nodeMap[depID]; !ok {
+				nodeMap[depID] = graphNode{ID: depID, Type: "cookbook", Name: dep}
+			}
+			edges = append(edges, graphEdge{From: cbID, To: depID, Type: "depends_on"})
+			cbWalk(dep)
+		}
+	}
 
 	var walk func(role string)
 	walk = func(role string) {
@@ -346,6 +378,8 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 
 			if d.DependencyType == "role" {
 				walk(d.DependencyName)
+			} else if d.DependencyType == "cookbook" {
+				cbWalk(d.DependencyName)
 			}
 		}
 	}

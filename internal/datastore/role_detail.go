@@ -117,12 +117,18 @@ func (db *DB) GetRoleDetail(ctx context.Context, roleName, targetChefVersion str
 		adj[d.RoleName] = append(adj[d.RoleName], d)
 	}
 
+	// Load cookbook→cookbook deps for transitive expansion.
+	cbAdj, err := db.ListCookbookDependenciesByOrg(ctx, orgs[0])
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing cookbook dependencies for role detail: %w", err)
+	}
+
 	// Walk the tree to collect transitive cookbooks and build chain.
 	visited := make(map[string]bool)
 	var transitiveCookbooks []string
 	cookbookSet := make(map[string]bool)
 
-	chain := buildRoleChain(roleName, adj, visited, cookbookSet)
+	chain := buildRoleChain(roleName, adj, visited, cookbookSet, cbAdj)
 
 	for cb := range cookbookSet {
 		transitiveCookbooks = append(transitiveCookbooks, cb)
@@ -244,7 +250,7 @@ func (db *DB) getRoleOrganisations(ctx context.Context, roleName string) ([]stri
 }
 
 // buildRoleChain recursively builds the nested role chain tree.
-func buildRoleChain(roleName string, adj map[string][]RoleDependency, visited map[string]bool, cookbooks map[string]bool) *RoleChainNode {
+func buildRoleChain(roleName string, adj map[string][]RoleDependency, visited map[string]bool, cookbooks map[string]bool, cbAdj map[string][]string) *RoleChainNode {
 	if visited[roleName] {
 		return &RoleChainNode{Name: roleName, Type: "role"}
 	}
@@ -256,14 +262,12 @@ func buildRoleChain(roleName string, adj map[string][]RoleDependency, visited ma
 	for _, d := range deps {
 		switch d.DependencyType {
 		case "role":
-			child := buildRoleChain(d.DependencyName, adj, visited, cookbooks)
+			child := buildRoleChain(d.DependencyName, adj, visited, cookbooks, cbAdj)
 			node.Children = append(node.Children, child)
 		case "cookbook":
-			cookbooks[d.DependencyName] = true
-			node.Children = append(node.Children, &RoleChainNode{
-				Name: d.DependencyName,
-				Type: "cookbook",
-			})
+			cbVisited := make(map[string]bool)
+			child := buildCookbookChain(d.DependencyName, cbAdj, cbVisited, cookbooks, 0)
+			node.Children = append(node.Children, child)
 		}
 	}
 	return node

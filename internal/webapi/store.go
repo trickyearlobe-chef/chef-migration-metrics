@@ -332,6 +332,11 @@ type DataStore interface {
 	// organisation, ordered by role_name, dependency_type, dependency_name.
 	ListRoleDependenciesByOrg(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
 
+	// ListCookbookDependenciesByOrg returns an adjacency map of cookbook name
+	// to its direct dependency cookbook names for all active cookbooks in the
+	// given organisation. Used to expand cookbook→cookbook transitive deps.
+	ListCookbookDependenciesByOrg(ctx context.Context, orgName string) (map[string][]string, error)
+
 	// GetCookbookComplexityMap returns complexity scores for named cookbooks.
 	GetCookbookComplexityMap(ctx context.Context, org, targetChefVersion string, names []string) (map[string]int, error)
 

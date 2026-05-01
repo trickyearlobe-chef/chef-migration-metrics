@@ -115,21 +115,24 @@ An interactive force-directed graph scoped to this role, showing:
 - Nested roles (recursively)
 - Cookbooks referenced by each role (direct dependencies)
 - Transitive cookbook dependencies resolved through nested roles
+- **Cookbook→cookbook transitive dependencies** — each cookbook's own deps (from `server_cookbooks.dependencies` JSONB) are expanded recursively, so the graph includes the full transitive closure of all reachable cookbooks
 
-Uses the same graph component and visual conventions as the existing dependency graph view (role nodes = one shape/colour, cookbook nodes = another, incompatible cookbooks highlighted in red). Same node-click behaviour: clicking a cookbook navigates to cookbook detail, clicking a nested role navigates to that role's detail page.
+Cookbook→cookbook edges use type `depends_on` to distinguish them from role→cookbook edges (`includes_cookbook`) and role→role edges (`includes_role`).
 
-Graph data is fetched from `GET /api/v1/roles/:name/dependency-graph` which returns the same `{ nodes, edges, metadata }` format as `GET /api/v1/dependency-graph`.
+Multiple active versions of the same cookbook have their dep sets unioned. Cycles are handled with a visited guard; depth is capped at 50 to prevent runaway expansion on malformed data.
 
 ### Nested Role Chain
 
-If this role includes other roles (directly or transitively), display the full expansion tree:
+If this role includes other roles (directly or transitively), display the full expansion tree. **Cookbook→cookbook deps are expanded recursively**, so each cookbook node may itself have children:
 
 ```
 role:webserver
 ├── role:base
 │   ├── cookbook:base
 │   └── cookbook:apt
+│       └── cookbook:compat_resource   ← cookbook dep of apt
 ├── cookbook:nginx
+│   └── cookbook:apt                   ← shared dep (not re-expanded)
 └── cookbook:ssl
 ```
 
