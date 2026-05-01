@@ -728,6 +728,23 @@ type DataStore interface {
 
 	// MarkInterruptedKitchenRuns marks in-flight items as interrupted on startup.
 	MarkInterruptedKitchenRuns(ctx context.Context) (int64, error)
+
+	// -----------------------------------------------------------------
+	// Diagnostic bundle
+	// -----------------------------------------------------------------
+
+	// ListAppliedMigrations returns all rows from schema_migrations ordered
+	// by version ascending.
+	ListAppliedMigrations(ctx context.Context) ([]datastore.AppliedMigration, error)
+
+	// InventoryStats returns aggregate inventory counts across all organisations.
+	// When includeNames is true, cookbook/role/git-repo names are also returned.
+	InventoryStats(ctx context.Context, includeNames bool) (datastore.InventoryStatsResult, error)
+
+	// DependencyDepthStats returns recursive role and cookbook dependency
+	// depth statistics per organisation. When includeNames is true, the top
+	// 10 deepest roles are also returned.
+	DependencyDepthStats(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error)
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.
