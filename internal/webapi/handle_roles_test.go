@@ -252,6 +252,121 @@ func TestHandleRoles_NilDataReturnedAsEmptyArray(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Role compat summary cache tests
+// ---------------------------------------------------------------------------
+
+func TestHandleRoles_Cache_FetchesOnFirstRequest(t *testing.T) {
+	calls := 0
+	expectedSummary := datastore.RoleFilterSummary{
+		TargetChefVersion: "",
+		CompatibleRoles:   3,
+		IncompatibleRoles: 1,
+		UntestedRoles:     2,
+		TotalRoles:        6,
+	}
+	store := &mockStore{
+		GetRoleCompatSummaryFn: func(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error) {
+			calls++
+			return expectedSummary, map[string]string{"role-a": "compatible"}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/roles", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if calls != 1 {
+		t.Errorf("GetRoleCompatSummaryFn called %d times on first request, want 1", calls)
+	}
+
+	var body struct {
+		Summary datastore.RoleFilterSummary `json:"summary"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Summary.CompatibleRoles != expectedSummary.CompatibleRoles {
+		t.Errorf("summary.compatible_roles = %d, want %d", body.Summary.CompatibleRoles, expectedSummary.CompatibleRoles)
+	}
+	if body.Summary.TotalRoles != expectedSummary.TotalRoles {
+		t.Errorf("summary.total_roles = %d, want %d", body.Summary.TotalRoles, expectedSummary.TotalRoles)
+	}
+}
+
+func TestHandleRoles_Cache_DoesNotFetchOnSecondRequestWithinTTL(t *testing.T) {
+	calls := 0
+	expectedSummary := datastore.RoleFilterSummary{
+		CompatibleRoles:   5,
+		IncompatibleRoles: 2,
+		TotalRoles:        7,
+	}
+	store := &mockStore{
+		GetRoleCompatSummaryFn: func(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error) {
+			calls++
+			return expectedSummary, map[string]string{"role-b": "incompatible"}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	// First request — populates cache.
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/api/v1/roles", nil))
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first request status = %d, want %d", w1.Code, http.StatusOK)
+	}
+	if calls != 1 {
+		t.Fatalf("expected 1 call after first request, got %d", calls)
+	}
+
+	// Second request within TTL — must NOT call GetRoleCompatSummaryFn again.
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/api/v1/roles", nil))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("second request status = %d, want %d", w2.Code, http.StatusOK)
+	}
+	if calls != 1 {
+		t.Errorf("GetRoleCompatSummaryFn called %d times after second request within TTL, want 1", calls)
+	}
+
+	// Summary should be served from cache on the second request.
+	var body struct {
+		Summary datastore.RoleFilterSummary `json:"summary"`
+	}
+	if err := json.Unmarshal(w2.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Summary.CompatibleRoles != expectedSummary.CompatibleRoles {
+		t.Errorf("cached summary.compatible_roles = %d, want %d", body.Summary.CompatibleRoles, expectedSummary.CompatibleRoles)
+	}
+	if body.Summary.TotalRoles != expectedSummary.TotalRoles {
+		t.Errorf("cached summary.total_roles = %d, want %d", body.Summary.TotalRoles, expectedSummary.TotalRoles)
+	}
+}
+
+func TestHandleRoles_Cache_PrecomputedCompatMapPassedToListRolesFiltered(t *testing.T) {
+	compatMap := map[string]string{"role-a": "compatible", "role-b": "incompatible"}
+	var capturedFilter datastore.RoleFilter
+	store := &mockStore{
+		GetRoleCompatSummaryFn: func(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error) {
+			return datastore.RoleFilterSummary{TotalRoles: 2}, compatMap, nil
+		},
+		ListRolesFilteredFn: func(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error) {
+			capturedFilter = f
+			return nil, 0, datastore.RoleFilterSummary{}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/roles", nil))
+
+	if len(capturedFilter.PrecomputedCompatMap) != len(compatMap) {
+		t.Errorf("PrecomputedCompatMap len = %d, want %d", len(capturedFilter.PrecomputedCompatMap), len(compatMap))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/v1/roles/:name — detail
 // ---------------------------------------------------------------------------
 
