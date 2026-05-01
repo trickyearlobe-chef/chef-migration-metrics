@@ -138,6 +138,32 @@ role:webserver
 
 Each node in the tree is a link to the corresponding role or cookbook detail page. Incompatible cookbooks are visually highlighted (red text or icon). Untested cookbooks are shown in grey.
 
+## Performance Architecture
+
+### List Query (Two-Query Fast Path)
+
+`GET /api/v1/roles` uses a two-query approach for name-sorted requests (the default):
+
+1. **Page query** — `SELECT DISTINCT role_name, COUNT(*) OVER()` from `role_dependencies` with name/org filters, LIMIT/OFFSET. Fast index scan; returns only the ~20 role names for the current page.
+2. **Seeded CTE query** — the full recursive transitive-dep expansion, but seeded with `AND rd.role_name = ANY($page_roles)`. Expands deps for O(page size) roles instead of O(all roles).
+
+Roles with no reachable cookbooks (e.g. roles that only include other roles with no cookbook closure) appear as `untested` via `all_seed_roles LEFT JOIN role_compat`.
+
+Sort by `node_count` or `incompatible_cookbook_count` falls back to the single-query slow path (all roles expanded before sorting).
+
+### Summary Bar Cache
+
+The summary bar compat counts require `GetRoleCompatSummary` — a lighter recursive CTE that returns only `(role_name, compat_status)` for all matching roles. This is cached in memory on the `router` struct:
+
+- **TTL:** 60 seconds
+- **Cache key:** sorted orgs + name filter + target chef version (excludes compat filter)
+- **Invalidation:** cleared on rescan-all; also expires naturally after 60s
+- **First load** after startup or cache expiry is slow for the summary bar (O(all roles)); subsequent loads within TTL are instant
+
+### Future: Pre-computation During Collection
+
+Dashboard aggregations (cookbook-compatibility, compat summary bar) remain O(all roles) without pre-computation. The strategic fix is to write per-org compat summary counts to a `role_compat_summary` table at the end of each collection run, making all aggregate reads O(1). Tracked in tech debt.
+
 ## API Endpoints
 
 ### `GET /api/v1/roles`
