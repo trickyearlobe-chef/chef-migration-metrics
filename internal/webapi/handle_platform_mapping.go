@@ -71,8 +71,11 @@ func (r *Router) handlePlatformMappingStatus(w http.ResponseWriter, req *http.Re
 
 	// Fetch hypervisor templates (best-effort).
 	var templates []hypervisor.Template
-	if r.hypervisor != nil {
-		t, tErr := r.hypervisor.ListTemplates(ctx)
+	hyp, hypErr := r.buildHypervisor(ctx)
+	if hypErr != nil {
+		r.logf("WARN", "platform-mapping-status: build hypervisor: %v", hypErr)
+	} else if hyp != nil {
+		t, tErr := hyp.ListTemplates(ctx)
 		if tErr != nil {
 			r.logf("WARN", "platform-mapping-status: list templates: %v", tErr)
 		} else {

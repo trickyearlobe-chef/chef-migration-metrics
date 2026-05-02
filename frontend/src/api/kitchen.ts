@@ -3,6 +3,7 @@
 import type {
   TestKitchenConfig,
   PlatformMappingStatusResponse,
+  HypervisorTestConnectionResponse,
   NodeKitchenRun,
   NodeKitchenRunRequest,
   NodeKitchenTriggerResponse,
@@ -215,6 +216,13 @@ export async function runOrphanSweep(dryRun: boolean): Promise<SweepResult> {
   return apiFetch<SweepResult>(`/kitchen/orphan-sweep?dry_run=${dryRun}`, {
     method: "POST",
   });
+}
+
+export async function testHypervisorConnection(): Promise<HypervisorTestConnectionResponse> {
+  return apiFetch<HypervisorTestConnectionResponse>(
+    buildUrl("/admin/hypervisor/test-connection"),
+    { method: "POST" },
+  );
 }
 
 // --- Kitchen Instance Exclusions ---

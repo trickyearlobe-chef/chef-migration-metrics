@@ -32,7 +32,6 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
@@ -885,34 +884,6 @@ func (app *serverApp) setupExports() error {
 }
 
 // ---------------------------------------------------------------------------
-// Phase: hypervisor client construction.
-// ---------------------------------------------------------------------------
-
-func (app *serverApp) buildHypervisorClient() (hypervisor.Hypervisor, error) {
-	tk := app.configHolder.Get().AnalysisTools.TestKitchen
-
-	hypType := tk.EffectiveHypervisorType()
-	if hypType == "" {
-		return nil, nil
-	}
-
-	// Resolve driver secrets needed for hypervisor auth.
-	resolvedSecrets := make(map[string]string, len(tk.DriverSecrets))
-	for key, credName := range tk.DriverSecrets {
-		resolved, err := app.credResolver.Resolve(context.Background(), secrets.CredentialSource{
-			CredentialName: credName,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("resolving driver secret %q (credential %q): %w", key, credName, err)
-		}
-		resolvedSecrets[key] = string(resolved.Plaintext)
-		secrets.ZeroBytes(resolved.Plaintext)
-	}
-
-	return hypervisor.NewFromConfig(hypType, tk.DriverSettings, resolvedSecrets)
-}
-
-// ---------------------------------------------------------------------------
 // Phase: HTTP server setup and serve.
 // ---------------------------------------------------------------------------
 
@@ -981,15 +952,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		routerOpts = append(routerOpts, webapi.WithConfigStore(app.cfgStore, app.configHolder))
 	}
 
-	// Wire hypervisor client for template discovery and orphan sweep.
-	if hyp, hypErr := app.buildHypervisorClient(); hypErr != nil {
-		app.startup.Warn(fmt.Sprintf("hypervisor client not available: %v", hypErr))
-	} else if hyp != nil {
-		routerOpts = append(routerOpts, webapi.WithHypervisor(hyp))
-		app.startup.Info(fmt.Sprintf("hypervisor client initialised (type=%s)",
-			app.configHolder.Get().AnalysisTools.TestKitchen.EffectiveHypervisorType()))
-	} else {
-		app.startup.Info("hypervisor not configured (no driver/hypervisor_type in analysis tools config)")
+	// Wire credential resolver so the router can build hypervisor clients
+	// on demand from live config — no restart needed after config changes.
+	if app.credResolver != nil {
+		routerOpts = append(routerOpts, webapi.WithCredentialResolver(app.credResolver))
 	}
 
 	// Wire Node Kitchen runner factory when kitchen binary is available.
