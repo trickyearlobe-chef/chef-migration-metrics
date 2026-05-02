@@ -114,18 +114,17 @@ func (c *VCenterClient) ensureSession(ctx context.Context) error {
 	return nil
 }
 
-// ListTemplates returns VMs from vCenter. The vSphere REST API does not
-// expose a reliable template flag on the list endpoint, so all VMs are
-// returned. Callers can filter by naming convention.
+// ListTemplates returns VM templates from vCenter by filtering with the
+// vSphere REST API's filter.type parameter.
 func (c *VCenterClient) ListTemplates(ctx context.Context) ([]Template, error) {
-	body, _, err := c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm")
+	body, _, err := c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm?filter.type=TEMPLATE")
 	if err != nil {
 		return nil, fmt.Errorf("vcenter: list templates: %w", err)
 	}
 
 	var vms []vsphereVM
 	if err := json.Unmarshal(body, &vms); err != nil {
-		return nil, fmt.Errorf("vcenter: unmarshal VM list: %w", err)
+		return nil, fmt.Errorf("vcenter: unmarshal template list: %w", err)
 	}
 
 	templates := make([]Template, 0, len(vms))
