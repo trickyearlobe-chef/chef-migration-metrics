@@ -31,18 +31,7 @@ func newVCenterMockServer(t *testing.T, vms []vsphereVM) *httptest.Server {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			// If filter.is_template=true is set, only return templates.
-			if r.URL.Query().Get("filter.is_template") == "true" {
-				var filtered []vsphereVM
-				for _, vm := range vms {
-					if vm.IsTemplate {
-						filtered = append(filtered, vm)
-					}
-				}
-				json.NewEncoder(w).Encode(filtered)
-			} else {
-				json.NewEncoder(w).Encode(vms)
-			}
+			json.NewEncoder(w).Encode(vms)
 
 		case strings.HasSuffix(r.URL.Path, "/power") && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusOK)
@@ -70,84 +59,13 @@ func TestVCenterClient_Session(t *testing.T) {
 	defer srv.Close()
 
 	client := newVCenterTestClient(srv)
-	// Session should be created implicitly on first request.
-	_, err := client.ListTemplates(context.Background())
+	// Session should be created implicitly on first REST request.
+	_, err := client.ListManagedVMs(context.Background(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if client.sessionID != "test-session-id" {
 		t.Errorf("expected session ID 'test-session-id', got %q", client.sessionID)
-	}
-}
-
-func TestVCenterClient_ListTemplates(t *testing.T) {
-	vms := []vsphereVM{
-		{VM: "vm-100", Name: "tmpl-ubuntu-22", PowerState: "POWERED_OFF", CPUCount: 2, MemorySizeMiB: 2048, IsTemplate: true},
-		{VM: "vm-101", Name: "tmpl-rhel-9", PowerState: "POWERED_OFF", CPUCount: 4, MemorySizeMiB: 4096, IsTemplate: true},
-		{VM: "vm-200", Name: "worker-1", PowerState: "POWERED_ON", CPUCount: 8, MemorySizeMiB: 16384, IsTemplate: false},
-	}
-	srv := newVCenterMockServer(t, vms)
-	defer srv.Close()
-
-	client := newVCenterTestClient(srv)
-	templates, err := client.ListTemplates(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Only templates returned via filter.is_template=true.
-	if len(templates) != 2 {
-		t.Fatalf("expected 2 templates, got %d", len(templates))
-	}
-	if templates[0].ID != "vm-100" || templates[0].Name != "tmpl-ubuntu-22" {
-		t.Errorf("unexpected first template: %+v", templates[0])
-	}
-	if templates[1].ID != "vm-101" || templates[1].Name != "tmpl-rhel-9" {
-		t.Errorf("unexpected second template: %+v", templates[1])
-	}
-}
-
-func TestVCenterClient_ListTemplates_FilterFallback(t *testing.T) {
-	// Simulate older vCenter that doesn't support filter.is_template.
-	vms := []vsphereVM{
-		{VM: "vm-100", Name: "tmpl-ubuntu-22", PowerState: "POWERED_OFF", CPUCount: 2, MemorySizeMiB: 2048, IsTemplate: true},
-		{VM: "vm-200", Name: "worker-1", PowerState: "POWERED_ON", CPUCount: 8, MemorySizeMiB: 16384, IsTemplate: false},
-	}
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/session" && r.Method == http.MethodPost:
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode("test-session-id")
-		case r.URL.Path == "/api/vcenter/vm" && r.Method == http.MethodGet:
-			if r.Header.Get("vmware-api-session-id") != "test-session-id" {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			if r.URL.Query().Get("filter.is_template") != "" {
-				// Reject filter.is_template — simulating older vCenter.
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(`{"error_type":"INVALID_ARGUMENT","messages":[{"args":["filter.is_template"],"default_message":"Unsupported filter."}]}`))
-				return
-			}
-			json.NewEncoder(w).Encode(vms)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	client := NewVCenterClient(srv.URL, "admin", "password")
-	client.httpClient = srv.Client()
-
-	templates, err := client.ListTemplates(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Falls back to all VMs and filters client-side by is_template.
-	if len(templates) != 1 {
-		t.Fatalf("expected 1 template (fallback with client filter), got %d", len(templates))
-	}
-	if templates[0].Name != "tmpl-ubuntu-22" {
-		t.Errorf("unexpected template: %+v", templates[0])
 	}
 }
 
@@ -205,7 +123,7 @@ func TestVCenterClient_Session_Unauthorized(t *testing.T) {
 
 	client := NewVCenterClient(srv.URL, "bad", "creds")
 	client.httpClient = srv.Client()
-	_, err := client.ListTemplates(context.Background())
+	_, err := client.ListManagedVMs(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected error for unauthorized request")
 	}
@@ -263,7 +181,7 @@ func TestVCenterClient_SessionReuse(t *testing.T) {
 	client.httpClient = srv.Client()
 
 	ctx := context.Background()
-	if _, err := client.ListTemplates(ctx); err != nil {
+	if _, err := client.ListManagedVMs(ctx, ""); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 	if _, err := client.ListManagedVMs(ctx, ""); err != nil {
