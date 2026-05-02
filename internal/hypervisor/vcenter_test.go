@@ -31,7 +31,21 @@ func newVCenterMockServer(t *testing.T, vms []vsphereVM) *httptest.Server {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			json.NewEncoder(w).Encode(vms)
+			// If filter.type=TEMPLATE is set, only return powered-off VMs
+			// (simulating the real vCenter behaviour where templates are
+			// typically powered off).
+			filterType := r.URL.Query().Get("filter.type")
+			if filterType == "TEMPLATE" {
+				var filtered []vsphereVM
+				for _, vm := range vms {
+					if vm.PowerState == "POWERED_OFF" {
+						filtered = append(filtered, vm)
+					}
+				}
+				json.NewEncoder(w).Encode(filtered)
+			} else {
+				json.NewEncoder(w).Encode(vms)
+			}
 
 		case strings.HasSuffix(r.URL.Path, "/power") && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusOK)
@@ -83,17 +97,15 @@ func TestVCenterClient_ListTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(templates) != 3 {
-		t.Fatalf("expected 3 templates, got %d", len(templates))
+	// Only POWERED_OFF VMs are returned (mock simulates template filter).
+	if len(templates) != 2 {
+		t.Fatalf("expected 2 templates, got %d", len(templates))
 	}
 	if templates[0].ID != "vm-100" || templates[0].Name != "tmpl-ubuntu-22" {
 		t.Errorf("unexpected first template: %+v", templates[0])
 	}
 	if templates[1].ID != "vm-101" || templates[1].Name != "tmpl-rhel-9" {
 		t.Errorf("unexpected second template: %+v", templates[1])
-	}
-	if templates[2].ID != "vm-200" || templates[2].Name != "worker-1" {
-		t.Errorf("unexpected third template: %+v", templates[2])
 	}
 }
 
