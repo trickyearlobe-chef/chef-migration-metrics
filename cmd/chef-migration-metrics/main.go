@@ -718,6 +718,10 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		app.kitchenPath = toolResult.Kitchen.Path
 	}
 
+	kitchenAnalyser := analysis.NewKitchenAnalyser(app.db, app.logger, 0)
+	collOpts = append(collOpts, collector.WithKitchenAnalyser(kitchenAnalyser))
+	app.startup.Info("kitchen config analyser enabled")
+
 	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)
 	collOpts = append(collOpts, collector.WithComplexityScorer(cxScorer))
 
