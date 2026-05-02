@@ -114,13 +114,14 @@ func (c *VCenterClient) ensureSession(ctx context.Context) error {
 	return nil
 }
 
-// ListTemplates returns VM templates from vCenter. On vSphere 7.0+ it uses
-// filter.type=TEMPLATE. On older versions that don't support this filter
-// (HTTP 400), it falls back to listing all VMs.
+// ListTemplates returns VM templates from vCenter. On vSphere 8.0+ the
+// query parameter is "types=TEMPLATE". If rejected (HTTP 400), falls back
+// to listing all VMs for compatibility with environments where the
+// parameter is not supported.
 func (c *VCenterClient) ListTemplates(ctx context.Context) ([]Template, error) {
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm?filter.type=TEMPLATE")
+	body, status, err := c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm?types=TEMPLATE")
 	if err != nil && status == http.StatusBadRequest {
-		// Older vCenter — filter.type not supported, fall back to all VMs.
+		// Fallback: list all VMs if filter not supported.
 		body, _, err = c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm")
 	}
 	if err != nil {

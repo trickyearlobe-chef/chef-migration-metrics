@@ -31,11 +31,11 @@ func newVCenterMockServer(t *testing.T, vms []vsphereVM) *httptest.Server {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			// If filter.type=TEMPLATE is set, only return powered-off VMs
+			// If types=TEMPLATE is set, only return powered-off VMs
 			// (simulating the real vCenter behaviour where templates are
 			// typically powered off).
-			filterType := r.URL.Query().Get("filter.type")
-			if filterType == "TEMPLATE" {
+			typesParam := r.URL.Query().Get("types")
+			if typesParam == "TEMPLATE" {
 				var filtered []vsphereVM
 				for _, vm := range vms {
 					if vm.PowerState == "POWERED_OFF" {
@@ -125,10 +125,10 @@ func TestVCenterClient_ListTemplates_FilterFallback(t *testing.T) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			if r.URL.Query().Get("filter.type") != "" {
-				// Reject filter.type — simulating older vCenter.
+			if r.URL.Query().Get("types") != "" {
+				// Reject types param — simulating older vCenter.
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(`{"error_type":"INVALID_ARGUMENT","messages":[{"args":["filter.type"],"default_message":"Unsupported property with name: filter.type."}]}`))
+				w.Write([]byte(`{"error_type":"INVALID_ARGUMENT","messages":[{"args":["types"],"default_message":"Unsupported property with name: types."}]}`))
 				return
 			}
 			json.NewEncoder(w).Encode(vms)
