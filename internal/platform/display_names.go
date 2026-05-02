@@ -8,6 +8,28 @@ import (
 	"strings"
 )
 
+// DetectOSFamilyFromPlatform returns the OS family for a Chef platform name.
+// This uses the Ohai platform value (e.g. "windows", "ubuntu", "centos").
+func DetectOSFamilyFromPlatform(plat string) string {
+	p := strings.ToLower(plat)
+	switch {
+	case p == "windows":
+		return "windows"
+	case p == "ubuntu" || p == "debian" || p == "linuxmint" || p == "pop_os":
+		return "debian"
+	case p == "centos" || p == "redhat" || p == "rhel" || p == "oracle" ||
+		p == "scientific" || p == "rocky" || p == "almalinux" || p == "amazon" ||
+		p == "fedora":
+		return "rhel"
+	case p == "suse" || p == "opensuse" || p == "sles" || p == "opensuseleap":
+		return "suse"
+	case p == "mac_os_x" || p == "macos":
+		return "macos"
+	default:
+		return "other"
+	}
+}
+
 // DisplayNameMapping represents a single platform → friendly name mapping entry.
 type DisplayNameMapping struct {
 	Platform      string `json:"platform"`

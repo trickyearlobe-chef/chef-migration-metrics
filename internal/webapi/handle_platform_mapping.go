@@ -6,25 +6,28 @@ package webapi
 import (
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/platform"
 )
 
 // DiscoveredPlatformStatus describes a single discovered platform with its
 // mapping status relative to the current platform map config.
 type DiscoveredPlatformStatus struct {
-	PlatformName      string `json:"platform_name"`
-	NormalisedName    string `json:"normalised_name"`
-	OSFamily          string `json:"os_family"`
-	CookbookCount     int    `json:"cookbook_count"`
-	NodeCount         int    `json:"node_count"`
-	Source            string `json:"source"` // "kitchen", "nodes", or "both"
-	TransportType     string `json:"transport_type,omitempty"`
-	MappingStatus     string `json:"mapping_status"`      // "mapped", "skipped", or "unmapped"
-	MatchedEntryIndex int    `json:"matched_entry_index"` // -1 if unmapped
-	MatchedImage      string `json:"matched_image"`       // empty if unmapped or skipped
+	PlatformName      string  `json:"platform_name"`
+	DisplayName       *string `json:"display_name"`
+	NormalisedName    string  `json:"normalised_name"`
+	OSFamily          string  `json:"os_family"`
+	CookbookCount     int     `json:"cookbook_count"`
+	NodeCount         int     `json:"node_count"`
+	Source            string  `json:"source"` // "kitchen", "nodes", or "both"
+	TransportType     string  `json:"transport_type,omitempty"`
+	MappingStatus     string  `json:"mapping_status"`      // "mapped", "skipped", or "unmapped"
+	MatchedEntryIndex int     `json:"matched_entry_index"` // -1 if unmapped
+	MatchedImage      string  `json:"matched_image"`       // empty if unmapped or skipped
 }
 
 // PlatformMappingStatusResponse is the response for
@@ -76,6 +79,9 @@ func (r *Router) handlePlatformMappingStatus(w http.ResponseWriter, req *http.Re
 			templates = t
 		}
 	}
+
+	// Load platform display name mappings for friendly name resolution.
+	displayMappings, _ := r.loadPlatformDisplayNames(ctx)
 
 	// Build per-platform status and counters.
 	// Start with kitchen-discovered platforms, then merge node platforms.
@@ -136,6 +142,18 @@ func (r *Router) handlePlatformMappingStatus(w http.ResponseWriter, req *http.Re
 			NormalisedName: name,
 			NodeCount:      count,
 			Source:         "nodes",
+		}
+
+		// Resolve OS family and display name from the "platform version" label.
+		if idx := strings.IndexByte(name, ' '); idx > 0 {
+			plat := name[:idx]
+			ver := name[idx+1:]
+			s.OSFamily = platform.DetectOSFamilyFromPlatform(plat)
+			if dn := resolvePlatformDisplayName(plat, ver, displayMappings); dn != nil {
+				s.DisplayName = dn
+			}
+		} else if name != "unknown" {
+			s.OSFamily = platform.DetectOSFamilyFromPlatform(name)
 		}
 
 		if match.Entry != nil {

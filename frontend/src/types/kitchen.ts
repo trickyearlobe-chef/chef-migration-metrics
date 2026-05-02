@@ -38,6 +38,7 @@ export interface TestKitchenConfig {
 
 export interface DiscoveredPlatformStatus {
   platform_name: string;
+  display_name?: string | null;
   normalised_name: string;
   os_family: string;
   cookbook_count: number;
