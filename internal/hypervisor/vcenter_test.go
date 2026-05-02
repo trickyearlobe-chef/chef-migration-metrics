@@ -109,6 +109,51 @@ func TestVCenterClient_ListTemplates(t *testing.T) {
 	}
 }
 
+func TestVCenterClient_ListTemplates_FilterFallback(t *testing.T) {
+	// Simulate older vCenter that doesn't support filter.type.
+	vms := []vsphereVM{
+		{VM: "vm-100", Name: "tmpl-ubuntu-22", PowerState: "POWERED_OFF", CPUCount: 2, MemorySizeMiB: 2048},
+		{VM: "vm-200", Name: "worker-1", PowerState: "POWERED_ON", CPUCount: 8, MemorySizeMiB: 16384},
+	}
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/session" && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode("test-session-id")
+		case r.URL.Path == "/api/vcenter/vm" && r.Method == http.MethodGet:
+			if r.Header.Get("vmware-api-session-id") != "test-session-id" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if r.URL.Query().Get("filter.type") != "" {
+				// Reject filter.type — simulating older vCenter.
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error_type":"INVALID_ARGUMENT","messages":[{"args":["filter.type"],"default_message":"Unsupported property with name: filter.type."}]}`))
+				return
+			}
+			json.NewEncoder(w).Encode(vms)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewVCenterClient(srv.URL, "admin", "password")
+	client.httpClient = srv.Client()
+
+	templates, err := client.ListTemplates(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Falls back to all VMs when filter not supported.
+	if len(templates) != 2 {
+		t.Fatalf("expected 2 templates (fallback), got %d", len(templates))
+	}
+	if templates[0].Name != "tmpl-ubuntu-22" {
+		t.Errorf("unexpected first template: %+v", templates[0])
+	}
+}
+
 func TestVCenterClient_ListManagedVMs(t *testing.T) {
 	vms := []vsphereVM{
 		{VM: "vm-200", Name: "cmm-test-1", PowerState: "POWERED_ON", CPUCount: 2, MemorySizeMiB: 4096},
