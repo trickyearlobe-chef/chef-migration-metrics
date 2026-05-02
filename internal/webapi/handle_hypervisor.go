@@ -20,13 +20,19 @@ func (r *Router) handleHypervisorTemplates(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	if r.hypervisor == nil {
+	ctx := req.Context()
+	hyp, err := r.buildHypervisor(ctx)
+	if err != nil {
+		r.logf("ERROR", "failed to build hypervisor client: %v", err)
+		WriteInternalError(w, "Failed to initialise hypervisor client.")
+		return
+	}
+	if hyp == nil {
 		WriteJSON(w, http.StatusOK, []any{})
 		return
 	}
 
-	ctx := req.Context()
-	templates, err := r.hypervisor.ListTemplates(ctx)
+	templates, err := hyp.ListTemplates(ctx)
 	if err != nil {
 		r.logf("ERROR", "failed to list hypervisor templates: %v", err)
 		WriteInternalError(w, "Failed to retrieve hypervisor templates.")
@@ -95,11 +101,19 @@ func (r *Router) handleHypervisorDestroyVM(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	if r.hypervisor != nil && vm.HypervisorID != "" {
-		if err := r.hypervisor.DestroyVM(ctx, vm.HypervisorID); err != nil {
-			r.logf("ERROR", "failed to destroy VM %s on hypervisor: %v", vm.HypervisorID, err)
-			WriteInternalError(w, "Failed to destroy VM on hypervisor.")
+	if vm.HypervisorID != "" {
+		hyp, hypErr := r.buildHypervisor(ctx)
+		if hypErr != nil {
+			r.logf("ERROR", "failed to build hypervisor client: %v", hypErr)
+			WriteInternalError(w, "Failed to initialise hypervisor client.")
 			return
+		}
+		if hyp != nil {
+			if err := hyp.DestroyVM(ctx, vm.HypervisorID); err != nil {
+				r.logf("ERROR", "failed to destroy VM %s on hypervisor: %v", vm.HypervisorID, err)
+				WriteInternalError(w, "Failed to destroy VM on hypervisor.")
+				return
+			}
 		}
 	}
 
@@ -121,11 +135,18 @@ func (r *Router) handleHypervisorCleanup(w http.ResponseWriter, req *http.Reques
 	}
 
 	ctx := req.Context()
+	hyp, err := r.buildHypervisor(ctx)
+	if err != nil {
+		r.logf("ERROR", "failed to build hypervisor client: %v", err)
+		WriteInternalError(w, "Failed to initialise hypervisor client.")
+		return
+	}
+
 	prefix := r.liveConfig().AnalysisTools.TestKitchen.EffectiveVMNamePrefix()
 
-	result, err := hypervisor.CleanupOrphans(ctx, r.db, r.hypervisor, prefix)
-	if err != nil {
-		r.logf("ERROR", "orphan cleanup failed: %v", err)
+	result, cleanErr := hypervisor.CleanupOrphans(ctx, r.db, hyp, prefix)
+	if cleanErr != nil {
+		r.logf("ERROR", "orphan cleanup failed: %v", cleanErr)
 		WriteInternalError(w, "Orphan cleanup failed.")
 		return
 	}
@@ -142,7 +163,17 @@ func (r *Router) handleHypervisorTestConnection(w http.ResponseWriter, req *http
 		return
 	}
 
-	if r.hypervisor == nil {
+	ctx := req.Context()
+	hyp, err := r.buildHypervisor(ctx)
+	if err != nil {
+		r.logf("ERROR", "hypervisor test-connection build failed: %v", err)
+		WriteJSON(w, http.StatusOK, map[string]string{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+	if hyp == nil {
 		WriteJSON(w, http.StatusOK, map[string]string{
 			"status":  "not_configured",
 			"message": "No hypervisor is configured. Set the driver type and credentials first.",
@@ -150,8 +181,7 @@ func (r *Router) handleHypervisorTestConnection(w http.ResponseWriter, req *http
 		return
 	}
 
-	ctx := req.Context()
-	templates, err := r.hypervisor.ListTemplates(ctx)
+	templates, err := hyp.ListTemplates(ctx)
 	if err != nil {
 		r.logf("ERROR", "hypervisor test-connection failed: %v", err)
 		WriteJSON(w, http.StatusOK, map[string]string{
@@ -166,7 +196,7 @@ func (r *Router) handleHypervisorTestConnection(w http.ResponseWriter, req *http
 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"status":          "ok",
-		"hypervisor_type": r.hypervisor.Type(),
+		"hypervisor_type": hyp.Type(),
 		"template_count":  len(templates),
 		"templates":       templates,
 	})
@@ -182,7 +212,14 @@ func (r *Router) handleOrphanSweep(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if r.hypervisor == nil {
+	ctx := req.Context()
+	hyp, err := r.buildHypervisor(ctx)
+	if err != nil {
+		r.logf("ERROR", "failed to build hypervisor client for sweep: %v", err)
+		WriteInternalError(w, "Failed to initialise hypervisor client.")
+		return
+	}
+	if hyp == nil {
 		WriteJSON(w, http.StatusOK, &hypervisor.SweepResult{
 			Details: []hypervisor.SweepDetail{},
 		})
@@ -199,8 +236,7 @@ func (r *Router) handleOrphanSweep(w http.ResponseWriter, req *http.Request) {
 	prefix := cfg.EffectiveVMNamePrefix()
 	ageThreshold := cfg.EffectiveOrphanSweepAge()
 
-	ctx := req.Context()
-	result, err := hypervisor.SweepOrphanVMs(ctx, r.hypervisor, prefix, ageThreshold, dryRun)
+	result, err := hypervisor.SweepOrphanVMs(ctx, hyp, prefix, ageThreshold, dryRun)
 	if err != nil {
 		r.logf("ERROR", "orphan sweep failed: %v", err)
 		WriteInternalError(w, "Orphan sweep failed.")

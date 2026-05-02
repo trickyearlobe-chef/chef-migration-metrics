@@ -106,9 +106,15 @@ type Router struct {
 	configHolder *configstore.ConfigHolder
 
 	// hypervisor provides template discovery, VM inventory, and orphan
-	// cleanup. Nil when no hypervisor is configured — handlers return
-	// empty results gracefully.
+	// cleanup. When nil, buildHypervisor() builds one on demand from live
+	// config. A static value (from WithHypervisor) takes precedence — this
+	// is used in tests with mock clients.
 	hypervisor hypervisor.Hypervisor
+
+	// credResolver resolves credential secrets from the encrypted store,
+	// environment variables, or files. Used to build hypervisor clients on
+	// demand from live config without requiring a restart.
+	credResolver *secrets.CredentialResolver
 
 	// nodeKitchenRunner orchestrates on-demand Node Kitchen runs.
 	// Nil when not configured — the trigger endpoint returns 503.
@@ -229,9 +235,17 @@ func WithConfigStore(store *configstore.Store, holder *configstore.ConfigHolder)
 	}
 }
 
-// WithHypervisor sets the hypervisor client for template discovery and VM management.
+// WithHypervisor sets a static hypervisor client. When set, this takes
+// precedence over building one dynamically from live config. Primarily
+// used in tests with mock hypervisor clients.
 func WithHypervisor(h hypervisor.Hypervisor) RouterOption {
 	return func(r *Router) { r.hypervisor = h }
+}
+
+// WithCredentialResolver sets the credential resolver used to build
+// hypervisor clients on demand from live config.
+func WithCredentialResolver(cr *secrets.CredentialResolver) RouterOption {
+	return func(r *Router) { r.credResolver = cr }
 }
 
 // NodeKitchenRunner abstracts the Node Kitchen run orchestrator so that
@@ -279,7 +293,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 	// from startup output when a component was defined but never passed
 	// to NewRouter — the most common class of silent wiring bug with
 	// functional options.
-	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t hypervisor=%t node_kitchen=%t git_kitchen=%t",
+	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t cred_resolver=%t hypervisor_static=%t node_kitchen=%t git_kitchen=%t",
 		r.logger != nil,
 		r.frontendFS != nil,
 		r.authMiddleware != nil,
@@ -287,6 +301,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 		r.configStore != nil,
 		r.recorder != nil,
 		r.triggerCollection != nil,
+		r.credResolver != nil,
 		r.hypervisor != nil,
 		r.nodeKitchenRunner != nil,
 		r.gitKitchenScheduler != nil,
@@ -742,6 +757,41 @@ func (r *Router) liveConfig() *config.Config {
 		return r.configHolder.Get()
 	}
 	return r.cfg
+}
+
+// buildHypervisor returns a hypervisor client. If a static client was
+// injected via WithHypervisor (e.g. in tests), it is returned directly.
+// Otherwise, a fresh client is built from the current live config and
+// resolved credentials — meaning config changes via the UI take effect
+// immediately without a restart.
+func (r *Router) buildHypervisor(ctx context.Context) (hypervisor.Hypervisor, error) {
+	if r.hypervisor != nil {
+		return r.hypervisor, nil
+	}
+
+	tk := r.liveConfig().AnalysisTools.TestKitchen
+	hypType := tk.EffectiveHypervisorType()
+	if hypType == "" {
+		return nil, nil
+	}
+
+	if r.credResolver == nil {
+		return nil, fmt.Errorf("credential resolver not configured")
+	}
+
+	resolvedSecrets := make(map[string]string, len(tk.DriverSecrets))
+	for key, credName := range tk.DriverSecrets {
+		resolved, err := r.credResolver.Resolve(ctx, secrets.CredentialSource{
+			CredentialName: credName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolving driver secret %q (credential %q): %w", key, credName, err)
+		}
+		resolvedSecrets[key] = string(resolved.Plaintext)
+		secrets.ZeroBytes(resolved.Plaintext)
+	}
+
+	return hypervisor.NewFromConfig(hypType, tk.DriverSettings, resolvedSecrets)
 }
 
 // logf logs a formatted message if a logger is configured.
