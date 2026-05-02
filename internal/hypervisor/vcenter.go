@@ -11,9 +11,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
 )
 
 // VCenterClient implements the Hypervisor interface for VMware vCenter
@@ -38,7 +42,6 @@ type vsphereVM struct {
 	PowerState    string `json:"power_state"`     // "POWERED_ON", "POWERED_OFF", "SUSPENDED"
 	CPUCount      int    `json:"cpu_count"`       // number of vCPUs
 	MemorySizeMiB int    `json:"memory_size_mib"` // memory in MiB
-	IsTemplate    bool   `json:"is_template"`     // true if VM is a template
 }
 
 // sessionTTL is how long we consider a cached session valid.
@@ -115,37 +118,40 @@ func (c *VCenterClient) ensureSession(ctx context.Context) error {
 	return nil
 }
 
-// ListTemplates returns VM templates from vCenter. Uses the
-// filter.is_template=true query parameter to list only templates.
-// If rejected (HTTP 400), falls back to listing all VMs and filtering
-// client-side for compatibility with older vCenter versions.
+// ListTemplates returns classic VM templates from vCenter using the SOAP
+// API (via govmomi). The REST API excludes classic templates by design, so
+// we use the Finder to discover all VMs then filter by IsTemplate.
 func (c *VCenterClient) ListTemplates(ctx context.Context) ([]Template, error) {
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm?filter.is_template=true")
-	if err != nil && status == http.StatusBadRequest {
-		// Fallback: list all VMs and filter client-side.
-		body, _, err = c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm")
-	}
+	u, err := url.Parse(c.baseURL + "/sdk")
 	if err != nil {
-		return nil, fmt.Errorf("vcenter: list templates: %w", err)
+		return nil, fmt.Errorf("vcenter: parse URL: %w", err)
+	}
+	u.User = url.UserPassword(c.username, c.password)
+
+	client, err := govmomi.NewClient(ctx, u, true)
+	if err != nil {
+		return nil, fmt.Errorf("vcenter: SOAP connect: %w", err)
+	}
+	defer client.Logout(ctx) //nolint:errcheck
+
+	finder := find.NewFinder(client.Client, false)
+	vms, err := finder.VirtualMachineList(ctx, "*")
+	if err != nil {
+		return nil, fmt.Errorf("vcenter: find VMs: %w", err)
 	}
 
-	var vms []vsphereVM
-	if err := json.Unmarshal(body, &vms); err != nil {
-		return nil, fmt.Errorf("vcenter: unmarshal template list: %w", err)
-	}
-
-	templates := make([]Template, 0, len(vms))
+	var templates []Template
 	for _, vm := range vms {
-		// When filter.is_template worked server-side, all results are
-		// templates. In fallback mode, include only entries marked as
-		// templates (or all if the field is absent from the response).
-		if status == http.StatusBadRequest && !vm.IsTemplate {
+		isTmpl, err := vm.IsTemplate(ctx)
+		if err != nil {
 			continue
 		}
-		templates = append(templates, Template{
-			ID:   vm.VM,
-			Name: vm.Name,
-		})
+		if isTmpl {
+			templates = append(templates, Template{
+				ID:   vm.Reference().Value,
+				Name: vm.Name(),
+			})
+		}
 	}
 	return templates, nil
 }

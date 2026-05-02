@@ -5,6 +5,9 @@ go 1.26.2
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/lib/pq v1.12.1
+	github.com/vmware/govmomi v0.53.1
 	golang.org/x/crypto v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+require github.com/google/uuid v1.6.0 // indirect
