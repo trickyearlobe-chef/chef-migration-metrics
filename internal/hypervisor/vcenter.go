@@ -38,6 +38,7 @@ type vsphereVM struct {
 	PowerState    string `json:"power_state"`     // "POWERED_ON", "POWERED_OFF", "SUSPENDED"
 	CPUCount      int    `json:"cpu_count"`       // number of vCPUs
 	MemorySizeMiB int    `json:"memory_size_mib"` // memory in MiB
+	IsTemplate    bool   `json:"is_template"`     // true if VM is a template
 }
 
 // sessionTTL is how long we consider a cached session valid.
@@ -114,14 +115,14 @@ func (c *VCenterClient) ensureSession(ctx context.Context) error {
 	return nil
 }
 
-// ListTemplates returns VM templates from vCenter. On vSphere 8.0+ the
-// query parameter is "types=TEMPLATE". If rejected (HTTP 400), falls back
-// to listing all VMs for compatibility with environments where the
-// parameter is not supported.
+// ListTemplates returns VM templates from vCenter. Uses the
+// filter.is_template=true query parameter to list only templates.
+// If rejected (HTTP 400), falls back to listing all VMs and filtering
+// client-side for compatibility with older vCenter versions.
 func (c *VCenterClient) ListTemplates(ctx context.Context) ([]Template, error) {
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm?types=TEMPLATE")
+	body, status, err := c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm?filter.is_template=true")
 	if err != nil && status == http.StatusBadRequest {
-		// Fallback: list all VMs if filter not supported.
+		// Fallback: list all VMs and filter client-side.
 		body, _, err = c.doRequest(ctx, http.MethodGet, "/api/vcenter/vm")
 	}
 	if err != nil {
@@ -135,6 +136,12 @@ func (c *VCenterClient) ListTemplates(ctx context.Context) ([]Template, error) {
 
 	templates := make([]Template, 0, len(vms))
 	for _, vm := range vms {
+		// When filter.is_template worked server-side, all results are
+		// templates. In fallback mode, include only entries marked as
+		// templates (or all if the field is absent from the response).
+		if status == http.StatusBadRequest && !vm.IsTemplate {
+			continue
+		}
 		templates = append(templates, Template{
 			ID:   vm.VM,
 			Name: vm.Name,
