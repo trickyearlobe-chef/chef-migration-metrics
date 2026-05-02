@@ -902,6 +902,7 @@ export function AdminTestKitchenPage() {
                   </label>
                   <input
                     type="text"
+                    list="hypervisor-templates-list"
                     value={img.id}
                     onChange={(e) => updateImage(idx, { id: e.target.value })}
                     placeholder="e.g. 100 or tmpl-ubuntu"
@@ -1104,6 +1105,15 @@ export function AdminTestKitchenPage() {
         <AddButton onClick={addImage} disabled={saving}>
           Add Image
         </AddButton>
+        {connectionResult?.templates && connectionResult.templates.length > 0 && (
+          <datalist id="hypervisor-templates-list">
+            {connectionResult.templates.map((tmpl) => (
+              <option key={tmpl.id} value={tmpl.id}>
+                {tmpl.name}{tmpl.guest_os ? ` (${tmpl.guest_os})` : ""}
+              </option>
+            ))}
+          </datalist>
+        )}
       </div>
 
       {/* Section 6: Platform Map */}
