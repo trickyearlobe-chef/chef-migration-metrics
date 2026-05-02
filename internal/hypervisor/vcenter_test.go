@@ -31,14 +31,11 @@ func newVCenterMockServer(t *testing.T, vms []vsphereVM) *httptest.Server {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			// If types=TEMPLATE is set, only return powered-off VMs
-			// (simulating the real vCenter behaviour where templates are
-			// typically powered off).
-			typesParam := r.URL.Query().Get("types")
-			if typesParam == "TEMPLATE" {
+			// If filter.is_template=true is set, only return templates.
+			if r.URL.Query().Get("filter.is_template") == "true" {
 				var filtered []vsphereVM
 				for _, vm := range vms {
-					if vm.PowerState == "POWERED_OFF" {
+					if vm.IsTemplate {
 						filtered = append(filtered, vm)
 					}
 				}
@@ -85,9 +82,9 @@ func TestVCenterClient_Session(t *testing.T) {
 
 func TestVCenterClient_ListTemplates(t *testing.T) {
 	vms := []vsphereVM{
-		{VM: "vm-100", Name: "tmpl-ubuntu-22", PowerState: "POWERED_OFF", CPUCount: 2, MemorySizeMiB: 2048},
-		{VM: "vm-101", Name: "tmpl-rhel-9", PowerState: "POWERED_OFF", CPUCount: 4, MemorySizeMiB: 4096},
-		{VM: "vm-200", Name: "worker-1", PowerState: "POWERED_ON", CPUCount: 8, MemorySizeMiB: 16384},
+		{VM: "vm-100", Name: "tmpl-ubuntu-22", PowerState: "POWERED_OFF", CPUCount: 2, MemorySizeMiB: 2048, IsTemplate: true},
+		{VM: "vm-101", Name: "tmpl-rhel-9", PowerState: "POWERED_OFF", CPUCount: 4, MemorySizeMiB: 4096, IsTemplate: true},
+		{VM: "vm-200", Name: "worker-1", PowerState: "POWERED_ON", CPUCount: 8, MemorySizeMiB: 16384, IsTemplate: false},
 	}
 	srv := newVCenterMockServer(t, vms)
 	defer srv.Close()
@@ -97,7 +94,7 @@ func TestVCenterClient_ListTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Only POWERED_OFF VMs are returned (mock simulates template filter).
+	// Only templates returned via filter.is_template=true.
 	if len(templates) != 2 {
 		t.Fatalf("expected 2 templates, got %d", len(templates))
 	}
@@ -110,10 +107,10 @@ func TestVCenterClient_ListTemplates(t *testing.T) {
 }
 
 func TestVCenterClient_ListTemplates_FilterFallback(t *testing.T) {
-	// Simulate older vCenter that doesn't support filter.type.
+	// Simulate older vCenter that doesn't support filter.is_template.
 	vms := []vsphereVM{
-		{VM: "vm-100", Name: "tmpl-ubuntu-22", PowerState: "POWERED_OFF", CPUCount: 2, MemorySizeMiB: 2048},
-		{VM: "vm-200", Name: "worker-1", PowerState: "POWERED_ON", CPUCount: 8, MemorySizeMiB: 16384},
+		{VM: "vm-100", Name: "tmpl-ubuntu-22", PowerState: "POWERED_OFF", CPUCount: 2, MemorySizeMiB: 2048, IsTemplate: true},
+		{VM: "vm-200", Name: "worker-1", PowerState: "POWERED_ON", CPUCount: 8, MemorySizeMiB: 16384, IsTemplate: false},
 	}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -125,10 +122,10 @@ func TestVCenterClient_ListTemplates_FilterFallback(t *testing.T) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			if r.URL.Query().Get("types") != "" {
-				// Reject types param — simulating older vCenter.
+			if r.URL.Query().Get("filter.is_template") != "" {
+				// Reject filter.is_template — simulating older vCenter.
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(`{"error_type":"INVALID_ARGUMENT","messages":[{"args":["types"],"default_message":"Unsupported property with name: types."}]}`))
+				w.Write([]byte(`{"error_type":"INVALID_ARGUMENT","messages":[{"args":["filter.is_template"],"default_message":"Unsupported filter."}]}`))
 				return
 			}
 			json.NewEncoder(w).Encode(vms)
@@ -145,12 +142,12 @@ func TestVCenterClient_ListTemplates_FilterFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Falls back to all VMs when filter not supported.
-	if len(templates) != 2 {
-		t.Fatalf("expected 2 templates (fallback), got %d", len(templates))
+	// Falls back to all VMs and filters client-side by is_template.
+	if len(templates) != 1 {
+		t.Fatalf("expected 1 template (fallback with client filter), got %d", len(templates))
 	}
 	if templates[0].Name != "tmpl-ubuntu-22" {
-		t.Errorf("unexpected first template: %+v", templates[0])
+		t.Errorf("unexpected template: %+v", templates[0])
 	}
 }
 

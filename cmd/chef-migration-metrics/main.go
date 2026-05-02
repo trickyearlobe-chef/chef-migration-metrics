@@ -814,26 +814,31 @@ func (app *serverApp) setupOwnership(ctx context.Context) {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) startScheduler(ctx context.Context) error {
-	resumeResult, resumeErr := app.coll.ResumeInterruptedRuns(ctx)
-	if resumeErr != nil {
-		app.startup.Warn(fmt.Sprintf("failed to resume interrupted collection runs: %v", resumeErr))
-	} else if resumeResult != nil && resumeResult.Evaluated > 0 {
-		app.startup.Info(fmt.Sprintf(
-			"interrupted run evaluation: %d evaluated, %d resumed, %d abandoned",
-			resumeResult.Evaluated, resumeResult.Resumed, resumeResult.Abandoned,
-		))
-		if resumeResult.ResumedRunResult != nil {
-			rr := resumeResult.ResumedRunResult
-			app.startup.Info(fmt.Sprintf(
-				"resumed collection completed: %d/%d orgs succeeded, %d nodes, %d cookbook versions in %s",
-				rr.SucceededOrgs, rr.TotalOrgs, rr.TotalNodes, rr.TotalCookbooks,
-				rr.Duration.Round(time.Millisecond),
+	// Resume interrupted runs asynchronously so the HTTP server can start
+	// immediately — a large org (50k+ nodes) can take minutes to resume.
+	go func() {
+		log := app.logger.WithScope(logging.ScopeCollectionRun)
+		resumeResult, resumeErr := app.coll.ResumeInterruptedRuns(ctx)
+		if resumeErr != nil {
+			_ = log.Warn(fmt.Sprintf("failed to resume interrupted collection runs: %v", resumeErr))
+		} else if resumeResult != nil && resumeResult.Evaluated > 0 {
+			_ = log.Info(fmt.Sprintf(
+				"interrupted run evaluation: %d evaluated, %d resumed, %d abandoned",
+				resumeResult.Evaluated, resumeResult.Resumed, resumeResult.Abandoned,
 			))
+			if resumeResult.ResumedRunResult != nil {
+				rr := resumeResult.ResumedRunResult
+				_ = log.Info(fmt.Sprintf(
+					"resumed collection completed: %d/%d orgs succeeded, %d nodes, %d cookbook versions in %s",
+					rr.SucceededOrgs, rr.TotalOrgs, rr.TotalNodes, rr.TotalCookbooks,
+					rr.Duration.Round(time.Millisecond),
+				))
+			}
+			for runID, runErr := range resumeResult.Errors {
+				_ = log.Warn(fmt.Sprintf("resume error for run %s: %v", runID, runErr))
+			}
 		}
-		for runID, runErr := range resumeResult.Errors {
-			app.startup.Warn(fmt.Sprintf("resume error for run %s: %v", runID, runErr))
-		}
-	}
+	}()
 
 	schedule, schedErr := collector.ParseSchedule(app.cfg.Collection.Schedule)
 	if schedErr != nil {
