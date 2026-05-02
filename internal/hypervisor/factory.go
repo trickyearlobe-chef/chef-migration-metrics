@@ -73,7 +73,8 @@ func newVCenterFromConfig(settings map[string]any, secrets map[string]string) (H
 	if !strings.HasPrefix(baseURL, "http") {
 		baseURL = "https://" + host
 	}
-	return NewVCenterClient(baseURL, username, password), nil
+	datacenter := settingStr(settings, "datacenter")
+	return NewVCenterClient(baseURL, username, password, datacenter), nil
 }
 
 // settingStr extracts a string value from a map[string]any.

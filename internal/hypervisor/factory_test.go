@@ -157,6 +157,26 @@ func TestNewFromConfig_VCenter(t *testing.T) {
 	}
 }
 
+func TestNewFromConfig_VCenter_WithDatacenter(t *testing.T) {
+	settings := map[string]any{
+		"vcenter_host":     "vcenter.example.com",
+		"vcenter_username": "admin@vsphere.local",
+		"datacenter":       "DC-01",
+	}
+	secrets := map[string]string{
+		"vcenter_password": "pass123",
+	}
+
+	h, err := NewFromConfig("vcenter", settings, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	vc := h.(*VCenterClient)
+	if vc.datacenter != "DC-01" {
+		t.Errorf("datacenter = %q, want %q", vc.datacenter, "DC-01")
+	}
+}
+
 func TestNewFromConfig_VCenter_WithScheme(t *testing.T) {
 	settings := map[string]any{
 		"vcenter_host":     "https://vc.example.com",
