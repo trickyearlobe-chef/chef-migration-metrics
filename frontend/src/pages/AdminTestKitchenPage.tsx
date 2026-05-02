@@ -5,6 +5,7 @@ import {
   deleteTestKitchenConfig,
   fetchCredentials,
   fetchPlatformMappingStatus,
+  testHypervisorConnection,
   runOrphanSweep,
   ApiError,
 } from "../api";
@@ -15,6 +16,7 @@ import type {
   PlatformMapTransport,
   Credential,
   PlatformMappingStatusResponse,
+  HypervisorTestConnectionResponse,
   SweepResult,
 } from "../types";
 
@@ -220,6 +222,11 @@ export function AdminTestKitchenPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  // Hypervisor test connection state
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionResult, setConnectionResult] =
+    useState<HypervisorTestConnectionResponse | null>(null);
 
   // Platform mapping status
   const [mappingStatus, setMappingStatus] =
@@ -479,6 +486,24 @@ export function AdminTestKitchenPage() {
   }
 
   const credentialNames = credentials.map((c) => c.name);
+
+  // --- Test hypervisor connection ---
+  async function handleTestConnection() {
+    setTestingConnection(true);
+    setConnectionResult(null);
+    try {
+      const result = await testHypervisorConnection();
+      setConnectionResult(result);
+    } catch (err: unknown) {
+      setConnectionResult({
+        status: "error",
+        message: err instanceof Error ? err.message : "Connection test failed",
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  }
+
   const imageNames = (config.images ?? [])
     .map((img) => img.name)
     .filter(Boolean);
@@ -695,6 +720,97 @@ export function AdminTestKitchenPage() {
         <AddButton onClick={addSecret} disabled={saving}>
           Add Secret
         </AddButton>
+      </div>
+
+      {/* Test Connection */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+              Connection Test
+            </h3>
+            <p className="mt-1 text-xs text-gray-400">
+              Verify connectivity to the hypervisor and discover available templates.
+            </p>
+          </div>
+          <button
+            onClick={handleTestConnection}
+            disabled={testingConnection || saving}
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+          >
+            {testingConnection ? (
+              <>
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Testing…
+              </>
+            ) : (
+              "Test Connection"
+            )}
+          </button>
+        </div>
+
+        {connectionResult && (
+          <div className="mt-4">
+            {connectionResult.status === "ok" && (
+              <div className="rounded-md border border-green-200 bg-green-50 p-4">
+                <div className="flex items-center gap-2">
+                  <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-medium text-green-800">
+                    Connected to {connectionResult.hypervisor_type} — {connectionResult.template_count} template{connectionResult.template_count !== 1 ? "s" : ""} found
+                  </span>
+                </div>
+                {connectionResult.templates && connectionResult.templates.length > 0 && (
+                  <div className="mt-3">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-green-200 text-left text-green-700">
+                          <th className="pb-1 pr-4">Name</th>
+                          <th className="pb-1 pr-4">Guest OS</th>
+                          <th className="pb-1">ID</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-green-900">
+                        {connectionResult.templates.map((tmpl) => (
+                          <tr key={tmpl.id} className="border-b border-green-100 last:border-0">
+                            <td className="py-1 pr-4 font-medium">{tmpl.name}</td>
+                            <td className="py-1 pr-4">{tmpl.guest_os || "—"}</td>
+                            <td className="py-1 font-mono text-green-700">{tmpl.id}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+            {connectionResult.status === "error" && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2">
+                  <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                  </svg>
+                  <span className="text-sm font-medium text-red-800">Connection failed</span>
+                </div>
+                <p className="mt-2 text-sm text-red-700">{connectionResult.message}</p>
+              </div>
+            )}
+            {connectionResult.status === "not_configured" && (
+              <div className="rounded-md border border-yellow-200 bg-yellow-50 p-4">
+                <div className="flex items-center gap-2">
+                  <svg className="h-5 w-5 text-yellow-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+                  </svg>
+                  <span className="text-sm font-medium text-yellow-800">{connectionResult.message}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Section 4: Provisioner */}

@@ -58,6 +58,14 @@ export interface HypervisorTemplate {
   last_modified?: string;
 }
 
+export interface HypervisorTestConnectionResponse {
+  status: "ok" | "error" | "not_configured";
+  message?: string;
+  hypervisor_type?: string;
+  template_count?: number;
+  templates?: HypervisorTemplate[];
+}
+
 export interface PlatformMappingStatusResponse {
   discovered_platforms: DiscoveredPlatformStatus[];
   templates: HypervisorTemplate[];

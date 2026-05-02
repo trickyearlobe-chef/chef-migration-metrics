@@ -132,6 +132,46 @@ func (r *Router) handleHypervisorCleanup(w http.ResponseWriter, req *http.Reques
 	WriteJSON(w, http.StatusOK, result)
 }
 
+// handleHypervisorTestConnection tests connectivity to the configured
+// hypervisor by calling ListTemplates. Returns status, type, and the
+// discovered templates on success.
+//
+//	POST /api/v1/admin/hypervisor/test-connection
+func (r *Router) handleHypervisorTestConnection(w http.ResponseWriter, req *http.Request) {
+	if !requirePOST(w, req) {
+		return
+	}
+
+	if r.hypervisor == nil {
+		WriteJSON(w, http.StatusOK, map[string]string{
+			"status":  "not_configured",
+			"message": "No hypervisor is configured. Set the driver type and credentials first.",
+		})
+		return
+	}
+
+	ctx := req.Context()
+	templates, err := r.hypervisor.ListTemplates(ctx)
+	if err != nil {
+		r.logf("ERROR", "hypervisor test-connection failed: %v", err)
+		WriteJSON(w, http.StatusOK, map[string]string{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+	if templates == nil {
+		templates = []hypervisor.Template{}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"status":          "ok",
+		"hypervisor_type": r.hypervisor.Type(),
+		"template_count":  len(templates),
+		"templates":       templates,
+	})
+}
+
 // handleOrphanSweep performs a hypervisor-side orphan sweep by listing VMs
 // directly from the hypervisor and destroying those exceeding the age
 // threshold based on the timestamp embedded in their names.

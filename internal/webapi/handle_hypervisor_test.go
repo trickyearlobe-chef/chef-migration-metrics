@@ -615,3 +615,116 @@ func TestHandleOrphanSweep_MethodNotAllowed(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// handleHypervisorTestConnection
+// ---------------------------------------------------------------------------
+
+func TestHandleHypervisorTestConnection_Success(t *testing.T) {
+	now := time.Now().UTC()
+	hyp := &mockHypervisorClient{
+		templates: []hypervisor.Template{
+			{ID: "tmpl-1", Name: "ubuntu-22.04", GuestOS: "ubuntu64Guest", LastModified: now},
+			{ID: "tmpl-2", Name: "centos-7", GuestOS: "centos7_64Guest", LastModified: now},
+		},
+	}
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, hyp)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/hypervisor/test-connection", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Status         string                `json:"status"`
+		HypervisorType string                `json:"hypervisor_type"`
+		TemplateCount  int                   `json:"template_count"`
+		Templates      []hypervisor.Template `json:"templates"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Status != "ok" {
+		t.Errorf("status = %q, want %q", resp.Status, "ok")
+	}
+	if resp.HypervisorType != "mock" {
+		t.Errorf("hypervisor_type = %q, want %q", resp.HypervisorType, "mock")
+	}
+	if resp.TemplateCount != 2 {
+		t.Errorf("template_count = %d, want 2", resp.TemplateCount)
+	}
+	if len(resp.Templates) != 2 {
+		t.Errorf("templates length = %d, want 2", len(resp.Templates))
+	}
+}
+
+func TestHandleHypervisorTestConnection_NoHypervisor(t *testing.T) {
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/hypervisor/test-connection", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Status != "not_configured" {
+		t.Errorf("status = %q, want %q", resp.Status, "not_configured")
+	}
+}
+
+func TestHandleHypervisorTestConnection_Error(t *testing.T) {
+	hyp := &mockHypervisorClient{
+		listErr: fmt.Errorf("connection refused: dial tcp 10.0.0.1:8006: connect: connection refused"),
+	}
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, hyp)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/hypervisor/test-connection", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Status != "error" {
+		t.Errorf("status = %q, want %q", resp.Status, "error")
+	}
+	if resp.Message == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
+func TestHandleHypervisorTestConnection_MethodNotAllowed(t *testing.T) {
+	store := &mockStore{}
+	r := newTestRouterWithHypervisor(store, &mockHypervisorClient{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/hypervisor/test-connection", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
