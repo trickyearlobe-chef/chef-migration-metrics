@@ -1326,7 +1326,13 @@ function PlatformMapSection({
               {sortedPlatforms.map((p) => (
                 <tr key={p.platform_name}>
                   <td className="py-2 pr-3 font-medium text-gray-800">
-                    {p.platform_name}
+                    {p.display_name ? (
+                      <span title={p.platform_name} className="cursor-help border-b border-dotted border-gray-400">
+                        {p.display_name}
+                      </span>
+                    ) : (
+                      p.platform_name
+                    )}
                   </td>
                   <td className="py-2 pr-3">
                     <SourceBadge source={p.source} />
