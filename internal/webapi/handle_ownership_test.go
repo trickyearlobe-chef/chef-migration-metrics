@@ -2055,6 +2055,43 @@ func TestCookbookCommittersAssign_OwnershipDisabled(t *testing.T) {
 	}
 }
 
+func TestCookbookCommittersAssign_UppercaseOwnerName(t *testing.T) {
+	var insertedName string
+	store := &mockStore{
+		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
+			return "https://gitlab.example.com/cookbooks/nginx.git", nil
+		},
+		GetOwnerByNameFn: func(ctx context.Context, name string) (datastore.Owner, error) {
+			return datastore.Owner{}, datastore.ErrNotFound
+		},
+		InsertOwnerFn: func(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error) {
+			insertedName = p.Name
+			return datastore.Owner{Name: p.Name, OwnerType: "individual"}, nil
+		},
+		InsertAssignmentFn: func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
+			return datastore.OwnershipAssignment{ID: 100}, nil
+		},
+		InsertAuditEntryFn: func(ctx context.Context, p datastore.InsertAuditEntryParams) error {
+			return nil
+		},
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
+			return nil, nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	body := `{"committers":[{"author_email":"Mark.Leadbeater@example.com","owner_name":"Mark.Leadbeater","display_name":"Leadbeater, Mark: IT (LDN)"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookbooks/nginx/committers/assign", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if insertedName != "mark.leadbeater" {
+		t.Errorf("inserted owner name = %q, want %q", insertedName, "mark.leadbeater")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Owner filter helpers
 // ---------------------------------------------------------------------------

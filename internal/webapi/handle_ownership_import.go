@@ -424,6 +424,10 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 			return
 		}
 
+		// Normalise owner name to lowercase to satisfy the CHECK constraint
+		// on owners.name (^[a-z0-9][a-z0-9._-]*$).
+		c.OwnerName = strings.ToLower(c.OwnerName)
+
 		// Look up or create the owner.
 		owner, err := r.db.GetOwnerByName(ctx, c.OwnerName)
 		if errors.Is(err, datastore.ErrNotFound) {
