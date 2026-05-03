@@ -408,9 +408,12 @@ func TestGenerateReadyNodeExport_PlatformDisplayName_CSV(t *testing.T) {
 		t.Fatalf("parsing CSV: %v", err)
 	}
 
-	// Verify header includes platform_display_name.
+	// Verify header includes platform_display_name and platform_group.
 	if records[0][5] != "platform_display_name" {
 		t.Errorf("header[5] = %q, want platform_display_name", records[0][5])
+	}
+	if records[0][6] != "platform_group" {
+		t.Errorf("header[6] = %q, want platform_group", records[0][6])
 	}
 
 	// Find win01 and lin01 rows.
@@ -421,8 +424,9 @@ func TestGenerateReadyNodeExport_PlatformDisplayName_CSV(t *testing.T) {
 				t.Errorf("win01 platform_display_name = %q, want %q", row[5], "Win11 23H2")
 			}
 		case "lin01":
-			if row[5] != "" {
-				t.Errorf("lin01 platform_display_name = %q, want empty (no mapping)", row[5])
+			// With centralized resolver, RHEL gets abbreviated even without an explicit mapping.
+			if row[5] != "RHEL 8.5" {
+				t.Errorf("lin01 platform_display_name = %q, want %q", row[5], "RHEL 8.5")
 			}
 		}
 	}
@@ -488,8 +492,10 @@ func TestGenerateReadyNodeExport_PlatformDisplayName_NoMappings(t *testing.T) {
 		t.Fatalf("parsing JSON: %v", err)
 	}
 	for _, row := range rows {
-		if row.PlatformDisplayName != "" {
-			t.Errorf("expected empty PlatformDisplayName with no mappings, got %q for %s", row.PlatformDisplayName, row.NodeName)
+		// With centralized resolver, display name is always populated
+		// via abbreviation or raw fallback even without explicit mappings.
+		if row.PlatformDisplayName == "" {
+			t.Errorf("expected non-empty PlatformDisplayName from resolver fallback for %s", row.NodeName)
 		}
 	}
 }
@@ -521,7 +527,7 @@ func TestGenerateBlockedNodeExport_CSV(t *testing.T) {
 		t.Fatalf("CSV rows = %d, want 2", len(records))
 	}
 	// Verify blocking_cookbooks column contains "legacy-db".
-	blockingCol := records[1][10] // blocking_cookbooks is column index 10
+	blockingCol := records[1][11] // blocking_cookbooks is column index 11 (after platform_group)
 	if !strings.Contains(blockingCol, "legacy-db") {
 		t.Errorf("blocking_cookbooks = %q, want to contain legacy-db", blockingCol)
 	}

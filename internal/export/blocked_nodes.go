@@ -57,6 +57,7 @@ type blockedNodeRow struct {
 	Platform            string   `json:"platform"`
 	PlatformVersion     string   `json:"platform_version"`
 	PlatformDisplayName string   `json:"platform_display_name"`
+	PlatformGroup       string   `json:"platform_group"`
 	ChefVersion         string   `json:"chef_version"`
 	PolicyName          string   `json:"policy_name"`
 	PolicyGroup         string   `json:"policy_group"`
@@ -223,10 +224,8 @@ func buildBlockedNodeRow(
 	}
 
 	// Resolve platform display name.
-	var displayName string
-	if name, ok := platform.ResolveName(node.Platform, node.PlatformVersion, mappings); ok {
-		displayName = name
-	}
+	family := platform.DetectOSFamilyFromPlatform(node.Platform)
+	info := platform.ResolveInfo(node.Platform, node.PlatformVersion, family, "", mappings)
 
 	return blockedNodeRow{
 		NodeName:            node.NodeName,
@@ -234,7 +233,8 @@ func buildBlockedNodeRow(
 		Environment:         node.ChefEnvironment,
 		Platform:            node.Platform,
 		PlatformVersion:     node.PlatformVersion,
-		PlatformDisplayName: displayName,
+		PlatformDisplayName: info.DisplayName,
+		PlatformGroup:       info.GroupDisplayName,
 		ChefVersion:         node.ChefVersion,
 		PolicyName:          node.PolicyName,
 		PolicyGroup:         node.PolicyGroup,
@@ -373,7 +373,8 @@ func renderBlockedNodeCSV(rows []blockedNodeRow) ([]byte, error) {
 
 	header := []string{
 		"node_name", "organisation", "environment", "platform",
-		"platform_version", "platform_display_name", "chef_version", "policy_name", "policy_group",
+		"platform_version", "platform_display_name", "platform_group",
+		"chef_version", "policy_name", "policy_group",
 		"target_chef_version", "blocking_cookbooks", "blocking_reasons",
 		"complexity_score",
 	}
@@ -389,6 +390,7 @@ func renderBlockedNodeCSV(rows []blockedNodeRow) ([]byte, error) {
 			r.Platform,
 			r.PlatformVersion,
 			r.PlatformDisplayName,
+			r.PlatformGroup,
 			r.ChefVersion,
 			r.PolicyName,
 			r.PolicyGroup,

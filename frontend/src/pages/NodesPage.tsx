@@ -149,14 +149,20 @@ export function NodesPage() {
       .catch(() => setEnvironmentOptions([]));
 
     fetchFilterPlatforms(org)
-      .then((res) =>
-        setPlatformOptions(
-          (res.data ?? []).map((p) => ({
-            value: p.value,
-            label: p.display_name || p.value,
-          })),
-        ),
-      )
+      .then((res) => {
+        const entries = (res.data ?? []).map((p) => ({
+          value: p.value,
+          label: p.display_name || p.value,
+          group: p.group_display_name ?? "",
+        }));
+        // Sort by group then label for logical clustering.
+        entries.sort((a, b) =>
+          a.group !== b.group
+            ? a.group.localeCompare(b.group)
+            : a.label.localeCompare(b.label),
+        );
+        setPlatformOptions(entries);
+      })
       .catch(() => setPlatformOptions([]));
   }, [selectedOrg]);
 
