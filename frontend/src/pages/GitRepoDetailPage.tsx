@@ -6,13 +6,25 @@ import {
   resetGitRepo,
   fetchGitRepoFiles,
   fetchGitRepoFileContent,
+  fetchGitRepoCommitters,
+  assignGitRepoCommitters,
 } from "../api";
-import type { GitRepoDetailResponse } from "../types";
+import type {
+  GitRepoDetailResponse,
+  CookbookCommittersResponse,
+  GitRepoCommitter,
+  Pagination as PaginationType,
+} from "../types";
+import type { CommitterFilterQuery } from "../api/ownership";
 import type { GitRepoFileEntry, GitRepoFileContentResponse } from "../api/git-repos";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
+import { Pagination } from "../components/Pagination";
 import { StatusBadge } from "../components/StatusBadge";
 import { CookstyleResultRow } from "../components/CookstyleResultRow";
 import { GitKitchenSection } from "../components/GitKitchenSection";
+import { SortableColumnHeader } from "../components/SortableColumnHeader";
+import { useSort } from "../hooks/useSort";
+import { SMALL_PAGE_SIZE } from "../constants";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -27,7 +39,7 @@ export function GitRepoDetailPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "files">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "files" | "committers">("overview");
 
   const load = useCallback(() => {
     if (!name) return;
@@ -168,30 +180,21 @@ export function GitRepoDetailPage() {
           >
             Files
           </button>
+          <button
+            onClick={() => setActiveTab("committers")}
+            className={`border-b-2 px-1 py-2 text-sm font-medium ${
+              activeTab === "committers"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
+            }`}
+          >
+            Committers
+          </button>
         </nav>
       </div>
 
       {activeTab === "overview" && (
         <>
-          {hasGitRepos && (
-            <div className="card">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">Committers</h4>
-                  <p className="mt-1 text-sm text-gray-500">
-                    View committer history and assign repository owners
-                  </p>
-                </div>
-                <Link
-                  to={`/git-repos/${encodeURIComponent(data.name)}/committers`}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 shadow-sm hover:bg-gray-50"
-                >
-                  View Committers →
-                </Link>
-              </div>
-            </div>
-          )}
-
           {!hasGitRepos ? (
             <EmptyState title="No git repo entries found" />
           ) : (
@@ -384,6 +387,313 @@ export function GitRepoDetailPage() {
 
       {activeTab === "files" && name && (
         <GitRepoFileBrowser repoName={name} />
+      )}
+
+      {activeTab === "committers" && name && (
+        <GitRepoCommittersTab repoName={name} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Committers Tab Component
+// ---------------------------------------------------------------------------
+
+const DATE_FILTER_OPTIONS: { label: string; months: number | null }[] = [
+  { label: "All time", months: null },
+  { label: "Last 6 months", months: 6 },
+  { label: "Last year", months: 12 },
+  { label: "Last 2 years", months: 24 },
+];
+
+function sinceDate(months: number | null): string | undefined {
+  if (months === null) return undefined;
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString();
+}
+
+function GitRepoCommittersTab({ repoName }: { repoName: string }) {
+  const [response, setResponse] = useState<CookbookCommittersResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [page, setPage] = useState(1);
+  const perPage = SMALL_PAGE_SIZE;
+  type CommitterSortField =
+    | "author_name"
+    | "author_email"
+    | "commit_count"
+    | "first_commit_at"
+    | "last_commit_at";
+  const {
+    sortField: sort,
+    sortOrder: order,
+    handleSort,
+  } = useSort<CommitterSortField>({
+    defaultField: "last_commit_at",
+    defaultOrder: "desc",
+    descendingFields: ["commit_count", "first_commit_at", "last_commit_at"],
+  });
+  const [sinceMonths, setSinceMonths] = useState<number | null>(null);
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const key = (c: GitRepoCommitter) => c.author_email;
+
+  const [assigning, setAssigning] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  const committers: GitRepoCommitter[] = response?.data ?? [];
+  const pagination: PaginationType | null = response?.pagination ?? null;
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+
+    const filters: CommitterFilterQuery = {
+      page,
+      per_page: perPage,
+      sort,
+      order,
+      since: sinceDate(sinceMonths),
+    };
+
+    fetchGitRepoCommitters(repoName, filters)
+      .then((res) => {
+        setResponse(res);
+        const ownerIds = new Set(
+          (res.data ?? []).filter((c) => c.is_owner).map((c) => key(c)),
+        );
+        setSelected(ownerIds);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [repoName, page, perPage, sort, order, sinceMonths]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [sort, order, sinceMonths]);
+
+  const allSelected =
+    committers.length > 0 && committers.every((c) => selected.has(key(c)));
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(committers.map((c) => key(c))));
+    }
+  };
+
+  const toggleOne = (c: GitRepoCommitter) => {
+    const k = key(c);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) {
+        next.delete(k);
+      } else {
+        next.add(k);
+      }
+      return next;
+    });
+  };
+
+  const handleAssign = async () => {
+    if (selected.size === 0) return;
+    setAssigning(true);
+    setAssignError(null);
+    setSuccessMsg(null);
+
+    const selectedCommitters = committers.filter((c) => selected.has(key(c)));
+    const body = {
+      committers: selectedCommitters.map((c) => ({
+        author_email: c.author_email,
+        owner_name: c.author_email.split("@")[0],
+        display_name: c.author_name,
+      })),
+    };
+
+    try {
+      const res = await assignGitRepoCommitters(repoName, body);
+      setSuccessMsg(
+        `Created ${res.owners_created} owner(s), ${res.assignments_created} assignment(s), ${res.skipped} skipped.`,
+      );
+      setSelected(new Set());
+      load();
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Failed to assign committers.";
+      setAssignError(message);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  if (loading && !response) {
+    return <LoadingSpinner message="Loading committers…" />;
+  }
+
+  if (error && !response) {
+    return <ErrorAlert message={error} onRetry={load} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {successMsg && (
+        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {successMsg}
+        </div>
+      )}
+
+      {assignError && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {assignError}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Activity Period
+          </label>
+          <select
+            value={sinceMonths === null ? "" : String(sinceMonths)}
+            onChange={(e) =>
+              setSinceMonths(
+                e.target.value === "" ? null : Number(e.target.value),
+              )
+            }
+            className="block w-44 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {DATE_FILTER_OPTIONS.map((opt) => (
+              <option
+                key={opt.label}
+                value={opt.months === null ? "" : String(opt.months)}
+              >
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={handleAssign}
+          disabled={selected.size === 0 || assigning}
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {assigning ? "Assigning…" : `Assign as Owners (${selected.size})`}
+        </button>
+      </div>
+
+      {loading && response && <LoadingSpinner message="Refreshing…" />}
+      {error && response && <ErrorAlert message={error} onRetry={load} />}
+
+      {!loading && committers.length === 0 ? (
+        <EmptyState
+          title="No committers found"
+          description="Adjust the activity period filter or check that the repository has been scanned."
+        />
+      ) : (
+        !loading && (
+          <div className="card">
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </th>
+                    <SortableColumnHeader
+                      label="Author Name"
+                      field="author_name"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Email"
+                      field="author_email"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                    <th>Owner</th>
+                    <SortableColumnHeader
+                      label="Commit Count"
+                      field="commit_count"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="First Commit"
+                      field="first_commit_at"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
+                      label="Last Commit"
+                      field="last_commit_at"
+                      currentField={sort}
+                      currentOrder={order}
+                      onSort={handleSort}
+                    />
+                  </tr>
+                </thead>
+                <tbody>
+                  {committers.map((c) => (
+                    <tr key={key(c)} className={c.is_owner ? "bg-blue-50" : ""}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(key(c))}
+                          onChange={() => toggleOne(c)}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="text-sm text-gray-800">{c.author_name}</td>
+                      <td className="text-sm text-gray-600">
+                        {c.author_email}
+                      </td>
+                      <td className="text-sm">
+                        {c.is_owner && (
+                          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                            Owner
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-sm text-gray-600">
+                        {c.commit_count}
+                      </td>
+                      <td className="text-sm text-gray-500">
+                        {new Date(c.first_commit_at).toLocaleDateString()}
+                      </td>
+                      <td className="text-sm text-gray-500">
+                        {new Date(c.last_commit_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {pagination && (
+              <Pagination pagination={pagination} onPageChange={setPage} />
+            )}
+          </div>
+        )
       )}
     </div>
   );
