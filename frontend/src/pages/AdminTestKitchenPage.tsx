@@ -900,15 +900,33 @@ export function AdminTestKitchenPage() {
                   <label className="mb-1 block text-xs font-medium text-gray-600">
                     Infrastructure ID
                   </label>
-                  <input
-                    type="text"
-                    list="hypervisor-templates-list"
-                    value={img.id}
-                    onChange={(e) => updateImage(idx, { id: e.target.value })}
-                    placeholder="e.g. 100 or tmpl-ubuntu"
-                    disabled={saving}
-                    className={INPUT_CLASS}
-                  />
+                  {connectionResult?.templates && connectionResult.templates.length > 0 ? (
+                    <select
+                      value={img.id}
+                      onChange={(e) => updateImage(idx, { id: e.target.value })}
+                      disabled={saving}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">— select template —</option>
+                      {connectionResult.templates.map((tmpl) => (
+                        <option key={tmpl.id} value={tmpl.name}>
+                          {tmpl.name}
+                        </option>
+                      ))}
+                      {img.id && !connectionResult.templates.some((t) => t.name === img.id) && (
+                        <option value={img.id}>{img.id} (custom)</option>
+                      )}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={img.id}
+                      onChange={(e) => updateImage(idx, { id: e.target.value })}
+                      placeholder="e.g. template-rhel9"
+                      disabled={saving}
+                      className={INPUT_CLASS}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1105,15 +1123,6 @@ export function AdminTestKitchenPage() {
         <AddButton onClick={addImage} disabled={saving}>
           Add Image
         </AddButton>
-        {connectionResult?.templates && connectionResult.templates.length > 0 && (
-          <datalist id="hypervisor-templates-list">
-            {connectionResult.templates.map((tmpl) => (
-              <option key={tmpl.id} value={tmpl.name}>
-                {tmpl.name}{tmpl.guest_os ? ` (${tmpl.guest_os})` : ""}
-              </option>
-            ))}
-          </datalist>
-        )}
       </div>
 
       {/* Section 6: Platform Map */}
