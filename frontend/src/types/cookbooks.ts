@@ -122,6 +122,9 @@ export interface GitRepoDetail {
   cookstyle?: CookstyleResult[];
   test_kitchen?: TestKitchenResult[];
   complexity?: CookbookComplexity[];
+  tk_status?: string;
+  tk_passed?: number;
+  tk_total?: number;
 }
 
 export interface CookbookDetailResponse {

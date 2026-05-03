@@ -194,32 +194,12 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Build TK status map from active (non-excluded) git kitchen results.
-	type tkSummary struct {
-		Passed int
-		Failed int
-		Total  int
-	}
-	tkByRepo := make(map[string]*tkSummary)
+	tkByRepo := make(map[string]*tkRepoSummary)
 	allResults, tkErr := r.db.ListActiveGitKitchenResults(ctx)
 	if tkErr != nil {
 		r.logf("WARN", "listing git kitchen results for repo list: %v", tkErr)
 	} else {
-		for _, res := range allResults {
-			if res.Passed == nil {
-				continue // still running
-			}
-			s := tkByRepo[res.GitRepoName]
-			if s == nil {
-				s = &tkSummary{}
-				tkByRepo[res.GitRepoName] = s
-			}
-			s.Total++
-			if *res.Passed {
-				s.Passed++
-			} else {
-				s.Failed++
-			}
-		}
+		tkByRepo = buildTKSummaryMap(allResults)
 	}
 
 	// Apply optional TK status filter.
@@ -424,6 +404,9 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 		GitRepo     datastore.GitRepo                    `json:"git_repo"`
 		Cookstyle   []datastore.GitRepoCookstyleResult   `json:"cookstyle,omitempty"`
 		Complexity  []datastore.GitRepoComplexity        `json:"complexity,omitempty"`
+		TKStatus    string                               `json:"tk_status,omitempty"`
+		TKPassed    int                                  `json:"tk_passed,omitempty"`
+		TKTotal     int                                  `json:"tk_total,omitempty"`
 	}
 
 	details := make([]gitRepoDetailEntry, 0, len(gitRepos))
@@ -445,6 +428,21 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 		}
 
 		details = append(details, detail)
+	}
+
+	// Enrich with TK summary from active kitchen results.
+	activeResults, tkErr := r.db.ListActiveGitKitchenResults(ctx)
+	if tkErr != nil {
+		r.logf("WARN", "listing active kitchen results for git repo detail %s: %v", name, tkErr)
+	} else {
+		tkByRepo := buildTKSummaryMap(activeResults)
+		for i := range details {
+			if s := tkByRepo[details[i].GitRepo.Name]; s != nil && s.Total > 0 {
+				details[i].TKStatus = tkstatus.ComputeTKStatus(s.Passed, s.Failed)
+				details[i].TKPassed = s.Passed
+				details[i].TKTotal = s.Total
+			}
+		}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{
@@ -625,6 +623,39 @@ func (r *Router) handleGitRepoReset(w http.ResponseWriter, req *http.Request) {
 		"local_clone_removed": localCloneRemoved,
 		"message":             "Git repo reset — will be re-cloned on the next collection cycle.",
 	})
+}
+
+// ---------------------------------------------------------------------------
+// TK Summary helper
+// ---------------------------------------------------------------------------
+
+// tkRepoSummary holds aggregated TK pass/fail counts for a single repo.
+type tkRepoSummary struct {
+	Passed int
+	Failed int
+	Total  int
+}
+
+// buildTKSummaryMap groups kitchen results by repo name and counts pass/fail.
+func buildTKSummaryMap(results []datastore.GitKitchenResult) map[string]*tkRepoSummary {
+	m := make(map[string]*tkRepoSummary)
+	for _, res := range results {
+		if res.Passed == nil {
+			continue
+		}
+		s := m[res.GitRepoName]
+		if s == nil {
+			s = &tkRepoSummary{}
+			m[res.GitRepoName] = s
+		}
+		s.Total++
+		if *res.Passed {
+			s.Passed++
+		} else {
+			s.Failed++
+		}
+	}
+	return m
 }
 
 // ---------------------------------------------------------------------------

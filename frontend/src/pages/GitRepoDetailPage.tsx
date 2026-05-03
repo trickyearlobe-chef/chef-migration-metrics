@@ -390,30 +390,30 @@ export function GitRepoDetailPage() {
                         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
                           <StatusBadge
                             variant={
-                              gr.tk_status === "passed"
+                              gd.tk_status === "passed"
                                 ? "compatible"
-                                : gr.tk_status === "partial"
+                                : gd.tk_status === "partial"
                                   ? "warning"
-                                  : gr.tk_status === "failed"
+                                  : gd.tk_status === "failed"
                                     ? "incompatible"
-                                    : gr.tk_status === "timed_out"
+                                    : gd.tk_status === "timed_out"
                                       ? "incompatible"
                                       : "untested"
                             }
                             label={
-                              gr.tk_status === "timed_out"
+                              gd.tk_status === "timed_out"
                                 ? "Timed Out"
-                                : gr.tk_status === "partial"
+                                : gd.tk_status === "partial"
                                   ? "Partial"
-                                  : gr.tk_status
-                                    ? gr.tk_status.charAt(0).toUpperCase() + gr.tk_status.slice(1)
+                                  : gd.tk_status
+                                    ? gd.tk_status.charAt(0).toUpperCase() + gd.tk_status.slice(1)
                                     : "Not Run"
                             }
                             size="sm"
                           />
-                          {gr.tk_total != null && gr.tk_total > 0 && (
+                          {gd.tk_total != null && gd.tk_total > 0 && (
                             <span className="text-xs text-gray-600">
-                              {gr.tk_passed ?? 0} / {gr.tk_total} suites passed
+                              {gd.tk_passed ?? 0} / {gd.tk_total} suites passed
                             </span>
                           )}
                           <button
