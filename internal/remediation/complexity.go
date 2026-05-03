@@ -12,6 +12,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -332,7 +333,7 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 //
 //  1. Loads the CookStyle scan result and classifies offenses.
 //  2. Loads the auto-correct preview (if any) for manual fix counts.
-//  3. Loads the Test Kitchen result (if any).
+//  3. Looks up the aggregate Test Kitchen status.
 //  4. Computes the blast radius from usage analysis and role dependencies.
 //  5. Computes the weighted score and label.
 //  6. Persists to the git_repo_complexity table.
@@ -351,6 +352,15 @@ func (s *ComplexityScorer) ScoreGitRepos(
 		log.Error(fmt.Sprintf("failed to load blast radius data: %v", blastErr))
 		if blastRadii == nil {
 			blastRadii = make(map[string]BlastRadius)
+		}
+	}
+
+	// Pre-load TK counts for all target versions (bulk query).
+	tkCounts, tkErr := s.db.ListGitKitchenCountsByTargetVersions(ctx, targetChefVersions)
+	if tkErr != nil {
+		log.Error(fmt.Sprintf("failed to load TK counts: %v", tkErr))
+		if tkCounts == nil {
+			tkCounts = make(map[string]tkstatus.Counts)
 		}
 	}
 
@@ -377,7 +387,7 @@ func (s *ComplexityScorer) ScoreGitRepos(
 			break
 		}
 
-		result := s.scoreOneGitRepo(ctx, item.Repo, item.TargetVersion, blastRadii)
+		result := s.scoreOneGitRepo(ctx, item.Repo, item.TargetVersion, blastRadii, tkCounts)
 		batch.Results = append(batch.Results, result)
 
 		switch {
@@ -486,6 +496,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 	repo datastore.GitRepo,
 	targetChefVersion string,
 	blastRadii map[string]BlastRadius,
+	tkCounts map[string]tkstatus.Counts,
 ) ComplexityResult {
 	result := ComplexityResult{
 		CookbookName:      repo.Name,
@@ -525,13 +536,19 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 	// Step 3: Look up blast radius.
 	blast := blastRadii[repo.Name]
 
-	// Step 4: Compute score.
+	// Step 4: Derive TK status from pre-loaded counts.
+	var tk TKStatus
+	if counts, ok := tkCounts[repo.Name+"|"+targetChefVersion]; ok {
+		tk.Status = counts.Status()
+	}
+
+	// Step 5: Compute score.
 	input := ComplexityInput{
 		CookbookName:      repo.Name,
 		GitRepoURL:        repo.GitRepoURL,
 		TargetChefVersion: targetChefVersion,
 		Cookstyle:         offenseSummary,
-		TestKitchen:       TKStatus{},
+		TestKitchen:       tk,
 		Blast:             blast,
 	}
 
