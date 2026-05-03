@@ -55,6 +55,7 @@ type readyNodeRow struct {
 	Platform            string `json:"platform"`
 	PlatformVersion     string `json:"platform_version"`
 	PlatformDisplayName string `json:"platform_display_name"`
+	PlatformGroup       string `json:"platform_group"`
 	ChefVersion         string `json:"chef_version"`
 	PolicyName          string `json:"policy_name"`
 	PolicyGroup         string `json:"policy_group"`
@@ -87,17 +88,16 @@ func GenerateReadyNodeExport(ctx context.Context, db DataStore, params ReadyNode
 	// Flatten into export rows.
 	exportRows := make([]readyNodeRow, 0, len(rows))
 	for _, r := range rows {
-		var displayName string
-		if name, ok := platform.ResolveName(r.node.Platform, r.node.PlatformVersion, params.PlatformDisplayMappings); ok {
-			displayName = name
-		}
+		family := platform.DetectOSFamilyFromPlatform(r.node.Platform)
+		info := platform.ResolveInfo(r.node.Platform, r.node.PlatformVersion, family, "", params.PlatformDisplayMappings)
 		exportRows = append(exportRows, readyNodeRow{
 			NodeName:            r.node.NodeName,
 			Organisation:        orgNameByID[r.node.OrganisationName],
 			Environment:         r.node.ChefEnvironment,
 			Platform:            r.node.Platform,
 			PlatformVersion:     r.node.PlatformVersion,
-			PlatformDisplayName: displayName,
+			PlatformDisplayName: info.DisplayName,
+			PlatformGroup:       info.GroupDisplayName,
 			ChefVersion:         r.node.ChefVersion,
 			PolicyName:          r.node.PolicyName,
 			PolicyGroup:         r.node.PolicyGroup,
@@ -248,7 +248,8 @@ func renderReadyNodeCSV(rows []readyNodeRow) ([]byte, error) {
 	// Header row.
 	header := []string{
 		"node_name", "organisation", "environment", "platform",
-		"platform_version", "platform_display_name", "chef_version", "policy_name", "policy_group",
+		"platform_version", "platform_display_name", "platform_group",
+		"chef_version", "policy_name", "policy_group",
 	}
 	if err := w.Write(header); err != nil {
 		return nil, fmt.Errorf("export: writing CSV header: %w", err)
@@ -262,6 +263,7 @@ func renderReadyNodeCSV(rows []readyNodeRow) ([]byte, error) {
 			r.Platform,
 			r.PlatformVersion,
 			r.PlatformDisplayName,
+			r.PlatformGroup,
 			r.ChefVersion,
 			r.PolicyName,
 			r.PolicyGroup,

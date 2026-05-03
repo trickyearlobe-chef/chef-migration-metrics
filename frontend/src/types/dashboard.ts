@@ -14,13 +14,24 @@ export interface VersionDistributionResponse {
 export interface PlatformCount {
   platform: string;
   display_name?: string | null;
+  group_key?: string;
+  group_display_name?: string;
   count: number;
   percent: number;
+}
+
+export interface PlatformGroup {
+  group_key: string;
+  group_display_name: string;
+  total_count: number;
+  total_percent: number;
+  versions: PlatformCount[];
 }
 
 export interface PlatformDistributionResponse {
   total_nodes: number;
   distribution: PlatformCount[];
+  groups?: PlatformGroup[];
 }
 
 export interface VersionDistributionTrendPoint {

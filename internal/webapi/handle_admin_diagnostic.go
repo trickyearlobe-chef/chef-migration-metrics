@@ -13,9 +13,11 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/platform"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/syshealth"
 )
 
@@ -298,6 +300,21 @@ func (r *Router) handleDiagnosticBundle(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// --- platform_distribution.json ---
+	{
+		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+		dist, totalNodes, err := r.db.CountNodePlatformDistribution(ctx, datastore.NodeSnapshotFilter{})
+		cancel()
+		if err != nil {
+			errs["platform_distribution"] = err.Error()
+		} else {
+			pd := buildBundlePlatformDistribution(dist, totalNodes)
+			if err := writeZipJSON(zw, "platform_distribution.json", pd); err != nil {
+				errs["platform_distribution"] = err.Error()
+			}
+		}
+	}
+
 	// --- dependency_depth_stats.json (optional) ---
 	if params.includeDepthStats {
 		ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
@@ -516,4 +533,73 @@ func sanitizeLogEntry(le datastore.LogEntry, orgKeyMap map[string]string, includ
 	}
 
 	return m
+}
+
+// ---------------------------------------------------------------------------
+// Platform distribution for diagnostic bundle
+// ---------------------------------------------------------------------------
+
+type bundlePlatformEntry struct {
+	Platform         string  `json:"platform"`
+	Version          string  `json:"version"`
+	DisplayName      string  `json:"display_name"`
+	GroupKey         string  `json:"group_key"`
+	GroupDisplayName string  `json:"group_display_name"`
+	Count            int     `json:"count"`
+	Percent          float64 `json:"percent"`
+}
+
+type bundlePlatformDistribution struct {
+	TotalNodes   int                   `json:"total_nodes"`
+	Distribution []bundlePlatformEntry `json:"distribution"`
+}
+
+// buildBundlePlatformDistribution resolves display names and groups using
+// built-in default mappings only (not admin-configured mappings) to avoid
+// leaking customer-specific identifiers in the always-on bundle file.
+func buildBundlePlatformDistribution(dist map[string]int, totalNodes int) bundlePlatformDistribution {
+	entries := make([]bundlePlatformEntry, 0, len(dist))
+
+	for label, count := range dist {
+		plat, ver := splitPlatformLabel(label)
+		family := platform.DetectOSFamilyFromPlatform(plat)
+		info := platform.ResolveInfo(plat, ver, family, "", platform.DefaultMappings)
+
+		pct := float64(0)
+		if totalNodes > 0 {
+			pct = float64(count) / float64(totalNodes) * 100
+		}
+
+		entries = append(entries, bundlePlatformEntry{
+			Platform:         plat,
+			Version:          ver,
+			DisplayName:      info.DisplayName,
+			GroupKey:         info.GroupKey,
+			GroupDisplayName: info.GroupDisplayName,
+			Count:            count,
+			Percent:          pct,
+		})
+	}
+
+	// Sort by count descending for readability.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Count != entries[j].Count {
+			return entries[i].Count > entries[j].Count
+		}
+		return entries[i].DisplayName < entries[j].DisplayName
+	})
+
+	return bundlePlatformDistribution{
+		TotalNodes:   totalNodes,
+		Distribution: entries,
+	}
+}
+
+// splitPlatformLabel splits "platform version" back into components.
+func splitPlatformLabel(label string) (plat, ver string) {
+	idx := strings.IndexByte(label, ' ')
+	if idx > 0 {
+		return label[:idx], label[idx+1:]
+	}
+	return label, ""
 }

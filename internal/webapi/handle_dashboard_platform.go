@@ -13,24 +13,77 @@ import (
 )
 
 type dashboardPlatformCount struct {
-	Platform    string  `json:"platform"`
-	DisplayName *string `json:"display_name"`
-	Count       int     `json:"count"`
-	Percent     float64 `json:"percent"`
+	Platform         string  `json:"platform"`
+	DisplayName      *string `json:"display_name"`
+	GroupKey         string  `json:"group_key"`
+	GroupDisplayName string  `json:"group_display_name"`
+	Count            int     `json:"count"`
+	Percent          float64 `json:"percent"`
+}
+
+type dashboardPlatformGroup struct {
+	GroupKey         string                   `json:"group_key"`
+	GroupDisplayName string                   `json:"group_display_name"`
+	TotalCount       int                      `json:"total_count"`
+	TotalPercent     float64                  `json:"total_percent"`
+	Versions         []dashboardPlatformCount `json:"versions"`
 }
 
 func resolveDashboardPlatformDisplayNames(result []dashboardPlatformCount, mappings []platform.DisplayNameMapping) {
 	for i := range result {
 		idx := strings.IndexByte(result[i].Platform, ' ')
-		if idx < 0 {
-			continue
+		var plat, ver string
+		if idx > 0 {
+			plat = result[i].Platform[:idx]
+			ver = result[i].Platform[idx+1:]
+		} else {
+			plat = result[i].Platform
 		}
-		plat := result[i].Platform[:idx]
-		ver := result[i].Platform[idx+1:]
-		if name, ok := platform.ResolveName(plat, ver, mappings); ok {
-			result[i].DisplayName = &name
-		}
+		family := platform.DetectOSFamilyFromPlatform(plat)
+		info := platform.ResolveInfo(plat, ver, family, "", mappings)
+		result[i].DisplayName = &info.DisplayName
+		result[i].GroupKey = info.GroupKey
+		result[i].GroupDisplayName = info.GroupDisplayName
 	}
+}
+
+func buildPlatformGroups(items []dashboardPlatformCount, totalNodes int) []dashboardPlatformGroup {
+	groupMap := make(map[string]*dashboardPlatformGroup)
+	var groupOrder []string
+
+	for _, item := range items {
+		g, exists := groupMap[item.GroupKey]
+		if !exists {
+			g = &dashboardPlatformGroup{
+				GroupKey:         item.GroupKey,
+				GroupDisplayName: item.GroupDisplayName,
+			}
+			groupMap[item.GroupKey] = g
+			groupOrder = append(groupOrder, item.GroupKey)
+		}
+		g.TotalCount += item.Count
+		g.Versions = append(g.Versions, item)
+	}
+
+	// Calculate percentages and build result.
+	groups := make([]dashboardPlatformGroup, 0, len(groupOrder))
+	for _, key := range groupOrder {
+		g := groupMap[key]
+		if totalNodes > 0 {
+			g.TotalPercent = float64(g.TotalCount) / float64(totalNodes) * 100
+		}
+		groups = append(groups, *g)
+	}
+
+	// Sort groups by total count descending.
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].TotalCount != groups[j].TotalCount {
+			return groups[i].TotalCount > groups[j].TotalCount
+		}
+		return groups[i].GroupKey < groups[j].GroupKey
+	})
+
+	return groups
 }
 
 // ---------------------------------------------------------------------------
@@ -101,9 +154,13 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 	mappings, _ := r.loadPlatformDisplayNames(ctx)
 	resolveDashboardPlatformDisplayNames(result, mappings)
 
+	// Build grouped response.
+	groups := buildPlatformGroups(result, totalNodes)
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"total_nodes":  totalNodes,
 		"distribution": result,
+		"groups":       groups,
 	})
 }
 
@@ -169,9 +226,13 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 	mappings, _ := r.loadPlatformDisplayNames(ctx)
 	resolveDashboardPlatformDisplayNames(result, mappings)
 
+	// Build grouped response.
+	groups := buildPlatformGroups(result, totalNodes)
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"total_nodes":  totalNodes,
 		"distribution": result,
+		"groups":       groups,
 	})
 }
 

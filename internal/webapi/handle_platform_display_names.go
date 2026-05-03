@@ -171,11 +171,13 @@ func (r *Router) handlePlatformDisplayNamesReset(w http.ResponseWriter, req *htt
 }
 
 // resolvePlatformDisplayName resolves the display name for a node's platform
-// and version, returning the friendly name or nil.
+// and version using the centralized resolver. Always returns a non-nil result
+// unless platform is empty.
 func resolvePlatformDisplayName(plat, ver string, mappings []platform.DisplayNameMapping) *string {
-	name, ok := platform.ResolveName(plat, ver, mappings)
-	if !ok {
+	if plat == "" {
 		return nil
 	}
-	return &name
+	family := platform.DetectOSFamilyFromPlatform(plat)
+	info := platform.ResolveInfo(plat, ver, family, "", mappings)
+	return &info.DisplayName
 }

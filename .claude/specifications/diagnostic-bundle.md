@@ -43,6 +43,7 @@ GET /api/v1/admin/diagnostic-bundle
 | `logs_recent.json` | `ListLogEntries` for last `log_days` days, max 5000 rows | `process_output` field omitted |
 | `logs_errors.json` | `ListLogEntries` severity=ERROR for last `log_days` days, max 1000 rows | `process_output` field omitted |
 | `inventory_stats.json` | counts per org from DB | see Inventory Stats below |
+| `platform_distribution.json` | `CountNodePlatformDistribution` resolved with `DefaultMappings` only | see Platform Distribution below |
 
 ### Included with `?include_depth_stats=true`
 
@@ -70,6 +71,30 @@ GET /api/v1/admin/diagnostic-bundle
 ```
 
 Node names are never included even with `?include_identifiers=true`.
+
+---
+
+## Platform Distribution
+
+`platform_distribution.json` contains per-platform node counts resolved through the built-in display name mappings only (admin-configured mappings are excluded to avoid leaking customer-specific identifiers).
+
+```json
+{
+  "total_nodes": 1234,
+  "distribution": [
+    {
+      "platform": "windows",
+      "version": "10.0.20348",
+      "display_name": "Win Server 2022",
+      "group_key": "windows:windows-server-2022",
+      "group_display_name": "Windows Server 2022",
+      "count": 500
+    }
+  ]
+}
+```
+
+Entries are sorted by count descending. The `group_key` and `group_display_name` fields use the same centralized resolver as the dashboard.
 
 ---
 

@@ -52,6 +52,8 @@ export interface FilterStringResponse {
 export interface FilterPlatformEntry {
   value: string;
   display_name: string | null;
+  group_key?: string;
+  group_display_name?: string;
 }
 
 export interface FilterPlatformsResponse {

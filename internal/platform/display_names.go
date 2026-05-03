@@ -51,6 +51,7 @@ var DefaultMappings = []DisplayNameMapping{
 	{Platform: "windows", VersionPrefix: "10.0.19042", DisplayName: "Win10 20H2"},
 	{Platform: "windows", VersionPrefix: "10.0.18363", DisplayName: "Win10 1909"},
 	{Platform: "windows", VersionPrefix: "10.0.17763", DisplayName: "Win10 1809 / Server 2019"},
+	{Platform: "windows", VersionPrefix: "10.0.14393", DisplayName: "Win10 1607 / Server 2016"},
 	{Platform: "windows", VersionPrefix: "6.3.9600", DisplayName: "Win8.1 / Server 2012 R2"},
 	{Platform: "windows", VersionPrefix: "6.2.9200", DisplayName: "Win8 / Server 2012"},
 	{Platform: "windows", VersionPrefix: "6.1.7601", DisplayName: "Win7 SP1 / Server 2008 R2"},

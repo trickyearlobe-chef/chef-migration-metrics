@@ -130,6 +130,12 @@ func defaultDiagnosticStore() *mockStore {
 		DatabaseTableSizesFn: func(_ context.Context) ([]datastore.TableSize, error) {
 			return []datastore.TableSize{}, nil
 		},
+		CountNodePlatformDistributionFn: func(_ context.Context, _ datastore.NodeSnapshotFilter) (map[string]int, int, error) {
+			return map[string]int{
+				"windows 10.0.20348": 3,
+				"redhat 8.10":        2,
+			}, 5, nil
+		},
 	}
 }
 
@@ -193,6 +199,7 @@ func TestHandleDiagnosticBundle_BasicBundle(t *testing.T) {
 		"collection_run_status.json",
 		"performance_db.json",
 		"inventory_stats.json",
+		"platform_distribution.json",
 		"logs_recent.json",
 		"logs_errors.json",
 		"errors.json",
@@ -338,4 +345,87 @@ func keys(m map[string][]byte) []string {
 		ks = append(ks, k)
 	}
 	return ks
+}
+
+// ---------------------------------------------------------------------------
+// buildBundlePlatformDistribution tests
+// ---------------------------------------------------------------------------
+
+func TestBuildBundlePlatformDistribution(t *testing.T) {
+	dist := map[string]int{
+		"windows 10.0.20348": 100,
+		"redhat 8.10":        50,
+		"ubuntu 22.04":       30,
+	}
+
+	result := buildBundlePlatformDistribution(dist, 180)
+
+	if result.TotalNodes != 180 {
+		t.Errorf("TotalNodes = %d, want 180", result.TotalNodes)
+	}
+	if len(result.Distribution) != 3 {
+		t.Fatalf("len(Distribution) = %d, want 3", len(result.Distribution))
+	}
+
+	// Should be sorted by count descending.
+	if result.Distribution[0].Count != 100 {
+		t.Errorf("first entry count = %d, want 100", result.Distribution[0].Count)
+	}
+	if result.Distribution[1].Count != 50 {
+		t.Errorf("second entry count = %d, want 50", result.Distribution[1].Count)
+	}
+
+	// Check resolved display names and groups.
+	for _, e := range result.Distribution {
+		switch e.Platform {
+		case "windows":
+			if e.DisplayName != "Win Server 2022" {
+				t.Errorf("windows display = %q, want %q", e.DisplayName, "Win Server 2022")
+			}
+			if e.GroupDisplayName != "Windows Server 2022" {
+				t.Errorf("windows group = %q, want %q", e.GroupDisplayName, "Windows Server 2022")
+			}
+		case "redhat":
+			if e.DisplayName != "RHEL 8.10" {
+				t.Errorf("redhat display = %q, want %q", e.DisplayName, "RHEL 8.10")
+			}
+			if e.GroupDisplayName != "RHEL 8" {
+				t.Errorf("redhat group = %q, want %q", e.GroupDisplayName, "RHEL 8")
+			}
+		case "ubuntu":
+			if e.GroupDisplayName != "Ubuntu 22.04" {
+				t.Errorf("ubuntu group = %q, want %q", e.GroupDisplayName, "Ubuntu 22.04")
+			}
+		}
+	}
+}
+
+func TestBuildBundlePlatformDistribution_Empty(t *testing.T) {
+	result := buildBundlePlatformDistribution(map[string]int{}, 0)
+	if result.TotalNodes != 0 {
+		t.Errorf("TotalNodes = %d, want 0", result.TotalNodes)
+	}
+	if len(result.Distribution) != 0 {
+		t.Errorf("len(Distribution) = %d, want 0", len(result.Distribution))
+	}
+}
+
+func TestSplitPlatformLabel(t *testing.T) {
+	cases := []struct {
+		label    string
+		wantPlat string
+		wantVer  string
+	}{
+		{"windows 10.0.20348", "windows", "10.0.20348"},
+		{"redhat 8.10", "redhat", "8.10"},
+		{"unknown", "unknown", ""},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		plat, ver := splitPlatformLabel(tc.label)
+		if plat != tc.wantPlat || ver != tc.wantVer {
+			t.Errorf("splitPlatformLabel(%q) = (%q, %q), want (%q, %q)",
+				tc.label, plat, ver, tc.wantPlat, tc.wantVer)
+		}
+	}
 }

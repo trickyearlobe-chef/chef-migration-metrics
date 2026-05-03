@@ -2,6 +2,27 @@
 
 import type { VersionCount } from "../../types/dashboard";
 
+/** Generic group structure used by BatteryBarChart. */
+export interface BarGroup {
+  /** Unique key for expand/collapse state. */
+  key: string;
+  /** Label displayed on the group row. */
+  label: string;
+  totalCount: number;
+  totalPercentage: number;
+  entries: BarGroupEntry[];
+}
+
+export interface BarGroupEntry {
+  /** Label displayed in the expanded child row. */
+  label: string;
+  /** Value used for link building (e.g. version string or platform filter value). */
+  filterValue: string;
+  count: number;
+  percent: number;
+}
+
+/** Legacy interface kept for backward compatibility with existing tests. */
 export interface GroupedMajorVersion {
   majorVersion: number;
   totalCount: number;
@@ -11,13 +32,15 @@ export interface GroupedMajorVersion {
 
 /**
  * Group version distribution entries by major version.
+ * Returns BarGroup[] for direct use with BatteryBarChart.
  * Groups are sorted descending by majorVersion (newest first).
  * Versions within each group are sorted descending by semver.
  */
 export function groupByMajorVersion(
   distribution: VersionCount[],
   totalNodes: number,
-): GroupedMajorVersion[] {
+  labelPrefix = "Chef",
+): BarGroup[] {
   const groups = new Map<number, VersionCount[]>();
 
   for (const entry of distribution) {
@@ -27,19 +50,29 @@ export function groupByMajorVersion(
     groups.set(major, list);
   }
 
-  const result: GroupedMajorVersion[] = [];
+  const result: BarGroup[] = [];
   for (const [majorVersion, versions] of groups) {
-    // Sort versions descending within the group.
     versions.sort((a, b) => compareSemverDesc(a.version, b.version));
 
     const totalCount = versions.reduce((sum, v) => sum + v.count, 0);
     const totalPercentage = totalNodes > 0 ? (totalCount / totalNodes) * 100 : 0;
 
-    result.push({ majorVersion, totalCount, totalPercentage, versions });
+    result.push({
+      key: String(majorVersion),
+      label: `${labelPrefix} ${majorVersion}`,
+      totalCount,
+      totalPercentage,
+      entries: versions.map((v) => ({
+        label: v.version,
+        filterValue: v.version,
+        count: v.count,
+        percent: v.percent,
+      })),
+    });
   }
 
   // Sort groups descending by major version (newest first).
-  result.sort((a, b) => b.majorVersion - a.majorVersion);
+  result.sort((a, b) => Number(b.key) - Number(a.key));
 
   return result;
 }
