@@ -381,6 +381,62 @@ export function GitRepoDetailPage() {
                       </div>
                     )}
 
+                    {/* Test Kitchen summary */}
+                    <div className="mt-4">
+                      <h4 className="mb-2 text-sm font-medium text-gray-600">
+                        Test Kitchen
+                      </h4>
+                      {gr.has_test_suite ? (
+                        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
+                          <StatusBadge
+                            variant={
+                              gr.tk_status === "passed"
+                                ? "compatible"
+                                : gr.tk_status === "partial"
+                                  ? "warning"
+                                  : gr.tk_status === "failed"
+                                    ? "incompatible"
+                                    : gr.tk_status === "timed_out"
+                                      ? "incompatible"
+                                      : "untested"
+                            }
+                            label={
+                              gr.tk_status === "timed_out"
+                                ? "Timed Out"
+                                : gr.tk_status === "partial"
+                                  ? "Partial"
+                                  : gr.tk_status
+                                    ? gr.tk_status.charAt(0).toUpperCase() + gr.tk_status.slice(1)
+                                    : "Not Run"
+                            }
+                            size="sm"
+                          />
+                          {gr.tk_total != null && gr.tk_total > 0 && (
+                            <span className="text-xs text-gray-600">
+                              {gr.tk_passed ?? 0} / {gr.tk_total} suites passed
+                            </span>
+                          )}
+                          <button
+                            onClick={() => setActiveTab("kitchen")}
+                            className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800"
+                          >
+                            View Details →
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 p-3">
+                          <StatusBadge
+                            variant="untested"
+                            label="No Test Suite"
+                            size="sm"
+                          />
+                          <span className="text-xs text-gray-400">
+                            No kitchen.yml detected in this repository.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
                   </div>
                 );
               })}
