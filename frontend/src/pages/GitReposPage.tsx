@@ -87,6 +87,9 @@ export function GitReposPage() {
   const [cloneStatus, setCloneStatus] = useState<string[]>(
     searchParams.get("clone_status")?.split(",").filter(Boolean) ?? [],
   );
+  const [kitchenFilter, setKitchenFilter] = useState<string[]>(
+    searchParams.get("has_test_suite")?.split(",").filter(Boolean) ?? [],
+  );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -111,7 +114,8 @@ export function GitReposPage() {
       searchParams.has("target_chef_version") ||
       searchParams.has("name") ||
       searchParams.has("tk_status") ||
-      searchParams.has("clone_status")
+      searchParams.has("clone_status") ||
+      searchParams.has("has_test_suite")
     ) {
       setSearchParams({}, { replace: true });
     }
@@ -126,6 +130,7 @@ export function GitReposPage() {
       compatibility?: string;
       tk_status?: string;
       clone_status?: string;
+      has_test_suite?: string;
       target_chef_version?: string;
       sort?: string;
       order?: string;
@@ -140,6 +145,8 @@ export function GitReposPage() {
       filters.compatibility = compatibility.join(",");
     if (tkStatus.length > 0) filters.tk_status = tkStatus.join(",");
     if (cloneStatus.length > 0) filters.clone_status = cloneStatus.join(",");
+    if (kitchenFilter.length > 0)
+      filters.has_test_suite = kitchenFilter.join(",");
     if (selectedTargetVersion)
       filters.target_chef_version = selectedTargetVersion;
     if (sortField) filters.sort = sortField;
@@ -157,6 +164,7 @@ export function GitReposPage() {
     compatibility,
     tkStatus,
     cloneStatus,
+    kitchenFilter,
     selectedTargetVersion,
     page,
     sortField,
@@ -173,6 +181,7 @@ export function GitReposPage() {
     compatibility,
     tkStatus,
     cloneStatus,
+    kitchenFilter,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -184,6 +193,7 @@ export function GitReposPage() {
     compatibility.length > 0 ? 1 : 0,
     tkStatus.length > 0 ? 1 : 0,
     cloneStatus.length > 0 ? 1 : 0,
+    kitchenFilter.length > 0 ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
   const clearFilters = () => {
@@ -191,6 +201,7 @@ export function GitReposPage() {
     setCompatibility([]);
     setTkStatus([]);
     setCloneStatus([]);
+    setKitchenFilter([]);
   };
 
   return (
@@ -235,6 +246,15 @@ export function GitReposPage() {
           ]}
           selected={cloneStatus}
           onChange={setCloneStatus}
+        />
+        <FilterMultiCheckbox
+          label="Kitchen"
+          options={[
+            { value: "yes", label: "Yes" },
+            { value: "no", label: "No" },
+          ]}
+          selected={kitchenFilter}
+          onChange={setKitchenFilter}
         />
         {activeFilterCount > 0 && (
           <button

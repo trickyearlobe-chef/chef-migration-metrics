@@ -117,6 +117,7 @@ export interface GitRepoFilterQuery extends PaginationQuery {
   compatibility?: string;
   tk_status?: string;
   clone_status?: string;
+  has_test_suite?: string;
   target_chef_version?: string;
   search?: string;
   sort?: string;
