@@ -665,7 +665,8 @@ func TestNodeSearchAttributes(t *testing.T) {
 	attrs := NodeSearchAttributes()
 	expected := []string{
 		"name", "chef_environment", "chef_version", "platform",
-		"platform_version", "platform_family", "filesystem", "cookbooks",
+		"platform_version", "platform_family", "kernel_os_info_caption",
+		"lsb_description", "filesystem", "cookbooks",
 		"run_list", "roles", "policy_name", "policy_group", "ohai_time",
 	}
 	for _, key := range expected {
@@ -2192,4 +2193,87 @@ func TestParsePrivateKey_PKCS8NonRSA(t *testing.T) {
 
 func ctx() context.Context {
 	return context.Background()
+}
+
+// ---------------------------------------------------------------------------
+// PlatformCaption tests
+// ---------------------------------------------------------------------------
+
+func TestNodeData_PlatformCaption_Windows(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"platform":               "windows",
+		"platform_family":        "windows",
+		"kernel_os_info_caption": "Microsoft Windows Server 2022 Datacenter",
+	})
+	got := nd.PlatformCaption()
+	want := "Microsoft Windows Server 2022 Datacenter"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestNodeData_PlatformCaption_Ubuntu(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"platform":        "ubuntu",
+		"platform_family": "debian",
+		"lsb_description": "Ubuntu 24.04.4 LTS",
+	})
+	got := nd.PlatformCaption()
+	want := "Ubuntu 24.04.4 LTS"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestNodeData_PlatformCaption_Empty(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"platform":        "redhat",
+		"platform_family": "rhel",
+	})
+	got := nd.PlatformCaption()
+	if got != "" {
+		t.Errorf("PlatformCaption() = %q, want empty", got)
+	}
+}
+
+func TestNodeData_PlatformCaption_WindowsFamilyMissing(t *testing.T) {
+	// Windows node with missing platform_family but kernel caption present.
+	nd := NewNodeData(map[string]interface{}{
+		"platform":               "windows",
+		"kernel_os_info_caption": "Microsoft Windows Server 2019 Standard",
+	})
+	got := nd.PlatformCaption()
+	want := "Microsoft Windows Server 2019 Standard"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestNodeData_PlatformCaption_PreferWindowsCaption(t *testing.T) {
+	// Windows node with both fields — should prefer kernel caption.
+	nd := NewNodeData(map[string]interface{}{
+		"platform":               "windows",
+		"platform_family":        "windows",
+		"kernel_os_info_caption": "Microsoft Windows 11 Enterprise",
+		"lsb_description":        "should not be used",
+	})
+	got := nd.PlatformCaption()
+	want := "Microsoft Windows 11 Enterprise"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestNodeData_PlatformCaption_FallbackToKernelCaption(t *testing.T) {
+	// Non-windows node with kernel caption but no LSB — still returns it.
+	nd := NewNodeData(map[string]interface{}{
+		"platform":               "unknown",
+		"platform_family":        "",
+		"kernel_os_info_caption": "Some OS Caption",
+	})
+	got := nd.PlatformCaption()
+	want := "Some OS Caption"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
 }

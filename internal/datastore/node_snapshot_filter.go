@@ -136,6 +136,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	lightCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
 		       cn.chef_environment, cn.chef_version,
 		       cn.platform, cn.platform_version, cn.platform_family,
+		       cn.platform_caption,
 		       cn.run_list, cn.roles,
 		       cn.policy_name, cn.policy_group,
 		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at`
@@ -143,6 +144,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	heavyCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
 		       cn.chef_environment, cn.chef_version,
 		       cn.platform, cn.platform_version, cn.platform_family,
+		       cn.platform_caption,
 		       cn.filesystem, cn.cookbooks, cn.run_list, cn.roles,
 		       cn.policy_name, cn.policy_group,
 		       cn.ohai_time, cn.custom_attributes,
@@ -237,6 +239,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		var ns NodeSnapshot
 		var collectionRunOrg sql.NullString
 		var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
+		var platformCaption sql.NullString
 		var policyName, policyGroup sql.NullString
 		var ohaiTime sql.NullFloat64
 		var runList, roles []byte
@@ -253,6 +256,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&platform,
 				&platformVer,
 				&platformFam,
+				&platformCaption,
 				&filesystem,
 				&cookbooks,
 				&runList,
@@ -281,6 +285,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&platform,
 				&platformVer,
 				&platformFam,
+				&platformCaption,
 				&runList,
 				&roles,
 				&policyName,
@@ -301,6 +306,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		ns.Platform = stringFromNull(platform)
 		ns.PlatformVersion = stringFromNull(platformVer)
 		ns.PlatformFamily = stringFromNull(platformFam)
+		ns.PlatformCaption = stringFromNull(platformCaption)
 		ns.PolicyName = stringFromNull(policyName)
 		ns.PolicyGroup = stringFromNull(policyGroup)
 		ns.OhaiTime = floatFromNull(ohaiTime)
@@ -380,6 +386,55 @@ func (db *DB) countNodeDistribution(ctx context.Context, f NodeSnapshotFilter, e
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("datastore: iterating node distribution rows: %w", err)
+	}
+
+	return result, total, nil
+}
+
+// PlatformDistributionRow holds one row from the detailed platform distribution query.
+type PlatformDistributionRow struct {
+	Platform        string
+	PlatformVersion string
+	PlatformFamily  string
+	PlatformCaption string
+	Count           int
+}
+
+// CountNodePlatformDistributionDetailed returns platform distribution with
+// individual platform, version, family, and caption columns for accurate resolution.
+func (db *DB) CountNodePlatformDistributionDetailed(ctx context.Context, f NodeSnapshotFilter) ([]PlatformDistributionRow, int, error) {
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
+
+	query := fmt.Sprintf(`%s
+		SELECT COALESCE(NULLIF(cn.platform, ''), 'unknown') AS platform,
+		       COALESCE(cn.platform_version, '') AS platform_version,
+		       COALESCE(cn.platform_family, '') AS platform_family,
+		       COALESCE(cn.platform_caption, '') AS platform_caption,
+		       COUNT(*) AS cnt
+		  FROM completed_nodes cn
+		%s%s
+		 GROUP BY 1, 2, 3, 4
+		 ORDER BY cnt DESC
+	`, cte, join, where)
+
+	rows, err := db.pool.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("datastore: counting detailed platform distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var result []PlatformDistributionRow
+	total := 0
+	for rows.Next() {
+		var r PlatformDistributionRow
+		if err := rows.Scan(&r.Platform, &r.PlatformVersion, &r.PlatformFamily, &r.PlatformCaption, &r.Count); err != nil {
+			return nil, 0, fmt.Errorf("datastore: scanning detailed platform distribution row: %w", err)
+		}
+		result = append(result, r)
+		total += r.Count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("datastore: iterating detailed platform distribution rows: %w", err)
 	}
 
 	return result, total, nil
@@ -514,6 +569,7 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		SELECT ns.collection_run_org, ns.organisation_name, ns.node_name,
 		       ns.chef_environment, ns.chef_version,
 		       ns.platform, ns.platform_version, ns.platform_family,
+		       ns.platform_caption,
 		       ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
 		       ns.policy_name, ns.policy_group,
 		       ns.ohai_time, ns.custom_attributes,
