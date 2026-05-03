@@ -276,3 +276,63 @@ func TestHandleGitRepos_TKStatusFilter_Partial(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Tests: has_test_suite filter
+// ---------------------------------------------------------------------------
+
+func TestHandleGitRepos_HasTestSuiteFilter_Yes(t *testing.T) {
+	store := defaultGitRepoMockStore()
+	r := newGitRepoTestRouter(store)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos?has_test_suite=yes", nil)
+	r.ServeHTTP(w, req)
+
+	resp := decodeGitRepoListResponse(t, w)
+
+	// cookbook-a, cookbook-c, cookbook-d have test suites
+	if len(resp.Data) != 3 {
+		t.Fatalf("expected 3 repos with test suite, got %d", len(resp.Data))
+	}
+	for _, d := range resp.Data {
+		if !d.HasTestSuite {
+			t.Errorf("repo %q should have test suite", d.Name)
+		}
+	}
+}
+
+func TestHandleGitRepos_HasTestSuiteFilter_No(t *testing.T) {
+	store := defaultGitRepoMockStore()
+	r := newGitRepoTestRouter(store)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos?has_test_suite=no", nil)
+	r.ServeHTTP(w, req)
+
+	resp := decodeGitRepoListResponse(t, w)
+
+	// Only cookbook-b has no test suite
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 repo without test suite, got %d", len(resp.Data))
+	}
+	if resp.Data[0].Name != "cookbook-b" {
+		t.Errorf("expected cookbook-b, got %q", resp.Data[0].Name)
+	}
+}
+
+func TestHandleGitRepos_HasTestSuiteFilter_Both(t *testing.T) {
+	store := defaultGitRepoMockStore()
+	r := newGitRepoTestRouter(store)
+
+	// Both yes and no selected = no filter applied
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos?has_test_suite=yes,no", nil)
+	r.ServeHTTP(w, req)
+
+	resp := decodeGitRepoListResponse(t, w)
+
+	if len(resp.Data) != 4 {
+		t.Fatalf("expected all 4 repos when both selected, got %d", len(resp.Data))
+	}
+}
+

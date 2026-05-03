@@ -74,3 +74,34 @@ export function fetchGitRepoCommitters(
     ),
   );
 }
+
+export interface GitRepoFileEntry {
+  name: string;
+  type: "file" | "dir";
+  size?: number;
+}
+
+export interface GitRepoFileContentResponse {
+  path: string;
+  encoding: "text" | "base64";
+  content: string;
+  size: number;
+}
+
+export function fetchGitRepoFiles(
+  repoName: string,
+  path?: string,
+): Promise<GitRepoFileEntry[]> {
+  return apiFetch<GitRepoFileEntry[]>(
+    buildUrl(`/git-repos/${encodeURIComponent(repoName)}/files`, { path }),
+  );
+}
+
+export function fetchGitRepoFileContent(
+  repoName: string,
+  path: string,
+): Promise<GitRepoFileContentResponse> {
+  return apiFetch<GitRepoFileContentResponse>(
+    buildUrl(`/git-repos/${encodeURIComponent(repoName)}/files/content`, { path }),
+  );
+}
