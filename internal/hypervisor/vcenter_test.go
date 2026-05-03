@@ -46,7 +46,7 @@ func newVCenterMockServer(t *testing.T, vms []vsphereVM) *httptest.Server {
 }
 
 func newVCenterTestClient(srv *httptest.Server) *VCenterClient {
-	client := NewVCenterClient(srv.URL, "admin", "password")
+	client := NewVCenterClient(srv.URL, "admin", "password", "")
 	client.httpClient = srv.Client()
 	return client
 }
@@ -121,7 +121,7 @@ func TestVCenterClient_Session_Unauthorized(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewVCenterClient(srv.URL, "bad", "creds")
+	client := NewVCenterClient(srv.URL, "bad", "creds", "")
 	client.httpClient = srv.Client()
 	_, err := client.ListManagedVMs(context.Background(), "")
 	if err == nil {
@@ -133,7 +133,7 @@ func TestVCenterClient_Session_Unauthorized(t *testing.T) {
 }
 
 func TestVCenterClient_Type(t *testing.T) {
-	client := NewVCenterClient("https://vcenter.example.com", "u", "p")
+	client := NewVCenterClient("https://vcenter.example.com", "u", "p", "")
 	if client.Type() != "vcenter" {
 		t.Errorf("expected vcenter, got %s", client.Type())
 	}
@@ -177,7 +177,7 @@ func TestVCenterClient_SessionReuse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewVCenterClient(srv.URL, "admin", "password")
+	client := NewVCenterClient(srv.URL, "admin", "password", "")
 	client.httpClient = srv.Client()
 
 	ctx := context.Background()

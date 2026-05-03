@@ -27,6 +27,7 @@ type VCenterClient struct {
 	baseURL    string // e.g. "https://vcenter.example.com"
 	username   string
 	password   string
+	datacenter string // optional datacenter name for SOAP/govmomi queries
 	httpClient *http.Client
 
 	sessionMu  sync.Mutex
@@ -52,7 +53,7 @@ const sessionTTL = 25 * time.Minute
 const sessionBuffer = 5 * time.Minute
 
 // NewVCenterClient creates a vCenter hypervisor client.
-func NewVCenterClient(baseURL, username, password string) *VCenterClient {
+func NewVCenterClient(baseURL, username, password, datacenter string) *VCenterClient {
 	jar, _ := cookiejar.New(nil) // cookiejar.New never returns an error with nil options
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
@@ -65,6 +66,7 @@ func NewVCenterClient(baseURL, username, password string) *VCenterClient {
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		username:   username,
 		password:   password,
+		datacenter: datacenter,
 		httpClient: httpClient,
 	}
 }
@@ -135,6 +137,22 @@ func (c *VCenterClient) ListTemplates(ctx context.Context) ([]Template, error) {
 	defer client.Logout(ctx) //nolint:errcheck
 
 	finder := find.NewFinder(client.Client, false)
+
+	// Set datacenter scope — required when vCenter manages multiple datacenters.
+	if c.datacenter != "" {
+		dc, err := finder.Datacenter(ctx, c.datacenter)
+		if err != nil {
+			return nil, fmt.Errorf("vcenter: find datacenter %q: %w", c.datacenter, err)
+		}
+		finder.SetDatacenter(dc)
+	} else {
+		dc, err := finder.DefaultDatacenter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("vcenter: find default datacenter: %w", err)
+		}
+		finder.SetDatacenter(dc)
+	}
+
 	vms, err := finder.VirtualMachineList(ctx, "*")
 	if err != nil {
 		return nil, fmt.Errorf("vcenter: find VMs: %w", err)
