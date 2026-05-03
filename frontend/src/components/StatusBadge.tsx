@@ -1,4 +1,4 @@
-import type { CompatibilityStatus, ComplexityLabel } from "../types";
+import type { CompatibilityStatus, ComplexityLabel, ComplexityBreakdown } from "../types";
 
 // ---------------------------------------------------------------------------
 // StatusBadge — renders a colour-coded pill for compatibility status,
@@ -318,7 +318,65 @@ export function ComplexityBadge({
   return <StatusBadge variant={variant} label={label} size={size} />;
 }
 
-/** Renders a stale/fresh indicator for nodes with two-tier staleness support. */
+// ---------------------------------------------------------------------------
+// Complexity breakdown labels for display
+// ---------------------------------------------------------------------------
+
+const breakdownLabels: Record<string, string> = {
+  error_fatal: "Fatal",
+  deprecation: "Deprecations",
+  correctness: "Correctness",
+  manual_fix: "Manual Fix",
+  modernize: "Modernize",
+  tk_fail: "TK",
+};
+
+/**
+ * Renders the complexity score as a formula showing contributing components.
+ * Only non-zero components are displayed. Example:
+ *   Correctness 9×3 + Manual Fix 9×4 = Critical (63)
+ */
+export function ComplexityBreakdownDisplay({
+  breakdown,
+  complexityLabel,
+  score,
+}: {
+  breakdown: ComplexityBreakdown;
+  complexityLabel: string;
+  score: number;
+}) {
+  const entries = Object.entries(breakdown)
+    .filter(([, item]) => item.subtotal > 0)
+    .map(([key, item]) => {
+      const label = breakdownLabels[key] ?? key;
+      if (key === "tk_fail") {
+        return `${label} ${item.status ?? "fail"} +${item.subtotal}`;
+      }
+      return `${label} ${item.count}×${item.weight}`;
+    });
+
+  const variant = (
+    ["low", "medium", "high", "critical"].includes(complexityLabel)
+      ? complexityLabel
+      : "unknown"
+  ) as BadgeVariant;
+
+  const labelText = variantLabels[variant] ?? complexityLabel;
+
+  if (entries.length === 0) {
+    return <StatusBadge variant={variant} label={`${labelText} (${score})`} />;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm">
+      <span className="text-gray-500 font-mono text-xs">
+        {entries.join(" + ")}
+      </span>
+      <span className="text-gray-400">=</span>
+      <StatusBadge variant={variant} label={`${labelText} (${score})`} />
+    </span>
+  );
+}
 export function StaleBadge({
   isStale,
   stalenesTier,

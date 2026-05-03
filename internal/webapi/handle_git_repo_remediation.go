@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,8 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	var autoCorrectableCount int
 	var manualFixCount int
 	var deprecationCount int
+	var correctnessCount int
+	var modernizeCount int
 	var errorCount int
 
 	complexities, cxErr := r.db.ListGitRepoComplexitiesByRepo(ctx, repoName, gitRepoURL)
@@ -118,6 +121,8 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 			autoCorrectableCount = cc.AutoCorrectableCount
 			manualFixCount = cc.ManualFixCount
 			deprecationCount = cc.DeprecationCount
+			correctnessCount = cc.CorrectnessCount
+			modernizeCount = cc.ModernizeCount
 			errorCount = cc.ErrorCount
 			break
 		}
@@ -316,15 +321,81 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		}
 	}
 
+	// Build complexity breakdown.
+	var tkStatusStr string
+	var tkWeight int
+	tkResults, tkErr := r.db.ListGitKitchenResultsByRepo(ctx, repoName)
+	if tkErr == nil {
+		var passed, failed int
+		for _, res := range tkResults {
+			if res.Passed == nil || res.TargetChefVersion != targetVersion {
+				continue
+			}
+			if *res.Passed {
+				passed++
+			} else {
+				failed++
+			}
+		}
+		tkStatusStr = tkstatus.ComputeTKStatus(passed, failed)
+	}
+	switch tkStatusStr {
+	case "failed":
+		tkWeight = remediation.WeightTKFail
+	case "partial":
+		tkWeight = remediation.WeightTKPartial
+	}
+
+	type breakdownItem struct {
+		Count    int    `json:"count"`
+		Weight   int    `json:"weight"`
+		Subtotal int    `json:"subtotal"`
+		Status   string `json:"status,omitempty"`
+	}
+
+	breakdown := map[string]breakdownItem{
+		"error_fatal": {
+			Count:    errorCount,
+			Weight:   remediation.WeightErrorFatal,
+			Subtotal: errorCount * remediation.WeightErrorFatal,
+		},
+		"deprecation": {
+			Count:    deprecationCount,
+			Weight:   remediation.WeightDeprecation,
+			Subtotal: deprecationCount * remediation.WeightDeprecation,
+		},
+		"correctness": {
+			Count:    correctnessCount,
+			Weight:   remediation.WeightCorrectness,
+			Subtotal: correctnessCount * remediation.WeightCorrectness,
+		},
+		"manual_fix": {
+			Count:    manualFixCount,
+			Weight:   remediation.WeightNonAutoCorrectable,
+			Subtotal: manualFixCount * remediation.WeightNonAutoCorrectable,
+		},
+		"modernize": {
+			Count:    modernizeCount,
+			Weight:   remediation.WeightModernize,
+			Subtotal: modernizeCount * remediation.WeightModernize,
+		},
+		"tk_fail": {
+			Status:   tkStatusStr,
+			Weight:   tkWeight,
+			Subtotal: tkWeight,
+		},
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"git_repo_name":       repoName,
-		"version":             repoVersion,
-		"target_chef_version": targetVersion,
-		"source":              "git",
-		"complexity_score":    complexityScore,
-		"complexity_label":    complexityLabel,
-		"cookstyle_passed":    cookstylePassed,
-		"scanned_at":          cookstyleScannedAt,
+		"git_repo_name":        repoName,
+		"version":              repoVersion,
+		"target_chef_version":  targetVersion,
+		"source":               "git",
+		"complexity_score":     complexityScore,
+		"complexity_label":     complexityLabel,
+		"complexity_breakdown": breakdown,
+		"cookstyle_passed":     cookstylePassed,
+		"scanned_at":           cookstyleScannedAt,
 		"statistics": map[string]any{
 			"total_offenses":         totalOffenses,
 			"correctable_offenses":   correctableOffenses,

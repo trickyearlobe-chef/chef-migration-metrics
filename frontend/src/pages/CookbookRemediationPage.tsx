@@ -9,7 +9,7 @@ import type {
   RemediationStatistics,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
-import { ComplexityBadge, StatusBadge } from "../components/StatusBadge";
+import { ComplexityBadge, ComplexityBreakdownDisplay, StatusBadge } from "../components/StatusBadge";
 import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 
 // ---------------------------------------------------------------------------
@@ -145,10 +145,18 @@ export function CookbookRemediationPage() {
           )}
 
           {/* Badges */}
-          <ComplexityBadge
-            complexityLabel={data.complexity_label}
-            score={data.complexity_score}
-          />
+          {data.complexity_breakdown ? (
+            <ComplexityBreakdownDisplay
+              breakdown={data.complexity_breakdown}
+              complexityLabel={data.complexity_label}
+              score={data.complexity_score}
+            />
+          ) : (
+            <ComplexityBadge
+              complexityLabel={data.complexity_label}
+              score={data.complexity_score}
+            />
+          )}
           {data.cookstyle_passed !== null && (
             <StatusBadge
               variant={data.cookstyle_passed ? "compatible" : "incompatible"}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -39,13 +40,13 @@ const (
 	// offenses.
 	WeightModernize = 1
 
-	// WeightTKConvergeFail is the flat weight applied when Test Kitchen
-	// converge fails.
-	WeightTKConvergeFail = 20
+	// WeightTKFail is the flat weight applied when the aggregate Test
+	// Kitchen status is "failed" (all instances failed).
+	WeightTKFail = 20
 
-	// WeightTKTestFail is the flat weight applied when Test Kitchen
-	// converge passes but tests fail.
-	WeightTKTestFail = 10
+	// WeightTKPartial is the flat weight applied when the aggregate Test
+	// Kitchen status is "partial" (some instances passed, some failed).
+	WeightTKPartial = 10
 )
 
 // ---------------------------------------------------------------------------
@@ -112,18 +113,13 @@ type CookstyleOffenseSummary struct {
 	ManualFixCount int
 }
 
-// TestKitchenSummary carries the test outcome for a single cookbook ×
-// target version from the Test Kitchen results table.
-type TestKitchenSummary struct {
-	// HasResult is true if a Test Kitchen result exists for this cookbook
-	// and target version.
-	HasResult bool
-
-	// ConvergePassed is true if the converge phase succeeded.
-	ConvergePassed bool
-
-	// TestsPassed is true if the verify phase succeeded.
-	TestsPassed bool
+// TKStatus carries the aggregate Test Kitchen outcome for a single
+// cookbook × target version. Values align with tkstatus.ComputeTKStatus:
+// "passed", "failed", "partial", or "" (no data).
+type TKStatus struct {
+	// Status is the aggregate TK outcome: "passed", "failed", "partial",
+	// or "" (not tested).
+	Status string
 }
 
 // BlastRadius carries the impact metrics for a single cookbook.
@@ -150,7 +146,7 @@ type ComplexityInput struct {
 	TargetChefVersion string
 
 	Cookstyle   CookstyleOffenseSummary
-	TestKitchen TestKitchenSummary
+	TestKitchen TKStatus
 	Blast       BlastRadius
 }
 
@@ -171,13 +167,12 @@ func ComputeComplexityScore(input ComplexityInput) int {
 	score += input.Cookstyle.ManualFixCount * WeightNonAutoCorrectable
 	score += input.Cookstyle.ModernizeCount * WeightModernize
 
-	// Test Kitchen weights.
-	if input.TestKitchen.HasResult {
-		if !input.TestKitchen.ConvergePassed {
-			score += WeightTKConvergeFail
-		} else if !input.TestKitchen.TestsPassed {
-			score += WeightTKTestFail
-		}
+	// Test Kitchen weight — aligned with tkstatus model.
+	switch input.TestKitchen.Status {
+	case "failed":
+		score += WeightTKFail
+	case "partial":
+		score += WeightTKPartial
 	}
 
 	return score
@@ -338,7 +333,7 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 //
 //  1. Loads the CookStyle scan result and classifies offenses.
 //  2. Loads the auto-correct preview (if any) for manual fix counts.
-//  3. Loads the Test Kitchen result (if any).
+//  3. Looks up the aggregate Test Kitchen status.
 //  4. Computes the blast radius from usage analysis and role dependencies.
 //  5. Computes the weighted score and label.
 //  6. Persists to the git_repo_complexity table.
@@ -357,6 +352,15 @@ func (s *ComplexityScorer) ScoreGitRepos(
 		log.Error(fmt.Sprintf("failed to load blast radius data: %v", blastErr))
 		if blastRadii == nil {
 			blastRadii = make(map[string]BlastRadius)
+		}
+	}
+
+	// Pre-load TK counts for all target versions (bulk query).
+	tkCounts, tkErr := s.db.ListGitKitchenCountsByTargetVersions(ctx, targetChefVersions)
+	if tkErr != nil {
+		log.Error(fmt.Sprintf("failed to load TK counts: %v", tkErr))
+		if tkCounts == nil {
+			tkCounts = make(map[string]tkstatus.Counts)
 		}
 	}
 
@@ -383,7 +387,7 @@ func (s *ComplexityScorer) ScoreGitRepos(
 			break
 		}
 
-		result := s.scoreOneGitRepo(ctx, item.Repo, item.TargetVersion, blastRadii)
+		result := s.scoreOneGitRepo(ctx, item.Repo, item.TargetVersion, blastRadii, tkCounts)
 		batch.Results = append(batch.Results, result)
 
 		switch {
@@ -492,6 +496,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 	repo datastore.GitRepo,
 	targetChefVersion string,
 	blastRadii map[string]BlastRadius,
+	tkCounts map[string]tkstatus.Counts,
 ) ComplexityResult {
 	result := ComplexityResult{
 		CookbookName:      repo.Name,
@@ -531,13 +536,19 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 	// Step 3: Look up blast radius.
 	blast := blastRadii[repo.Name]
 
-	// Step 4: Compute score.
+	// Step 4: Derive TK status from pre-loaded counts.
+	var tk TKStatus
+	if counts, ok := tkCounts[repo.Name+"|"+targetChefVersion]; ok {
+		tk.Status = counts.Status()
+	}
+
+	// Step 5: Compute score.
 	input := ComplexityInput{
 		CookbookName:      repo.Name,
 		GitRepoURL:        repo.GitRepoURL,
 		TargetChefVersion: targetChefVersion,
 		Cookstyle:         offenseSummary,
-		TestKitchen:       TestKitchenSummary{},
+		TestKitchen:       tk,
 		Blast:             blast,
 	}
 

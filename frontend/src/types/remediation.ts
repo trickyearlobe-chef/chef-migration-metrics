@@ -98,12 +98,29 @@ export interface RemediationStatistics {
   offense_groups: number;
 }
 
+export interface ComplexityBreakdownItem {
+  count?: number;
+  weight: number;
+  subtotal: number;
+  status?: string;
+}
+
+export interface ComplexityBreakdown {
+  error_fatal: ComplexityBreakdownItem;
+  deprecation: ComplexityBreakdownItem;
+  correctness: ComplexityBreakdownItem;
+  manual_fix: ComplexityBreakdownItem;
+  modernize: ComplexityBreakdownItem;
+  tk_fail: ComplexityBreakdownItem;
+}
+
 export interface CookbookRemediationResponse {
   cookbook_name: string;
   cookbook_version: string;
   target_chef_version: string;
   complexity_score: number;
   complexity_label: ComplexityLabel | string;
+  complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
   scanned_at: string;
   statistics: RemediationStatistics;
@@ -118,6 +135,7 @@ export interface GitRepoRemediationResponse {
   source: string;
   complexity_score: number;
   complexity_label: ComplexityLabel | string;
+  complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
   scanned_at: string;
   statistics: RemediationStatistics;
