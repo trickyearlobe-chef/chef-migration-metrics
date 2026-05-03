@@ -168,6 +168,31 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		repos = filtered
 	}
 
+	// Apply optional has_test_suite filter (yes, no — comma-separated).
+	testSuiteFilter := queryString(req, "has_test_suite", "")
+	if testSuiteFilter != "" {
+		wantYes := false
+		wantNo := false
+		for _, v := range strings.Split(testSuiteFilter, ",") {
+			switch strings.TrimSpace(v) {
+			case "yes":
+				wantYes = true
+			case "no":
+				wantNo = true
+			}
+		}
+		// Only filter if not both selected (both = no filter).
+		if wantYes != wantNo {
+			filtered := repos[:0]
+			for _, gr := range repos {
+				if (wantYes && gr.HasTestSuite) || (wantNo && !gr.HasTestSuite) {
+					filtered = append(filtered, gr)
+				}
+			}
+			repos = filtered
+		}
+	}
+
 	// Build TK status map from active (non-excluded) git kitchen results.
 	type tkSummary struct {
 		Passed int
@@ -351,6 +376,22 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		WriteNotFound(w, fmt.Sprintf("Unknown committers endpoint: %s", req.URL.Path))
+		return
+	}
+
+	// /api/v1/git-repos/:name/files — list directory
+	// /api/v1/git-repos/:name/files/content — read file content
+	if len(segments) >= 2 && segments[1] == "files" {
+		repoName := segments[0]
+		if len(segments) == 3 && segments[2] == "content" {
+			r.handleGitRepoFileContent(w, req, repoName)
+			return
+		}
+		if len(segments) == 2 {
+			r.handleGitRepoFileTree(w, req, repoName)
+			return
+		}
+		WriteNotFound(w, fmt.Sprintf("Unknown files endpoint: %s", req.URL.Path))
 		return
 	}
 
