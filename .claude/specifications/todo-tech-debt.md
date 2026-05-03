@@ -67,6 +67,10 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] `GetOwnerEmailsForGitRepo` marks a committer as `is_owner` by matching the committer's `author_email` against the owner's single `contact_email`. When two committer emails map to the same `owner_name` (e.g. `user@example` and `user@example.com` both produce owner_name `user`), only the first email is stored as `contact_email`. The second committer never shows as "Owner" in the UI despite sharing the same owner identity. **Strategic fix:** either (a) store multiple contact emails per owner (many-to-one), or (b) match `is_owner` by owner_name derivation (email prefix) rather than exact contact_email comparison.
 
+## Git — Committers Not Populated
+
+- [ ] **Git repo committers no longer being collected** — the committers list for git repositories is not being populated during collection runs. This may be a regression from a recent change (config rework or collector refactor). **Investigate:** check whether `git log` is being executed, whether the results are being parsed/stored, and whether the relevant DB write path is still being called.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
