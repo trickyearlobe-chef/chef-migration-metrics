@@ -1,14 +1,5 @@
 # Data Visualisation — ToDo
 
-Status key: [ ] Not started | [~] In progress | [x] Done
-
----
-
-## Next Up
-
-- [x] Distinguish CookStyle scan errors from genuine pass/fail on git repo detail page — `CookstyleResultRow` component renders three states: Passed (green), Failed (red), Scan Error (orange with expandable stderr). Used on both `GitRepoDetailPage` and `CookbookDetailPage`.
-- [x] Fix sawtooth pattern on trend charts when viewing all orgs — backend now merges per-org metric snapshots by hour bucket before returning, so one data point per collection cycle instead of one per (org, snapshot_time).
-
 ## Dashboard
 
 - [ ] Ensure dashboard performs acceptably with many thousands of nodes
@@ -39,10 +30,5 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Persist notification history to `notification_history` table
 
 ## Historical Trending
-
-- [x] Store timestamped metric snapshots during each collection run
-- [x] Aggregate per-org snapshots into single data points per collection cycle for all-orgs view
-
-## Log Viewer
 
 - [ ] Implement log retention purge based on configured retention period

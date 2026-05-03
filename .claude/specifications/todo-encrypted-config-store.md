@@ -10,8 +10,6 @@
 ## Phase 4 — Deprecation (deferred post-release)
 
 - [ ] Migration to drop `credentials` table
-- [x] Migration to drop `runtime_settings` table
 - [ ] Remove YAML config parsing for non-bootstrap fields
 - [ ] Remove env var overrides for non-bootstrap fields
-- [x] Remove `runtime_settings` datastore methods
 - [ ] Update all specs and documentation

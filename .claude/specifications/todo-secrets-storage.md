@@ -1,9 +1,5 @@
 # Secrets Storage — ToDo
 
-Status key: [ ] Not started | [~] In progress | [x] Done
-
----
-
 ## Credential Store
 
 - [ ] Write functional tests for `DBCredentialStore` SQL paths against real PostgreSQL (build-tagged `//go:build functional`)
@@ -22,22 +18,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Warn if keys directory permissions > `0700` — deferred until RPM/DEB packaging creates the directory
 - [ ] Warn if env file permissions > `0640` (RPM/DEB) — deferred until RPM/DEB packaging creates the env file
 - [ ] Write unit tests for startup validation (all pass, various failure modes)
-
-## Web API Integration
-
-- [x] Wire `CredentialStore` into `internal/webapi/` admin credential handlers
-- [x] Implement `GET /api/v1/admin/credentials` handler (metadata only)
-- [x] Implement `POST /api/v1/admin/credentials` handler (validate, encrypt, store)
-- [x] Implement `PUT /api/v1/admin/credentials/:name` handler (rotate value)
-- [x] Implement `DELETE /api/v1/admin/credentials/:name` handler (reference check, hard delete)
-- [x] Implement `POST /api/v1/admin/credentials/:name/test` handler
-- [x] Return `503` when `CMM_CREDENTIAL_ENCRYPTION_KEY` is not configured
-- [x] Require `admin` role on all credential endpoints
-- [x] Verify no endpoint returns `encrypted_value` or plaintext in any response
-- [x] Log all credential operations at `INFO` with `scope: secrets`
-- [x] Write handler tests for each endpoint (success and error cases)
-- [x] Write handler tests for authorisation enforcement (non-admin rejected)
-- [x] Write handler tests for `503` when encryption key is missing
 
 ## Consumer Integration
 
