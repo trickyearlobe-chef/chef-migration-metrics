@@ -13,6 +13,8 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
 import { CookstyleResultRow } from "../components/CookstyleResultRow";
 import { GitKitchenSection } from "../components/GitKitchenSection";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export function GitRepoDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -410,6 +412,7 @@ function GitRepoFileBrowser({ repoName }: { repoName: string }) {
   const [fileContent, setFileContent] = useState<GitRepoFileContentResponse | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"rendered" | "raw">("rendered");
 
   // Load root directory on mount.
   useEffect(() => {
@@ -496,6 +499,7 @@ function GitRepoFileBrowser({ repoName }: { repoName: string }) {
   const selectFile = useCallback(
     (path: string) => {
       setSelectedFile(path);
+      setViewMode("rendered");
       setLoadingFile(true);
       setFileError(null);
       setFileContent(null);
@@ -506,6 +510,11 @@ function GitRepoFileBrowser({ repoName }: { repoName: string }) {
     },
     [repoName],
   );
+
+  function isMarkdownFile(path: string): boolean {
+    const lower = path.toLowerCase();
+    return lower.endsWith(".md") || lower.endsWith(".markdown");
+  }
 
   function formatSize(bytes?: number): string {
     if (bytes === undefined || bytes === 0) return "";
@@ -611,16 +620,64 @@ function GitRepoFileBrowser({ repoName }: { repoName: string }) {
                 <span className="font-mono text-xs text-gray-500">
                   {fileContent.path}
                 </span>
-                <span className="text-xs text-gray-400">
-                  {formatSize(fileContent.size)}
-                  {fileContent.encoding === "base64" && " (binary)"}
-                </span>
+                <div className="flex items-center gap-2">
+                  {fileContent.encoding === "text" &&
+                    isMarkdownFile(fileContent.path) && (
+                      <div className="inline-flex rounded-md border border-gray-200 text-[11px] font-medium">
+                        <button
+                          onClick={() => setViewMode("rendered")}
+                          className={`rounded-l-md px-2 py-0.5 ${
+                            viewMode === "rendered"
+                              ? "bg-blue-50 text-blue-700"
+                              : "text-gray-500 hover:bg-gray-50"
+                          }`}
+                        >
+                          Rendered
+                        </button>
+                        <button
+                          onClick={() => setViewMode("raw")}
+                          className={`rounded-r-md border-l border-gray-200 px-2 py-0.5 ${
+                            viewMode === "raw"
+                              ? "bg-blue-50 text-blue-700"
+                              : "text-gray-500 hover:bg-gray-50"
+                          }`}
+                        >
+                          Raw
+                        </button>
+                      </div>
+                    )}
+                  <span className="text-xs text-gray-400">
+                    {formatSize(fileContent.size)}
+                    {fileContent.encoding === "base64" && " (binary)"}
+                  </span>
+                </div>
               </div>
               {fileContent.encoding === "base64" ? (
                 <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-200 p-8">
                   <p className="text-sm text-gray-500">
                     Binary file — content cannot be displayed as text.
                   </p>
+                </div>
+              ) : isMarkdownFile(fileContent.path) &&
+                viewMode === "rendered" ? (
+                <div className="prose prose-sm max-w-none max-h-[600px] overflow-auto rounded-lg bg-white p-4">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children, ...props }) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          {...props}
+                        >
+                          {children}
+                        </a>
+                      ),
+                    }}
+                  >
+                    {fileContent.content}
+                  </ReactMarkdown>
                 </div>
               ) : (
                 <pre className="max-h-[600px] overflow-auto rounded-lg bg-gray-50 p-4 text-xs leading-relaxed text-gray-800">
