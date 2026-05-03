@@ -56,7 +56,7 @@ func ResolveInfo(platform, version, family, caption string, mappings []DisplayNa
 	info.DisplayName = resolveDisplayName(platform, version, caption, mappings)
 
 	// --- Resolve group ---
-	info.GroupKey, info.GroupDisplayName = resolveGroup(platform, version, family, caption)
+	info.GroupKey, info.GroupDisplayName = resolveGroup(platform, version, family, caption, info.DisplayName)
 
 	// --- Resolve sort key ---
 	info.SortKey = buildSortKey(platform, version, family)
@@ -97,14 +97,14 @@ func resolveDisplayName(platform, version, caption string, mappings []DisplayNam
 	return platform + " " + version
 }
 
-func resolveGroup(platform, version, family, caption string) (groupKey, groupDisplay string) {
+func resolveGroup(platform, version, family, caption, displayName string) (groupKey, groupDisplay string) {
 	platLower := strings.ToLower(platform)
 
 	switch family {
 	case "rhel":
 		return resolveGroupRHEL(platLower, version)
 	case "windows":
-		return resolveGroupWindows(platLower, version, caption)
+		return resolveGroupWindows(platLower, version, caption, displayName)
 	case "debian":
 		return resolveGroupDebian(platLower, version)
 	case "aix":
@@ -133,7 +133,7 @@ func resolveGroupRHEL(platform, version string) (string, string) {
 	return fmt.Sprintf("rhel:%s:%s", platform, major), abbrev + " " + major
 }
 
-func resolveGroupWindows(platform, version, caption string) (string, string) {
+func resolveGroupWindows(platform, version, caption, displayName string) (string, string) {
 	if caption != "" {
 		_, group := parseWindowsCaption(caption)
 		if group != "" {
@@ -141,8 +141,47 @@ func resolveGroupWindows(platform, version, caption string) (string, string) {
 			return "windows:" + key, group
 		}
 	}
-	// Fallback: use version prefix to guess generation
+	// Try to derive group from display name (e.g. admin mapping).
+	if group := windowsGroupFromDisplayName(displayName); group != "" {
+		key := strings.ToLower(strings.ReplaceAll(group, " ", "-"))
+		return "windows:" + key, group
+	}
+	// Fallback: use version prefix to guess generation.
 	return "windows:" + version, "Windows " + version
+}
+
+// windowsGroupFromDisplayName extracts a product generation from display names
+// that follow the DefaultMappings convention (Win11, Win10, Win Server, etc.).
+func windowsGroupFromDisplayName(dn string) string {
+	dn = strings.TrimSpace(dn)
+	if dn == "" {
+		return ""
+	}
+	// "Win11 25H2" → "Windows 11"
+	if strings.HasPrefix(dn, "Win11") {
+		return "Windows 11"
+	}
+	// "Win10 22H2" → "Windows 10"
+	if strings.HasPrefix(dn, "Win10") {
+		return "Windows 10"
+	}
+	// "Win Server 2022" → "Windows Server 2022"
+	if strings.HasPrefix(dn, "Win Server ") {
+		return "Windows Server " + strings.TrimPrefix(dn, "Win Server ")
+	}
+	// "Win8.1 / Server 2012 R2" → "Windows 8.1"
+	if strings.HasPrefix(dn, "Win8.1") {
+		return "Windows 8.1"
+	}
+	// "Win8 / Server 2012" → "Windows 8"
+	if strings.HasPrefix(dn, "Win8 ") || dn == "Win8" {
+		return "Windows 8"
+	}
+	// "Win7 SP1 / Server 2008 R2" → "Windows 7"
+	if strings.HasPrefix(dn, "Win7") {
+		return "Windows 7"
+	}
+	return ""
 }
 
 func resolveGroupDebian(platform, version string) (string, string) {

@@ -126,6 +126,40 @@ func TestResolveInfo_WindowsWithoutCaption_UsesMapping(t *testing.T) {
 	if info.DisplayName != "Win Server 2022" {
 		t.Errorf("got DisplayName=%q, want mapping result", info.DisplayName)
 	}
+	if info.GroupDisplayName != "Windows Server 2022" {
+		t.Errorf("got GroupDisplayName=%q, want %q", info.GroupDisplayName, "Windows Server 2022")
+	}
+	if info.GroupKey != "windows:windows-server-2022" {
+		t.Errorf("got GroupKey=%q, want %q", info.GroupKey, "windows:windows-server-2022")
+	}
+}
+
+func TestResolveInfo_WindowsGroupFromDisplayName(t *testing.T) {
+	cases := []struct {
+		version   string
+		wantGroup string
+	}{
+		{"10.0.26200", "Windows 11"},
+		{"10.0.26100", "Windows 11"},
+		{"10.0.22631", "Windows 11"},
+		{"10.0.22000", "Windows 11"},
+		{"10.0.19045", "Windows 10"},
+		{"10.0.17763", "Windows 10"},
+		{"10.0.14393", "Windows 10"},
+		{"10.0.20348", "Windows Server 2022"},
+		{"10.0.26334", "Windows Server 2025"},
+		{"6.3.9600", "Windows 8.1"},
+		{"6.2.9200", "Windows 8"},
+		{"6.1.7601", "Windows 7"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.version, func(t *testing.T) {
+			info := ResolveInfo("windows", tc.version, "windows", "", DefaultMappings)
+			if info.GroupDisplayName != tc.wantGroup {
+				t.Errorf("GroupDisplayName=%q, want %q (display=%q)", info.GroupDisplayName, tc.wantGroup, info.DisplayName)
+			}
+		})
+	}
 }
 
 func TestResolveInfo_EmptyPlatform(t *testing.T) {
