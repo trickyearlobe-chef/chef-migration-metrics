@@ -187,8 +187,9 @@ func (s *Scheduler) loop(ctx context.Context) {
 			}
 
 			// Circuit breaker — check host health before starting a run.
-			if s.collector.cfg != nil && s.collector.cfg.SystemHealth.IsPauseCollectionOnCritical() {
-				sh := s.collector.cfg.SystemHealth
+			cfg := s.collector.effectiveConfig()
+			if cfg != nil && cfg.SystemHealth.IsPauseCollectionOnCritical() {
+				sh := cfg.SystemHealth
 				th := syshealth.Thresholds{
 					DiskUsedWarningPercent:  sh.DiskUsedWarningPercent,
 					DiskUsedCriticalPercent: sh.DiskUsedCriticalPercent,
