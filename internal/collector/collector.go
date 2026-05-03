@@ -843,6 +843,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			Platform:         nd.Platform(),
 			PlatformVersion:  nd.PlatformVersion(),
 			PlatformFamily:   nd.PlatformFamily(),
+			PlatformCaption:  nd.PlatformCaption(),
 			Filesystem:       fsJSON,
 			Cookbooks:        cbJSON,
 			RunList:          rlJSON,

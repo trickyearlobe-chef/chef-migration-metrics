@@ -402,19 +402,21 @@ func NodeSearchAttributes() PartialSearchQuery {
 	// Ohai (platform, cookbooks, filesystem, etc.) are accessed directly
 	// by name — the "automatic" prefix must NOT appear in the path.
 	return PartialSearchQuery{
-		"name":             {"name"},
-		"chef_environment": {"chef_environment"},
-		"chef_version":     {"chef_packages", "chef", "version"},
-		"platform":         {"platform"},
-		"platform_version": {"platform_version"},
-		"platform_family":  {"platform_family"},
-		"filesystem":       {"filesystem"},
-		"cookbooks":        {"cookbooks"},
-		"run_list":         {"run_list"},
-		"roles":            {"roles"},
-		"policy_name":      {"policy_name"},
-		"policy_group":     {"policy_group"},
-		"ohai_time":        {"ohai_time"},
+		"name":                    {"name"},
+		"chef_environment":        {"chef_environment"},
+		"chef_version":            {"chef_packages", "chef", "version"},
+		"platform":                {"platform"},
+		"platform_version":        {"platform_version"},
+		"platform_family":         {"platform_family"},
+		"kernel_os_info_caption":  {"kernel", "os_info", "caption"},
+		"lsb_description":         {"lsb", "description"},
+		"filesystem":              {"filesystem"},
+		"cookbooks":               {"cookbooks"},
+		"run_list":                {"run_list"},
+		"roles":                   {"roles"},
+		"policy_name":             {"policy_name"},
+		"policy_group":            {"policy_group"},
+		"ohai_time":               {"ohai_time"},
 	}
 }
 
@@ -934,6 +936,24 @@ func (n NodeData) PlatformVersion() string { return n.getString("platform_versio
 
 // PlatformFamily returns the platform family (e.g. "debian").
 func (n NodeData) PlatformFamily() string { return n.getString("platform_family") }
+
+// PlatformCaption returns the OS caption string from Ohai. For Windows nodes
+// this is kernel.os_info.caption (e.g. "Microsoft Windows Server 2022 Datacenter").
+// For Debian/Ubuntu this is lsb.description (e.g. "Ubuntu 24.04.4 LTS").
+// Returns "" if neither field is populated.
+func (n NodeData) PlatformCaption() string {
+	if strings.EqualFold(n.PlatformFamily(), "windows") {
+		if c := n.getString("kernel_os_info_caption"); c != "" {
+			return c
+		}
+	}
+	if c := n.getString("lsb_description"); c != "" {
+		return c
+	}
+	// Fall back to Windows caption even if family wasn't "windows" — covers
+	// cases where platform_family is empty but the field is present.
+	return n.getString("kernel_os_info_caption")
+}
 
 // PolicyName returns the Policyfile policy name, or "" for classic nodes.
 func (n NodeData) PolicyName() string { return n.getString("policy_name") }

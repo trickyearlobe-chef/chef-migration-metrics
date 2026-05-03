@@ -26,6 +26,7 @@ type NodeSnapshot struct {
 	Platform         string          `json:"platform,omitempty"`
 	PlatformVersion  string          `json:"platform_version,omitempty"`
 	PlatformFamily   string          `json:"platform_family,omitempty"`
+	PlatformCaption  string          `json:"platform_caption,omitempty"`
 	Filesystem       json.RawMessage `json:"filesystem,omitempty"`
 	Cookbooks        json.RawMessage `json:"cookbooks,omitempty"`
 	RunList          json.RawMessage `json:"run_list,omitempty"`
@@ -66,6 +67,7 @@ type InsertNodeSnapshotParams struct {
 	Platform         string
 	PlatformVersion  string
 	PlatformFamily   string
+	PlatformCaption  string
 	Filesystem       json.RawMessage // raw JSON from Chef API
 	Cookbooks        json.RawMessage // raw JSON from Chef API
 	RunList          json.RawMessage // raw JSON from Chef API
@@ -102,12 +104,12 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 		INSERT INTO node_snapshots (
 			collection_run_org, organisation_name, node_name,
 			chef_environment, chef_version, platform, platform_version,
-			platform_family, filesystem, cookbooks, run_list, roles,
+			platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 			policy_name, policy_group, ohai_time, custom_attributes,
 			is_stale, collected_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17, $18
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+			$14, $15, $16, $17, $18, $19
 		)
 		ON CONFLICT (organisation_name, node_name) DO UPDATE SET
 			collection_run_org = EXCLUDED.collection_run_org,
@@ -116,6 +118,7 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			platform           = EXCLUDED.platform,
 			platform_version   = EXCLUDED.platform_version,
 			platform_family    = EXCLUDED.platform_family,
+			platform_caption   = EXCLUDED.platform_caption,
 			filesystem         = EXCLUDED.filesystem,
 			cookbooks          = EXCLUDED.cookbooks,
 			run_list           = EXCLUDED.run_list,
@@ -128,7 +131,7 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			collected_at       = EXCLUDED.collected_at
 		RETURNING collection_run_org, organisation_name, node_name,
 		          chef_environment, chef_version, platform, platform_version,
-		          platform_family, filesystem, cookbooks, run_list, roles,
+		          platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 		          policy_name, policy_group, ohai_time, custom_attributes,
 		          is_stale, collected_at, created_at
 	`
@@ -142,6 +145,7 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 		nullString(p.Platform),
 		nullString(p.PlatformVersion),
 		nullString(p.PlatformFamily),
+		nullString(p.PlatformCaption),
 		nullJSON(p.Filesystem),
 		nullJSON(p.Cookbooks),
 		nullJSON(p.RunList),
@@ -182,7 +186,7 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 	}
 
 	const batchSize = 500
-	const numCols = 18
+	const numCols = 19
 	inserted := 0
 
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
@@ -213,7 +217,7 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 				INSERT INTO node_snapshots (
 					collection_run_org, organisation_name, node_name,
 					chef_environment, chef_version, platform, platform_version,
-					platform_family, filesystem, cookbooks, run_list, roles,
+					platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 					policy_name, policy_group, ohai_time, custom_attributes,
 					is_stale, collected_at
 				) VALUES `)
@@ -227,10 +231,10 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 				}
 				offset := i * numCols
 				fmt.Fprintf(&sb,
-					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 					offset+1, offset+2, offset+3, offset+4, offset+5, offset+6,
 					offset+7, offset+8, offset+9, offset+10, offset+11, offset+12,
-					offset+13, offset+14, offset+15, offset+16, offset+17, offset+18,
+					offset+13, offset+14, offset+15, offset+16, offset+17, offset+18, offset+19,
 				)
 
 				if p.CollectedAt.IsZero() {
@@ -246,6 +250,7 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					nullString(p.Platform),
 					nullString(p.PlatformVersion),
 					nullString(p.PlatformFamily),
+					nullString(p.PlatformCaption),
 					nullJSON(p.Filesystem),
 					nullJSON(p.Cookbooks),
 					nullJSON(p.RunList),
@@ -268,6 +273,7 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					platform           = EXCLUDED.platform,
 					platform_version   = EXCLUDED.platform_version,
 					platform_family    = EXCLUDED.platform_family,
+					platform_caption   = EXCLUDED.platform_caption,
 					filesystem         = EXCLUDED.filesystem,
 					cookbooks          = EXCLUDED.cookbooks,
 					run_list           = EXCLUDED.run_list,
@@ -331,7 +337,7 @@ func (db *DB) listNodeSnapshotsByCollectionRun(ctx context.Context, q queryable,
 	const query = `
 		SELECT collection_run_org, organisation_name, node_name,
 		       chef_environment, chef_version, platform, platform_version,
-		       platform_family, filesystem, cookbooks, run_list, roles,
+		       platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 		       policy_name, policy_group, ohai_time, custom_attributes,
 		       is_stale, collected_at, created_at
 		FROM node_snapshots
@@ -353,7 +359,7 @@ func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, 
 	const query = `
 		SELECT ns.collection_run_org, ns.organisation_name, ns.node_name,
 		       ns.chef_environment, ns.chef_version, ns.platform, ns.platform_version,
-		       ns.platform_family, ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
+		       ns.platform_family, ns.platform_caption, ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
 		       ns.policy_name, ns.policy_group, ns.ohai_time, ns.custom_attributes,
 		       ns.is_stale, ns.collected_at, ns.created_at
 		FROM node_snapshots ns
@@ -381,7 +387,7 @@ func (db *DB) getNodeSnapshotByName(ctx context.Context, q queryable, organisati
 	const query = `
 		SELECT collection_run_org, organisation_name, node_name,
 		       chef_environment, chef_version, platform, platform_version,
-		       platform_family, filesystem, cookbooks, run_list, roles,
+		       platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 		       policy_name, policy_group, ohai_time, custom_attributes,
 		       is_stale, collected_at, created_at
 		FROM node_snapshots
@@ -524,6 +530,7 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	var ns NodeSnapshot
 	var collectionRunOrg sql.NullString
 	var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
+	var platformCaption sql.NullString
 	var policyName, policyGroup sql.NullString
 	var ohaiTime sql.NullFloat64
 	var filesystem, cookbooks, runList, roles, customAttributes []byte
@@ -537,6 +544,7 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 		&platform,
 		&platformVer,
 		&platformFam,
+		&platformCaption,
 		&filesystem,
 		&cookbooks,
 		&runList,
@@ -562,6 +570,7 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	ns.Platform = stringFromNull(platform)
 	ns.PlatformVersion = stringFromNull(platformVer)
 	ns.PlatformFamily = stringFromNull(platformFam)
+	ns.PlatformCaption = stringFromNull(platformCaption)
 	ns.PolicyName = stringFromNull(policyName)
 	ns.PolicyGroup = stringFromNull(policyGroup)
 	ns.OhaiTime = floatFromNull(ohaiTime)
@@ -584,6 +593,7 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		var ns NodeSnapshot
 		var collectionRunOrg sql.NullString
 		var chefEnv, chefVer, platform, platformVer, platformFam sql.NullString
+		var platformCaption sql.NullString
 		var policyName, policyGroup sql.NullString
 		var ohaiTime sql.NullFloat64
 		var filesystem, cookbooks, runList, roles, customAttributes []byte
@@ -597,6 +607,7 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 			&platform,
 			&platformVer,
 			&platformFam,
+			&platformCaption,
 			&filesystem,
 			&cookbooks,
 			&runList,
@@ -618,6 +629,7 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		ns.Platform = stringFromNull(platform)
 		ns.PlatformVersion = stringFromNull(platformVer)
 		ns.PlatformFamily = stringFromNull(platformFam)
+		ns.PlatformCaption = stringFromNull(platformCaption)
 		ns.PolicyName = stringFromNull(policyName)
 		ns.PolicyGroup = stringFromNull(policyGroup)
 		ns.OhaiTime = floatFromNull(ohaiTime)

@@ -225,7 +225,7 @@ func buildBlockedNodeRow(
 
 	// Resolve platform display name.
 	family := platform.DetectOSFamilyFromPlatform(node.Platform)
-	info := platform.ResolveInfo(node.Platform, node.PlatformVersion, family, "", mappings)
+	info := platform.ResolveInfo(node.Platform, node.PlatformVersion, family, node.PlatformCaption, mappings)
 
 	return blockedNodeRow{
 		NodeName:            node.NodeName,
