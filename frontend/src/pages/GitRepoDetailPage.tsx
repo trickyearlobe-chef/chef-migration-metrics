@@ -20,11 +20,11 @@ import type { GitRepoFileEntry, GitRepoFileContentResponse } from "../api/git-re
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge } from "../components/StatusBadge";
-import { CookstyleResultRow } from "../components/CookstyleResultRow";
 import { GitKitchenSection } from "../components/GitKitchenSection";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { useSort } from "../hooks/useSort";
 import { SMALL_PAGE_SIZE } from "../constants";
+import { GitRepoRemediationContent } from "./GitRepoRemediationPage";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -39,7 +39,7 @@ export function GitRepoDetailPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "files" | "committers" | "kitchen">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "files" | "committers" | "kitchen" | "cookstyle">("overview");
 
   const load = useCallback(() => {
     if (!name) return;
@@ -200,6 +200,16 @@ export function GitRepoDetailPage() {
           >
             Kitchen
           </button>
+          <button
+            onClick={() => setActiveTab("cookstyle")}
+            className={`border-b-2 px-1 py-2 text-sm font-medium ${
+              activeTab === "cookstyle"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
+            }`}
+          >
+            CookStyle
+          </button>
         </nav>
       </div>
 
@@ -208,186 +218,126 @@ export function GitRepoDetailPage() {
           {!hasGitRepos ? (
             <EmptyState title="No git repo entries found" />
           ) : (
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Git Repositories
-              </h3>
-              {data.git_repos.map((gd, idx) => {
-                const gr = gd.git_repo;
-                return (
-                  <div key={`gr-${idx}`} className="card">
-                    {/* Header */}
-                    <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <h3 className="text-base font-semibold text-gray-800">
-                        {gr.name}
-                      </h3>
-                      <span className="badge badge-compatible">Git</span>
-                      {gr.clone_status === "failed" ? (
-                        <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800 ring-1 ring-inset ring-red-600/20">
-                          Missing
-                        </span>
-                      ) : gr.clone_status === "pending" ? (
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 ring-1 ring-inset ring-gray-500/20">
-                          Pending
-                        </span>
-                      ) : null}
-                      {gr.clone_status === "ok" && gr.has_test_suite ? (
-                        <StatusBadge
-                          variant="compatible"
-                          label="Has Test Suite"
-                          size="sm"
-                        />
-                      ) : gr.clone_status === "ok" ? (
-                        <StatusBadge
-                          variant="untested"
-                          label="No Test Suite"
-                          size="sm"
-                        />
-                      ) : null}
-                      {gr.git_repo_url && (
-                        <span
-                          className="text-xs text-gray-400 truncate max-w-md"
-                          title={gr.git_repo_url}
-                        >
-                          {gr.git_repo_url}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Clone failure alert */}
+            (() => {
+              const gd = data.git_repos[0];
+              const gr = gd.git_repo;
+              return (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {/* Git Details card */}
+                  <div className="card">
+                    <h4 className="mb-3 text-sm font-semibold text-gray-700">Repository</h4>
                     {gr.clone_status === "failed" && (
-                      <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                      <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2">
                         <span className="mt-0.5 shrink-0 text-red-500">⚠</span>
-                        <div className="text-sm text-red-700">
-                          <p className="font-medium">
-                            Repository could not be cloned
-                          </p>
-                          {gr.clone_error && (
-                            <p className="mt-1 text-xs text-red-600">
-                              {gr.clone_error}
-                            </p>
-                          )}
-                          <p className="mt-1 text-xs text-red-500">
-                            Clone will be reattempted on the next collection run.
-                          </p>
+                        <div className="text-xs text-red-700">
+                          <p className="font-medium">Clone failed</p>
+                          {gr.clone_error && <p className="mt-0.5">{gr.clone_error}</p>}
                         </div>
                       </div>
                     )}
-
-                    {/* Metadata */}
-                    <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+                    <dl className="space-y-2 text-xs">
+                      {gr.git_repo_url && (
+                        <div>
+                          <dt className="text-gray-500">URL</dt>
+                          <dd className="truncate font-mono text-gray-700" title={gr.git_repo_url}>{gr.git_repo_url}</dd>
+                        </div>
+                      )}
                       {gr.default_branch && (
-                        <span>
-                          Branch:{" "}
-                          <code className="rounded bg-gray-100 px-1 py-0.5">
-                            {gr.default_branch}
-                          </code>
-                        </span>
+                        <div>
+                          <dt className="text-gray-500">Branch</dt>
+                          <dd><code className="rounded bg-gray-100 px-1 py-0.5">{gr.default_branch}</code></dd>
+                        </div>
                       )}
                       {gr.head_commit_sha && (
-                        <span>
-                          HEAD:{" "}
-                          <code
-                            className="rounded bg-gray-100 px-1 py-0.5"
-                            title={gr.head_commit_sha}
-                          >
-                            {gr.head_commit_sha.substring(0, 12)}
-                          </code>
-                        </span>
-                      )}
-                      {gr.last_fetched_at && (
-                        <span>
-                          Last fetched:{" "}
-                          {new Date(gr.last_fetched_at).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Cookstyle results */}
-                    <div>
-                      <h4 className="mb-2 text-sm font-medium text-gray-600">
-                        CookStyle Results
-                      </h4>
-                      {gd.cookstyle && gd.cookstyle.length > 0 ? (
-                        <div className="space-y-2">
-                          {gd.cookstyle.map((cs) => (
-                            <CookstyleResultRow
-                              key={cs.id}
-                              result={cs}
-                              linkBase={`/git-repos/${encodeURIComponent(gr.name)}/latest/remediation`}
-                            />
-                          ))}
+                        <div>
+                          <dt className="text-gray-500">HEAD</dt>
+                          <dd><code className="rounded bg-gray-100 px-1 py-0.5" title={gr.head_commit_sha}>{gr.head_commit_sha.substring(0, 12)}</code></dd>
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 p-3">
+                      )}
+                      <div>
+                        <dt className="text-gray-500">Status</dt>
+                        <dd className="flex items-center gap-2">
+                          {gr.clone_status === "failed" ? (
+                            <StatusBadge variant="incompatible" label="Missing" size="sm" />
+                          ) : gr.clone_status === "pending" ? (
+                            <StatusBadge variant="untested" label="Pending" size="sm" />
+                          ) : (
+                            <StatusBadge variant="compatible" label="Cloned" size="sm" />
+                          )}
+                          {gr.clone_status === "ok" && (
+                            gr.has_test_suite
+                              ? <StatusBadge variant="compatible" label="Has Test Suite" size="sm" />
+                              : <StatusBadge variant="untested" label="No Test Suite" size="sm" />
+                          )}
+                        </dd>
+                      </div>
+                      {gr.last_fetched_at && (
+                        <div>
+                          <dt className="text-gray-500">Last Fetched</dt>
+                          <dd className="text-gray-700">{new Date(gr.last_fetched_at).toLocaleString()}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+
+                  {/* CookStyle Summary card */}
+                  <button
+                    onClick={() => setActiveTab("cookstyle")}
+                    className="card text-left hover:ring-1 hover:ring-blue-200 transition-shadow"
+                  >
+                    <h4 className="mb-3 text-sm font-semibold text-gray-700">CookStyle</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Status:</span>
+                        {gd.cookstyle && gd.cookstyle.length > 0 ? (
                           <StatusBadge
-                            variant="untested"
-                            label="Not Yet Scanned"
+                            variant={gd.cookstyle.every((cs) => cs.passed) ? "compatible" : "incompatible"}
+                            label={gd.cookstyle.every((cs) => cs.passed) ? "Passed" : "Issues Found"}
                             size="sm"
                           />
-                          <span className="text-xs text-gray-400">
-                            CookStyle results will appear here after the next
-                            collection run.
-                          </span>
+                        ) : (
+                          <StatusBadge variant="untested" label="Not Scanned" size="sm" />
+                        )}
+                      </div>
+                      {gd.complexity && gd.complexity.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">Complexity:</span>
+                          <StatusBadge
+                            variant={
+                              gd.complexity[0].complexity_label === "low"
+                                ? "low"
+                                : gd.complexity[0].complexity_label === "medium"
+                                  ? "medium"
+                                  : gd.complexity[0].complexity_label === "high"
+                                    ? "high"
+                                    : gd.complexity[0].complexity_label === "critical"
+                                      ? "critical"
+                                      : "unknown"
+                            }
+                            label={`${(gd.complexity[0].complexity_label ?? "unknown").charAt(0).toUpperCase() + (gd.complexity[0].complexity_label ?? "unknown").slice(1)} (${gd.complexity[0].complexity_score ?? 0})`}
+                            size="sm"
+                          />
+                        </div>
+                      )}
+                      {gd.cookstyle && gd.cookstyle.length > 0 && (
+                        <div className="text-xs text-gray-500">
+                          Target: Chef {gd.cookstyle[0].target_chef_version}
                         </div>
                       )}
                     </div>
+                    <p className="mt-3 text-xs font-medium text-blue-600">View Details →</p>
+                  </button>
 
-                    {/* Complexity results */}
-                    {gd.complexity && gd.complexity.length > 0 && (
-                      <div className="mt-4">
-                        <h4 className="mb-2 text-sm font-medium text-gray-600">
-                          Complexity Analysis
-                        </h4>
-                        <div className="space-y-2">
-                          {gd.complexity.map((cx) => (
-                            <div
-                              key={cx.id}
-                              className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3"
-                            >
-                              <span className="text-xs text-gray-500">
-                                Target: {cx.target_chef_version}
-                              </span>
-                              <StatusBadge
-                                variant={
-                                  cx.complexity_label === "low"
-                                    ? "low"
-                                    : cx.complexity_label === "medium"
-                                      ? "medium"
-                                      : cx.complexity_label === "high"
-                                        ? "high"
-                                        : cx.complexity_label === "critical"
-                                          ? "critical"
-                                          : "unknown"
-                                }
-                                label={`${(cx.complexity_label ?? "unknown").charAt(0).toUpperCase() + (cx.complexity_label ?? "unknown").slice(1)} (${cx.complexity_score ?? 0})`}
-                                size="sm"
-                              />
-                              <span className="text-xs text-gray-500">
-                                Auto-fix: {cx.auto_correctable_count} | Manual:{" "}
-                                {cx.manual_fix_count} | Errors: {cx.error_count}
-                              </span>
-                              <span className="text-xs text-gray-500">
-                                Deprecations: {cx.deprecation_count} | Correctness:{" "}
-                                {cx.correctness_count} | Modernize:{" "}
-                                {cx.modernize_count}
-                              </span>
-                              <span className="text-xs text-gray-400">
-                                {new Date(cx.created_at).toLocaleString()}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Test Kitchen summary */}
-                    <div className="mt-4">
-                      <h4 className="mb-2 text-sm font-medium text-gray-600">
-                        Test Kitchen
-                      </h4>
-                      {gr.has_test_suite ? (
-                        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
+                  {/* Test Kitchen Summary card */}
+                  <button
+                    onClick={() => setActiveTab("kitchen")}
+                    className="card text-left hover:ring-1 hover:ring-blue-200 transition-shadow"
+                  >
+                    <h4 className="mb-3 text-sm font-semibold text-gray-700">Test Kitchen</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Status:</span>
+                        {gr.has_test_suite ? (
                           <StatusBadge
                             variant={
                               gd.tk_status === "passed"
@@ -411,36 +361,24 @@ export function GitRepoDetailPage() {
                             }
                             size="sm"
                           />
-                          {gd.tk_total != null && gd.tk_total > 0 && (
-                            <span className="text-xs text-gray-600">
-                              {gd.tk_passed ?? 0} / {gd.tk_total} suites passed
-                            </span>
-                          )}
-                          <button
-                            onClick={() => setActiveTab("kitchen")}
-                            className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800"
-                          >
-                            View Details →
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 p-3">
-                          <StatusBadge
-                            variant="untested"
-                            label="No Test Suite"
-                            size="sm"
-                          />
-                          <span className="text-xs text-gray-400">
-                            No kitchen.yml detected in this repository.
+                        ) : (
+                          <StatusBadge variant="untested" label="No Test Suite" size="sm" />
+                        )}
+                      </div>
+                      {gd.tk_total != null && gd.tk_total > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">Results:</span>
+                          <span className="text-sm font-medium text-gray-800">
+                            {gd.tk_passed ?? 0} / {gd.tk_total} suites passed
                           </span>
                         </div>
                       )}
                     </div>
-
-                  </div>
-                );
-              })}
-            </div>
+                    <p className="mt-3 text-xs font-medium text-blue-600">View Details →</p>
+                  </button>
+                </div>
+              );
+            })()
           )}
         </>
       )}
@@ -455,6 +393,10 @@ export function GitRepoDetailPage() {
 
       {activeTab === "kitchen" && name && (
         <GitKitchenSection repoName={name} />
+      )}
+
+      {activeTab === "cookstyle" && name && (
+        <GitRepoRemediationContent repoName={name} version="latest" />
       )}
     </div>
   );
