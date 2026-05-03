@@ -745,6 +745,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	// Cookbook directory resolvers.
 	collOpts = append(collOpts, app.cookbookDirOpts()...)
 
+	// Live config: collector picks up admin UI changes each run.
+	collOpts = append(collOpts, collector.WithConfigFn(app.configHolder.Get))
+
 	app.startup.Info("analysis pipeline configured: complexity scorer and readiness evaluator always enabled")
 
 	app.coll = collector.New(app.db, app.cfg, app.logger, app.credResolver, collOpts...)

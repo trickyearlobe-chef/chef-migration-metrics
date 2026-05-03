@@ -91,6 +91,11 @@ type Collector struct {
 	mu                sync.Mutex
 	currentRunOrgName string
 	running           bool
+
+	// configFn, when set, returns the current live config. This is used
+	// to pick up config changes (e.g. git_base_urls) made via the admin
+	// UI without requiring a restart. When nil, the static cfg is used.
+	configFn func() *config.Config
 }
 
 // Option configures optional behaviour on a Collector.
@@ -170,6 +175,22 @@ func WithCookbookCacheDir(dir string) Option {
 // instead of the default $TMPDIR-based location.
 func WithGitCookbookDir(dir string) Option {
 	return func(c *Collector) { c.gitCookbookDir = dir }
+}
+
+// WithConfigFn sets a function that returns the current live config.
+// When set, the collector reads config at the start of each run, picking
+// up changes made via the admin UI (e.g. git_base_urls, target versions).
+func WithConfigFn(fn func() *config.Config) Option {
+	return func(c *Collector) { c.configFn = fn }
+}
+
+// effectiveConfig returns the current config — from configFn if set,
+// otherwise the static cfg captured at construction.
+func (c *Collector) effectiveConfig() *config.Config {
+	if c.configFn != nil {
+		return c.configFn()
+	}
+	return c.cfg
 }
 
 // New creates a new Collector with the given dependencies.
@@ -545,6 +566,13 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 		return nil, fmt.Errorf("collector: a collection run is already in progress")
 	}
 	defer c.finishRun()
+
+	// Snapshot the live config at the start of the run so that changes
+	// made via the admin UI (git_base_urls, target_chef_versions, etc.)
+	// take effect without a restart.
+	if c.configFn != nil {
+		c.cfg = c.configFn()
+	}
 
 	if c.db == nil {
 		return nil, fmt.Errorf("collector: database is nil")

@@ -1701,6 +1701,33 @@ func TestWithGitRepoDirFn_NilIsAccepted(t *testing.T) {
 	}
 }
 
+func TestWithConfigFn_EffectiveConfig(t *testing.T) {
+	memWriter := logging.NewMemoryWriter()
+	logger := logging.New(logging.Options{Level: logging.DEBUG, Writers: []logging.Writer{memWriter}})
+	staticCfg := &config.Config{}
+	staticCfg.GitBaseURLs = []string{"https://git.example.com/old"}
+	resolver := secrets.NewCredentialResolver(nil)
+
+	// Without configFn, effectiveConfig returns the static cfg.
+	c := New(nil, staticCfg, logger, resolver)
+	if got := c.effectiveConfig(); got != staticCfg {
+		t.Errorf("effectiveConfig without configFn should return static cfg")
+	}
+
+	// With configFn, effectiveConfig returns the live config.
+	liveCfg := &config.Config{}
+	liveCfg.GitBaseURLs = []string{"https://git.example.com/new"}
+	c2 := New(nil, staticCfg, logger, resolver, WithConfigFn(func() *config.Config {
+		return liveCfg
+	}))
+	if got := c2.effectiveConfig(); got != liveCfg {
+		t.Errorf("effectiveConfig with configFn should return live cfg")
+	}
+	if got := c2.effectiveConfig().GitBaseURLs[0]; got != "https://git.example.com/new" {
+		t.Errorf("expected new URL, got %s", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Checkpoint/Resume tests
 // ---------------------------------------------------------------------------
