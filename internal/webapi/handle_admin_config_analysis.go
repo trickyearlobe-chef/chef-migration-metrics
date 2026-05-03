@@ -191,6 +191,9 @@ func validateAdminTKConfig(tk config.TestKitchenConfig) string {
 	if driver != "" && !knownTKDrivers[driver] {
 		return fmt.Sprintf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile.", driver)
 	}
+	if driver == "" && (len(tk.DriverSettings) > 0 || len(tk.DriverSecrets) > 0) {
+		return "analysis_tools.test_kitchen.driver is required when driver_settings or driver_secrets are configured."
+	}
 
 	// Validate images registry: unique names, non-empty ID.
 	seenImages := make(map[string]int)

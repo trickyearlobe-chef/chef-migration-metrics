@@ -592,6 +592,11 @@ export function AdminTestKitchenPage() {
               disabled={saving}
               className={INPUT_CLASS}
             >
+              {config.driver === "" && (
+                <option value="" disabled>
+                  — Select driver —
+                </option>
+              )}
               {DRIVERS.map((d) => (
                 <option key={d} value={d}>
                   {d}
