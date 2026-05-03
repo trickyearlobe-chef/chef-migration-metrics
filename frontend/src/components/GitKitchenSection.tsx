@@ -106,7 +106,7 @@ export function GitKitchenSection({ repoName }: { repoName: string }) {
 
   if (loading) return <LoadingSpinner message="Loading kitchen instances…" />;
   if (error) return <ErrorAlert message={error} />;
-  if (!plan || plan.instances.length === 0) return null;
+  if (!plan || !plan.instances || plan.instances.length === 0) return null;
 
   function latestResult(instanceName: string): GitKitchenResult | undefined {
     return results

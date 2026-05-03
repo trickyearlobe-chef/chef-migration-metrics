@@ -372,6 +372,39 @@ func TestPlanRepo_UserExclusion(t *testing.T) {
 	t.Error("did not find default-centos-7 instance in plan")
 }
 
+func TestPlanRepo_EmptySuitesReturnsEmptyInstances(t *testing.T) {
+	ar := makeAnalysis([]analysis.KitchenPlatform{{Name: "ubuntu-22.04"}}, nil)
+	result, err := PlanRepo(ar, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Instances == nil {
+		t.Fatal("expected non-nil Instances slice, got nil")
+	}
+	if len(result.Instances) != 0 {
+		t.Errorf("expected 0 instances, got %d", len(result.Instances))
+	}
+
+	// Also verify JSON serialization produces [] not null.
+	data, _ := json.Marshal(result)
+	if !json.Valid(data) {
+		t.Fatal("invalid JSON")
+	}
+	var m map[string]interface{}
+	_ = json.Unmarshal(data, &m)
+	instances, ok := m["instances"]
+	if !ok {
+		t.Fatal("missing instances key in JSON")
+	}
+	arr, ok := instances.([]interface{})
+	if !ok {
+		t.Fatalf("expected instances to be array, got %T", instances)
+	}
+	if len(arr) != 0 {
+		t.Errorf("expected empty array, got %d elements", len(arr))
+	}
+}
+
 func TestPlanRepo_UserExclusionOnUnmappedPlatformIgnored(t *testing.T) {
 	platforms := []analysis.KitchenPlatform{
 		{Name: "ubuntu-22.04"},

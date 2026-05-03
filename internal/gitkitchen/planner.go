@@ -87,6 +87,7 @@ func PlanRepo(ar datastore.KitchenAnalysisResult, platformMap []config.PlatformM
 		GitRepoName: ar.GitRepoName,
 		GitRepoURL:  ar.GitRepoURL,
 		CommitSHA:   ar.HeadCommitSHA,
+		Instances:   []PlannedInstance{},
 	}
 
 	if len(suites) == 0 || len(platforms) == 0 {
