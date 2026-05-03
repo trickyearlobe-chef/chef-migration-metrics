@@ -1108,7 +1108,7 @@ export function AdminTestKitchenPage() {
         {connectionResult?.templates && connectionResult.templates.length > 0 && (
           <datalist id="hypervisor-templates-list">
             {connectionResult.templates.map((tmpl) => (
-              <option key={tmpl.id} value={tmpl.id}>
+              <option key={tmpl.id} value={tmpl.name}>
                 {tmpl.name}{tmpl.guest_os ? ` (${tmpl.guest_os})` : ""}
               </option>
             ))}
