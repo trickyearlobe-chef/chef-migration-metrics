@@ -39,7 +39,7 @@ export function GitRepoDetailPage() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "files" | "committers">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "files" | "committers" | "kitchen">("overview");
 
   const load = useCallback(() => {
     if (!name) return;
@@ -189,6 +189,16 @@ export function GitRepoDetailPage() {
             }`}
           >
             Committers
+          </button>
+          <button
+            onClick={() => setActiveTab("kitchen")}
+            className={`border-b-2 px-1 py-2 text-sm font-medium ${
+              activeTab === "kitchen"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
+            }`}
+          >
+            Kitchen
           </button>
         </nav>
       </div>
@@ -371,12 +381,6 @@ export function GitRepoDetailPage() {
                       </div>
                     )}
 
-                    {/* Git Kitchen instances */}
-                    {gr.has_test_suite && (
-                      <div className="mt-4">
-                        <GitKitchenSection repoName={gr.name} />
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -391,6 +395,10 @@ export function GitRepoDetailPage() {
 
       {activeTab === "committers" && name && (
         <GitRepoCommittersTab repoName={name} />
+      )}
+
+      {activeTab === "kitchen" && name && (
+        <GitKitchenSection repoName={name} />
       )}
     </div>
   );
