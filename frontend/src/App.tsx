@@ -203,10 +203,6 @@ export function App() {
               <Route path="/git-repos" element={<GitReposPage />} />
               <Route path="/git-repos/:name" element={<GitRepoDetailPage />} />
               <Route
-                path="/git-repos/:name/committers"
-                element={<CookbookCommittersPage />}
-              />
-              <Route
                 path="/git-repos/:name/:version/remediation"
                 element={<GitRepoRemediationPage />}
               />

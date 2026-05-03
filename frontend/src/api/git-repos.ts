@@ -5,10 +5,12 @@ import type {
   GitRepoDetailResponse,
   GitRepoRemediationResponse,
   CookbookCommittersResponse,
+  CommitterAssignResponse,
   ResetGitCookbookResponse,
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
-import type { GitRepoFilterQuery, PaginationQuery } from "./client";
+import type { GitRepoFilterQuery } from "./client";
+import type { CommitterFilterQuery } from "./ownership";
 
 export function fetchGitRepos(
   filters?: GitRepoFilterQuery,
@@ -65,13 +67,33 @@ export function fetchGitRepoRemediation(
 
 export function fetchGitRepoCommitters(
   repoName: string,
-  filters?: PaginationQuery,
+  filters?: CommitterFilterQuery,
 ): Promise<CookbookCommittersResponse> {
   return apiFetch<CookbookCommittersResponse>(
     buildUrl(
       `/git-repos/${encodeURIComponent(repoName)}/committers`,
       filters as Record<string, string | number | boolean | undefined>,
     ),
+  );
+}
+
+export function assignGitRepoCommitters(
+  repoName: string,
+  body: {
+    committers: {
+      author_email: string;
+      owner_name: string;
+      display_name?: string;
+    }[];
+  },
+): Promise<CommitterAssignResponse> {
+  return apiFetch<CommitterAssignResponse>(
+    buildUrl(`/git-repos/${encodeURIComponent(repoName)}/committers/assign`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
   );
 }
 
