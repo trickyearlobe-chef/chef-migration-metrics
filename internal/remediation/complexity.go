@@ -39,13 +39,13 @@ const (
 	// offenses.
 	WeightModernize = 1
 
-	// WeightTKConvergeFail is the flat weight applied when Test Kitchen
-	// converge fails.
-	WeightTKConvergeFail = 20
+	// WeightTKFail is the flat weight applied when the aggregate Test
+	// Kitchen status is "failed" (all instances failed).
+	WeightTKFail = 20
 
-	// WeightTKTestFail is the flat weight applied when Test Kitchen
-	// converge passes but tests fail.
-	WeightTKTestFail = 10
+	// WeightTKPartial is the flat weight applied when the aggregate Test
+	// Kitchen status is "partial" (some instances passed, some failed).
+	WeightTKPartial = 10
 )
 
 // ---------------------------------------------------------------------------
@@ -112,18 +112,13 @@ type CookstyleOffenseSummary struct {
 	ManualFixCount int
 }
 
-// TestKitchenSummary carries the test outcome for a single cookbook ×
-// target version from the Test Kitchen results table.
-type TestKitchenSummary struct {
-	// HasResult is true if a Test Kitchen result exists for this cookbook
-	// and target version.
-	HasResult bool
-
-	// ConvergePassed is true if the converge phase succeeded.
-	ConvergePassed bool
-
-	// TestsPassed is true if the verify phase succeeded.
-	TestsPassed bool
+// TKStatus carries the aggregate Test Kitchen outcome for a single
+// cookbook × target version. Values align with tkstatus.ComputeTKStatus:
+// "passed", "failed", "partial", or "" (no data).
+type TKStatus struct {
+	// Status is the aggregate TK outcome: "passed", "failed", "partial",
+	// or "" (not tested).
+	Status string
 }
 
 // BlastRadius carries the impact metrics for a single cookbook.
@@ -150,7 +145,7 @@ type ComplexityInput struct {
 	TargetChefVersion string
 
 	Cookstyle   CookstyleOffenseSummary
-	TestKitchen TestKitchenSummary
+	TestKitchen TKStatus
 	Blast       BlastRadius
 }
 
@@ -171,13 +166,12 @@ func ComputeComplexityScore(input ComplexityInput) int {
 	score += input.Cookstyle.ManualFixCount * WeightNonAutoCorrectable
 	score += input.Cookstyle.ModernizeCount * WeightModernize
 
-	// Test Kitchen weights.
-	if input.TestKitchen.HasResult {
-		if !input.TestKitchen.ConvergePassed {
-			score += WeightTKConvergeFail
-		} else if !input.TestKitchen.TestsPassed {
-			score += WeightTKTestFail
-		}
+	// Test Kitchen weight — aligned with tkstatus model.
+	switch input.TestKitchen.Status {
+	case "failed":
+		score += WeightTKFail
+	case "partial":
+		score += WeightTKPartial
 	}
 
 	return score
@@ -537,7 +531,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		GitRepoURL:        repo.GitRepoURL,
 		TargetChefVersion: targetChefVersion,
 		Cookstyle:         offenseSummary,
-		TestKitchen:       TestKitchenSummary{},
+		TestKitchen:       TKStatus{},
 		Blast:             blast,
 	}
 

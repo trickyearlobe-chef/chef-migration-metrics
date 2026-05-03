@@ -142,57 +142,41 @@ func TestComputeComplexityScore_ModernizeOnly(t *testing.T) {
 	}
 }
 
-func TestComputeComplexityScore_TKConvergeFailOnly(t *testing.T) {
+func TestComputeComplexityScore_TKFailedOnly(t *testing.T) {
 	input := ComplexityInput{
-		TestKitchen: TestKitchenSummary{
-			HasResult:      true,
-			ConvergePassed: false,
-			TestsPassed:    false,
-		},
+		TestKitchen: TKStatus{Status: "failed"},
 	}
-	want := WeightTKConvergeFail
+	want := WeightTKFail
 	if got := ComputeComplexityScore(input); got != want {
-		t.Errorf("TK converge fail score = %d, want %d", got, want)
+		t.Errorf("TK failed score = %d, want %d", got, want)
 	}
 }
 
-func TestComputeComplexityScore_TKTestFailOnly(t *testing.T) {
+func TestComputeComplexityScore_TKPartialOnly(t *testing.T) {
 	input := ComplexityInput{
-		TestKitchen: TestKitchenSummary{
-			HasResult:      true,
-			ConvergePassed: true,
-			TestsPassed:    false,
-		},
+		TestKitchen: TKStatus{Status: "partial"},
 	}
-	want := WeightTKTestFail
+	want := WeightTKPartial
 	if got := ComputeComplexityScore(input); got != want {
-		t.Errorf("TK test fail score = %d, want %d", got, want)
+		t.Errorf("TK partial score = %d, want %d", got, want)
 	}
 }
 
-func TestComputeComplexityScore_TKBothPassNoContribution(t *testing.T) {
+func TestComputeComplexityScore_TKPassedNoContribution(t *testing.T) {
 	input := ComplexityInput{
-		TestKitchen: TestKitchenSummary{
-			HasResult:      true,
-			ConvergePassed: true,
-			TestsPassed:    true,
-		},
+		TestKitchen: TKStatus{Status: "passed"},
 	}
 	if got := ComputeComplexityScore(input); got != 0 {
-		t.Errorf("TK both pass score = %d, want 0", got)
+		t.Errorf("TK passed score = %d, want 0", got)
 	}
 }
 
-func TestComputeComplexityScore_TKNoResultNoContribution(t *testing.T) {
+func TestComputeComplexityScore_TKUntestedNoContribution(t *testing.T) {
 	input := ComplexityInput{
-		TestKitchen: TestKitchenSummary{
-			HasResult:      false,
-			ConvergePassed: false,
-			TestsPassed:    false,
-		},
+		TestKitchen: TKStatus{Status: ""},
 	}
 	if got := ComputeComplexityScore(input); got != 0 {
-		t.Errorf("TK no result score = %d, want 0", got)
+		t.Errorf("TK untested score = %d, want 0", got)
 	}
 }
 
@@ -209,10 +193,7 @@ func TestComputeComplexityScore_AllFactorsCombined(t *testing.T) {
 			ModernizeCount:   4,
 			ManualFixCount:   2,
 		},
-		TestKitchen: TestKitchenSummary{
-			HasResult:      true,
-			ConvergePassed: false,
-		},
+		TestKitchen: TKStatus{Status: "failed"},
 	}
 
 	want := 2*WeightErrorFatal +
@@ -220,28 +201,24 @@ func TestComputeComplexityScore_AllFactorsCombined(t *testing.T) {
 		1*WeightCorrectness +
 		4*WeightModernize +
 		2*WeightNonAutoCorrectable +
-		WeightTKConvergeFail
+		WeightTKFail
 
 	if got := ComputeComplexityScore(input); got != want {
 		t.Errorf("combined score = %d, want %d", got, want)
 	}
 }
 
-func TestComputeComplexityScore_CookstyleAndTKTestFail(t *testing.T) {
+func TestComputeComplexityScore_CookstyleAndTKPartial(t *testing.T) {
 	input := ComplexityInput{
 		Cookstyle: CookstyleOffenseSummary{
 			DeprecationCount: 5,
 		},
-		TestKitchen: TestKitchenSummary{
-			HasResult:      true,
-			ConvergePassed: true,
-			TestsPassed:    false,
-		},
+		TestKitchen: TKStatus{Status: "partial"},
 	}
 
-	want := 5*WeightDeprecation + WeightTKTestFail
+	want := 5*WeightDeprecation + WeightTKPartial
 	if got := ComputeComplexityScore(input); got != want {
-		t.Errorf("cookstyle + TK test fail score = %d, want %d", got, want)
+		t.Errorf("cookstyle + TK partial score = %d, want %d", got, want)
 	}
 }
 
@@ -298,18 +275,14 @@ func TestComputeComplexityScore_LabelHigh(t *testing.T) {
 }
 
 func TestComputeComplexityScore_LabelCritical(t *testing.T) {
-	// TK converge fail (20) + 5 errors (25) + 5 deprecations (15) = 60 → high
-	// Add 1 more to get 61 → critical
+	// TK fail (20) + 5 errors (25) + 5 deprecations (15) + 2 modernize (2) = 62 → critical
 	input := ComplexityInput{
 		Cookstyle: CookstyleOffenseSummary{
 			ErrorFatalCount:  5,
 			DeprecationCount: 5,
 			ModernizeCount:   2,
 		},
-		TestKitchen: TestKitchenSummary{
-			HasResult:      true,
-			ConvergePassed: false,
-		},
+		TestKitchen: TKStatus{Status: "failed"},
 	}
 	score := ComputeComplexityScore(input)
 	label := ScoreToLabel(score)
@@ -380,11 +353,11 @@ func TestWeightConstants(t *testing.T) {
 	if WeightModernize != 1 {
 		t.Errorf("WeightModernize = %d, want 1", WeightModernize)
 	}
-	if WeightTKConvergeFail != 20 {
-		t.Errorf("WeightTKConvergeFail = %d, want 20", WeightTKConvergeFail)
+	if WeightTKFail != 20 {
+		t.Errorf("WeightTKFail = %d, want 20", WeightTKFail)
 	}
-	if WeightTKTestFail != 10 {
-		t.Errorf("WeightTKTestFail = %d, want 10", WeightTKTestFail)
+	if WeightTKPartial != 10 {
+		t.Errorf("WeightTKPartial = %d, want 10", WeightTKPartial)
 	}
 }
 
@@ -643,21 +616,19 @@ func TestComplexityBatchResult_SkippedCounting(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TK scoring edge cases: converge fail takes precedence over test fail
+// TK scoring: failed takes higher weight than partial
 // ---------------------------------------------------------------------------
 
-func TestComputeComplexityScore_TKConvergeFailTakesPrecedence(t *testing.T) {
-	// When converge fails, we should get the converge fail weight (20),
-	// NOT the test fail weight (10), even though tests also failed.
-	input := ComplexityInput{
-		TestKitchen: TestKitchenSummary{
-			HasResult:      true,
-			ConvergePassed: false,
-			TestsPassed:    false,
-		},
+func TestComputeComplexityScore_TKFailedHigherThanPartial(t *testing.T) {
+	failed := ComplexityInput{
+		TestKitchen: TKStatus{Status: "failed"},
 	}
-	want := WeightTKConvergeFail
-	if got := ComputeComplexityScore(input); got != want {
-		t.Errorf("TK converge+test fail score = %d, want %d (converge fail only)", got, want)
+	partial := ComplexityInput{
+		TestKitchen: TKStatus{Status: "partial"},
+	}
+	failedScore := ComputeComplexityScore(failed)
+	partialScore := ComputeComplexityScore(partial)
+	if failedScore <= partialScore {
+		t.Errorf("TK failed score (%d) should be > partial score (%d)", failedScore, partialScore)
 	}
 }
