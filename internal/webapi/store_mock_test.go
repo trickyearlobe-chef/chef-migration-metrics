@@ -26,6 +26,7 @@ type mockStore struct {
 	ListNodeSnapshotsFilteredFn                         func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
 	CountNodeVersionDistributionFn                      func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
 	CountNodePlatformDistributionFn                     func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
+	CountNodePlatformDistributionDetailedFn             func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.PlatformDistributionRow, int, error)
 	ListDistinctNodeValuesFn                            func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error)
 	ListDistinctNodeRolesFn                             func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error)
 	ListNodeSnapshotsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
@@ -266,6 +267,13 @@ func (m *mockStore) CountNodeVersionDistribution(ctx context.Context, f datastor
 func (m *mockStore) CountNodePlatformDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {
 	if m.CountNodePlatformDistributionFn != nil {
 		return m.CountNodePlatformDistributionFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) CountNodePlatformDistributionDetailed(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.PlatformDistributionRow, int, error) {
+	if m.CountNodePlatformDistributionDetailedFn != nil {
+		return m.CountNodePlatformDistributionDetailedFn(ctx, f)
 	}
 	return nil, 0, nil
 }

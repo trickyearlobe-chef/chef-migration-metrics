@@ -181,6 +181,7 @@ func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request)
 		parts := splitPlatformValue(v)
 		if parts.platform != "" {
 			family := platformPkg.DetectOSFamilyFromPlatform(parts.platform)
+			// TODO: pass caption when filter endpoint provides per-value caption context.
 			info := platformPkg.ResolveInfo(parts.platform, parts.version, family, "", mappings)
 			entry.DisplayName = &info.DisplayName
 			entry.GroupKey = info.GroupKey

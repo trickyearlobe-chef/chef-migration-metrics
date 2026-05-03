@@ -19,6 +19,8 @@ type dashboardPlatformCount struct {
 	GroupDisplayName string  `json:"group_display_name"`
 	Count            int     `json:"count"`
 	Percent          float64 `json:"percent"`
+	caption          string  // unexported: used for resolution only
+	family           string  // unexported: used for resolution only
 }
 
 type dashboardPlatformGroup struct {
@@ -39,8 +41,11 @@ func resolveDashboardPlatformDisplayNames(result []dashboardPlatformCount, mappi
 		} else {
 			plat = result[i].Platform
 		}
-		family := platform.DetectOSFamilyFromPlatform(plat)
-		info := platform.ResolveInfo(plat, ver, family, "", mappings)
+		family := result[i].family
+		if family == "" {
+			family = platform.DetectOSFamilyFromPlatform(plat)
+		}
+		info := platform.ResolveInfo(plat, ver, family, result[i].caption, mappings)
 		result[i].DisplayName = &info.DisplayName
 		result[i].GroupKey = info.GroupKey
 		result[i].GroupDisplayName = info.GroupDisplayName
@@ -129,18 +134,33 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 		return
 	}
 
-	// --- SQL aggregate push-down path ---
+	// --- SQL aggregate push-down path (with caption for accurate resolution) ---
 	f := datastore.NodeSnapshotFilter{OrganisationNames: orgIDs}
-	counts, totalNodes, err := r.db.CountNodePlatformDistribution(ctx, f)
+	distRows, totalNodes, err := r.db.CountNodePlatformDistributionDetailed(ctx, f)
 	if err != nil {
 		r.logf("ERROR", "counting platform distribution: %v", err)
 		WriteInternalError(w, "Failed to compute platform distribution.")
 		return
 	}
 
-	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) dashboardPlatformCount {
-		return dashboardPlatformCount{Platform: label, Count: count, Percent: pct}
-	})
+	result := make([]dashboardPlatformCount, 0, len(distRows))
+	for _, row := range distRows {
+		label := row.Platform
+		if row.PlatformVersion != "" {
+			label = row.Platform + " " + row.PlatformVersion
+		}
+		pct := 0.0
+		if totalNodes > 0 {
+			pct = float64(row.Count) / float64(totalNodes) * 100
+		}
+		result = append(result, dashboardPlatformCount{
+			Platform: label,
+			Count:    row.Count,
+			Percent:  pct,
+			caption:  row.PlatformCaption,
+			family:   row.PlatformFamily,
+		})
+	}
 
 	// Sort by count descending, then platform ascending for stability.
 	sort.Slice(result, func(i, j int) bool {
@@ -194,7 +214,12 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 		return
 	}
 
-	counts := make(map[string]int)
+	type platformKey struct {
+		label   string
+		caption string
+		family  string
+	}
+	countMap := make(map[platformKey]int)
 	totalNodes := 0
 	for _, n := range nodes {
 		if !ownershipInclude(n.NodeName, ownedKeys, of) {
@@ -204,16 +229,29 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 		if p == "" {
 			p = "unknown"
 		}
+		label := p
 		if n.PlatformVersion != "" {
-			p = p + " " + n.PlatformVersion
+			label = p + " " + n.PlatformVersion
 		}
-		counts[p]++
+		key := platformKey{label: label, caption: n.PlatformCaption, family: n.PlatformFamily}
+		countMap[key]++
 		totalNodes++
 	}
 
-	result := buildDistributionResponse(counts, totalNodes, func(label string, count int, pct float64) dashboardPlatformCount {
-		return dashboardPlatformCount{Platform: label, Count: count, Percent: pct}
-	})
+	result := make([]dashboardPlatformCount, 0, len(countMap))
+	for key, count := range countMap {
+		pct := 0.0
+		if totalNodes > 0 {
+			pct = float64(count) / float64(totalNodes) * 100
+		}
+		result = append(result, dashboardPlatformCount{
+			Platform: key.label,
+			Count:    count,
+			Percent:  pct,
+			caption:  key.caption,
+			family:   key.family,
+		})
+	}
 
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Count != result[j].Count {

@@ -173,6 +173,7 @@ func (r *Router) handlePlatformDisplayNamesReset(w http.ResponseWriter, req *htt
 // resolvePlatformDisplayName resolves the display name for a node's platform
 // and version using the centralized resolver. Always returns a non-nil result
 // unless platform is empty.
+// TODO: accept caption parameter when callers have it available.
 func resolvePlatformDisplayName(plat, ver string, mappings []platform.DisplayNameMapping) *string {
 	if plat == "" {
 		return nil

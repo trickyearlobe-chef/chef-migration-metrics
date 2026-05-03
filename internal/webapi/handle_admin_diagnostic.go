@@ -303,12 +303,12 @@ func (r *Router) handleDiagnosticBundle(w http.ResponseWriter, req *http.Request
 	// --- platform_distribution.json ---
 	{
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
-		dist, totalNodes, err := r.db.CountNodePlatformDistribution(ctx, datastore.NodeSnapshotFilter{})
+		distRows, totalNodes, err := r.db.CountNodePlatformDistributionDetailed(ctx, datastore.NodeSnapshotFilter{})
 		cancel()
 		if err != nil {
 			errs["platform_distribution"] = err.Error()
 		} else {
-			pd := buildBundlePlatformDistribution(dist, totalNodes)
+			pd := buildBundlePlatformDistributionDetailed(distRows, totalNodes)
 			if err := writeZipJSON(zw, "platform_distribution.json", pd); err != nil {
 				errs["platform_distribution"] = err.Error()
 			}
@@ -577,6 +577,48 @@ func buildBundlePlatformDistribution(dist map[string]int, totalNodes int) bundle
 			GroupKey:         info.GroupKey,
 			GroupDisplayName: info.GroupDisplayName,
 			Count:            count,
+			Percent:          pct,
+		})
+	}
+
+	// Sort by count descending for readability.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Count != entries[j].Count {
+			return entries[i].Count > entries[j].Count
+		}
+		return entries[i].DisplayName < entries[j].DisplayName
+	})
+
+	return bundlePlatformDistribution{
+		TotalNodes:   totalNodes,
+		Distribution: entries,
+	}
+}
+
+// buildBundlePlatformDistributionDetailed resolves display names using the
+// detailed rows that include caption for accurate resolution.
+func buildBundlePlatformDistributionDetailed(rows []datastore.PlatformDistributionRow, totalNodes int) bundlePlatformDistribution {
+	entries := make([]bundlePlatformEntry, 0, len(rows))
+
+	for _, row := range rows {
+		family := row.PlatformFamily
+		if family == "" {
+			family = platform.DetectOSFamilyFromPlatform(row.Platform)
+		}
+		info := platform.ResolveInfo(row.Platform, row.PlatformVersion, family, row.PlatformCaption, platform.DefaultMappings)
+
+		pct := float64(0)
+		if totalNodes > 0 {
+			pct = float64(row.Count) / float64(totalNodes) * 100
+		}
+
+		entries = append(entries, bundlePlatformEntry{
+			Platform:         row.Platform,
+			Version:          row.PlatformVersion,
+			DisplayName:      info.DisplayName,
+			GroupKey:         info.GroupKey,
+			GroupDisplayName: info.GroupDisplayName,
+			Count:            row.Count,
 			Percent:          pct,
 		})
 	}

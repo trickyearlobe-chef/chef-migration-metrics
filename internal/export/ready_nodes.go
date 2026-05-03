@@ -89,7 +89,7 @@ func GenerateReadyNodeExport(ctx context.Context, db DataStore, params ReadyNode
 	exportRows := make([]readyNodeRow, 0, len(rows))
 	for _, r := range rows {
 		family := platform.DetectOSFamilyFromPlatform(r.node.Platform)
-		info := platform.ResolveInfo(r.node.Platform, r.node.PlatformVersion, family, "", params.PlatformDisplayMappings)
+		info := platform.ResolveInfo(r.node.Platform, r.node.PlatformVersion, family, r.node.PlatformCaption, params.PlatformDisplayMappings)
 		exportRows = append(exportRows, readyNodeRow{
 			NodeName:            r.node.NodeName,
 			Organisation:        orgNameByID[r.node.OrganisationName],

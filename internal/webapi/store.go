@@ -74,6 +74,10 @@ type DataStore interface {
 	// for nodes matching the given filter, aggregated in SQL.
 	CountNodePlatformDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
 
+	// CountNodePlatformDistributionDetailed returns platform distribution with
+	// individual platform, version, family, and caption columns for accurate resolution.
+	CountNodePlatformDistributionDetailed(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.PlatformDistributionRow, int, error)
+
 	// ListDistinctNodeValues returns sorted distinct non-empty values for the
 	// given column expression from nodes matching the filter.
 	ListDistinctNodeValues(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error)
