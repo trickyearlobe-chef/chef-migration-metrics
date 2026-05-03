@@ -128,7 +128,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	// we fall back to the in-memory path but still use SQL for the other
 	// filters (without pagination, which we apply after ownership
 	// filtering).
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	ownerFilterActive := of.Active
 	if ownerFilterActive {
 		r.handleNodesWithOwnerFilter(w, req, orgs, orgNameByID, of, pg)
 		return
@@ -377,7 +377,7 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Apply owner filter if active and ownership is enabled.
+	// Apply owner filter if active.
 	matched = applyOwnerFilter(req.Context(), r, matched, of)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
@@ -453,8 +453,7 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 		}
 	}
 
-	// Apply owner filter if active and ownership is enabled.
-	// Apply owner filter if active and ownership is enabled.
+	// Apply owner filter if active.
 	{
 		ownedKeys, oErr := r.resolveOwnershipFilter(req.Context(), of, "node")
 		if oErr != nil {

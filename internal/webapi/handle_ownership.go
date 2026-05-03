@@ -106,10 +106,10 @@ func (r *Router) resolveAllOwnedEntityKeys(ctx context.Context, entityType strin
 
 // resolveOwnershipFilter resolves ownership keys for the given entity type
 // based on the parsed ownerFilter. Returns nil keys (no filtering needed)
-// when ownership is not active or not enabled. The caller should treat a nil
-// return as "no ownership filtering — include everything".
+// when the filter is not active. The caller should treat a nil return as
+// "no ownership filtering — include everything".
 func (r *Router) resolveOwnershipFilter(ctx context.Context, of ownerFilter, entityType string) (map[string]bool, error) {
-	if !of.Active || !r.cfg.Ownership.Enabled {
+	if !of.Active {
 		return nil, nil
 	}
 	if of.Unowned {
@@ -154,15 +154,6 @@ func filterByOwnershipKey[T any](items []T, ownedKeys map[string]bool, of ownerF
 // underscores, hyphens; must start with alphanumeric.
 var ownerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
-// requireOwnership returns false and writes a 404 if ownership is disabled.
-func (r *Router) requireOwnership(w http.ResponseWriter) bool {
-	if !r.cfg.Ownership.Enabled {
-		WriteNotFound(w, "Ownership tracking is not enabled.")
-		return false
-	}
-	return true
-}
-
 // requireOperatorOrAdmin checks that the user has at least operator role.
 // Returns false and writes a 403 if not. When auth is not configured,
 // returns true (development mode).
@@ -197,10 +188,6 @@ func requireAdminRole(w http.ResponseWriter, req *http.Request) bool {
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleOwners(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
-
 	// Exact match for collection endpoint.
 	if req.URL.Path != "/api/v1/owners" {
 		// Sub-path: /api/v1/owners/:name[/...]
@@ -776,9 +763,6 @@ func (r *Router) handleDeleteAssignment(w http.ResponseWriter, req *http.Request
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleOwnershipReassign(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
 	if !requireMethod(w, req, http.MethodPost) {
 		return
 	}
@@ -900,9 +884,6 @@ func (r *Router) handleOwnershipReassign(w http.ResponseWriter, req *http.Reques
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleOwnershipLookup(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
 	if !requireGET(w, req) {
 		return
 	}
@@ -956,9 +937,6 @@ func (r *Router) handleOwnershipLookup(w http.ResponseWriter, req *http.Request)
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleOwnershipAuditLog(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
 	if !requireGET(w, req) {
 		return
 	}
@@ -1000,10 +978,6 @@ func (r *Router) handleOwnershipAuditLog(w http.ResponseWriter, req *http.Reques
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleOwnershipEndpoints(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
-
 	switch req.URL.Path {
 	case "/api/v1/ownership/reassign":
 		r.handleOwnershipReassign(w, req)

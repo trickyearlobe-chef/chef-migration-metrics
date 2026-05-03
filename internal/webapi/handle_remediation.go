@@ -42,7 +42,7 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 
 	// Resolve owned cookbook keys when ownership filtering is active.
 	var ownedKeys map[string]bool
-	if of.Active && r.cfg.Ownership.Enabled {
+	if of.Active {
 		if of.Unowned {
 			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
 			if err != nil {
@@ -186,8 +186,8 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		items = deduped
 	}
 
-	// Apply owner filter if active and ownership is enabled.
-	if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+	// Apply owner filter if active.
+	if of.Active && ownedKeys != nil {
 		if of.Unowned {
 			filtered := items[:0]
 			for _, item := range items {
@@ -297,7 +297,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 
 	// Resolve owned cookbook keys when ownership filtering is active.
 	var ownedKeys map[string]bool
-	if of.Active && r.cfg.Ownership.Enabled {
+	if of.Active {
 		if of.Unowned {
 			keys, err := r.resolveAllOwnedEntityKeys(ctx, "cookbook")
 			if err != nil {
@@ -353,7 +353,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 
 		// Build a map from cookbook name:version to cookbook metadata for ownership filtering.
 		var cbByID map[string]datastore.ServerCookbook
-		if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+		if of.Active && ownedKeys != nil {
 			cookbooks, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 			if err != nil {
 				r.logf("WARN", "listing server cookbooks for org %s in remediation summary: %v", org.Name, err)
@@ -371,7 +371,7 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 			}
 
 			// Apply owner filter: skip cookbooks that don't match ownership.
-			if of.Active && r.cfg.Ownership.Enabled && ownedKeys != nil {
+			if of.Active && ownedKeys != nil {
 				if of.Unowned {
 					if ownedKeys[cc.CookbookName] {
 						continue

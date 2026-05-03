@@ -1205,7 +1205,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			}
 			gitMgr := NewGitCookbookManager(gitDir, nil)
 
-			gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency, c.cfg.Ownership.Enabled)
+			gitResult := fetchGitCookbooks(ctx, gitMgr, c.db, gitLog, c.cfg.GitBaseURLs, activeCookbookNames, fetchConcurrency)
 
 			if gitResult.Total == 0 {
 				gitLog.Info("no git cookbook candidates to fetch",

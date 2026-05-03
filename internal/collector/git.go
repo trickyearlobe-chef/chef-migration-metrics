@@ -432,7 +432,6 @@ func fetchGitCookbooks(
 	gitBaseURLs []string,
 	activeCookbookNames map[string]bool,
 	concurrency int,
-	ownershipEnabled bool,
 ) GitFetchResult {
 	start := time.Now()
 
@@ -561,18 +560,16 @@ func fetchGitCookbooks(
 						logging.WithCookbook(cbName, ""),
 						logging.WithCommitSHA(repoResult.HeadCommitSHA))
 
-					// Extract and store git committer data when ownership is enabled.
-					if ownershipEnabled {
-						repoDir := mgr.RepoDir(cbName)
-						committers, extractErr := extractGitCommitters(ctx, mgr.executor, repoDir, repoURL)
-						if extractErr != nil {
-							log.Warn(fmt.Sprintf("git committer extraction failed for %s: %v", cbName, extractErr))
-						} else if len(committers) > 0 {
-							if replaceErr := db.ReplaceCommittersForRepo(ctx, repoURL, committers); replaceErr != nil {
-								log.Warn(fmt.Sprintf("git committer storage failed for %s: %v", cbName, replaceErr))
-							} else {
-								log.Debug(fmt.Sprintf("stored %d committer(s) for %s", len(committers), cbName))
-							}
+					// Extract and store git committer data.
+					repoDir := mgr.RepoDir(cbName)
+					committers, extractErr := extractGitCommitters(ctx, mgr.executor, repoDir, repoURL)
+					if extractErr != nil {
+						log.Warn(fmt.Sprintf("git committer extraction failed for %s: %v", cbName, extractErr))
+					} else if len(committers) > 0 {
+						if replaceErr := db.ReplaceCommittersForRepo(ctx, repoURL, committers); replaceErr != nil {
+							log.Warn(fmt.Sprintf("git committer storage failed for %s: %v", cbName, replaceErr))
+						} else {
+							log.Debug(fmt.Sprintf("stored %d committer(s) for %s", len(committers), cbName))
 						}
 					}
 				}

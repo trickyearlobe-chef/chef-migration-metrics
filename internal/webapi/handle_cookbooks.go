@@ -104,7 +104,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 
 	// When ownership filtering is active, we disable SQL pagination and
 	// apply ownership + pagination in memory (same pattern as nodes).
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	ownerFilterActive := of.Active
 	if ownerFilterActive {
 		f.Limit = 0
 		f.Offset = 0

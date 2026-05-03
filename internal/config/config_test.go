@@ -2585,22 +2585,8 @@ func TestCheckDirWritable_NotExist(t *testing.T) {
 // Ownership — CMDBSearchKeys helper
 // ---------------------------------------------------------------------------
 
-func TestCMDBSearchKeys_Disabled(t *testing.T) {
-	cfg := OwnershipConfig{
-		Enabled: false,
-		AutoRules: []OwnershipAutoRule{
-			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
-		},
-	}
-	keys := cfg.CMDBSearchKeys()
-	if keys != nil {
-		t.Errorf("expected nil when ownership is disabled, got %v", keys)
-	}
-}
-
 func TestCMDBSearchKeys_NoCMDBRules(t *testing.T) {
 	cfg := OwnershipConfig{
-		Enabled: true,
 		AutoRules: []OwnershipAutoRule{
 			{Name: "web-nodes", Type: "node_name_pattern", Owner: "web", Pattern: "^web-.*"},
 		},
@@ -2613,7 +2599,6 @@ func TestCMDBSearchKeys_NoCMDBRules(t *testing.T) {
 
 func TestCMDBSearchKeys_SingleObjectType(t *testing.T) {
 	cfg := OwnershipConfig{
-		Enabled: true,
 		AutoRules: []OwnershipAutoRule{
 			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
 		},
@@ -2633,7 +2618,6 @@ func TestCMDBSearchKeys_SingleObjectType(t *testing.T) {
 
 func TestCMDBSearchKeys_AllObjectTypes(t *testing.T) {
 	cfg := OwnershipConfig{
-		Enabled: true,
 		AutoRules: []OwnershipAutoRule{
 			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
 			{Name: "cmdb-cookbook", Type: "cmdb_attribute", ObjectType: "cookbook"},
@@ -2660,7 +2644,6 @@ func TestCMDBSearchKeys_AllObjectTypes(t *testing.T) {
 
 func TestCMDBSearchKeys_DeduplicatesObjectTypes(t *testing.T) {
 	cfg := OwnershipConfig{
-		Enabled: true,
 		AutoRules: []OwnershipAutoRule{
 			{Name: "cmdb-node-a", Type: "cmdb_attribute", ObjectType: "node", OwnerAttribute: "owner"},
 			{Name: "cmdb-node-b", Type: "cmdb_attribute", ObjectType: "node", OwnerAttribute: "support_group"},
@@ -2677,7 +2660,6 @@ func TestCMDBSearchKeys_DeduplicatesObjectTypes(t *testing.T) {
 
 func TestCMDBSearchKeys_MixedRuleTypes(t *testing.T) {
 	cfg := OwnershipConfig{
-		Enabled: true,
 		AutoRules: []OwnershipAutoRule{
 			{Name: "web-nodes", Type: "node_name_pattern", Owner: "web", Pattern: "^web-.*"},
 			{Name: "cmdb-node", Type: "cmdb_attribute", ObjectType: "node"},
@@ -2699,7 +2681,6 @@ func TestCMDBSearchKeys_MixedRuleTypes(t *testing.T) {
 
 func TestCMDBSearchKeys_EmptyObjectTypeSkipped(t *testing.T) {
 	cfg := OwnershipConfig{
-		Enabled: true,
 		AutoRules: []OwnershipAutoRule{
 			{Name: "bad-rule", Type: "cmdb_attribute", ObjectType: ""},
 		},
@@ -2803,16 +2784,14 @@ ownership:
 	expectParseError(t, yaml, "owner must not be set for cmdb_attribute rules")
 }
 
-func TestValidation_OwnershipCMDBAttribute_DisabledSkipsValidation(t *testing.T) {
+func TestValidation_OwnershipCMDBAttribute_AlwaysValidated(t *testing.T) {
 	yaml := minimalValidYAML() + `
 ownership:
-  enabled: false
   auto_rules:
     - name: cmdb-disabled
       type: cmdb_attribute
 `
-	// Should not error — validation is skipped when ownership is disabled.
-	_ = mustParse(t, yaml)
+	expectParseError(t, yaml, "object_type is required for cmdb_attribute rules")
 }
 
 func TestValidation_OwnershipCMDBAttribute_MixedWithOtherRules(t *testing.T) {

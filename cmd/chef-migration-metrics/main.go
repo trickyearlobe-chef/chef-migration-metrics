@@ -731,11 +731,8 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
 
-	if app.cfg.Ownership.Enabled {
-		ownershipEval := collector.NewOwnershipEvaluator(app.db, app.cfg.Ownership, app.logger)
-		collOpts = append(collOpts, collector.WithOwnershipEvaluator(ownershipEval))
-		app.startup.Info("ownership evaluator enabled")
-	}
+	ownershipEval := collector.NewOwnershipEvaluator(app.db, app.cfg.Ownership, app.logger)
+	collOpts = append(collOpts, collector.WithOwnershipEvaluator(ownershipEval))
 
 	// Ensure storage directories exist.
 	if err := app.ensureStorageDirs(); err != nil {
@@ -802,9 +799,6 @@ func (app *serverApp) cookbookDirOpts() []collector.Option {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) setupOwnership(ctx context.Context) {
-	if !app.cfg.Ownership.Enabled {
-		return
-	}
 	if err := collector.CleanupRemovedAutoRules(ctx, app.db, app.cfg.Ownership, app.logger); err != nil {
 		app.startup.Warn(fmt.Sprintf("ownership auto-rule cleanup failed: %v", err))
 	}

@@ -962,7 +962,6 @@ func TestHandleDashboardReadinessTrend_Snapshots_OwnershipFiltered(t *testing.T)
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	cfg.TargetChefVersions = []string{"18.0.0"}
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -1023,7 +1022,6 @@ func TestHandleDashboardReadinessTrend_Snapshots_NodesOmitted_SkippedUnderOwnerF
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	cfg.TargetChefVersions = []string{"18.0.0"}
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -2539,7 +2537,6 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_HappyPath(t *
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -2624,7 +2621,6 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_Unowned(t *te
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -2696,7 +2692,6 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_NodesOmitted(
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -2749,7 +2744,6 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_BackwardCompa
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -3001,7 +2995,6 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_WithOwnership(t *
 		// the handler must not use live data during a running collection.
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()

@@ -46,7 +46,7 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 
 	// When ownership filtering is active, fall back to in-memory path
 	// because ownership assignments can't be joined in the aggregate SQL.
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	ownerFilterActive := of.Active
 	if ownerFilterActive {
 		r.handleDashboardVersionDistributionWithOwnerFilter(w, req, orgs, of)
 		return

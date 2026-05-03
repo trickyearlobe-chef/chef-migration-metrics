@@ -21,9 +21,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleOwnershipImport(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
 	if !requireMethod(w, req, http.MethodPost) {
 		return
 	}
@@ -365,9 +362,6 @@ func (r *Router) handleCookbookCommitters(w http.ResponseWriter, req *http.Reque
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http.Request, cookbookName string) {
-	if !r.requireOwnership(w) {
-		return
-	}
 	if !requireMethod(w, req, http.MethodPost) {
 		return
 	}
