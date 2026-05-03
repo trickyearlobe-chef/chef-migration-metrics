@@ -26,6 +26,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 ## Backend — Code Smells
 
 - [ ] `DataStore` interface has 138+ methods (`webapi/store.go`) — consider splitting into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, etc.) composed into the full interface.
+- [ ] **Owner name not normalised on assign** — `handleCookbookCommittersAssign` derives `owner_name` from the email prefix sent by the frontend (`author_email.split("@")[0]`). Email local parts often contain uppercase (e.g. `Mark.Leadbeater`), but the `owners` table has a CHECK constraint requiring `^[a-z0-9][a-z0-9._-]*$`. The INSERT hits the constraint and returns a generic "Failed to create owner." error. **Strategic fix:** normalise `owner_name` to lowercase in the backend handler (don't rely on the frontend) — apply `strings.ToLower()` before `InsertOwner`. Also improve the error message to surface the actual constraint violation so it's diagnosable without logs.
 
 ## Database
 
