@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchVersionDistribution,
@@ -11,6 +11,7 @@ import {
 import type {
   VersionDistributionResponse,
   PlatformDistributionResponse,
+  PlatformGroup,
   ReadinessResponse,
   CookbookCompatibilityResponse,
   GitRepoCompatibilityResponse,
@@ -25,6 +26,7 @@ import {
   BatteryBarChart,
   groupByMajorVersion,
 } from "../../components/battery-bar";
+import type { BarGroup } from "../../components/battery-bar";
 
 // ---------------------------------------------------------------------------
 // Version Distribution Card (point-in-time)
@@ -69,9 +71,8 @@ export function VersionDistributionCard({
             />
           ) : (
             <BatteryBarChart
-              groups={groupByMajorVersion(data.distribution, data.total_nodes)}
+              groups={groupByMajorVersion(data.distribution, data.total_nodes, "Chef")}
               totalCount={data.total_nodes}
-              labelPrefix="Chef"
               childLinkBuilder={(version) =>
                 `/nodes?chef_version=${encodeURIComponent(version)}`
               }
@@ -109,6 +110,11 @@ export function PlatformDistributionCard({
     load();
   }, [load]);
 
+  const barGroups: BarGroup[] = useMemo(() => {
+    if (!data?.groups) return [];
+    return platformGroupsToBarGroups(data.groups);
+  }, [data]);
+
   return (
     <div className="card">
       <h3 className="card-header">OS Platform Distribution</h3>
@@ -125,40 +131,34 @@ export function PlatformDistributionCard({
               description="No nodes have been collected yet."
             />
           ) : (
-            <div className="space-y-1">
-              {data.distribution.map((v) => {
-                const pct =
-                  data.total_nodes > 0 ? (v.count / data.total_nodes) * 100 : 0;
-                const label = v.display_name ?? v.platform;
-                return (
-                  <Link
-                    key={v.platform}
-                    to={`/nodes?platform=${encodeURIComponent(v.platform)}`}
-                    className="bar-chart-row hover:bg-gray-50 rounded transition-colors"
-                  >
-                    <span className="bar-chart-label" title={v.platform}>
-                      {label}
-                    </span>
-                    <div className="bar-chart-track">
-                      <div
-                        className="bar-chart-fill bg-purple-500"
-                        style={{ width: `${Math.max(pct, 2)}%` }}
-                      >
-                        {pct >= 8 && <span>{pct.toFixed(1)}%</span>}
-                      </div>
-                    </div>
-                    <span className="bar-chart-value">
-                      {v.count.toLocaleString()}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
+            <BatteryBarChart
+              groups={barGroups}
+              totalCount={data.total_nodes}
+              childLinkBuilder={(platform) =>
+                `/nodes?platform=${encodeURIComponent(platform)}`
+              }
+            />
           )}
         </>
       )}
     </div>
   );
+}
+
+/** Convert API PlatformGroup[] to BarGroup[] for BatteryBarChart. */
+function platformGroupsToBarGroups(groups: PlatformGroup[]): BarGroup[] {
+  return groups.map((g) => ({
+    key: g.group_key,
+    label: g.group_display_name,
+    totalCount: g.total_count,
+    totalPercentage: g.total_percent,
+    entries: g.versions.map((v) => ({
+      label: v.display_name ?? v.platform,
+      filterValue: v.platform,
+      count: v.count,
+      percent: v.percent,
+    })),
+  }));
 }
 
 // ---------------------------------------------------------------------------

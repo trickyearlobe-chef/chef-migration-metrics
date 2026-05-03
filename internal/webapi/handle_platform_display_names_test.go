@@ -330,10 +330,14 @@ func TestResolvePlatformDisplayName(t *testing.T) {
 		}
 	})
 
-	t.Run("no match", func(t *testing.T) {
+	t.Run("no mapping uses abbreviation or raw fallback", func(t *testing.T) {
 		got := resolvePlatformDisplayName("debian", "11.0", mappings)
-		if got != nil {
-			t.Errorf("expected nil for no match, got %q", *got)
+		if got == nil {
+			t.Fatal("expected non-nil with new resolver")
+		}
+		// debian has no abbreviation, so raw fallback
+		if *got != "debian 11.0" {
+			t.Errorf("display name = %q, want %q", *got, "debian 11.0")
 		}
 	})
 
@@ -354,17 +358,24 @@ func TestResolvePlatformDisplayName(t *testing.T) {
 		}
 	})
 
-	t.Run("empty version", func(t *testing.T) {
+	t.Run("empty version still resolves", func(t *testing.T) {
+		// With the centralized resolver, platform without version still resolves
 		got := resolvePlatformDisplayName("windows", "", mappings)
-		if got != nil {
-			t.Errorf("expected nil for empty version, got %q", *got)
+		if got == nil {
+			t.Fatal("expected non-nil for platform with empty version")
+		}
+		if *got != "windows" {
+			t.Errorf("display name = %q, want %q", *got, "windows")
 		}
 	})
 
-	t.Run("nil mappings", func(t *testing.T) {
-		got := resolvePlatformDisplayName("windows", "10.0", nil)
-		if got != nil {
-			t.Errorf("expected nil for nil mappings, got %q", *got)
+	t.Run("nil mappings uses abbreviation fallback", func(t *testing.T) {
+		got := resolvePlatformDisplayName("redhat", "8.10", nil)
+		if got == nil {
+			t.Fatal("expected non-nil with abbreviation fallback")
+		}
+		if *got != "RHEL 8.10" {
+			t.Errorf("display name = %q, want %q", *got, "RHEL 8.10")
 		}
 	})
 }

@@ -3,5 +3,5 @@
 export { BatteryBarChart } from "./BatteryBarChart";
 export type { BatteryBarChartProps } from "./BatteryBarChart";
 export { groupByMajorVersion } from "./grouping";
-export type { GroupedMajorVersion } from "./grouping";
+export type { BarGroup, BarGroupEntry, GroupedMajorVersion } from "./grouping";
 export { getBaseColour, getSegmentColour } from "./colours";

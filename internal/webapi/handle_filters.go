@@ -169,18 +169,22 @@ func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request)
 	mappings, _ := r.loadPlatformDisplayNames(req.Context())
 
 	type platformFilterEntry struct {
-		Value       string  `json:"value"`
-		DisplayName *string `json:"display_name"`
+		Value            string  `json:"value"`
+		DisplayName      *string `json:"display_name"`
+		GroupKey         string  `json:"group_key,omitempty"`
+		GroupDisplayName string  `json:"group_display_name,omitempty"`
 	}
 
 	entries := make([]platformFilterEntry, 0, len(values))
 	for _, v := range values {
 		entry := platformFilterEntry{Value: v}
 		parts := splitPlatformValue(v)
-		if parts.platform != "" && parts.version != "" {
-			if name, ok := platformPkg.ResolveName(parts.platform, parts.version, mappings); ok {
-				entry.DisplayName = &name
-			}
+		if parts.platform != "" {
+			family := platformPkg.DetectOSFamilyFromPlatform(parts.platform)
+			info := platformPkg.ResolveInfo(parts.platform, parts.version, family, "", mappings)
+			entry.DisplayName = &info.DisplayName
+			entry.GroupKey = info.GroupKey
+			entry.GroupDisplayName = info.GroupDisplayName
 		}
 		entries = append(entries, entry)
 	}

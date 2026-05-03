@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useCallback } from "react";
-import type { GroupedMajorVersion } from "./grouping";
+import type { BarGroup } from "./grouping";
 import { getSegmentColour } from "./colours";
 
 export interface BatteryBarChartProps {
-  groups: GroupedMajorVersion[];
+  groups: BarGroup[];
   totalCount: number;
-  labelPrefix: string;
-  childLinkBuilder: (version: string) => string;
+  /** @deprecated Use groupByMajorVersion(dist, total, prefix) instead. */
+  labelPrefix?: string;
+  childLinkBuilder: (filterValue: string) => string;
 }
 
 export function BatteryBarChart({
   groups,
   totalCount,
-  labelPrefix,
   childLinkBuilder,
 }: BatteryBarChartProps) {
-  const [expandedMajor, setExpandedMajor] = useState<number | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const toggleExpand = useCallback(
-    (major: number) => {
-      setExpandedMajor((prev) => (prev === major ? null : major));
+    (key: string) => {
+      setExpandedKey((prev) => (prev === key ? null : key));
     },
     [],
   );
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent, major: number) => {
+    (e: React.KeyboardEvent, key: string) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        toggleExpand(major);
+        toggleExpand(key);
       }
     },
     [toggleExpand],
@@ -40,8 +40,7 @@ export function BatteryBarChart({
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        setExpandedMajor(null);
-        // Return focus to the parent row.
+        setExpandedKey(null);
         const target = e.currentTarget as HTMLElement;
         const parent = target.closest(".battery-bar-children")
           ?.previousElementSibling as HTMLElement | null;
@@ -56,55 +55,55 @@ export function BatteryBarChart({
   return (
     <div className="space-y-0.5">
       {groups.map((group, groupIndex) => {
-        const isExpanded = expandedMajor === group.majorVersion;
+        const isExpanded = expandedKey === group.key;
         const barWidth = totalCount > 0
           ? Math.max((group.totalCount / totalCount) * 100, 2)
           : 0;
         const showPctInBar = group.totalPercentage >= 8;
-        const labelId = `battery-label-${group.majorVersion}`;
+        const labelId = `battery-label-${group.key}`;
 
         return (
-          <div key={group.majorVersion}>
+          <div key={group.key}>
             {/* Battery bar row */}
             <div
               className="battery-bar-row"
               role="button"
               tabIndex={0}
               aria-expanded={isExpanded}
-              onClick={() => toggleExpand(group.majorVersion)}
-              onKeyDown={(e) => handleKeyDown(e, group.majorVersion)}
+              onClick={() => toggleExpand(group.key)}
+              onKeyDown={(e) => handleKeyDown(e, group.key)}
             >
               <span className="bar-chart-label" id={labelId}>
                 <span className="mr-1 text-xs text-gray-400">
                   {isExpanded ? "▾" : "▸"}
                 </span>
-                {labelPrefix} {group.majorVersion}
+                {group.label}
               </span>
               <div className="bar-chart-track">
                 <div
                   className="battery-bar-track"
                   style={{ width: `${barWidth}%` }}
                   role="img"
-                  aria-label={`${labelPrefix} ${group.majorVersion}: ${group.versions.map((v) => `${v.version} (${v.count})`).join(", ")}`}
+                  aria-label={`${group.label}: ${group.entries.map((e) => `${e.label} (${e.count})`).join(", ")}`}
                 >
-                  {group.versions.map((v, vIdx) => {
+                  {group.entries.map((entry, vIdx) => {
                     const segWidth =
                       group.totalCount > 0
-                        ? (v.count / group.totalCount) * 100
+                        ? (entry.count / group.totalCount) * 100
                         : 0;
                     return (
                       <div
-                        key={v.version}
+                        key={entry.filterValue}
                         className="battery-bar-segment"
                         style={{
                           width: `${Math.max(segWidth, 1)}%`,
                           backgroundColor: getSegmentColour(
                             groupIndex,
                             vIdx,
-                            group.versions.length,
+                            group.entries.length,
                           ),
                         }}
-                        title={`${v.version} — ${v.count.toLocaleString()} nodes (${v.percent.toFixed(1)}%)`}
+                        title={`${entry.label} — ${entry.count.toLocaleString()} nodes (${entry.percent.toFixed(1)}%)`}
                       />
                     );
                   })}
@@ -127,23 +126,22 @@ export function BatteryBarChart({
                 role="region"
                 aria-labelledby={labelId}
               >
-                {group.versions.map((v, vIdx) => {
+                {group.entries.map((entry, vIdx) => {
                   const childPct =
-                    totalCount > 0 ? (v.count / totalCount) * 100 : 0;
+                    totalCount > 0 ? (entry.count / totalCount) * 100 : 0;
                   return (
                     <a
-                      key={v.version}
-                      href={childLinkBuilder(v.version)}
+                      key={entry.filterValue}
+                      href={childLinkBuilder(entry.filterValue)}
                       className="battery-bar-child"
                       onKeyDown={handleChildKeyDown}
                       onClick={(e) => {
-                        // Use client-side navigation if available
                         e.preventDefault();
-                        window.location.href = childLinkBuilder(v.version);
+                        window.location.href = childLinkBuilder(entry.filterValue);
                       }}
                     >
                       <span className="bar-chart-label pl-6 text-xs">
-                        {v.version}
+                        {entry.label}
                       </span>
                       <div className="bar-chart-track">
                         <div
@@ -153,7 +151,7 @@ export function BatteryBarChart({
                             backgroundColor: getSegmentColour(
                               groupIndex,
                               vIdx,
-                              group.versions.length,
+                              group.entries.length,
                             ),
                           }}
                         >
@@ -163,7 +161,7 @@ export function BatteryBarChart({
                         </div>
                       </div>
                       <span className="bar-chart-value text-xs">
-                        {v.count.toLocaleString()}
+                        {entry.count.toLocaleString()}
                       </span>
                     </a>
                   );
