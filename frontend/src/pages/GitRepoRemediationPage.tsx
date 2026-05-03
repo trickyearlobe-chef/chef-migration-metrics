@@ -30,6 +30,32 @@ import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 export function GitRepoRemediationPage() {
   const { name, version } = useParams<{ name: string; version: string }>();
   const [searchParams] = useSearchParams();
+
+  return (
+    <GitRepoRemediationContent
+      repoName={name ?? ""}
+      version={version ?? "latest"}
+      initialTargetVersion={searchParams.get("target_chef_version") || undefined}
+      showBreadcrumb
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Remediation content — reusable in both standalone page and CookStyle tab
+// ---------------------------------------------------------------------------
+
+export function GitRepoRemediationContent({
+  repoName,
+  version,
+  initialTargetVersion,
+  showBreadcrumb = false,
+}: {
+  repoName: string;
+  version: string;
+  initialTargetVersion?: string;
+  showBreadcrumb?: boolean;
+}) {
   const [data, setData] = useState<GitRepoRemediationResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,20 +67,20 @@ export function GitRepoRemediationPage() {
     setSelectedVersion,
     versionsLoading,
   } = useTargetChefVersion({
-    initialVersion: searchParams.get("target_chef_version") || undefined,
+    initialVersion: initialTargetVersion,
   });
 
   const load = useCallback(() => {
-    if (!name || !version || !selectedVersion) return;
+    if (!repoName || !version || !selectedVersion) return;
     setLoading(true);
     setError(null);
-    fetchGitRepoRemediation(name, version, {
+    fetchGitRepoRemediation(repoName, version, {
       target_chef_version: selectedVersion,
     })
       .then(setData)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [name, version, selectedVersion]);
+  }, [repoName, version, selectedVersion]);
 
   useEffect(() => {
     load();
@@ -95,21 +121,23 @@ export function GitRepoRemediationPage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
-      <nav className="text-sm text-gray-500">
-        <Link to="/git-repos" className="hover:text-blue-600 hover:underline">
-          Git Repos
-        </Link>
-        <span className="mx-1">/</span>
-        <Link
-          to={`/git-repos/${encodeURIComponent(data.git_repo_name)}`}
-          className="hover:text-blue-600 hover:underline"
-        >
-          {data.git_repo_name}
-        </Link>
-        <span className="mx-1">/</span>
-        <span className="text-gray-800">Remediation</span>
-      </nav>
+      {/* Breadcrumb — only in standalone page mode */}
+      {showBreadcrumb && (
+        <nav className="text-sm text-gray-500">
+          <Link to="/git-repos" className="hover:text-blue-600 hover:underline">
+            Git Repos
+          </Link>
+          <span className="mx-1">/</span>
+          <Link
+            to={`/git-repos/${encodeURIComponent(data.git_repo_name)}`}
+            className="hover:text-blue-600 hover:underline"
+          >
+            {data.git_repo_name}
+          </Link>
+          <span className="mx-1">/</span>
+          <span className="text-gray-800">Remediation</span>
+        </nav>
+      )}
 
       {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
