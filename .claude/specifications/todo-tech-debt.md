@@ -69,7 +69,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Git — Committers Not Populated
 
-- [ ] **Git repo committers no longer being collected** — the committers list for git repositories is not being populated during collection runs. This may be a regression from a recent change (config rework or collector refactor). **Investigate:** check whether `git log` is being executed, whether the results are being parsed/stored, and whether the relevant DB write path is still being called.
+- [x] **Git repo committers no longer being collected** — Root cause: committer extraction was gated behind `Ownership.Enabled` which defaulted to `false` with no UI toggle. Fixed by removing the flag entirely — ownership (and committer collection) is now always active.
 
 ## Phasing Notes
 
