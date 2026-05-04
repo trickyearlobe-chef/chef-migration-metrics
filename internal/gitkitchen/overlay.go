@@ -118,8 +118,10 @@ func generateOverlay(tkConfig config.TestKitchenConfig, params OverlayParams) (s
 	if bakedIn {
 		if major >= 19 {
 			buf.WriteString("  name: chef-ice\n")
+			buf.WriteString("  install_strategy: skip\n")
+		} else {
+			buf.WriteString("  require_chef_omnibus: false\n")
 		}
-		buf.WriteString("  require_chef_omnibus: false\n")
 		if img.ChefClientPath != "" {
 			fmt.Fprintf(&buf, "  chef_client_path: %s\n", yamlScalar(img.ChefClientPath))
 		}
