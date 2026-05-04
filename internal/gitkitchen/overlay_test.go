@@ -243,8 +243,11 @@ func TestGenerateOverlay_BakedIn_Chef19(t *testing.T) {
 	if !strings.Contains(overlay, "  name: chef-ice\n") {
 		t.Errorf("expected provisioner name chef-ice, got:\n%s", overlay)
 	}
-	if !strings.Contains(overlay, "require_chef_omnibus: false") {
-		t.Errorf("expected require_chef_omnibus: false, got:\n%s", overlay)
+	if !strings.Contains(overlay, "install_strategy: skip") {
+		t.Errorf("expected install_strategy: skip, got:\n%s", overlay)
+	}
+	if strings.Contains(overlay, "require_chef_omnibus") {
+		t.Error("chef-ice should not use legacy require_chef_omnibus")
 	}
 	if !strings.Contains(overlay, "chef_client_path: /opt/chef/bin/chef-client") {
 		t.Errorf("expected chef_client_path, got:\n%s", overlay)

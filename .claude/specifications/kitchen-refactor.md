@@ -321,7 +321,16 @@ provisioner:
 Each image in the image registry supports an `install_method` field:
 
 - `download` (default): Chef is installed from the network. The overlay uses `product_version` or `download_url`.
-- `baked_in`: Chef is pre-installed in the image. The overlay emits:
+- `baked_in`: Chef is pre-installed in the image. For Chef >= 19 (chef-ice provisioner):
+
+```
+provisioner:
+  name: chef-ice
+  install_strategy: skip
+  chef_client_path: /opt/chef/bin/chef-client
+```
+
+For Chef < 19 (legacy chef_zero provisioner):
 
 ```
 provisioner:
