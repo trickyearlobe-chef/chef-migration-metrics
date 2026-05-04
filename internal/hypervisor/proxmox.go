@@ -16,10 +16,10 @@ import (
 )
 
 // ProxmoxClient implements the Hypervisor interface for Proxmox VE.
-// This is a minimal proof-of-concept to validate the hypervisor abstraction.
+// Queries the cluster-wide API to discover templates and VMs across all nodes.
 type ProxmoxClient struct {
 	baseURL  string // e.g. "https://pve.example.com:8006"
-	node     string // Proxmox node name (e.g. "pve1")
+	node     string // optional — used as hint for destroy if set
 	authFunc func(req *http.Request) // injects auth header into requests
 	httpClient *http.Client
 
@@ -35,13 +35,15 @@ type proxmoxResponse struct {
 	Data json.RawMessage `json:"data"`
 }
 
-// proxmoxVM represents a VM entry from the Proxmox API.
-type proxmoxVM struct {
+// proxmoxClusterResource represents a VM entry from /cluster/resources.
+type proxmoxClusterResource struct {
 	VMID     int    `json:"vmid"`
 	Name     string `json:"name"`
+	Node     string `json:"node"`
 	Status   string `json:"status"`   // "running", "stopped"
+	Type     string `json:"type"`     // "qemu", "lxc"
 	Template int    `json:"template"` // 1 = template, 0 = regular VM
-	CPU      int    `json:"cpus"`
+	MaxCPU   int    `json:"maxcpu"`
 	MaxMem   int64  `json:"maxmem"` // bytes
 	Uptime   int64  `json:"uptime"`
 }
@@ -90,18 +92,24 @@ func newProxmoxHTTPClient() *http.Client {
 	}
 }
 
-// ListTemplates returns VM templates from the Proxmox node.
+// ListTemplates returns VM templates from all cluster nodes, deduped by name.
+// When the same template name exists on multiple nodes, only one entry is returned.
 func (c *ProxmoxClient) ListTemplates(ctx context.Context) ([]Template, error) {
-	vms, err := c.listAllVMs(ctx)
+	vms, err := c.listClusterVMs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("proxmox: list templates: %w", err)
 	}
 
+	seen := make(map[string]struct{})
 	var templates []Template
 	for _, vm := range vms {
 		if vm.Template != 1 {
 			continue
 		}
+		if _, dup := seen[vm.Name]; dup {
+			continue
+		}
+		seen[vm.Name] = struct{}{}
 		templates = append(templates, Template{
 			ID:   strconv.Itoa(vm.VMID),
 			Name: vm.Name,
@@ -112,7 +120,7 @@ func (c *ProxmoxClient) ListTemplates(ctx context.Context) ([]Template, error) {
 
 // ListManagedVMs returns non-template VMs whose name starts with prefix.
 func (c *ProxmoxClient) ListManagedVMs(ctx context.Context, prefix string) ([]ManagedVM, error) {
-	vms, err := c.listAllVMs(ctx)
+	vms, err := c.listClusterVMs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("proxmox: list managed VMs: %w", err)
 	}
@@ -129,7 +137,7 @@ func (c *ProxmoxClient) ListManagedVMs(ctx context.Context, prefix string) ([]Ma
 			HypervisorID: strconv.Itoa(vm.VMID),
 			Name:         vm.Name,
 			PowerState:   proxmoxPowerState(vm.Status),
-			CPUCount:     vm.CPU,
+			CPUCount:     vm.MaxCPU,
 			MemoryMB:     int(vm.MaxMem / 1048576),
 			Uptime:       time.Duration(vm.Uptime) * time.Second,
 		})
@@ -151,29 +159,58 @@ func matchesKitchenPrefix(name, prefix string) bool {
 }
 
 // DestroyVM stops (if running) and deletes a VM by its VMID.
+// Resolves the node from cluster resources if not configured.
 func (c *ProxmoxClient) DestroyVM(ctx context.Context, hypervisorID string) error {
+	node, err := c.resolveVMNode(ctx, hypervisorID)
+	if err != nil {
+		return err
+	}
+	if node == "" {
+		// VM not found in cluster — treat as already destroyed.
+		return nil
+	}
+
 	// Best-effort stop — ignore errors (VM may already be stopped).
-	stopPath := fmt.Sprintf("/api2/json/nodes/%s/qemu/%s/status/stop", c.node, hypervisorID)
+	stopPath := fmt.Sprintf("/api2/json/nodes/%s/qemu/%s/status/stop", node, hypervisorID)
 	_, _ = c.doRequest(ctx, http.MethodPost, stopPath)
 
-	// Brief wait for stop to take effect (POC, not production).
+	// Brief wait for stop to take effect.
 	time.Sleep(1 * time.Second)
 
-	deletePath := fmt.Sprintf("/api2/json/nodes/%s/qemu/%s", c.node, hypervisorID)
-	_, err := c.doRequest(ctx, http.MethodDelete, deletePath)
+	deletePath := fmt.Sprintf("/api2/json/nodes/%s/qemu/%s", node, hypervisorID)
+	_, err = c.doRequest(ctx, http.MethodDelete, deletePath)
 	if err != nil {
+		// Treat "does not exist" as already destroyed (stale cluster resource entry).
+		if strings.Contains(err.Error(), "does not exist") {
+			return nil
+		}
 		return fmt.Errorf("proxmox: destroy VM %s: %w", hypervisorID, err)
 	}
 	return nil
 }
 
+// resolveVMNode finds which node a VM is on via cluster resources.
+// Returns empty string if VM not found.
+func (c *ProxmoxClient) resolveVMNode(ctx context.Context, hypervisorID string) (string, error) {
+	vms, err := c.listClusterVMs(ctx)
+	if err != nil {
+		return "", fmt.Errorf("proxmox: resolve VM node: %w", err)
+	}
+	for _, vm := range vms {
+		if strconv.Itoa(vm.VMID) == hypervisorID {
+			return vm.Node, nil
+		}
+	}
+	return "", nil
+}
+
 // Type returns the hypervisor type name.
 func (c *ProxmoxClient) Type() string { return "proxmox" }
 
-// listAllVMs fetches all QEMU VMs from the configured Proxmox node.
-func (c *ProxmoxClient) listAllVMs(ctx context.Context) ([]proxmoxVM, error) {
-	path := fmt.Sprintf("/api2/json/nodes/%s/qemu", c.node)
-	body, err := c.doRequest(ctx, http.MethodGet, path)
+// listClusterVMs queries the cluster-wide resource listing.
+// Filters to QEMU VMs only (excludes LXC containers).
+func (c *ProxmoxClient) listClusterVMs(ctx context.Context) ([]proxmoxClusterResource, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/api2/json/cluster/resources?type=vm")
 	if err != nil {
 		return nil, err
 	}
@@ -183,11 +220,19 @@ func (c *ProxmoxClient) listAllVMs(ctx context.Context) ([]proxmoxVM, error) {
 		return nil, fmt.Errorf("proxmox: unmarshal response: %w", err)
 	}
 
-	var vms []proxmoxVM
-	if err := json.Unmarshal(resp.Data, &vms); err != nil {
-		return nil, fmt.Errorf("proxmox: unmarshal VM list: %w", err)
+	var resources []proxmoxClusterResource
+	if err := json.Unmarshal(resp.Data, &resources); err != nil {
+		return nil, fmt.Errorf("proxmox: unmarshal cluster resources: %w", err)
 	}
-	return vms, nil
+
+	// Filter to QEMU only.
+	var qemu []proxmoxClusterResource
+	for _, r := range resources {
+		if r.Type == "qemu" {
+			qemu = append(qemu, r)
+		}
+	}
+	return qemu, nil
 }
 
 // doRequest performs an authenticated Proxmox API request.

@@ -26,7 +26,7 @@ var builtinProfiles = map[string]DriverProfile{
 	"vra":     {Name: "vra", ImageFieldName: "image_mapping", TypicalSecrets: []string{"password"}},
 	"ec2":     {Name: "ec2", ImageFieldName: "ami", TypicalSecrets: []string{"aws_secret_access_key"}},
 	"vagrant": {Name: "vagrant", ImageFieldName: "box", TypicalSecrets: nil},
-	"proxmox": {Name: "proxmox", ImageFieldName: "template_id", TypicalSecrets: []string{"proxmox_token_secret"}},
+	"proxmox": {Name: "proxmox", ImageFieldName: "template_name", TypicalSecrets: []string{"proxmox_token_secret"}},
 }
 
 // LookupProfile returns the driver profile for the given driver name.

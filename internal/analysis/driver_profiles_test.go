@@ -20,8 +20,8 @@ func TestLookupProfile_VCenter(t *testing.T) {
 
 func TestLookupProfile_Proxmox(t *testing.T) {
     p := LookupProfile("proxmox", "")
-    if p.ImageFieldName != "template_id" {
-        t.Errorf("expected ImageFieldName %q, got %q", "template_id", p.ImageFieldName)
+    if p.ImageFieldName != "template_name" {
+        t.Errorf("expected ImageFieldName %q, got %q", "template_name", p.ImageFieldName)
     }
     if p.Name != "proxmox" {
         t.Errorf("expected Name %q, got %q", "proxmox", p.Name)
@@ -83,7 +83,7 @@ func TestLookupProfile_BuiltinIgnoresOverride(t *testing.T) {
         "vcenter": "template",
         "ec2":     "ami",
         "vagrant": "box",
-        "proxmox": "template_id",
+        "proxmox": "template_name",
         "vra":     "image_mapping",
     }
     for driver, expectedField := range builtins {
