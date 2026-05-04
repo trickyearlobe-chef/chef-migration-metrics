@@ -315,9 +315,9 @@ func (r *Router) handleRunKitchenBatch(w http.ResponseWriter, req *http.Request,
 		return
 	}
 
-	if r.gitKitchenScheduler == nil {
+	if r.kitchenQueue == nil {
 		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
-			"Git kitchen scheduler is not configured.")
+			"Kitchen queue is not configured.")
 		return
 	}
 
@@ -462,12 +462,8 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 		return // someone cancelled while we were preparing
 	}
 
-	// Phase 3: execute via queue or fallback to scheduler.
-	if r.kitchenQueue != nil {
-		r.executeBatchViaQueue(ctx, batchID, plans, instanceMap, b)
-	} else {
-		r.executeBatchViaScheduler(ctx, batchID, plans, instanceMap, b, tkCfg)
-	}
+	// Phase 3: execute via queue.
+	r.executeBatchViaQueue(ctx, batchID, plans, instanceMap, b)
 }
 
 // executeBatchViaQueue enqueues each batch instance into the kitchen run queue
@@ -649,86 +645,6 @@ func (r *Router) finalizeBatch(ctx context.Context, batchID string) {
 		"failed":   counts["failed"],
 		"errored":  counts["errored"],
 	}))
-}
-
-// executeBatchViaScheduler is the legacy path when no kitchen queue is
-// available. It calls RunBatch directly with its own semaphore concurrency.
-func (r *Router) executeBatchViaScheduler(ctx context.Context, batchID string, plans []*gitkitchen.PlanResult, instanceMap map[string]string, b datastore.KitchenBatch, tkCfg config.TestKitchenConfig) {
-	concurrency := 2
-	if b.MaxConcurrentVMs != nil && *b.MaxConcurrentVMs > 0 {
-		concurrency = *b.MaxConcurrentVMs
-	}
-
-	cfg := gitkitchen.SchedulerConfig{
-		MaxConcurrency:    concurrency,
-		TargetChefVersion: r.batchTargetVersion(b),
-	}
-
-	progressCB := func(completed, total int, repoName string, inst gitkitchen.PlannedInstance, result gitkitchen.RunInstanceResult) {
-		instKey := repoName + "/" + inst.InstanceName
-		if instID, ok := instanceMap[instKey]; ok {
-			status := "passed"
-			errMsg := ""
-			if result.Passed == nil || !*result.Passed {
-				status = "failed"
-				if result.NetworkTimeout {
-					status = "network_timeout"
-					errMsg = result.ErrorMessage
-					r.logf("WARN", "kitchen-batches: network timeout on %s platform %s", repoName, inst.PlatformName)
-				} else if result.TimedOut {
-					status = "timed_out"
-					errMsg = result.ErrorMessage
-				} else if result.ErrorMessage != "" {
-					status = "errored"
-					errMsg = result.ErrorMessage
-				}
-			}
-			_ = r.db.UpdateBatchInstanceStatus(ctx, instID, status, errMsg, time.Now().UTC())
-		}
-
-		passed := result.Passed != nil && *result.Passed
-		r.hub.Broadcast(NewEvent(EventBatchProgress, map[string]any{
-			"batch_id":      batchID,
-			"instance_name": inst.InstanceName,
-			"git_repo_name": repoName,
-			"passed":        passed,
-			"completed":     completed,
-			"total":         total,
-		}))
-	}
-
-	result, runErr := r.gitKitchenScheduler.RunBatch(ctx, plans, cfg, tkCfg, progressCB)
-	if runErr != nil {
-		r.logf("ERROR", "kitchen-batches: running batch %s: %v", batchID, runErr)
-	}
-
-	// Cancel any remaining pending instances.
-	_, _ = r.db.CancelPendingBatchInstances(ctx, batchID)
-
-	finalStatus := "completed"
-	if ctx.Err() != nil {
-		finalStatus = "cancelled"
-	}
-	_, casErr := r.db.UpdateKitchenBatchStatusIfCurrent(ctx, batchID, "running", finalStatus, time.Now().UTC())
-	if casErr != nil {
-		r.logf("WARN", "kitchen-batches: CAS running→%s for %s failed (already transitioned): %v", finalStatus, batchID, casErr)
-	}
-
-	evtData := map[string]any{
-		"batch_id": batchID,
-		"status":   finalStatus,
-		"total":    0,
-		"passed":   0,
-		"failed":   0,
-		"errored":  0,
-	}
-	if result != nil {
-		evtData["total"] = result.Total
-		evtData["passed"] = result.Passed
-		evtData["failed"] = result.Failed
-		evtData["errored"] = result.Errors
-	}
-	r.hub.Broadcast(NewEvent(EventBatchComplete, evtData))
 }
 
 // prepareBatchInstances resolves repos, plans instances, and persists

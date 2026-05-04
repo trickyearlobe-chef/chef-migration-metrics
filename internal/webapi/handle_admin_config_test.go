@@ -581,7 +581,6 @@ func TestAdminConfigConcurrency_GET(t *testing.T) {
 		GitPull:                8,
 		CookbookDownload:       4,
 		CookstyleScan:          6,
-		TestKitchenRun:         2,
 		ReadinessEvaluation:    20,
 	}
 	r := newTestRouterForAdminConfig(cfg, nil, nil)
@@ -619,7 +618,7 @@ func TestAdminConfigConcurrency_PUT_Success(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"test_kitchen_run":2,"readiness_evaluation":20}`
+	body := `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":20}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/concurrency", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -635,7 +634,7 @@ func TestAdminConfigConcurrency_PUT_Success(t *testing.T) {
 func TestAdminConfigConcurrency_PUT_503_NilStore(t *testing.T) {
 	r := newTestRouterForAdminConfig(nil, nil, nil)
 
-	body := `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"test_kitchen_run":2,"readiness_evaluation":20}`
+	body := `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":20}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/concurrency", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -660,7 +659,7 @@ func TestAdminConfigConcurrency_PUT_422_ZeroField(t *testing.T) {
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
 	// organisation_collection is 0 — all fields must be >= 1.
-	body := `{"organisation_collection":0,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"test_kitchen_run":2,"readiness_evaluation":20}`
+	body := `{"organisation_collection":0,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":20}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/concurrency", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -677,9 +676,9 @@ func TestAdminConfigConcurrency_PUT_422_AllFieldsRequired(t *testing.T) {
 		name string
 		body string
 	}{
-		{"zero node_page_fetching", `{"organisation_collection":5,"node_page_fetching":0,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"test_kitchen_run":2,"readiness_evaluation":20}`},
-		{"zero git_pull", `{"organisation_collection":5,"node_page_fetching":10,"git_pull":0,"cookbook_download":4,"cookstyle_scan":6,"test_kitchen_run":2,"readiness_evaluation":20}`},
-		{"zero readiness_evaluation", `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"test_kitchen_run":2,"readiness_evaluation":0}`},
+		{"zero node_page_fetching", `{"organisation_collection":5,"node_page_fetching":0,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":20}`},
+		{"zero git_pull", `{"organisation_collection":5,"node_page_fetching":10,"git_pull":0,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":20}`},
+		{"zero readiness_evaluation", `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":0}`},
 	}
 
 	for _, tc := range tests {

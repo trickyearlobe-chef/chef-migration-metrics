@@ -14,7 +14,6 @@ const mockConcurrency = {
   git_pull: 4,
   cookbook_download: 8,
   cookstyle_scan: 4,
-  test_kitchen_run: 2,
   readiness_evaluation: 4,
 };
 

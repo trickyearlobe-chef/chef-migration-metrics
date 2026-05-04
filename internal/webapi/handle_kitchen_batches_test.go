@@ -14,16 +14,8 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 )
-
-// noopResultStore satisfies gitkitchen.ResultStore for handler tests
-// where background goroutine execution is not under test.
-type noopResultStore struct{}
-
-func (noopResultStore) UpsertGitKitchenResult(_ context.Context, _ datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error) {
-	return datastore.GitKitchenResult{}, nil
-}
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/kitchen/batches
@@ -687,6 +679,15 @@ func TestHandleRunKitchenBatch_NonDryRun_Returns202(t *testing.T) {
 		CancelPendingBatchInstancesFn: func(_ context.Context, _ string) (int, error) {
 			return 0, nil
 		},
+		CountBatchInstancesByStatusFn: func(_ context.Context, _ string) (map[string]int, error) {
+			return map[string]int{"passed": 1}, nil
+		},
+		CancelKitchenRunsByBatchFn: func(_ context.Context, _ string) (int64, error) {
+			return 0, nil
+		},
+		ListKitchenQueueFn: func(_ context.Context, _ datastore.KitchenQueueFilter) ([]datastore.KitchenQueueItem, error) {
+			return nil, nil
+		},
 	}
 
 	cfg := testConfig()
@@ -694,18 +695,9 @@ func TestHandleRunKitchenBatch_NonDryRun_Returns202(t *testing.T) {
 		{KitchenName: "ubuntu-22.04", Image: "ubuntu-2204-template"},
 	}
 
-	noopRun := func(_ context.Context, _ gitkitchen.RunInstanceParams, _ config.TestKitchenConfig,
-		_ gitkitchen.KitchenExecutor, _ gitkitchen.CredentialResolver) gitkitchen.RunInstanceResult {
-		passed := true
-		return gitkitchen.RunInstanceResult{Passed: &passed}
-	}
-	sched := gitkitchen.NewScheduler(nil, nil, noopResultStore{},
-		func(name, url string) string { return "/repos/" + name },
-		gitkitchen.WithRunFn(noopRun))
-
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(store, cfg, hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/run", nil)
 	w := httptest.NewRecorder()
@@ -754,12 +746,10 @@ func TestHandleRunKitchenBatch_SingleRunningGuard(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
 
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(store, cfg, hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	// Simulate an already-running batch in the map.
 	r.batchMu.Lock()
@@ -775,7 +765,7 @@ func TestHandleRunKitchenBatch_SingleRunningGuard(t *testing.T) {
 	}
 }
 
-func TestHandleRunKitchenBatch_NoScheduler(t *testing.T) {
+func TestHandleRunKitchenBatch_NoQueue(t *testing.T) {
 	store := &mockStore{
 		GetKitchenBatchFn: func(_ context.Context, id string) (datastore.KitchenBatch, error) {
 			return datastore.KitchenBatch{

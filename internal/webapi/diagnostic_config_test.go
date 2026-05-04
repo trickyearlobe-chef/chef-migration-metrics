@@ -50,7 +50,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 			GitPull:                10,
 			CookbookDownload:       4,
 			CookstyleScan:          8,
-			TestKitchenRun:         4,
 			ReadinessEvaluation:    20,
 		},
 		AnalysisTools: config.AnalysisToolsConfig{
@@ -217,9 +216,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 		}
 		if c["organisation_collection"] != 5 {
 			t.Errorf("organisation_collection: expected 5, got %v", c["organisation_collection"])
-		}
-		if c["test_kitchen_run"] != 4 {
-			t.Errorf("test_kitchen_run: expected 4, got %v", c["test_kitchen_run"])
 		}
 		if c["readiness_evaluation"] != 20 {
 			t.Errorf("readiness_evaluation: expected 20, got %v", c["readiness_evaluation"])

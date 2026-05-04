@@ -182,7 +182,6 @@ func TestDefaults_Concurrency(t *testing.T) {
 		{"node_page_fetching", cfg.Concurrency.NodePageFetching, 10},
 		{"git_pull", cfg.Concurrency.GitPull, 10},
 		{"cookstyle_scan", cfg.Concurrency.CookstyleScan, 8},
-		{"test_kitchen_run", cfg.Concurrency.TestKitchenRun, 4},
 		{"readiness_evaluation", cfg.Concurrency.ReadinessEvaluation, 20},
 	}
 	for _, c := range checks {
@@ -3137,8 +3136,8 @@ func TestHypervisorConfigDefaults(t *testing.T) {
 	if got := tk.EffectiveVMNamePrefix(); got != "cmm" {
 		t.Errorf("EffectiveVMNamePrefix() = %q, want %q", got, "cmm")
 	}
-	if got := tk.EffectiveMaxConcurrentVMs(); got != 10 {
-		t.Errorf("EffectiveMaxConcurrentVMs() = %d, want 10", got)
+	if got := tk.EffectiveMaxConcurrentVMs(); got != 4 {
+		t.Errorf("EffectiveMaxConcurrentVMs() = %d, want 4", got)
 	}
 	if got := tk.EffectiveHypervisorType(); got != "" {
 		t.Errorf("EffectiveHypervisorType() = %q, want %q", got, "")

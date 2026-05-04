@@ -141,7 +141,6 @@ type ConcurrencyConfig struct {
 	GitPull                int `yaml:"git_pull"`
 	CookbookDownload       int `yaml:"cookbook_download"`
 	CookstyleScan          int `yaml:"cookstyle_scan"`
-	TestKitchenRun         int `yaml:"test_kitchen_run"`
 	ReadinessEvaluation    int `yaml:"readiness_evaluation"`
 }
 
@@ -387,12 +386,12 @@ func (c TestKitchenConfig) EffectiveVMNamePrefix() string {
 	return "cmm"
 }
 
-// EffectiveMaxConcurrentVMs returns the configured max concurrent VMs or 10.
+// EffectiveMaxConcurrentVMs returns the configured max concurrent VMs or 4.
 func (c TestKitchenConfig) EffectiveMaxConcurrentVMs() int {
 	if c.MaxConcurrentVMs > 0 {
 		return c.MaxConcurrentVMs
 	}
-	return 10
+	return 4
 }
 
 // EffectiveHypervisorType returns the hypervisor type — either explicitly
@@ -820,9 +819,6 @@ func (c *Config) setDefaults() {
 	}
 	if c.Concurrency.CookstyleScan == 0 {
 		c.Concurrency.CookstyleScan = 8
-	}
-	if c.Concurrency.TestKitchenRun == 0 {
-		c.Concurrency.TestKitchenRun = 4
 	}
 	if c.Concurrency.ReadinessEvaluation == 0 {
 		c.Concurrency.ReadinessEvaluation = 20
@@ -1331,7 +1327,6 @@ func (c *Config) validateConcurrency(ve *ValidationError) {
 	check("git_pull", c.Concurrency.GitPull)
 	check("cookbook_download", c.Concurrency.CookbookDownload)
 	check("cookstyle_scan", c.Concurrency.CookstyleScan)
-	check("test_kitchen_run", c.Concurrency.TestKitchenRun)
 	check("readiness_evaluation", c.Concurrency.ReadinessEvaluation)
 }
 

@@ -33,7 +33,6 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
@@ -1032,18 +1031,6 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		routerOpts = append(routerOpts, webapi.WithNodeKitchenRunner(factory))
 		app.startup.Info("Node Kitchen runner factory enabled")
 
-		// Wire Git Kitchen scheduler using the same kitchen binary and credentials.
-		gitKitchenSched := gitkitchen.NewScheduler(
-			&nodekitchen.DefaultExecutor{Path: app.kitchenPath},
-			&nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
-			app.db,
-			func(name, _ string) string {
-				return filepath.Join(app.cfg.Storage.GitCookbookDir, name)
-			},
-		)
-		routerOpts = append(routerOpts, webapi.WithGitKitchenScheduler(gitKitchenSched))
-		app.startup.Info("Git Kitchen scheduler enabled")
-
 		// Wire kitchen run queue (bounded concurrency worker pool).
 		queueScoped := logger.WithScope(logging.ScopeTestKitchenRun)
 		gitExecutor := kitchenqueue.NewGitKitchenExecutor(kitchenqueue.GitKitchenExecutorConfig{
@@ -1058,7 +1045,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			},
 		})
 		app.kitchenQueue = kitchenqueue.New(app.db, gitExecutor,
-			kitchenqueue.WithWorkerCount(app.cfg.Concurrency.TestKitchenRun),
+			kitchenqueue.WithWorkerCount(app.cfg.AnalysisTools.TestKitchen.EffectiveMaxConcurrentVMs()),
 			kitchenqueue.WithLogFunc(func(level, msg string, args ...any) {
 				formatted := fmt.Sprintf(msg, args...)
 				switch level {
@@ -1085,7 +1072,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			return serverResult{}, err
 		}
 		routerOpts = append(routerOpts, webapi.WithKitchenQueue(app.kitchenQueue))
-		app.startup.Info(fmt.Sprintf("Kitchen queue started with %d workers", app.cfg.Concurrency.TestKitchenRun))
+		app.startup.Info(fmt.Sprintf("Kitchen queue started with %d workers", app.cfg.AnalysisTools.TestKitchen.EffectiveMaxConcurrentVMs()))
 
 		// Start periodic cleanup of completed queue items (24h retention).
 		queueCleanupLog := func(level, msg string) {

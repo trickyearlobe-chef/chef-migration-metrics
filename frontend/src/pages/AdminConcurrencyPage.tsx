@@ -11,7 +11,6 @@ const DEFAULT_CONFIG: ConcurrencyConfig = {
   git_pull: 1,
   cookbook_download: 1,
   cookstyle_scan: 1,
-  test_kitchen_run: 1,
   readiness_evaluation: 1,
 };
 
@@ -91,7 +90,6 @@ export function AdminConcurrencyPage() {
     { key: "git_pull", label: "Git Pull Workers" },
     { key: "cookbook_download", label: "Cookbook Download Workers" },
     { key: "cookstyle_scan", label: "CookStyle Scan Workers" },
-    { key: "test_kitchen_run", label: "Test Kitchen Run Workers" },
     { key: "readiness_evaluation", label: "Readiness Evaluation Workers" },
   ];
 
