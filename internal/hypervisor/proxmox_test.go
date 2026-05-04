@@ -20,7 +20,7 @@ func mustMarshal(v any) json.RawMessage {
 	return b
 }
 
-func newProxmoxMockServer(t *testing.T, vms []proxmoxVM) *httptest.Server {
+func newProxmoxMockServer(t *testing.T, vms []proxmoxClusterResource) *httptest.Server {
 	t.Helper()
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -30,7 +30,7 @@ func newProxmoxMockServer(t *testing.T, vms []proxmoxVM) *httptest.Server {
 		}
 
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/qemu"):
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/cluster/resources"):
 			resp := proxmoxResponse{Data: mustMarshal(vms)}
 			json.NewEncoder(w).Encode(resp)
 
@@ -55,10 +55,11 @@ func newProxmoxTestClient(srv *httptest.Server) *ProxmoxClient {
 }
 
 func TestProxmoxClient_ListTemplates(t *testing.T) {
-	vms := []proxmoxVM{
-		{VMID: 100, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, CPU: 2, MaxMem: 2147483648},
-		{VMID: 101, Name: "tmpl-rhel", Status: "stopped", Template: 1, CPU: 4, MaxMem: 4294967296},
-		{VMID: 200, Name: "worker-1", Status: "running", Template: 0, CPU: 4, MaxMem: 8589934592},
+	vms := []proxmoxClusterResource{
+		{VMID: 100, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 2147483648},
+		{VMID: 101, Name: "tmpl-rhel", Status: "stopped", Template: 1, Type: "qemu", Node: "pve1", MaxCPU: 4, MaxMem: 4294967296},
+		{VMID: 200, Name: "worker-1", Status: "running", Template: 0, Type: "qemu", Node: "pve1", MaxCPU: 4, MaxMem: 8589934592},
+		{VMID: 500, Name: "lxc-container", Status: "running", Template: 0, Type: "lxc", Node: "pve1", MaxCPU: 1, MaxMem: 1073741824},
 	}
 	srv := newProxmoxMockServer(t, vms)
 	defer srv.Close()
@@ -80,11 +81,12 @@ func TestProxmoxClient_ListTemplates(t *testing.T) {
 }
 
 func TestProxmoxClient_ListManagedVMs(t *testing.T) {
-	vms := []proxmoxVM{
-		{VMID: 100, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, CPU: 2, MaxMem: 2147483648},
-		{VMID: 200, Name: "cmm-test-1", Status: "running", Template: 0, CPU: 2, MaxMem: 4294967296},
-		{VMID: 201, Name: "cmm-test-2", Status: "stopped", Template: 0, CPU: 4, MaxMem: 8589934592},
-		{VMID: 300, Name: "other-vm", Status: "running", Template: 0, CPU: 1, MaxMem: 1073741824},
+	vms := []proxmoxClusterResource{
+		{VMID: 100, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 2147483648},
+		{VMID: 200, Name: "cmm-test-1", Status: "running", Template: 0, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 4294967296},
+		{VMID: 201, Name: "cmm-test-2", Status: "stopped", Template: 0, Type: "qemu", Node: "pve2", MaxCPU: 4, MaxMem: 8589934592},
+		{VMID: 300, Name: "other-vm", Status: "running", Template: 0, Type: "qemu", Node: "pve1", MaxCPU: 1, MaxMem: 1073741824},
+		{VMID: 400, Name: "cmm-lxc", Status: "running", Template: 0, Type: "lxc", Node: "pve1", MaxCPU: 1, MaxMem: 1073741824},
 	}
 	srv := newProxmoxMockServer(t, vms)
 	defer srv.Close()
@@ -147,11 +149,11 @@ func TestProxmoxClient_Type(t *testing.T) {
 }
 
 func TestProxmoxClient_ListManagedVMs_EmptyPrefix(t *testing.T) {
-	vms := []proxmoxVM{
-		{VMID: 100, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, CPU: 2, MaxMem: 2147483648},
-		{VMID: 200, Name: "cmm-test-1", Status: "running", Template: 0, CPU: 2, MaxMem: 4294967296},
-		{VMID: 201, Name: "cmm-test-2", Status: "stopped", Template: 0, CPU: 4, MaxMem: 8589934592},
-		{VMID: 300, Name: "other-vm", Status: "running", Template: 0, CPU: 1, MaxMem: 1073741824},
+	vms := []proxmoxClusterResource{
+		{VMID: 100, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 2147483648},
+		{VMID: 200, Name: "cmm-test-1", Status: "running", Template: 0, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 4294967296},
+		{VMID: 201, Name: "cmm-test-2", Status: "stopped", Template: 0, Type: "qemu", Node: "pve1", MaxCPU: 4, MaxMem: 8589934592},
+		{VMID: 300, Name: "other-vm", Status: "running", Template: 0, Type: "qemu", Node: "pve2", MaxCPU: 1, MaxMem: 1073741824},
 	}
 	srv := newProxmoxMockServer(t, vms)
 	defer srv.Close()
@@ -163,5 +165,42 @@ func TestProxmoxClient_ListManagedVMs_EmptyPrefix(t *testing.T) {
 	}
 	if len(managed) != 3 {
 		t.Fatalf("expected 3 managed VMs with empty prefix, got %d", len(managed))
+	}
+}
+
+func TestProxmoxClient_ListTemplates_DedupeByName(t *testing.T) {
+	vms := []proxmoxClusterResource{
+		{VMID: 100, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 2147483648},
+		{VMID: 110, Name: "tmpl-ubuntu", Status: "stopped", Template: 1, Type: "qemu", Node: "pve2", MaxCPU: 2, MaxMem: 2147483648},
+		{VMID: 101, Name: "tmpl-rhel", Status: "stopped", Template: 1, Type: "qemu", Node: "pve1", MaxCPU: 4, MaxMem: 4294967296},
+	}
+	srv := newProxmoxMockServer(t, vms)
+	defer srv.Close()
+
+	client := newProxmoxTestClient(srv)
+	templates, err := client.ListTemplates(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(templates) != 2 {
+		t.Fatalf("expected 2 deduplicated templates, got %d", len(templates))
+	}
+}
+
+func TestProxmoxClient_DestroyVM_NotFound(t *testing.T) {
+	// When VM doesn't exist in cluster, DestroyVM should succeed (treat as already gone).
+	vms := []proxmoxClusterResource{
+		{VMID: 100, Name: "other-vm", Status: "running", Template: 0, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 2147483648},
+	}
+	srv := newProxmoxMockServer(t, vms)
+	defer srv.Close()
+
+	// Client with no node configured — must resolve from cluster.
+	client := NewProxmoxClient(srv.URL, "", "test@pam!token", "secret")
+	client.httpClient = srv.Client()
+
+	err := client.DestroyVM(context.Background(), "999")
+	if err != nil {
+		t.Fatalf("expected nil error for not-found VM, got: %v", err)
 	}
 }

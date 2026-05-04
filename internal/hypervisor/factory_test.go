@@ -100,12 +100,6 @@ func TestNewFromConfig_Proxmox_MissingFields(t *testing.T) {
 			wantErr:  "proxmox_url",
 		},
 		{
-			name:     "missing node",
-			settings: map[string]any{"proxmox_url": "u", "proxmox_token_id": "t"},
-			secrets:  map[string]string{"proxmox_token_secret": "s"},
-			wantErr:  "node",
-		},
-		{
 			name:     "missing auth",
 			settings: map[string]any{"proxmox_url": "u", "node": "n"},
 			secrets:  map[string]string{},
@@ -123,6 +117,28 @@ func TestNewFromConfig_Proxmox_MissingFields(t *testing.T) {
 				t.Errorf("error %q does not mention %q", err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestNewFromConfig_Proxmox_NodeOptional(t *testing.T) {
+	settings := map[string]any{
+		"proxmox_url":      "https://pve.example.com:8006",
+		"proxmox_token_id": "user@pam!cmm",
+	}
+	secrets := map[string]string{
+		"proxmox_token_secret": "secret-value",
+	}
+
+	h, err := NewFromConfig("proxmox", settings, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("expected non-nil hypervisor")
+	}
+	pc := h.(*ProxmoxClient)
+	if pc.node != "" {
+		t.Errorf("expected empty node, got %q", pc.node)
 	}
 }
 

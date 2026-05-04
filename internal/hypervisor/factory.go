@@ -30,12 +30,10 @@ func newProxmoxFromConfig(settings map[string]any, secrets map[string]string) (H
 	if baseURL == "" {
 		return nil, fmt.Errorf("hypervisor: proxmox requires driver_settings.proxmox_url")
 	}
+	// Node is optional — the cluster API resolves VM locations automatically.
 	node := settingStr(settings, "proxmox_node")
 	if node == "" {
 		node = settingStr(settings, "node")
-	}
-	if node == "" {
-		return nil, fmt.Errorf("hypervisor: proxmox requires driver_settings.node (or proxmox_node)")
 	}
 
 	// Prefer API token auth if configured; fall back to username/password.
