@@ -180,6 +180,10 @@ func (c *ProxmoxClient) DestroyVM(ctx context.Context, hypervisorID string) erro
 	deletePath := fmt.Sprintf("/api2/json/nodes/%s/qemu/%s", node, hypervisorID)
 	_, err = c.doRequest(ctx, http.MethodDelete, deletePath)
 	if err != nil {
+		// Treat "does not exist" as already destroyed (stale cluster resource entry).
+		if strings.Contains(err.Error(), "does not exist") {
+			return nil
+		}
 		return fmt.Errorf("proxmox: destroy VM %s: %w", hypervisorID, err)
 	}
 	return nil

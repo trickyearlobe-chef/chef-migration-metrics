@@ -204,3 +204,40 @@ func TestProxmoxClient_DestroyVM_NotFound(t *testing.T) {
 		t.Fatalf("expected nil error for not-found VM, got: %v", err)
 	}
 }
+
+func TestProxmoxClient_DestroyVM_StaleResource(t *testing.T) {
+	// VM appears in cluster resources but config file is gone (stale entry).
+	// Proxmox returns 500 "Configuration file... does not exist".
+	vms := []proxmoxClusterResource{
+		{VMID: 945901, Name: "kitchen-default-almalinux", Status: "stopped", Template: 0, Type: "qemu", Node: "pve1", MaxCPU: 2, MaxMem: 2147483648},
+	}
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "PVEAPIToken=") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/cluster/resources"):
+			resp := proxmoxResponse{Data: mustMarshal(vms)}
+			json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/status/stop"):
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(proxmoxResponse{})
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"message":"Configuration file 'nodes/pve1/qemu-server/945901.conf' does not exist\n","data":null}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewProxmoxClient(srv.URL, "", "test@pam!token", "secret")
+	client.httpClient = srv.Client()
+
+	err := client.DestroyVM(context.Background(), "945901")
+	if err != nil {
+		t.Fatalf("expected nil error for stale resource, got: %v", err)
+	}
+}
