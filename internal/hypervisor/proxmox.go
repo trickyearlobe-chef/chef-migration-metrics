@@ -189,13 +189,9 @@ func (c *ProxmoxClient) DestroyVM(ctx context.Context, hypervisorID string) erro
 	return nil
 }
 
-// resolveVMNode finds which node a VM is on. Returns empty string if VM not found.
+// resolveVMNode finds which node a VM is on via cluster resources.
+// Returns empty string if VM not found.
 func (c *ProxmoxClient) resolveVMNode(ctx context.Context, hypervisorID string) (string, error) {
-	// Fast path: if node is configured, use it directly.
-	if c.node != "" {
-		return c.node, nil
-	}
-
 	vms, err := c.listClusterVMs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("proxmox: resolve VM node: %w", err)
