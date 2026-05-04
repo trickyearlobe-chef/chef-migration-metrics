@@ -43,12 +43,30 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Kitchen — Proxmox VMID Race Condition (Upstream)
 
-- [ ] **Proxmox `nextid` API has no reservation mechanism** — `GET /cluster/nextid` returns the lowest free VMID but doesn't reserve it. When multiple clients clone concurrently (~11s clone window), they can receive the same VMID, causing lock timeouts and one process inadvertently destroying another's VM. **Upstream ticket:** Bugzilla #7553 filed requesting atomic VMID allocation. **Workarounds implemented in kitchen-proxmox (branch `fix/lock-timeout-retry`):**
+- [ ] **Proxmox `nextid` API has no reservation mechanism** — `GET /cluster/nextid` returns the lowest free VMID but doesn't reserve it. When multiple clients clone concurrently, they can receive the same VMID, causing lock timeouts and one process inadvertently destroying another's VM. **Upstream ticket:** Bugzilla #7553 filed requesting atomic VMID allocation. **Workarounds implemented in kitchen-proxmox (branch `fix/lock-timeout-retry`):**
   - `vmid_conflict?` detection in `allocate_and_clone`: retries clone with a fresh VMID when the clone POST returns "already exists", "unable to create VM", or "can't lock file" (immediate 500 from Proxmox).
   - `wait_for_task` exit status check: raises `ApiError` when a clone task completes with a non-OK exit status (e.g. lock timeout discovered only after task polling). Previously the driver silently treated failed tasks as successful.
   - `vmid_race_lost?` detection in `clone_and_start`: if configure or start fails with "already running", "hotplug problem", "does not exist", or "can't lock file", the driver abandons the VMID (does NOT destroy — it belongs to another process), clears Kitchen state, and retries the full create sequence with a new VMID.
   - Exponential backoff with jitter between retries (up to `clone_retries`, default 5).
   - **Strategic fix (if upstream resolves):** remove retry logic and use atomic VMID allocation or omit `newid` from clone request. Alternative client-side mitigation: use random VMIDs in a high range (900000–999999) to reduce collision probability.
+
+### Empirical Findings (2026-05-04)
+
+Tested against live Proxmox VE cluster (2 nodes). Key findings:
+
+1. **`nextid` is a validator, not an allocator** — `GET /cluster/nextid?vmid=X` checks if X is free and returns it or errors. Without `vmid` param it scans sequentially from 100. No reservation occurs either way. Multiple concurrent calls return the same value.
+
+2. **`newid` is mandatory on clone** — Proxmox will not auto-assign a VMID. The client must always pick one, making the race unavoidable at the API level.
+
+3. **Two concurrent clone POSTs to the same VMID are both accepted** (HTTP 200 with valid task UPIDs). The race resolves at the filesystem lock level:
+   - **Full clone** (~15-20s): loser gets `exitstatus: "can't lock file '/var/lock/qemu-server/lock-<vmid>.conf' - got timeout"` — only discoverable by polling task status.
+   - **Linked clone** (<1s): loser gets `exitstatus: "unable to create VM <vmid>: config file already exists"` — faster rejection due to shorter clone time.
+
+4. **No ownership boundary** — the losing caller can still `start`, `stop`, or `destroy` the VMID that was cloned by the winner. There is no concept of "this task created this VM".
+
+5. **Random high-range strategy works** — 3 concurrent full clones to pre-selected unique VMIDs (900001-900003) all succeeded without conflict. VMID range is 100–999,999,999. Using `rand(900000..999999)` gives ~0.003% collision probability with 10 concurrent clients.
+
+6. **Recommended approach**: generate a random VMID in a high range, validate with `nextid?vmid=X`, clone, poll task `exitstatus`, retry on conflict. The retry logic in `fix/lock-timeout-retry` covers this but should be updated to use random high-range VMIDs as the primary allocation strategy rather than relying on sequential `nextid`.
 
 ## Kitchen — Cloud Driver Orphan Detection
 
