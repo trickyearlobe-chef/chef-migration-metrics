@@ -15,6 +15,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 )
 
 // ---------------------------------------------------------------------------
@@ -240,13 +241,9 @@ func TestHandleGitKitchenRun_POST_Success(t *testing.T) {
 		{KitchenName: "ubuntu-22.04", Image: "ubuntu-2204-template"},
 	}
 
-	// Create a scheduler with a no-op runner for testing.
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
-
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(store, cfg, hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	body := `{"git_repo_name":"my-cookbook","instance_name":"default-ubuntu-2204","target_chef_version":"18.5.0"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run", bytes.NewBufferString(body))
@@ -258,7 +255,7 @@ func TestHandleGitKitchenRun_POST_Success(t *testing.T) {
 	}
 }
 
-func TestHandleGitKitchenRun_POST_NoScheduler(t *testing.T) {
+func TestHandleGitKitchenRun_POST_NoQueue(t *testing.T) {
 	r := newTestRouterWithMock(&mockStore{})
 
 	body := `{"git_repo_name":"my-cookbook","instance_name":"default-ubuntu-2204","target_chef_version":"18.5.0"}`
@@ -272,12 +269,9 @@ func TestHandleGitKitchenRun_POST_NoScheduler(t *testing.T) {
 }
 
 func TestHandleGitKitchenRun_POST_MissingFields(t *testing.T) {
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
-
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(&mockStore{}, testConfig(), hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(&mockStore{}, testConfig(), hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	tests := []struct {
 		name string
@@ -333,17 +327,9 @@ func TestHandleGitKitchenRun_ContextDetachedFromRequest(t *testing.T) {
 		{KitchenName: "ubuntu-22.04", Image: "ubuntu-2204-template"},
 	}
 
-	// Use a no-op executor/cred resolver; the RunOne path will fail on
-	// workspace copy, but the scheduler still calls the store with the
-	// context before returning the error. Actually, we need the runFn to
-	// succeed enough to reach the upsert. Use NewScheduler with nil
-	// executor — RunInstance will error but scheduler still upserts.
-	sched := gitkitchen.NewScheduler(nil, nil, store,
-		func(name, url string) string { return "/repos/" + name })
-
 	hub := NewEventHub()
 	go hub.Run()
-	rtr := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+	rtr := NewRouter(store, cfg, hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	// Create a cancellable context to simulate HTTP request lifecycle.
 	reqCtx, reqCancel := context.WithCancel(context.Background())
@@ -384,12 +370,9 @@ func TestHandleGitKitchenRun_POST_DisabledReturns409(t *testing.T) {
 	cfg := testConfig()
 	cfg.AnalysisTools.TestKitchen.Enabled = &disabled
 
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
-
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(store, cfg, hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	body := `{"git_repo_name":"my-cookbook","instance_name":"default-ubuntu-2204","target_chef_version":"18.5.0"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run", bytes.NewBufferString(body))
@@ -423,12 +406,9 @@ func TestHandleGitKitchenRunAll_POST_Success(t *testing.T) {
 		{KitchenName: "ubuntu-22.04", Image: "ubuntu-2204-template"},
 	}
 
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
-
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(store, cfg, hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	body := `{"git_repo_name":"my-cookbook","target_chef_version":"18.5.0"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run-all", bytes.NewBufferString(body))
@@ -443,12 +423,12 @@ func TestHandleGitKitchenRunAll_POST_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if resp["instance_count"] != float64(2) {
-		t.Fatalf("instance_count = %v, want 2", resp["instance_count"])
+	if resp["queued_count"] != float64(2) {
+		t.Fatalf("queued_count = %v, want 2", resp["queued_count"])
 	}
 }
 
-func TestHandleGitKitchenRunAll_POST_NoScheduler(t *testing.T) {
+func TestHandleGitKitchenRunAll_POST_NoQueue(t *testing.T) {
 	r := newTestRouterWithMock(&mockStore{})
 
 	body := `{"git_repo_name":"my-cookbook","target_chef_version":"18.5.0"}`
@@ -462,12 +442,9 @@ func TestHandleGitKitchenRunAll_POST_NoScheduler(t *testing.T) {
 }
 
 func TestHandleGitKitchenRunAll_POST_MissingFields(t *testing.T) {
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
-
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(&mockStore{}, testConfig(), hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(&mockStore{}, testConfig(), hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	tests := []struct {
 		name string
@@ -497,12 +474,9 @@ func TestHandleGitKitchenRunAll_POST_DisabledReturns409(t *testing.T) {
 	cfg := testConfig()
 	cfg.AnalysisTools.TestKitchen.Enabled = &disabled
 
-	sched := gitkitchen.NewScheduler(nil, nil, nil,
-		func(name, url string) string { return "/repos/" + name })
-
 	hub := NewEventHub()
 	go hub.Run()
-	r := NewRouter(store, cfg, hub, WithGitKitchenScheduler(sched))
+	r := NewRouter(store, cfg, hub, WithKitchenQueue(kitchenqueue.New(nil, nil)))
 
 	body := `{"git_repo_name":"my-cookbook","target_chef_version":"18.5.0"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/git/run-all", bytes.NewBufferString(body))

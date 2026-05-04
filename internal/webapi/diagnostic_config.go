@@ -51,7 +51,6 @@ func diagnosticConcurrency(cfg config.Config) map[string]any {
 		"git_pull":                cfg.Concurrency.GitPull,
 		"cookbook_download":       cfg.Concurrency.CookbookDownload,
 		"cookstyle_scan":          cfg.Concurrency.CookstyleScan,
-		"test_kitchen_run":        cfg.Concurrency.TestKitchenRun,
 		"readiness_evaluation":    cfg.Concurrency.ReadinessEvaluation,
 	}
 }

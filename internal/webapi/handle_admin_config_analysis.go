@@ -129,6 +129,10 @@ func (r *Router) putAdminConfigTestKitchen(w http.ResponseWriter, req *http.Requ
 			return
 		}
 	}
+	// Dynamically adjust kitchen queue worker pool to match new MaxConcurrentVMs.
+	if r.kitchenQueue != nil {
+		r.kitchenQueue.SetWorkerCount(r.liveConfig().AnalysisTools.TestKitchen.EffectiveMaxConcurrentVMs())
+	}
 	tkJSON, err := configstore.SerializeValue(input)
 	if err != nil {
 		r.logf("ERROR", "admin/config/test-kitchen: serialise response: %v", err)
@@ -164,6 +168,10 @@ func (r *Router) deleteAdminConfigTestKitchen(w http.ResponseWriter, req *http.R
 			WriteInternalError(w, "Failed to reload config after update.")
 			return
 		}
+	}
+	// Dynamically adjust kitchen queue worker pool (reset reverts to default).
+	if r.kitchenQueue != nil {
+		r.kitchenQueue.SetWorkerCount(r.liveConfig().AnalysisTools.TestKitchen.EffectiveMaxConcurrentVMs())
 	}
 	tkJSON, err := configstore.SerializeValue(analysisTools.TestKitchen)
 	if err != nil {

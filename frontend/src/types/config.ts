@@ -16,7 +16,6 @@ export interface ConcurrencyConfig {
   git_pull: number;
   cookbook_download: number;
   cookstyle_scan: number;
-  test_kitchen_run: number;
   readiness_evaluation: number;
 }
 

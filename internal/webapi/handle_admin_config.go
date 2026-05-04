@@ -191,7 +191,6 @@ func (r *Router) putAdminConfigConcurrency(w http.ResponseWriter, req *http.Requ
 		{"git_pull", input.GitPull},
 		{"cookbook_download", input.CookbookDownload},
 		{"cookstyle_scan", input.CookstyleScan},
-		{"test_kitchen_run", input.TestKitchenRun},
 		{"readiness_evaluation", input.ReadinessEvaluation},
 	}
 	for _, f := range fields {
@@ -203,11 +202,6 @@ func (r *Router) putAdminConfigConcurrency(w http.ResponseWriter, req *http.Requ
 	}
 
 	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency, false)
-
-	// Dynamically adjust kitchen queue worker pool if running.
-	if r.kitchenQueue != nil {
-		r.kitchenQueue.SetWorkerCount(input.TestKitchenRun)
-	}
 }
 
 // ---------------------------------------------------------------------------

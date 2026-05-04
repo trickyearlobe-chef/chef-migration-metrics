@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 
@@ -120,13 +119,9 @@ type Router struct {
 	// Nil when not configured — the trigger endpoint returns 503.
 	nodeKitchenRunner NodeKitchenRunner
 
-	// gitKitchenScheduler orchestrates on-demand Git Kitchen runs.
-	// Nil when not configured — the trigger endpoint returns 503.
-	gitKitchenScheduler *gitkitchen.Scheduler
-
 	// kitchenQueue manages the DB-backed queue and worker pool for all
 	// kitchen runs (git and node). Nil when not configured — handlers
-	// fall back to direct dispatch (legacy mode).
+	// return 503.
 	kitchenQueue *kitchenqueue.Manager
 
 	// batchMu guards runningBatch. Only held for fast map reads/writes.
@@ -259,11 +254,6 @@ func WithNodeKitchenRunner(runner NodeKitchenRunner) RouterOption {
 	return func(r *Router) { r.nodeKitchenRunner = runner }
 }
 
-// WithGitKitchenScheduler sets the scheduler used by the Git Kitchen run endpoint.
-func WithGitKitchenScheduler(s *gitkitchen.Scheduler) RouterOption {
-	return func(r *Router) { r.gitKitchenScheduler = s }
-}
-
 // WithKitchenQueue sets the kitchen queue manager for bounded-concurrency
 // kitchen execution. When set, handlers enqueue items instead of spawning
 // goroutines directly.
@@ -293,7 +283,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 	// from startup output when a component was defined but never passed
 	// to NewRouter — the most common class of silent wiring bug with
 	// functional options.
-	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t cred_resolver=%t hypervisor_static=%t node_kitchen=%t git_kitchen=%t",
+	r.logf("INFO", "router optional components: logger=%t frontend=%t auth=%t credentials=%t config_store=%t perf=%t collection_trigger=%t cred_resolver=%t hypervisor_static=%t node_kitchen=%t kitchen_queue=%t",
 		r.logger != nil,
 		r.frontendFS != nil,
 		r.authMiddleware != nil,
@@ -304,7 +294,7 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 		r.credResolver != nil,
 		r.hypervisor != nil,
 		r.nodeKitchenRunner != nil,
-		r.gitKitchenScheduler != nil,
+		r.kitchenQueue != nil,
 	)
 
 	r.registerRoutes()

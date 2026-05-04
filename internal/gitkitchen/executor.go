@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
 // KitchenExecutor runs kitchen CLI commands.
@@ -26,6 +27,11 @@ type KitchenExecutor interface {
 // CredentialResolver resolves kitchen credentials to environment variables.
 type CredentialResolver interface {
 	ResolveKitchenCredentials(ctx context.Context, tkConfig config.TestKitchenConfig) (envVars map[string][]byte, cleanup func(), err error)
+}
+
+// ResultStore abstracts the datastore methods needed by kitchen execution.
+type ResultStore interface {
+	UpsertGitKitchenResult(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error)
 }
 
 // RunInstanceParams holds input for a single git kitchen instance run.
@@ -121,7 +127,7 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 		"test", params.InstanceName, "--destroy=always", "--no-color")
 
 	duration := int(time.Since(start).Seconds())
-	output := combineOutput(stdout, stderr)
+	output := fmt.Sprintf("[workdir: %s] [started: %s]\n", workDir, start.UTC().Format(time.RFC3339)) + combineOutput(stdout, stderr)
 
 	result := RunInstanceResult{
 		Output:          output,
