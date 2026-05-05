@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ---------------------------------------------------------------------------
@@ -944,15 +945,40 @@ func (n NodeData) PlatformFamily() string { return n.getString("platform_family"
 func (n NodeData) PlatformCaption() string {
 	if strings.EqualFold(n.PlatformFamily(), "windows") {
 		if c := n.getString("kernel_os_info_caption"); c != "" {
-			return c
+			return sanitiseUTF8(c)
 		}
 	}
 	if c := n.getString("lsb_description"); c != "" {
-		return c
+		return sanitiseUTF8(c)
 	}
 	// Fall back to Windows caption even if family wasn't "windows" — covers
 	// cases where platform_family is empty but the field is present.
-	return n.getString("kernel_os_info_caption")
+	return sanitiseUTF8(n.getString("kernel_os_info_caption"))
+}
+
+// sanitiseUTF8 strips invalid UTF-8 bytes (e.g. BOM remnants from WMI UTF-16
+// transcoding failures) and collapses resulting double-spaces.
+func sanitiseUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size <= 1 {
+			i++
+			continue
+		}
+		b.WriteRune(r)
+		i += size
+	}
+	// Collapse any double-spaces left by removed bytes.
+	result := b.String()
+	for strings.Contains(result, "  ") {
+		result = strings.ReplaceAll(result, "  ", " ")
+	}
+	return strings.TrimSpace(result)
 }
 
 // PolicyName returns the Policyfile policy name, or "" for classic nodes.
