@@ -316,7 +316,7 @@ func (db *DB) ListKitchenQueue(ctx context.Context, f KitchenQueueFilter) ([]Kit
 		args = append(args, f.BatchID)
 	}
 
-	query += " ORDER BY priority DESC, enqueued_at DESC"
+	query += " ORDER BY started_at DESC NULLS LAST, enqueued_at DESC"
 
 	limit := f.Limit
 	if limit <= 0 {
