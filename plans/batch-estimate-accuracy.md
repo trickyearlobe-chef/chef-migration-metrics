@@ -2,24 +2,28 @@
 
 ## Goal
 
-Write a specification for accurate batch estimation that uses the same planning logic as the run path, replacing the current broken `len(platforms)` heuristic.
+Implement accurate batch estimation using the same `PlanRepo` planning logic as the run path.
 
-## Specs to read
+## Specs
 
-- `.claude/specifications/bulk-kitchen-scanning.md` (done)
-- `.claude/specifications/kitchen-run-queue.md` (done)
-- `.claude/specifications/kitchen-instance-exclusions.md` (done)
+- `.claude/specifications/batch-estimate.md` ✓ (written and reviewed)
+- `.claude/specifications/bulk-kitchen-scanning.md`
+- `.claude/specifications/kitchen-instance-exclusions.md`
 
 ## Steps
 
-1. Write spec: `.claude/specifications/batch-estimate.md`
-2. Get rubber-duck critique on the spec
-3. Commit spec
+1. ~~Write spec~~ ✓
+2. Write batch planner tests (TDD)
+3. Implement `batch.Planner`
+4. Wire resolver providers in webapi
+5. Update frontend types
+6. Update frontend UI
 
 ## Acceptance criteria
 
-- Spec defines the contract: estimate = count of `mapped` instances from `PlanRepo`
-- Spec covers data dependencies (analysis, platform map, exclusions)
-- Spec covers edge cases (no analysis, no mapped instances, stale data)
-- Spec covers frontend response shape changes (if any)
-- Spec is consistent with existing bulk-kitchen-scanning and kitchen-run-queue specs
+- Estimate uses `PlanRepo` and counts only `mapped` instances
+- Response includes `planning_status`, breakdown counts per cookbook
+- Resolver wired with analysis + results providers
+- All existing tests still pass
+- New planner tests cover: planned, no_analysis, exclusion_error, plan_error, empty
+
