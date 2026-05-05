@@ -167,7 +167,6 @@ interface BatchFormData {
   hasTestSuite: HasTestSuiteFilter;
   previousStatus: string;
   maxCount: string;
-  maxConcurrentVms: string;
   dryRun: boolean;
 }
 
@@ -179,7 +178,6 @@ function emptyForm(): BatchFormData {
     hasTestSuite: "any",
     previousStatus: "any",
     maxCount: "",
-    maxConcurrentVms: "",
     dryRun: true,
   };
 }
@@ -198,9 +196,6 @@ function formToRequest(form: BatchFormData): KitchenBatchRequest {
     name: form.name,
     filters,
     max_count: form.maxCount ? parseInt(form.maxCount, 10) : null,
-    max_concurrent_vms: form.maxConcurrentVms
-      ? parseInt(form.maxConcurrentVms, 10)
-      : null,
     dry_run: form.dryRun,
   };
 }
@@ -218,8 +213,6 @@ export function batchToForm(b: KitchenBatch): BatchFormData {
           : "any",
     previousStatus: b.filters.previous_status ?? "any",
     maxCount: b.max_count != null ? String(b.max_count) : "",
-    maxConcurrentVms:
-      b.max_concurrent_vms != null ? String(b.max_concurrent_vms) : "",
     dryRun: b.dry_run,
   };
 }
@@ -347,20 +340,6 @@ function BatchForm({
               min={1}
               value={form.maxCount}
               onChange={(e) => update({ maxCount: e.target.value })}
-              disabled={saving}
-              className={INPUT_CLASS}
-              placeholder="unlimited"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Max Concurrent VMs
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={form.maxConcurrentVms}
-              onChange={(e) => update({ maxConcurrentVms: e.target.value })}
               disabled={saving}
               className={INPUT_CLASS}
               placeholder="unlimited"
@@ -520,14 +499,6 @@ function BatchDetailView({
             <>
               <dt className="font-medium text-gray-600">Max Count</dt>
               <dd className="text-gray-800 sm:col-span-2">{batch.max_count}</dd>
-            </>
-          )}
-          {batch.max_concurrent_vms != null && (
-            <>
-              <dt className="font-medium text-gray-600">Max Concurrent VMs</dt>
-              <dd className="text-gray-800 sm:col-span-2">
-                {batch.max_concurrent_vms}
-              </dd>
             </>
           )}
         </dl>

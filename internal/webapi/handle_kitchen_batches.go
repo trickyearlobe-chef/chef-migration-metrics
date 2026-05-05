@@ -51,11 +51,10 @@ func (r *Router) handleListKitchenBatches(w http.ResponseWriter, req *http.Reque
 }
 
 type createBatchRequest struct {
-	Name             string                 `json:"name"`
-	Filters          datastore.BatchFilters `json:"filters"`
-	MaxCount         *int                   `json:"max_count"`
-	MaxConcurrentVMs *int                   `json:"max_concurrent_vms"`
-	DryRun           bool                   `json:"dry_run"`
+	Name    string                 `json:"name"`
+	Filters datastore.BatchFilters `json:"filters"`
+	MaxCount *int                  `json:"max_count"`
+	DryRun  bool                   `json:"dry_run"`
 }
 
 // handleCreateKitchenBatch creates a new kitchen batch definition.
@@ -71,11 +70,10 @@ func (r *Router) handleCreateKitchenBatch(w http.ResponseWriter, req *http.Reque
 	}
 
 	b, err := r.db.CreateKitchenBatch(req.Context(), datastore.CreateKitchenBatchParams{
-		Name:             body.Name,
-		Filters:          body.Filters,
-		MaxCount:         body.MaxCount,
-		MaxConcurrentVMs: body.MaxConcurrentVMs,
-		DryRun:           body.DryRun,
+		Name:    body.Name,
+		Filters: body.Filters,
+		MaxCount: body.MaxCount,
+		DryRun:  body.DryRun,
 	})
 	if err != nil {
 		r.logf("ERROR", "kitchen-batches: creating batch: %v", err)
@@ -323,11 +321,10 @@ func (r *Router) handleUpdateKitchenBatch(w http.ResponseWriter, req *http.Reque
 	}
 
 	b, err := r.db.UpdateKitchenBatch(req.Context(), id, datastore.UpdateKitchenBatchParams{
-		Name:             body.Name,
-		Filters:          body.Filters,
-		MaxCount:         body.MaxCount,
-		MaxConcurrentVMs: body.MaxConcurrentVMs,
-		DryRun:           body.DryRun,
+		Name:    body.Name,
+		Filters: body.Filters,
+		MaxCount: body.MaxCount,
+		DryRun:  body.DryRun,
 	})
 	if err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {

@@ -164,7 +164,6 @@ export interface KitchenBatchRequest {
   name: string;
   filters: BatchFilters;
   max_count?: number | null;
-  max_concurrent_vms?: number | null;
   dry_run?: boolean;
 }
 
