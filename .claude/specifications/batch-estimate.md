@@ -30,6 +30,15 @@ Batch filters include an optional `platforms` field. This selects **repos** whos
 
 A batch filtered to `ubuntu*` will resolve only repos that have an Ubuntu platform in their analysis, but the estimate and run will still include all mapped instances for those repos (including non-Ubuntu platforms). This is the current behaviour and is intentional — it prevents operators from accidentally skipping suites that test cross-platform interaction.
 
+## Resolver Provider Wiring
+
+The `batch.Resolver` accepts optional providers for platform filtering (`KitchenAnalysisProvider`) and previous-status filtering (`TestKitchenResultProvider`). Both preview and run paths MUST construct the resolver with concrete providers wired:
+
+- `KitchenAnalysisProvider` — required when `platforms` filter is set (otherwise repos with matching platforms are incorrectly excluded)
+- `TestKitchenResultProvider` — required when `previous_status` filter is set (otherwise no repos match)
+
+If these providers are not wired, the resolver cannot apply the corresponding filters, causing the resolved set to diverge from expectations. The fix must wire both providers in `resolveBatch`.
+
 ## Data Dependencies
 
 The estimate requires:
@@ -114,21 +123,27 @@ The planning/estimation logic lives in the `batch` package as a `Planner` (or eq
 | `skipped_cookbooks` | int | Subset of `total_cookbooks` that could not be planned |
 | `per_platform` | map | Mapped instance count grouped by platform name |
 | `cookbooks[].planning_status` | string | One of: `planned`, `no_analysis`, `exclusion_error`, `plan_error` |
-| `cookbooks[].planning_note` | string | Human-readable explanation when status is not `planned` |
+| `cookbooks[].planning_note` | string | Informational, not contract-stable. Empty when `planned`. |
 | `cookbooks[].estimated_vms` | int | Mapped instances for this cookbook (0 if not planned) |
-| `cookbooks[].total_instances` | int | Total suite×platform combinations (0 if not planned) |
+| `cookbooks[].total_instances` | int | Total suite×platform combinations from `PlanRepo`. 0 if not planned OR if analysis has no suites/platforms. |
 | `cookbooks[].unmapped` | int | Instances with no platform map entry |
 | `cookbooks[].skipped` | int | Instances where platform map has `skip=true` |
 | `cookbooks[].excluded` | int | Instances excluded by suite include/exclude lists |
 | `cookbooks[].user_excluded` | int | Instances excluded by operator via exclusions table |
-| `cookbooks[].platforms` | []string | Platform names from analysis (informational) |
-| `cookbooks[].suites` | []string | Suite names from analysis (informational) |
+| `cookbooks[].platforms` | []string | Platform names from analysis. Empty if `planning_status != planned`. |
+| `cookbooks[].suites` | []string | Suite names from analysis. Empty if `planning_status != planned`. |
 
 ## Edge Cases
 
 ### No analysis data for a repo
 
 The repo appears in `cookbooks[]` with `planning_status: "no_analysis"` and `estimated_vms: 0`. It is counted in `skipped_cookbooks`. The frontend renders it distinctly (e.g. greyed row with the planning note).
+
+Note: if a `platforms` filter is active, repos without analysis data are excluded during resolution (before planning). In that case they never appear in `cookbooks[]` at all. The `no_analysis` status only applies to repos that passed all resolution filters but then failed at the planning stage.
+
+### Planned but empty (no suites or platforms in analysis)
+
+A repo whose analysis contains zero suites or zero platforms will be planned successfully by `PlanRepo` (returns empty instances). This results in `planning_status: "planned"`, `total_instances: 0`, `estimated_vms: 0`. This is distinct from "not planned" — the analysis was loaded and parsed, it just had nothing to expand. No warning indicator is needed; the operator can see the cookbook's analysis page for details.
 
 ### All instances unmapped or excluded
 
