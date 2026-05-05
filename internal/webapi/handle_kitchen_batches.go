@@ -558,6 +558,12 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 func (r *Router) executeBatchViaQueue(ctx context.Context, batchID string, plans []*gitkitchen.PlanResult, instanceMap map[string]string, b datastore.KitchenBatch) {
 	targetVersion := r.batchTargetVersion(b)
 
+	if targetVersion == "" {
+		r.logf("ERROR", "kitchen-batches: batch %s has no target chef version configured", batchID)
+		r.failBatch(ctx, batchID, "running")
+		return
+	}
+
 	// Enqueue all mapped instances.
 	enqueued := 0
 	skipped := 0
@@ -580,11 +586,11 @@ func (r *Router) executeBatchViaQueue(ctx context.Context, batchID string, plans
 				Priority:          5,
 			})
 			if err != nil {
-				// Dedup collision — instance already queued/running.
 				instKey := plan.GitRepoName + "/" + inst.InstanceName
 				if instID, ok := instanceMap[instKey]; ok {
-					_ = r.db.UpdateBatchInstanceStatus(ctx, instID, "cancelled", "already queued or running", time.Now().UTC())
+					_ = r.db.UpdateBatchInstanceStatus(ctx, instID, "errored", err.Error(), time.Now().UTC())
 				}
+				r.logf("WARN", "kitchen-batches: batch %s enqueue failed for %s/%s: %v", batchID, plan.GitRepoName, inst.InstanceName, err)
 				skipped++
 				continue
 			}
@@ -592,7 +598,7 @@ func (r *Router) executeBatchViaQueue(ctx context.Context, batchID string, plans
 		}
 	}
 
-	r.logf("INFO", "kitchen-batches: batch %s enqueued %d items (skipped %d dedup)", batchID, enqueued, skipped)
+	r.logf("INFO", "kitchen-batches: batch %s enqueued %d items (skipped %d errors)", batchID, enqueued, skipped)
 
 	if enqueued == 0 {
 		r.finalizeBatch(ctx, batchID)
@@ -824,12 +830,14 @@ func (r *Router) failBatch(ctx context.Context, batchID, fromStatus string) {
 }
 
 // batchTargetVersion extracts the target chef version from batch filters.
-// Uses the first entry if multiple are specified.
+// Uses the first entry if multiple are specified. Falls back to the highest
+// globally configured target version when filters don't specify one.
 func (r *Router) batchTargetVersion(b datastore.KitchenBatch) string {
 	if len(b.Filters.TargetChefVersions) > 0 {
 		return b.Filters.TargetChefVersions[0]
 	}
-	return ""
+	// Fall back to the highest globally configured target version.
+	return config.HighestVersion(r.liveConfig().TargetChefVersions)
 }
 
 // ---------------------------------------------------------------------------
