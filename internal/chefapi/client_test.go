@@ -2277,3 +2277,45 @@ func TestNodeData_PlatformCaption_FallbackToKernelCaption(t *testing.T) {
 		t.Errorf("PlatformCaption() = %q, want %q", got, want)
 	}
 }
+
+func TestNodeData_PlatformCaption_UTF16BOMStripped(t *testing.T) {
+	// Caption with UTF-16 BOM bytes (0xFF 0xFE) that didn't get transcoded.
+	nd := NewNodeData(map[string]interface{}{
+		"platform":               "windows",
+		"platform_family":        "windows",
+		"kernel_os_info_caption": "\xff\xfeMicrosoft Windows Server 2016 Standard",
+	})
+	got := nd.PlatformCaption()
+	want := "Microsoft Windows Server 2016 Standard"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestNodeData_PlatformCaption_InvalidUTF8Stripped(t *testing.T) {
+	// Caption with scattered invalid bytes.
+	nd := NewNodeData(map[string]interface{}{
+		"platform":               "windows",
+		"platform_family":        "windows",
+		"kernel_os_info_caption": "Microsoft\x80 Windows\xfe Server",
+	})
+	got := nd.PlatformCaption()
+	want := "Microsoft Windows Server"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
+
+func TestNodeData_PlatformCaption_ValidUTF8Unchanged(t *testing.T) {
+	// Valid UTF-8 with non-ASCII characters passes through.
+	nd := NewNodeData(map[string]interface{}{
+		"platform":               "windows",
+		"platform_family":        "windows",
+		"kernel_os_info_caption": "Microsoft Windows Server 2022 Données",
+	})
+	got := nd.PlatformCaption()
+	want := "Microsoft Windows Server 2022 Données"
+	if got != want {
+		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
