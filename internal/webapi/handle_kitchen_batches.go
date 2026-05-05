@@ -162,6 +162,79 @@ func (a *dbRepoLister) ListGitRepos(ctx context.Context) ([]batch.GitRepo, error
 	return result, nil
 }
 
+// dbAnalysisProvider adapts the DataStore to both batch.KitchenAnalysisProvider
+// (for resolver platform filtering) and batch.AnalysisLoader (for planner).
+type dbAnalysisProvider struct {
+	db DataStore
+}
+
+func (a *dbAnalysisProvider) GetKitchenAnalysisPlatforms(ctx context.Context, repoName string) ([]string, error) {
+	ar, err := a.db.GetKitchenAnalysisResultByName(ctx, repoName)
+	if err != nil || ar == nil {
+		return nil, err
+	}
+	var platforms []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(ar.Platforms, &platforms); err != nil {
+		return nil, err
+	}
+	names := make([]string, len(platforms))
+	for i, p := range platforms {
+		names[i] = p.Name
+	}
+	return names, nil
+}
+
+func (a *dbAnalysisProvider) GetKitchenAnalysisResultByName(ctx context.Context, repoName string) (*datastore.KitchenAnalysisResult, error) {
+	return a.db.GetKitchenAnalysisResultByName(ctx, repoName)
+}
+
+// dbResultProvider adapts the DataStore to batch.TestKitchenResultProvider.
+type dbResultProvider struct {
+	db DataStore
+}
+
+func (p *dbResultProvider) GetLatestTestKitchenStatus(ctx context.Context, repoName string) (string, error) {
+	results, err := p.db.ListGitKitchenResultsByRepo(ctx, repoName)
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return "untested", nil
+	}
+	var passed, failed int
+	for _, r := range results {
+		if r.Passed != nil && *r.Passed {
+			passed++
+		} else {
+			failed++
+		}
+	}
+	status := "untested"
+	if passed > 0 || failed > 0 {
+		switch {
+		case passed > 0 && failed > 0:
+			status = "partial"
+		case failed > 0:
+			status = "failed"
+		case passed > 0:
+			status = "passed"
+		}
+	}
+	return status, nil
+}
+
+// dbExclusionsLoader adapts the Router's loadInstanceExclusions helper to
+// the batch.ExclusionsLoader interface.
+type dbExclusionsLoader struct {
+	router *Router
+}
+
+func (l *dbExclusionsLoader) LoadInstanceExclusions(ctx context.Context, repoName string) ([]gitkitchen.InstanceExclusion, error) {
+	return l.router.loadInstanceExclusions(ctx, repoName)
+}
+
 // toBatchFilters converts datastore.BatchFilters to batch.Filters.
 func toBatchFilters(f datastore.BatchFilters) batch.Filters {
 	return batch.Filters{
@@ -175,14 +248,27 @@ func toBatchFilters(f datastore.BatchFilters) batch.Filters {
 	}
 }
 
-// resolveBatch creates a batch.Resolver and resolves the given batch filters.
+// resolveBatch creates a batch.Resolver with all providers wired, resolves the
+// given batch filters, then calls PlanBatch for accurate VM estimates.
 func (r *Router) resolveBatch(ctx context.Context, filters datastore.BatchFilters, maxCount *int) (*batch.BatchEstimate, error) {
-	resolver := batch.NewResolver(&dbRepoLister{db: r.db})
+	analysisProvider := &dbAnalysisProvider{db: r.db}
+	resultProvider := &dbResultProvider{db: r.db}
+
+	resolver := batch.NewResolver(
+		&dbRepoLister{db: r.db},
+		batch.WithAnalysisProvider(analysisProvider),
+		batch.WithResultProvider(resultProvider),
+	)
 	estimate, err := resolver.ResolveBatch(ctx, toBatchFilters(filters), maxCount)
 	if err != nil {
 		return nil, err
 	}
-	return &estimate, nil
+
+	// Enrich with accurate VM estimates via PlanBatch.
+	platformMap := r.liveConfig().AnalysisTools.TestKitchen.PlatformMap
+	exclusionsLoader := &dbExclusionsLoader{router: r}
+	planned := batch.PlanBatch(ctx, estimate.Cookbooks, platformMap, analysisProvider, exclusionsLoader)
+	return &planned, nil
 }
 
 // ---------------------------------------------------------------------------
