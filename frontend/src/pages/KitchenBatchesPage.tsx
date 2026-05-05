@@ -167,7 +167,6 @@ interface BatchFormData {
   hasTestSuite: HasTestSuiteFilter;
   previousStatus: string;
   maxCount: string;
-  maxConcurrentVms: string;
   dryRun: boolean;
 }
 
@@ -179,7 +178,6 @@ function emptyForm(): BatchFormData {
     hasTestSuite: "any",
     previousStatus: "any",
     maxCount: "",
-    maxConcurrentVms: "",
     dryRun: true,
   };
 }
@@ -198,9 +196,6 @@ function formToRequest(form: BatchFormData): KitchenBatchRequest {
     name: form.name,
     filters,
     max_count: form.maxCount ? parseInt(form.maxCount, 10) : null,
-    max_concurrent_vms: form.maxConcurrentVms
-      ? parseInt(form.maxConcurrentVms, 10)
-      : null,
     dry_run: form.dryRun,
   };
 }
@@ -218,8 +213,6 @@ export function batchToForm(b: KitchenBatch): BatchFormData {
           : "any",
     previousStatus: b.filters.previous_status ?? "any",
     maxCount: b.max_count != null ? String(b.max_count) : "",
-    maxConcurrentVms:
-      b.max_concurrent_vms != null ? String(b.max_concurrent_vms) : "",
     dryRun: b.dry_run,
   };
 }
@@ -347,20 +340,6 @@ function BatchForm({
               min={1}
               value={form.maxCount}
               onChange={(e) => update({ maxCount: e.target.value })}
-              disabled={saving}
-              className={INPUT_CLASS}
-              placeholder="unlimited"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Max Concurrent VMs
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={form.maxConcurrentVms}
-              onChange={(e) => update({ maxConcurrentVms: e.target.value })}
               disabled={saving}
               className={INPUT_CLASS}
               placeholder="unlimited"
@@ -522,14 +501,6 @@ function BatchDetailView({
               <dd className="text-gray-800 sm:col-span-2">{batch.max_count}</dd>
             </>
           )}
-          {batch.max_concurrent_vms != null && (
-            <>
-              <dt className="font-medium text-gray-600">Max Concurrent VMs</dt>
-              <dd className="text-gray-800 sm:col-span-2">
-                {batch.max_concurrent_vms}
-              </dd>
-            </>
-          )}
         </dl>
       </div>
 
@@ -541,7 +512,7 @@ function BatchDetailView({
       {/* Estimate summary */}
       {est && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               <div className="text-xs font-medium uppercase tracking-wider text-gray-400">
                 Total Cookbooks
@@ -558,6 +529,16 @@ function BatchDetailView({
                 {est.total_estimated_vms.toLocaleString()}
               </div>
             </div>
+            {est.skipped_cookbooks != null && est.skipped_cookbooks > 0 && (
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wider text-gray-400">
+                  Skipped
+                </div>
+                <div className="mt-1 text-2xl font-bold tabular-nums text-amber-600">
+                  {est.skipped_cookbooks.toLocaleString()}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Per-platform breakdown */}
@@ -594,8 +575,10 @@ function BatchDetailView({
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                       <th className="px-4 py-2">Name</th>
-                      <th className="px-4 py-2">Git URL</th>
+                      <th className="px-4 py-2">Status</th>
                       <th className="px-4 py-2 text-right">Est. VMs</th>
+                      <th className="px-4 py-2 text-right">Unmapped</th>
+                      <th className="px-4 py-2 text-right">Excluded</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -604,11 +587,28 @@ function BatchDetailView({
                         <td className="whitespace-nowrap px-4 py-2 font-medium text-gray-800">
                           {cb.name}
                         </td>
-                        <td className="px-4 py-2 text-gray-600">
-                          {cb.git_repo_url || "—"}
+                        <td className="whitespace-nowrap px-4 py-2">
+                          {cb.planning_status === "planned" ? (
+                            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                              planned
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+                              title={cb.planning_note || ""}
+                            >
+                              {cb.planning_status || "unknown"}
+                            </span>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-gray-800">
                           {cb.estimated_vms}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-gray-500">
+                          {cb.unmapped || 0}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-gray-500">
+                          {(cb.excluded || 0) + (cb.user_excluded || 0)}
                         </td>
                       </tr>
                     ))}

@@ -33,17 +33,25 @@ type TestKitchenResultProvider interface {
 
 // ResolvedCookbook represents a cookbook that matched batch filters.
 type ResolvedCookbook struct {
-	Name         string   `json:"name"`
-	GitRepoURL   string   `json:"git_repo_url"`
-	Platforms    []string `json:"platforms,omitempty"`
-	Suites       []string `json:"suites,omitempty"`
-	EstimatedVMs int      `json:"estimated_vms"`
+	Name           string   `json:"name"`
+	GitRepoURL     string   `json:"git_repo_url"`
+	Platforms      []string `json:"platforms,omitempty"`
+	Suites         []string `json:"suites,omitempty"`
+	EstimatedVMs   int      `json:"estimated_vms"`
+	PlanningStatus string   `json:"planning_status,omitempty"`
+	PlanningNote   string   `json:"planning_note,omitempty"`
+	TotalInstances int      `json:"total_instances,omitempty"`
+	Unmapped       int      `json:"unmapped,omitempty"`
+	Skipped        int      `json:"skipped,omitempty"`
+	Excluded       int      `json:"excluded,omitempty"`
+	UserExcluded   int      `json:"user_excluded,omitempty"`
 }
 
 // BatchEstimate summarises a resolved batch.
 type BatchEstimate struct {
 	TotalCookbooks    int                `json:"total_cookbooks"`
 	TotalEstimatedVMs int                `json:"total_estimated_vms"`
+	SkippedCookbooks  int                `json:"skipped_cookbooks,omitempty"`
 	PerPlatform       map[string]int     `json:"per_platform,omitempty"`
 	Cookbooks         []ResolvedCookbook `json:"cookbooks"`
 }

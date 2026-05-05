@@ -51,11 +51,10 @@ func (r *Router) handleListKitchenBatches(w http.ResponseWriter, req *http.Reque
 }
 
 type createBatchRequest struct {
-	Name             string                 `json:"name"`
-	Filters          datastore.BatchFilters `json:"filters"`
-	MaxCount         *int                   `json:"max_count"`
-	MaxConcurrentVMs *int                   `json:"max_concurrent_vms"`
-	DryRun           bool                   `json:"dry_run"`
+	Name    string                 `json:"name"`
+	Filters datastore.BatchFilters `json:"filters"`
+	MaxCount *int                  `json:"max_count"`
+	DryRun  bool                   `json:"dry_run"`
 }
 
 // handleCreateKitchenBatch creates a new kitchen batch definition.
@@ -71,11 +70,10 @@ func (r *Router) handleCreateKitchenBatch(w http.ResponseWriter, req *http.Reque
 	}
 
 	b, err := r.db.CreateKitchenBatch(req.Context(), datastore.CreateKitchenBatchParams{
-		Name:             body.Name,
-		Filters:          body.Filters,
-		MaxCount:         body.MaxCount,
-		MaxConcurrentVMs: body.MaxConcurrentVMs,
-		DryRun:           body.DryRun,
+		Name:    body.Name,
+		Filters: body.Filters,
+		MaxCount: body.MaxCount,
+		DryRun:  body.DryRun,
 	})
 	if err != nil {
 		r.logf("ERROR", "kitchen-batches: creating batch: %v", err)
@@ -162,6 +160,79 @@ func (a *dbRepoLister) ListGitRepos(ctx context.Context) ([]batch.GitRepo, error
 	return result, nil
 }
 
+// dbAnalysisProvider adapts the DataStore to both batch.KitchenAnalysisProvider
+// (for resolver platform filtering) and batch.AnalysisLoader (for planner).
+type dbAnalysisProvider struct {
+	db DataStore
+}
+
+func (a *dbAnalysisProvider) GetKitchenAnalysisPlatforms(ctx context.Context, repoName string) ([]string, error) {
+	ar, err := a.db.GetKitchenAnalysisResultByName(ctx, repoName)
+	if err != nil || ar == nil {
+		return nil, err
+	}
+	var platforms []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(ar.Platforms, &platforms); err != nil {
+		return nil, err
+	}
+	names := make([]string, len(platforms))
+	for i, p := range platforms {
+		names[i] = p.Name
+	}
+	return names, nil
+}
+
+func (a *dbAnalysisProvider) GetKitchenAnalysisResultByName(ctx context.Context, repoName string) (*datastore.KitchenAnalysisResult, error) {
+	return a.db.GetKitchenAnalysisResultByName(ctx, repoName)
+}
+
+// dbResultProvider adapts the DataStore to batch.TestKitchenResultProvider.
+type dbResultProvider struct {
+	db DataStore
+}
+
+func (p *dbResultProvider) GetLatestTestKitchenStatus(ctx context.Context, repoName string) (string, error) {
+	results, err := p.db.ListGitKitchenResultsByRepo(ctx, repoName)
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return "untested", nil
+	}
+	var passed, failed int
+	for _, r := range results {
+		if r.Passed != nil && *r.Passed {
+			passed++
+		} else {
+			failed++
+		}
+	}
+	status := "untested"
+	if passed > 0 || failed > 0 {
+		switch {
+		case passed > 0 && failed > 0:
+			status = "partial"
+		case failed > 0:
+			status = "failed"
+		case passed > 0:
+			status = "passed"
+		}
+	}
+	return status, nil
+}
+
+// dbExclusionsLoader adapts the Router's loadInstanceExclusions helper to
+// the batch.ExclusionsLoader interface.
+type dbExclusionsLoader struct {
+	router *Router
+}
+
+func (l *dbExclusionsLoader) LoadInstanceExclusions(ctx context.Context, repoName string) ([]gitkitchen.InstanceExclusion, error) {
+	return l.router.loadInstanceExclusions(ctx, repoName)
+}
+
 // toBatchFilters converts datastore.BatchFilters to batch.Filters.
 func toBatchFilters(f datastore.BatchFilters) batch.Filters {
 	return batch.Filters{
@@ -175,14 +246,27 @@ func toBatchFilters(f datastore.BatchFilters) batch.Filters {
 	}
 }
 
-// resolveBatch creates a batch.Resolver and resolves the given batch filters.
+// resolveBatch creates a batch.Resolver with all providers wired, resolves the
+// given batch filters, then calls PlanBatch for accurate VM estimates.
 func (r *Router) resolveBatch(ctx context.Context, filters datastore.BatchFilters, maxCount *int) (*batch.BatchEstimate, error) {
-	resolver := batch.NewResolver(&dbRepoLister{db: r.db})
+	analysisProvider := &dbAnalysisProvider{db: r.db}
+	resultProvider := &dbResultProvider{db: r.db}
+
+	resolver := batch.NewResolver(
+		&dbRepoLister{db: r.db},
+		batch.WithAnalysisProvider(analysisProvider),
+		batch.WithResultProvider(resultProvider),
+	)
 	estimate, err := resolver.ResolveBatch(ctx, toBatchFilters(filters), maxCount)
 	if err != nil {
 		return nil, err
 	}
-	return &estimate, nil
+
+	// Enrich with accurate VM estimates via PlanBatch.
+	platformMap := r.liveConfig().AnalysisTools.TestKitchen.PlatformMap
+	exclusionsLoader := &dbExclusionsLoader{router: r}
+	planned := batch.PlanBatch(ctx, estimate.Cookbooks, platformMap, analysisProvider, exclusionsLoader)
+	return &planned, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -237,11 +321,10 @@ func (r *Router) handleUpdateKitchenBatch(w http.ResponseWriter, req *http.Reque
 	}
 
 	b, err := r.db.UpdateKitchenBatch(req.Context(), id, datastore.UpdateKitchenBatchParams{
-		Name:             body.Name,
-		Filters:          body.Filters,
-		MaxCount:         body.MaxCount,
-		MaxConcurrentVMs: body.MaxConcurrentVMs,
-		DryRun:           body.DryRun,
+		Name:    body.Name,
+		Filters: body.Filters,
+		MaxCount: body.MaxCount,
+		DryRun:  body.DryRun,
 	})
 	if err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {
@@ -472,6 +555,12 @@ func (r *Router) executeBatch(ctx context.Context, b datastore.KitchenBatch, tkC
 func (r *Router) executeBatchViaQueue(ctx context.Context, batchID string, plans []*gitkitchen.PlanResult, instanceMap map[string]string, b datastore.KitchenBatch) {
 	targetVersion := r.batchTargetVersion(b)
 
+	if targetVersion == "" {
+		r.logf("ERROR", "kitchen-batches: batch %s has no target chef version configured", batchID)
+		r.failBatch(ctx, batchID, "running")
+		return
+	}
+
 	// Enqueue all mapped instances.
 	enqueued := 0
 	skipped := 0
@@ -494,11 +583,11 @@ func (r *Router) executeBatchViaQueue(ctx context.Context, batchID string, plans
 				Priority:          5,
 			})
 			if err != nil {
-				// Dedup collision — instance already queued/running.
 				instKey := plan.GitRepoName + "/" + inst.InstanceName
 				if instID, ok := instanceMap[instKey]; ok {
-					_ = r.db.UpdateBatchInstanceStatus(ctx, instID, "cancelled", "already queued or running", time.Now().UTC())
+					_ = r.db.UpdateBatchInstanceStatus(ctx, instID, "errored", err.Error(), time.Now().UTC())
 				}
+				r.logf("WARN", "kitchen-batches: batch %s enqueue failed for %s/%s: %v", batchID, plan.GitRepoName, inst.InstanceName, err)
 				skipped++
 				continue
 			}
@@ -506,7 +595,7 @@ func (r *Router) executeBatchViaQueue(ctx context.Context, batchID string, plans
 		}
 	}
 
-	r.logf("INFO", "kitchen-batches: batch %s enqueued %d items (skipped %d dedup)", batchID, enqueued, skipped)
+	r.logf("INFO", "kitchen-batches: batch %s enqueued %d items (skipped %d errors)", batchID, enqueued, skipped)
 
 	if enqueued == 0 {
 		r.finalizeBatch(ctx, batchID)
@@ -738,12 +827,14 @@ func (r *Router) failBatch(ctx context.Context, batchID, fromStatus string) {
 }
 
 // batchTargetVersion extracts the target chef version from batch filters.
-// Uses the first entry if multiple are specified.
+// Uses the first entry if multiple are specified. Falls back to the highest
+// globally configured target version when filters don't specify one.
 func (r *Router) batchTargetVersion(b datastore.KitchenBatch) string {
 	if len(b.Filters.TargetChefVersions) > 0 {
 		return b.Filters.TargetChefVersions[0]
 	}
-	return ""
+	// Fall back to the highest globally configured target version.
+	return config.HighestVersion(r.liveConfig().TargetChefVersions)
 }
 
 // ---------------------------------------------------------------------------

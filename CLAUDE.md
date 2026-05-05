@@ -40,6 +40,8 @@
 - Don't write code or tests until the problem or goal is clear.
 - We practice TDD. Start by writing tests, then code.
 - Make sure tests are passing before committing code.
+- Local dev is done with the DB in a docker container. Look at data for evidence to back up theories on bugs.
+- Customer is only accessible via VDI or file transfer so design for diagnostic collection in a support bundle or screenshot
 
 ## Specifications
 

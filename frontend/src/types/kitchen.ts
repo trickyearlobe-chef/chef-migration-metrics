@@ -139,11 +139,19 @@ export interface ResolvedCookbook {
   platforms?: string[];
   suites?: string[];
   estimated_vms: number;
+  planning_status?: string;
+  planning_note?: string;
+  total_instances?: number;
+  unmapped?: number;
+  skipped?: number;
+  excluded?: number;
+  user_excluded?: number;
 }
 
 export interface BatchEstimate {
   total_cookbooks: number;
   total_estimated_vms: number;
+  skipped_cookbooks?: number;
   per_platform?: Record<string, number>;
   cookbooks: ResolvedCookbook[];
 }
@@ -156,7 +164,6 @@ export interface KitchenBatchRequest {
   name: string;
   filters: BatchFilters;
   max_count?: number | null;
-  max_concurrent_vms?: number | null;
   dry_run?: boolean;
 }
 
