@@ -75,7 +75,11 @@ type Router struct {
 	// endpoints. Nil when authentication is not configured.
 	authStore AuthStore
 
-	// triggerCollection triggers an immediate collection run when a rescan
+	// --- SAML authentication components (set via WithSAML) ---
+
+	// samlHandler holds the SAML SSO/SLO HTTP handlers.
+	// Nil when SAML is not configured.
+	samlHandler *SAMLHandler
 	// is requested. Nil when not wired up — rescan handlers fall back to
 	// the "will run on next collection cycle" behaviour.
 	triggerCollection CollectionTriggerFunc
@@ -261,6 +265,12 @@ func WithKitchenQueue(m *kitchenqueue.Manager) RouterOption {
 	return func(r *Router) { r.kitchenQueue = m }
 }
 
+// WithSAML wires in the SAML SSO/SLO handler. When set, the SAML placeholder
+// routes are replaced with real handlers for metadata, login, ACS, and SLO.
+func WithSAML(h *SAMLHandler) RouterOption {
+	return func(r *Router) { r.samlHandler = h }
+}
+
 // NewRouter creates a new Router with all routes registered. The EventHub
 // must already be running (via go hub.Run()) before requests are served.
 //
@@ -397,10 +407,18 @@ func (r *Router) registerRoutes() {
 		r.mux.HandleFunc("/api/v1/auth/logout", r.handleNotImplemented)
 		r.mux.HandleFunc("/api/v1/auth/me", r.handleNotImplemented)
 	}
-	// SAML endpoints remain placeholders until SAML provider is implemented.
-	r.mux.HandleFunc("/api/v1/auth/saml/acs", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/auth/saml/login", r.handleNotImplemented)
+	// SAML endpoints — wired when a SAML provider is configured.
+	if r.samlHandler != nil {
+		r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.samlHandler.HandleMetadata)
+		r.mux.HandleFunc("/api/v1/auth/saml/login", r.samlHandler.HandleLogin)
+		r.mux.HandleFunc("/api/v1/auth/saml/acs", r.samlHandler.HandleACS)
+		r.mux.HandleFunc("/api/v1/auth/saml/slo", r.samlHandler.HandleSLO)
+	} else {
+		r.mux.HandleFunc("/api/v1/auth/saml/acs", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/saml/login", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/saml/slo", r.handleNotImplemented)
+	}
 
 	// -----------------------------------------------------------------
 	// Dashboard endpoints (viewer — any authenticated user)
