@@ -16,11 +16,11 @@ Implement SAML 2.0 SP-initiated SSO, revamp authorisation to three roles (viewer
 2. ~~Extend config schema~~ — DONE
 3. ~~SAML SP implementation~~ — DONE
 4. ~~JIT user provisioning~~ — DONE
-5. HTTP routes (`/saml/metadata`, `/saml/login`, `/saml/acs`, `/saml/slo`) — NEXT
-6. Authorisation revamp (viewer/operator/admin + ownership-scoped middleware)
-7. Ownership aliases (`owner_aliases` table + `pg_trgm` fuzzy matching)
-8. Import enhancements (CSV aliases, CMDB adapter)
-9. Frontend (SSO button, alias management, role-aware UI)
+5. ~~HTTP routes~~ — DONE
+6. ~~Authorisation revamp~~ — DONE
+7. ~~Ownership aliases~~ — DONE
+8. ~~Import enhancements~~ — DONE
+9. Frontend (SSO button, alias management, role-aware UI) — REMAINING
 
 ## Decisions
 
@@ -30,4 +30,5 @@ Implement SAML 2.0 SP-initiated SSO, revamp authorisation to three roles (viewer
 - Roles: viewer < operator < admin (schema supports future custom roles)
 - Ownership identity: alias table with `pg_trgm` fuzzy suggestions
 - Testing: Google Workspace as E2E IdP, mock fixtures for unit tests
+
 
