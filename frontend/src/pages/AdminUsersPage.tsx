@@ -355,12 +355,16 @@ function ResetPasswordModal({
   target: AdminUser | null;
 }) {
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const passwordsMatch = password === confirmPassword;
+
   function reset() {
     setPassword("");
+    setConfirmPassword("");
     setError(null);
     setSaving(false);
     setSuccess(false);
@@ -382,6 +386,7 @@ function ResetPasswordModal({
       await resetUserPassword(target.username, { password });
       setSuccess(true);
       setPassword("");
+      setConfirmPassword("");
     } catch (err: unknown) {
       const message =
         err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Failed to reset password.";
@@ -395,54 +400,85 @@ function ResetPasswordModal({
 
   return (
     <Modal open={open} onClose={handleClose} title={`Reset Password: ${target.username}`}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-        )}
-        {success && (
+      {success ? (
+        <div className="space-y-4">
           <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
             Password reset successfully. All existing sessions for this user have been invalidated.
           </div>
-        )}
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+          )}
 
-        <p className="text-sm text-gray-600">
-          Set a new password for <strong>{target.username}</strong>. This will invalidate all of their active sessions.
-        </p>
+          <p className="text-sm text-gray-600">
+            Set a new password for <strong>{target.username}</strong>. This will invalidate all of their active sessions.
+          </p>
 
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-gray-700">New Password</span>
-          <input
-            type="password"
-            required
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={saving}
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50"
-            placeholder="Min 8 chars, uppercase, lowercase, digit"
-          />
-        </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">New Password</span>
+            <input
+              type="password"
+              required
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={saving}
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50"
+              placeholder="Min 8 chars, uppercase, lowercase, digit"
+            />
+          </label>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={saving}
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60"
-          >
-            {success ? "Close" : "Cancel"}
-          </button>
-          {!success && (
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">Confirm Password</span>
+            <input
+              type="password"
+              required
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={saving}
+              className={`block w-full rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                confirmPassword && !passwordsMatch
+                  ? "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  : "border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              }`}
+              placeholder="Re-enter password"
+            />
+            {confirmPassword && !passwordsMatch && (
+              <p className="mt-1 text-xs text-red-600">Passwords do not match.</p>
+            )}
+          </label>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={saving}
+              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
             <button
               type="submit"
-              disabled={saving || !password}
+              disabled={saving || !password || !confirmPassword || !passwordsMatch}
               className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "Resetting…" : "Reset Password"}
             </button>
-          )}
-        </div>
-      </form>
+          </div>
+        </form>
+      )}
     </Modal>
   );
 }
