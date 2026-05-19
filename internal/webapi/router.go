@@ -372,6 +372,17 @@ func (r *Router) adminOnly(pattern string, handler http.HandlerFunc) {
 	}
 }
 
+// operatorOnly registers a route that requires authentication AND at least
+// operator role. When authMiddleware is nil, the handler is registered without
+// enforcement.
+func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc) {
+	if r.authMiddleware != nil {
+		r.mux.Handle(pattern, r.authMiddleware.OperatorOnly(handler))
+	} else {
+		r.mux.HandleFunc(pattern, handler)
+	}
+}
+
 func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Health & version (public — no auth required)
@@ -544,39 +555,40 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/kitchen/analysis/cookbooks", r.handleKitchenAnalysisCookbooksRouter)
 	r.protect("/api/v1/kitchen/analysis/cookbooks/", r.handleKitchenAnalysisCookbooksRouter)
 
-	// Kitchen analysis trigger (admin only)
-	r.adminOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger)
+	// Kitchen analysis trigger (operator — operational action)
+	r.operatorOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger)
 
 	// -----------------------------------------------------------------
-	// Hypervisor endpoints (viewer for reads, admin for writes)
+	// Hypervisor endpoints (viewer for reads, operator for operational,
+	// admin for destructive/config)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/hypervisor/templates", r.handleHypervisorTemplates)
 	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs)
-	r.adminOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM)
-	r.adminOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
+	r.operatorOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM)
+	r.operatorOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
 	r.adminOnly("/api/v1/admin/hypervisor/test-connection", r.handleHypervisorTestConnection)
-	r.adminOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep)
+	r.operatorOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep)
 
 	// -----------------------------------------------------------------
-	// Node Kitchen endpoints
+	// Node Kitchen endpoints (operator for triggers)
 	// -----------------------------------------------------------------
-	r.adminOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger)
+	r.operatorOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger)
 	r.protect("/api/v1/kitchen/node-runs", r.handleNodeKitchenRuns)
 	r.protect("/api/v1/kitchen/node-runs/", r.handleNodeKitchenRunDetail)
 
 	// -----------------------------------------------------------------
-	// Kitchen Batch endpoints
+	// Kitchen Batch endpoints (operator for management)
 	// -----------------------------------------------------------------
-	r.adminOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
+	r.operatorOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
 	r.protect("/api/v1/kitchen/batches/", r.handleKitchenBatchDetail)
 
 	// -----------------------------------------------------------------
-	// Git Kitchen endpoints
+	// Git Kitchen endpoints (operator for triggers)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/kitchen/git/instances", r.handleGitKitchenInstances)
 	r.protect("/api/v1/kitchen/git/results", r.handleGitKitchenResults)
-	r.adminOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun)
-	r.adminOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll)
+	r.operatorOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun)
+	r.operatorOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll)
 	r.protect("/api/v1/kitchen/git/exclusions", r.handleKitchenExclusions)
 	r.protect("/api/v1/kitchen/git/exclusions/", r.handleDeleteKitchenExclusion)
 
@@ -595,7 +607,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)
-	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
+	r.operatorOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
 	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames)
 	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset)
 
