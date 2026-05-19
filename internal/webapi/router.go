@@ -529,6 +529,10 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints)
+	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases)
+	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases)
+	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport)
+	r.protect("/api/v1/ownership/aliases/suggest", r.handleOwnershipAliasSuggest)
 
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)

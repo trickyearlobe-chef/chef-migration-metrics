@@ -1433,3 +1433,27 @@ func (m *mockStore) DependencyDepthStats(ctx context.Context, includeNames bool)
 		CookbookDepDepthByOrg: map[string]datastore.OrgDepthStats{},
 	}, nil
 }
+
+// ---------------------------------------------------------------------------
+// Owner aliases stubs
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) InsertOwnerAlias(_ context.Context, _ datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error) {
+	return datastore.OwnerAlias{}, nil
+}
+
+func (m *mockStore) GetOwnerAliasesByOwner(_ context.Context, _ string) ([]datastore.OwnerAlias, error) {
+	return nil, nil
+}
+
+func (m *mockStore) ResolveOwnerByAlias(_ context.Context, _, _ string) (string, error) {
+	return "", datastore.ErrNotFound
+}
+
+func (m *mockStore) DeleteOwnerAlias(_ context.Context, _ string) error {
+	return nil
+}
+
+func (m *mockStore) SuggestOwnerAliases(_ context.Context, _ string, _ int) ([]datastore.AliasSuggestion, error) {
+	return nil, nil
+}
