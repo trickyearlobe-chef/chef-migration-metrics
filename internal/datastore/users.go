@@ -19,6 +19,7 @@ type User struct {
 	PasswordHash        string
 	Role                string
 	AuthProvider        string
+	SAMLSubject         string
 	IsLocked            bool
 	FailedLoginAttempts int
 	LastLoginAt         time.Time
@@ -34,6 +35,7 @@ type InsertUserParams struct {
 	PasswordHash string
 	Role         string
 	AuthProvider string
+	SAMLSubject  string
 }
 
 // UpdateUserParams holds the parameters for updating a user. Only non-zero
@@ -47,22 +49,23 @@ type UpdateUserParams struct {
 
 // userColumns is the SELECT column list for the users table.
 const userColumns = `username, display_name, email, password_hash, role,
-	auth_provider, is_locked, failed_login_attempts, last_login_at,
+	auth_provider, saml_subject, is_locked, failed_login_attempts, last_login_at,
 	created_at, updated_at`
 
 // scanUser scans a single user row into a User struct.
 func scanUser(row interface{ Scan(dest ...any) error }) (User, error) {
 	var u User
-	var displayName, email sql.NullString
+	var displayName, email, samlSubject, passwordHash sql.NullString
 	var lastLogin sql.NullTime
 
 	err := row.Scan(
 		&u.Username,
 		&displayName,
 		&email,
-		&u.PasswordHash,
+		&passwordHash,
 		&u.Role,
 		&u.AuthProvider,
+		&samlSubject,
 		&u.IsLocked,
 		&u.FailedLoginAttempts,
 		&lastLogin,
@@ -74,6 +77,8 @@ func scanUser(row interface{ Scan(dest ...any) error }) (User, error) {
 	}
 	u.DisplayName = stringFromNull(displayName)
 	u.Email = stringFromNull(email)
+	u.PasswordHash = stringFromNull(passwordHash)
+	u.SAMLSubject = stringFromNull(samlSubject)
 	u.LastLoginAt = timeFromNull(lastLogin)
 	return u, nil
 }
@@ -108,17 +113,18 @@ func (db *DB) scanUsers(ctx context.Context, query string, args ...any) ([]User,
 // ErrAlreadyExists if a user with the same username already exists.
 func (db *DB) InsertUser(ctx context.Context, p InsertUserParams) (User, error) {
 	query := `
-		INSERT INTO users (username, display_name, email, password_hash, role, auth_provider)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO users (username, display_name, email, password_hash, role, auth_provider, saml_subject)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + userColumns
 
 	row := db.pool.QueryRowContext(ctx, query,
 		p.Username,
 		nullString(p.DisplayName),
 		nullString(p.Email),
-		p.PasswordHash,
+		nullString(p.PasswordHash),
 		p.Role,
 		p.AuthProvider,
+		nullString(p.SAMLSubject),
 	)
 
 	u, err := scanUser(row)
@@ -145,6 +151,79 @@ func (db *DB) GetUserByUsername(ctx context.Context, username string) (User, err
 		return User{}, fmt.Errorf("datastore: getting user by username: %w", err)
 	}
 	return u, nil
+}
+
+// GetUserBySAMLSubject returns the user with the given SAML subject. Returns
+// ErrNotFound if no such user exists.
+func (db *DB) GetUserBySAMLSubject(ctx context.Context, samlSubject string) (User, error) {
+	query := `SELECT ` + userColumns + ` FROM users WHERE saml_subject = $1`
+	row := db.pool.QueryRowContext(ctx, query, samlSubject)
+
+	u, err := scanUser(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrNotFound
+		}
+		return User{}, fmt.Errorf("datastore: getting user by saml_subject: %w", err)
+	}
+	return u, nil
+}
+
+// UpsertSAMLUser creates or updates a SAML user based on saml_subject.
+// On conflict with saml_subject, it updates display_name, email, and role.
+// Returns the upserted user record and whether it was newly created.
+func (db *DB) UpsertSAMLUser(ctx context.Context, p InsertUserParams) (User, bool, error) {
+	query := `
+		INSERT INTO users (username, display_name, email, password_hash, role, auth_provider, saml_subject)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (saml_subject) WHERE saml_subject IS NOT NULL
+		DO UPDATE SET
+			display_name = EXCLUDED.display_name,
+			email = EXCLUDED.email,
+			role = EXCLUDED.role,
+			updated_at = now()
+		RETURNING ` + userColumns + `, (xmax = 0) AS is_new`
+
+	var u User
+	var displayName, email, samlSubject, passwordHash sql.NullString
+	var lastLogin sql.NullTime
+	var isNew bool
+
+	err := db.pool.QueryRowContext(ctx, query,
+		p.Username,
+		nullString(p.DisplayName),
+		nullString(p.Email),
+		nullString(p.PasswordHash),
+		p.Role,
+		p.AuthProvider,
+		nullString(p.SAMLSubject),
+	).Scan(
+		&u.Username,
+		&displayName,
+		&email,
+		&passwordHash,
+		&u.Role,
+		&u.AuthProvider,
+		&samlSubject,
+		&u.IsLocked,
+		&u.FailedLoginAttempts,
+		&lastLogin,
+		&u.CreatedAt,
+		&u.UpdatedAt,
+		&isNew,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return User{}, false, ErrAlreadyExists
+		}
+		return User{}, false, fmt.Errorf("datastore: upserting SAML user: %w", err)
+	}
+	u.DisplayName = stringFromNull(displayName)
+	u.Email = stringFromNull(email)
+	u.PasswordHash = stringFromNull(passwordHash)
+	u.SAMLSubject = stringFromNull(samlSubject)
+	u.LastLoginAt = timeFromNull(lastLogin)
+	return u, isNew, nil
 }
 
 // ListUsers returns all users ordered by username.
