@@ -205,6 +205,12 @@ export function OwnersPage() {
         <h2 className="text-xl font-bold text-gray-800">Owners</h2>
         <div className="flex items-center gap-2">
           <Link
+            to="/ownership/aliases"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            Aliases
+          </Link>
+          <Link
             to="/ownership/import"
             className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >

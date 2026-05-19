@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { LoginRequest, LoginResponse, MeResponse } from "../types";
+import type { LoginRequest, LoginResponse, MeResponse, AuthInfoResponse } from "../types";
 import { apiFetch, buildUrl } from "./client";
 
 export function login(req: LoginRequest): Promise<LoginResponse> {
@@ -17,4 +17,8 @@ export function logout(): Promise<void> {
 
 export function fetchMe(): Promise<MeResponse> {
   return apiFetch<MeResponse>(buildUrl("/auth/me"));
+}
+
+export function fetchAuthInfo(): Promise<AuthInfoResponse> {
+  return apiFetch<AuthInfoResponse>(buildUrl("/auth/info"));
 }

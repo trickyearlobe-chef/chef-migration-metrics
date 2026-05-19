@@ -409,6 +409,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Authentication endpoints (public — no session required for login)
 	// -----------------------------------------------------------------
+	r.mux.HandleFunc("/api/v1/auth/info", r.handleAuthInfo)
 	if r.localAuth != nil && r.sessions != nil {
 		r.mux.HandleFunc("/api/v1/auth/login", r.handleLogin)
 		r.mux.HandleFunc("/api/v1/auth/logout", r.handleLogout)

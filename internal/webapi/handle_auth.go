@@ -133,3 +133,25 @@ func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 
 	WriteJSON(w, http.StatusOK, resp)
 }
+
+// handleAuthInfo handles GET /api/v1/auth/info. It returns which
+// authentication providers are enabled so the login page can render
+// the appropriate UI (local form, SSO button, or both). This endpoint
+// is public — no session required.
+func (r *Router) handleAuthInfo(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	type authInfoResponse struct {
+		LocalEnabled bool `json:"local_enabled"`
+		SAMLEnabled  bool `json:"saml_enabled"`
+	}
+
+	resp := authInfoResponse{
+		LocalEnabled: r.localAuth != nil,
+		SAMLEnabled:  r.samlHandler != nil,
+	}
+
+	WriteJSON(w, http.StatusOK, resp)
+}

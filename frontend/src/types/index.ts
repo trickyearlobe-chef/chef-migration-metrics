@@ -17,3 +17,4 @@ export * from "./credentials";
 export * from "./kitchen";
 export * from "./config";
 export * from "./roles";
+export * from "./aliases";

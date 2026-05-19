@@ -24,3 +24,8 @@ export interface MeResponse {
   role: string;
   provider: string;
 }
+
+export interface AuthInfoResponse {
+  local_enabled: boolean;
+  saml_enabled: boolean;
+}

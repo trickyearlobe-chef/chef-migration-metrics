@@ -40,6 +40,8 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /** True if the user has the admin role. */
   isAdmin: boolean;
+  /** True if the user has operator or admin role. */
+  isOperator: boolean;
   /** True if the user is authenticated (any role). */
   isAuthenticated: boolean;
 }
@@ -141,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = user !== null;
   const isAdmin = user?.role === "admin";
+  const isOperator = user?.role === "operator" || user?.role === "admin";
 
   return (
     <AuthContext.Provider
@@ -152,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout: logoutFn,
         isAdmin,
+        isOperator,
         isAuthenticated,
       }}
     >

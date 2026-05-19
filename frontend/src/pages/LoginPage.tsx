@@ -1,15 +1,33 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
+import { fetchAuthInfo } from "../api";
 
 export function LoginPage() {
   const { login, error, loggingIn } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [localEnabled, setLocalEnabled] = useState(true);
+  const [samlEnabled, setSamlEnabled] = useState(false);
+
+  useEffect(() => {
+    fetchAuthInfo()
+      .then((info) => {
+        setLocalEnabled(info.local_enabled);
+        setSamlEnabled(info.saml_enabled);
+      })
+      .catch(() => {
+        // Default to showing local login on error.
+      });
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!username || !password) return;
     await login(username, password);
+  }
+
+  function handleSSO() {
+    window.location.href = "/api/v1/auth/saml/login";
   }
 
   return (
@@ -42,10 +60,7 @@ export function LoginPage() {
         </div>
 
         {/* Card */}
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-        >
+        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           {/* Error banner */}
           {error && (
             <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -53,76 +68,115 @@ export function LoginPage() {
             </div>
           )}
 
-          {/* Username */}
-          <label className="mb-4 block">
-            <span className="mb-1 block text-sm font-medium text-gray-700">
-              Username
-            </span>
-            <input
-              type="text"
-              autoComplete="username"
-              autoFocus
-              required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              disabled={loggingIn}
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-              placeholder="admin"
-            />
-          </label>
-
-          {/* Password */}
-          <label className="mb-6 block">
-            <span className="mb-1 block text-sm font-medium text-gray-700">
-              Password
-            </span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loggingIn}
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-              placeholder="••••••••"
-            />
-          </label>
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loggingIn || !username || !password}
-            className="flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loggingIn ? (
-              <>
+          {/* SSO button */}
+          {samlEnabled && (
+            <>
+              <button
+                type="button"
+                onClick={handleSSO}
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
                 <svg
-                  className="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
-                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-gray-500"
                   fill="none"
                   viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                  aria-hidden="true"
                 >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
                   <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
                   />
                 </svg>
-                Signing in…
-              </>
-            ) : (
-              "Sign in"
-            )}
-          </button>
-        </form>
+                Sign in with SSO
+              </button>
+              {localEnabled && (
+                <div className="my-4 flex items-center gap-3">
+                  <hr className="flex-1 border-gray-200" />
+                  <span className="text-xs text-gray-400">or</span>
+                  <hr className="flex-1 border-gray-200" />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Local login form */}
+          {localEnabled && (
+            <form onSubmit={handleSubmit}>
+              {/* Username */}
+              <label className="mb-4 block">
+                <span className="mb-1 block text-sm font-medium text-gray-700">
+                  Username
+                </span>
+                <input
+                  type="text"
+                  autoComplete="username"
+                  autoFocus
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={loggingIn}
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                  placeholder="admin"
+                />
+              </label>
+
+              {/* Password */}
+              <label className="mb-6 block">
+                <span className="mb-1 block text-sm font-medium text-gray-700">
+                  Password
+                </span>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loggingIn}
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                  placeholder="••••••••"
+                />
+              </label>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loggingIn || !username || !password}
+                className="flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loggingIn ? (
+                  <>
+                    <svg
+                      className="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
+                    Signing in…
+                  </>
+                ) : (
+                  "Sign in"
+                )}
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
