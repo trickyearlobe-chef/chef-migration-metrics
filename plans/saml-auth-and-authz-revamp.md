@@ -20,7 +20,7 @@ Implement SAML 2.0 SP-initiated SSO, revamp authorisation to three roles (viewer
 6. ~~Authorisation revamp~~ — DONE
 7. ~~Ownership aliases~~ — DONE
 8. ~~Import enhancements~~ — DONE
-9. Frontend (SSO button, alias management, role-aware UI) — REMAINING
+9. ~~Frontend (SSO button, alias management, role-aware UI)~~ — DONE
 
 ## Decisions
 
