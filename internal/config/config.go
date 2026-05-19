@@ -672,6 +672,25 @@ type AuthProvider struct {
 	BindPasswordCredential string `yaml:"bind_password_credential,omitempty"`
 	IDPMetadataURL         string `yaml:"idp_metadata_url,omitempty"`
 	SPEntityID             string `yaml:"sp_entity_id,omitempty"`
+
+	// SAML SP signing credentials (stored in encrypted credential store).
+	SPCertificateCredential string `yaml:"sp_certificate_credential,omitempty"`
+	SPPrivateKeyCredential  string `yaml:"sp_private_key_credential,omitempty"`
+
+	// SAML attribute mappings for extracting identity from assertions.
+	UsernameAttr    string `yaml:"username_attr,omitempty"`
+	EmailAttr       string `yaml:"email_attr,omitempty"`
+	DisplayNameAttr string `yaml:"display_name_attr,omitempty"`
+	GroupsAttr      string `yaml:"groups_attr,omitempty"`
+
+	// SAML role mapping: IdP group name → application role.
+	RoleMapping map[string]string `yaml:"role_mapping,omitempty"`
+
+	// SAML behaviour options.
+	AllowIDPInitiated        bool   `yaml:"allow_idp_initiated,omitempty"`
+	SignRequests             bool   `yaml:"sign_requests,omitempty"`
+	ClockSkewTolerance       string `yaml:"clock_skew_tolerance,omitempty"`
+	MetadataRefreshInterval  string `yaml:"metadata_refresh_interval,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1707,9 +1726,35 @@ func (c *Config) validateAuth(ve *ValidationError) {
 		case "saml":
 			if p.IDPMetadataURL == "" {
 				ve.addf("%s: idp_metadata_url is required for saml provider", prefix)
+			} else if !isHTTPSURL(p.IDPMetadataURL) {
+				ve.addf("%s: idp_metadata_url must be an https:// URL", prefix)
 			}
 			if p.SPEntityID == "" {
 				ve.addf("%s: sp_entity_id is required for saml provider", prefix)
+			}
+			if p.SPPrivateKeyCredential == "" {
+				ve.addf("%s: sp_private_key_credential is required for saml provider", prefix)
+			}
+			if p.SPCertificateCredential == "" {
+				ve.addf("%s: sp_certificate_credential is required for saml provider", prefix)
+			}
+			// Validate role_mapping values are known roles.
+			validRoles := map[string]bool{"viewer": true, "operator": true, "admin": true}
+			for group, role := range p.RoleMapping {
+				if !validRoles[role] {
+					ve.addf("%s: role_mapping[%q] has invalid role %q (expected viewer, operator, or admin)", prefix, group, role)
+				}
+			}
+			// Validate duration fields if specified.
+			if p.ClockSkewTolerance != "" {
+				if _, err := time.ParseDuration(p.ClockSkewTolerance); err != nil {
+					ve.addf("%s: clock_skew_tolerance is not a valid duration: %v", prefix, err)
+				}
+			}
+			if p.MetadataRefreshInterval != "" {
+				if _, err := time.ParseDuration(p.MetadataRefreshInterval); err != nil {
+					ve.addf("%s: metadata_refresh_interval is not a valid duration: %v", prefix, err)
+				}
 			}
 		default:
 			ve.addf("%s: unknown provider type %q (expected local, ldap, or saml)", prefix, p.Type)
@@ -1775,6 +1820,11 @@ func (c *Config) validateOwnership(ve *ValidationError) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// isHTTPSURL returns true if s starts with "https://".
+func isHTTPSURL(s string) bool {
+	return len(s) > 8 && strings.EqualFold(s[:8], "https://")
+}
 
 // checkDirWritable checks that the given path exists and is a writable
 // directory. It tries to create it if it doesn't exist.
