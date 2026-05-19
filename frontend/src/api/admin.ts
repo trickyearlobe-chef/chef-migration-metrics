@@ -45,9 +45,9 @@ export function resetUserPassword(
   req: ResetPasswordRequest,
 ): Promise<void> {
   return apiFetch<void>(
-    buildUrl(`/admin/users/${encodeURIComponent(username)}/reset-password`),
+    buildUrl(`/admin/users/${encodeURIComponent(username)}/password`),
     {
-      method: "POST",
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     },
