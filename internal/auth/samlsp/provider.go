@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -32,7 +33,13 @@ import (
 // Config holds the SAML SP configuration needed to initialise the provider.
 type Config struct {
 	// IDPMetadataURL is the HTTPS URL to fetch IdP metadata from.
+	// Mutually exclusive with IDPMetadataPath.
 	IDPMetadataURL string
+
+	// IDPMetadataPath is a local file path to IdP metadata XML.
+	// Used when the IdP doesn't expose a fetchable metadata URL (e.g. Google Workspace).
+	// Mutually exclusive with IDPMetadataURL.
+	IDPMetadataPath string
 
 	// SPEntityID is the entity ID of this service provider.
 	SPEntityID string
@@ -64,6 +71,11 @@ type Config struct {
 
 	// GroupsAttr is the SAML attribute name for group membership.
 	GroupsAttr string
+
+	// RoleAttr is a SAML attribute name that contains the role directly
+	// (e.g. "admin", "operator", "viewer"). If set AND the attribute is
+	// present in the assertion, it takes precedence over group-based mapping.
+	RoleAttr string
 
 	// RoleMapping maps SAML group names to application roles.
 	RoleMapping map[string]string
@@ -124,8 +136,8 @@ type Provider struct {
 
 // New creates a new SAML Provider from the given configuration.
 func New(cfg Config) (*Provider, error) {
-	if cfg.IDPMetadataURL == "" {
-		return nil, errors.New("samlsp: idp_metadata_url is required")
+	if cfg.IDPMetadataURL == "" && cfg.IDPMetadataPath == "" {
+		return nil, errors.New("samlsp: idp_metadata_url or idp_metadata_path is required")
 	}
 	if cfg.SPEntityID == "" {
 		return nil, errors.New("samlsp: sp_entity_id is required")
@@ -154,10 +166,15 @@ func New(cfg Config) (*Provider, error) {
 	metadataURL, _ := url.Parse(cfg.MetadataURL)
 	sloURL, _ := url.Parse(cfg.SLOURL)
 
-	// Fetch IdP metadata.
-	idpMeta, err := fetchIDPMetadata(cfg.IDPMetadataURL)
+	// Load IdP metadata from URL or file.
+	var idpMeta *saml.EntityDescriptor
+	if cfg.IDPMetadataPath != "" {
+		idpMeta, err = loadIDPMetadataFromFile(cfg.IDPMetadataPath)
+	} else {
+		idpMeta, err = fetchIDPMetadata(cfg.IDPMetadataURL)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("samlsp: fetching idp metadata: %w", err)
+		return nil, fmt.Errorf("samlsp: loading idp metadata: %w", err)
 	}
 
 	// Build the crewjam/saml ServiceProvider.
@@ -338,6 +355,15 @@ func (p *Provider) RefreshMetadata(ctx context.Context) error {
 func (p *Provider) extractUserInfo(assertion *saml.Assertion) *UserInfo {
 	attrs := flattenAttributes(assertion)
 
+	// Log all received attributes at DEBUG level to help troubleshoot mappings.
+	if p.logger != nil {
+		attrNames := make([]string, 0, len(attrs))
+		for k, v := range attrs {
+			attrNames = append(attrNames, fmt.Sprintf("%s=%v", k, v))
+		}
+		p.logger("DEBUG", fmt.Sprintf("SAML assertion attributes: %v", attrNames))
+	}
+
 	nameID := ""
 	if assertion.Subject != nil && assertion.Subject.NameID != nil {
 		nameID = assertion.Subject.NameID.Value
@@ -381,8 +407,8 @@ func (p *Provider) extractUserInfo(assertion *saml.Assertion) *UserInfo {
 		groups = v
 	}
 
-	// Map groups to role.
-	role := p.resolveRole(groups)
+	// Map groups to role (or use direct role attribute).
+	role := p.resolveRole(groups, attrs)
 
 	// Build stable identity.
 	idpEntityID := ""
@@ -401,18 +427,31 @@ func (p *Provider) extractUserInfo(assertion *saml.Assertion) *UserInfo {
 }
 
 // resolveRole maps group memberships to the highest-privilege matching role.
-func (p *Provider) resolveRole(groups []string) string {
+// If RoleAttr is configured and present in attrs, it takes precedence.
+func (p *Provider) resolveRole(groups []string, attrs map[string][]string) string {
+	validRoles := map[string]int{"viewer": 1, "operator": 2, "admin": 3}
+
+	// Check direct role attribute first.
+	if p.cfg.RoleAttr != "" {
+		if v, ok := attrs[p.cfg.RoleAttr]; ok && len(v) > 0 {
+			role := strings.ToLower(strings.TrimSpace(v[0]))
+			if _, valid := validRoles[role]; valid {
+				return role
+			}
+		}
+	}
+
+	// Fall back to group-based mapping.
 	if len(p.cfg.RoleMapping) == 0 {
 		return "viewer"
 	}
 
-	rolePriority := map[string]int{"viewer": 1, "operator": 2, "admin": 3}
 	best := "viewer"
 	bestPriority := 1
 
 	for _, group := range groups {
 		if role, ok := p.cfg.RoleMapping[group]; ok {
-			if pri, known := rolePriority[role]; known && pri > bestPriority {
+			if pri, known := validRoles[role]; known && pri > bestPriority {
 				best = role
 				bestPriority = pri
 			}
@@ -493,6 +532,24 @@ func fetchIDPMetadata(metadataURL string) (*saml.EntityDescriptor, error) {
 	descriptor, err := samlsp.ParseMetadata(body)
 	if err != nil {
 		return nil, fmt.Errorf("parsing metadata XML: %w", err)
+	}
+
+	return descriptor, nil
+}
+
+// loadIDPMetadataFromFile reads and parses IdP metadata from a local file.
+func loadIDPMetadataFromFile(path string) (*saml.EntityDescriptor, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading metadata file %q: %w", path, err)
+	}
+	if len(body) > 1<<20 {
+		return nil, fmt.Errorf("metadata file %q exceeds 1MB size limit", path)
+	}
+
+	descriptor, err := samlsp.ParseMetadata(body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing metadata XML from %q: %w", path, err)
 	}
 
 	return descriptor, nil

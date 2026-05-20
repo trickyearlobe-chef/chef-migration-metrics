@@ -671,6 +671,7 @@ type AuthProvider struct {
 	BindPasswordEnv        string `yaml:"bind_password_env,omitempty"`
 	BindPasswordCredential string `yaml:"bind_password_credential,omitempty"`
 	IDPMetadataURL         string `yaml:"idp_metadata_url,omitempty"`
+	IDPMetadataPath        string `yaml:"idp_metadata_path,omitempty"`
 	SPEntityID             string `yaml:"sp_entity_id,omitempty"`
 
 	// SAML SP signing credentials (stored in encrypted credential store).
@@ -682,6 +683,7 @@ type AuthProvider struct {
 	EmailAttr       string `yaml:"email_attr,omitempty"`
 	DisplayNameAttr string `yaml:"display_name_attr,omitempty"`
 	GroupsAttr      string `yaml:"groups_attr,omitempty"`
+	RoleAttr        string `yaml:"role_attr,omitempty"`
 
 	// SAML role mapping: IdP group name → application role.
 	RoleMapping map[string]string `yaml:"role_mapping,omitempty"`
@@ -1724,9 +1726,9 @@ func (c *Config) validateAuth(ve *ValidationError) {
 				ve.addf("%s: base_dn is required for ldap provider", prefix)
 			}
 		case "saml":
-			if p.IDPMetadataURL == "" {
-				ve.addf("%s: idp_metadata_url is required for saml provider", prefix)
-			} else if !isHTTPSURL(p.IDPMetadataURL) {
+			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
+				ve.addf("%s: idp_metadata_url or idp_metadata_path is required for saml provider", prefix)
+			} else if p.IDPMetadataURL != "" && !isHTTPSURL(p.IDPMetadataURL) {
 				ve.addf("%s: idp_metadata_url must be an https:// URL", prefix)
 			}
 			if p.SPEntityID == "" {

@@ -1631,7 +1631,7 @@ auth:
     - type: saml
       sp_entity_id: test
 `
-	expectParseError(t, yaml, "idp_metadata_url is required for saml")
+	expectParseError(t, yaml, "idp_metadata_url or idp_metadata_path is required for saml")
 }
 
 func TestValidation_AuthSAMLMissingSPEntityID(t *testing.T) {

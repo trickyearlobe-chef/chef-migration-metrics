@@ -66,7 +66,7 @@ func TestResolveRole(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Provider{cfg: Config{RoleMapping: tt.roleMapping}}
-			got := p.resolveRole(tt.groups)
+			got := p.resolveRole(tt.groups, nil)
 			if got != tt.want {
 				t.Errorf("resolveRole(%v) = %q, want %q", tt.groups, got, tt.want)
 			}
@@ -261,7 +261,7 @@ func TestNewProvider_ValidationErrors(t *testing.T) {
 		{
 			name:    "missing idp_metadata_url",
 			cfg:     Config{SPEntityID: "x", ACSURL: "x", Certificate: []byte("x"), PrivateKey: []byte("x")},
-			wantErr: "idp_metadata_url is required",
+			wantErr: "idp_metadata_url or idp_metadata_path is required",
 		},
 		{
 			name:    "missing sp_entity_id",
