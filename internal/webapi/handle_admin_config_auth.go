@@ -57,15 +57,34 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 				return
 			}
 		case "saml":
-			if p.IDPMetadataURL == "" {
+			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-					fmt.Sprintf("%s: idp_metadata_url is required for saml provider", prefix))
+					fmt.Sprintf("%s: idp_metadata_url or idp_metadata_path is required for saml provider", prefix))
 				return
 			}
 			if p.SPEntityID == "" {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
 					fmt.Sprintf("%s: sp_entity_id is required for saml provider", prefix))
 				return
+			}
+			if p.SPPrivateKeyCredential == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: sp_private_key_credential is required for saml provider", prefix))
+				return
+			}
+			if p.SPCertificateCredential == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: sp_certificate_credential is required for saml provider", prefix))
+				return
+			}
+			// Validate role_mapping values.
+			validRoles := map[string]bool{"viewer": true, "operator": true, "admin": true}
+			for group, role := range p.RoleMapping {
+				if !validRoles[role] {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						fmt.Sprintf("%s: role_mapping[%q] has invalid role %q (expected viewer, operator, or admin)", prefix, group, role))
+					return
+				}
 			}
 		default:
 			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,

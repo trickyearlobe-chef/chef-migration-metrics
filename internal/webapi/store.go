@@ -445,6 +445,25 @@ type DataStore interface {
 	LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
 
 	// -----------------------------------------------------------------
+	// Owner aliases
+	// -----------------------------------------------------------------
+
+	// InsertOwnerAlias creates a new alias for an owner.
+	InsertOwnerAlias(ctx context.Context, p datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error)
+
+	// GetOwnerAliasesByOwner returns all aliases for a given owner.
+	GetOwnerAliasesByOwner(ctx context.Context, ownerName string) ([]datastore.OwnerAlias, error)
+
+	// ResolveOwnerByAlias finds the owner name for a given alias.
+	ResolveOwnerByAlias(ctx context.Context, aliasType, aliasValue string) (string, error)
+
+	// DeleteOwnerAlias removes an alias by ID.
+	DeleteOwnerAlias(ctx context.Context, id string) error
+
+	// SuggestOwnerAliases returns fuzzy match suggestions.
+	SuggestOwnerAliases(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error)
+
+	// -----------------------------------------------------------------
 	// Owner detail summaries
 	// -----------------------------------------------------------------
 

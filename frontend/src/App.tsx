@@ -55,6 +55,7 @@ import {
   useSetupRequired,
 } from "./pages/AdminSetupWizardPage";
 import { AdminPlatformDisplayNamesPage } from "./pages/AdminPlatformDisplayNamesPage";
+import { OwnerAliasesPage } from "./pages/OwnerAliasesPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -208,6 +209,10 @@ export function App() {
               />
               <Route path="/remediation" element={<RemediationPage />} />
               <Route path="/ownership" element={<OwnersPage />} />
+              <Route
+                path="/ownership/aliases"
+                element={<OwnerAliasesPage />}
+              />
               <Route
                 path="/ownership/audit-log"
                 element={<OwnershipAuditLogPage />}

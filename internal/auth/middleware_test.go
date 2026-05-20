@@ -731,3 +731,118 @@ func TestChainedRequireAuthThenRequireAdminViewerBlocked(t *testing.T) {
 		t.Errorf("expected 403 for chained viewer, got %d", w.Code)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// RequireOperator tests
+// ---------------------------------------------------------------------------
+
+func TestRequireOperatorWithAdminRole(t *testing.T) {
+	mw := newTestMiddleware(&mockSessionStore{})
+	inner := http.HandlerFunc(okHandler)
+	handler := mw.RequireOperator(inner)
+
+	info := &SessionInfo{SessionID: "s1", Username: "admin-user", Role: "admin"}
+	req := httptest.NewRequest(http.MethodGet, "/operator/something", nil)
+	req = req.WithContext(ContextWithSession(req.Context(), info))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for admin user on operator endpoint, got %d", w.Code)
+	}
+}
+
+func TestRequireOperatorWithOperatorRole(t *testing.T) {
+	mw := newTestMiddleware(&mockSessionStore{})
+	inner := http.HandlerFunc(okHandler)
+	handler := mw.RequireOperator(inner)
+
+	info := &SessionInfo{SessionID: "s2", Username: "ops-user", Role: "operator"}
+	req := httptest.NewRequest(http.MethodPost, "/kitchen/trigger", nil)
+	req = req.WithContext(ContextWithSession(req.Context(), info))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for operator user, got %d", w.Code)
+	}
+}
+
+func TestRequireOperatorWithViewerRole(t *testing.T) {
+	mw := newTestMiddleware(&mockSessionStore{})
+	inner := http.HandlerFunc(okHandler)
+	handler := mw.RequireOperator(inner)
+
+	info := &SessionInfo{SessionID: "s3", Username: "viewer-user", Role: "viewer"}
+	req := httptest.NewRequest(http.MethodPost, "/kitchen/trigger", nil)
+	req = req.WithContext(ContextWithSession(req.Context(), info))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for viewer on operator endpoint, got %d", w.Code)
+	}
+}
+
+func TestRequireOperatorNoSession(t *testing.T) {
+	mw := newTestMiddleware(&mockSessionStore{})
+	inner := http.HandlerFunc(okHandler)
+	handler := mw.RequireOperator(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/operator/something", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with no session, got %d", w.Code)
+	}
+}
+
+func TestOperatorOnlyComposedMiddleware(t *testing.T) {
+	store := &mockSessionStore{
+		getValidSessionFn: func(_ context.Context, _ string) (datastore.Session, error) {
+			return datastore.Session{
+				ID:       "s1",
+				Username: "ops",
+				Role:     "operator",
+			}, nil
+		},
+	}
+	mw := newTestMiddleware(store)
+	handler := mw.OperatorOnly(okHandler)
+
+	req := httptest.NewRequest(http.MethodPost, "/kitchen/run", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for operator via OperatorOnly, got %d", w.Code)
+	}
+}
+
+func TestIsOperatorRoleCheck(t *testing.T) {
+	tests := []struct {
+		role       string
+		isOp      bool
+		isAdmin   bool
+		isViewer  bool
+	}{
+		{"viewer", false, false, true},
+		{"operator", true, false, true},
+		{"admin", true, true, true},
+	}
+
+	for _, tt := range tests {
+		info := &SessionInfo{Role: tt.role}
+		if info.IsOperator() != tt.isOp {
+			t.Errorf("role=%q: IsOperator()=%v, want %v", tt.role, info.IsOperator(), tt.isOp)
+		}
+		if info.IsAdmin() != tt.isAdmin {
+			t.Errorf("role=%q: IsAdmin()=%v, want %v", tt.role, info.IsAdmin(), tt.isAdmin)
+		}
+		if info.IsViewer() != tt.isViewer {
+			t.Errorf("role=%q: IsViewer()=%v, want %v", tt.role, info.IsViewer(), tt.isViewer)
+		}
+	}
+}

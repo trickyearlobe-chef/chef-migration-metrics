@@ -14,9 +14,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +26,8 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth/jit"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth/samlsp"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -96,6 +100,7 @@ type serverApp struct {
 	localAuth      *auth.LocalAuthenticator
 	sessionMgr     *auth.SessionManager
 	authMiddleware *auth.Middleware
+	samlHandler    *webapi.SAMLHandler
 
 	// Secrets components.
 	encryptor    *secrets.Encryptor
@@ -434,6 +439,115 @@ func (app *serverApp) setupAuth(ctx context.Context) error {
 	auth.StartSessionCleanup(ctx, app.sessionMgr)
 	app.startup.Info("session cleanup started (interval: 1h)")
 	return nil
+}
+
+// setupSAML configures the SAML Service Provider if a SAML auth provider is
+// present in the configuration. Requires setupAuth to have run first.
+func (app *serverApp) setupSAML(ctx context.Context) {
+	// Find the SAML provider in the config.
+	var samlCfg *config.AuthProvider
+	for i := range app.cfg.Auth.Providers {
+		if app.cfg.Auth.Providers[i].Type == "saml" {
+			samlCfg = &app.cfg.Auth.Providers[i]
+			break
+		}
+	}
+	if samlCfg == nil {
+		return
+	}
+
+	authLog := app.logger.WithScope(logging.ScopeAuth)
+	logFn := func(level, msg string) {
+		switch level {
+		case "DEBUG":
+			authLog.Debug(msg)
+		case "WARN":
+			authLog.Warn(msg)
+		case "ERROR":
+			authLog.Error(msg)
+		default:
+			authLog.Info(msg)
+		}
+	}
+
+	// Resolve SP certificate and private key from credential store.
+	if app.credResolver == nil {
+		app.startup.Warn("SAML provider configured but credential resolver is nil — skipping SAML setup")
+		return
+	}
+
+	certCred, err := app.credResolver.Resolve(ctx, secrets.CredentialSource{
+		CredentialName: samlCfg.SPCertificateCredential,
+	})
+	if err != nil {
+		app.startup.Error(fmt.Sprintf("SAML: failed to resolve SP certificate %q: %v", samlCfg.SPCertificateCredential, err))
+		return
+	}
+
+	keyCred, err := app.credResolver.Resolve(ctx, secrets.CredentialSource{
+		CredentialName: samlCfg.SPPrivateKeyCredential,
+	})
+	if err != nil {
+		app.startup.Error(fmt.Sprintf("SAML: failed to resolve SP private key %q: %v", samlCfg.SPPrivateKeyCredential, err))
+		return
+	}
+
+	// Derive base URL for ACS/SLO/metadata endpoints.
+	scheme := "http"
+	if app.cfg.Server.TLS.Mode == "static" || app.cfg.Server.TLS.Mode == "acme" {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://localhost:%d", scheme, app.cfg.Server.Port)
+	if samlCfg.SPEntityID != "" {
+		// Use entity ID host as the base if it looks like a URL.
+		if strings.HasPrefix(samlCfg.SPEntityID, "http") {
+			if u, err := url.Parse(samlCfg.SPEntityID); err == nil {
+				baseURL = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+			}
+		}
+	}
+
+	spCfg := samlsp.Config{
+		IDPMetadataURL:          samlCfg.IDPMetadataURL,
+		IDPMetadataPath:         samlCfg.IDPMetadataPath,
+		SPEntityID:              samlCfg.SPEntityID,
+		ACSURL:                  baseURL + "/api/v1/auth/saml/acs",
+		SLOURL:                  baseURL + "/api/v1/auth/saml/slo",
+		MetadataURL:             baseURL + "/api/v1/auth/saml/metadata",
+		Certificate:             certCred.Plaintext,
+		PrivateKey:              keyCred.Plaintext,
+		UsernameAttr:            samlCfg.UsernameAttr,
+		EmailAttr:               samlCfg.EmailAttr,
+		DisplayNameAttr:         samlCfg.DisplayNameAttr,
+		GroupsAttr:              samlCfg.GroupsAttr,
+		RoleAttr:                samlCfg.RoleAttr,
+		RoleMapping:             samlCfg.RoleMapping,
+		AllowIDPInitiated:       samlCfg.AllowIDPInitiated,
+		SignRequests:            samlCfg.SignRequests,
+		Logger:                  logFn,
+	}
+
+	logFn("INFO", fmt.Sprintf("SAML config: groups_attr=%q role_attr=%q role_mapping=%v",
+		samlCfg.GroupsAttr, samlCfg.RoleAttr, samlCfg.RoleMapping))
+
+	provider, err := samlsp.New(spCfg)
+	if err != nil {
+		app.startup.Error(fmt.Sprintf("SAML: failed to create provider: %v", err))
+		return
+	}
+
+	provisioner := jit.New(app.db, logFn)
+
+	app.samlHandler = webapi.NewSAMLHandler(
+		provider,
+		provisioner,
+		app.sessionMgr,
+		app.db,
+		app.cfg.Server.TrustedProxy,
+		logFn,
+	)
+
+	app.startup.Info(fmt.Sprintf("SAML SSO configured: entity_id=%s", samlCfg.SPEntityID))
 }
 
 // ---------------------------------------------------------------------------
@@ -965,6 +1079,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		routerOpts = append(routerOpts, webapi.WithCredentialResolver(app.credResolver))
 	}
 
+	if app.samlHandler != nil {
+		routerOpts = append(routerOpts, webapi.WithSAML(app.samlHandler))
+	}
+
 	// Wire Node Kitchen runner factory when kitchen binary is available.
 	if app.kitchenPath != "" {
 		nkScoped := logger.WithScope(logging.ScopeTestKitchenRun)
@@ -1318,6 +1436,9 @@ func run() int {
 	if err := app.setupConfigStore(ctx); err != nil {
 		return 1
 	}
+
+	// Phase 9b: SAML SSO (optional, needs credential resolver from Phase 9).
+	app.setupSAML(ctx)
 
 	// Phase 10: sync organisations.
 	if err := app.syncOrganisations(ctx); err != nil {

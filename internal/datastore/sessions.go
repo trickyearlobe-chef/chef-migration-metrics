@@ -139,6 +139,19 @@ func (db *DB) DeleteSessionsByUsername(ctx context.Context, username string) (in
 	return int(n), nil
 }
 
+// DeleteSAMLSessionsByUsername removes only SAML-authenticated sessions for
+// the given username. Local sessions are not affected. Used for inbound SLO.
+func (db *DB) DeleteSAMLSessionsByUsername(ctx context.Context, username string) (int, error) {
+	res, err := db.pool.ExecContext(ctx,
+		`DELETE FROM sessions WHERE username = $1 AND auth_provider = 'saml'`, username,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: deleting SAML sessions by username: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // ---------------------------------------------------------------------------
 // Listing
 // ---------------------------------------------------------------------------

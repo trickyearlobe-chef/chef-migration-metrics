@@ -410,6 +410,22 @@ export function OwnerDetailPage() {
         </div>
       )}
 
+      {/* Aliases section — link to dedicated page */}
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <h3 className="card-header">Identity Aliases</h3>
+          <Link
+            to={`/ownership/aliases?owner=${encodeURIComponent(name!)}`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800"
+          >
+            Manage aliases →
+          </Link>
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
+          Aliases link this owner to identities (emails, usernames, SAML IDs) for permission resolution and ownership matching.
+        </p>
+      </div>
+
       {/* Assignments section */}
       <div className="card">
         <div className="flex items-center justify-between">

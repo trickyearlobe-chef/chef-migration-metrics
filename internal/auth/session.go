@@ -40,10 +40,16 @@ func (s *SessionInfo) IsAdmin() bool {
 	return s.Role == "admin"
 }
 
+// IsOperator returns true if the session has at least operator-level access
+// (operator or admin).
+func (s *SessionInfo) IsOperator() bool {
+	return s.Role == "operator" || s.Role == "admin"
+}
+
 // IsViewer returns true if the session has the viewer role (any
 // authenticated user has at least viewer-level access).
 func (s *SessionInfo) IsViewer() bool {
-	return s.Role == "viewer" || s.Role == "admin"
+	return s.Role == "viewer" || s.Role == "operator" || s.Role == "admin"
 }
 
 // contextKey is an unexported type used for context keys to prevent

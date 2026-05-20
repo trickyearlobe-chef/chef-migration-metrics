@@ -18,4 +18,6 @@ export * from "./credentials";
 export * from "./kitchen";
 export * from "./config";
 export * from "./platform-display-names";
+export * from "./saml";
 export * from "./roles";
+export * from "./aliases";

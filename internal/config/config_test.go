@@ -1631,7 +1631,7 @@ auth:
     - type: saml
       sp_entity_id: test
 `
-	expectParseError(t, yaml, "idp_metadata_url is required for saml")
+	expectParseError(t, yaml, "idp_metadata_url or idp_metadata_path is required for saml")
 }
 
 func TestValidation_AuthSAMLMissingSPEntityID(t *testing.T) {
@@ -1665,6 +1665,147 @@ auth:
     - type: oauth2
 `
 	expectParseError(t, yaml, "unknown provider type")
+}
+
+func TestValidation_AuthSAMLMissingKeyCredential(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: https://idp.example.com/metadata
+      sp_entity_id: test
+      sp_certificate_credential: cert
+`
+	expectParseError(t, yaml, "sp_private_key_credential is required for saml")
+}
+
+func TestValidation_AuthSAMLMissingCertCredential(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: https://idp.example.com/metadata
+      sp_entity_id: test
+      sp_private_key_credential: key
+`
+	expectParseError(t, yaml, "sp_certificate_credential is required for saml")
+}
+
+func TestValidation_AuthSAMLInvalidRoleMapping(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: https://idp.example.com/metadata
+      sp_entity_id: test
+      sp_private_key_credential: key
+      sp_certificate_credential: cert
+      role_mapping:
+        admins: superuser
+`
+	expectParseError(t, yaml, "invalid role")
+}
+
+func TestValidation_AuthSAMLInvalidClockSkew(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: https://idp.example.com/metadata
+      sp_entity_id: test
+      sp_private_key_credential: key
+      sp_certificate_credential: cert
+      clock_skew_tolerance: "not-a-duration"
+`
+	expectParseError(t, yaml, "clock_skew_tolerance is not a valid duration")
+}
+
+func TestValidation_AuthSAMLHTTPMetadataURL(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: http://idp.example.com/metadata
+      sp_entity_id: test
+      sp_private_key_credential: key
+      sp_certificate_credential: cert
+`
+	expectParseError(t, yaml, "idp_metadata_url must be an https:// URL")
+}
+
+func TestValidation_AuthSAMLValidComplete(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: https://idp.example.com/metadata
+      sp_entity_id: https://app.example.com
+      sp_private_key_credential: saml-sp-key
+      sp_certificate_credential: saml-sp-cert
+      username_attr: uid
+      email_attr: mail
+      display_name_attr: cn
+      groups_attr: memberOf
+      role_mapping:
+        cmm-admins: admin
+        cmm-operators: operator
+      sign_requests: true
+      clock_skew_tolerance: "5m"
+      metadata_refresh_interval: "24h"
+`
+	cfg := mustParse(t, yaml)
+	if len(cfg.Auth.Providers) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(cfg.Auth.Providers))
+	}
+	p := cfg.Auth.Providers[0]
+	if p.RoleMapping["cmm-admins"] != "admin" {
+		t.Errorf("role_mapping[cmm-admins] = %q, want admin", p.RoleMapping["cmm-admins"])
+	}
+	if p.ClockSkewTolerance != "5m" {
+		t.Errorf("clock_skew_tolerance = %q, want 5m", p.ClockSkewTolerance)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2505,6 +2646,8 @@ auth:
     - type: saml
       idp_metadata_url: https://idp.example.com/saml/metadata
       sp_entity_id: chef-migration-metrics
+      sp_private_key_credential: saml-sp-key
+      sp_certificate_credential: saml-sp-cert
 `
 	cfg := mustParse(t, yaml)
 

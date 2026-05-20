@@ -38,6 +38,7 @@ type Tab = "logs" | "runs";
 const SEVERITIES = ["DEBUG", "INFO", "WARN", "ERROR"];
 
 const SCOPES = [
+  "auth",
   "collection_run",
   "git_operation",
   "test_kitchen_run",
@@ -50,6 +51,8 @@ const SCOPES = [
   "secrets",
   "remediation",
   "webapi",
+  "ownership",
+  "platform_coverage",
 ];
 
 const RUN_STATUSES = ["running", "completed", "failed", "interrupted"];

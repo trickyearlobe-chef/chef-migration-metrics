@@ -15,7 +15,7 @@ import (
 
 const validAuthBodyLocal = `{"providers":[{"type":"local"}],"session_expiry":"24h","min_password_length":12}`
 const validAuthBodyLDAP = `{"providers":[{"type":"ldap","host":"ldap.example.com","base_dn":"dc=example,dc=com"}]}`
-const validAuthBodySAML = `{"providers":[{"type":"saml","idp_metadata_url":"https://idp.example.com/metadata","sp_entity_id":"https://app.example.com"}]}`
+const validAuthBodySAML = `{"providers":[{"type":"saml","idp_metadata_url":"https://idp.example.com/metadata","sp_entity_id":"https://app.example.com","sp_private_key_credential":"saml-sp-key","sp_certificate_credential":"saml-sp-cert"}]}`
 const validAuthBodyEmpty = `{"providers":[]}`
 
 // ---------------------------------------------------------------------------

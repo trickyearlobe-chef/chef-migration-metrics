@@ -75,7 +75,11 @@ type Router struct {
 	// endpoints. Nil when authentication is not configured.
 	authStore AuthStore
 
-	// triggerCollection triggers an immediate collection run when a rescan
+	// --- SAML authentication components (set via WithSAML) ---
+
+	// samlHandler holds the SAML SSO/SLO HTTP handlers.
+	// Nil when SAML is not configured.
+	samlHandler *SAMLHandler
 	// is requested. Nil when not wired up — rescan handlers fall back to
 	// the "will run on next collection cycle" behaviour.
 	triggerCollection CollectionTriggerFunc
@@ -261,6 +265,12 @@ func WithKitchenQueue(m *kitchenqueue.Manager) RouterOption {
 	return func(r *Router) { r.kitchenQueue = m }
 }
 
+// WithSAML wires in the SAML SSO/SLO handler. When set, the SAML placeholder
+// routes are replaced with real handlers for metadata, login, ACS, and SLO.
+func WithSAML(h *SAMLHandler) RouterOption {
+	return func(r *Router) { r.samlHandler = h }
+}
+
 // NewRouter creates a new Router with all routes registered. The EventHub
 // must already be running (via go hub.Run()) before requests are served.
 //
@@ -362,6 +372,17 @@ func (r *Router) adminOnly(pattern string, handler http.HandlerFunc) {
 	}
 }
 
+// operatorOnly registers a route that requires authentication AND at least
+// operator role. When authMiddleware is nil, the handler is registered without
+// enforcement.
+func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc) {
+	if r.authMiddleware != nil {
+		r.mux.Handle(pattern, r.authMiddleware.OperatorOnly(handler))
+	} else {
+		r.mux.HandleFunc(pattern, handler)
+	}
+}
+
 func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Health & version (public — no auth required)
@@ -388,6 +409,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Authentication endpoints (public — no session required for login)
 	// -----------------------------------------------------------------
+	r.mux.HandleFunc("/api/v1/auth/info", r.handleAuthInfo)
 	if r.localAuth != nil && r.sessions != nil {
 		r.mux.HandleFunc("/api/v1/auth/login", r.handleLogin)
 		r.mux.HandleFunc("/api/v1/auth/logout", r.handleLogout)
@@ -397,10 +419,18 @@ func (r *Router) registerRoutes() {
 		r.mux.HandleFunc("/api/v1/auth/logout", r.handleNotImplemented)
 		r.mux.HandleFunc("/api/v1/auth/me", r.handleNotImplemented)
 	}
-	// SAML endpoints remain placeholders until SAML provider is implemented.
-	r.mux.HandleFunc("/api/v1/auth/saml/acs", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.handleNotImplemented)
-	r.mux.HandleFunc("/api/v1/auth/saml/login", r.handleNotImplemented)
+	// SAML endpoints — wired when a SAML provider is configured.
+	if r.samlHandler != nil {
+		r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.samlHandler.HandleMetadata)
+		r.mux.HandleFunc("/api/v1/auth/saml/login", r.samlHandler.HandleLogin)
+		r.mux.HandleFunc("/api/v1/auth/saml/acs", r.samlHandler.HandleACS)
+		r.mux.HandleFunc("/api/v1/auth/saml/slo", r.samlHandler.HandleSLO)
+	} else {
+		r.mux.HandleFunc("/api/v1/auth/saml/acs", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/saml/login", r.handleNotImplemented)
+		r.mux.HandleFunc("/api/v1/auth/saml/slo", r.handleNotImplemented)
+	}
 
 	// -----------------------------------------------------------------
 	// Dashboard endpoints (viewer — any authenticated user)
@@ -500,6 +530,10 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints)
+	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases)
+	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases)
+	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport)
+	r.protect("/api/v1/ownership/aliases/suggest", r.handleOwnershipAliasSuggest)
 
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)
@@ -518,6 +552,8 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/notifications", r.handleAdminConfigNotifications)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
+	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
+	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
 	r.adminOnly("/api/v1/admin/platform-mapping/status", r.handlePlatformMappingStatus)
 
 	// Kitchen analysis endpoints (viewer — any authenticated user)
@@ -526,39 +562,40 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/kitchen/analysis/cookbooks", r.handleKitchenAnalysisCookbooksRouter)
 	r.protect("/api/v1/kitchen/analysis/cookbooks/", r.handleKitchenAnalysisCookbooksRouter)
 
-	// Kitchen analysis trigger (admin only)
-	r.adminOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger)
+	// Kitchen analysis trigger (operator — operational action)
+	r.operatorOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger)
 
 	// -----------------------------------------------------------------
-	// Hypervisor endpoints (viewer for reads, admin for writes)
+	// Hypervisor endpoints (viewer for reads, operator for operational,
+	// admin for destructive/config)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/hypervisor/templates", r.handleHypervisorTemplates)
 	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs)
-	r.adminOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM)
-	r.adminOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
+	r.operatorOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM)
+	r.operatorOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
 	r.adminOnly("/api/v1/admin/hypervisor/test-connection", r.handleHypervisorTestConnection)
-	r.adminOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep)
+	r.operatorOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep)
 
 	// -----------------------------------------------------------------
-	// Node Kitchen endpoints
+	// Node Kitchen endpoints (operator for triggers)
 	// -----------------------------------------------------------------
-	r.adminOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger)
+	r.operatorOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger)
 	r.protect("/api/v1/kitchen/node-runs", r.handleNodeKitchenRuns)
 	r.protect("/api/v1/kitchen/node-runs/", r.handleNodeKitchenRunDetail)
 
 	// -----------------------------------------------------------------
-	// Kitchen Batch endpoints
+	// Kitchen Batch endpoints (operator for management)
 	// -----------------------------------------------------------------
-	r.adminOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
+	r.operatorOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
 	r.protect("/api/v1/kitchen/batches/", r.handleKitchenBatchDetail)
 
 	// -----------------------------------------------------------------
-	// Git Kitchen endpoints
+	// Git Kitchen endpoints (operator for triggers)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/kitchen/git/instances", r.handleGitKitchenInstances)
 	r.protect("/api/v1/kitchen/git/results", r.handleGitKitchenResults)
-	r.adminOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun)
-	r.adminOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll)
+	r.operatorOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun)
+	r.operatorOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll)
 	r.protect("/api/v1/kitchen/git/exclusions", r.handleKitchenExclusions)
 	r.protect("/api/v1/kitchen/git/exclusions/", r.handleDeleteKitchenExclusion)
 
@@ -577,7 +614,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)
-	r.adminOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
+	r.operatorOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
 	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames)
 	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset)
 

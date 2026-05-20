@@ -145,6 +145,33 @@ func (m *Middleware) AdminOnly(next http.HandlerFunc) http.Handler {
 	return m.RequireAuth(m.RequireAdmin(http.HandlerFunc(next)))
 }
 
+// RequireOperator returns an http.Handler that enforces at least operator role.
+// The request must already have a valid session.
+func (m *Middleware) RequireOperator(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := SessionFromContext(r.Context())
+		if info == nil {
+			m.writeUnauthorized(w, "Authentication required.")
+			return
+		}
+
+		if !info.IsOperator() {
+			m.logf("WARN", "forbidden: user %q (role=%s) attempted operator action %s %s",
+				info.Username, info.Role, r.Method, r.URL.Path)
+			m.writeForbidden(w, "This action requires at least the operator role.")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// OperatorOnly is a combined middleware that enforces authentication AND at
+// least operator role. Used for endpoints that operators and admins can access.
+func (m *Middleware) OperatorOnly(next http.HandlerFunc) http.Handler {
+	return m.RequireAuth(m.RequireOperator(http.HandlerFunc(next)))
+}
+
 // ---------------------------------------------------------------------------
 // JSON error writers
 // ---------------------------------------------------------------------------
