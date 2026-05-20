@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchAuthConfig, saveAuthConfig, type AuthConfig, type AuthProvider } from "../api";
+import {
+  fetchAuthConfig,
+  fetchSAMLCertificate,
+  generateSAMLKeypair,
+  saveAuthConfig,
+  type AuthConfig,
+  type AuthProvider,
+  type SAMLCertificateResponse,
+} from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 
 const INPUT_CLASS =
@@ -28,6 +36,95 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
   );
 }
 
+function RoleMappingEditor({
+  mapping,
+  disabled,
+  onChange,
+}: {
+  mapping: Record<string, string>;
+  disabled: boolean;
+  onChange: (m: Record<string, string>) => void;
+}) {
+  const entries = Object.entries(mapping);
+
+  function handleAdd() {
+    onChange({ ...mapping, "": "viewer" });
+  }
+
+  function handleRemove(key: string) {
+    const next = { ...mapping };
+    delete next[key];
+    onChange(next);
+  }
+
+  function handleKeyChange(oldKey: string, newKey: string) {
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(mapping)) {
+      next[k === oldKey ? newKey : k] = v;
+    }
+    onChange(next);
+  }
+
+  function handleValueChange(key: string, value: string) {
+    onChange({ ...mapping, [key]: value });
+  }
+
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-gray-700">Role Mapping</label>
+      <p className="mb-2 text-xs text-gray-400">
+        Map IdP group names to app roles. Group name must match exactly what the IdP sends (often email address for Google).
+      </p>
+      <div className="space-y-2">
+        {entries.map(([key, value], i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={key}
+              onChange={(e) => handleKeyChange(key, e.target.value)}
+              placeholder="group-name@domain.com"
+              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50"
+              disabled={disabled}
+            />
+            <span className="text-xs text-gray-400">→</span>
+            <select
+              value={value}
+              onChange={(e) => handleValueChange(key, e.target.value)}
+              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 bg-white"
+              disabled={disabled}
+            >
+              <option value="viewer">viewer</option>
+              <option value="operator">operator</option>
+              <option value="admin">admin</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => handleRemove(key)}
+              disabled={disabled}
+              className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={handleAdd}
+        disabled={disabled}
+        className="mt-2 flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-40"
+      >
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Add Mapping
+      </button>
+    </div>
+  );
+}
+
 function ProviderCard({
   provider,
   index,
@@ -38,7 +135,7 @@ function ProviderCard({
   provider: AuthProvider;
   index: number;
   saving: boolean;
-  onChange: (index: number, field: keyof AuthProvider, value: string | number | undefined) => void;
+  onChange: (index: number, field: keyof AuthProvider, value: string | number | boolean | Record<string, string> | undefined) => void;
   onRemove: (index: number) => void;
 }) {
   return (
@@ -154,7 +251,7 @@ function ProviderCard({
 
         {provider.type === "saml" && (
           <div className="space-y-4">
-            <FieldRow label="IDP Metadata URL" hint="URL to the IdP SAML metadata XML">
+            <FieldRow label="IDP Metadata URL" hint="URL to the IdP SAML metadata XML (use this OR path below)">
               <input
                 type="url"
                 value={provider.idp_metadata_url ?? ""}
@@ -164,16 +261,105 @@ function ProviderCard({
                 disabled={saving}
               />
             </FieldRow>
-            <FieldRow label="SP Entity ID" hint="Service Provider entity ID">
+            <FieldRow label="IDP Metadata Path" hint="Local file path to IdP metadata XML (e.g. for Google Workspace)">
               <input
                 type="text"
-                value={provider.sp_entity_id ?? ""}
-                onChange={(e) => onChange(index, "sp_entity_id", e.target.value)}
-                placeholder="https://app.example.com"
+                value={provider.idp_metadata_path ?? ""}
+                onChange={(e) => onChange(index, "idp_metadata_path", e.target.value)}
+                placeholder="./GoogleIDPMetadata.xml"
                 className={INPUT_CLASS}
                 disabled={saving}
               />
             </FieldRow>
+            <FieldRow label="SP Entity ID" hint="Service Provider entity ID (e.g. https://app.example.com/saml)">
+              <input
+                type="text"
+                value={provider.sp_entity_id ?? ""}
+                onChange={(e) => onChange(index, "sp_entity_id", e.target.value)}
+                placeholder="https://app.example.com/saml"
+                className={INPUT_CLASS}
+                disabled={saving}
+              />
+            </FieldRow>
+            <div className="grid grid-cols-2 gap-4">
+              <FieldRow label="SP Certificate Credential" hint="Credential store name for SP cert">
+                <input
+                  type="text"
+                  value={provider.sp_certificate_credential ?? ""}
+                  onChange={(e) => onChange(index, "sp_certificate_credential", e.target.value)}
+                  placeholder="saml-sp-cert"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+              <FieldRow label="SP Private Key Credential" hint="Credential store name for SP key">
+                <input
+                  type="text"
+                  value={provider.sp_private_key_credential ?? ""}
+                  onChange={(e) => onChange(index, "sp_private_key_credential", e.target.value)}
+                  placeholder="saml-sp-key"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <FieldRow label="Username Attribute" hint="SAML attribute for username">
+                <input
+                  type="text"
+                  value={provider.username_attr ?? ""}
+                  onChange={(e) => onChange(index, "username_attr", e.target.value)}
+                  placeholder="email"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+              <FieldRow label="Email Attribute" hint="SAML attribute for email address">
+                <input
+                  type="text"
+                  value={provider.email_attr ?? ""}
+                  onChange={(e) => onChange(index, "email_attr", e.target.value)}
+                  placeholder="email"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+              <FieldRow label="Display Name Attribute">
+                <input
+                  type="text"
+                  value={provider.display_name_attr ?? ""}
+                  onChange={(e) => onChange(index, "display_name_attr", e.target.value)}
+                  placeholder="displayName"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+              <FieldRow label="Groups Attribute">
+                <input
+                  type="text"
+                  value={provider.groups_attr ?? ""}
+                  onChange={(e) => onChange(index, "groups_attr", e.target.value)}
+                  placeholder="groups"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+              <FieldRow label="Role Attribute" hint="Direct role attribute (admin/operator/viewer). Overrides group mapping.">
+                <input
+                  type="text"
+                  value={provider.role_attr ?? ""}
+                  onChange={(e) => onChange(index, "role_attr", e.target.value)}
+                  placeholder="role"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+            </div>
+            <RoleMappingEditor
+              mapping={provider.role_mapping ?? {}}
+              disabled={saving}
+              onChange={(m) => onChange(index, "role_mapping", m)}
+            />
           </div>
         )}
       </div>
@@ -191,15 +377,22 @@ export function AdminAuthPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // SP Certificate state.
+  const [spCert, setSpCert] = useState<SAMLCertificateResponse | null>(null);
+  const [generatingCert, setGeneratingCert] = useState(false);
+  const [certError, setCertError] = useState<string | null>(null);
+  const [certCopied, setCertCopied] = useState(false);
+
   const load = useCallback(() => {
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
-    fetchAuthConfig()
-      .then((data) => {
+    Promise.all([fetchAuthConfig(), fetchSAMLCertificate()])
+      .then(([data, cert]) => {
         if (cancelled) return;
         setConfig(data);
         setSaved(data);
+        setSpCert(cert);
       })
       .catch((err: unknown) => {
         if (!cancelled)
@@ -220,7 +413,7 @@ export function AdminAuthPage() {
     setSuccess(false);
   }
 
-  function handleProviderChange(index: number, field: keyof AuthProvider, value: string | number | undefined) {
+  function handleProviderChange(index: number, field: keyof AuthProvider, value: string | number | boolean | Record<string, string> | undefined) {
     setConfig((prev) => {
       if (!prev) return prev;
       const updated = prev.providers.map((p, i) => i === index ? { ...p, [field]: value } : p);
@@ -250,10 +443,23 @@ export function AdminAuthPage() {
     setSaving(true);
     setSaveError(null);
     setSuccess(false);
+    // Apply defaults for SAML credential names before sending.
+    const toSave = {
+      ...config,
+      providers: config.providers.map((p) =>
+        p.type === "saml"
+          ? {
+              ...p,
+              sp_certificate_credential: p.sp_certificate_credential || "saml-sp-cert",
+              sp_private_key_credential: p.sp_private_key_credential || "saml-sp-key",
+            }
+          : p,
+      ),
+    };
     try {
-      const { value: updated } = await saveAuthConfig(config);
-      setConfig(updated ?? config);
-      setSaved(updated ?? config);
+      const { value: updated } = await saveAuthConfig(toSave);
+      setConfig(updated ?? toSave);
+      setSaved(updated ?? toSave);
       setSuccess(true);
       setRestartRequired(true);
     } catch (err: unknown) {
@@ -261,6 +467,28 @@ export function AdminAuthPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleGenerateCert() {
+    setGeneratingCert(true);
+    setCertError(null);
+    setCertCopied(false);
+    try {
+      const cert = await generateSAMLKeypair();
+      setSpCert(cert);
+    } catch (err: unknown) {
+      setCertError(err instanceof Error ? err.message : "Failed to generate keypair.");
+    } finally {
+      setGeneratingCert(false);
+    }
+  }
+
+  function handleCopyCert() {
+    if (!spCert) return;
+    navigator.clipboard.writeText(spCert.certificate_pem).then(() => {
+      setCertCopied(true);
+      setTimeout(() => setCertCopied(false), 2000);
+    });
   }
 
   if (loading) return <LoadingSpinner message="Loading auth config…" />;
@@ -347,6 +575,61 @@ export function AdminAuthPage() {
           </FieldRow>
         </div>
       </SectionCard>
+
+      {/* SP Certificate — shown when any SAML provider exists */}
+      {config.providers.some((p) => p.type === "saml") && (
+        <SectionCard title="SAML SP Certificate">
+          <p className="text-sm text-gray-500">
+            Generate a signing certificate for the Service Provider. Copy the certificate PEM and
+            paste it into your Identity Provider&apos;s SAML app configuration.
+          </p>
+
+          {spCert && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span>Fingerprint: <code className="font-mono">{spCert.fingerprint_sha256.slice(0, 16)}…</code></span>
+                <span>Expires: {new Date(spCert.not_after).toLocaleDateString()}</span>
+                {spCert.subject && <span>CN: {spCert.subject}</span>}
+              </div>
+              <div className="relative">
+                <textarea
+                  readOnly
+                  value={spCert.certificate_pem}
+                  rows={6}
+                  className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 focus:outline-none"
+                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyCert}
+                  className="absolute right-2 top-2 rounded bg-white px-2 py-1 text-xs font-medium text-gray-600 shadow-sm border border-gray-200 hover:bg-gray-50"
+                >
+                  {certCopied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {certError && <ErrorAlert message="Certificate generation failed" detail={certError} />}
+
+          <button
+            type="button"
+            onClick={handleGenerateCert}
+            disabled={generatingCert}
+            className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {generatingCert && <InlineSpinner />}
+            {spCert ? "Regenerate SP Certificate" : "Generate SP Certificate"}
+          </button>
+
+          {spCert && (
+            <p className="text-xs text-amber-600">
+              ⚠️ Regenerating will invalidate the current certificate. You will need to update
+              the certificate in your Identity Provider.
+            </p>
+          )}
+        </SectionCard>
+      )}
 
       {saveError && <ErrorAlert message="Failed to save" detail={saveError} />}
 

@@ -94,7 +94,18 @@ export interface AuthProvider {
   bind_password_env?: string;
   bind_password_credential?: string;
   idp_metadata_url?: string;
+  idp_metadata_path?: string;
   sp_entity_id?: string;
+  sp_certificate_credential?: string;
+  sp_private_key_credential?: string;
+  username_attr?: string;
+  email_attr?: string;
+  display_name_attr?: string;
+  groups_attr?: string;
+  role_attr?: string;
+  role_mapping?: Record<string, string>;
+  allow_idp_initiated?: boolean;
+  sign_requests?: boolean;
 }
 
 export interface AuthConfig {
