@@ -57,9 +57,9 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 				return
 			}
 		case "saml":
-			if p.IDPMetadataURL == "" {
+			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-					fmt.Sprintf("%s: idp_metadata_url is required for saml provider", prefix))
+					fmt.Sprintf("%s: idp_metadata_url or idp_metadata_path is required for saml provider", prefix))
 				return
 			}
 			if p.SPEntityID == "" {
