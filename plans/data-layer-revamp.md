@@ -6,6 +6,27 @@ The application has duplicated derived calculations (complexity scores, readines
 
 Additionally, cross-org aggregations (roles/cookbooks presented with `organisations []string`) may produce incorrect counts if array lengths are mistaken for entity counts. See tech debt: "Cross-org aggregations may produce incorrect counts".
 
+## Observed Bugs (from customer demo)
+
+These drive the need for this revamp:
+
+1. Node readiness shows TK passes but no TK runs have actually passed (different definition of "TK passed" in readiness evaluator vs dashboard)
+2. Trend graphs don't react to staleness filters
+3. Filtering nodes by non-existent policy shows no filtering effect
+4. Filtering nodes by matching roles gives incorrect results
+5. Filtering nodes by chef version gives incorrect matches
+6. Chef version filter has debounce/validation bug — `12` works, `12.` clears, back to `12` shows no matches
+7. Role filter: partial text entry doesn't filter, only autocomplete selection works (typing `sample` doesn't match but selecting from dropdown does)
+8. Export buttons don't work / exports should be "filtered view of current page" not separate buttons
+9. Cookbook view: selecting "fresh" still shows inactive cookbooks — need staleness to mean "not referenced by any fresh node"
+10. Consistency errors in calculations obvious to humans but not caught by tests
+11. Cookstyle "passed" semantics confusing — means no FATAL offenses, not zero offenses
+12. Derived status computed differently at multiple call sites (5+ places call ComputeTKStatus with different input prep)
+13. `handleGitRepos` loads ALL cookstyle + ALL kitchen results into memory then filters in Go
+14. Blast radius / complexity scores calculated independently in API handlers, frontend sorts, dashboard aggregation, exports
+15. Collection-run gating missing — trends include partial collection data
+16. Metric snapshots don't partition cleanly by collection run
+
 ## Phases
 
 ### Phase 0: Backup/Restore ✓ DONE
