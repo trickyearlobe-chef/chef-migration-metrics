@@ -120,7 +120,8 @@ type serverApp struct {
 	kitchenQueue            *kitchenqueue.Manager
 
 	// Backup scheduler (for stopping during restore).
-	backupSched *backup.Scheduler
+	backupSched   *backup.Scheduler
+	schemaVersion int
 	stopKitchenQueueCleanup func()
 }
 
@@ -376,6 +377,7 @@ func (app *serverApp) runMigrations(ctx context.Context, migrationsDir string) e
 	if verErr != nil {
 		app.startup.Warn(fmt.Sprintf("could not read migration version: %v", verErr))
 	} else {
+		app.schemaVersion = ver
 		app.startup.Info(fmt.Sprintf("database schema version: %d", ver))
 	}
 	return nil
@@ -1037,6 +1039,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	logger := app.logger
 	routerOpts := []webapi.RouterOption{
 		webapi.WithVersion(version),
+		webapi.WithSchemaVersion(app.schemaVersion),
 		webapi.WithLogger(func(level, msg string) {
 			switch level {
 			case "DEBUG":
@@ -1223,7 +1226,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			} else {
 				backupDir := app.cfg.BackupDir()
 				maxGen := app.cfg.BackupMaxGenerations()
-				svc, svcErr := backup.NewService(backupDir, backupConn, pgTools, version, 31, maxGen)
+				svc, svcErr := backup.NewService(backupDir, backupConn, pgTools, version, app.schemaVersion, maxGen)
 				if svcErr != nil {
 					app.startup.Error(fmt.Sprintf("backup: failed to create service: %v", svcErr))
 				} else {

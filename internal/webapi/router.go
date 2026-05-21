@@ -45,7 +45,8 @@ type Router struct {
 	hub     *EventHub
 	db      DataStore
 	cfg     *config.Config
-	version string
+	version       string
+	schemaVersion int
 
 	// frontendFS holds the built React SPA assets (index.html, JS, CSS).
 	// When non-nil, the frontend fallback handler serves files from this
@@ -186,6 +187,14 @@ type RouterOption func(*Router)
 func WithVersion(v string) RouterOption {
 	return func(r *Router) {
 		r.version = v
+	}
+}
+
+// WithSchemaVersion sets the database schema version reported by /api/v1/version
+// and /api/v1/health.
+func WithSchemaVersion(v int) RouterOption {
+	return func(r *Router) {
+		r.schemaVersion = v
 	}
 }
 
@@ -761,6 +770,7 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"status":            "healthy",
 		"version":           r.version,
+		"schema_version":    r.schemaVersion,
 		"websocket_enabled": r.cfg.Server.WebSocket.IsEnabled(),
 		"websocket_clients": r.hub.ClientCount(),
 	})
@@ -771,8 +781,9 @@ func (r *Router) handleVersion(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "Version endpoint requires GET.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, map[string]string{
-		"version": r.version,
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"version":        r.version,
+		"schema_version": r.schemaVersion,
 	})
 }
 

@@ -93,28 +93,32 @@ func (r *Router) handleBackupList(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	type backupItem struct {
-		ID          string        `json:"id"`
-		Filename    string        `json:"filename"`
-		SizeBytes   int64         `json:"size_bytes"`
-		SHA256      string        `json:"sha256,omitempty"`
-		Status      backup.Status `json:"status"`
-		Error       string        `json:"error,omitempty"`
-		CreatedAt   time.Time     `json:"created_at"`
-		CompletedAt *time.Time    `json:"completed_at,omitempty"`
-		InitiatedBy string        `json:"initiated_by,omitempty"`
+		ID            string        `json:"id"`
+		Filename      string        `json:"filename"`
+		SizeBytes     int64         `json:"size_bytes"`
+		SHA256        string        `json:"sha256,omitempty"`
+		Status        backup.Status `json:"status"`
+		Error         string        `json:"error,omitempty"`
+		CreatedAt     time.Time     `json:"created_at"`
+		CompletedAt   *time.Time    `json:"completed_at,omitempty"`
+		InitiatedBy   string        `json:"initiated_by,omitempty"`
+		AppVersion    string        `json:"app_version,omitempty"`
+		SchemaVersion int           `json:"schema_version"`
 	}
 
 	items := make([]backupItem, 0, len(manifests))
 	for _, m := range manifests {
 		item := backupItem{
-			ID:          m.ID,
-			Filename:    m.Filename,
-			SizeBytes:   m.SizeBytes,
-			SHA256:      m.SHA256,
-			Status:      m.Status,
-			Error:       m.Error,
-			CreatedAt:   m.CreatedAt,
-			InitiatedBy: m.InitiatedBy,
+			ID:            m.ID,
+			Filename:      m.Filename,
+			SizeBytes:     m.SizeBytes,
+			SHA256:        m.SHA256,
+			Status:        m.Status,
+			Error:         m.Error,
+			CreatedAt:     m.CreatedAt,
+			InitiatedBy:   m.InitiatedBy,
+			AppVersion:    m.AppVersion,
+			SchemaVersion: m.SchemaVersion,
 		}
 		if !m.CompletedAt.IsZero() {
 			t := m.CompletedAt
