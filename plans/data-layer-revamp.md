@@ -42,8 +42,10 @@ Define exactly what each metric means and how it's derived. Audit every calculat
 - [x] Identify discrepancies between calculation sites
 - [x] Validate cross-org counting logic (roles/cookbooks with org arrays)
 - [x] Output: specification per metric with canonical definition → `.claude/specifications/semantic-contracts.md`
-- [ ] Write conformance tests validating webapi re-derivation matches analysis write-time values
-- [ ] Add tests proving TK status contract (all callers use canonical function)
+- [x] Write conformance tests validating webapi re-derivation matches analysis write-time values
+- [x] Add tests proving TK status contract (all callers use canonical function)
+- [x] Fix inlined TK status derivation in handle_kitchen_batches.go
+- [x] Document known kitchen status divergences with regression tests
 
 ### Phase 2: Write-Time Materialisation
 

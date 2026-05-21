@@ -15,6 +15,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/gitkitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // ---------------------------------------------------------------------------
@@ -211,14 +212,7 @@ func (p *dbResultProvider) GetLatestTestKitchenStatus(ctx context.Context, repoN
 	}
 	status := "untested"
 	if passed > 0 || failed > 0 {
-		switch {
-		case passed > 0 && failed > 0:
-			status = "partial"
-		case failed > 0:
-			status = "failed"
-		case passed > 0:
-			status = "passed"
-		}
+		status = tkstatus.ComputeTKStatus(passed, failed)
 	}
 	return status, nil
 }

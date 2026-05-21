@@ -40,7 +40,7 @@ Canonical definitions for all derived metrics. Each metric has exactly one autho
 
 **Consumers:** readiness evaluator, complexity scoring, git repo handlers, dashboard compatibility, role detail, cookbook remediation.
 
-**Discrepancy (resolved by this contract):** All callers MUST use `tkstatus.ComputeTKStatus` or `Counts.Status()`. No inline re-implementation.
+**Discrepancy (resolved by this contract):** All callers MUST use `tkstatus.ComputeTKStatus` or `Counts.Status()`. No inline re-implementation. Fixed: `webapi/handle_kitchen_batches.go` was inlining the logic — now uses canonical function.
 
 ---
 
