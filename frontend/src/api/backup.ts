@@ -50,6 +50,8 @@ export interface BackupItem {
   created_at: string;
   completed_at?: string;
   initiated_by?: string;
+  app_version?: string;
+  schema_version: number;
 }
 
 export interface BackupStatus {

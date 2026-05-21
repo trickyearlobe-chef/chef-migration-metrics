@@ -297,6 +297,7 @@ export function AdminBackupPage() {
                   <th className="px-4 py-2 text-left font-medium text-gray-500">Created</th>
                   <th className="px-4 py-2 text-left font-medium text-gray-500">Status</th>
                   <th className="px-4 py-2 text-left font-medium text-gray-500">Size</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-500">Version</th>
                   <th className="px-4 py-2 text-left font-medium text-gray-500">Initiated By</th>
                   <th className="px-4 py-2 text-right font-medium text-gray-500">Actions</th>
                 </tr>
@@ -319,6 +320,11 @@ export function AdminBackupPage() {
                     </td>
                     <td className="px-4 py-2 whitespace-nowrap">
                       {b.size_bytes > 0 ? formatBytes(b.size_bytes) : "—"}
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-xs">
+                      <span title={`App: ${b.app_version || "?"}, Schema: ${b.schema_version}`}>
+                        {b.app_version || "?"} / s{b.schema_version}
+                      </span>
                     </td>
                     <td className="px-4 py-2">{b.initiated_by || "—"}</td>
                     <td className="px-4 py-2 text-right space-x-2">
