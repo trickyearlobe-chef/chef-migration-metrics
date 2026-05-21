@@ -33,15 +33,17 @@ These drive the need for this revamp:
 
 Safety net before schema changes. Backup create/restore, cron scheduler, maintenance mode, schema version display.
 
-### Phase 1: Semantic Contracts (NEXT)
+### Phase 1: Semantic Contracts (IN PROGRESS)
 
 Define exactly what each metric means and how it's derived. Audit every calculation path to ensure consistency. Produce a single source of truth for each derived value.
 
-- Catalogue all derived metrics (readiness, complexity, blast radius, TK status, etc.)
-- For each: document inputs, formula, where it's calculated, where it's consumed
-- Identify discrepancies between calculation sites
-- Validate cross-org counting logic (roles/cookbooks with org arrays)
-- Output: specification per metric with canonical definition
+- [x] Catalogue all derived metrics (readiness, complexity, blast radius, TK status, staleness, cookstyle/kitchen status)
+- [x] For each: document inputs, formula, where it's calculated, where it's consumed
+- [x] Identify discrepancies between calculation sites
+- [x] Validate cross-org counting logic (roles/cookbooks with org arrays)
+- [x] Output: specification per metric with canonical definition → `.claude/specifications/semantic-contracts.md`
+- [ ] Write conformance tests validating webapi re-derivation matches analysis write-time values
+- [ ] Add tests proving TK status contract (all callers use canonical function)
 
 ### Phase 2: Write-Time Materialisation
 
