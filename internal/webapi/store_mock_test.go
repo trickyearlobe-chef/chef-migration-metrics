@@ -119,6 +119,7 @@ type mockStore struct {
 	IndexStatsFn                                        func(ctx context.Context) ([]datastore.IndexStat, error)
 	ActiveQueriesFn                                     func(ctx context.Context) ([]datastore.ActiveQuery, error)
 	ResetPgStatsFn                                      func(ctx context.Context) error
+	VacuumFullFn                                        func(ctx context.Context) error
 	GetCookbookPlatformCoverageFn                       func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
 	GetKitchenAnalysisSummaryFn                         func(ctx context.Context) (*datastore.KitchenAnalysisSummary, error)
 	ListKitchenAnalysisResultsFn                        func(ctx context.Context) ([]datastore.KitchenAnalysisResult, error)
@@ -986,6 +987,13 @@ func (m *mockStore) ActiveQueries(ctx context.Context) ([]datastore.ActiveQuery,
 func (m *mockStore) ResetPgStats(ctx context.Context) error {
 	if m.ResetPgStatsFn != nil {
 		return m.ResetPgStatsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) VacuumFull(ctx context.Context) error {
+	if m.VacuumFullFn != nil {
+		return m.VacuumFullFn(ctx)
 	}
 	return nil
 }

@@ -138,3 +138,20 @@ export async function resetPerformanceDB(): Promise<void> {
     throw new ApiError(code, message, "");
   }
 }
+
+export async function vacuumFull(): Promise<void> {
+  const res = await fetch(buildUrl("/admin/performance/vacuum"), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let code = res.status;
+    let message = res.statusText || `HTTP ${res.status}`;
+    try {
+      const body = await res.text();
+      const parsed = JSON.parse(body);
+      message = parsed.message || parsed.error || message;
+    } catch { /* ignore */ }
+    throw new ApiError(code, message, "");
+  }
+}

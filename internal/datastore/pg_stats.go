@@ -221,3 +221,13 @@ func (db *DB) ResetPgStats(ctx context.Context) error {
 	}
 	return nil
 }
+
+// VacuumFull runs VACUUM FULL on the database to reclaim disk space from dead
+// tuples. This rewrites all tables and reclaims bloat but requires an exclusive
+// lock on each table — callers should be aware this blocks concurrent access.
+func (db *DB) VacuumFull(ctx context.Context) error {
+	if _, err := db.pool.ExecContext(ctx, `VACUUM FULL`); err != nil {
+		return fmt.Errorf("datastore: vacuum full: %w", err)
+	}
+	return nil
+}

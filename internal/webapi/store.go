@@ -544,6 +544,9 @@ type DataStore interface {
 	// pg_stat_reset() to clear cumulative PostgreSQL statistics.
 	ResetPgStats(ctx context.Context) error
 
+	// VacuumFull runs VACUUM FULL to reclaim disk space from dead tuples.
+	VacuumFull(ctx context.Context) error
+
 	// -----------------------------------------------------------------
 	// Cookbook Platform Coverage
 	// -----------------------------------------------------------------

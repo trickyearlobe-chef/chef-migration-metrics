@@ -181,3 +181,23 @@ func emptySliceIfNil[T any](s []T) any {
 	}
 	return s
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/admin/performance/vacuum — run VACUUM FULL
+// ---------------------------------------------------------------------------
+
+func (r *Router) handleVacuumFull(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "VACUUM endpoint requires POST.")
+		return
+	}
+
+	if err := r.db.VacuumFull(req.Context()); err != nil {
+		WriteError(w, http.StatusInternalServerError, ErrCodeInternalError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]string{
+		"status": "ok",
+	})
+}

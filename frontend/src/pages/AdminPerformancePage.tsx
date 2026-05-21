@@ -4,6 +4,7 @@ import {
   fetchPerformanceDB,
   resetPerformanceStats,
   resetPerformanceDB,
+  vacuumFull,
 } from "../api";
 import type {
   PerformanceResponse,
@@ -372,6 +373,17 @@ export function AdminPerformancePage() {
     }
   };
 
+  const [vacuuming, setVacuuming] = useState(false);
+  const handleVacuum = () => {
+    if (window.confirm("Run VACUUM FULL? This reclaims disk space by rewriting all tables. The database will be locked during this operation — it may take several minutes for large databases.")) {
+      setVacuuming(true);
+      vacuumFull()
+        .then(load)
+        .catch(() => {})
+        .finally(() => setVacuuming(false));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Performance Diagnostics</h1>
@@ -398,7 +410,13 @@ export function AdminPerformancePage() {
         <div className="flex gap-3">
           <button className={btnCls} onClick={handleResetApi}>Reset API Stats</button>
           <button className={btnDangerCls} onClick={handleResetDb}>Reset DB Stats</button>
+          <button className={btnDangerCls} onClick={handleVacuum} disabled={vacuuming}>
+            {vacuuming ? "Vacuuming…" : "VACUUM FULL"}
+          </button>
         </div>
+        <p className="mt-2 text-xs text-gray-400">
+          VACUUM FULL reclaims disk space from dead tuples. Tables are locked during the operation.
+        </p>
       </section>
     </div>
   );
