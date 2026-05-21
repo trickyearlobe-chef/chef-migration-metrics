@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"sync"
+	"sync/atomic"
 
 	"path"
 	"strings"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/backup"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 
@@ -139,6 +141,25 @@ type Router struct {
 	// roleCompatCache holds in-memory cached results from GetRoleCompatSummary,
 	// keyed by org+name+targetVersion. Each entry expires after 60 seconds.
 	roleCompatCache sync.Map // key: string → *roleCompatCacheEntry
+
+	// backupService provides database backup and restore operations.
+	// Nil when backup is not configured — backup handlers return 503.
+	backupService *backup.Service
+
+	// restoreHook is called before restore to stop background workers.
+	// Provided by main.go. If nil, restore skips worker shutdown.
+	restoreHook func()
+
+	// exitFunc is called after a successful restore to terminate the process.
+	// Defaults to os.Exit. Overridable for testing.
+	exitFunc func(code int)
+
+	// maintenanceMode is set to true during restore operations.
+	// When true, all API routes except health and backup status return 503.
+	maintenanceMode atomic.Bool
+
+	// maintenanceMessage describes the current maintenance operation.
+	maintenanceMessage atomic.Value // stores string
 }
 
 // AuthStore is the interface consumed by admin user-management handlers. It
@@ -271,6 +292,24 @@ func WithSAML(h *SAMLHandler) RouterOption {
 	return func(r *Router) { r.samlHandler = h }
 }
 
+// WithBackupService sets the backup service used by admin backup endpoints.
+func WithBackupService(svc *backup.Service) RouterOption {
+	return func(r *Router) { r.backupService = svc }
+}
+
+// WithRestoreHook sets a callback invoked before restore to stop background
+// workers (collector, kitchen queue, etc.). The hook should block until
+// workers are drained.
+func WithRestoreHook(fn func()) RouterOption {
+	return func(r *Router) { r.restoreHook = fn }
+}
+
+// WithExitFunc overrides the function called after a successful restore.
+// Defaults to os.Exit. Intended for testing.
+func WithExitFunc(fn func(int)) RouterOption {
+	return func(r *Router) { r.exitFunc = fn }
+}
+
 // NewRouter creates a new Router with all routes registered. The EventHub
 // must already be running (via go hub.Run()) before requests are served.
 //
@@ -333,14 +372,47 @@ func NewRouter(db DataStore, cfg *config.Config, hub *EventHub, opts ...RouterOp
 // ServeHTTP implements http.Handler, delegating to the internal ServeMux.
 // When a perf.Recorder is configured, every request is wrapped by the
 // timing middleware so that latency is captured for all mux-routed paths.
+// During maintenance mode, API routes return 503 except health and backup status.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	SecurityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if r.maintenanceMode.Load() && r.isMaintenanceBlocked(req.URL.Path) {
+			msg := "Database restore in progress. Please wait."
+			if v := r.maintenanceMessage.Load(); v != nil {
+				if s, ok := v.(string); ok && s != "" {
+					msg = s
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "30")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, `{"error":"maintenance","message":%q}`, msg)
+			return
+		}
 		if r.timingHandler != nil {
 			r.timingHandler.ServeHTTP(w, req)
 		} else {
 			r.mux.ServeHTTP(w, req)
 		}
 	})).ServeHTTP(w, req)
+}
+
+// isMaintenanceBlocked returns true if the path should be blocked during
+// maintenance mode. Health, version, and backup status endpoints remain
+// accessible. Frontend assets are also served normally.
+func (r *Router) isMaintenanceBlocked(urlPath string) bool {
+	if !strings.HasPrefix(urlPath, "/api/") {
+		return false
+	}
+	switch {
+	case urlPath == "/api/v1/health":
+		return false
+	case urlPath == "/api/v1/version":
+		return false
+	case urlPath == "/api/v1/admin/backups/status":
+		return false
+	default:
+		return true
+	}
 }
 
 // Hub returns the EventHub so callers (main, collector, etc.) can broadcast
@@ -552,6 +624,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/notifications", r.handleAdminConfigNotifications)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
+	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
 	r.adminOnly("/api/v1/admin/platform-mapping/status", r.handlePlatformMappingStatus)
@@ -614,6 +687,9 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)
+	r.adminOnly("/api/v1/admin/backups", r.handleAdminBackups)
+	r.adminOnly("/api/v1/admin/backups/", r.handleAdminBackups)
+	r.adminOnly("/api/v1/admin/backups/status", r.handleAdminBackupStatus)
 	r.operatorOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
 	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames)
 	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset)
