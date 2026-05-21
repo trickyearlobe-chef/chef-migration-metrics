@@ -339,6 +339,7 @@ export function AdminPerformancePage() {
   const [dbData, setDbData] = useState<PerformanceDBResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [vacuuming, setVacuuming] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(() => {
@@ -373,7 +374,6 @@ export function AdminPerformancePage() {
     }
   };
 
-  const [vacuuming, setVacuuming] = useState(false);
   const handleVacuum = () => {
     if (window.confirm("Run VACUUM FULL? This reclaims disk space by rewriting all tables. The database will be locked during this operation — it may take several minutes for large databases.")) {
       setVacuuming(true);
