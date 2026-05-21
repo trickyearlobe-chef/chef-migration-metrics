@@ -2,6 +2,15 @@
 
 Project-specific technical conventions for the Chef Migration Metrics dashboard.
 
+## Configuration
+
+- **All application configuration is stored in the encrypted config store (database)**, not YAML files.
+- The bootstrap YAML (`deploy/pkg/config.yml`) contains ONLY values required before the database is available: `database_url`, `listen_address`, `listen_port`.
+- The master encryption key (`CMM_CREDENTIAL_ENCRYPTION_KEY`) is an environment variable, never stored in config.
+- New configuration sections go into the config store with a corresponding admin UI page.
+- Do not add new settings to the YAML file unless they are genuinely required before database connectivity is established.
+- **Configuration changes must take effect without a restart** unless there is a genuine technical reason live reload cannot be supported (e.g. listen address/port, TLS certificates). Document the reason if a restart is required.
+
 ## Database
 
 - All database schema changes must be managed through migration files. Migrations must be sequential, numbered, and checked into source control.
