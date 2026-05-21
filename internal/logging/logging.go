@@ -168,6 +168,10 @@ const (
 	// ScopePlatformCoverage is used for platform coverage analysis events —
 	// computing tested vs production platform coverage per cookbook.
 	ScopePlatformCoverage Scope = "platform_coverage"
+
+	// ScopeBackup is used for backup and restore operations — creation,
+	// scheduling, pruning, verification, and restore execution.
+	ScopeBackup Scope = "backup"
 )
 
 // validScopes is the set of recognised scope values. Used for validation.
@@ -187,6 +191,7 @@ var validScopes = map[Scope]bool{
 	ScopeAuth:                 true,
 	ScopeOwnership:            true,
 	ScopePlatformCoverage:     true,
+	ScopeBackup:               true,
 }
 
 // IsValidScope returns true if s is a recognised scope value.

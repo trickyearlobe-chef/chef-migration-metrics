@@ -8,6 +8,7 @@ import {
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { OrgProvider } from "./context/OrgContext";
 import { GlobalFilterProvider } from "./context/GlobalFilterContext";
+import { MaintenanceProvider } from "./context/MaintenanceContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppLayout } from "./components/AppLayout";
 import { LoginPage } from "./pages/LoginPage";
@@ -55,6 +56,7 @@ import {
   useSetupRequired,
 } from "./pages/AdminSetupWizardPage";
 import { AdminPlatformDisplayNamesPage } from "./pages/AdminPlatformDisplayNamesPage";
+import { AdminBackupPage } from "./pages/AdminBackupPage";
 import { OwnerAliasesPage } from "./pages/OwnerAliasesPage";
 
 // ---------------------------------------------------------------------------
@@ -153,11 +155,12 @@ function LoginRoute() {
 export function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            {/* Public route: login */}
-            <Route path="/login" element={<LoginRoute />} />
+      <MaintenanceProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <Routes>
+              {/* Public route: login */}
+              <Route path="/login" element={<LoginRoute />} />
 
             {/* Protected routes */}
             <Route
@@ -394,6 +397,14 @@ export function App() {
                   </RequireAdmin>
                 }
               />
+              <Route
+                path="/admin/backups"
+                element={
+                  <RequireAdmin>
+                    <AdminBackupPage />
+                  </RequireAdmin>
+                }
+              />
             </Route>
 
             {/* Catch-all — redirect to dashboard */}
@@ -401,6 +412,7 @@ export function App() {
           </Routes>
         </AuthProvider>
       </BrowserRouter>
+      </MaintenanceProvider>
     </ErrorBoundary>
   );
 }

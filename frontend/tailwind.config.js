@@ -11,9 +11,14 @@ export default {
           '0%': { backgroundColor: 'rgb(220 252 231)' },   // green-100
           '100%': { backgroundColor: 'transparent' },
         },
+        indeterminate: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
       },
       animation: {
         highlight: 'highlight 2s ease-out',
+        indeterminate: 'indeterminate 1.5s infinite ease-in-out',
       },
       colors: {
         // Status colours matching the spec confidence indicators

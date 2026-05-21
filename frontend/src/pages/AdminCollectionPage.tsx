@@ -5,6 +5,7 @@ import {
   InlineSpinner,
   LoadingSpinner,
 } from "../components/Feedback";
+import { CronDescription } from "../components/CronDescription";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -127,6 +128,7 @@ export function AdminCollectionPage() {
             <p className="mt-1 text-xs text-gray-500">
               Cron expression with 5 space-separated fields (e.g. 0 * * * *)
             </p>
+            <CronDescription expression={config.schedule} />
           </div>
 
           <div>
