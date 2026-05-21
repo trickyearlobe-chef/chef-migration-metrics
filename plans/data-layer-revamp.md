@@ -47,14 +47,17 @@ Define exactly what each metric means and how it's derived. Audit every calculat
 - [x] Fix inlined TK status derivation in handle_kitchen_batches.go
 - [x] Document known kitchen status divergences with regression tests
 
-### Phase 2: Write-Time Materialisation
+### Phase 2: Write-Time Materialisation (IN PROGRESS)
 
 Push derived calculations into the DB at collection time. API surfaces read pre-computed values instead of re-deriving.
 
-- Add materialised columns/tables for each metric defined in Phase 1
-- Compute at end of collection run (single writer)
-- Remove duplicate calculation logic from handlers/frontend
-- Enables correct server-side sort/filter/pagination
+- [x] Serve persisted cookstyle_status/kitchen_status from deriveCheckStatus
+- [x] Remove redundant override logic in handle_nodes.go (now handled inside deriveCheckStatus)
+- [x] Fix GetLatestTestKitchenStatus nil/timed_out handling to match SQL semantics
+- [x] Verify frontend only displays API-provided scores (no client-side recomputation)
+- [ ] Collection run gating: assess necessity (snapshots already gated by step success — see note below)
+
+**Note on collection run gating:** Investigation shows snapshots are only written after their respective steps succeed (node metrics after node commit, readiness after evaluation, complexity after scoring). The existing architecture implicitly gates by success. Explicit `run_id`-based gating in trend queries adds defence-in-depth but is lower priority than the status divergence fixes above.
 
 ### Phase 3: Server-Side Pagination
 
