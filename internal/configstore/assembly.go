@@ -37,6 +37,7 @@ const (
 	KeyStorage                    = "storage"
 	KeySystemHealth               = "system_health"
 	KeyPerformance                = "performance"
+	KeyBackup                     = "backup"
 	KeyCredentialEncryptionKeyEnv = "credential_encryption_key_env"
 )
 
@@ -66,6 +67,7 @@ func AllConfigKeys() []string {
 		KeyStorage,
 		KeySystemHealth,
 		KeyPerformance,
+		KeyBackup,
 		KeyCredentialEncryptionKeyEnv,
 	}
 }
@@ -183,6 +185,8 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 		return yamlUnmarshalInto(&cfg.SystemHealth, raw, key)
 	case KeyPerformance:
 		return yamlUnmarshalInto(&cfg.Performance, raw, key)
+	case KeyBackup:
+		return yamlUnmarshalInto(&cfg.Backup, raw, key)
 	case KeyCredentialEncryptionKeyEnv:
 		return yamlUnmarshalInto(&cfg.CredentialEncryptionKeyEnv, raw, key)
 	default:
@@ -238,6 +242,7 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 		KeyStorage:                cfg.Storage,
 		KeySystemHealth:           cfg.SystemHealth,
 		KeyPerformance:            cfg.Performance,
+		KeyBackup:                 cfg.Backup,
 	}
 
 	// Only include credential_encryption_key_env if it was explicitly set

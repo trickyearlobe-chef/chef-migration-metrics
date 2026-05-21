@@ -45,6 +45,7 @@ type Config struct {
 	Ownership                  OwnershipConfig     `yaml:"ownership"`
 	SystemHealth               SystemHealthConfig  `yaml:"system_health"`
 	Performance                PerformanceConfig   `yaml:"performance"`
+	Backup                     BackupConfig        `yaml:"backup"`
 
 	// explicitExportsDir tracks whether the user explicitly set exports.output_directory.
 	explicitExportsDir bool
@@ -484,6 +485,46 @@ func (pc PerformanceConfig) IsEnabled() bool {
 		return true
 	}
 	return *pc.Enabled
+}
+
+// ---------------------------------------------------------------------------
+// Backup
+// ---------------------------------------------------------------------------
+
+// BackupConfig controls database backup and restore behaviour.
+type BackupConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	Dir            string `yaml:"dir"`
+	MaxGenerations int    `yaml:"max_generations"`
+	Schedule       string `yaml:"schedule"`
+	PgDumpPath     string `yaml:"pg_dump_path"`
+	PgRestorePath  string `yaml:"pg_restore_path"`
+}
+
+// BackupDir returns the configured backup directory, falling back to
+// <data_dir>/backups when not explicitly set.
+func (c *Config) BackupDir() string {
+	if c.Backup.Dir != "" {
+		return c.Backup.Dir
+	}
+	return filepath.Join(c.Storage.DataDir, "backups")
+}
+
+// BackupMaxGenerations returns the number of backups to retain, defaulting to 7.
+func (c *Config) BackupMaxGenerations() int {
+	if c.Backup.MaxGenerations > 0 {
+		return c.Backup.MaxGenerations
+	}
+	return 7
+}
+
+// BackupSchedule returns the cron expression for scheduled backups,
+// defaulting to "0 2 * * *" (daily at 02:00).
+func (c *Config) BackupSchedule() string {
+	if c.Backup.Schedule != "" {
+		return c.Backup.Schedule
+	}
+	return "0 2 * * *"
 }
 
 // ---------------------------------------------------------------------------
