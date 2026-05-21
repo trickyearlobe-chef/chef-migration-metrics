@@ -28,6 +28,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth/jit"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth/samlsp"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/backup"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
@@ -117,6 +118,9 @@ type serverApp struct {
 
 	// Kitchen queue manager (bounded concurrency for TK runs).
 	kitchenQueue            *kitchenqueue.Manager
+
+	// Backup scheduler (for stopping during restore).
+	backupSched *backup.Scheduler
 	stopKitchenQueueCleanup func()
 }
 
@@ -1205,6 +1209,77 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		app.startup.Info("kitchen queue cleanup ticker started (retention: 24h)")
 	} else {
 		app.startup.Info("Node Kitchen runner not available (kitchen binary not found)")
+	}
+
+	// --- Backup service (always available — "enabled" flag controls scheduler only) ---
+	{
+		backupConn, parseErr := backup.ParseConnString(app.cfg.Datastore.URL)
+		if parseErr != nil {
+			app.startup.Error(fmt.Sprintf("backup: failed to parse DB URL: %v", parseErr))
+		} else {
+			pgTools, toolsErr := backup.NewPgTools(app.cfg.Backup.PgDumpPath, app.cfg.Backup.PgRestorePath)
+			if toolsErr != nil {
+				app.startup.Warn(fmt.Sprintf("backup: pg_dump/pg_restore not available: %v", toolsErr))
+			} else {
+				backupDir := app.cfg.BackupDir()
+				maxGen := app.cfg.BackupMaxGenerations()
+				svc, svcErr := backup.NewService(backupDir, backupConn, pgTools, version, 31, maxGen)
+				if svcErr != nil {
+					app.startup.Error(fmt.Sprintf("backup: failed to create service: %v", svcErr))
+				} else {
+					backupLogger := logger.WithScope(logging.ScopeBackup)
+					svc.SetLogFunc(func(level, msg string) {
+						switch level {
+						case "error":
+							backupLogger.Error(msg)
+						case "warn":
+							backupLogger.Warn(msg)
+						default:
+							backupLogger.Info(msg)
+						}
+					})
+					routerOpts = append(routerOpts, webapi.WithBackupService(svc))
+					routerOpts = append(routerOpts, webapi.WithRestoreHook(func() {
+						app.startup.Info("restore: stopping collection scheduler")
+						app.sched.Stop()
+						if app.kitchenQueue != nil {
+							app.startup.Info("restore: stopping kitchen queue workers")
+							app.kitchenQueue.Stop(15 * time.Second)
+						}
+						if app.backupSched != nil {
+							app.startup.Info("restore: stopping backup scheduler")
+							app.backupSched.Stop()
+						}
+						if app.stopExportCleanup != nil {
+							app.startup.Info("restore: stopping export cleanup")
+							app.stopExportCleanup()
+						}
+						app.startup.Info("restore: all background workers stopped")
+					}))
+					app.startup.Info(fmt.Sprintf("backup service ready (dir=%s, max_generations=%d)", backupDir, maxGen))
+
+					if app.cfg.Backup.Enabled {
+						cronExpr := app.cfg.BackupSchedule()
+						backupLog := func(level, msg string) {
+							switch level {
+							case "error":
+								backupLogger.Error(msg)
+							default:
+								backupLogger.Info(msg)
+							}
+						}
+						sched, schedErr := backup.NewScheduler(svc, cronExpr, backupLog)
+						if schedErr != nil {
+							app.startup.Error(fmt.Sprintf("backup: invalid schedule: %v", schedErr))
+						} else {
+							sched.Start(context.Background())
+							app.backupSched = sched
+							app.startup.Info(fmt.Sprintf("backup scheduler started (schedule=%q)", cronExpr))
+						}
+					}
+				}
+			}
+		}
 	}
 
 	if frontendFS := frontend.FS(frontend.DistDir); frontendFS != nil {
