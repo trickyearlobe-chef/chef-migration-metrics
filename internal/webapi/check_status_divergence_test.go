@@ -11,97 +11,123 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Semantic Contract Divergence Tests
+// Semantic Contract Conformance Tests — Persisted Value Precedence
 //
-// These tests document KNOWN divergences between the webapi read-time
-// derivation (check_status.go) and the analysis write-time derivation
-// (analysis/readiness.go). They serve as a regression guard and roadmap
-// for Phase 2 fixes.
-//
-// Each test documents:
-// - What the analysis (write-time) would produce
-// - What the webapi (read-time) re-derivation produces
-// - Why they differ
+// These tests verify that deriveCheckStatus prefers persisted status values
+// (computed at analysis time with full context) over re-derivation from
+// blocking cookbooks. This resolves the divergences documented in Phase 1.
 // ---------------------------------------------------------------------------
 
-// TestDivergence_KitchenStatus_PartialCoverageNotVisible documents that the
-// webapi deriveKitchenStatus cannot detect partial TK coverage because it only
-// sees blocking cookbooks, not all cookbooks on the node.
+// TestPersistedStatus_KitchenPartialServedDirectly verifies that when analysis
+// computed kitchen_status="partial" (due to partial TK coverage), the API
+// serves "partial" instead of re-deriving "passed" from blocking cookbooks.
 //
-// Scenario: A node has 3 TK-eligible cookbooks. Only 1 has been tested (passed).
-// None are blocking (all compatible). The analysis write-time correctly sets
-// kitchen_status = "partial" because tkTested < tkEligible. But the webapi
-// re-derivation sees AllCookbooksCompatible=true + no blocking → returns "passed".
-//
-// Phase 2 fix: serve the persisted kitchen_status from the DB instead of
-// re-deriving it.
-func TestDivergence_KitchenStatus_PartialCoverageNotVisible(t *testing.T) {
-	// This represents a node where analysis computed kitchen_status="partial"
-	// but we stored AllCookbooksCompatible=true because no cookbooks are blocking.
+// This is the fix for Bug #1: "Node readiness shows TK passes but no TK runs
+// have actually passed."
+func TestPersistedStatus_KitchenPartialServedDirectly(t *testing.T) {
 	nr := datastore.NodeReadiness{
 		AllCookbooksCompatible: true,
 		BlockingCookbooks:      json.RawMessage(`[]`),
 		CookstyleStatus:        "passed",
-		KitchenStatus:          "partial", // ← what analysis computed (persisted)
+		KitchenStatus:          "partial", // persisted by analysis (has full TK coverage context)
 	}
 
-	// The webapi re-derivation disagrees with what was persisted.
-	got := deriveKitchenStatus(nr)
+	got := deriveCheckStatus(nr)
 
-	// KNOWN DIVERGENCE: webapi says "passed", analysis said "partial".
-	if got != KitchenStatusPassed {
-		t.Fatalf("expected webapi to return %q (the divergent value), got %q",
-			KitchenStatusPassed, got)
+	if got.KitchenStatus != "partial" {
+		t.Errorf("KitchenStatus = %q, want %q (persisted value)", got.KitchenStatus, "partial")
 	}
-
-	// The persisted value is correct per the semantic contract.
-	if nr.KitchenStatus != "partial" {
-		t.Fatalf("persisted kitchen_status should be %q, got %q", "partial", nr.KitchenStatus)
+	// Detail string must be consistent with status.
+	if got.KitchenDetail == nil || *got.KitchenDetail != "Test Kitchen: partially tested" {
+		detail := "<nil>"
+		if got.KitchenDetail != nil {
+			detail = *got.KitchenDetail
+		}
+		t.Errorf("KitchenDetail = %q, want %q", detail, "Test Kitchen: partially tested")
 	}
-
-	// This test PASSES today documenting the divergence.
-	// When Phase 2 lands (serve persisted values), this test should be updated
-	// to verify the API returns nr.KitchenStatus ("partial") directly.
-	t.Log("KNOWN DIVERGENCE: webapi derives 'passed' but persisted value is 'partial'")
-	t.Log("Phase 2 will fix by serving persisted kitchen_status directly")
 }
 
-// TestDivergence_KitchenStatus_AllTestedPassedButBlockingExists documents
-// another scenario where webapi and analysis can disagree.
-//
-// Scenario: All TK-eligible cookbooks passed, but one cookbook is blocking
-// due to cookstyle failure (not TK). The analysis says kitchen_status="passed"
-// because all TK tests passed. The webapi sees blocking entries without TK
-// verdicts and says "unknown".
-func TestDivergence_KitchenStatus_AllTestedPassedButBlockingExists(t *testing.T) {
-	// A cookbook is blocking due to cookstyle but TK was fine for all eligible.
+// TestPersistedStatus_KitchenPassedWithBlocking verifies that when analysis
+// determined kitchen_status="passed" (all TK tests passed) but blocking
+// exists for cookstyle reasons, the API serves "passed".
+func TestPersistedStatus_KitchenPassedWithBlocking(t *testing.T) {
 	blocking := []testBlocking{{
 		Name:   "legacy-cookbook",
 		Reason: "incompatible",
 		Source: "cookstyle",
 		Verdicts: []testVerdict{
 			{Source: "server_cookstyle", Status: "incompatible"},
-			// No git_test_kitchen verdict — this cookbook has no test suite
 		},
 	}}
 	nr := datastore.NodeReadiness{
 		AllCookbooksCompatible: false,
 		BlockingCookbooks:      mustJSON(blocking),
-		KitchenStatus:          "passed", // ← analysis determined all TK passed
+		KitchenStatus:          "passed", // persisted by analysis
 	}
 
-	got := deriveKitchenStatus(nr)
+	got := deriveCheckStatus(nr)
 
-	// KNOWN DIVERGENCE: webapi sees blocking without TK verdicts → "unknown"
-	if got != KitchenStatusUnknown {
-		t.Fatalf("expected webapi to return %q (the divergent value), got %q",
-			KitchenStatusUnknown, got)
+	if got.KitchenStatus != "passed" {
+		t.Errorf("KitchenStatus = %q, want %q (persisted value)", got.KitchenStatus, "passed")
+	}
+	if got.KitchenDetail == nil || *got.KitchenDetail != "Test Kitchen: all passed" {
+		detail := "<nil>"
+		if got.KitchenDetail != nil {
+			detail = *got.KitchenDetail
+		}
+		t.Errorf("KitchenDetail = %q, want %q", detail, "Test Kitchen: all passed")
+	}
+}
+
+// TestPersistedStatus_FallbackWhenEmpty verifies that legacy records without
+// persisted status values fall back to re-derivation from blocking cookbooks.
+func TestPersistedStatus_FallbackWhenEmpty(t *testing.T) {
+	blocking := []testBlocking{{
+		Name:   "apt",
+		Reason: "incompatible",
+		Verdicts: []testVerdict{
+			{Source: "server_cookstyle", Status: "incompatible"},
+			{Source: "git_test_kitchen", Status: "incompatible"},
+		},
+	}}
+	nr := datastore.NodeReadiness{
+		AllCookbooksCompatible: false,
+		BlockingCookbooks:      mustJSON(blocking),
+		CookstyleStatus:        "", // legacy empty — triggers fallback
+		KitchenStatus:          "", // legacy empty — triggers fallback
 	}
 
-	if nr.KitchenStatus != "passed" {
-		t.Fatalf("persisted kitchen_status should be %q, got %q", "passed", nr.KitchenStatus)
+	got := deriveCheckStatus(nr)
+
+	if got.CookstyleStatus != CookstyleStatusFailed {
+		t.Errorf("CookstyleStatus fallback = %q, want %q", got.CookstyleStatus, CookstyleStatusFailed)
+	}
+	if got.KitchenStatus != KitchenStatusFailed {
+		t.Errorf("KitchenStatus fallback = %q, want %q", got.KitchenStatus, KitchenStatusFailed)
+	}
+}
+
+// TestPersistedStatus_CookstyleOverridesDerivation verifies cookstyle status
+// is also served from persisted values.
+func TestPersistedStatus_CookstyleOverridesDerivation(t *testing.T) {
+	// Blocking exists with only TK failures. Re-derivation would say "passed".
+	// But persisted says "unknown" (analysis had a reason we can't see from blocking alone).
+	blocking := []testBlocking{{
+		Name:   "web-app",
+		Reason: "incompatible",
+		Verdicts: []testVerdict{
+			{Source: "git_test_kitchen", Status: "incompatible"},
+		},
+	}}
+	nr := datastore.NodeReadiness{
+		AllCookbooksCompatible: false,
+		BlockingCookbooks:      mustJSON(blocking),
+		CookstyleStatus:        "unknown", // persisted — analysis had reason
 	}
 
-	t.Log("KNOWN DIVERGENCE: webapi derives 'unknown' but persisted value is 'passed'")
-	t.Log("Phase 2 will fix by serving persisted kitchen_status directly")
+	got := deriveCheckStatus(nr)
+
+	if got.CookstyleStatus != "unknown" {
+		t.Errorf("CookstyleStatus = %q, want %q (persisted value)", got.CookstyleStatus, "unknown")
+	}
 }

@@ -204,10 +204,12 @@ func (p *dbResultProvider) GetLatestTestKitchenStatus(ctx context.Context, repoN
 	}
 	var passed, failed int
 	for _, r := range results {
-		if r.Passed != nil && *r.Passed {
+		switch {
+		case r.Passed != nil && *r.Passed:
 			passed++
-		} else {
+		case (r.Passed != nil && !*r.Passed) || r.TimedOut:
 			failed++
+		// r.Passed == nil && !r.TimedOut: result incomplete — skip
 		}
 	}
 	status := "untested"
