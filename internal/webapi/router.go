@@ -709,6 +709,9 @@ func (r *Router) registerRoutes() {
 		r.adminOnly("/api/v1/admin/performance/db", r.handlePerformanceDB)
 	}
 
+	// Database maintenance (always available to admins).
+	r.adminOnly("/api/v1/admin/performance/vacuum", r.handleVacuumFull)
+
 	// pprof endpoints (admin-only, only registered when explicitly enabled).
 	if r.cfg.Performance.PprofEnabled {
 		r.adminOnly("/debug/pprof/", func(w http.ResponseWriter, req *http.Request) {
