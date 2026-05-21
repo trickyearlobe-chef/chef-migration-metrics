@@ -38,6 +38,10 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] `kubernetes-cluster` git repo: `ha-cluster-k8s135-cp1` suite hardcodes `control_plane_endpoint: "192.168.56.10:6443"` in `kitchen.yml`, which depends on a Vagrant `private_network` interface. On non-Vagrant drivers (e.g. Proxmox), that IP is never created — kubeadm starts on the Proxmox-assigned IP but times out trying to reach the hardcoded endpoint. This is a suite-level incompatibility with non-Vagrant drivers, not a cookbook bug. **Strategic fix:** detect or flag suites that reference driver-specific networking (e.g. `192.168.56.x`) and either skip them or allow per-suite driver overrides in the kitchen overlay.
 
+## Test Kitchen — Pre-Converge Scripts
+
+- [ ] **Some git repos contain shell scripts (e.g. `users.sh`) that must be executed on the VM before converge** — these set up prerequisite state (users, groups, packages) that the cookbook expects to exist. Without them, converge fails for the wrong reason. **Strategic fix:** add a configurable pre-converge hook mechanism — detect scripts matching a naming convention or path (e.g. `scripts/pre-converge/*.sh`, or a top-level `users.sh`), upload and execute them on the VM before the Chef run. Could be a per-repo config item specifying which scripts to run and in what order.
+
 ## Kitchen Queue — Live Output Streaming
 
 - [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (already available via `GET /kitchen/queue/:id`) covers 90% of the use case.
