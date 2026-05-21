@@ -415,7 +415,7 @@ export function AdminPerformancePage() {
           </button>
         </div>
         <p className="mt-2 text-xs text-gray-400">
-          VACUUM FULL reclaims disk space from dead tuples. Tables are locked during the operation.
+          VACUUM FULL reclaims disk space by rewriting tables. Only needed when disk space is critically low — PostgreSQL normally reuses free space automatically. Tables are locked during the operation.
         </p>
       </section>
     </div>
