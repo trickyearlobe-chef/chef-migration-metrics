@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { maintenanceEvents } from "../context/MaintenanceContext";
+
 export const BASE = "/api/v1";
 
 export function buildUrl(
@@ -56,6 +58,14 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
     try {
       const parsed = JSON.parse(body);
       if (typeof parsed === "object" && parsed !== null) {
+        // Detect maintenance mode response
+        if (res.status === 503 && parsed.error === "maintenance") {
+          maintenanceEvents.dispatchEvent(
+            new CustomEvent("maintenance", {
+              detail: { active: true, message: parsed.message || "System maintenance in progress." },
+            }),
+          );
+        }
         message =
           parsed.message ||
           parsed.error ||
