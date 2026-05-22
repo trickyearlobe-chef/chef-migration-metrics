@@ -163,7 +163,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	sb.WriteString(cte)
 	sb.WriteString("\nSELECT ")
 	sb.WriteString(cols)
-	sb.WriteString(", COUNT(*) OVER () AS total_count\n  FROM completed_nodes cn")
+	sb.WriteString(", COUNT(*) OVER () AS total_count\n  FROM current_nodes cn")
 	sb.WriteString(join)
 	sb.WriteString(where)
 
@@ -361,7 +361,7 @@ func (db *DB) countNodeDistribution(ctx context.Context, f NodeSnapshotFilter, e
 
 	query := fmt.Sprintf(`%s
 		SELECT %s AS %s, COUNT(*) AS cnt
-		  FROM completed_nodes cn
+		  FROM current_nodes cn
 		%s%s
 		 GROUP BY %s
 		 ORDER BY cnt DESC, %s ASC
@@ -411,7 +411,7 @@ func (db *DB) CountNodePlatformDistributionDetailed(ctx context.Context, f NodeS
 		       COALESCE(cn.platform_family, '') AS platform_family,
 		       COALESCE(cn.platform_caption, '') AS platform_caption,
 		       COUNT(*) AS cnt
-		  FROM completed_nodes cn
+		  FROM current_nodes cn
 		%s%s
 		 GROUP BY 1, 2, 3, 4
 		 ORDER BY cnt DESC
@@ -481,7 +481,7 @@ func (db *DB) ListDistinctNodeValues(ctx context.Context, f NodeSnapshotFilter, 
 
 	query := fmt.Sprintf(`%s
 		SELECT DISTINCT %s AS val
-		  FROM completed_nodes cn
+		  FROM current_nodes cn
 		%s%s
 		   AND %s IS NOT NULL AND %s != ''%s
 		 ORDER BY val%s
@@ -531,7 +531,7 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, o
 
 	query := fmt.Sprintf(`%s
 		SELECT DISTINCT r.value AS val
-		  FROM completed_nodes cn
+		  FROM current_nodes cn
 		%s, jsonb_array_elements_text(cn.roles) r(value)
 		%s
 		   AND jsonb_typeof(cn.roles) = 'array'
@@ -565,7 +565,11 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, o
 // the same filtering logic. The WHERE clause always starts with " WHERE 1=1"
 // so additional conditions can be appended with AND.
 func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string, where string, args []interface{}) {
-	cte = `WITH completed_nodes AS (
+	// Do not gate on collection_runs.status. Node snapshots are upserted in
+	// place and are valid once written, even if the collection run later fails.
+	// Orphaned nodes are cleaned up by DeleteOrphanedNodeSnapshots which has
+	// its own safety guard against empty active-node lists.
+	cte = `WITH current_nodes AS (
 		SELECT ns.collection_run_org, ns.organisation_name, ns.node_name,
 		       ns.chef_environment, ns.chef_version,
 		       ns.platform, ns.platform_version, ns.platform_family,
@@ -575,14 +579,6 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		       ns.ohai_time, ns.custom_attributes,
 		       ns.is_stale, ns.collected_at, ns.created_at
 		  FROM node_snapshots ns
-		 INNER JOIN collection_runs cr ON cr.organisation_name = ns.collection_run_org
-		 WHERE cr.status = 'completed'
-		   AND cr.started_at = (
-		         SELECT MAX(cr2.started_at)
-		           FROM collection_runs cr2
-		          WHERE cr2.organisation_name = ns.organisation_name
-		            AND cr2.status = 'completed'
-		       )
 	)`
 
 	where = " WHERE 1=1"
