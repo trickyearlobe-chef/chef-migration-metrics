@@ -117,6 +117,12 @@ func (r *Router) putAdminConfigTargetVersions(w http.ResponseWriter, req *http.R
 		}
 	}
 
+	// Reset materialised status columns — results for old target are invalid.
+	if err := r.db.ResetAllGitRepoStatuses(req.Context()); err != nil {
+		r.logf("ERROR", "admin/config/target-chef-versions: reset git repo statuses: %v", err)
+		// Non-fatal: statuses will be recomputed on next scan cycle.
+	}
+
 	r.storeAdminConfigSection(w, req, &config.Config{TargetChefVersions: input}, configstore.KeyTargetChefVersions, false)
 }
 

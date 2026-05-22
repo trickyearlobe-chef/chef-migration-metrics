@@ -272,7 +272,11 @@ func (db *DB) deleteKitchenBatch(ctx context.Context, q queryable, id string) er
 // SetGitRepoKitchenExclusion marks a git repo as excluded from kitchen
 // testing. Returns ErrNotFound if no git repo with that name exists.
 func (db *DB) SetGitRepoKitchenExclusion(ctx context.Context, name string, reason string, excludedBy string) error {
-	return db.setGitRepoKitchenExclusion(ctx, db.q(), name, reason, excludedBy)
+	if err := db.setGitRepoKitchenExclusion(ctx, db.q(), name, reason, excludedBy); err != nil {
+		return err
+	}
+	// Exclusion changes which results are "active" → recompute TK status.
+	return db.RecomputeGitRepoTKStatusByName(ctx, name)
 }
 
 func (db *DB) setGitRepoKitchenExclusion(ctx context.Context, q queryable, name string, reason string, excludedBy string) error {
@@ -301,7 +305,11 @@ func (db *DB) setGitRepoKitchenExclusion(ctx context.Context, q queryable, name 
 // ClearGitRepoKitchenExclusion removes the kitchen exclusion flag from a
 // git repo. Returns ErrNotFound if no git repo with that name exists.
 func (db *DB) ClearGitRepoKitchenExclusion(ctx context.Context, name string) error {
-	return db.clearGitRepoKitchenExclusion(ctx, db.q(), name)
+	if err := db.clearGitRepoKitchenExclusion(ctx, db.q(), name); err != nil {
+		return err
+	}
+	// Exclusion changes which results are "active" → recompute TK status.
+	return db.RecomputeGitRepoTKStatusByName(ctx, name)
 }
 
 func (db *DB) clearGitRepoKitchenExclusion(ctx context.Context, q queryable, name string) error {

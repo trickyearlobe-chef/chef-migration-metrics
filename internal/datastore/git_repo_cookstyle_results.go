@@ -60,7 +60,15 @@ type UpsertGitRepoCookstyleResultParams struct {
 // updates the existing one for the same (git_repo_name, git_repo_url,
 // target_chef_version) combination. Returns the resulting row.
 func (db *DB) UpsertGitRepoCookstyleResult(ctx context.Context, p UpsertGitRepoCookstyleResultParams) (*GitRepoCookstyleResult, error) {
-	return db.upsertGitRepoCookstyleResult(ctx, db.q(), p)
+	result, err := db.upsertGitRepoCookstyleResult(ctx, db.q(), p)
+	if err != nil {
+		return nil, err
+	}
+	// Recompute materialised compatibility_status column.
+	if reErr := db.RecomputeGitRepoCompatibilityStatus(ctx, p.GitRepoName, p.GitRepoURL, p.TargetChefVersion); reErr != nil {
+		return result, fmt.Errorf("datastore: recomputing compatibility after cookstyle upsert: %w", reErr)
+	}
+	return result, nil
 }
 
 func (db *DB) upsertGitRepoCookstyleResult(ctx context.Context, q queryable, p UpsertGitRepoCookstyleResultParams) (*GitRepoCookstyleResult, error) {

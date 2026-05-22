@@ -176,6 +176,10 @@ type DataStore interface {
 	// Git repos
 	// -----------------------------------------------------------------
 
+	// ResetAllGitRepoStatuses resets all materialised status columns to
+	// 'untested'. Call when the active target Chef version changes.
+	ResetAllGitRepoStatuses(ctx context.Context) error
+
 	// ListGitRepos returns all git repos, deduplicated by name (most
 	// recently fetched row per name), ordered by name.
 	ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
