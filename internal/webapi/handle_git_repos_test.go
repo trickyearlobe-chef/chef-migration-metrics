@@ -73,15 +73,15 @@ func decodeGitRepoListResponse(t *testing.T, w *httptest.ResponseRecorder) gitRe
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures
+// Fixtures — repos now have materialised status columns populated
 // ---------------------------------------------------------------------------
 
 func sampleGitRepos() []datastore.GitRepo {
 	return []datastore.GitRepo{
-		{Name: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", HasTestSuite: true},
-		{Name: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", HasTestSuite: false},
-		{Name: "cookbook-c", GitRepoURL: "https://github.com/org/cookbook-c.git", HasTestSuite: true},
-		{Name: "cookbook-d", GitRepoURL: "https://github.com/org/cookbook-d.git", HasTestSuite: true},
+		{Name: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", HasTestSuite: true, CompatibilityStatus: "compatible", TKStatus: "passed", TKPassed: 2, TKTotal: 2},
+		{Name: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", HasTestSuite: false, CompatibilityStatus: "incompatible", TKStatus: "partial", TKPassed: 1, TKTotal: 2},
+		{Name: "cookbook-c", GitRepoURL: "https://github.com/org/cookbook-c.git", HasTestSuite: true, CompatibilityStatus: "untested", TKStatus: "untested", TKPassed: 0, TKTotal: 0},
+		{Name: "cookbook-d", GitRepoURL: "https://github.com/org/cookbook-d.git", HasTestSuite: true, CompatibilityStatus: "untested", TKStatus: "untested", TKPassed: 0, TKTotal: 0},
 	}
 }
 
@@ -90,7 +90,6 @@ func sampleCookstyleResults() []datastore.GitRepoCookstyleResult {
 	return []datastore.GitRepoCookstyleResult{
 		{GitRepoName: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", TargetChefVersion: "18.0.0", Passed: true, ScannedAt: now},
 		{GitRepoName: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 5, ScannedAt: now},
-		// cookbook-c and cookbook-d have no cookstyle result → "untested"
 	}
 }
 
@@ -102,14 +101,60 @@ func sampleKitchenResults() []datastore.GitKitchenResult {
 		{GitRepoName: "cookbook-a", InstanceName: "default-rocky-9", Passed: &passed},
 		{GitRepoName: "cookbook-b", InstanceName: "default-ubuntu-2404", Passed: &passed},
 		{GitRepoName: "cookbook-b", InstanceName: "default-rocky-9", Passed: &failed},
-		// cookbook-c and cookbook-d have no kitchen results → "untested"
 	}
 }
 
 func defaultGitRepoMockStore() *mockStore {
+	allRepos := sampleGitRepos()
 	return &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return sampleGitRepos(), nil
+			return allRepos, nil
+		},
+		ListGitReposFilteredFn: func(ctx context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			// Simple mock: apply name and status filters against sample data.
+			var result []datastore.GitRepo
+			for _, r := range allRepos {
+				if f.Name != "" && !containsFold(r.Name, f.Name) {
+					continue
+				}
+				compat := r.CompatibilityStatus
+				if compat == "" {
+					compat = "untested"
+				}
+				if f.CompatibilityStatus != "" && compat != f.CompatibilityStatus {
+					continue
+				}
+				tkStatus := r.TKStatus
+				if tkStatus == "" {
+					tkStatus = "untested"
+				}
+				if f.TKStatus != "" && tkStatus != f.TKStatus {
+					continue
+				}
+				if f.CloneStatus != "" && r.CloneStatus != f.CloneStatus {
+					continue
+				}
+				if f.HasTestSuite != nil {
+					if *f.HasTestSuite && !r.HasTestSuite {
+						continue
+					}
+					if !*f.HasTestSuite && r.HasTestSuite {
+						continue
+					}
+				}
+				result = append(result, r)
+			}
+			total := len(result)
+			// Apply offset/limit.
+			if f.Offset > 0 && f.Offset < len(result) {
+				result = result[f.Offset:]
+			} else if f.Offset >= len(result) {
+				result = nil
+			}
+			if f.Limit > 0 && f.Limit < len(result) {
+				result = result[:f.Limit]
+			}
+			return result, total, nil
 		},
 		ListAllGitRepoCookstyleResultsFn: func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error) {
 			return sampleCookstyleResults(), nil
@@ -124,7 +169,7 @@ func defaultGitRepoMockStore() *mockStore {
 }
 
 // ---------------------------------------------------------------------------
-// Tests: Compatibility is also returned correctly
+// Tests: Compatibility is returned correctly from materialised column
 // ---------------------------------------------------------------------------
 
 func TestHandleGitRepos_CompatibilityInResponse(t *testing.T) {
@@ -165,11 +210,8 @@ func TestHandleGitRepos_CompatibilityInResponse(t *testing.T) {
 
 func TestHandleGitRepos_EmptyList(t *testing.T) {
 	store := &mockStore{
-		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
-			return nil, nil
-		},
-		ListAllGitRepoComplexitiesFn: func(ctx context.Context) ([]datastore.GitRepoComplexity, error) {
-			return nil, nil
+		ListGitReposFilteredFn: func(ctx context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			return nil, 0, nil
 		},
 	}
 	r := newGitRepoTestRouter(store)
@@ -193,7 +235,6 @@ func TestHandleGitRepos_NameFilter_WithTKStatus(t *testing.T) {
 	store := defaultGitRepoMockStore()
 	r := newGitRepoTestRouter(store)
 
-	// Filter by name=cookbook-a AND tk_status=passed — should match.
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos?name=cookbook-a&tk_status=passed", nil)
 	r.ServeHTTP(w, req)
@@ -244,15 +285,12 @@ func TestHandleGitRepos_TKPartialStatus(t *testing.T) {
 		tkStatusMap[d.Name] = d.TKStatus
 	}
 
-	// cookbook-a: 2 passed, 0 failed → "passed"
 	if tkStatusMap["cookbook-a"] != "passed" {
 		t.Errorf("cookbook-a: expected tk_status=passed, got %q", tkStatusMap["cookbook-a"])
 	}
-	// cookbook-b: 1 passed, 1 failed → "partial"
 	if tkStatusMap["cookbook-b"] != "partial" {
 		t.Errorf("cookbook-b: expected tk_status=partial, got %q", tkStatusMap["cookbook-b"])
 	}
-	// cookbook-c: no results → "untested"
 	if tkStatusMap["cookbook-c"] != "untested" {
 		t.Errorf("cookbook-c: expected tk_status=untested, got %q", tkStatusMap["cookbook-c"])
 	}
@@ -290,7 +328,6 @@ func TestHandleGitRepos_HasTestSuiteFilter_Yes(t *testing.T) {
 
 	resp := decodeGitRepoListResponse(t, w)
 
-	// cookbook-a, cookbook-c, cookbook-d have test suites
 	if len(resp.Data) != 3 {
 		t.Fatalf("expected 3 repos with test suite, got %d", len(resp.Data))
 	}
@@ -311,7 +348,6 @@ func TestHandleGitRepos_HasTestSuiteFilter_No(t *testing.T) {
 
 	resp := decodeGitRepoListResponse(t, w)
 
-	// Only cookbook-b has no test suite
 	if len(resp.Data) != 1 {
 		t.Fatalf("expected 1 repo without test suite, got %d", len(resp.Data))
 	}
@@ -324,7 +360,6 @@ func TestHandleGitRepos_HasTestSuiteFilter_Both(t *testing.T) {
 	store := defaultGitRepoMockStore()
 	r := newGitRepoTestRouter(store)
 
-	// Both yes and no selected = no filter applied
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos?has_test_suite=yes,no", nil)
 	r.ServeHTTP(w, req)

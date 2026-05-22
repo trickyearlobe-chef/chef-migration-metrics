@@ -180,6 +180,10 @@ type DataStore interface {
 	// recently fetched row per name), ordered by name.
 	ListGitRepos(ctx context.Context) ([]datastore.GitRepo, error)
 
+	// ListGitReposFiltered returns git repos matching the filter with
+	// SQL-level pagination. Returns the page of results and total count.
+	ListGitReposFiltered(ctx context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error)
+
 	// ListGitReposByName returns all git repo rows with the given cookbook
 	// name, ordered by last_fetched_at DESC.
 	ListGitReposByName(ctx context.Context, name string) ([]datastore.GitRepo, error)
