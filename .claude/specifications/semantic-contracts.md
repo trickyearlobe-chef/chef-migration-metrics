@@ -38,6 +38,8 @@ Canonical definitions for all derived metrics. Each metric has exactly one autho
 
 **Canonical function:** `tkstatus.ComputeTKStatus`
 
+**Note on "failed":** A kitchen instance counts as failed when `passed = false` OR `timed_out = true`. An instance with `passed = nil` and `timed_out = false` is indeterminate (not yet complete) and excluded from counts.
+
 **Consumers:** readiness evaluator, complexity scoring, git repo handlers, dashboard compatibility, role detail, cookbook remediation.
 
 **Discrepancy (resolved by this contract):** All callers MUST use `tkstatus.ComputeTKStatus` or `Counts.Status()`. No inline re-implementation. Fixed: `webapi/handle_kitchen_batches.go` was inlining the logic — now uses canonical function.
@@ -182,7 +184,25 @@ Both implement the same contract but independently. Phase 2 will eliminate the r
 
 ---
 
-## 9. Collection Run Gating
+## 9. Cookstyle Compatibility (per git repo)
+
+**Package:** `internal/webapi` (currently), target: `internal/analysis` (write-time)
+
+**Inputs:** `git_repo_cookstyle_results` for the active target Chef version
+
+**Contract:**
+- `error_message != ""` → `"error"` (scan failed)
+- `passed = true` → `"compatible"`
+- `passed = false` → `"incompatible"`
+- No result for active target → `"untested"`
+
+**"Passed" semantics:** Cookstyle "passed" means **no FATAL offenses** (no `ChefDeprecations` cops with severity `error` triggered). It does NOT mean zero offenses — style warnings, modernization suggestions, and non-fatal corrections do not affect the pass/fail verdict.
+
+**Note:** At the current customer, cookstyle is NOT the main compatibility signal — most repos pass. Test Kitchen is where real compatibility issues surface.
+
+---
+
+## 10. Collection Run Gating
 
 **Problem:** Metric snapshots and trend data currently include partial collection runs. A collection that fails mid-way still writes partial results, which can cause trend graphs to show misleading dips.
 

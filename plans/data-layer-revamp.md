@@ -62,7 +62,14 @@ Push derived calculations into the DB at collection time. API surfaces read pre-
 
 ### Phase 3: Server-Side Pagination
 
-With materialised values in DB, implement proper server-side pagination with correct sort order.
+Eliminate in-memory fetch-all-then-paginate patterns. Spec: `.claude/specifications/server-side-pagination.md`.
+
+- [ ] 3a. Add materialised status columns to `git_repos` + backfill migration + recomputation function
+- [ ] 3b. Create `GitRepoFilter` SQL builder; migrate `handleGitRepos` to SQL pagination
+- [ ] 3c. Materialise TK status for cookbooks; remove TK in-memory fallback from `handleCookbooks`
+- [ ] 3d. Add `tk_status` to role storage; remove TK in-memory fallback from `handleRoles`
+- [ ] 3e. Add sort stability (tie-breaker on unique key) to all list endpoints
+- [ ] 3f. Verify export filter contract matches list filter contract (Bug 8 parity)
 
 ### Phases 4–8: TBD
 

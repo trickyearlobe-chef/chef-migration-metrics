@@ -108,6 +108,14 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 - [ ] **Git repo committers no longer being collected** — the committers list for git repositories is not being populated during collection runs. This may be a regression from a recent change (config rework or collector refactor). **Investigate:** check whether `git log` is being executed, whether the results are being parsed/stored, and whether the relevant DB write path is still being called.
 
+## Backup — Scheduled Cron Not Firing at Customer
+
+- [ ] **Backup cron schedule not triggering** — customer has `0 2 * * *` configured with "Enable scheduled backups" checked, but no scheduled backups are being created. Manual "Create Backup Now" works (2.3 GB backup succeeded 21/05/2026). Only one backup exists, implying cron has never fired since deployment. **Investigate:** check whether the cron scheduler goroutine is running, whether it correctly reads the config-store schedule on startup and after live-reload, and whether any error is being logged. May be related to the config-reload lifecycle or the scheduler not surviving app restarts.
+
+## Backup — No Log Scope Filter in UI
+
+- [ ] **No way to filter logs to show backup activity** — the log UI has no scope/category filter to isolate backup-related log entries. The backup service logs using `ScopeBackup` but users cannot filter by scope in the logs page. **Strategic fix:** add a scope filter dropdown to the log viewer UI (selecting from known scopes: backup, collection, analysis, kitchen, etc.) and a corresponding `?scope=backup` query param on the log entries API.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
