@@ -185,7 +185,7 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	if strings.EqualFold(f.SortOrder, "desc") {
 		sortDir = "DESC"
 	}
-	sb.WriteString("\n ORDER BY " + sortCol + " " + sortDir)
+	sb.WriteString("\n ORDER BY " + sortCol + " " + sortDir + ", cn.node_name ASC")
 
 	// Pagination — argument numbering continues from where
 	// buildNodeSnapshotFilterParts left off.

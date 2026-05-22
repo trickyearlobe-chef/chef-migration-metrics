@@ -315,7 +315,7 @@ func buildRoleFilterQuery(f RoleFilter, seedRoles []string) (string, []interface
 		if strings.EqualFold(f.SortOrder, "desc") {
 			sortDir = "DESC"
 		}
-		sb.WriteString("ORDER BY " + sortExpr + " " + sortDir + "\n")
+		sb.WriteString("ORDER BY " + sortExpr + " " + sortDir + ", LOWER(role_name) ASC\n")
 
 		if f.Limit > 0 {
 			sb.WriteString("LIMIT " + nextArg() + "\n")

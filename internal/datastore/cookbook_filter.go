@@ -195,7 +195,9 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 	if strings.EqualFold(f.SortOrder, "desc") {
 		sortDir = "DESC"
 	}
-	sb.WriteString(" ORDER BY " + sortExpr + " " + sortDir + "\n")
+	// Append deterministic tie-breaker for sort stability.
+	tieBreaker := ", LOWER(cb.name) ASC, cb.version ASC"
+	sb.WriteString(" ORDER BY " + sortExpr + " " + sortDir + tieBreaker + "\n")
 
 	// --- Pagination ---
 	if f.Limit > 0 {
