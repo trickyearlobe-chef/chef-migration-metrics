@@ -27,6 +27,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] `DataStore` interface has 138+ methods (`webapi/store.go`) — consider splitting into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, etc.) composed into the full interface.
 - [ ] **SAML commit re-introduced `Ownership.Enabled` gate** — commit `fc9f511` removed the `Enabled` flag to make ownership always active, but the SAML commit (`e6c4ff1`) re-added `r.cfg.Ownership.Enabled` checks in `handle_ownership.go` (`requireOwnership` helper, `resolveOwnershipFilter`). Since `Enabled` defaults to `false`, ownership appears disabled unless manually configured. **Strategic fix:** remove `Ownership.Enabled` field from `OwnershipConfig` again, remove `requireOwnership()` helper and all `r.cfg.Ownership.Enabled` checks from `handle_ownership.go`, and remove the env-var override at `config.go:1177`. Ownership should always be active.
+- [ ] **`target_chef_versions` is a list but only one target is ever active** — config stores `TargetChefVersions []string` and code picks the highest via `config.HighestVersion()`. This is confusing and error-prone (users may add multiple values thinking they'll all be tested). **Strategic fix:** change config to `target_chef_version: "18.5.0"` (scalar string), update `config.Config`, admin API PUT/GET, frontend admin page, and all call sites that index into the slice. Remove `HighestVersion()` helper.
 
 ## Database
 
