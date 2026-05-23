@@ -92,7 +92,7 @@ RoleChainNode {
 
 - `getServerCookbookNames(ctx, orgs, names)` → set of names that exist in server_cookbooks
 - `getGitRepoCookbookNames(ctx, names)` → set of names that exist in git_repos
-- `getGitKitchenStatusMap(ctx, names, targetVersion)` → map[name]status aggregated from git_kitchen_results
+- `getGitKitchenStatusMap(ctx, names)` → map[name]status read from materialised `git_repos.tk_status`
 
 ### Role List Enhancement
 

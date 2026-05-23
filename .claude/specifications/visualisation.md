@@ -142,7 +142,7 @@ All dashboard views must support filtering by the following dimensions. Filters 
 | Policy name | Limit view to nodes using a specific Policyfile policy name |
 | Policy group | Limit view to nodes in a specific Policyfile policy group |
 | Platform / platform version | Limit view to nodes running a specific OS platform or version |
-| Target Chef Client version | Select which target upgrade version to evaluate readiness against |
+| Target Chef Client version | **Read-only indicator** — displays the single active target set in admin config. Not a user-selectable filter. |
 | Active/unused cookbook status | Show or hide cookbooks not applied to any node (default: hide unused) |
 | Stale node status | Show all nodes, only stale nodes, or only fresh nodes (default: all) |
 | Complexity label | Filter cookbooks by complexity label (`low`, `medium`, `high`, `critical`) |

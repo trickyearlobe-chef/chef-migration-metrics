@@ -2,12 +2,13 @@
 
 ## TL;DR
 
-Redesign the filter system into three tiers — global filters in the top bar, multi-select per-page filters with tag/chip UX, and type-ahead search for high-cardinality dimensions. Replace single-select dropdowns with multi-select controls. Promote cross-cutting filters (target Chef version, staleness) to a shared `GlobalFilterContext`. Add backend `?q=` search support for high-cardinality filter endpoints.
+Redesign the filter system into three tiers — global filters in the top bar, multi-select per-page filters with tag/chip UX, and type-ahead search for high-cardinality dimensions. Replace single-select dropdowns with multi-select controls. Promote staleness to a shared `GlobalFilterContext`. Add backend `?q=` search support for high-cardinality filter endpoints. Display the active target Chef version as a read-only indicator (not a filter — there is only one active target, set via admin config).
 
 ## Problem
 
 - All filters are single-select. Users cannot express "show me Windows 2019 AND Windows 2022" or "incompatible AND untested" without toggling back and forth.
-- Global filters (target Chef version, staleness) are managed independently on every page via local `useState` + URL params. Changing target version on the node list does not carry over to the cookbook list.
+- Global filters (target Chef version, staleness) are managed independently on every page via local `useState` + URL params. Changing staleness on the node list does not carry over to the cookbook list.
+- **Note:** Target Chef version is a system-wide admin setting, not a user-selectable filter. There is only one active target at any time; changing it invalidates all cookstyle/TK results and triggers a rescan. It should be displayed as a read-only indicator, not a filter control.
 - High-cardinality dropdowns (roles) load thousands of items into a `FilterCombobox`, which is slow to render and impossible to scroll through.
 - Client-side option filtering in `FilterCombobox` may use substring matching while the backend uses `^<string>.*` prefix matching on version fields, producing confusing suggestions where a user sees a match in the dropdown but gets no results from the API. (Under investigation — may already be fixed, but the contract must be explicit either way.)
 
@@ -39,7 +40,7 @@ Filters that affect every page and persist across navigation.
 | Filter | Current State | Target State |
 |---|---|---|
 | Organisation | Global via `OrgContext` | Unchanged |
-| Target Chef version | Per-page via `useTargetChefVersion` | Promote to `GlobalFilterContext` |
+| Target Chef version | Per-page via `useTargetChefVersion` | **Read-only indicator** in top bar (not a filter — single system-wide value set in admin config) |
 | Staleness tier | Per-page `stale_status` param | Promote to `GlobalFilterContext` (once two-tier staleness lands) |
 
 These render in the top bar, next to the existing org selector.
@@ -115,14 +116,15 @@ New React context: `GlobalFilterContext`, provided at the app root alongside `Au
 
 | Key | Type | Default | Source |
 |---|---|---|---|
-| `targetChefVersion` | `string \| null` | Highest available version (from `/api/v1/filters/target-chef-versions`) | Auto-selected on load, user-overridable |
-| `staleStatus` | `"all" \| "stale" \| "fresh"` | `"all"` | User selection |
+| `staleStatus` | `"all" \| "warning" \| "critical" \| "fresh"` | `"all"` | User selection |
 
-**Persistence:** All global filter values are reflected in URL query params (`?target_chef_version=18.5.0&stale_status=fresh`). Navigating to a URL with these params restores the global filter state. Bookmarking and link-sharing work.
+**Target Chef version** is NOT part of filter state. It is a system-wide admin setting (single active value). The context exposes it as a read-only value fetched from `/api/v1/admin/config` for display purposes only. It cannot be changed from the filter bar — only from admin config.
 
-**Page integration:** Pages read global filters from context and include them in API calls. Pages no longer manage these filters in local state.
+**Persistence:** Global filter values are reflected in URL query params (`?stale_status=fresh`). Navigating to a URL with these params restores the global filter state. Bookmarking and link-sharing work.
 
-**`useTargetChefVersion` hook:** Retired or reduced to a thin wrapper that reads from `GlobalFilterContext`. Pages that currently call this hook require no changes beyond the hook's internal refactor.
+**Page integration:** Pages read global filters from context and include them in API calls. Pages no longer manage staleness in local state.
+
+**`useTargetChefVersion` hook:** Retired. Pages that need to display the target version read it from `GlobalFilterContext` (read-only). No filter param is sent to the backend — the backend always uses the single configured target.
 
 ## Component Changes
 
@@ -163,15 +165,14 @@ Single-select dropdown. Replaced by `FilterMultiCheckbox` for enum-like dimensio
 
 ### Top Bar Layout
 
-The top bar layout is extended with slots for global filter controls to the right of the org selector. Layout order: Organisation selector → Target Chef version dropdown → Staleness toggle. Responsive: on narrow viewports, global filters collapse into a "Filters" dropdown.
+The top bar layout is extended with slots for global filter controls and the target version indicator to the right of the org selector. Layout order: Organisation selector → Target Chef version indicator (read-only, e.g. "Target: 18.5.0") → Staleness toggle. Responsive: on narrow viewports, global filters collapse into a "Filters" dropdown.
 
 ## Per-Page Filter Mapping
 
-### Node List (9 → 9 filters, restructured)
+### Node List (8 filters)
 
 | Filter | Tier | Component |
 |---|---|---|
-| Target Chef version | Global | Top bar dropdown |
 | Staleness | Global | Top bar toggle |
 | Platform | Multi-select | `FilterMultiCheckbox` |
 | Chef client version | Multi-select | `FilterCombobox` (multi, prefix match) |
@@ -181,27 +182,25 @@ The top bar layout is extended with slots for global filter controls to the righ
 | Policy name | Multi-select | `FilterMultiCheckbox` or `FilterTypeAhead` |
 | Node name | Text | `FilterInput` |
 
-### Cookbook List (4 filters)
+### Cookbook List (3 filters)
 
 | Filter | Tier | Component |
 |---|---|---|
-| Target Chef version | Global | Top bar dropdown |
 | Compatibility status | Multi-select | `FilterMultiCheckbox` |
 | Complexity label | Multi-select | `FilterMultiCheckbox` |
 | Cookbook name | Text | `FilterInput` |
 
-### Git Repos (4 filters)
+### Git Repos (3 filters)
 
 | Filter | Tier | Component |
 |---|---|---|
-| Target Chef version | Global | Top bar dropdown |
 | Compatibility status | Multi-select | `FilterMultiCheckbox` |
 | Complexity label | Multi-select | `FilterMultiCheckbox` |
 | Repo name | Text | `FilterInput` |
 
 ## URL Query Param Behaviour
 
-- Global filters use fixed param names: `target_chef_version`, `stale_status`
+- Global filters use fixed param names: `stale_status`
 - Per-page multi-select filters use comma-separated values: `?platform=windows,centos&complexity_label=high,critical`
 - Navigating between pages preserves global params and drops per-page params
 - Browser back/forward updates filter state from URL
@@ -238,13 +237,14 @@ Filters in the multi-select tier automatically degrade to type-ahead behaviour w
 
 ## Migration Path
 
-1. Implement `GlobalFilterContext` and promote target Chef version — all pages benefit immediately
+1. Implement `GlobalFilterContext` with staleness filter + read-only target version indicator
 2. Add `FilterMultiCheckbox` and `FilterTypeAhead` components
 3. Migrate node list filters (highest filter count, biggest UX pain)
 4. Migrate cookbook and git repo filters
 5. Add `?q=` backend support for roles endpoint (highest cardinality)
 6. Extend `?q=` to other endpoints as needed
 7. Deprecate `FilterSelect`
+8. Remove `useTargetChefVersion` hook (target version comes from admin config, not user selection)
 
 Each step is independently shippable and testable.
 

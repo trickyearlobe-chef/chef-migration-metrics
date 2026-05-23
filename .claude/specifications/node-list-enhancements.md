@@ -28,7 +28,7 @@ The node list shows an overall readiness status (`is_ready` boolean) but not whi
 
 ### New Fields on Node List Response
 
-`GET /api/v1/nodes` response items gain three fields alongside the existing `readiness` array. These are per-target-version, nested inside each `NodeReadinessSummary` entry:
+`GET /api/v1/nodes` response items gain three fields alongside the existing `readiness` array. These are nested inside each `NodeReadinessSummary` entry (there is only one entry — the single active target version):
 
 | Field | Type | Values |
 |---|---|---|
@@ -257,7 +257,7 @@ This is deferred — the existing readiness filter covers the most common triage
 - Checks column renders when readiness data includes per-check fields
 - Checks column degrades gracefully when per-check fields are absent (shows all-unknown)
 - Sort by check status sends correct query parameter
-- Selected target version drives which readiness entry is used for icon display
+- The single active target version (from admin config) drives which readiness entry is used for icon display
 
 ### API Tests
 

@@ -85,13 +85,14 @@ organisations:
 
 ### Target Chef Client Versions
 
-A list of Chef Client versions to test cookbook compatibility against.
+A list of Chef Client versions to test cookbook compatibility against. The system uses the **highest version** in the list as the single active target for all compatibility/TK evaluations. Changing this list invalidates all cookstyle and kitchen results and resets materialised status columns to 'untested'.
 
 ```yaml
 target_chef_versions:
   - "18.5.0"
-  - "19.0.0"
 ```
+
+**Operational note:** Only one target is active at a time (the highest semver in the list). The list format is retained for future multi-target support, but current UI displays a single read-only indicator and backend queries do not accept a target version parameter — they always use the configured active target.
 
 ---
 

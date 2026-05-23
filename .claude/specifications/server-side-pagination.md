@@ -73,17 +73,18 @@ Create `internal/datastore/git_repo_filter.go` with a `GitRepoFilter` struct mir
 ```
 GitRepoFilter {
   Name              string   // ILIKE substring
-  Compatibility     string   // filter on joined status
+  Compatibility     string   // filter on materialised compatibility_status column
   CloneStatus       string   // exact match
   HasTestSuite      *bool
-  TKStatus          string   // filter on joined status
-  TargetChefVersion string   // required for compat/TK joins
+  TKStatus          string   // filter on materialised tk_status column
   Sort              string   // whitelist: name, compatibility, tk_status, clone_status, last_fetched_at
   SortOrder         string
   Limit             int
   Offset            int
 }
 ```
+
+**Note:** No `TargetChefVersion` field — the application uses a single active target. Status columns are materialised scalars on `git_repos`, recomputed when results are written. Target version change resets all statuses to 'untested'.
 
 ### Status Materialisation (scalar columns)
 
