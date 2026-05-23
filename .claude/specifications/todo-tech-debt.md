@@ -111,7 +111,7 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 ## Backup — Scheduled Cron Not Firing at Customer
 
-- [ ] **Backup cron schedule not triggering** — customer has `0 2 * * *` configured with "Enable scheduled backups" checked, but no scheduled backups are being created. Manual "Create Backup Now" works (2.3 GB backup succeeded 21/05/2026). Only one backup exists, implying cron has never fired since deployment. **Investigate:** check whether the cron scheduler goroutine is running, whether it correctly reads the config-store schedule on startup and after live-reload, and whether any error is being logged. May be related to the config-reload lifecycle or the scheduler not surviving app restarts.
+- [ ] **Backup cron schedule not triggering** — customer has `0 2 * * *` configured with "Enable scheduled backups" checked, but no scheduled backups are being created. Manual "Create Backup Now" works (2.3 GB backup succeeded 21/05/2026). Only one backup exists, implying cron has never fired since deployment. **Root cause (suspected):** config was changed via admin UI but the app was not restarted; the backup scheduler goroutine reads config only at startup and does not re-read on config-store changes. **Strategic fix:** the backup scheduler must subscribe to config-store change notifications (or re-read config on each tick) so that enable/disable and schedule changes take effect immediately. See configuration spec § Live Reload Requirement.
 
 ## Backup — No Log Scope Filter in UI
 
