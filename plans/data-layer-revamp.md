@@ -75,13 +75,12 @@ Eliminate in-memory fetch-all-then-paginate patterns. Spec: `.claude/specificati
 
 ### Phase 4: Node Filter Correctness (Bugs 3–7)
 
-Fix backend filter logic where node queries produce incorrect or missing results. Spec: `.claude/specifications/filter-ux-overhaul.md` (backend section).
+Fix backend and frontend filter logic for node queries.
 
-- [ ] 4a. Bug 3: Policy name filter — verify SQL WHERE handles non-existent values (returns empty, not unfiltered)
-- [ ] 4b. Bug 4: Role filter — fix node-to-role JOIN producing incorrect results (likely OR vs AND or missing expansion_data parse)
-- [ ] 4c. Bug 5: Chef version filter — fix ILIKE/prefix matching giving false positives (e.g. `12` matching `12.x` and `112.x`)
-- [ ] 4d. Bug 6: Chef version debounce — frontend validation rejects intermediate input (`12.`) then can't recover
-- [ ] 4e. Bug 7: Role filter partial text — backend `?q=` prefix search works but frontend only sends on autocomplete select, not on freeform text
+- [ ] 4a. Bug 4+7: Role filter — add multi-value `Roles []string` to `NodeSnapshotFilter` with exact-match `= ANY(...)` against JSONB array elements. Handler splits comma-separated `?role=` into `Roles` (same pattern as environments/platforms). Fixes substring false positives and multi-select.
+- [ ] 4b. Bug 5: Chef version filter — change single-value path from prefix LIKE to exact match (users pick from dropdown, not freeform). Keep prefix only when explicitly requested (future).
+- [ ] 4c. Bug 3: Policy name filter — investigate frontend; backend logic appears correct (LIKE '%x%' returns empty for non-existent values). Likely frontend not sending param or clearing it on autocomplete miss.
+- [ ] 4d. Bug 6: Chef version debounce — frontend fix: don't clear filter input when intermediate value fails regex validation (e.g. `12.` is incomplete, not invalid).
 
 ### Phase 5: Staleness & Freshness Filters (Bugs 2, 9)
 

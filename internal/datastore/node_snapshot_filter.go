@@ -45,8 +45,13 @@ type NodeSnapshotFilter struct {
 	PolicyGroup string
 
 	// Role filters by case-insensitive substring match against any element
-	// in the roles JSONB array.
+	// in the roles JSONB array. Used for freeform text search.
 	Role string
+
+	// Roles filters by exact match against any of these role names in the
+	// roles JSONB array. Uses EXISTS + ANY SQL. When set, takes precedence
+	// over Role (substring).
+	Roles []string
 
 	// Environments filters by exact match against any of these environments.
 	// Uses ANY($N) SQL. When set, takes precedence over Environment (substring).
@@ -647,7 +652,10 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		args = append(args, f.PolicyGroup)
 	}
 
-	if f.Role != "" {
+	if len(f.Roles) > 0 {
+		where += " AND jsonb_typeof(cn.roles) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE r = ANY(" + nextArg() + "))"
+		args = append(args, pq.Array(f.Roles))
+	} else if f.Role != "" {
 		where += " AND jsonb_typeof(cn.roles) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE LOWER(r) LIKE '%' || LOWER(" + nextArg() + ") || '%')"
 		args = append(args, f.Role)
 	}

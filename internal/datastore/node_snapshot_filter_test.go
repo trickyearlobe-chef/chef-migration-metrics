@@ -279,6 +279,41 @@ func TestBuildNodeSnapshotFilterQuery_Role(t *testing.T) {
 	}
 }
 
+func TestBuildNodeSnapshotFilterQuery_RolesExact(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Roles: []string{"admin", "webserver"},
+	})
+
+	if !strings.Contains(q, "jsonb_typeof(cn.roles) = 'array'") {
+		t.Errorf("query missing jsonb_typeof guard for roles")
+	}
+	if !strings.Contains(q, "EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE r = ANY(") {
+		t.Errorf("query missing role exact-match ANY clause, got:\n%s", q)
+	}
+	// Should NOT contain LIKE (that's the substring path).
+	if strings.Contains(q, "LIKE") {
+		t.Errorf("exact-match Roles should not use LIKE, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d", len(args))
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_RolesExactTakesPrecedence(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Role:  "admin",
+		Roles: []string{"admin"},
+	})
+
+	// Roles (exact) should take precedence — no LIKE clause.
+	if strings.Contains(q, "LIKE") {
+		t.Errorf("Roles should take precedence over Role (substring), got:\n%s", q)
+	}
+	if !strings.Contains(q, "r = ANY(") {
+		t.Errorf("expected exact-match ANY clause, got:\n%s", q)
+	}
+}
+
 func TestBuildNodeSnapshotFilterQuery_StaleTrue(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
 		Stale: boolPtr(true),
