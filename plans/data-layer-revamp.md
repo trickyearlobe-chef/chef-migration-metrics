@@ -14,12 +14,12 @@ These drive the need for this revamp:
 |---|-----|-------|--------|
 | 1 | Node readiness shows TK passes but no TK runs have actually passed | Phase 1 | ✅ Fixed |
 | 2 | Trend graphs don't react to staleness filters | Phase 5 | Pending |
-| 3 | Filtering nodes by non-existent policy shows no filtering effect | Phase 4 | Pending |
-| 4 | Filtering nodes by matching roles gives incorrect results | Phase 4 | Pending |
-| 5 | Filtering nodes by chef version gives incorrect matches | Phase 4 | Pending |
-| 6 | Chef version filter debounce/validation bug | Phase 4 | Pending |
-| 7 | Role filter: partial text entry doesn't filter, only autocomplete selection works | Phase 4 | Pending |
-| 8 | Export buttons don't respect current filters | Phase 6 | Partial (backend ready) |
+| 3 | Filtering nodes by non-existent role shows no filtering effect | Phase 4 | ✅ Fixed (same as Bug 4) |
+| 4 | Filtering nodes by matching roles gives incorrect results | Phase 4 | ✅ Fixed |
+| 5 | Filtering nodes by chef version gives incorrect matches | Phase 4 | ✅ Fixed (debounce) |
+| 6 | Chef version filter debounce/validation bug | Phase 4 | ✅ Fixed |
+| 7 | Role filter: partial text entry doesn't filter, only autocomplete selection works | Phase 4 | ✅ Fixed (same as Bug 4) |
+| 8 | Export buttons don't respect current filters | Phase 6 | ✅ Fixed (NodesPage already passes filters to ExportButton) |
 | 9 | Cookbook "fresh" still shows inactive cookbooks | Phase 5 | Pending |
 | 10 | Consistency errors in calculations obvious to humans | Phase 1 | ✅ Fixed |
 | 11 | Cookstyle "passed" semantics confusing | Phase 1 | ✅ Fixed |
@@ -86,8 +86,10 @@ Fix backend and frontend filter logic for node queries.
 
 Staleness-aware filtering across all views. Spec: `.claude/specifications/staleness-tiers.md`.
 
-- [ ] 5a. Bug 2: Trend graphs — pass staleness filter param to trend/dashboard aggregation endpoints
-- [ ] 5b. Bug 9: Cookbook freshness — "fresh" filter should mean "referenced by at least one fresh node", not just "active"
+These are feature work, not quick fixes:
+
+- [ ] 5a. Bug 2: Trend graphs — trends are pre-aggregated in metric snapshots; filtering by current staleness doesn't apply to historical data. Options: (a) re-aggregate at query time filtering by staleness tier at each snapshot timestamp, or (b) store separate stale/fresh trend lines at collection time.
+- [ ] 5b. Bug 9: Cookbook freshness — define "fresh cookbook" as "referenced by at least one node with `is_stale = false`". Requires JOIN through `node_snapshots.cookbooks` JSONB. Add `used_by_fresh_nodes` filter param to cookbook endpoint.
 
 ### Phase 6: Export Filter Parity (Bug 8)
 
