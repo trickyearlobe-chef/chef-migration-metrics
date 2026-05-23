@@ -25,7 +25,7 @@ These drive the need for this revamp:
 | 11 | Cookstyle "passed" semantics confusing | Phase 1 | ✅ Fixed |
 | 12 | Derived status computed differently at multiple call sites | Phase 1+2 | ✅ Fixed |
 | 13 | `handleGitRepos` loads ALL results into memory | Phase 3 | ✅ Fixed |
-| 14 | Blast radius / complexity scores calculated independently everywhere | Phase 7 | Pending |
+| 14 | Blast radius / complexity scores calculated independently everywhere | Phase 7 | ✅ Already resolved — scores materialised at write-time by ComplexityScorer; all handlers read stored values |
 | 15 | Collection-run gating missing — trends include partial data | Phase 2 | ✅ Fixed |
 | 16 | Metric snapshots don't partition cleanly by collection run | Phase 2 | ✅ Fixed (implicit) |
 
@@ -98,13 +98,11 @@ Export respects current page filters. Frontend passes same filter params to expo
 - [ ] 6a. Frontend: wire current filter state into export download URL params
 - [ ] 6b. Verify backend export endpoints accept and apply same filters as list endpoints
 
-### Phase 7: Remaining Derived Metric Consolidation (Bug 14)
+### Phase 7: Remaining Derived Metric Consolidation (Bug 14) — RESOLVED
 
-Push remaining derived calculations (blast radius, complexity scores) to write-time materialisation. Same pattern as TK/cookstyle.
+Investigation confirms complexity scores and blast radius are already materialised at write-time by `ComplexityScorer` (persisted to `server_cookbook_complexity` / `git_repo_complexity` tables). All API handlers, exports, and frontend read the stored values. The only read-time derivation is `priority_score = complexity × max(affected_nodes, 1)` in one handler — this is a trivial formula over two stored columns and doesn't warrant a DB column.
 
-- [ ] 7a. Identify all call sites computing blast radius / complexity
-- [ ] 7b. Materialise scores at collection time; API reads stored values
-- [ ] 7c. Remove independent re-derivation from frontend sort comparators and export formatters
+No code changes needed.
 
 ### Phase 8: Performance & Indexing
 
