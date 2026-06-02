@@ -2,13 +2,13 @@
 
 Spec: `specifications/parallel-deployment-tracking.md`
 
-### Open Questions (resolve before implementation)
+### Open Questions
 
-- [ ] Confirm ohai attribute tier: `normal['chef_migration']` or `automatic['chef_migration']`?
+*None — all resolved.*
 
-### Implementation (blocked on attribute tier open question)
+### Implementation
 
-- [ ] Add `chef_migration` attributes to partial-search fields in data collection
+- [ ] Add `chef_migration` automatic attributes to partial-search fields in data collection (path: `automatic.chef_migration.*`)
 - [ ] Schema migration: add migration tracking columns to `nodes` table
 - [ ] Persist migration state and speculative converge result per node during collection
 - [ ] Node list: add `migration_state` badge column (`omnibus_only` / `hab_dormant` / `hab_active`)

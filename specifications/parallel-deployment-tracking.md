@@ -49,7 +49,11 @@ Updated nightly by the staged version test run on each node.
 
 ## Open Questions
 
-- **Attribute tier** — are these `normal['chef_migration']` or `automatic['chef_migration']`? Determines the Chef Server partial-search path used during collection.
+*None — all resolved.*
+
+### Resolved
+
+- **Attribute tier** — confirmed `automatic['chef_migration']`. The migration cookbook writes to automatic attributes via ohai plugin, so partial-search path is `automatic.chef_migration.*`.
 
 ## Behaviour
 
@@ -68,7 +72,7 @@ A node is considered **ready to activate** when:
 ### Data Collection
 
 - Add `chef_migration` attributes to the Chef Server partial-search fields fetched per node
-- Map to the correct ohai path once attribute tier is confirmed (see open questions)
+- Path: `automatic.chef_migration.*` (ohai plugin writes to automatic attributes)
 
 ### Datastore
 
