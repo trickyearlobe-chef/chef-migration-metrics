@@ -296,20 +296,20 @@ func TestAuthenticateStoreError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAuthenticateNonLocalProvider(t *testing.T) {
-	ldapUser := datastore.User{
-		Username:     "ldap-alice",
+	samlUser := datastore.User{
+		Username:     "saml-alice",
 		PasswordHash: "irrelevant",
 		Role:         "viewer",
-		AuthProvider: "ldap",
+		AuthProvider: "saml",
 	}
 	store := &mockLocalAuthStore{
 		getUserByUsernameFn: func(ctx context.Context, username string) (datastore.User, error) {
-			return ldapUser, nil
+			return samlUser, nil
 		},
 	}
 
 	auth := NewLocalAuthenticator(store, 5)
-	result := auth.Authenticate(context.Background(), "ldap-alice", "anything", "10.0.0.1")
+	result := auth.Authenticate(context.Background(), "saml-alice", "anything", "10.0.0.1")
 
 	if result.Success {
 		t.Fatal("expected failure for non-local provider user")

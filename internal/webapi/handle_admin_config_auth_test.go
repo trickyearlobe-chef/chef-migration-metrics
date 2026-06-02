@@ -14,7 +14,6 @@ import (
 )
 
 const validAuthBodyLocal = `{"providers":[{"type":"local"}],"session_expiry":"24h","min_password_length":12}`
-const validAuthBodyLDAP = `{"providers":[{"type":"ldap","host":"ldap.example.com","base_dn":"dc=example,dc=com"}]}`
 const validAuthBodySAML = `{"providers":[{"type":"saml","idp_metadata_url":"https://idp.example.com/metadata","sp_entity_id":"https://app.example.com","sp_private_key_credential":"saml-sp-key","sp_certificate_credential":"saml-sp-cert"}]}`
 const validAuthBodyEmpty = `{"providers":[]}`
 
@@ -56,7 +55,13 @@ func TestAdminConfigAuth_GET_NilStore(t *testing.T) {
 func TestAdminConfigAuth_GET_UsesHolder(t *testing.T) {
 	cfg := testConfig()
 	cfg.Auth = config.AuthConfig{
-		Providers: []config.AuthProvider{{Type: "ldap", Host: "ldap.example.com", BaseDN: "dc=x,dc=com"}},
+		Providers: []config.AuthProvider{{
+			Type:                   "saml",
+			IDPMetadataURL:         "https://idp.example.com/metadata",
+			SPEntityID:             "https://app.example.com",
+			SPPrivateKeyCredential: "saml-sp-key",
+			SPCertificateCredential: "saml-sp-cert",
+		}},
 	}
 	holder := configstore.NewConfigHolder(cfg, nil)
 	r := newTestRouterForAdminConfig(testConfig(), nil, holder)
@@ -76,8 +81,8 @@ func TestAdminConfigAuth_GET_UsesHolder(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider[0] is not an object: %v", providers[0])
 	}
-	if first["type"] != "ldap" {
-		t.Errorf("provider type = %v, want \"ldap\"", first["type"])
+	if first["type"] != "saml" {
+		t.Errorf("provider type = %v, want \"saml\"", first["type"])
 	}
 }
 
@@ -110,17 +115,6 @@ func TestAdminConfigAuth_PUT_Success_Local(t *testing.T) {
 	if !restartRequired {
 		t.Error("auth PUT should set restart_required = true")
 	}
-}
-
-func TestAdminConfigAuth_PUT_Success_LDAP(t *testing.T) {
-	store := newTestConfigStore(t)
-	r := newTestRouterForAdminConfig(nil, store, nil)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(validAuthBodyLDAP))
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusOK)
 }
 
 func TestAdminConfigAuth_PUT_Success_SAML(t *testing.T) {
@@ -164,30 +158,6 @@ func TestAdminConfigAuth_PUT_400_InvalidJSON(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusBadRequest)
-}
-
-func TestAdminConfigAuth_PUT_422_LDAPMissingHost(t *testing.T) {
-	store := newTestConfigStore(t)
-	r := newTestRouterForAdminConfig(nil, store, nil)
-
-	body := `{"providers":[{"type":"ldap","base_dn":"dc=x,dc=com"}]}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusUnprocessableEntity)
-}
-
-func TestAdminConfigAuth_PUT_422_LDAPMissingBaseDN(t *testing.T) {
-	store := newTestConfigStore(t)
-	r := newTestRouterForAdminConfig(nil, store, nil)
-
-	body := `{"providers":[{"type":"ldap","host":"ldap.example.com"}]}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusUnprocessableEntity)
 }
 
 func TestAdminConfigAuth_PUT_422_SAMLMissingIDPURL(t *testing.T) {

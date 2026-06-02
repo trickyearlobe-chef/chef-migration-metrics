@@ -133,15 +133,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 				{
 					Type: "local",
 				},
-				{
-					Type:                   "ldap",
-					Host:                   "ldap.internal.example.com",
-					Port:                   389,
-					BaseDN:                 "dc=example,dc=com",
-					BindDN:                 "cn=admin,dc=example,dc=com",
-					BindPasswordEnv:        "LDAP_BIND_PASS",
-					BindPasswordCredential: "ldap-pass-cred",
-				},
 			},
 		},
 		SMTP: config.SMTPConfig{
@@ -321,7 +312,7 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 		if !ok {
 			t.Fatalf("provider_types wrong type: %T", auth["provider_types"])
 		}
-		if len(types) != 2 || types[0] != "local" || types[1] != "ldap" {
+		if len(types) != 1 || types[0] != "local" {
 			t.Errorf("unexpected provider_types: %v", types)
 		}
 		// Host, BaseDN, BindDN must not appear.
@@ -371,7 +362,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 			{"client key path", "/etc/chef/client.pem"},
 			{"driver secret value", "my-credential-name"},
 			{"smtp password env", "SMTP_PASS"},
-			{"bind password credential", "ldap-pass-cred"},
 			{"tls key path", "/etc/ssl/key.pem"},
 			{"acme email", "admin@example.com"},
 		}
