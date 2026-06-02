@@ -1482,6 +1482,10 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			// historical readiness trends without querying live
 			// node_readiness rows.
 			c.recordReadinessSnapshots(ctx, log, run.OrganisationName, org.Name, readinessResults, c.cfg.TargetChefVersions)
+
+			// Step 14c: Record unified node_metrics snapshot for enriched
+			// trend views (staleness breakdown, blocking reasons, platform).
+			c.recordNodeMetricsSnapshot(ctx, log, run.OrganisationName, org.Name, snapshotParams, readinessResults)
 		}
 	}
 
