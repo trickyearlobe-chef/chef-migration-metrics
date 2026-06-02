@@ -33,8 +33,7 @@ import { OwnershipAuditLogPage } from "./pages/OwnershipAuditLogPage";
 import { OwnershipImportPage } from "./pages/OwnershipImportPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminActionsPage } from "./pages/AdminActionsPage";
-import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
-import { AdminPerformancePage } from "./pages/AdminPerformancePage";
+import { AdminSystemHealthPage } from "./pages/AdminSystemHealthPage";
 import { AdminCredentialsPage } from "./pages/credentials";
 import { AdminTestKitchenHubPage } from "./pages/AdminTestKitchenHubPage";
 import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
@@ -242,7 +241,7 @@ export function App() {
                 path="/admin/system-stats"
                 element={
                   <RequireAdmin>
-                    <AdminSystemStatsPage />
+                    <AdminSystemHealthPage />
                   </RequireAdmin>
                 }
               />
@@ -356,11 +355,7 @@ export function App() {
               />
               <Route
                 path="/admin/performance"
-                element={
-                  <RequireAdmin>
-                    <AdminPerformancePage />
-                  </RequireAdmin>
-                }
+                element={<Navigate to="/admin/system-stats?tab=performance" replace />}
               />
               <Route
                 path="/admin/backups"
