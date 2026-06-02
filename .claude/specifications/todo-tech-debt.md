@@ -117,6 +117,14 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 - [ ] **No way to filter logs to show backup activity** — the log UI has no scope/category filter to isolate backup-related log entries. The backup service logs using `ScopeBackup` but users cannot filter by scope in the logs page. **Strategic fix:** add a scope filter dropdown to the log viewer UI (selecting from known scopes: backup, collection, analysis, kitchen, etc.) and a corresponding `?scope=backup` query param on the log entries API.
 
+## UI — Misleading Exclusion Tooltip
+
+- [ ] **"Known to be incompatible" tooltip is hardcoded regardless of actual exclusion reason** — `StatusBadge.tsx` displays the tooltip "Known to be incompatible with the target Chef version" for all excluded/skipped kitchen instances. However, exclusions can be created for many reasons (EOL platform, no hypervisor image, not deployed there, licensing cost, flaky infra, irrelevant suite). The `kitchen_instance_exclusions` table has a `reason` field that captures the actual motivation. **Strategic fix:** pass the exclusion `reason` through to the frontend and display it in the tooltip (e.g. "Excluded: Platform is EOL and being decommissioned"). Fall back to a generic "Excluded from testing" message when `reason` is empty, rather than claiming incompatibility.
+
+## UI — Redundant Target Version Selector
+
+- [ ] **Target version dropdown is dead weight** — the project uses a single-target model where changing the target invalidates all previous analysis (cookstyle, TK, readiness) and the startup reconciliation purges live-state data for old versions. This means there's only ever one version of live data. Despite this, the UI shows a `<select>` dropdown (via `GlobalFilterContext.targetChefVersion`) populated from `GET /filters/target-chef-versions`. Since the config list always has exactly one entry, the dropdown shows a single option that cannot be changed. On the dashboard trends page, the selected version isn't even passed to the API — the backend iterates all configured versions internally. **Strategic fix:** hide the selector entirely when `targetVersions.length <= 1` (in `AppLayout.tsx` where the global filter bar is rendered). Longer term, align with the scalar config change (`target_chef_version: string` instead of `target_chef_versions: []string`) tracked above under "Backend — Code Smells".
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
