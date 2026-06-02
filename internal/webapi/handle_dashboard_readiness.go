@@ -42,7 +42,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	targetVersions := r.cfg.TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersions
 
 	type readinessSummary struct {
 		TargetChefVersion string  `json:"target_chef_version"`
@@ -174,6 +174,9 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 	}
 	ownerFilterActive := ownedKeys != nil
 
+	// Parse staleness filter: ?stale=fresh,warning,critical (default: fresh).
+	staleFilter := parseStalenessFilter(req)
+
 	orgs, err2 := r.resolveOrganisationFilter(req)
 	if err2 != nil {
 		r.logf("ERROR", "listing organisations for readiness trend: %v", err2)
@@ -181,12 +184,83 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 		return
 	}
 
-	targetVersions := r.cfg.TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersions
 
 	var points []readinessTrendPoint
 
-	// Try snapshot-based path first (preferred).
-	snapshotFound := false
+	// Collect dates covered by node_metrics so we can skip legacy dupes.
+	nodeMetricsDates := make(map[string]bool)
+
+	// Use node_metrics ONLY when the user explicitly set ?stale=fresh.
+	// node_metrics only has readiness data for fresh nodes. Without an
+	// explicit filter, we use legacy readiness_summary (all nodes) to
+	// maintain continuity with historical data.
+	useNodeMetrics := !ownerFilterActive && staleFilter.isFreshOnly()
+	if useNodeMetrics {
+		for _, org := range orgs {
+			metrics, mErr := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "node_metrics", 365)
+			if mErr != nil {
+				r.logf("WARN", "listing node_metrics snapshots for org %s in readiness trend: %v", org.Name, mErr)
+				continue
+			}
+			for _, ms := range metrics {
+				var payload struct {
+					TotalNodes      int    `json:"total_nodes"`
+					TargetChefVer   string `json:"target_chef_version"`
+					Fresh           struct {
+						Total        int `json:"total"`
+						Ready        int `json:"ready"`
+						BlockedTotal int `json:"blocked_total"`
+						BlockedBy    struct {
+							Cookstyle   int `json:"cookstyle"`
+							TestKitchen int `json:"test_kitchen"`
+							Disk        int `json:"disk"`
+							FoodCritic  int `json:"foodcritic"`
+							ChefSpec    int `json:"chefspec"`
+						} `json:"blocked_by"`
+					} `json:"fresh"`
+				}
+				if jErr := json.Unmarshal(ms.Data, &payload); jErr != nil {
+					r.logf("WARN", "unmarshalling node_metrics snapshot %d for readiness trend: %v", ms.ID, jErr)
+					continue
+				}
+
+				// We only reach here when filter is explicitly fresh-only,
+				// so serve the fresh breakdown directly.
+				total := payload.Fresh.Total
+				ready := payload.Fresh.Ready
+				blocked := payload.Fresh.BlockedTotal
+				if total == 0 {
+					continue
+				}
+				pct := float64(ready) / float64(total) * 100
+
+				day := ms.SnapshotAt.Format("2006-01-02")
+				nodeMetricsDates[org.Name+"/"+day] = true
+
+				points = append(points, readinessTrendPoint{
+					OrganisationName:  org.Name,
+					CollectionRunOrg:  ms.CollectionRunOrg,
+					CompletedAt:       ms.SnapshotAt.Format(trendTimestampFormat),
+					TargetChefVersion: payload.TargetChefVer,
+					TotalNodes:        total,
+					ReadyNodes:        ready,
+					BlockedNodes:      blocked,
+					ReadyPercent:      pct,
+					BlockedBy: &blockedByResponse{
+						Cookstyle:   payload.Fresh.BlockedBy.Cookstyle,
+						TestKitchen: payload.Fresh.BlockedBy.TestKitchen,
+						Disk:        payload.Fresh.BlockedBy.Disk,
+						FoodCritic:  payload.Fresh.BlockedBy.FoodCritic,
+						ChefSpec:    payload.Fresh.BlockedBy.ChefSpec,
+					},
+				})
+			}
+		}
+	}
+
+	// Backfill from legacy readiness_summary for dates not covered.
+	snapshotFound := len(nodeMetricsDates) > 0
 	for _, org := range orgs {
 		for _, tv := range targetVersions {
 			metrics, mErr := r.db.ListDailyMetricSnapshotsByOrganisationAndVersion(ctx, org.Name, "readiness_summary", tv, 365)
@@ -198,6 +272,10 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 				snapshotFound = true
 			}
 			for _, ms := range metrics {
+				day := ms.SnapshotAt.Format("2006-01-02")
+				if nodeMetricsDates[org.Name+"/"+day] {
+					continue
+				}
 				var payload struct {
 					TotalNodes int `json:"total_nodes"`
 					Ready      int `json:"ready"`
@@ -217,8 +295,6 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 				ready := payload.Ready
 				blocked := payload.Blocked
 
-				// Apply ownership filtering if active and per-node
-				// data is available.
 				if ownerFilterActive {
 					if payload.NodesOmitted || payload.Nodes == nil {
 						continue
@@ -253,14 +329,14 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 					ReadyNodes:        ready,
 					BlockedNodes:      blocked,
 					ReadyPercent:      pct,
+					FilterLimited:     !staleFilter.isDefault(),
 				})
 			}
 		}
 	}
 
 	// Fallback: if no snapshots were found (pre-upgrade data), query live
-	// CountNodeReadiness for a single current-state point. Ownership
-	// filtering is not supported in the fallback path.
+	// CountNodeReadiness for a single current-state point.
 	if !snapshotFound && !ownerFilterActive {
 		for _, org := range orgs {
 			for _, tv := range targetVersions {
@@ -280,6 +356,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 					ReadyNodes:        ready,
 					BlockedNodes:      blocked,
 					ReadyPercent:      pct,
+					FilterLimited:     !staleFilter.isDefault(),
 				})
 			}
 		}

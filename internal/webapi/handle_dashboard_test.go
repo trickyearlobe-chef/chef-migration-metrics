@@ -667,6 +667,9 @@ func TestHandleDashboardVersionDistributionTrend_HappyPath(t *testing.T) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType == "node_metrics" {
+				return nil, nil
+			}
 			return []datastore.MetricSnapshot{
 				{
 					ID:               1,
@@ -1105,6 +1108,359 @@ func TestHandleDashboardReadinessTrend_DBError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// handleDashboardReadinessTrend — node_metrics happy path
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardReadinessTrend_NodeMetrics_HappyPath(t *testing.T) {
+	// When ?stale=fresh is explicitly set and node_metrics snapshots exist,
+	// the handler uses them and returns blocked_by breakdown.
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"target_chef_version":"18.0.0","by_staleness":{"fresh":80,"warning":15,"critical":5},"fresh":{"total":80,"ready":60,"blocked_total":20,"blocked_by":{"cookstyle":10,"test_kitchen":8,"disk":5,"foodcritic":0,"chefspec":0},"by_version":{"18.0.0":60,"17.0.0":20},"by_platform_family":{"rhel":50,"debian":30}}}`),
+					SnapshotAt:       t1,
+				},
+				{
+					ID:               2,
+					CollectionRunOrg: "run-2",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"target_chef_version":"18.0.0","by_staleness":{"fresh":85,"warning":10,"critical":5},"fresh":{"total":85,"ready":70,"blocked_total":15,"blocked_by":{"cookstyle":8,"test_kitchen":5,"disk":3,"foodcritic":0,"chefspec":0},"by_version":{"18.0.0":70,"17.0.0":15},"by_platform_family":{"rhel":55,"debian":30}}}`),
+					SnapshotAt:       t2,
+				},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?stale=fresh", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			OrganisationName  string  `json:"organisation_name"`
+			CollectionRunOrg  string  `json:"collection_run_org"`
+			CompletedAt       string  `json:"completed_at"`
+			TargetChefVersion string  `json:"target_chef_version"`
+			TotalNodes        int     `json:"total_nodes"`
+			ReadyNodes        int     `json:"ready_nodes"`
+			BlockedNodes      int     `json:"blocked_nodes"`
+			ReadyPercent      float64 `json:"ready_percent"`
+			FilterLimited     bool    `json:"filter_limited"`
+			BlockedBy         *struct {
+				Cookstyle   int `json:"cookstyle"`
+				TestKitchen int `json:"test_kitchen"`
+				Disk        int `json:"disk"`
+				FoodCritic  int `json:"foodcritic"`
+				ChefSpec    int `json:"chefspec"`
+			} `json:"blocked_by"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+
+	// First point.
+	p0 := body.Data[0]
+	if p0.OrganisationName != "prod" {
+		t.Errorf("data[0].organisation_name = %q, want %q", p0.OrganisationName, "prod")
+	}
+	if p0.TotalNodes != 80 {
+		t.Errorf("data[0].total_nodes = %d, want 80", p0.TotalNodes)
+	}
+	if p0.ReadyNodes != 60 {
+		t.Errorf("data[0].ready_nodes = %d, want 60", p0.ReadyNodes)
+	}
+	if p0.BlockedNodes != 20 {
+		t.Errorf("data[0].blocked_nodes = %d, want 20", p0.BlockedNodes)
+	}
+	if p0.ReadyPercent != 75.0 {
+		t.Errorf("data[0].ready_percent = %f, want 75.0", p0.ReadyPercent)
+	}
+	if p0.BlockedBy == nil {
+		t.Fatal("data[0].blocked_by is nil")
+	}
+	if p0.BlockedBy.Cookstyle != 10 {
+		t.Errorf("data[0].blocked_by.cookstyle = %d, want 10", p0.BlockedBy.Cookstyle)
+	}
+	if p0.BlockedBy.TestKitchen != 8 {
+		t.Errorf("data[0].blocked_by.test_kitchen = %d, want 8", p0.BlockedBy.TestKitchen)
+	}
+	if p0.BlockedBy.Disk != 5 {
+		t.Errorf("data[0].blocked_by.disk = %d, want 5", p0.BlockedBy.Disk)
+	}
+
+	// Second point.
+	p1 := body.Data[1]
+	if p1.TotalNodes != 85 {
+		t.Errorf("data[1].total_nodes = %d, want 85", p1.TotalNodes)
+	}
+	if p1.ReadyNodes != 70 {
+		t.Errorf("data[1].ready_nodes = %d, want 70", p1.ReadyNodes)
+	}
+}
+
+func TestHandleDashboardReadinessTrend_NodeMetrics_StaleFilterNonFresh(t *testing.T) {
+	// When ?stale= includes non-fresh tiers, node_metrics is NOT used
+	// (it only has fresh readiness data). Falls back to legacy which may
+	// return empty if no readiness_summary snapshots exist.
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":50,"target_chef_version":"18.0.0","by_staleness":{"fresh":40,"warning":8,"critical":2},"fresh":{"total":40,"ready":30,"blocked_total":10,"blocked_by":{"cookstyle":5,"test_kitchen":3,"disk":2,"foodcritic":0,"chefspec":0},"by_version":{"18.0.0":30,"17.0.0":10},"by_platform_family":{"rhel":40}}}`),
+					SnapshotAt:       now,
+				},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?stale=fresh,warning", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// node_metrics not used (filter includes non-fresh), and no legacy data.
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0 (node_metrics skipped, no legacy)", len(body.Data))
+	}
+}
+
+func TestHandleDashboardReadinessTrend_NodeMetrics_StaleFilterOnlyNonFresh(t *testing.T) {
+	// When ?stale= contains only non-fresh tiers (no fresh), the node_metrics
+	// path skips the snapshot (readiness is only for fresh nodes) and returns empty.
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":50,"target_chef_version":"18.0.0","by_staleness":{"fresh":40,"warning":8,"critical":2},"fresh":{"total":40,"ready":30,"blocked_total":10,"blocked_by":{"cookstyle":5,"test_kitchen":3,"disk":2,"foodcritic":0,"chefspec":0},"by_version":{"18.0.0":30},"by_platform_family":{"rhel":40}}}`),
+					SnapshotAt:       now,
+				},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?stale=warning,critical", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0 (readiness not available for non-fresh)", len(body.Data))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardStaleTrend — node_metrics happy path
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardStaleTrend_NodeMetrics_HappyPath(t *testing.T) {
+	// When node_metrics snapshots exist, stale trend should use the
+	// by_staleness breakdown from them.
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"target_chef_version":"18.0.0","by_staleness":{"fresh":80,"warning":15,"critical":5},"fresh":{"total":80,"ready":60,"blocked_total":20,"blocked_by":{"cookstyle":10,"test_kitchen":8,"disk":5,"foodcritic":0,"chefspec":0},"by_version":{"18.0.0":60,"17.0.0":20},"by_platform_family":{"rhel":50,"debian":30}}}`),
+					SnapshotAt:       t1,
+				},
+				{
+					ID:               2,
+					CollectionRunOrg: "run-2",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":110,"target_chef_version":"18.0.0","by_staleness":{"fresh":90,"warning":12,"critical":8},"fresh":{"total":90,"ready":75,"blocked_total":15,"blocked_by":{"cookstyle":8,"test_kitchen":5,"disk":3,"foodcritic":0,"chefspec":0},"by_version":{"18.0.0":75,"17.0.0":15},"by_platform_family":{"rhel":60,"debian":30}}}`),
+					SnapshotAt:       t2,
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stale/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			OrganisationName string `json:"organisation_name"`
+			CollectionRunOrg string `json:"collection_run_org"`
+			CompletedAt      string `json:"completed_at"`
+			TotalNodes       int    `json:"total_nodes"`
+			StaleNodes       int    `json:"stale_nodes"`
+			FreshNodes       int    `json:"fresh_nodes"`
+			WarningNodes     int    `json:"warning_nodes"`
+			CriticalNodes    int    `json:"critical_nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+
+	p0 := body.Data[0]
+	if p0.TotalNodes != 100 {
+		t.Errorf("data[0].total_nodes = %d, want 100", p0.TotalNodes)
+	}
+	if p0.FreshNodes != 80 {
+		t.Errorf("data[0].fresh_nodes = %d, want 80", p0.FreshNodes)
+	}
+	if p0.WarningNodes != 15 {
+		t.Errorf("data[0].warning_nodes = %d, want 15", p0.WarningNodes)
+	}
+	if p0.CriticalNodes != 5 {
+		t.Errorf("data[0].critical_nodes = %d, want 5", p0.CriticalNodes)
+	}
+	if p0.StaleNodes != 20 {
+		t.Errorf("data[0].stale_nodes = %d, want 20 (warning+critical)", p0.StaleNodes)
+	}
+
+	p1 := body.Data[1]
+	if p1.TotalNodes != 110 {
+		t.Errorf("data[1].total_nodes = %d, want 110", p1.TotalNodes)
+	}
+	if p1.StaleNodes != 20 {
+		t.Errorf("data[1].stale_nodes = %d, want 20", p1.StaleNodes)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardVersionDistributionTrend — node_metrics happy path
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardVersionDistributionTrend_IgnoresNodeMetrics(t *testing.T) {
+	// node_metrics only has fresh-node version data. The version distribution
+	// trend should always use legacy chef_version_distribution which has all nodes.
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType == "chef_version_distribution" {
+				return []datastore.MetricSnapshot{
+					{
+						ID:               1,
+						CollectionRunOrg: "run-1",
+						OrganisationName: "prod",
+						SnapshotType:     "chef_version_distribution",
+						Data:             []byte(`{"total_nodes":50,"distribution":{"18.0.0":30,"17.0.0":15,"16.0.0":5}}`),
+						SnapshotAt:       t1,
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/version-distribution/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			TotalNodes   int            `json:"total_nodes"`
+			Distribution map[string]int `json:"distribution"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	// Should show ALL nodes (50), not just fresh
+	if body.Data[0].TotalNodes != 50 {
+		t.Errorf("total_nodes = %d, want 50 (all nodes)", body.Data[0].TotalNodes)
+	}
+	if body.Data[0].Distribution["18.0.0"] != 30 {
+		t.Errorf("distribution[18.0.0] = %d, want 30", body.Data[0].Distribution["18.0.0"])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // handleDashboardComplexityTrend — method checks
 // ---------------------------------------------------------------------------
 
@@ -1353,6 +1709,9 @@ func TestHandleDashboardStaleTrend_HappyPath(t *testing.T) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType == "node_metrics" {
+				return nil, nil
+			}
 			return []datastore.MetricSnapshot{
 				{
 					ID:               1,
@@ -1509,6 +1868,9 @@ func TestHandleDashboardStaleTrend_MultipleRuns(t *testing.T) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType == "node_metrics" {
+				return nil, nil
+			}
 			return []datastore.MetricSnapshot{
 				{
 					ID:               1,
