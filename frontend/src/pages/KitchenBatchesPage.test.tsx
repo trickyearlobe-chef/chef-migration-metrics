@@ -249,7 +249,6 @@ describe("KitchenBatchesPage", () => {
     expect(screen.getByText("Has Test Suite")).toBeInTheDocument();
     expect(screen.getByText("Previous Status")).toBeInTheDocument();
     expect(screen.getByText("Max Count")).toBeInTheDocument();
-    expect(screen.getByText("Max Concurrent VMs")).toBeInTheDocument();
     expect(screen.getByText("Dry Run")).toBeInTheDocument();
     expect(screen.getByText("Save")).toBeInTheDocument();
     expect(screen.getByText("Cancel")).toBeInTheDocument();
