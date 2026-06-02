@@ -227,15 +227,52 @@ export function TrendChart({
   const plotH = svgHeight - margin.top - margin.bottom;
 
   // ---------------------------------------------------------------------------
-  // Scales
+  // Time-proportional X scale
   // ---------------------------------------------------------------------------
-  const xScale = useCallback(
-    (i: number) => {
-      if (timestamps.length <= 1) return margin.left + plotW / 2;
-      return margin.left + (i / (timestamps.length - 1)) * plotW;
-    },
-    [timestamps.length, margin.left, plotW],
-  );
+  const { xScale, gapIndices } = useMemo(() => {
+    if (timestamps.length === 0) {
+      return {
+        xScale: () => margin.left,
+        gapIndices: new Set<number>(),
+      };
+    }
+    if (timestamps.length === 1) {
+      return {
+        xScale: () => margin.left + plotW / 2,
+        gapIndices: new Set<number>(),
+      };
+    }
+
+    const times = timestamps.map((ts) => new Date(ts).getTime());
+    const tMin = times[0];
+    const tMax = times[times.length - 1];
+    const tRange = tMax - tMin;
+
+    // Detect gaps: intervals > 2× the median interval.
+    const intervals: number[] = [];
+    for (let i = 1; i < times.length; i++) {
+      intervals.push(times[i] - times[i - 1]);
+    }
+    const sortedIntervals = [...intervals].sort((a, b) => a - b);
+    const medianInterval = sortedIntervals[Math.floor(sortedIntervals.length / 2)] || 0;
+    const gapThreshold = medianInterval * 2.5;
+
+    const gaps = new Set<number>();
+    if (medianInterval > 0) {
+      for (let i = 0; i < intervals.length; i++) {
+        if (intervals[i] > gapThreshold) {
+          gaps.add(i + 1); // the index AFTER the gap
+        }
+      }
+    }
+
+    const scaleFn = (i: number) => {
+      if (tRange === 0) return margin.left + plotW / 2;
+      return margin.left + ((times[i] - tMin) / tRange) * plotW;
+    };
+
+    return { xScale: scaleFn, gapIndices: gaps };
+  }, [timestamps, margin.left, plotW]);
 
   const yScale = useCallback(
     (v: number) => {
@@ -253,13 +290,31 @@ export function TrendChart({
   const xTickIndices = useMemo(() => {
     const n = timestamps.length;
     if (n === 0) return [];
-    if (n <= 8) return timestamps.map((_, i) => i);
-    const step = Math.max(1, Math.floor(n / 7));
-    const indices: number[] = [];
-    for (let i = 0; i < n; i += step) indices.push(i);
-    if (indices[indices.length - 1] !== n - 1) indices.push(n - 1);
+    if (n === 1) return [0];
+
+    // With time-proportional spacing, pick ticks that are at least
+    // minPixelGap apart to prevent label overlap.
+    const minPixelGap = 70;
+    const indices: number[] = [0];
+    let lastX = xScale(0);
+
+    for (let i = 1; i < n; i++) {
+      const x = xScale(i);
+      if (x - lastX >= minPixelGap) {
+        indices.push(i);
+        lastX = x;
+      }
+    }
+    // Always include the last point if it's far enough from the previous tick.
+    const lastIdx = n - 1;
+    if (indices[indices.length - 1] !== lastIdx) {
+      const lastTickX = xScale(indices[indices.length - 1]);
+      if (xScale(lastIdx) - lastTickX >= minPixelGap * 0.6) {
+        indices.push(lastIdx);
+      }
+    }
     return indices;
-  }, [timestamps]);
+  }, [timestamps, xScale]);
 
   // ---------------------------------------------------------------------------
   // Hover handling — map mouse X to closest data index
@@ -306,28 +361,72 @@ export function TrendChart({
   }
 
   // ---------------------------------------------------------------------------
-  // Build SVG paths for each series
+  // Build SVG paths for each series, splitting at gaps
   // ---------------------------------------------------------------------------
   const seriesPaths = seriesPoints.map((s) => {
-    const linePoints: Array<{ x: number; y: number }> = [];
+    // Build indexed points with original index preserved.
+    const indexedPoints: Array<{ i: number; x: number; y: number }> = [];
     for (let i = 0; i < s.values.length; i++) {
       const v = s.values[i];
       if (v !== null) {
-        linePoints.push({ x: xScale(i), y: yScale(v) });
+        indexedPoints.push({ i, x: xScale(i), y: yScale(v) });
       }
     }
 
-    // Area polygon: close the path down to the X-axis.
+    // Split into segments: solid (normal) and dashed (gap-spanning).
+    type Segment = {
+      points: Array<{ x: number; y: number }>;
+      isGap: boolean;
+    };
+    const segments: Segment[] = [];
+    let currentSegment: Segment | null = null;
+
+    for (let j = 0; j < indexedPoints.length; j++) {
+      const pt = indexedPoints[j];
+      const crossesGap = j > 0 && gapIndices.has(pt.i);
+
+      if (crossesGap) {
+        // Close current segment, add a gap segment connecting the two.
+        if (currentSegment && currentSegment.points.length > 0) {
+          segments.push(currentSegment);
+          // Gap segment: from last point of previous to this point.
+          const prev = currentSegment.points[currentSegment.points.length - 1];
+          segments.push({
+            points: [prev, { x: pt.x, y: pt.y }],
+            isGap: true,
+          });
+        }
+        // Start a new solid segment from this point.
+        currentSegment = { points: [{ x: pt.x, y: pt.y }], isGap: false };
+      } else {
+        if (!currentSegment) {
+          currentSegment = { points: [], isGap: false };
+        }
+        currentSegment.points.push({ x: pt.x, y: pt.y });
+      }
+    }
+    if (currentSegment && currentSegment.points.length > 0) {
+      segments.push(currentSegment);
+    }
+
+    // Build area polygon from ALL points (solid only for fill).
+    const solidPoints = indexedPoints.map((p) => ({ x: p.x, y: p.y }));
     const areaPoints =
-      showArea && linePoints.length > 1
+      showArea && solidPoints.length > 1
         ? [
-          ...linePoints,
-          { x: linePoints[linePoints.length - 1].x, y: yScale(yMinVal) },
-          { x: linePoints[0].x, y: yScale(yMinVal) },
+          ...solidPoints,
+          { x: solidPoints[solidPoints.length - 1].x, y: yScale(yMinVal) },
+          { x: solidPoints[0].x, y: yScale(yMinVal) },
         ]
         : [];
 
-    return { key: s.key, colour: s.colour, linePoints, areaPoints };
+    return {
+      key: s.key,
+      colour: s.colour,
+      segments,
+      areaPoints,
+      allPoints: solidPoints,
+    };
   });
 
   // ---------------------------------------------------------------------------
@@ -461,25 +560,28 @@ export function TrendChart({
               ),
           )}
 
-        {/* ---------- Lines ---------- */}
-        {seriesPaths.map(
-          (sp) =>
-            sp.linePoints.length > 1 && (
+        {/* ---------- Lines (solid + dashed for gaps) ---------- */}
+        {seriesPaths.map((sp) =>
+          sp.segments.map((seg, segIdx) =>
+            seg.points.length > 1 ? (
               <polyline
-                key={`line-${sp.key}`}
-                points={pointsToString(sp.linePoints)}
+                key={`line-${sp.key}-${segIdx}`}
+                points={pointsToString(seg.points)}
                 fill="none"
                 stroke={sp.colour}
                 strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
+                strokeDasharray={seg.isGap ? "6 4" : undefined}
+                strokeOpacity={seg.isGap ? 0.4 : 1}
               />
-            ),
+            ) : null,
+          ),
         )}
 
         {/* ---------- Data points (dots) ---------- */}
         {seriesPaths.map((sp) =>
-          sp.linePoints.map((pt, i) => (
+          sp.allPoints.map((pt, i) => (
             <circle
               key={`dot-${sp.key}-${i}`}
               cx={pt.x}
@@ -528,14 +630,14 @@ export function TrendChart({
           <foreignObject
             x={Math.min(
               tooltipContent.x + 12,
-              svgWidth - margin.right - 160,
+              svgWidth - margin.right - 220,
             )}
             y={margin.top + 4}
-            width={150}
-            height={20 + tooltipContent.values.length * 20 + 8}
-            className="pointer-events-none"
+            width={210}
+            height={svgHeight - margin.top - 8}
+            className="pointer-events-none overflow-visible"
           >
-            <div className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs shadow-lg">
+            <div className="inline-block max-w-[206px] rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs shadow-lg">
               <div className="mb-1 font-semibold text-gray-700">
                 {tooltipContent.date}
               </div>
@@ -546,12 +648,12 @@ export function TrendChart({
                 >
                   <span className="flex items-center gap-1 text-gray-600">
                     <span
-                      className="inline-block h-2 w-2 rounded-full"
+                      className="inline-block h-2 w-2 shrink-0 rounded-full"
                       style={{ backgroundColor: v.colour }}
                     />
-                    {v.label}
+                    <span className="truncate">{v.label}</span>
                   </span>
-                  <span className="font-medium text-gray-800">
+                  <span className="shrink-0 font-medium text-gray-800">
                     {v.value !== null ? fmtY(v.value) : "—"}
                   </span>
                 </div>

@@ -49,9 +49,10 @@ export function fetchVersionDistributionTrend(
 
 export function fetchReadinessTrend(
   organisation?: string,
+  stale?: string,
 ): Promise<ReadinessTrendResponse> {
   return apiFetch<ReadinessTrendResponse>(
-    buildUrl("/dashboard/readiness/trend", { organisation }),
+    buildUrl("/dashboard/readiness/trend", { organisation, stale }),
   );
 }
 
