@@ -1,6 +1,6 @@
 # Configuration - Component Specification
 
-> **TL;DR** — Single YAML config file with environment variable overrides for secrets. Key sections: `server` (bind address, port, TLS mode — off/static/acme), `database` (PostgreSQL URL), `collection` (Chef server orgs, schedule, stale thresholds), `target_versions` (Chef Client versions to test against), `git` (cookbook repo URLs), `concurrency` (worker pool sizes per task type), `analysis_tools` (embedded CookStyle/TK bin dir, timeouts), `auth` (local/LDAP/SAML), `notifications` (webhook/email channels, triggers), `exports` (output dir, retention, async threshold), `elasticsearch` (NDJSON export toggle, output dir), `logging` (level, retention). All sensitive values must be set via env vars, never inlined. See `todo/configuration.md` for implementation status.
+> **TL;DR** — Single YAML config file with environment variable overrides for secrets. Key sections: `server` (bind address, port, TLS mode — off/static/acme), `database` (PostgreSQL URL), `collection` (Chef server orgs, schedule, stale thresholds), `target_versions` (Chef Client versions to test against), `git` (cookbook repo URLs), `concurrency` (worker pool sizes per task type), `analysis_tools` (embedded CookStyle/TK bin dir, timeouts), `auth` (local/SAML), `notifications` (webhook/email channels, triggers), `exports` (output dir, retention, async threshold), `elasticsearch` (NDJSON export toggle, output dir), `logging` (level, retention). All sensitive values must be set via env vars, never inlined. See `todo/configuration.md` for implementation status.
 
 ## Overview
 
@@ -40,7 +40,7 @@ The application supports three ways to supply credentials, listed in order of re
 | Method | When to use | Example |
 |--------|-------------|---------|
 | **Database** | Multi-org deployments, containerised environments, management via Web UI | `client_key_credential: myorg-production-key` references a row in the `credentials` table |
-| **Environment variable** | Container orchestrators (Kubernetes Secrets, ECS task definitions), CI/CD | `CMM_CREDENTIAL_ENCRYPTION_KEY`, `LDAP_BIND_PASSWORD` |
+| **Environment variable** | Container orchestrators (Kubernetes Secrets, ECS task definitions), CI/CD | `CMM_CREDENTIAL_ENCRYPTION_KEY` |
 | **File path** | Traditional on-premises installs, simple single-org setups | `client_key_path: /etc/chef-migration-metrics/keys/myorg.pem` |
 
 When multiple sources are configured for the same credential, database takes precedence over environment variable, which takes precedence over file path. This allows operators to migrate incrementally from file-based to database-stored credentials without changing the config file.
@@ -599,21 +599,10 @@ auth:
   providers:
     - type: local
 
-    - type: ldap
-      host: ldap.example.com
-      port: 636
-      base_dn: "ou=users,dc=example,dc=com"
-      bind_dn: "cn=service-account,dc=example,dc=com"
-      bind_password_env: LDAP_BIND_PASSWORD
-      # Alternative: store bind password in the database
-      # bind_password_credential: ldap-bind-password
-
     - type: saml
       idp_metadata_url: https://idp.example.com/saml/metadata
       sp_entity_id: chef-migration-metrics
 ```
-
-> **Database credential alternative:** Instead of `bind_password_env`, the LDAP bind password can be stored in the `credentials` table by setting `bind_password_credential` to the name of a credential with `credential_type: ldap_bind_password`. If both `bind_password_env` and `bind_password_credential` are set, the database credential takes precedence.
 
 ---
 
@@ -633,7 +622,6 @@ The following environment variables are explicitly supported for sensitive value
 | `CMM_CREDENTIAL_ENCRYPTION_KEY` | Base64-encoded AES-256 master key for encrypting/decrypting database-stored credentials. Required when any `*_credential` config references or Web API-created credentials exist. |
 | `CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | Base64-encoded previous master key, required only during key rotation. Remove after successful rotation. |
 | `DATABASE_URL` | Full datastore connection URL, overrides `datastore.url` |
-| `LDAP_BIND_PASSWORD` | Password for the LDAP bind account |
 | `CHEF_MIGRATION_METRICS_SERVER_PORT` | Override `server.port` |
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_MODE` | Override `server.tls.mode` (`off`, `static`, `acme`) |
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_CERT_PATH` | Override `server.tls.cert_path` |

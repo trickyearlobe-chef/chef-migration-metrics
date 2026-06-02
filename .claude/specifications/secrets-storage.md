@@ -1,12 +1,12 @@
 # Secrets Storage - Component Specification
 
-> **TL;DR** — Three credential storage methods in precedence order: **database** (AES-256-GCM encrypted, managed via Web UI/API), **environment variable** (Kubernetes Secrets, ECS, CI/CD), **file path** (traditional on-prem PEM files). Database credentials are encrypted with a master key (`CMM_CREDENTIAL_ENCRYPTION_KEY`) that must live outside the database. The `credentials` table stores Chef API keys, LDAP passwords, SMTP passwords, and webhook URLs — all encrypted at rest with per-row nonces and AAD binding. Plaintext is only held in memory for the duration of each operation. Key rotation (both credential values and the master encryption key) is supported without downtime. Admin-only Web API endpoints manage credentials (CRUD + test) and never return plaintext. Kubernetes deployments use `existingSecret` references or chart-managed Secrets; RPM/DEB installs use file paths and env files. See `todo/secrets-storage.md` for implementation status.
+> **TL;DR** — Three credential storage methods in precedence order: **database** (AES-256-GCM encrypted, managed via Web UI/API), **environment variable** (Kubernetes Secrets, ECS, CI/CD), **file path** (traditional on-prem PEM files). Database credentials are encrypted with a master key (`CMM_CREDENTIAL_ENCRYPTION_KEY`) that must live outside the database. The `credentials` table stores Chef API keys, SMTP passwords, and webhook URLs — all encrypted at rest with per-row nonces and AAD binding. Plaintext is only held in memory for the duration of each operation. Key rotation (both credential values and the master encryption key) is supported without downtime. Admin-only Web API endpoints manage credentials (CRUD + test) and never return plaintext. Kubernetes deployments use `existingSecret` references or chart-managed Secrets; RPM/DEB installs use file paths and env files. See `todo/secrets-storage.md` for implementation status.
 
 ---
 
 ## Overview
 
-This specification consolidates all secrets and credential management for the Chef Migration Metrics application. Secrets include Chef API private keys, LDAP bind passwords, SMTP credentials, webhook URLs, the database connection string, TLS private keys, and the credential encryption master key itself.
+This specification consolidates all secrets and credential management for the Chef Migration Metrics application. Secrets include Chef API private keys, SMTP credentials, webhook URLs, the database connection string, TLS private keys, and the credential encryption master key itself.
 
 The design follows a defence-in-depth model: secrets are protected at the application layer (encryption, memory-only plaintext), the transport layer (TLS for database and API connections), the storage layer (database access controls, file permissions), and the operational layer (key separation, rotation procedures, audit logging).
 
@@ -20,7 +20,7 @@ This specification is the authoritative reference for secrets management. The fo
 | [`chef-api/Specification.md`](../chef-api/Specification.md) | § Credentials Security |
 | [`packaging/Specification.md`](../packaging/Specification.md) | § Docker Compose Configuration, § Environment File |
 | [`tls/Specification.md`](../tls/Specification.md) | § Static certificate key files, § ACME storage |
-| [`auth/Specification.md`](../auth/Specification.md) | § LDAP bind credentials, § Local account password hashing |
+| [`auth/Specification.md`](../auth/Specification.md) | § Local account password hashing |
 
 ---
 
@@ -31,7 +31,6 @@ The application manages the following categories of secrets:
 | Credential Type | Storage Methods | Notes |
 |-----------------|-----------------|-------|
 | Chef API private key (RSA PEM) | Database, env var, file path | One per Chef server organisation. Database storage recommended for multi-org and containerised deployments. |
-| LDAP bind password | Database, env var | Referenced via `bind_password_credential` (database) or `bind_password_env` (env var) in the auth config. |
 | SMTP password | Database, env var | Referenced via `password_credential` (database) or `password_env` (env var) in the SMTP config. |
 | Webhook URL | Database, env var | May contain authentication tokens in the URL. Referenced via `url_credential` or `url_env`. |
 | Database connection string | Env var only | `DATABASE_URL`. Never stored in the database (circular dependency). |
@@ -90,7 +89,6 @@ If multiple sources are configured for the same credential, the highest-preceden
 | Credential | Database reference | Env var | File path |
 |------------|-------------------|---------|-----------|
 | Chef API key | `client_key_credential: <name>` in org config → FK in `organisations.client_key_credential_id` | `client_key_env: VAR_NAME` in org config | `client_key_path: /path/to/key.pem` in org config |
-| LDAP bind password | `bind_password_credential: <name>` in auth config | `bind_password_env: LDAP_BIND_PASSWORD` in auth config | — |
 | SMTP password | `password_credential: <name>` in SMTP config | `password_env: SMTP_PASSWORD` in SMTP config | — |
 | Webhook URL | `url_credential: <name>` in notification channel config | `url_env: NOTIFICATION_WEBHOOK_URL` in notification channel config | — |
 | Database URL | — | `DATABASE_URL` | — |
@@ -128,7 +126,7 @@ The `credentials` table (fully specified in the [Datastore Specification](../dat
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
 | `name` | TEXT | No | Unique human-readable identifier (e.g. `myorg-production-key`) |
-| `credential_type` | TEXT | No | One of: `chef_client_key`, `ldap_bind_password`, `smtp_password`, `webhook_url`, `generic` |
+| `credential_type` | TEXT | No | One of: `chef_client_key`, `smtp_password`, `webhook_url`, `generic` |
 | `encrypted_value` | TEXT | No | `<nonce_hex>:<ciphertext_hex>` |
 | `metadata` | JSONB | Yes | Non-sensitive metadata (e.g. `{"key_format": "pkcs1", "bits": 2048}`). **Never** contains plaintext. |
 | `last_rotated_at` | TIMESTAMPTZ | Yes | When the credential value was last updated |
@@ -163,9 +161,9 @@ The `credentials` table (fully specified in the [Datastore Specification](../dat
 
 ┌──────────────────────┐   Credential needed   ┌───────────────────────┐
 │  Chef API signing    │ ◄──────────────────── │  credentials table    │
-│  LDAP bind           │   1. Read ciphertext  │                       │
-│  SMTP auth           │   2. Decrypt in mem   │  (encrypted_value)    │
-│  Webhook dispatch    │   3. Use              │                       │
+│  SMTP auth           │   1. Read ciphertext  │                       │
+│  Webhook dispatch    │   2. Decrypt in mem   │  (encrypted_value)    │
+│                      │   3. Use              │                       │
 │                      │   4. Zero memory      │                       │
 └──────────────────────┘                       └───────────────────────┘
 ```
@@ -256,7 +254,7 @@ When rotated via the Web API, the `last_rotated_at` timestamp is updated. The ol
 
 These rules apply to **all** credential storage methods (database, env var, file path):
 
-1. **Memory lifetime** — Plaintext must only be held in a Go variable for the duration of the operation that needs it (e.g. signing a Chef API request, performing an LDAP bind, sending an SMTP `AUTH`). It must not be assigned to a package-level variable, cached in a map or struct field that outlives the operation, or stored in a sync.Pool.
+1. **Memory lifetime** — Plaintext must only be held in a Go variable for the duration of the operation that needs it (e.g. signing a Chef API request, sending an SMTP `AUTH`). It must not be assigned to a package-level variable, cached in a map or struct field that outlives the operation, or stored in a sync.Pool.
 
 2. **Zeroing** — After use, the byte slice or string holding the plaintext should be overwritten with zeros before the variable goes out of scope. While Go's garbage collector does not guarantee immediate reclamation, zeroing reduces the window of exposure. Use a helper function:
 
@@ -326,7 +324,7 @@ For local development and evaluation using Docker Compose:
 For traditional Linux installations:
 
 - Chef API keys are placed in `/etc/chef-migration-metrics/keys/` with `0600` permissions.
-- The environment file (`/etc/sysconfig/chef-migration-metrics` or `/etc/default/chef-migration-metrics`) contains sensitive env vars (`DATABASE_URL`, `CMM_CREDENTIAL_ENCRYPTION_KEY`, `LDAP_BIND_PASSWORD`). File permissions are `0640`, owned by `root:chef-migration-metrics`.
+- The environment file (`/etc/sysconfig/chef-migration-metrics` or `/etc/default/chef-migration-metrics`) contains sensitive env vars (`DATABASE_URL`, `CMM_CREDENTIAL_ENCRYPTION_KEY`). File permissions are `0640`, owned by `root:chef-migration-metrics`.
 - The systemd unit file references the environment file via `EnvironmentFile=`.
 - The `postinstall.sh` script sets correct ownership and permissions on the keys directory and environment file.
 - The `preremove.sh` script does **not** delete credential files — this is left to the operator to avoid accidental data loss.
@@ -360,10 +358,9 @@ The `GET /api/v1/admin/status` endpoint includes a `credential_storage` section:
 {
   "credential_storage": {
     "encryption_key_configured": true,
-    "total_credentials": 5,
+    "total_credentials": 4,
     "credential_types": {
       "chef_client_key": 3,
-      "ldap_bind_password": 1,
       "smtp_password": 1
     },
     "orphaned_credentials": 0
@@ -382,7 +379,7 @@ The `GET /api/v1/admin/status` endpoint includes a `credential_storage` section:
 |-------|-----------|
 | **Application** | AES-256-GCM encryption with HKDF-derived key; per-row nonces; AAD binding; plaintext zeroed after use; never logged; API never returns values |
 | **Database** | Standard PostgreSQL access controls; `encrypted_value` column contains only ciphertext; connection via TLS (`sslmode=verify-full` recommended) |
-| **Transport** | All external connections (PostgreSQL, LDAP, SMTP, Chef API, webhooks) should use TLS |
+| **Transport** | All external connections (PostgreSQL, SMTP, Chef API, webhooks) should use TLS |
 | **Filesystem** | PEM files `0600`, key directories `0700`, env files `0640`; owned by service account |
 | **Backups** | Database backups contain only ciphertext; restoring without the master key renders credentials unusable |
 | **Key management** | Master key is external to the database; key and encrypted data never in the same storage system |
@@ -426,7 +423,6 @@ When creating or updating credentials via the Web API:
 | `credential_type` | Validation |
 |--------------------|------------|
 | `chef_client_key` | Must be a PEM-encoded RSA private key. Key size extracted for metadata. |
-| `ldap_bind_password` | Non-empty string. |
 | `smtp_password` | Non-empty string. |
 | `webhook_url` | Must be a valid URL with `http` or `https` scheme. |
 | `generic` | Non-empty string. No format validation. |
@@ -490,13 +486,9 @@ organisations:
 ```yaml
 auth:
   providers:
-    - type: ldap
-      host: ldap.example.com
-      bind_dn: cn=svc-chef-metrics,ou=service-accounts,dc=example,dc=com
-      # Database-stored:
-      bind_password_credential: ldap-bind-password
-      # Or environment variable:
-      # bind_password_env: LDAP_BIND_PASSWORD
+    - type: saml
+      idp_metadata_url: https://idp.example.com/saml/metadata
+      sp_entity_id: chef-migration-metrics
 ```
 
 ### SMTP Credential References
@@ -519,7 +511,6 @@ smtp:
 | `CMM_CREDENTIAL_ENCRYPTION_KEY` | Base64-encoded AES-256 master key. Required when DB credentials are used. |
 | `CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | Previous master key. Required during key rotation only. |
 | `DATABASE_URL` | PostgreSQL connection string. |
-| `LDAP_BIND_PASSWORD` | LDAP bind password (when using env var method). |
 | `SMTP_PASSWORD` | SMTP password (when using env var method). |
 | `SMTP_USERNAME` | SMTP username (when using env var method). |
 | `NOTIFICATION_WEBHOOK_URL` | Webhook URL (when using env var method). |
@@ -564,5 +555,5 @@ No external cryptography libraries are required.
 | [`chef-api/Specification.md`](../chef-api/Specification.md) | Chef API signing using resolved credentials |
 | [`packaging/Specification.md`](../packaging/Specification.md) | RPM/DEB env files, Docker Compose configuration |
 | [`tls/Specification.md`](../tls/Specification.md) | TLS key file handling, ACME storage |
-| [`auth/Specification.md`](../auth/Specification.md) | LDAP bind credential usage, local password hashing |
+| [`auth/Specification.md`](../auth/Specification.md) | Local account password hashing |
 | [`logging/Specification.md`](../logging/Specification.md) | `secrets` log scope definition |

@@ -2026,7 +2026,7 @@ All endpoints in this section require the `admin` role.
 
 ### Credential Management
 
-These endpoints manage encrypted credentials stored in the database. Credentials are used for Chef API private keys, LDAP bind passwords, SMTP passwords, and webhook URLs. All credential values are encrypted at the application layer using AES-256-GCM before storage — see the [Datastore Specification](../datastore/Specification.md) for the encryption model.
+These endpoints manage encrypted credentials stored in the database. Credentials are used for Chef API private keys, SMTP passwords, and webhook URLs. All credential values are encrypted at the application layer using AES-256-GCM before storage — see the [Datastore Specification](../datastore/Specification.md) for the encryption model.
 
 > **Security principles:**
 > - The API **never** returns the plaintext or encrypted value of a credential in any response.
@@ -2042,7 +2042,7 @@ Lists all stored credentials (metadata only, never values).
 
 | Parameter | Description |
 |-----------|-------------|
-| `type` | Filter by `credential_type` (e.g. `chef_client_key`, `ldap_bind_password`) |
+| `type` | Filter by `credential_type` (e.g. `chef_client_key`, `smtp_password`) |
 
 **Response (200):**
 
@@ -2058,16 +2058,6 @@ Lists all stored credentials (metadata only, never values).
       "created_by": "alice",
       "created_at": "2024-01-15T10:00:00Z",
       "updated_at": "2024-06-01T10:00:00Z"
-    },
-    {
-      "name": "ldap-bind-password",
-      "credential_type": "ldap_bind_password",
-      "metadata": { "host": "ldap.example.com" },
-      "referenced_by": ["config:auth.providers[1].bind_password_credential"],
-      "last_rotated_at": null,
-      "created_by": "alice",
-      "created_at": "2024-01-15T10:00:00Z",
-      "updated_at": "2024-01-15T10:00:00Z"
     }
   ]
 }
@@ -2096,7 +2086,7 @@ Creates a new encrypted credential.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Unique name for this credential |
-| `credential_type` | Yes | One of: `chef_client_key`, `ldap_bind_password`, `smtp_password`, `webhook_url`, `generic` |
+| `credential_type` | Yes | One of: `chef_client_key`, `smtp_password`, `webhook_url`, `generic` |
 | `value` | Yes | The plaintext credential value. Validated per type (e.g. RSA key must be parseable, URL must be valid). Encrypted before storage. **Never logged.** |
 | `metadata` | No | Non-sensitive metadata object. Must not contain the credential value. |
 
@@ -2119,7 +2109,6 @@ The `value` field is **never** included in the response.
 | `credential_type` | Validation |
 |--------------------|------------|
 | `chef_client_key` | Must be a PEM-encoded RSA private key. Parsed to extract key size for metadata. |
-| `ldap_bind_password` | Non-empty string. |
 | `smtp_password` | Non-empty string. |
 | `webhook_url` | Must be a valid URL with `http` or `https` scheme. |
 | `generic` | Non-empty string. No format validation. |
@@ -2213,7 +2202,6 @@ Tests a stored credential by performing a lightweight validation appropriate to 
 | `credential_type` | Test action |
 |--------------------|------------|
 | `chef_client_key` | Parse the RSA key and verify it can produce a valid signature. If linked to an organisation, optionally make a test API call to the Chef server. |
-| `ldap_bind_password` | Attempt an LDAP bind using the configured LDAP settings and this password. |
 | `smtp_password` | Attempt an SMTP `AUTH` handshake using the configured SMTP settings and this password. |
 | `webhook_url` | Send an HTTP `HEAD` request to the URL and verify a 2xx or 3xx response. |
 | `generic` | Verify the credential can be decrypted (confirms master key is correct). |
@@ -2233,10 +2221,10 @@ Tests a stored credential by performing a lightweight validation appropriate to 
 
 ```json
 {
-  "name": "ldap-bind-password",
-  "credential_type": "ldap_bind_password",
+  "name": "smtp-password",
+  "credential_type": "smtp_password",
   "status": "error",
-  "message": "LDAP bind failed: invalid credentials"
+  "message": "SMTP AUTH failed: invalid credentials"
 }
 ```
 
@@ -2339,7 +2327,7 @@ Resets a user's password.
 
 #### `DELETE /api/v1/admin/users/:username`
 
-Deletes a local user account. LDAP and SAML users cannot be deleted via this endpoint.
+Deletes a local user account. SAML users cannot be deleted via this endpoint.
 
 **Response (204):** No content.
 
@@ -2361,10 +2349,9 @@ Returns the system health status including datastore connectivity, credential en
   },
   "credential_storage": {
     "encryption_key_configured": true,
-    "total_credentials": 5,
+    "total_credentials": 4,
     "credential_types": {
       "chef_client_key": 3,
-      "ldap_bind_password": 1,
       "smtp_password": 1
     },
     "orphaned_credentials": 0

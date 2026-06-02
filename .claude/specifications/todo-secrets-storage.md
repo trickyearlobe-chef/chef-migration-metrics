@@ -7,7 +7,6 @@
 ## Credential Testing
 
 - [ ] Implement `chef_client_key` live test: optionally test Chef API call with the key
-- [ ] Implement `ldap_bind_password` live test: attempt LDAP bind with configured settings
 - [ ] Implement `smtp_password` live test: attempt SMTP AUTH handshake with configured settings
 - [ ] Implement `webhook_url` live test: send HTTP HEAD request, verify 2xx/3xx response
 - [ ] Write unit tests for live credential test functions (with mocked external services)
@@ -22,12 +21,10 @@
 ## Consumer Integration
 
 - [ ] Update `internal/chefapi/` to resolve Chef API keys via `CredentialResolver`
-- [ ] Update `internal/auth/` LDAP provider to resolve bind password via `CredentialResolver`
 - [ ] *(deferred — `internal/notify/` not yet implemented)* Update SMTP sender to resolve password via `CredentialResolver`
 - [ ] *(deferred — `internal/notify/` not yet implemented)* Update webhook sender to resolve URL via `CredentialResolver`
 - [ ] Verify plaintext is zeroed after use in all consumer call sites
 - [ ] Write integration tests for Chef API signing with each credential source
-- [ ] Write integration tests for LDAP bind with each credential source
 - [ ] Write integration tests for SMTP auth with each credential source
 
 ## Configuration Integration

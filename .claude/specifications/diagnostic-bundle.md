@@ -141,7 +141,7 @@ Each depth query runs under its own 10-second timeout (longer than standard 5s, 
 - `performance` — window seconds
 - `organisation_count` — integer count of configured orgs (names and URLs omitted)
 
-Everything not in this list is omitted, including: DB URL, Chef server URLs, key paths, credential references, passwords, webhook URLs, notification tokens, SMTP config, auth bind passwords, LDAP config, ACME config.
+Everything not in this list is omitted, including: DB URL, Chef server URLs, key paths, credential references, passwords, webhook URLs, notification tokens, SMTP config, ACME config.
 
 ---
 

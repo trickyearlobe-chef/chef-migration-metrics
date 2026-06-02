@@ -153,7 +153,7 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-The `EnvironmentFile` directive points to `/etc/sysconfig/chef-migration-metrics` (RPM convention) where operators can set environment variable overrides such as `DATABASE_URL` and `LDAP_BIND_PASSWORD` without modifying the config file.
+The `EnvironmentFile` directive points to `/etc/sysconfig/chef-migration-metrics` (RPM convention) where operators can set environment variable overrides such as `DATABASE_URL` and `CMM_CREDENTIAL_ENCRYPTION_KEY` without modifying the config file.
 
 ### 2.6 Pre/Post Install Scripts
 

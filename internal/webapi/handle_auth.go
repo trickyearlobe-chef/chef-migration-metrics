@@ -101,7 +101,7 @@ func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Look up the full user record for display_name and email. For
-	// externally authenticated users (LDAP/SAML) who may not have a
+	// externally authenticated users (SAML) who may not have a
 	// local user row, fall back to the session information.
 	type meResponse struct {
 		Username    string `json:"username"`

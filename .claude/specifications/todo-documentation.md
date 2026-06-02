@@ -11,7 +11,7 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Document configuration reference
 - [ ] Document Chef server API credentials setup
 - [ ] Document git repository URL configuration
-- [ ] Document authentication provider setup (SAML, LDAP, local)
+- [ ] Document authentication provider setup (SAML, local)
 - [ ] Document Policyfile support (what is collected, how to filter by policy name/group)
 - [ ] Document stale node and stale cookbook detection (thresholds, dashboard indicators)
 - [ ] Document remediation guidance features (auto-correct preview, migration docs, complexity scoring)
