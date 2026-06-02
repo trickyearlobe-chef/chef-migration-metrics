@@ -923,5 +923,5 @@ func (r *Router) logf(level, format string, args ...any) {
 // Handlers use this as the fallback when no target_chef_version query
 // parameter is supplied.
 func (r *Router) defaultTargetVersion() string {
-	return config.HighestVersion(r.cfg.TargetChefVersions)
+	return config.HighestVersion(r.liveConfig().TargetChefVersions)
 }
