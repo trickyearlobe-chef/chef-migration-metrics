@@ -5,9 +5,6 @@ Spec: `specifications/habitat-migration-tracking.md`
 ### Open Questions (resolve before implementation)
 
 - [ ] Confirm ohai attribute tier: `normal['chef_migration']` or `automatic['chef_migration']`?
-- [ ] Confirm `target_converge_status` possible values (success/failure? error categories?)
-- [ ] Decide whether to store only latest speculative converge result or rolling history
-- [ ] Confirm headline dashboard metric with customer
 
 ### Implementation (blocked on open questions)
 

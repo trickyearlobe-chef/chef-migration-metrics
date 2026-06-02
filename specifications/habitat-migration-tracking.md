@@ -50,9 +50,6 @@ Updated nightly by the CC19 test run on each node.
 ## Open Questions
 
 - **Attribute tier** — are these `normal['chef_migration']` or `automatic['chef_migration']`? Determines the Chef Server partial-search path used during collection.
-- **`target_converge_status` values** — what are the possible values? (`success`/`failure`? more granular error categories? exit code?) Needed to design filtering and UI state.
-- **History** — track only the latest speculative converge result per node, or retain a rolling history (e.g. last 7 nights)? History enables trend views but requires a separate table.
-- **Key dashboard metric** — confirm that the headline number is: *"% of fleet in `hab_dormant` state with last `target_converge_status` = success"* (i.e. nodes ready to activate).
 
 ## What Needs to Change
 
