@@ -386,7 +386,7 @@ export function AdminPerformancePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Performance Diagnostics</h1>
+      <h2 className="text-xl font-bold text-gray-800">Performance Diagnostics</h2>
 
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
