@@ -129,7 +129,6 @@ func diagnosticPerformance(cfg config.Config) map[string]any {
 
 func diagnosticOwnership(cfg config.Config) map[string]any {
 	return map[string]any{
-		"enabled":                  cfg.Ownership.Enabled,
 		"audit_log_retention_days": cfg.Ownership.AuditLog.RetentionDays,
 	}
 }

@@ -17,12 +17,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Helper: build a router with ownership enabled
+// Helper: build a router for ownership tests
 // ---------------------------------------------------------------------------
 
 func ownershipTestConfig() *Router {
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	cfg.TargetChefVersions = []string{"18.5.0"}
 	store := &mockStore{}
 	return newTestRouterWithMockAndConfig(store, cfg)
@@ -30,98 +29,8 @@ func ownershipTestConfig() *Router {
 
 func ownershipRouter(store *mockStore) *Router {
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	cfg.TargetChefVersions = []string{"18.5.0"}
 	return newTestRouterWithMockAndConfig(store, cfg)
-}
-
-func ownershipDisabledRouter(store *mockStore) *Router {
-	cfg := testConfig()
-	cfg.Ownership.Enabled = false
-	return newTestRouterWithMockAndConfig(store, cfg)
-}
-
-// ---------------------------------------------------------------------------
-// Ownership disabled — all endpoints return 404
-// ---------------------------------------------------------------------------
-
-func TestOwnership_Disabled_ListOwners(t *testing.T) {
-	r := ownershipDisabledRouter(&mockStore{})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/owners", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestOwnership_Disabled_CreateOwner(t *testing.T) {
-	r := ownershipDisabledRouter(&mockStore{})
-	w := httptest.NewRecorder()
-	body := `{"name":"test","owner_type":"team"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/owners", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestOwnership_Disabled_GetOwner(t *testing.T) {
-	r := ownershipDisabledRouter(&mockStore{})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/owners/platform-team", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestOwnership_Disabled_Reassign(t *testing.T) {
-	r := ownershipDisabledRouter(&mockStore{})
-	w := httptest.NewRecorder()
-	body := `{"from_owner":"a","to_owner":"b"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/reassign", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestOwnership_Disabled_Lookup(t *testing.T) {
-	r := ownershipDisabledRouter(&mockStore{})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ownership/lookup?entity_type=node&entity_key=web-01", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestOwnership_Disabled_AuditLog(t *testing.T) {
-	r := ownershipDisabledRouter(&mockStore{})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ownership/audit-log", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestOwnership_Disabled_Import(t *testing.T) {
-	r := ownershipDisabledRouter(&mockStore{})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2035,26 +1944,6 @@ func TestCookbookCommittersAssign_EmptyCommitters(t *testing.T) {
 	}
 }
 
-func TestCookbookCommittersAssign_OwnershipDisabled(t *testing.T) {
-	store := &mockStore{
-		GetGitRepoURLForCookbookFn: func(ctx context.Context, cookbookName string) (string, error) {
-			return "https://gitlab.example.com/cookbooks/nginx.git", nil
-		},
-		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
-			return nil, nil
-		},
-	}
-	r := ownershipDisabledRouter(store)
-	w := httptest.NewRecorder()
-	body := `{"committers":[{"author_email":"a@b.com","owner_name":"jsmith"}]}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookbooks/nginx/committers/assign", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
 func TestCookbookCommittersAssign_UppercaseOwnerName(t *testing.T) {
 	var insertedName string
 	store := &mockStore{
@@ -2414,22 +2303,6 @@ func TestResolveOwnershipFilter_Inactive(t *testing.T) {
 	}
 }
 
-func TestResolveOwnershipFilter_OwnershipDisabled(t *testing.T) {
-	cfg := testConfig()
-	cfg.Ownership.Enabled = false
-	store := &mockStore{}
-	r := newTestRouterWithMockAndConfig(store, cfg)
-
-	of := ownerFilter{Active: true, OwnerNames: []string{"team-a"}}
-	keys, err := r.resolveOwnershipFilter(context.Background(), of, "node")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if keys != nil {
-		t.Error("disabled ownership should return nil keys")
-	}
-}
-
 func TestResolveOwnershipFilter_ByOwner(t *testing.T) {
 	store := &mockStore{
 		ListAssignmentsByOwnerFn: func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
@@ -2440,7 +2313,6 @@ func TestResolveOwnershipFilter_ByOwner(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	of := ownerFilter{Active: true, OwnerNames: []string{"team-a"}}
@@ -2468,7 +2340,6 @@ func TestResolveOwnershipFilter_Unowned(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	of := ownerFilter{Active: true, Unowned: true}
@@ -2486,7 +2357,6 @@ func TestResolveOwnershipFilter_Unowned(t *testing.T) {
 
 func TestResolveOwnershipFilter_ActiveButNoOwnerNamesOrUnowned(t *testing.T) {
 	cfg := testConfig()
-	cfg.Ownership.Enabled = true
 	store := &mockStore{}
 	r := newTestRouterWithMockAndConfig(store, cfg)
 

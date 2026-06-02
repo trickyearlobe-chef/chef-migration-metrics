@@ -55,17 +55,12 @@ func NewOwnershipEvaluator(db *datastore.DB, cfg config.OwnershipConfig, logger 
 // rules for the given organisation, creating and removing ownership
 // assignments as appropriate.
 func (e *OwnershipEvaluator) EvaluateAfterCollection(ctx context.Context, orgID, orgName string) error {
-	if !e.cfg.Enabled {
+	rules := e.cfg.AutoRules
+	if len(rules) == 0 {
 		return nil
 	}
 
 	log := e.logger.WithScope(logging.ScopeOwnership, logging.WithOrganisation(orgName))
-
-	rules := e.cfg.AutoRules
-	if len(rules) == 0 {
-		log.Debug("no auto-derivation rules configured, skipping")
-		return nil
-	}
 
 	totalCreated := 0
 	totalRemoved := 0

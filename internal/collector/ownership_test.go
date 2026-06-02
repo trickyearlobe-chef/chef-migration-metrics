@@ -77,7 +77,7 @@ func TestMatchNodeAttribute_BooleanValue(t *testing.T) {
 
 func TestEvaluateRule_UnknownType(t *testing.T) {
 	e := &OwnershipEvaluator{
-		cfg: config.OwnershipConfig{Enabled: true},
+		cfg: config.OwnershipConfig{},
 	}
 
 	rule := config.OwnershipAutoRule{
@@ -307,15 +307,15 @@ func TestEvaluateNodeAttributeRule_MissingMatchValue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// EvaluateAfterCollection — disabled config
+// EvaluateAfterCollection — empty rules (no auto-derivation configured)
 // ---------------------------------------------------------------------------
 
-func TestEvaluateAfterCollection_DisabledConfig(t *testing.T) {
-	e := NewOwnershipEvaluator(nil, config.OwnershipConfig{Enabled: false}, nil)
+func TestEvaluateAfterCollection_NoRulesConfigured(t *testing.T) {
+	e := NewOwnershipEvaluator(nil, config.OwnershipConfig{}, nil)
 
 	err := e.EvaluateAfterCollection(context.TODO(), "org-id", "org-name")
 	if err != nil {
-		t.Fatalf("expected nil error when ownership is disabled, got: %v", err)
+		t.Fatalf("expected nil error when no rules configured, got: %v", err)
 	}
 }
 
@@ -330,7 +330,6 @@ func TestEvaluateAfterCollection_EmptyRules(t *testing.T) {
 		Writers: []logging.Writer{mw},
 	})
 	e := NewOwnershipEvaluator(nil, config.OwnershipConfig{
-		Enabled:   true,
 		AutoRules: nil,
 	}, logger)
 
@@ -551,7 +550,7 @@ func TestEvaluateCMDBAttributeRule_DefaultOwnerAttribute(t *testing.T) {
 
 func TestEvaluateRule_CMDBAttribute_ReturnsError(t *testing.T) {
 	e := &OwnershipEvaluator{
-		cfg: config.OwnershipConfig{Enabled: true},
+		cfg: config.OwnershipConfig{},
 	}
 
 	rule := config.OwnershipAutoRule{

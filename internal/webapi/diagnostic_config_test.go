@@ -120,7 +120,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 			WindowSeconds: 300,
 		},
 		Ownership: config.OwnershipConfig{
-			Enabled: true,
 			AuditLog: config.OwnershipAuditLog{
 				RetentionDays: 365,
 			},
@@ -332,9 +331,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 		o, ok := result["ownership"].(map[string]any)
 		if !ok {
 			t.Fatal("ownership missing or wrong type")
-		}
-		if o["enabled"] != true {
-			t.Errorf("enabled: expected true, got %v", o["enabled"])
 		}
 		if o["audit_log_retention_days"] != 365 {
 			t.Errorf("audit_log_retention_days: expected 365, got %v", o["audit_log_retention_days"])

@@ -17,10 +17,6 @@ import (
 // rules that are no longer present in the configuration. This should be called
 // once at application startup.
 func CleanupRemovedAutoRules(ctx context.Context, db *datastore.DB, cfg config.OwnershipConfig, logger *logging.Logger) error {
-	if !cfg.Enabled {
-		return nil
-	}
-
 	log := logger.WithScope(logging.ScopeOwnership)
 
 	// Build a set of configured rule names.

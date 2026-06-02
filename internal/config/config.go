@@ -690,7 +690,6 @@ type AuthProvider struct {
 
 // OwnershipConfig controls the ownership tracking feature.
 type OwnershipConfig struct {
-	Enabled   bool                `yaml:"enabled"`
 	AuditLog  OwnershipAuditLog   `yaml:"audit_log"`
 	AutoRules []OwnershipAutoRule `yaml:"auto_rules"`
 }
@@ -734,9 +733,6 @@ var ValidCMDBObjectTypes = map[string]bool{
 // The returned map is intended to be merged into the standard
 // NodeSearchAttributes query before executing partial search.
 func (c *OwnershipConfig) CMDBSearchKeys() map[string][]string {
-	if !c.Enabled {
-		return nil
-	}
 	keys := make(map[string][]string)
 	for _, rule := range c.AutoRules {
 		if rule.Type != "cmdb_attribute" || rule.ObjectType == "" {
@@ -1105,9 +1101,6 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_OUTPUT_DIRECTORY"); v != "" {
 		c.Elasticsearch.OutputDirectory = v
-	}
-	if v := os.Getenv("CMM_OWNERSHIP_ENABLED"); v != "" {
-		c.Ownership.Enabled = strings.EqualFold(v, "true")
 	}
 	if v := os.Getenv("CMM_OWNERSHIP_AUDIT_LOG_RETENTION_DAYS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
@@ -1661,10 +1654,6 @@ func (c *Config) validateAuth(ve *ValidationError) {
 }
 
 func (c *Config) validateOwnership(ve *ValidationError) {
-	if !c.Ownership.Enabled {
-		return
-	}
-
 	names := make(map[string]bool)
 	for i, rule := range c.Ownership.AutoRules {
 		prefix := fmt.Sprintf("ownership.auto_rules[%d]", i)

@@ -128,7 +128,7 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 	}
 
 	// When ownership filtering is active, fall back to in-memory path.
-	ownerFilterActive := of.Active && r.cfg.Ownership.Enabled
+	ownerFilterActive := of.Active
 	if ownerFilterActive {
 		r.handleDashboardPlatformDistributionWithOwnerFilter(w, req, orgs, of)
 		return
