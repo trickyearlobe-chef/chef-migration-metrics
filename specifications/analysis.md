@@ -553,9 +553,9 @@ The `automatic.filesystem` attribute collected from each node contains a map of 
 
 **Evaluation algorithm:**
 
-1. **Determine the installation target path.** Use the configured path for the node's platform:
-   - Linux: `readiness.install_path_linux` (default: `/hab`)
-   - Windows: `readiness.install_path_windows` (default: `C:\hab`)
+1. **Determine the installation target path and size.** Use the configured values for the node's platform:
+   - Linux: path = `readiness.install_path_linux` (default: `/hab`), size = `readiness.install_size_mb_linux` (default: 3072 MB)
+   - Windows: path = `readiness.install_path_windows` (default: `C:\hab`), size = `readiness.install_size_mb_windows` (default: 6144 MB)
 
 2. **Find the matching filesystem entry.** Iterate through the `filesystem` map and find the entry whose `mount` value is the longest prefix match for the installation path. For example:
    - If `/apps/hab` is a mount point, use that entry
@@ -569,8 +569,8 @@ The `automatic.filesystem` attribute collected from each node contains a map of 
    - `kb_size` — total filesystem capacity
 
 4. **Apply dual threshold.** Both conditions must pass:
-   - **Absolute:** `kb_available / 1024 >= readiness.install_size_mb` — enough space for the install
-   - **Percentage:** `(kb_available - install_size_kb) / kb_size >= readiness.min_remaining_free_percent / 100` — at least the configured % of total capacity remains free after the install
+   - **Absolute:** `kb_available / 1024 >= install_size_mb` (platform-specific) — enough space for the install
+   - **Percentage:** `(kb_available - install_size_kb) / kb_size >= readiness.min_remaining_free_percent / 100` — at least the configured % of total capacity remains free after the install is allocated
 
    If either condition fails, the node is blocked with a reason indicating which check failed.
 

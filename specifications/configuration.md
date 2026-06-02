@@ -248,16 +248,22 @@ For driver-specific configuration examples (vCenter, vRA, EC2), see [Test Kitche
 readiness:
   install_path_linux: /hab          # filesystem path where the Chef Client bundle is installed on Linux
   install_path_windows: 'C:\hab'    # filesystem path on Windows
-  install_size_mb: 2048             # disk space required for the install bundle (MB)
+  install_size_mb_linux: 3072       # disk space required for the Linux install bundle (MB)
+  install_size_mb_windows: 6144     # disk space required for the Windows install bundle (MB)
   min_remaining_free_percent: 20    # minimum % of the filesystem that must remain free after install
 ```
+
+> ⚠️ **Warning: non-default install paths carry significant risk.** While symlinking the install directory to another filesystem location is supported, it does not guarantee that path-dependent behaviour within Chef and its cookbooks will continue to work correctly. Many cookbooks hardcode assumptions about the default install location. On **Windows**, relocating the install directory also changes the configuration directory, which causes failures with `knife bootstrap`. Only override `install_path_linux` or `install_path_windows` after fully understanding these risks and testing the non-standard path in a representative environment.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `install_path_linux` | `/hab` | Installation target path on Linux nodes. Used as the input to the longest-prefix-match filesystem lookup. Override only after understanding the risks of a non-standard install location. |
 | `install_path_windows` | `C:\hab` | Installation target path on Windows nodes. Matched against the drive letter of each filesystem entry. Override only after understanding the risks of a non-standard install location. |
-| `install_size_mb` | `2048` | Disk space in MB required for the Chef Client bundle install. Both thresholds (absolute and percentage) must pass for a node to be considered ready. |
-| `min_remaining_free_percent` | `20` | After reserving `install_size_mb`, at least this percentage of the filesystem's total capacity must remain free. Prevents installs that would leave a nearly-full volume. |
+| `install_size_mb_linux` | `3072` | Disk space in MB required for the Chef Client bundle install on Linux. |
+| `install_size_mb_windows` | `6144` | Disk space in MB required for the Chef Client bundle install on Windows. |
+| `min_remaining_free_percent` | `20` | After reserving the platform install size, at least this percentage of the filesystem's total capacity must remain free. Both the absolute and percentage conditions must pass. |
+
+The `install_path_linux` and `install_path_windows` fields must be accompanied by a prominent warning in the UI wherever they are displayed or edited. See the warning text in this spec — it must cover: cookbooks hardcoding default paths, and the Windows-specific knife bootstrap config directory issue.
 
 ---
 
@@ -678,7 +684,8 @@ concurrency:
 readiness:
   install_path_linux: /hab
   install_path_windows: 'C:\hab'
-  install_size_mb: 2048
+  install_size_mb_linux: 3072
+  install_size_mb_windows: 6144
   min_remaining_free_percent: 20
 
 datastore:
