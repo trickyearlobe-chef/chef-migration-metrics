@@ -285,6 +285,7 @@ export function CookbooksPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
+                      tooltip="CookStyle — static analysis for Chef cookbook compatibility"
                     />
                     <SortableColumnHeader
                       label="Test Kitchen"
@@ -292,6 +293,7 @@ export function CookbooksPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
+                      tooltip="Test Kitchen — integration test results from matching Git repository"
                     />
                     <SortableColumnHeader
                       label="Status"

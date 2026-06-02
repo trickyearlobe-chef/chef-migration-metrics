@@ -316,6 +316,7 @@ export function GitReposPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
+                      tooltip="CookStyle — static analysis for Chef cookbook compatibility"
                     />
                     <SortableColumnHeader
                       label="TK Status"
@@ -323,6 +324,7 @@ export function GitReposPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
+                      tooltip="Test Kitchen — integration test results"
                     />
                     <th>TK Results</th>
                     <th>Head Commit</th>

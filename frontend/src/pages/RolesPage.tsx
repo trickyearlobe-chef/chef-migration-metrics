@@ -284,6 +284,7 @@ export function RolesPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
+                      tooltip="CookStyle — cookbooks with compatibility issues"
                     />
                     <SortableColumnHeader
                       label="Test Kitchen"
@@ -291,6 +292,7 @@ export function RolesPage() {
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
+                      tooltip="Test Kitchen — integration test results from matching Git repository"
                     />
                   </tr>
                 </thead>
