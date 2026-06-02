@@ -12,7 +12,7 @@ import { AdminAnalysisToolsPage } from "./AdminAnalysisToolsPage";
 type KitchenTab = "config" | "analysis" | "batches" | "queue" | "settings";
 
 const TABS: { key: KitchenTab; label: string }[] = [
-  { key: "config", label: "Config" },
+  { key: "config", label: "Hypervisor" },
   { key: "analysis", label: "Analysis" },
   { key: "batches", label: "Batches" },
   { key: "queue", label: "Queue" },
