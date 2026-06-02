@@ -553,20 +553,26 @@ The `automatic.filesystem` attribute collected from each node contains a map of 
 
 **Evaluation algorithm:**
 
-1. **Determine the installation target mount point.** The Habitat-packaged Chef Client is installed to:
-   - Linux: `/hab` (falls back to `/` if `/hab` is not a separate mount)
-   - Windows: `C:\hab` (falls back to `C:` if not a separate mount)
+1. **Determine the installation target path and size.** Use the configured values for the node's platform:
+   - Linux: path = `readiness.install_path_linux` (default: `/hab`), size = `readiness.install_size_mb_linux` (default: 3072 MB)
+   - Windows: path = `readiness.install_path_windows` (default: `C:\hab`), size = `readiness.install_size_mb_windows` (default: 6144 MB)
 
 2. **Find the matching filesystem entry.** Iterate through the `filesystem` map and find the entry whose `mount` value is the longest prefix match for the installation path. For example:
-   - If `/hab` is a mount point, use that entry
-   - If `/hab` is not mounted separately but `/` is, use `/`
-   - If `/opt` is mounted and Habitat is configured to install under `/opt/hab`, use `/opt`
+   - If `/apps/hab` is a mount point, use that entry
+   - If `/apps/hab` is not mounted separately but `/apps` is, use `/apps`
+   - If neither is a separate mount, fall back to `/`
 
-   For Windows nodes, match on the drive letter.
+   For Windows nodes, match on the drive letter of the configured path.
 
-3. **Extract available space.** Read the `kb_available` field from the matched filesystem entry. Convert from KB to MB by dividing by 1024.
+3. **Extract space values.** From the matched filesystem entry:
+   - `kb_available` — current free space
+   - `kb_size` — total filesystem capacity
 
-4. **Compare against threshold.** Compare the available MB against the configured `readiness.min_free_disk_mb` value (default: 2048 MB). If available space is less than the threshold, the node is blocked for this reason.
+4. **Apply dual threshold.** Both conditions must pass:
+   - **Absolute:** `kb_available / 1024 >= install_size_mb` (platform-specific) — enough space for the install
+   - **Percentage:** `(kb_available - install_size_kb) / kb_size >= readiness.min_remaining_free_percent / 100` — at least the configured % of total capacity remains free after the install is allocated
+
+   If either condition fails, the node is blocked with a reason indicating which check failed.
 
 **Edge cases:**
 
@@ -723,7 +729,7 @@ Steps 3 and 4 may run concurrently since they operate on independent cookbook se
 | Full cookbook inventory from Chef server | Data collection component |
 | Role dependency graph | Data collection component |
 | Configured target Chef Client versions | Configuration |
-| Configured disk space threshold | Configuration |
+| Configured disk space thresholds (`install_size_mb`, `min_remaining_free_percent`, install paths) | Configuration |
 | Configured stale node threshold | Configuration |
 | Cop-to-documentation mapping (embedded) | Application binary |
 | CookStyle binary | Embedded Ruby environment (`/opt/chef-migration-metrics/embedded/bin/cookstyle`) |

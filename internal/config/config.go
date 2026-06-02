@@ -33,8 +33,6 @@ type Config struct {
 	Concurrency                ConcurrencyConfig   `yaml:"concurrency"`
 	AnalysisTools              AnalysisToolsConfig `yaml:"analysis_tools"`
 	Readiness                  ReadinessConfig     `yaml:"readiness"`
-	Notifications              NotificationsConfig `yaml:"notifications"`
-	SMTP                       SMTPConfig          `yaml:"smtp"`
 	Exports                    ExportsConfig       `yaml:"exports"`
 	Elasticsearch              ElasticsearchConfig `yaml:"elasticsearch"`
 	Datastore                  DatastoreConfig     `yaml:"datastore"`
@@ -528,50 +526,6 @@ func (c *Config) BackupSchedule() string {
 }
 
 // ---------------------------------------------------------------------------
-// Notifications
-// ---------------------------------------------------------------------------
-
-// NotificationsConfig controls webhook and email notification delivery.
-type NotificationsConfig struct {
-	Enabled             bool                  `yaml:"enabled"`
-	Channels            []NotificationChannel `yaml:"channels"`
-	ReadinessMilestones []int                 `yaml:"readiness_milestones"`
-	StaleNodeAlertCount int                   `yaml:"stale_node_alert_count"`
-}
-
-// NotificationChannel is one configured delivery channel (webhook or email).
-type NotificationChannel struct {
-	Name       string                    `yaml:"name"`
-	Type       string                    `yaml:"type"`
-	URL        string                    `yaml:"url"`
-	URLEnv     string                    `yaml:"url_env"`
-	Recipients []string                  `yaml:"recipients"`
-	Events     []string                  `yaml:"events"`
-	Filters    NotificationChannelFilter `yaml:"filters"`
-}
-
-// NotificationChannelFilter limits which events are delivered through a
-// channel.
-type NotificationChannelFilter struct {
-	Organisations []string `yaml:"organisations"`
-	Cookbooks     []string `yaml:"cookbooks"`
-}
-
-// ---------------------------------------------------------------------------
-// SMTP (email notifications)
-// ---------------------------------------------------------------------------
-
-// SMTPConfig holds settings for email notification delivery.
-type SMTPConfig struct {
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	UsernameEnv string `yaml:"username_env"`
-	PasswordEnv string `yaml:"password_env"`
-	FromAddress string `yaml:"from_address"`
-	TLS         bool   `yaml:"tls"`
-}
-
-// ---------------------------------------------------------------------------
 // Data exports
 // ---------------------------------------------------------------------------
 
@@ -912,22 +866,6 @@ func (c *Config) setDefaults() {
 		c.Readiness.MinFreeDiskMB = 2048
 	}
 
-	// Notifications
-	if c.Notifications.ReadinessMilestones == nil {
-		c.Notifications.ReadinessMilestones = []int{50, 75, 90, 100}
-	}
-	if c.Notifications.StaleNodeAlertCount == 0 {
-		c.Notifications.StaleNodeAlertCount = 50
-	}
-
-	// SMTP
-	if c.SMTP.Port == 0 {
-		c.SMTP.Port = 587
-	}
-	if !c.SMTP.TLS {
-		c.SMTP.TLS = true
-	}
-
 	// Exports
 	if c.Exports.MaxRows == 0 {
 		c.Exports.MaxRows = 100000
@@ -1231,7 +1169,6 @@ func (c *Config) Validate() (*Warnings, error) {
 	c.validateCollection(ve, w)
 	c.validateConcurrency(ve)
 	c.validateAnalysisTools(ve, w)
-	c.validateNotifications(ve, w)
 	c.validateExports(ve, w)
 	c.validateElasticsearch(ve, w)
 	c.validateServer(ve, w)
@@ -1511,75 +1448,6 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 				w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or per-image chef_download_urls for Chef 19+ installation", v)
 				break
 			}
-		}
-	}
-}
-
-func (c *Config) validateNotifications(ve *ValidationError, w *Warnings) {
-	if !c.Notifications.Enabled {
-		return
-	}
-
-	validEvents := map[string]bool{
-		"cookbook_status_change":        true,
-		"readiness_milestone":           true,
-		"new_incompatible_cookbook":     true,
-		"collection_failure":            true,
-		"stale_node_threshold_exceeded": true,
-		"certificate_expiry_warning":    true,
-	}
-
-	seenNames := make(map[string]bool)
-	hasEmailChannel := false
-
-	for i, ch := range c.Notifications.Channels {
-		prefix := fmt.Sprintf("notifications.channels[%d]", i)
-		if ch.Name == "" {
-			ve.addf("%s: name is required", prefix)
-		} else if seenNames[ch.Name] {
-			ve.addf("%s: duplicate channel name %q", prefix, ch.Name)
-		} else {
-			seenNames[ch.Name] = true
-		}
-
-		switch ch.Type {
-		case "webhook":
-			if ch.URL == "" && ch.URLEnv == "" {
-				ve.addf("%s: webhook channel requires url or url_env", prefix)
-			}
-			if ch.URLEnv != "" {
-				if os.Getenv(ch.URLEnv) == "" {
-					ve.addf("%s: url_env %q references an unset environment variable", prefix, ch.URLEnv)
-				}
-			}
-		case "email":
-			hasEmailChannel = true
-			if len(ch.Recipients) == 0 {
-				ve.addf("%s: email channel requires at least one recipient", prefix)
-			}
-		default:
-			ve.addf("%s: type must be 'webhook' or 'email', got %q", prefix, ch.Type)
-		}
-
-		for j, ev := range ch.Events {
-			if !validEvents[ev] {
-				ve.addf("%s.events[%d]: unknown event type %q", prefix, j, ev)
-			}
-		}
-	}
-
-	for i, m := range c.Notifications.ReadinessMilestones {
-		if m < 0 || m > 100 {
-			ve.addf("notifications.readiness_milestones[%d]: %d must be between 0 and 100", i, m)
-		}
-	}
-
-	if hasEmailChannel {
-		if c.SMTP.Host == "" {
-			ve.add("smtp.host is required when email notification channels are configured")
-		}
-		if c.SMTP.FromAddress == "" {
-			ve.add("smtp.from_address is required when email notification channels are configured")
 		}
 	}
 }

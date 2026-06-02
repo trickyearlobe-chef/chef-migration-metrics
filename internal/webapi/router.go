@@ -570,12 +570,6 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/exports/", r.handleExportStatus)
 
 	// -----------------------------------------------------------------
-	// Notification endpoints (placeholder — protected for when implemented)
-	// -----------------------------------------------------------------
-	r.protect("/api/v1/notifications", r.handleNotImplemented)
-	r.protect("/api/v1/notifications/", r.handleNotImplemented)
-
-	// -----------------------------------------------------------------
 	// Organisation endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/organisations", r.handleOrganisations)
@@ -630,7 +624,6 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools)
 	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen)
 	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer)
-	r.adminOnly("/api/v1/admin/config/notifications", r.handleAdminConfigNotifications)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)

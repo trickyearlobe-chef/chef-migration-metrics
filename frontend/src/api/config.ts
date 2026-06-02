@@ -9,7 +9,6 @@ import type {
   ConfigOrganisation,
   ServerConfig,
   AuthConfig,
-  NotificationsConfig,
 } from "../types/config";
 
 // Re-export config types so consumers importing from "../api" still find them.
@@ -26,8 +25,6 @@ export type {
   ServerConfig,
   AuthConfig,
   AuthProvider,
-  NotificationsConfig,
-  NotificationChannel,
 } from "../types/config";
 import { apiFetch, buildUrl } from "./client";
 
@@ -167,19 +164,6 @@ export function saveAuthConfig(
   value: AuthConfig,
 ): Promise<PutConfigResponse<AuthConfig>> {
   return apiMutateConfig<AuthConfig>(buildUrl("/admin/config/auth"), value);
-}
-
-export function fetchNotifications(): Promise<NotificationsConfig> {
-  return apiFetch<NotificationsConfig>(buildUrl("/admin/config/notifications"));
-}
-
-export function saveNotifications(
-  value: NotificationsConfig,
-): Promise<PutConfigResponse<NotificationsConfig>> {
-  return apiMutateConfig<NotificationsConfig>(
-    buildUrl("/admin/config/notifications"),
-    value,
-  );
 }
 
 // apiMutateConfig is exported so domain modules that use the same config

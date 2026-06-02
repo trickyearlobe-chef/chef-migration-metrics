@@ -23,8 +23,6 @@ const (
 	KeyConcurrency                = "concurrency"
 	KeyAnalysisTools              = "analysis_tools"
 	KeyReadiness                  = "readiness"
-	KeyNotifications              = "notifications"
-	KeySMTP                       = "smtp"
 	KeyExports                    = "exports"
 	KeyElasticsearch              = "elasticsearch"
 	KeyServerTLS                  = "server.tls"
@@ -53,8 +51,6 @@ func AllConfigKeys() []string {
 		KeyConcurrency,
 		KeyAnalysisTools,
 		KeyReadiness,
-		KeyNotifications,
-		KeySMTP,
 		KeyExports,
 		KeyElasticsearch,
 		KeyServerTLS,
@@ -157,10 +153,6 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 		return yamlUnmarshalInto(&cfg.AnalysisTools, raw, key)
 	case KeyReadiness:
 		return yamlUnmarshalInto(&cfg.Readiness, raw, key)
-	case KeyNotifications:
-		return yamlUnmarshalInto(&cfg.Notifications, raw, key)
-	case KeySMTP:
-		return yamlUnmarshalInto(&cfg.SMTP, raw, key)
 	case KeyExports:
 		return yamlUnmarshalInto(&cfg.Exports, raw, key)
 	case KeyElasticsearch:
@@ -228,8 +220,6 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 		KeyConcurrency:            cfg.Concurrency,
 		KeyAnalysisTools:          cfg.AnalysisTools,
 		KeyReadiness:              cfg.Readiness,
-		KeyNotifications:          cfg.Notifications,
-		KeySMTP:                   cfg.SMTP,
 		KeyExports:                cfg.Exports,
 		KeyElasticsearch:          cfg.Elasticsearch,
 		KeyServerTLS:              cfg.Server.TLS,

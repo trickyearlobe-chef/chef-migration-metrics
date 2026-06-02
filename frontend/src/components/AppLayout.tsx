@@ -160,7 +160,6 @@ const settingsNavItems = [
   { to: "/admin/config/analysis-tools", label: "Analysis Tools" },
   { to: "/admin/config/server", label: "Server & TLS" },
   { to: "/admin/config/auth", label: "Authentication" },
-  { to: "/admin/config/notifications", label: "Notifications" },
   { to: "/admin/config/logging", label: "Logging" },
   { to: "/admin/config/exports", label: "Exports" },
   { to: "/admin/config/platform-display-names", label: "Platform Names" },
