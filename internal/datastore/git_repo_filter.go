@@ -123,8 +123,10 @@ func buildGitRepoFilterQuery(f GitRepoFilter) (query string, args []interface{})
 		sortCol = "tk_status"
 	case "clone_status":
 		sortCol = "clone_status"
-	case "last_fetched_at":
+	case "last_fetched":
 		sortCol = "last_fetched_at"
+	case "git_url":
+		sortCol = "LOWER(git_repo_url)"
 	case "has_test_suite":
 		sortCol = "has_test_suite"
 	}
