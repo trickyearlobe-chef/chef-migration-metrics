@@ -1,6 +1,6 @@
-# Habitat Migration Tracking — ToDo
+# Parallel Deployment Tracking — ToDo
 
-Spec: `specifications/habitat-migration-tracking.md`
+Spec: `specifications/parallel-deployment-tracking.md`
 
 ### Open Questions (resolve before implementation)
 
