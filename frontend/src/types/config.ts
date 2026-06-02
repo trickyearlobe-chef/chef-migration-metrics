@@ -115,24 +115,3 @@ export interface AuthConfig {
   lockout_attempts: number;
 }
 
-export interface NotificationChannelFilter {
-  organisations: string[];
-  cookbooks: string[];
-}
-
-export interface NotificationChannel {
-  name: string;
-  type: string;
-  url: string;
-  url_env: string;
-  recipients: string[];
-  events: string[];
-  filters: NotificationChannelFilter;
-}
-
-export interface NotificationsConfig {
-  enabled: boolean;
-  channels: NotificationChannel[];
-  readiness_milestones: number[];
-  stale_node_alert_count: number;
-}

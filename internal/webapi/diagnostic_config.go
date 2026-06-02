@@ -11,8 +11,8 @@ import (
 
 // DiagnosticConfigSummary returns a safe subset of cfg suitable for
 // diagnostic endpoints. It uses an explicit allowlist — only the listed
-// fields are included. Secrets (DB URLs, key paths, credentials, SMTP
-// settings, TLS cert paths, ACME config, etc.) are never returned.
+// fields are included. Secrets (DB URLs, key paths, credentials, TLS cert
+// paths, ACME config, etc.) are never returned.
 func DiagnosticConfigSummary(cfg config.Config) map[string]any {
 	return map[string]any{
 		"organisation_count":   len(cfg.Organisations),

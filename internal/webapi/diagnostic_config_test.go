@@ -135,14 +135,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 				},
 			},
 		},
-		SMTP: config.SMTPConfig{
-			Host:        "smtp.example.com",
-			Port:        587,
-			UsernameEnv: "SMTP_USER",
-			PasswordEnv: "SMTP_PASS",
-			FromAddress: "no-reply@example.com",
-			TLS:         true,
-		},
 		Datastore: config.DatastoreConfig{
 			URL:          "postgres://user:secret@db/chef",
 			MaxOpenConns: 25,
@@ -361,7 +353,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 			{"db url", "postgres://user:secret@db/chef"},
 			{"client key path", "/etc/chef/client.pem"},
 			{"driver secret value", "my-credential-name"},
-			{"smtp password env", "SMTP_PASS"},
 			{"tls key path", "/etc/ssl/key.pem"},
 			{"acme email", "admin@example.com"},
 		}

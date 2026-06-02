@@ -1,6 +1,6 @@
 # Configuration - Component Specification
 
-> **TL;DR** — Single YAML config file with environment variable overrides for secrets. Key sections: `server` (bind address, port, TLS mode — off/static/acme), `database` (PostgreSQL URL), `collection` (Chef server orgs, schedule, stale thresholds), `target_versions` (Chef Client versions to test against), `git` (cookbook repo URLs), `concurrency` (worker pool sizes per task type), `analysis_tools` (embedded CookStyle/TK bin dir, timeouts), `auth` (local/SAML), `notifications` (webhook/email channels, triggers), `exports` (output dir, retention, async threshold), `elasticsearch` (NDJSON export toggle, output dir), `logging` (level, retention). All sensitive values must be set via env vars, never inlined. See `todo/configuration.md` for implementation status.
+> **TL;DR** — Single YAML config file with environment variable overrides for secrets. Key sections: `server` (bind address, port, TLS mode — off/static/acme), `database` (PostgreSQL URL), `collection` (Chef server orgs, schedule, stale thresholds), `target_versions` (Chef Client versions to test against), `git` (cookbook repo URLs), `concurrency` (worker pool sizes per task type), `analysis_tools` (embedded CookStyle/TK bin dir, timeouts), `auth` (local/SAML), `exports` (output dir, retention, async threshold), `elasticsearch` (NDJSON export toggle, output dir), `logging` (level, retention). All sensitive values must be set via env vars, never inlined. See `todo/configuration.md` for implementation status.
 
 ## Overview
 
@@ -132,17 +132,22 @@ Controls how frequently the background node collection job runs.
 
 ```yaml
 collection:
-  schedule: "0 * * * *"   # cron expression — default: every hour
-  stale_node_threshold_days: 7    # nodes with ohai_time older than this are flagged as stale
-  stale_cookbook_threshold_days: 365  # cookbooks not updated in this many days are flagged as stale
+  schedule: "0 * * * *"                   # cron expression — default: every hour
+  stale_node_threshold_days: 7            # nodes missing for more than this many days are flagged Gone (red)
+  stale_node_warning_hours: 26            # nodes missing for more than this many hours are flagged Missing (amber)
+  stale_node_critical_days: 7            # alias for stale_node_threshold_days — nodes flagged Gone (red)
+  stale_cookbook_threshold_days: 365      # cookbooks not updated in this many days are flagged as stale
+  skip_server_cookbook_download: false    # skip downloading cookbooks from Chef Server (scan git repos only)
   delete_server_cookbooks_after_scan: false  # delete downloaded server cookbook files after scanning
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `schedule` | `0 * * * *` | Cron expression controlling collection frequency |
-| `stale_node_threshold_days` | `7` | Nodes whose `ohai_time` is older than this many days are flagged as stale. Stale nodes are still collected and analysed but are visually distinguished in the dashboard and their disk space data is treated as potentially outdated. |
+| `stale_node_warning_hours` | `26` | Nodes whose `ohai_time` is older than this many hours are flagged as **Missing** (amber). Represents nodes that have missed at least one Chef run but may still recover. |
+| `stale_node_threshold_days` | `7` | Nodes whose `ohai_time` is older than this many days are flagged as **Gone** (red). Represents nodes that have been absent long enough to be considered truly missing. |
 | `stale_cookbook_threshold_days` | `365` | Cookbooks whose most recent version was first observed longer than this many days ago are flagged as stale in the dashboard. This helps teams identify unmaintained cookbooks that may need attention beyond compatibility fixes. |
+| `skip_server_cookbook_download` | `false` | When `true`, skips downloading cookbooks from the Chef Server. Only git-sourced cookbooks are scanned. Useful when Chef Server cookbook data is unreliable or irrelevant. |
 | `delete_server_cookbooks_after_scan` | `false` | Controls whether downloaded Chef Server cookbook files are deleted after the scan pipeline runs. Enable this to minimise disk usage. The default of `false` retains files on disk so they can be inspected for troubleshooting. |
 
 ---
@@ -242,99 +247,6 @@ readiness:
 ```
 
 The default value should be set to accommodate the Habitat-packaged Chef Client bundle including bundled InSpec. This value should be reviewed when new Chef Client versions are released.
-
----
-
-### Notifications
-
-Controls webhook and email notifications for significant events. See the [Visualisation specification](../visualisation/Specification.md) for the full list of notification triggers.
-
-```yaml
-notifications:
-  enabled: false
-  channels:
-    - name: slack-ops
-      type: webhook
-      url_env: NOTIFICATION_WEBHOOK_URL   # environment variable containing the webhook URL
-      # Alternatively, specify the URL directly (not recommended for production):
-      # url: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
-      events:
-        - cookbook_status_change
-        - readiness_milestone
-        - collection_failure
-      filters:
-        organisations: []    # empty = all organisations
-        cookbooks: []        # empty = all cookbooks
-
-    - name: email-team
-      type: email
-      recipients:
-        - chef-team@example.com
-      events:
-        - readiness_milestone
-        - new_incompatible_cookbook
-        - stale_node_threshold_exceeded
-      filters:
-        organisations: []
-
-  readiness_milestones:      # percentage thresholds that trigger readiness milestone notifications
-    - 50
-    - 75
-    - 90
-    - 100
-
-  stale_node_alert_count: 50   # notify when stale node count exceeds this value
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `enabled` | `false` | Master toggle for all notifications |
-| `channels[].name` | — | Unique name for the notification channel |
-| `channels[].type` | — | One of: `webhook`, `email` |
-| `channels[].url` | — | Webhook URL (for `webhook` type). Prefer `url_env` for secrets. |
-| `channels[].url_env` | — | Environment variable name containing the webhook URL |
-| `channels[].recipients` | — | List of email addresses (for `email` type) |
-| `channels[].events` | — | List of event types to notify on |
-| `channels[].filters.organisations` | `[]` (all) | Limit notifications to specific organisations |
-| `channels[].filters.cookbooks` | `[]` (all) | Limit notifications to specific cookbooks |
-| `readiness_milestones` | `[50, 75, 90, 100]` | Percentage thresholds for readiness milestone notifications |
-| `stale_node_alert_count` | `50` | Notify when the number of stale nodes exceeds this count |
-
-**Notification event types:**
-
-| Event | Description |
-|-------|-------------|
-| `cookbook_status_change` | A cookbook's compatibility status changed |
-| `readiness_milestone` | Ready node percentage crossed a configured threshold |
-| `new_incompatible_cookbook` | A previously untested or compatible cookbook is now incompatible |
-| `collection_failure` | A collection run failed for one or more organisations |
-| `stale_node_threshold_exceeded` | The count of stale nodes exceeded the configured alert count |
-| `certificate_expiry_warning` | A TLS certificate is within 7 days of expiry and automatic renewal has not succeeded. Includes domain name(s), current expiry timestamp, and last renewal error. See [TLS specification](../tls/Specification.md). |
-
----
-
-### SMTP (Email Notifications)
-
-Required only if email notification channels are configured.
-
-```yaml
-smtp:
-  host: smtp.example.com
-  port: 587
-  username_env: SMTP_USERNAME     # environment variable for SMTP username
-  password_env: SMTP_PASSWORD     # environment variable for SMTP password
-  from_address: chef-migration-metrics@example.com
-  tls: true                       # use STARTTLS
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `host` | — | SMTP server hostname |
-| `port` | `587` | SMTP server port |
-| `username_env` | — | Environment variable containing the SMTP username |
-| `password_env` | — | Environment variable containing the SMTP password |
-| `from_address` | — | Sender email address |
-| `tls` | `true` | Use STARTTLS for the SMTP connection |
 
 ---
 
@@ -635,9 +547,6 @@ The following environment variables are explicitly supported for sensitive value
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_ACME_DNS_PROVIDER` | Override `server.tls.acme.dns_provider` |
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_ACME_STORAGE_PATH` | Override `server.tls.acme.storage_path` |
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_ACME_AGREE_TO_TOS` | Override `server.tls.acme.agree_to_tos` |
-| `NOTIFICATION_WEBHOOK_URL` | Webhook URL for notification channels that use `url_env` |
-| `SMTP_USERNAME` | SMTP username for email notifications |
-| `SMTP_PASSWORD` | SMTP password for email notifications |
 | `CHEF_MIGRATION_METRICS_ANALYSIS_TOOLS_EMBEDDED_BIN_DIR` | Override `analysis_tools.embedded_bin_dir` — path to directory containing embedded `cookstyle`, `kitchen`, and `ruby` binaries |
 | `CHEF_MIGRATION_METRICS_ELASTICSEARCH_ENABLED` | Override `elasticsearch.enabled` — set to `true` to enable Elasticsearch NDJSON export |
 | `CHEF_MIGRATION_METRICS_ELASTICSEARCH_OUTPUT_DIRECTORY` | Override `elasticsearch.output_directory` — path where NDJSON files are written |
@@ -685,10 +594,7 @@ On startup, the application must validate the configuration and fail fast with a
   - `acme.ca_url` is not a valid URL
   - `acme.trusted_roots` is set but the file does not exist or is not a valid PEM bundle
 - **Backward compatibility:** Both `server.tls.enabled` and `server.tls.mode` are present (log `WARN` — `mode` takes precedence)
-- A notification channel references a `url_env` environment variable that is not set
-- An email notification channel is configured but SMTP settings are missing
 - The exports output directory does not exist or is not writable
-- `readiness_milestones` values are not between 0 and 100
 - `stale_node_threshold_days` or `stale_cookbook_threshold_days` is less than 1
 - `analysis_tools.cookstyle_timeout_minutes` is less than 1
 - `analysis_tools.test_kitchen_timeout_minutes` is less than 1

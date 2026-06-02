@@ -50,7 +50,6 @@ import { AdminTargetVersionsPage } from "./pages/AdminTargetVersionsPage";
 import { AdminOrganisationsPage } from "./pages/AdminOrganisationsPage";
 import { AdminServerPage } from "./pages/AdminServerPage";
 import { AdminAuthPage } from "./pages/AdminAuthPage";
-import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
 import {
   AdminSetupWizardPage,
   useSetupRequired,
@@ -370,14 +369,6 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminAuthPage />
-                  </RequireAdmin>
-                }
-              />
-              <Route
-                path="/admin/config/notifications"
-                element={
-                  <RequireAdmin>
-                    <AdminNotificationsPage />
                   </RequireAdmin>
                 }
               />
