@@ -49,7 +49,6 @@ func generateTestRSAKeyPKCS8(t *testing.T, bits int) []byte {
 func TestIsValidCredentialType_AllKnownTypes(t *testing.T) {
 	knownTypes := []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeLDAPBindPassword,
 		CredentialTypeSMTPPassword,
 		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
@@ -98,7 +97,6 @@ func TestValidate_UnrecognisedType(t *testing.T) {
 func TestValidate_EmptyValue_AllTypes(t *testing.T) {
 	for _, ct := range []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeLDAPBindPassword,
 		CredentialTypeSMTPPassword,
 		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
@@ -118,7 +116,6 @@ func TestValidate_EmptyValue_AllTypes(t *testing.T) {
 func TestValidate_NilValue_AllTypes(t *testing.T) {
 	for _, ct := range []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeLDAPBindPassword,
 		CredentialTypeSMTPPassword,
 		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
@@ -404,48 +401,6 @@ func TestValidate_WebhookURL_NoMetadata(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ldap_bind_password validation
-// ---------------------------------------------------------------------------
-
-func TestValidate_LDAPBindPassword_Valid(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeLDAPBindPassword, []byte("my-ldap-password"))
-	if !result.Valid {
-		t.Fatalf("expected non-empty LDAP password to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_LDAPBindPassword_SingleChar(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeLDAPBindPassword, []byte("x"))
-	if !result.Valid {
-		t.Fatalf("expected single-char LDAP password to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_LDAPBindPassword_SpecialChars(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeLDAPBindPassword, []byte("p@$$w0rd!#%^&*(){}[]|\\:\";<>,.?/~`"))
-	if !result.Valid {
-		t.Fatalf("expected LDAP password with special chars to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_LDAPBindPassword_Unicode(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeLDAPBindPassword, []byte("пароль密码パスワード"))
-	if !result.Valid {
-		t.Fatalf("expected Unicode LDAP password to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_LDAPBindPassword_NoMetadata(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeLDAPBindPassword, []byte("secret"))
-	if !result.Valid {
-		t.Fatalf("unexpected error: %v", result.Error)
-	}
-	if result.Metadata != nil {
-		t.Fatalf("expected nil metadata for ldap_bind_password, got %v", result.Metadata)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // smtp_password validation
 // ---------------------------------------------------------------------------
 
@@ -521,7 +476,6 @@ func TestValidate_Generic_NoMetadata(t *testing.T) {
 func TestValidCredentialTypes_ContainsAllConstants(t *testing.T) {
 	expected := []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeLDAPBindPassword,
 		CredentialTypeSMTPPassword,
 		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
@@ -546,7 +500,6 @@ func TestCredentialTypeConstants(t *testing.T) {
 		expected string
 	}{
 		{CredentialTypeChefClientKey, "chef_client_key"},
-		{CredentialTypeLDAPBindPassword, "ldap_bind_password"},
 		{CredentialTypeSMTPPassword, "smtp_password"},
 		{CredentialTypeWebhookURL, "webhook_url"},
 		{CredentialTypeGeneric, "generic"},

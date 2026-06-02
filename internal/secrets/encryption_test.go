@@ -417,8 +417,8 @@ func TestDecrypt_AADMismatch_DifferentType(t *testing.T) {
 	defer enc.Close()
 
 	plaintext := []byte("some password")
-	aadOriginal, _ := BuildAAD("ldap_bind_password", "ldap-pw")
-	aadSwapped, _ := BuildAAD("smtp_password", "ldap-pw")
+	aadOriginal, _ := BuildAAD("smtp_password", "ldap-pw")
+	aadSwapped, _ := BuildAAD("generic", "ldap-pw")
 
 	ciphertext, err := enc.Encrypt(plaintext, aadOriginal)
 	if err != nil {
@@ -925,7 +925,6 @@ func TestEncryptDecrypt_AllCredentialTypes(t *testing.T) {
 
 	types := []string{
 		"chef_client_key",
-		"ldap_bind_password",
 		"smtp_password",
 		"webhook_url",
 		"generic",
@@ -972,7 +971,6 @@ func TestDecrypt_CrossTypeAADRejection(t *testing.T) {
 	name := "shared-name"
 	types := []string{
 		"chef_client_key",
-		"ldap_bind_password",
 		"smtp_password",
 		"webhook_url",
 		"generic",
