@@ -78,102 +78,21 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 
 	ctx := req.Context()
 
-	repos, err := r.db.ListGitRepos(ctx)
-	if err != nil {
-		r.logf("ERROR", "listing git repos: %v", err)
-		WriteInternalError(w, "Failed to list git repos.")
-		return
+	// Parse query params into filter struct.
+	f := datastore.GitRepoFilter{
+		Name:                queryString(req, "name", ""),
+		CompatibilityStatus: queryString(req, "compatibility", ""),
+		TKStatus:            queryString(req, "tk_status", ""),
+		CloneStatus:         queryString(req, "clone_status", ""),
+		Sort:                queryString(req, "sort", "name"),
+		SortOrder:           queryString(req, "order", "asc"),
 	}
 
-	// Determine target Chef version for compatibility.
-	targetChefVersion := queryString(req, "target_chef_version", "")
-	if targetChefVersion == "" {
-		targetChefVersion = r.defaultTargetVersion()
-	}
-
-	// Build repo-name-by-ID lookup. One git repo per cookbook name.
-	repoNameByID := make(map[string]string, len(repos))
-	for _, gr := range repos {
-		repoNameByID[gr.Name] = gr.Name
-	}
-
-	// Build compatibility map from CookStyle results directly.
-	// Passed == true → compatible, Passed == false → incompatible,
-	// no result → untested.
-	compatByName := make(map[string]string)
-	if targetChefVersion != "" {
-		allCookstyle, csErr := r.db.ListAllGitRepoCookstyleResults(ctx)
-		if csErr != nil {
-			r.logf("WARN", "listing git repo cookstyle results for compatibility: %v", csErr)
-		} else {
-			for _, cs := range allCookstyle {
-				if cs.TargetChefVersion != targetChefVersion {
-					continue
-				}
-				name := repoNameByID[cs.GitRepoName]
-				if name == "" {
-					continue
-				}
-				if _, seen := compatByName[name]; seen {
-					continue
-				}
-				if cs.ErrorMessage != "" {
-					compatByName[name] = "error"
-				} else if cs.Passed {
-					compatByName[name] = "compatible"
-				} else {
-					compatByName[name] = "incompatible"
-				}
-			}
-		}
-	}
-
-	// Apply optional name filter (case-insensitive substring).
-	nameFilter := queryString(req, "name", "")
-	if nameFilter != "" {
-		filtered := repos[:0]
-		for _, gr := range repos {
-			if containsFold(gr.Name, nameFilter) {
-				filtered = append(filtered, gr)
-			}
-		}
-		repos = filtered
-	}
-
-	// Apply optional compatibility filter.
-	compatFilter := queryString(req, "compatibility", "")
-	if compatFilter != "" {
-		filtered := repos[:0]
-		for _, gr := range repos {
-			c := compatByName[gr.Name]
-			if c == "" {
-				c = "untested"
-			}
-			if c == compatFilter {
-				filtered = append(filtered, gr)
-			}
-		}
-		repos = filtered
-	}
-
-	// Apply optional clone status filter (ok, failed, pending).
-	cloneStatusFilter := queryString(req, "clone_status", "")
-	if cloneStatusFilter != "" {
-		filtered := repos[:0]
-		for _, gr := range repos {
-			if gr.CloneStatus == cloneStatusFilter {
-				filtered = append(filtered, gr)
-			}
-		}
-		repos = filtered
-	}
-
-	// Apply optional has_test_suite filter (yes, no — comma-separated).
-	testSuiteFilter := queryString(req, "has_test_suite", "")
-	if testSuiteFilter != "" {
+	// Parse has_test_suite filter (yes, no, yes,no — comma-separated).
+	if tsf := queryString(req, "has_test_suite", ""); tsf != "" {
 		wantYes := false
 		wantNo := false
-		for _, v := range strings.Split(testSuiteFilter, ",") {
+		for _, v := range strings.Split(tsf, ",") {
 			switch strings.TrimSpace(v) {
 			case "yes":
 				wantYes = true
@@ -183,59 +102,39 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		}
 		// Only filter if not both selected (both = no filter).
 		if wantYes != wantNo {
-			filtered := repos[:0]
-			for _, gr := range repos {
-				if (wantYes && gr.HasTestSuite) || (wantNo && !gr.HasTestSuite) {
-					filtered = append(filtered, gr)
-				}
-			}
-			repos = filtered
+			b := wantYes
+			f.HasTestSuite = &b
 		}
 	}
 
-	// Build TK status map from active (non-excluded) git kitchen results.
-	tkByRepo := make(map[string]*tkRepoSummary)
-	allResults, tkErr := r.db.ListActiveGitKitchenResults(ctx)
-	if tkErr != nil {
-		r.logf("WARN", "listing git kitchen results for repo list: %v", tkErr)
-	} else {
-		tkByRepo = buildTKSummaryMap(allResults)
+	// Pagination.
+	pg := ParsePagination(req)
+	f.Limit = pg.PerPage
+	f.Offset = (pg.Page - 1) * pg.PerPage
+
+	repos, total, err := r.db.ListGitReposFiltered(ctx, f)
+	if err != nil {
+		r.logf("ERROR", "listing git repos (filtered): %v", err)
+		WriteInternalError(w, "Failed to list git repos.")
+		return
 	}
 
-	// Apply optional TK status filter.
-	tkStatusFilter := queryString(req, "tk_status", "")
-	if tkStatusFilter != "" {
-		allowed := make(map[string]bool)
-		for _, s := range strings.Split(tkStatusFilter, ",") {
-			allowed[s] = true
-		}
-		filtered := repos[:0]
-		for _, gr := range repos {
-			s := tkByRepo[gr.Name]
-			status := "untested"
-			if s != nil && s.Total > 0 {
-				status = tkstatus.ComputeTKStatus(s.Passed, s.Failed)
-			}
-			if allowed[status] {
-				filtered = append(filtered, gr)
-			}
-		}
-		repos = filtered
+	// Determine target Chef version for response metadata.
+	targetChefVersion := queryString(req, "target_chef_version", "")
+	if targetChefVersion == "" {
+		targetChefVersion = r.defaultTargetVersion()
 	}
 
-	// Build enriched response objects so we can sort on derived fields.
-	enriched := make([]gitRepoResp, 0, len(repos))
+	// Build response objects from materialised columns.
+	result := make([]gitRepoResp, 0, len(repos))
 	for _, gr := range repos {
-		c := compatByName[gr.Name]
-		if c == "" {
-			c = "untested"
+		compat := gr.CompatibilityStatus
+		if compat == "" {
+			compat = "untested"
 		}
-		tkStatus := "untested"
-		var tkPassed, tkTotal int
-		if s := tkByRepo[gr.Name]; s != nil && s.Total > 0 {
-			tkTotal = s.Total
-			tkPassed = s.Passed
-			tkStatus = tkstatus.ComputeTKStatus(s.Passed, s.Failed)
+		tkStatus := gr.TKStatus
+		if tkStatus == "" {
+			tkStatus = "untested"
 		}
 		resp := gitRepoResp{
 			ID:                gr.Name,
@@ -246,26 +145,17 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			HasTestSuite:      gr.HasTestSuite,
 			CloneStatus:       gr.CloneStatus,
 			CloneError:        gr.CloneError,
-			Compatibility:     c,
+			Compatibility:     compat,
 			TargetChefVersion: targetChefVersion,
 			TKStatus:          tkStatus,
-			TKPassed:          tkPassed,
-			TKTotal:           tkTotal,
+			TKPassed:          gr.TKPassed,
+			TKTotal:           gr.TKTotal,
 		}
 		if !gr.LastFetchedAt.IsZero() {
 			resp.LastFetchedAt = gr.LastFetchedAt.Format("2006-01-02T15:04:05Z")
 		}
-		enriched = append(enriched, resp)
+		result = append(result, resp)
 	}
-
-	// Sort the enriched results.
-	sortField := queryString(req, "sort", "name")
-	sortOrder := queryString(req, "order", "asc")
-	sortGitRepoResps(enriched, sortField, sortOrder)
-
-	// Paginate.
-	pg := ParsePagination(req)
-	result, total := PaginateSlice(enriched, pg)
 
 	WritePaginated(w, result, pg, total)
 }

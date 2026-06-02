@@ -486,7 +486,6 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	f := datastore.NodeSnapshotFilter{
 		OrganisationNames: orgIDs,
 		NodeName:          q.Get("node_name"),
-		Role:              q.Get("role"),
 	}
 
 	// Multi-value filters: comma-separated values use exact-match ANY($N).
@@ -524,6 +523,13 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 			f.PolicyGroups = strings.Split(pg, ",")
 		} else {
 			f.PolicyGroup = pg
+		}
+	}
+	if role := q.Get("role"); role != "" {
+		if strings.Contains(role, ",") {
+			f.Roles = strings.Split(role, ",")
+		} else {
+			f.Roles = []string{role}
 		}
 	}
 
@@ -600,13 +606,6 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 		for nodeName, recs := range bulk {
 			for _, rec := range recs {
 				cs := deriveCheckStatus(rec)
-				// Prefer materialised status columns when available.
-				if rec.CookstyleStatus != "" {
-					cs.CookstyleStatus = rec.CookstyleStatus
-				}
-				if rec.KitchenStatus != "" {
-					cs.KitchenStatus = rec.KitchenStatus
-				}
 				result[nodeName] = append(result[nodeName], nodeReadinessSummaryEntry{
 					TargetChefVersion:      rec.TargetChefVersion,
 					IsReady:                rec.IsReady,

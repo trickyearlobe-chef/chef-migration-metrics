@@ -356,6 +356,8 @@ func (db *DB) ListNodeSnapshotsByOrganisation(ctx context.Context, organisationN
 }
 
 func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, organisationName string) ([]NodeSnapshot, error) {
+	// Do not gate on collection_runs.status. Node snapshots are upserted in
+	// place and are valid once written, even if the collection run later fails.
 	const query = `
 		SELECT ns.collection_run_org, ns.organisation_name, ns.node_name,
 		       ns.chef_environment, ns.chef_version, ns.platform, ns.platform_version,
@@ -363,14 +365,7 @@ func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, 
 		       ns.policy_name, ns.policy_group, ns.ohai_time, ns.custom_attributes,
 		       ns.is_stale, ns.collected_at, ns.created_at
 		FROM node_snapshots ns
-		INNER JOIN collection_runs cr ON cr.organisation_name = ns.collection_run_org
 		WHERE ns.organisation_name = $1
-		  AND cr.status = 'completed'
-		  AND cr.started_at = (
-			SELECT MAX(cr2.started_at)
-			FROM collection_runs cr2
-			WHERE cr2.organisation_name = $1 AND cr2.status = 'completed'
-		  )
 		ORDER BY ns.node_name
 	`
 	return scanNodeSnapshots(q.QueryContext(ctx, query, organisationName))

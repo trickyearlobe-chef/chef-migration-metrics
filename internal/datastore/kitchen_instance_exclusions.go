@@ -49,6 +49,8 @@ func (db *DB) CreateKitchenExclusion(ctx context.Context, p CreateKitchenExclusi
 	if err != nil {
 		return KitchenInstanceExclusion{}, fmt.Errorf("create kitchen exclusion: %w", err)
 	}
+	// Instance exclusion changes active results → recompute TK status.
+	_ = db.RecomputeGitRepoTKStatusByName(ctx, p.GitRepoName)
 	return e, nil
 }
 
@@ -84,11 +86,20 @@ func (db *DB) ListKitchenExclusions(ctx context.Context, repoName string) ([]Kit
 
 // DeleteKitchenExclusion removes an exclusion by ID. Returns false if not found.
 func (db *DB) DeleteKitchenExclusion(ctx context.Context, id string) (bool, error) {
+	// Look up repo name before deletion for recomputation.
+	var repoName string
+	_ = db.q().QueryRowContext(ctx,
+		`SELECT git_repo_name FROM kitchen_instance_exclusions WHERE id = $1`, id,
+	).Scan(&repoName)
+
 	result, err := db.q().ExecContext(ctx,
 		`DELETE FROM kitchen_instance_exclusions WHERE id = $1`, id)
 	if err != nil {
 		return false, fmt.Errorf("delete kitchen exclusion: %w", err)
 	}
 	n, _ := result.RowsAffected()
+	if n > 0 && repoName != "" {
+		_ = db.RecomputeGitRepoTKStatusByName(ctx, repoName)
+	}
 	return n > 0, nil
 }

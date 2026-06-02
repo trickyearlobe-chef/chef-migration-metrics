@@ -317,6 +317,7 @@ export function NodesPage() {
           value={nodeName}
           onChange={setNodeName}
           placeholder="Filter by name"
+          debounceMs={400}
         />
         <FilterMultiCheckbox
           label="Environment"
@@ -335,6 +336,7 @@ export function NodesPage() {
           value={chefVersion}
           onChange={setChefVersion}
           placeholder="e.g. 17.10.0"
+          debounceMs={400}
         />
         <FilterTypeAhead
           label="Role"

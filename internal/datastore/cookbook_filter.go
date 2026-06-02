@@ -146,27 +146,11 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 
 	sb.WriteString("),\n")
 
-	// --- CTE: TK status per cookbook name from matching git repos ---
+	// --- CTE: TK status per cookbook name from materialised git_repos column ---
 	sb.WriteString("tk AS (\n")
-	if f.TargetChefVersion != "" {
-		tkArg := nextArg()
-		sb.WriteString("  SELECT gr.name,\n")
-		sb.WriteString("    CASE\n")
-		sb.WriteString("      WHEN COUNT(gkr.id) = 0 THEN 'untested'\n")
-		sb.WriteString("      WHEN COUNT(*) FILTER (WHERE gkr.passed = true) > 0\n")
-		sb.WriteString("        AND COUNT(*) FILTER (WHERE gkr.passed = false) > 0 THEN 'partial'\n")
-		sb.WriteString("      WHEN COUNT(*) FILTER (WHERE gkr.passed = false) > 0 THEN 'failed'\n")
-		sb.WriteString("      ELSE 'passed'\n")
-		sb.WriteString("    END AS tk_status\n")
-		sb.WriteString("  FROM git_repos gr\n")
-		sb.WriteString("  LEFT JOIN git_kitchen_results gkr\n")
-		sb.WriteString("    ON gkr.git_repo_name = gr.name\n")
-		sb.WriteString("    AND gkr.target_chef_version = " + tkArg + "\n")
-		sb.WriteString("  GROUP BY gr.name\n")
-		args = append(args, f.TargetChefVersion)
-	} else {
-		sb.WriteString("  SELECT name, 'untested'::text AS tk_status FROM git_repos\n")
-	}
+	sb.WriteString("  SELECT gr.name,\n")
+	sb.WriteString("    COALESCE(gr.tk_status, 'untested') AS tk_status\n")
+	sb.WriteString("  FROM git_repos gr\n")
 	sb.WriteString(")\n")
 
 	// --- Outer SELECT with optional compatibility and TK filter ---
@@ -211,7 +195,9 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 	if strings.EqualFold(f.SortOrder, "desc") {
 		sortDir = "DESC"
 	}
-	sb.WriteString(" ORDER BY " + sortExpr + " " + sortDir + "\n")
+	// Append deterministic tie-breaker for sort stability.
+	tieBreaker := ", LOWER(cb.name) ASC, cb.version ASC"
+	sb.WriteString(" ORDER BY " + sortExpr + " " + sortDir + tieBreaker + "\n")
 
 	// --- Pagination ---
 	if f.Limit > 0 {

@@ -58,6 +58,14 @@ export interface ReadinessResponse {
   data: ReadinessSummary[];
 }
 
+export interface BlockedByBreakdown {
+  cookstyle: number;
+  test_kitchen: number;
+  disk: number;
+  foodcritic: number;
+  chefspec: number;
+}
+
 export interface ReadinessTrendPoint {
   organisation_name: string;
   collection_run_org: string;
@@ -67,6 +75,8 @@ export interface ReadinessTrendPoint {
   ready_nodes: number;
   blocked_nodes: number;
   ready_percent: number;
+  blocked_by?: BlockedByBreakdown;
+  filter_limited?: boolean;
 }
 
 export interface ReadinessTrendResponse {

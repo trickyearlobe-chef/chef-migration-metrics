@@ -75,7 +75,15 @@ const gkrColumns = `id, git_repo_name, git_repo_url, target_chef_version,
 // existing one for the same (git_repo_name, git_repo_url,
 // target_chef_version, platform_name, suite_name) combination.
 func (db *DB) UpsertGitKitchenResult(ctx context.Context, p UpsertGitKitchenResultParams) (GitKitchenResult, error) {
-	return db.upsertGitKitchenResult(ctx, db.q(), p)
+	result, err := db.upsertGitKitchenResult(ctx, db.q(), p)
+	if err != nil {
+		return result, err
+	}
+	// Recompute materialised tk_status/tk_passed/tk_total columns.
+	if reErr := db.RecomputeGitRepoTKStatus(ctx, p.GitRepoName, p.GitRepoURL); reErr != nil {
+		return result, fmt.Errorf("datastore: recomputing TK status after kitchen upsert: %w", reErr)
+	}
+	return result, nil
 }
 
 func (db *DB) upsertGitKitchenResult(ctx context.Context, q queryable, p UpsertGitKitchenResultParams) (GitKitchenResult, error) {

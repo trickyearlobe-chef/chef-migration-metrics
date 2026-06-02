@@ -1,10 +1,14 @@
 // Copyright 2025 Chef Migration Metrics Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FilterInput, FilterSelect, FilterCombobox } from "./FilterInputs";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("FilterInput", () => {
   it("renders a labelled text input", () => {
@@ -46,10 +50,30 @@ describe("FilterInput", () => {
 
     await user.type(screen.getByRole("textbox"), "ab");
     expect(onChange).toHaveBeenCalledTimes(2);
-    // Controlled component with static value="" — each keystroke reports
-    // only its own character because React resets the input to "".
+    // Local state accumulates — each call reports the full local value.
     expect(onChange).toHaveBeenNthCalledWith(1, "a");
-    expect(onChange).toHaveBeenNthCalledWith(2, "b");
+    expect(onChange).toHaveBeenNthCalledWith(2, "ab");
+  });
+
+  it("debounces onChange when debounceMs is set", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    render(
+      <FilterInput label="Version" value="" onChange={onChange} debounceMs={300} />,
+    );
+
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "1" } });
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.change(input, { target: { value: "12." } });
+
+    // onChange should not have been called yet (debounce pending).
+    expect(onChange).not.toHaveBeenCalled();
+
+    // Advance past the debounce window.
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith("12.");
   });
 });
 

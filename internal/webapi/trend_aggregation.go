@@ -57,14 +57,25 @@ type complexityTrendPoint struct {
 // response. Each point represents readiness counts for one (organisation,
 // target version) pair from one collection run.
 type readinessTrendPoint struct {
-	OrganisationName  string  `json:"organisation_name"`
-	CollectionRunOrg  string  `json:"collection_run_org"`
-	CompletedAt       string  `json:"completed_at"`
-	TargetChefVersion string  `json:"target_chef_version"`
-	TotalNodes        int     `json:"total_nodes"`
-	ReadyNodes        int     `json:"ready_nodes"`
-	BlockedNodes      int     `json:"blocked_nodes"`
-	ReadyPercent      float64 `json:"ready_percent"`
+	OrganisationName  string             `json:"organisation_name"`
+	CollectionRunOrg  string             `json:"collection_run_org"`
+	CompletedAt       string             `json:"completed_at"`
+	TargetChefVersion string             `json:"target_chef_version"`
+	TotalNodes        int                `json:"total_nodes"`
+	ReadyNodes        int                `json:"ready_nodes"`
+	BlockedNodes      int                `json:"blocked_nodes"`
+	ReadyPercent      float64            `json:"ready_percent"`
+	BlockedBy         *blockedByResponse `json:"blocked_by,omitempty"`
+	FilterLimited     bool               `json:"filter_limited,omitempty"`
+}
+
+// blockedByResponse provides a breakdown of why fresh nodes are blocked.
+type blockedByResponse struct {
+	Cookstyle   int `json:"cookstyle"`
+	TestKitchen int `json:"test_kitchen"`
+	Disk        int `json:"disk"`
+	FoodCritic  int `json:"foodcritic"`
+	ChefSpec    int `json:"chefspec"`
 }
 
 // trendTimestampFormat is the time layout used in trend point timestamps.

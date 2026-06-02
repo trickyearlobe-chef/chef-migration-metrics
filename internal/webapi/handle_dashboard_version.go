@@ -335,10 +335,14 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 
 	var points []versionDistTrendPoint
 
-	// When no ownership filter is active, read from pre-aggregated
-	// metric_snapshots. This avoids scanning the (now current-state-only)
-	// node_snapshots table and supports historical trends even after old
-	// raw snapshots have been deduplicated.
+	// NOTE: We do NOT use node_metrics for version distribution because
+	// node_metrics only contains version data for fresh nodes. The legacy
+	// chef_version_distribution snapshots include ALL nodes regardless of
+	// staleness, which is what this chart needs to show.
+	// When per-tier version breakdowns are added to node_metrics, this
+	// handler can be updated to support staleness-filtered version trends.
+
+	// Load from legacy chef_version_distribution.
 	if !ownerFilterActive {
 		for _, org := range orgs {
 			metrics, err := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 365)
@@ -364,72 +368,60 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 				})
 			}
 		}
-
-		// When multiple orgs are in scope, merge per-org snapshots
-		// from the same collection cycle into a single data point to
-		// avoid sawtooth patterns in the chart.
-		if len(orgs) > 1 {
-			points = mergeVersionDistributionSnapshots(points)
-		}
-
-		if points == nil {
-			points = []versionDistTrendPoint{}
-		}
-		WriteJSON(w, http.StatusOK, map[string]any{"data": points})
-		return
-	}
-
-	// Ownership-filtered path: read from metric_snapshots and apply
-	// ownership filtering against the per-node data in the JSONB payload.
-	// This avoids querying live node_snapshots (which suffers from the
-	// sawtooth problem during mid-collection updates).
-	for _, org := range orgs {
-		metrics, err := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 365)
-		if err != nil {
-			r.logf("WARN", "listing metric snapshots for org %s in ownership-filtered version trend: %v", org.Name, err)
-			continue
-		}
-		for _, ms := range metrics {
-			var payload struct {
-				Distribution map[string]int `json:"distribution"`
-				TotalNodes   int            `json:"total_nodes"`
-				Nodes        []struct {
-					Name    string `json:"name"`
-					Version string `json:"version"`
-				} `json:"nodes"`
-				NodesOmitted bool `json:"nodes_omitted"`
-			}
-			if err := json.Unmarshal(ms.Data, &payload); err != nil {
-				r.logf("WARN", "unmarshalling metric snapshot %d for ownership trend: %v", ms.ID, err)
+	} else {
+		// Ownership-filtered path: read from legacy metric_snapshots
+		// with per-node data.
+		for _, org := range orgs {
+			metrics, err := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 365)
+			if err != nil {
+				r.logf("WARN", "listing metric snapshots for org %s in ownership-filtered version trend: %v", org.Name, err)
 				continue
 			}
-
-			// Skip snapshots where per-node data is unavailable
-			// (large orgs with nodes_omitted, or old-format snapshots).
-			if payload.NodesOmitted || payload.Nodes == nil {
-				continue
-			}
-
-			// Apply ownership filtering to per-node data and
-			// re-aggregate into a version distribution.
-			dist := make(map[string]int)
-			total := 0
-			for _, n := range payload.Nodes {
-				if !ownershipInclude(n.Name, ownedKeys, of) {
+			for _, ms := range metrics {
+				var payload struct {
+					Distribution map[string]int `json:"distribution"`
+					TotalNodes   int            `json:"total_nodes"`
+					Nodes        []struct {
+						Name    string `json:"name"`
+						Version string `json:"version"`
+					} `json:"nodes"`
+					NodesOmitted bool `json:"nodes_omitted"`
+				}
+				if err := json.Unmarshal(ms.Data, &payload); err != nil {
+					r.logf("WARN", "unmarshalling metric snapshot %d for ownership trend: %v", ms.ID, err)
 					continue
 				}
-				dist[n.Version]++
-				total++
-			}
 
-			points = append(points, versionDistTrendPoint{
-				OrganisationName: org.Name,
-				CollectionRunOrg: ms.CollectionRunOrg,
-				CompletedAt:      ms.SnapshotAt.Format(trendTimestampFormat),
-				TotalNodes:       total,
-				Distribution:     dist,
-			})
+				if payload.NodesOmitted || payload.Nodes == nil {
+					continue
+				}
+
+				dist := make(map[string]int)
+				total := 0
+				for _, n := range payload.Nodes {
+					if !ownershipInclude(n.Name, ownedKeys, of) {
+						continue
+					}
+					dist[n.Version]++
+					total++
+				}
+
+				points = append(points, versionDistTrendPoint{
+					OrganisationName: org.Name,
+					CollectionRunOrg: ms.CollectionRunOrg,
+					CompletedAt:      ms.SnapshotAt.Format(trendTimestampFormat),
+					TotalNodes:       total,
+					Distribution:     dist,
+				})
+			}
 		}
+	}
+
+	// When multiple orgs are in scope, merge per-org snapshots
+	// from the same collection cycle into a single data point to
+	// avoid sawtooth patterns in the chart.
+	if len(orgs) > 1 {
+		points = mergeVersionDistributionSnapshots(points)
 	}
 
 	if points == nil {

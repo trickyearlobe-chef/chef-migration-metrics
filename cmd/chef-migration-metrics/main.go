@@ -779,9 +779,6 @@ func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
 	if result.GitRepoAutocorrectPreviews > 0 {
 		app.startup.Info(fmt.Sprintf("  - git_repo_autocorrect_previews: %d", result.GitRepoAutocorrectPreviews))
 	}
-	if result.MetricSnapshots > 0 {
-		app.startup.Info(fmt.Sprintf("  - metric_snapshots: %d", result.MetricSnapshots))
-	}
 }
 
 // ---------------------------------------------------------------------------

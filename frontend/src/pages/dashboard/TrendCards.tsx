@@ -14,6 +14,7 @@ import type {
 import { LoadingSpinner, ErrorAlert } from "../../components/Feedback";
 import { TrendChart, breakdownToSeries } from "../../components/TrendChart";
 import type { TrendSeries } from "../../components/TrendChart";
+import { useGlobalFilters } from "../../context/GlobalFilterContext";
 
 // ---------------------------------------------------------------------------
 // Version Distribution Trend Card (historical)
@@ -96,6 +97,9 @@ export function ReadinessTrendCard({
 }: {
   organisation?: string;
 }) {
+  const { staleTiers } = useGlobalFilters();
+  const staleParam = staleTiers.length > 0 ? staleTiers.join(",") : undefined;
+
   const [data, setData] = useState<ReadinessTrendResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,11 +107,11 @@ export function ReadinessTrendCard({
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetchReadinessTrend(organisation)
+    fetchReadinessTrend(organisation, staleParam)
       .then(setData)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [organisation]);
+  }, [organisation, staleParam]);
 
   useEffect(() => {
     load();

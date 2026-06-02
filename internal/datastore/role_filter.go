@@ -315,7 +315,7 @@ func buildRoleFilterQuery(f RoleFilter, seedRoles []string) (string, []interface
 		if strings.EqualFold(f.SortOrder, "desc") {
 			sortDir = "DESC"
 		}
-		sb.WriteString("ORDER BY " + sortExpr + " " + sortDir + "\n")
+		sb.WriteString("ORDER BY " + sortExpr + " " + sortDir + ", LOWER(role_name) ASC\n")
 
 		if f.Limit > 0 {
 			sb.WriteString("LIMIT " + nextArg() + "\n")
@@ -785,36 +785,21 @@ role_cookbooks AS (
   FROM transitive_deps
   WHERE dependency_type = 'cookbook'
 ),
-cookbook_tk AS (
-  SELECT rc.role_name, gkr.git_repo_name,
-    COUNT(*) FILTER (WHERE gkr.passed = true) AS p,
-    COUNT(*) FILTER (WHERE gkr.passed = false OR gkr.timed_out = true) AS f
+cookbook_status AS (
+  SELECT rc.role_name, gr.tk_status AS status
   FROM role_cookbooks rc
   JOIN git_repos gr ON gr.name = rc.cookbook_name
-  JOIN git_kitchen_results_active gkr
-    ON gkr.git_repo_name = gr.name
-    AND gkr.target_chef_version = $3
-  GROUP BY rc.role_name, gkr.git_repo_name
-),
-cookbook_status AS (
-  SELECT role_name,
-    CASE
-      WHEN p > 0 AND f > 0 THEN 'partial'
-      WHEN f > 0 THEN 'failed'
-      WHEN p > 0 THEN 'passed'
-    END AS status
-  FROM cookbook_tk
+  WHERE gr.tk_status IS NOT NULL AND gr.tk_status != 'untested'
 )
 SELECT role_name,
   COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
   COUNT(*) FILTER (WHERE status = 'partial') AS partial_count,
   COUNT(*) FILTER (WHERE status = 'passed') AS passed_count
 FROM cookbook_status
-WHERE status IS NOT NULL
 GROUP BY role_name`
 
 	rows, err := db.pool.QueryContext(ctx, query,
-		pq.Array(orgNames), pq.Array(roleNames), targetVersion,
+		pq.Array(orgNames), pq.Array(roleNames),
 	)
 	if err != nil {
 		return result, fmt.Errorf("datastore: querying role TK statuses: %w", err)

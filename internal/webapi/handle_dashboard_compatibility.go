@@ -45,7 +45,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		return
 	}
 
-	targetVersions := r.cfg.TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersions
 
 	type compatSummary struct {
 		TargetChefVersion     string  `json:"target_chef_version"`
@@ -234,7 +234,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 	ownerFilterActive := ownedKeys != nil
 
-	targetVersions := r.cfg.TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersions
 
 	type compatSummary struct {
 		TargetChefVersion        string  `json:"target_chef_version"`
@@ -423,7 +423,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 	ownerFilterActive := ownedKeys != nil
 
-	targetVersions := r.cfg.TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersions
 
 	type tkSummary struct {
 		TargetChefVersion        string  `json:"target_chef_version"`

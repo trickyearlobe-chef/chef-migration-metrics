@@ -38,6 +38,12 @@ type GitRepo struct {
 	KitchenExcludeReason string     `json:"kitchen_exclude_reason,omitempty"`
 	KitchenExcludedBy    string     `json:"kitchen_excluded_by,omitempty"`
 	KitchenExcludedAt    *time.Time `json:"kitchen_excluded_at,omitempty"`
+
+	// Materialised status columns — pre-computed for the active target version.
+	CompatibilityStatus string `json:"compatibility_status"`
+	TKStatus            string `json:"tk_status"`
+	TKPassed            int    `json:"tk_passed"`
+	TKTotal             int    `json:"tk_total"`
 }
 
 // IsCloned returns true when the git repo has been successfully cloned.
@@ -63,7 +69,8 @@ const gitRepoColumns = `
 	name, git_repo_url, head_commit_sha, default_branch,
 	has_test_suite, clone_status, clone_error,
 	last_fetched_at, created_at, updated_at,
-	kitchen_excluded, kitchen_exclude_reason, kitchen_excluded_by, kitchen_excluded_at
+	kitchen_excluded, kitchen_exclude_reason, kitchen_excluded_by, kitchen_excluded_at,
+	compatibility_status, tk_status, tk_passed, tk_total
 `
 
 // ---------------------------------------------------------------------------
@@ -464,6 +471,10 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 		&excludeReason,
 		&excludedBy,
 		&excludedAt,
+		&gr.CompatibilityStatus,
+		&gr.TKStatus,
+		&gr.TKPassed,
+		&gr.TKTotal,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -511,6 +522,10 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 			&excludeReason,
 			&excludedBy,
 			&excludedAt,
+			&gr.CompatibilityStatus,
+			&gr.TKStatus,
+			&gr.TKPassed,
+			&gr.TKTotal,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning git repo row: %w", err)
 		}

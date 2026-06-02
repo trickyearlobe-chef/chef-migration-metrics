@@ -25,7 +25,7 @@ func TestBuildNodeSnapshotFilterQuery_NoFilters(t *testing.T) {
 		t.Errorf("expected 0 args, got %d: %v", len(args), args)
 	}
 	// Should contain the CTE.
-	if !strings.Contains(q, "WITH completed_nodes AS") {
+	if !strings.Contains(q, "WITH current_nodes AS") {
 		t.Error("query missing CTE")
 	}
 	// Should contain COUNT(*) OVER() for pagination total.
@@ -279,6 +279,41 @@ func TestBuildNodeSnapshotFilterQuery_Role(t *testing.T) {
 	}
 }
 
+func TestBuildNodeSnapshotFilterQuery_RolesExact(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Roles: []string{"admin", "webserver"},
+	})
+
+	if !strings.Contains(q, "jsonb_typeof(cn.roles) = 'array'") {
+		t.Errorf("query missing jsonb_typeof guard for roles")
+	}
+	if !strings.Contains(q, "EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE r = ANY(") {
+		t.Errorf("query missing role exact-match ANY clause, got:\n%s", q)
+	}
+	// Should NOT contain LIKE (that's the substring path).
+	if strings.Contains(q, "LIKE") {
+		t.Errorf("exact-match Roles should not use LIKE, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d", len(args))
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_RolesExactTakesPrecedence(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Role:  "admin",
+		Roles: []string{"admin"},
+	})
+
+	// Roles (exact) should take precedence — no LIKE clause.
+	if strings.Contains(q, "LIKE") {
+		t.Errorf("Roles should take precedence over Role (substring), got:\n%s", q)
+	}
+	if !strings.Contains(q, "r = ANY(") {
+		t.Errorf("expected exact-match ANY clause, got:\n%s", q)
+	}
+}
+
 func TestBuildNodeSnapshotFilterQuery_StaleTrue(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
 		Stale: boolPtr(true),
@@ -497,28 +532,28 @@ func TestBuildNodeSnapshotFilterQuery_ParameterNumbering(t *testing.T) {
 	}
 }
 
-func TestBuildNodeSnapshotFilterQuery_CTE_CollectionRunValidation(t *testing.T) {
+func TestBuildNodeSnapshotFilterQuery_CTE_NoCollectionRunGating(t *testing.T) {
 	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{})
 
-	// The CTE must enforce collection run completion.
-	if !strings.Contains(q, "cr.status = 'completed'") {
-		t.Error("CTE missing collection run status check")
+	// The CTE must NOT gate on collection run status — node snapshots are
+	// upserted in place and valid regardless of run outcome.
+	if strings.Contains(q, "cr.status = 'completed'") {
+		t.Error("CTE should not gate on collection run status")
 	}
-	if !strings.Contains(q, "SELECT MAX(cr2.started_at)") {
-		t.Error("CTE missing MAX(started_at) correlated subquery")
+	if strings.Contains(q, "SELECT MAX(cr2.started_at)") {
+		t.Error("CTE should not contain MAX(started_at) subquery")
 	}
-	// The correlated subquery must scope per-org.
-	if !strings.Contains(q, "cr2.organisation_name = ns.organisation_name") {
-		t.Error("CTE correlated subquery not scoped to organisation_name")
+	if strings.Contains(q, "INNER JOIN collection_runs") {
+		t.Error("CTE should not JOIN collection_runs")
 	}
 }
 
-func TestBuildNodeSnapshotFilterQuery_CollectionRunJoin(t *testing.T) {
+func TestBuildNodeSnapshotFilterQuery_NoCollectionRunJoin(t *testing.T) {
 	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{})
 
-	// Must JOIN to collection_runs.
-	if !strings.Contains(q, "INNER JOIN collection_runs cr ON cr.organisation_name = ns.collection_run_org") {
-		t.Error("CTE missing collection_runs JOIN")
+	// Must NOT JOIN to collection_runs — snapshots are valid once upserted.
+	if strings.Contains(q, "INNER JOIN collection_runs") {
+		t.Error("CTE should not JOIN collection_runs")
 	}
 }
 
@@ -529,7 +564,7 @@ func TestBuildNodeSnapshotFilterQuery_CollectionRunJoin(t *testing.T) {
 func TestBuildNodeSnapshotFilterParts_NoFilters(t *testing.T) {
 	cte, _, where, args := buildNodeSnapshotFilterParts(NodeSnapshotFilter{})
 
-	if !strings.Contains(cte, "WITH completed_nodes AS") {
+	if !strings.Contains(cte, "WITH current_nodes AS") {
 		t.Error("CTE missing")
 	}
 	if where != " WHERE 1=1" {
@@ -1042,14 +1077,14 @@ func TestBuildNodeSnapshotFilterQuery_MultiValueCombined(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // extractOuterSelect returns the portion of the query between the last
-// "SELECT" and "FROM completed_nodes" — i.e. the outer SELECT column list.
+// "SELECT" and "FROM current_nodes" — i.e. the outer SELECT column list.
 func extractOuterSelect(query string) string {
 	// Find the last SELECT (the outer one, after the CTE).
 	lastSelect := strings.LastIndex(query, "SELECT ")
 	if lastSelect == -1 {
 		return ""
 	}
-	fromIdx := strings.Index(query[lastSelect:], "FROM completed_nodes")
+	fromIdx := strings.Index(query[lastSelect:], "FROM current_nodes")
 	if fromIdx == -1 {
 		return query[lastSelect:]
 	}
@@ -1057,9 +1092,9 @@ func extractOuterSelect(query string) string {
 }
 
 // extractWhere returns the WHERE clause portion from the outer query
-// (after "FROM completed_nodes").
+// (after "FROM current_nodes").
 func extractWhere(query string) string {
-	fromIdx := strings.Index(query, "FROM completed_nodes cn")
+	fromIdx := strings.Index(query, "FROM current_nodes cn")
 	if fromIdx == -1 {
 		return ""
 	}

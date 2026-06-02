@@ -102,6 +102,7 @@ Safety net for database rollback. Must be UI-triggered because customer CLI acce
 - Uses advisory lock to prevent duplicate runs across instances
 - Disabled by default unless backup dir is valid and writable
 - On failure: log error, continue (do not crash app)
+- **Config changes (enable/disable, schedule interval) take effect immediately** — the scheduler must re-read or be notified when config store is updated. No app restart required.
 
 ## Configuration (Config Store)
 

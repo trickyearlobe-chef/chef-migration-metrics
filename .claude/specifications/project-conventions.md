@@ -2,6 +2,21 @@
 
 Project-specific technical conventions for the Chef Migration Metrics dashboard.
 
+## Deployment Context
+
+- **Two instances**: customer RHEL server (RPM package) + dev laptop.
+- **Customer access is VDI-only** — CLI access is difficult. All operations must be UI-triggered.
+- **Scale**: 120,000+ nodes, 2,000+ git repos, limited vSphere capacity for TK.
+- Customer-facing; UI must be usable by non-technical stakeholders (PMs, execs).
+
+## Target Chef Version
+
+- The application uses a **single active target Chef version** at any time (e.g. `19.1.164`).
+- Target changes are infrequent (1–2 per year).
+- When target changes: all cookstyle and kitchen results are **invalidated and re-run** for the new target.
+- Materialised status columns (TK status, compatibility) are always relative to THE active target.
+- Do not design for multiple concurrent targets — this adds complexity with no real-world benefit.
+
 ## Configuration
 
 - **All application configuration is stored in the encrypted config store (database)**, not YAML files.
@@ -16,7 +31,14 @@ Project-specific technical conventions for the Chef Migration Metrics dashboard.
 - All database schema changes must be managed through migration files. Migrations must be sequential, numbered, and checked into source control.
 - The application must run pending migrations automatically on startup.
 - Migrations must never be edited after they have been committed. Instead, create a new migration to make further changes.
-- Keep in mind this dashboard runs at scale with 100000 nodes when writing specs or code.
+- Keep in mind this dashboard runs at scale with **120,000+ nodes** and **2,000+ git repos** when writing specs or code. JSONB operations that scan or aggregate all rows must be bounded or paginated.
+
+### Node Snapshot Invariant
+
+- Each node has **exactly one row** in `node_snapshots`, identified by `(organisation_name, node_name)`.
+- Nodes are **only upserted, never deleted and recreated**. Deleting and reinserting caused issues with summaries and counts previously.
+- Nodes are removed **only** when the Chef Server reports them gone (via `DeleteOrphanedNodeSnapshots`).
+- Because of upsert semantics, node data is valid once written — a failed collection run does NOT invalidate previously written rows.
 
 ### Primary Key Strategy
 
@@ -48,7 +70,11 @@ Project-specific technical conventions for the Chef Migration Metrics dashboard.
 - The Go binary embeds the built frontend assets using `go:embed` and serves them from the web server.
 - The frontend communicates exclusively through the Web API (`/api/v1/...`). It never accesses the database directly.
 
-## Error Handling
+## API Conventions
+
+- The frontend is the **sole consumer** of the API. There are no third-party integrations or backward-compatibility obligations.
+- API contracts can be changed freely — no versioning or deprecation cycle needed.
+- All list endpoints must support server-side pagination, filtering, and sorting via SQL pushdown. In-memory pagination of full result sets is not acceptable at 120k+ nodes.
 
 - All exported functions that can fail must return `error` as the last return value. Do not panic for recoverable errors.
 - Wrap errors with context using `fmt.Errorf("operation: %w", err)` so that callers can trace the failure path.

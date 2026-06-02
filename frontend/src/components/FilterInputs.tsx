@@ -1,17 +1,39 @@
 // Copyright 2025 Chef Migration Metrics Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import { useEffect, useRef, useState } from "react";
+
 export function FilterInput({
   label,
   value,
   onChange,
   placeholder,
+  debounceMs,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  debounceMs?: number;
 }) {
+  const [local, setLocal] = useState(value);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync from parent when value changes externally (e.g. clear all).
+  useEffect(() => {
+    setLocal(value);
+  }, [value]);
+
+  function handleChange(v: string) {
+    setLocal(v);
+    if (!debounceMs) {
+      onChange(v);
+      return;
+    }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onChange(v), debounceMs);
+  }
+
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-gray-500">
@@ -19,8 +41,8 @@ export function FilterInput({
       </label>
       <input
         type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={local}
+        onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}
         className="block w-40 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
       />

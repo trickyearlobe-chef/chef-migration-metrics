@@ -26,6 +26,8 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 ## Backend — Code Smells
 
 - [ ] `DataStore` interface has 138+ methods (`webapi/store.go`) — consider splitting into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, etc.) composed into the full interface.
+- [ ] **SAML commit re-introduced `Ownership.Enabled` gate** — commit `fc9f511` removed the `Enabled` flag to make ownership always active, but the SAML commit (`e6c4ff1`) re-added `r.cfg.Ownership.Enabled` checks in `handle_ownership.go` (`requireOwnership` helper, `resolveOwnershipFilter`). Since `Enabled` defaults to `false`, ownership appears disabled unless manually configured. **Strategic fix:** remove `Ownership.Enabled` field from `OwnershipConfig` again, remove `requireOwnership()` helper and all `r.cfg.Ownership.Enabled` checks from `handle_ownership.go`, and remove the env-var override at `config.go:1177`. Ownership should always be active.
+- [ ] **`target_chef_versions` is a list but only one target is ever active** — config stores `TargetChefVersions []string` and code picks the highest via `config.HighestVersion()`. This is confusing and error-prone (users may add multiple values thinking they'll all be tested). **Strategic fix:** change config to `target_chef_version: "18.5.0"` (scalar string), update `config.Config`, admin API PUT/GET, frontend admin page, and all call sites that index into the slice. Remove `HighestVersion()` helper.
 
 ## Database
 
@@ -106,6 +108,22 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 ## Git — Committers Not Populated
 
 - [ ] **Git repo committers no longer being collected** — the committers list for git repositories is not being populated during collection runs. This may be a regression from a recent change (config rework or collector refactor). **Investigate:** check whether `git log` is being executed, whether the results are being parsed/stored, and whether the relevant DB write path is still being called.
+
+## Backup — Scheduled Cron Not Firing at Customer
+
+- [ ] **Backup cron schedule not triggering** — customer has `0 2 * * *` configured with "Enable scheduled backups" checked, but no scheduled backups are being created. Manual "Create Backup Now" works (2.3 GB backup succeeded 21/05/2026). Only one backup exists, implying cron has never fired since deployment. **Root cause (suspected):** config was changed via admin UI but the app was not restarted; the backup scheduler goroutine reads config only at startup and does not re-read on config-store changes. **Strategic fix:** the backup scheduler must subscribe to config-store change notifications (or re-read config on each tick) so that enable/disable and schedule changes take effect immediately. See configuration spec § Live Reload Requirement.
+
+## Backup — No Log Scope Filter in UI
+
+- [ ] **No way to filter logs to show backup activity** — the log UI has no scope/category filter to isolate backup-related log entries. The backup service logs using `ScopeBackup` but users cannot filter by scope in the logs page. **Strategic fix:** add a scope filter dropdown to the log viewer UI (selecting from known scopes: backup, collection, analysis, kitchen, etc.) and a corresponding `?scope=backup` query param on the log entries API.
+
+## UI — Misleading Exclusion Tooltip
+
+- [ ] **"Known to be incompatible" tooltip is hardcoded regardless of actual exclusion reason** — `StatusBadge.tsx` displays the tooltip "Known to be incompatible with the target Chef version" for all excluded/skipped kitchen instances. However, exclusions can be created for many reasons (EOL platform, no hypervisor image, not deployed there, licensing cost, flaky infra, irrelevant suite). The `kitchen_instance_exclusions` table has a `reason` field that captures the actual motivation. **Strategic fix:** pass the exclusion `reason` through to the frontend and display it in the tooltip (e.g. "Excluded: Platform is EOL and being decommissioned"). Fall back to a generic "Excluded from testing" message when `reason` is empty, rather than claiming incompatibility.
+
+## UI — Redundant Target Version Selector
+
+- [ ] **Target version dropdown is dead weight** — the project uses a single-target model where changing the target invalidates all previous analysis (cookstyle, TK, readiness) and the startup reconciliation purges live-state data for old versions. This means there's only ever one version of live data. Despite this, the UI shows a `<select>` dropdown (via `GlobalFilterContext.targetChefVersion`) populated from `GET /filters/target-chef-versions`. Since the config list always has exactly one entry, the dropdown shows a single option that cannot be changed. On the dashboard trends page, the selected version isn't even passed to the API — the backend iterates all configured versions internally. **Strategic fix:** hide the selector entirely when `targetVersions.length <= 1` (in `AppLayout.tsx` where the global filter bar is rendered). Longer term, align with the scalar config change (`target_chef_version: string` instead of `target_chef_versions: []string`) tracked above under "Backend — Code Smells".
 
 ## Phasing Notes
 

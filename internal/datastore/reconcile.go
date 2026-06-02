@@ -19,7 +19,6 @@ type PurgeStaleTargetVersionResult struct {
 	GitRepoCookstyleResults           int64
 	GitRepoComplexity                 int64
 	GitRepoAutocorrectPreviews        int64
-	MetricSnapshots                   int64
 }
 
 // Total returns the total number of rows deleted across all tables.
@@ -30,8 +29,7 @@ func (r PurgeStaleTargetVersionResult) Total() int64 {
 		r.ServerCookbookAutocorrectPreviews +
 		r.GitRepoCookstyleResults +
 		r.GitRepoComplexity +
-		r.GitRepoAutocorrectPreviews +
-		r.MetricSnapshots
+		r.GitRepoAutocorrectPreviews
 }
 
 // PurgeStaleTargetVersionData removes all analysis records whose
@@ -99,11 +97,9 @@ func (db *DB) PurgeStaleTargetVersionData(ctx context.Context, activeVersions []
 				query: "DELETE FROM git_repo_autocorrect_previews WHERE target_chef_version NOT IN (" + notIn + ")",
 				dest:  &result.GitRepoAutocorrectPreviews,
 			},
-			{
-				name:  "metric_snapshots",
-				query: "DELETE FROM metric_snapshots WHERE target_chef_version IS NOT NULL AND target_chef_version NOT IN (" + notIn + ")",
-				dest:  &result.MetricSnapshots,
-			},
+			// NOTE: metric_snapshots are NOT purged here. They are historical
+			// time-series data that must be preserved across target version
+			// changes to maintain trend graph continuity.
 		}
 
 		for _, t := range tables {

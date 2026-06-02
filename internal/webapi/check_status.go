@@ -59,12 +59,28 @@ type blockingEntry struct {
 }
 
 // deriveCheckStatus computes per-check status from a NodeReadiness record.
+// When persisted status values are available (non-empty), they take precedence
+// over re-derivation from blocking cookbooks. This ensures the node detail and
+// list views agree with the analysis write-time computation.
 func deriveCheckStatus(nr datastore.NodeReadiness) checkStatusResult {
 	result := checkStatusResult{
-		DiskStatus:      deriveDiskStatus(nr),
-		CookstyleStatus: deriveCookstyleStatus(nr),
-		KitchenStatus:   deriveKitchenStatus(nr),
+		DiskStatus: deriveDiskStatus(nr),
 	}
+
+	// Prefer persisted statuses (computed at analysis time with full context).
+	// Fall back to re-derivation only for legacy data with empty strings.
+	if nr.CookstyleStatus != "" {
+		result.CookstyleStatus = nr.CookstyleStatus
+	} else {
+		result.CookstyleStatus = deriveCookstyleStatus(nr)
+	}
+
+	if nr.KitchenStatus != "" {
+		result.KitchenStatus = nr.KitchenStatus
+	} else {
+		result.KitchenStatus = deriveKitchenStatus(nr)
+	}
+
 	result.DiskDetail = diskDetail(nr)
 	result.CookstyleDetail = cookstyleDetail(nr, result.CookstyleStatus)
 	result.KitchenDetail = kitchenDetail(nr, result.KitchenStatus)

@@ -33,7 +33,7 @@ func (r *Router) handleDashboardComplexityTrend(w http.ResponseWriter, req *http
 	}
 
 	ctx := req.Context()
-	targetVersions := r.cfg.TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersions
 
 	var points []complexityTrendPoint
 
@@ -161,9 +161,45 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 	ctx := req.Context()
 	var points []staleTrendPoint
 
-	// Read from pre-aggregated metric_snapshots. The
-	// chef_version_distribution snapshots contain stale/fresh counts
-	// alongside the version distribution data.
+	// Collect dates covered by node_metrics so we can skip legacy dupes.
+	nodeMetricsDates := make(map[string]bool)
+
+	// Try node_metrics snapshots (preferred — includes staleness breakdown).
+	for _, org := range orgs {
+		metrics, mErr := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "node_metrics", 365)
+		if mErr != nil {
+			r.logf("WARN", "listing node_metrics snapshots for org %s in stale trend: %v", org.Name, mErr)
+			continue
+		}
+		for _, ms := range metrics {
+			var payload struct {
+				TotalNodes  int `json:"total_nodes"`
+				ByStaleness struct {
+					Fresh    int `json:"fresh"`
+					Warning  int `json:"warning"`
+					Critical int `json:"critical"`
+				} `json:"by_staleness"`
+			}
+			if jErr := json.Unmarshal(ms.Data, &payload); jErr != nil {
+				r.logf("WARN", "unmarshalling node_metrics snapshot %d for stale trend: %v", ms.ID, jErr)
+				continue
+			}
+			day := ms.SnapshotAt.Format("2006-01-02")
+			nodeMetricsDates[org.Name+"/"+day] = true
+			points = append(points, staleTrendPoint{
+				OrganisationName: org.Name,
+				CollectionRunOrg: ms.CollectionRunOrg,
+				CompletedAt:      ms.SnapshotAt.Format(trendTimestampFormat),
+				TotalNodes:       payload.TotalNodes,
+				StaleNodes:       payload.ByStaleness.Warning + payload.ByStaleness.Critical,
+				FreshNodes:       payload.ByStaleness.Fresh,
+				WarningNodes:     payload.ByStaleness.Warning,
+				CriticalNodes:    payload.ByStaleness.Critical,
+			})
+		}
+	}
+
+	// Backfill from legacy chef_version_distribution for dates not covered.
 	for _, org := range orgs {
 		metrics, err := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "chef_version_distribution", 365)
 		if err != nil {
@@ -171,6 +207,10 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 			continue
 		}
 		for _, ms := range metrics {
+			day := ms.SnapshotAt.Format("2006-01-02")
+			if nodeMetricsDates[org.Name+"/"+day] {
+				continue
+			}
 			var payload struct {
 				TotalNodes    int `json:"total_nodes"`
 				StaleNodes    int `json:"stale_nodes"`
