@@ -53,6 +53,7 @@ const SCOPES = [
   "webapi",
   "ownership",
   "platform_coverage",
+  "backup",
 ];
 
 const RUN_STATUSES = ["running", "completed", "failed", "interrupted"];
