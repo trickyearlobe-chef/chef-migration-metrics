@@ -702,16 +702,10 @@ type AuthConfig struct {
 	LockoutAttempts   int            `yaml:"lockout_attempts"`
 }
 
-// AuthProvider is a single authentication provider (local, LDAP, or SAML).
+// AuthProvider is a single authentication provider (local or SAML).
 type AuthProvider struct {
-	Type                   string `yaml:"type"`
-	Host                   string `yaml:"host,omitempty"`
-	Port                   int    `yaml:"port,omitempty"`
-	BaseDN                 string `yaml:"base_dn,omitempty"`
-	BindDN                 string `yaml:"bind_dn,omitempty"`
-	BindPasswordEnv        string `yaml:"bind_password_env,omitempty"`
-	BindPasswordCredential string `yaml:"bind_password_credential,omitempty"`
-	IDPMetadataURL         string `yaml:"idp_metadata_url,omitempty"`
+	Type           string `yaml:"type"`
+	IDPMetadataURL string `yaml:"idp_metadata_url,omitempty"`
 	IDPMetadataPath        string `yaml:"idp_metadata_path,omitempty"`
 	SPEntityID             string `yaml:"sp_entity_id,omitempty"`
 
@@ -1759,13 +1753,6 @@ func (c *Config) validateAuth(ve *ValidationError) {
 		switch p.Type {
 		case "local":
 			// no additional config required
-		case "ldap":
-			if p.Host == "" {
-				ve.addf("%s: host is required for ldap provider", prefix)
-			}
-			if p.BaseDN == "" {
-				ve.addf("%s: base_dn is required for ldap provider", prefix)
-			}
 		case "saml":
 			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
 				ve.addf("%s: idp_metadata_url or idp_metadata_path is required for saml provider", prefix)
@@ -1800,7 +1787,7 @@ func (c *Config) validateAuth(ve *ValidationError) {
 				}
 			}
 		default:
-			ve.addf("%s: unknown provider type %q (expected local, ldap, or saml)", prefix, p.Type)
+			ve.addf("%s: unknown provider type %q (expected local or saml)", prefix, p.Type)
 		}
 	}
 }

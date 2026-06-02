@@ -1583,40 +1583,6 @@ auth:
 	mustParse(t, yaml)
 }
 
-func TestValidation_AuthLDAPMissingHost(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-auth:
-  providers:
-    - type: ldap
-      base_dn: "ou=users,dc=example,dc=com"
-`
-	expectParseError(t, yaml, "host is required for ldap")
-}
-
-func TestValidation_AuthLDAPMissingBaseDN(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-auth:
-  providers:
-    - type: ldap
-      host: ldap.example.com
-`
-	expectParseError(t, yaml, "base_dn is required for ldap")
-}
-
 func TestValidation_AuthSAMLMissingIDPURL(t *testing.T) {
 	yaml := `
 organisations:
@@ -2639,10 +2605,6 @@ logging:
 auth:
   providers:
     - type: local
-    - type: ldap
-      host: ldap.example.com
-      port: 636
-      base_dn: "ou=users,dc=example,dc=com"
     - type: saml
       idp_metadata_url: https://idp.example.com/saml/metadata
       sp_entity_id: chef-migration-metrics
@@ -2697,8 +2659,8 @@ auth:
 	if cfg.Logging.Level != "WARN" {
 		t.Errorf("logging level: %q", cfg.Logging.Level)
 	}
-	if len(cfg.Auth.Providers) != 3 {
-		t.Errorf("expected 3 auth providers, got %d", len(cfg.Auth.Providers))
+	if len(cfg.Auth.Providers) != 2 {
+		t.Errorf("expected 2 auth providers, got %d", len(cfg.Auth.Providers))
 	}
 }
 
