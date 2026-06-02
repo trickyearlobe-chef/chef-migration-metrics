@@ -15,8 +15,8 @@
 ## Startup Validation
 
 - [ ] Warn if TLS key file permissions > `0600` (static mode) — deferred until TLS subsystem is implemented
-- [ ] Warn if keys directory permissions > `0700` — deferred until RPM/DEB packaging creates the directory
-- [ ] Warn if env file permissions > `0640` (RPM/DEB) — deferred until RPM/DEB packaging creates the env file
+- [ ] Warn if keys directory permissions > `0700`
+- [ ] Warn if env file permissions > `0640` (RPM/DEB)
 - [ ] Write unit tests for startup validation (all pass, various failure modes)
 
 ## Consumer Integration
@@ -32,14 +32,9 @@
 
 ## Configuration Integration
 
-- [ ] Add `client_key_credential` field to organisation config schema
 - [ ] Add `client_key_env` field to organisation config schema
-- [ ] Add `bind_password_credential` field to LDAP auth config schema
 - [ ] Add `password_credential` field to SMTP config schema
 - [ ] *(deferred — `internal/notify/` not yet implemented)* Add `url_credential` field to notification channel config schema
-- [ ] Validate credential resolution on startup (at least one source configured per org)
-- [ ] Write unit tests for config parsing of new credential reference fields
-- [ ] Write unit tests for config validation of credential resolution
 
 ## System Status
 
@@ -57,13 +52,13 @@
 
 ## Packaging
 
-- [ ] Verify RPM `postinstall.sh` sets `/etc/chef-migration-metrics/keys/` to `0700` — `deploy/pkg/` does not exist yet
-- [ ] Verify RPM `postinstall.sh` sets env file to `0640` — `deploy/pkg/` does not exist yet
-- [ ] Verify DEB `postinstall.sh` sets `/etc/chef-migration-metrics/keys/` to `0700` — `deploy/pkg/` does not exist yet
-- [ ] Verify DEB `postinstall.sh` sets env file to `0640` — `deploy/pkg/` does not exist yet
-- [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to `deploy/pkg/env-file` — `deploy/pkg/` does not exist yet
-- [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to Docker Compose `.env.example` — app Docker Compose does not exist yet
-- [ ] Document key generation command in Docker Compose `README.md` — app Docker Compose does not exist yet
+- [ ] Verify RPM `postinstall.sh` sets `/etc/chef-migration-metrics/keys/` to `0700`
+- [ ] Verify RPM `postinstall.sh` sets env file to `0640`
+- [ ] Verify DEB `postinstall.sh` sets `/etc/chef-migration-metrics/keys/` to `0700`
+- [ ] Verify DEB `postinstall.sh` sets env file to `0640`
+- [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to `deploy/pkg/env-file`
+- [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to `deploy/docker-compose/.env.example`
+- [ ] Document key generation command in `deploy/docker-compose/README.md`
 
 ## Documentation
 
