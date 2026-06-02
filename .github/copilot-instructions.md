@@ -26,7 +26,8 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Knowledge
 
-- Component specs and todos live in `.claude/specifications/`.
+- Component specs live in `specifications/` (top-level, flat layout, one file per component).
+- Todos and plans live in `plans/` (todo-*.md for open work, named plans for active tasks).
 - Each component spec is self-contained. Read only what you need for the current task.
 - Background research is available via Nuclia RAG through MCP. Query it when specs are insufficient.
 - Work plans live in `plans/`. One file per task or feature.
@@ -57,11 +58,12 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Specifications
 
+- Specs live under `specifications/<component>.md` (flat layout, no subdirectories).
 - NEVER silently diverge from a spec.
 - Do not modify specs without asking.
 - Specs define *what*, not *how*. They contain contracts, expected outputs, reference data, and behaviour descriptions. No function bodies or algorithm implementations — that's what TDD is for.
 - Before implementing any feature, check whether a specification exists. If not, write one first.
-- When completing tasks, update the relevant `todo-<component>.md` file.
+- When completing tasks, update the relevant `plans/todo-<component>.md` file.
 
 ## Git
 
@@ -113,7 +115,7 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Tech Debt
 
-- Technical debt is tracked in `.claude/specifications/todo-tech-debt.md`. This file must be kept up to date.
+- Technical debt is tracked in `plans/todo-tech-debt.md`. This file must be kept up to date.
 - When a **tactical decision** is made where a different **strategic decision** would be better long-term (e.g. duplicating code instead of extracting a shared component, using an in-memory workaround instead of a proper SQL query), add an entry to the tech debt list explaining what was done, why, and what the strategic fix would be.
 - When a **problem is fixed in an ugly or expedient way** that needs future refactoring (e.g. a quick hack to unblock progress, a workaround for a library limitation, a hardcoded value that should be configurable), add it to the tech debt list with enough context for someone to come back and do it properly.
 - When a tech debt item is **resolved**, ask the user for confirmation, then **remove it from the list entirely**. Do not leave checked-off items cluttering the file.
@@ -126,7 +128,7 @@ This file contains the rules and conventions that must be followed at all times 
 
 ## Project Conventions
 
-- Project-specific conventions (Go, DB, frontend, naming, error handling) are in `.claude/specifications/project-conventions.md`.
+- Project-specific conventions (Go, DB, frontend, naming, error handling) are in `specifications/project-conventions.md`.
 
 ## Licensing
 

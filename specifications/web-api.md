@@ -1700,11 +1700,7 @@ The private key is encrypted using AES-256-GCM before storage. After this call, 
   "chef_server_url": "https://chef.example.com",
   "org_name": "myorg-staging",
   "client_name": "chef-migration-metrics",
-  "client_key_pem": "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n"
-}
-```
-
-| Field | Required | Description |
+  "client_key_pem": "<PEM-encoded RSA private key>"
 |-------|----------|-------------|
 | `name` | Yes | Unique friendly name for this organisation |
 | `chef_server_url` | Yes | Base URL of the Chef Infra Server |
@@ -1750,11 +1746,7 @@ Updates an existing organisation. Requires the `admin` role. Only API-sourced or
   "chef_server_url": "https://new-chef.example.com",
   "org_name": "myorg-staging",
   "client_name": "chef-migration-metrics-v2",
-  "client_key_pem": "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n"
-}
-```
-
-All fields are optional. Only provided fields are updated. If `client_key_pem` is provided, the stored credential is re-encrypted with the new value.
+  "client_key_pem": "<PEM-encoded RSA private key>" Only provided fields are updated. If `client_key_pem` is provided, the stored credential is re-encrypted with the new value.
 
 **Response (200):** Updated organisation object (same shape as the create response).
 
@@ -2078,7 +2070,7 @@ Creates a new encrypted credential.
 {
   "name": "myorg-staging-key",
   "credential_type": "chef_client_key",
-  "value": "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n",
+  "value": "<PEM-encoded RSA private key>",
   "metadata": { "key_format": "pkcs1", "bits": 2048 }
 }
 ```
@@ -2130,7 +2122,7 @@ Rotates (replaces) the value of an existing credential. The new value is encrypt
 
 ```json
 {
-  "value": "-----BEGIN RSA PRIVATE KEY-----\nMIIE...(new key)...\n-----END RSA PRIVATE KEY-----\n",
+  "value": "<new PEM-encoded RSA private key>",
   "metadata": { "key_format": "pkcs1", "bits": 4096 }
 }
 ```

@@ -244,7 +244,7 @@ At a minimum, configure:
 - PostgreSQL datastore connection URL
 - Git base URLs for cookbook repositories (if applicable)
 
-See the [Configuration specification](.claude/specifications/configuration/Specification.md) for:
+See the [Configuration specification](specifications/configuration.md) for:
 
 - Full YAML schema with all available settings
 - Environment variable override conventions
@@ -261,7 +261,7 @@ For each Chef Infra Server organisation, create a dedicated API client:
 knife client create chef-migration-metrics --orgname myorg -f /path/to/keys/myorg.pem
 ```
 
-Grant the client read access to nodes, cookbooks, roles, and environments. See the [Chef API specification](.claude/specifications/chef-api/Specification.md) for details.
+Grant the client read access to nodes, cookbooks, roles, and environments. See the [Chef API specification](specifications/chef-api.md) for details.
 
 ### Database Setup
 
@@ -321,7 +321,7 @@ analysis_tools:
 
 Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are managed via the **Admin → Credentials** page in the web UI and resolved at test runtime. Plaintext is zeroed from memory after use.
 
-See the [Test Kitchen Driver specification](.claude/specifications/test-kitchen-drivers.md) for full details.
+See the [Test Kitchen Driver specification](specifications/test-kitchen-drivers.md) for full details.
 
 ### vCenter Platform Map Setup
 
@@ -445,7 +445,7 @@ Per-platform `driver_settings` are merged with the top-level defaults. Platform 
 
 The web UI currently supports **local accounts** with bcrypt password hashing, session-based authentication, and role-based access control with **Admin** and **Viewer** roles.
 
-See the [Authentication specification](.claude/specifications/auth/Specification.md) for details.
+See the [Authentication specification](specifications/auth.md) for details.
 
 > **Planned:** SAML 2.0 authentication is defined in the configuration schema but not yet implemented.
 
@@ -475,7 +475,7 @@ The `.gitignore` file excludes common secret file types (`*.pem`, `*.key`, `.env
 
 ### Credential Management
 
-For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [Secrets Storage Specification](.claude/specifications/secrets-storage/Specification.md).
+For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [Secrets Storage Specification](specifications/secrets-storage.md).
 
 ## Roadmap
 
@@ -489,22 +489,20 @@ The following features are defined in the specifications but not yet implemented
 
 ## Specifications
 
-Detailed specifications for every component are maintained under `.claude/specifications/`:
+Detailed specifications for every component are maintained under `specifications/`:
 
 | Document | Description |
 |----------|-------------|
-| [Project Specification](.claude/specifications/Specification.md) | Top-level overview, scope, and non-functional requirements |
-| [Data Collection](.claude/specifications/data-collection/Specification.md) | Node collection, Policyfile support, cookbook fetching, stale detection, role dependency graph, fault tolerance |
-| [Analysis](.claude/specifications/analysis/Specification.md) | Cookbook usage, compatibility testing, remediation guidance, complexity scoring, node readiness |
-| [Visualisation](.claude/specifications/visualisation/Specification.md) | Dashboard views, dependency graph, remediation guidance, confidence indicators, exports, notifications, filters, drill-downs, log viewer |
-| [Configuration](.claude/specifications/configuration/Specification.md) | Full YAML schema, environment variable overrides, notification channels, export settings, stale thresholds |
-| [Authentication](.claude/specifications/auth/Specification.md) | Local and SAML providers and RBAC |
-| [Logging](.claude/specifications/logging/Specification.md) | Structured logging, scopes (including notifications and exports), retention |
-| [Chef API](.claude/specifications/chef-api/Specification.md) | Chef Infra Server API endpoints and signing protocol |
-| [Datastore](.claude/specifications/datastore/Specification.md) | Database schema, tables, indexes, relationships — server cookbooks, git repos, split analysis result tables, remediation, complexity, dependency graph, notifications, and exports |
-| [Web API](.claude/specifications/web-api/Specification.md) | HTTP API endpoints between backend and frontend (including remediation, dependency graph, exports, and notifications) |
-| [Packaging](.claude/specifications/packaging/Specification.md) | RPM, DEB, distribution archives, and Docker Compose |
-| [Ownership](.claude/specifications/ownership/Specification.md) | Ownership tracking for nodes, roles, policyfiles, cookbooks, and git repositories — owner model, auto-derivation rules, bulk import, owner-scoped views and exports |
+| [Data Collection](specifications/data-collection.md) | Node collection, Policyfile support, cookbook fetching, stale detection, role dependency graph, fault tolerance |
+| [Analysis](specifications/analysis.md) | Cookbook usage, compatibility testing, remediation guidance, complexity scoring, node readiness |
+| [Visualisation](specifications/visualisation.md) | Dashboard views, dependency graph, remediation guidance, confidence indicators, exports, notifications, filters, drill-downs, log viewer |
+| [Configuration](specifications/configuration.md) | Full YAML schema, environment variable overrides, notification channels, export settings, stale thresholds |
+| [Authentication](specifications/auth.md) | Local and SAML providers and RBAC |
+| [Logging](specifications/logging.md) | Structured logging, scopes (including notifications and exports), retention |
+| [Chef API](specifications/chef-api.md) | Chef Infra Server API endpoints and signing protocol |
+| [Web API](specifications/web-api.md) | HTTP API endpoints between backend and frontend (including remediation, dependency graph, exports, and notifications) |
+| [Packaging](specifications/packaging.md) | RPM, DEB, distribution archives, and Docker Compose |
+| [Ownership](specifications/ownership.md) | Ownership tracking for nodes, roles, policyfiles, cookbooks, and git repositories — owner model, auto-derivation rules, bulk import, owner-scoped views and exports |
 
 ## License
 
