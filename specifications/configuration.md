@@ -130,12 +130,14 @@ git_base_urls:
 
 Controls how frequently the background node collection job runs.
 
+The staleness model has three tiers: **Healthy** → **Missing** (amber) → **Gone** (red).
+
 ```yaml
 collection:
   schedule: "0 * * * *"                   # cron expression — default: every hour
-  stale_node_threshold_days: 7            # nodes missing for more than this many days are flagged Gone (red)
-  stale_node_warning_hours: 26            # nodes missing for more than this many hours are flagged Missing (amber)
-  stale_node_critical_days: 7            # alias for stale_node_threshold_days — nodes flagged Gone (red)
+  stale_node_warning_hours: 72            # hours before a node is flagged Missing (amber)
+  stale_node_critical_days: 7            # days before a node is flagged Gone (red)
+  stale_node_threshold_days: 7            # legacy — stale_node_critical_days defaults to this value
   stale_cookbook_threshold_days: 365      # cookbooks not updated in this many days are flagged as stale
   skip_server_cookbook_download: false    # skip downloading cookbooks from Chef Server (scan git repos only)
   delete_server_cookbooks_after_scan: false  # delete downloaded server cookbook files after scanning
@@ -144,8 +146,9 @@ collection:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `schedule` | `0 * * * *` | Cron expression controlling collection frequency |
-| `stale_node_warning_hours` | `26` | Nodes whose `ohai_time` is older than this many hours are flagged as **Missing** (amber). Represents nodes that have missed at least one Chef run but may still recover. |
-| `stale_node_threshold_days` | `7` | Nodes whose `ohai_time` is older than this many days are flagged as **Gone** (red). Represents nodes that have been absent long enough to be considered truly missing. |
+| `stale_node_warning_hours` | `72` | Nodes whose `ohai_time` is older than this many hours are flagged **Missing** (amber). These nodes have missed at least one Chef run but may still recover. |
+| `stale_node_critical_days` | `7` | Nodes whose `ohai_time` is older than this many days are flagged **Gone** (red). Defaults to `stale_node_threshold_days` for backward compatibility. |
+| `stale_node_threshold_days` | `7` | Legacy single-threshold field. Still respected; `stale_node_critical_days` defaults to this value if not set explicitly. |
 | `stale_cookbook_threshold_days` | `365` | Cookbooks whose most recent version was first observed longer than this many days ago are flagged as stale in the dashboard. This helps teams identify unmaintained cookbooks that may need attention beyond compatibility fixes. |
 | `skip_server_cookbook_download` | `false` | When `true`, skips downloading cookbooks from the Chef Server. Only git-sourced cookbooks are scanned. Useful when Chef Server cookbook data is unreliable or irrelevant. |
 | `delete_server_cookbooks_after_scan` | `false` | Controls whether downloaded Chef Server cookbook files are deleted after the scan pipeline runs. Enable this to minimise disk usage. The default of `false` retains files on disk so they can be inspected for troubleshooting. |
