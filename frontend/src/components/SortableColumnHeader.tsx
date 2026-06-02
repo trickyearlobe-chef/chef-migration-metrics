@@ -24,6 +24,8 @@ interface SortableColumnHeaderProps<T extends string> {
   onSort: (field: T) => void;
   /** Optional extra className for the <th>. */
   className?: string;
+  /** Optional tooltip shown on hover (title attribute). */
+  tooltip?: string;
 }
 
 export function SortableColumnHeader<T extends string>({
@@ -33,11 +35,13 @@ export function SortableColumnHeader<T extends string>({
   currentOrder,
   onSort,
   className,
+  tooltip,
 }: SortableColumnHeaderProps<T>) {
   const active = field === currentField;
   return (
     <th
       onClick={() => onSort(field)}
+      title={tooltip}
       className={
         "cursor-pointer select-none hover:text-blue-600 " + (className ?? "")
       }

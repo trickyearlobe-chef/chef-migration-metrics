@@ -104,29 +104,14 @@ const adminNavItems = [
     icon: "M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5",
   },
   {
-    to: "/admin/kitchen-analysis",
-    label: "Kitchen Analysis",
-    icon: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z",
-  },
-  {
-    to: "/admin/kitchen-batches",
-    label: "Kitchen Batches",
-    icon: "M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75Z",
-  },
-  {
-    to: "/admin/kitchen-queue",
-    label: "Kitchen Queue",
-    icon: "M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5",
-  },
-  {
-    to: "/admin/credentials",
-    label: "Credentials",
-    icon: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z",
-  },
-  {
     to: "/admin/users",
     label: "Users",
     icon: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128H9m6 0a5.972 5.972 0 0 0-.786-3.07M9 19.128v-.003c0-1.113.285-2.16.786-3.07M9 19.128H3.375a1.125 1.125 0 0 1-1.125-1.125v-1.5c0-.621.504-1.125 1.125-1.125h3.026a5.972 5.972 0 0 1 .786-3.07M9 19.128a5.972 5.972 0 0 1-.786-3.07m0 0A5.974 5.974 0 0 1 12 12.75a5.974 5.974 0 0 1 3.786 3.308m-3.786-3.308a5.25 5.25 0 1 1 0-10.5 5.25 5.25 0 0 1 0 10.5",
+  },
+  {
+    to: "/admin/config/auth",
+    label: "Authentication",
+    icon: "M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.169.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z",
   },
   {
     to: "/admin/actions",
@@ -135,13 +120,8 @@ const adminNavItems = [
   },
   {
     to: "/admin/system-stats",
-    label: "System Stats",
+    label: "System Health",
     icon: "M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 0 6h13.5a3 3 0 1 0 0-6m-16.5-3a3 3 0 0 1 3-3h13.5a3 3 0 0 1 3 3m-19.5 0a4.5 4.5 0 0 1 .9-2.7L5.737 5.1a3.375 3.375 0 0 1 2.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 0 1 .9 2.7m0 0a3 3 0 0 1-3 3m0 3h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Zm-3 6h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Z",
-  },
-  {
-    to: "/admin/performance",
-    label: "Performance",
-    icon: "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75",
   },
   {
     to: "/admin/backups",
@@ -153,13 +133,11 @@ const adminNavItems = [
 // Settings sub-group items under Admin → Settings.
 const settingsNavItems = [
   { to: "/admin/config/organisations", label: "Organisations" },
+  { to: "/admin/credentials", label: "Credentials" },
   { to: "/admin/config/collection", label: "Collection" },
   { to: "/admin/config/target-versions", label: "Target Versions" },
   { to: "/admin/config/git-urls", label: "Git URLs" },
-  { to: "/admin/config/concurrency", label: "Concurrency" },
-  { to: "/admin/config/analysis-tools", label: "Analysis Tools" },
   { to: "/admin/config/server", label: "Server & TLS" },
-  { to: "/admin/config/auth", label: "Authentication" },
   { to: "/admin/config/logging", label: "Logging" },
   { to: "/admin/config/exports", label: "Exports" },
   { to: "/admin/config/platform-display-names", label: "Platform Names" },

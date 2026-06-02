@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
-import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
+import { useGlobalFilters } from "../context/GlobalFilterContext";
 import {
   fetchRemediationSummary,
   fetchRemediationPriority,
@@ -37,13 +37,8 @@ export function RemediationPage() {
   const { selectedOrg } = useOrg();
   const org = selectedOrg || undefined;
 
-  // Target Chef version state
-  const {
-    targetVersions,
-    selectedVersion,
-    setSelectedVersion,
-    versionsLoading,
-  } = useTargetChefVersion();
+  // Use global target Chef version (set in the header bar)
+  const { targetVersions, targetChefVersion: selectedVersion, versionsLoading } = useGlobalFilters();
 
   // Complexity label filter state
   const [complexityLabels, setComplexityLabels] = useState<string[]>([]);
@@ -171,32 +166,6 @@ export function RemediationPage() {
           Remediation Priority
         </h2>
         <div className="flex items-center gap-4">
-          {/* Target Chef version selector */}
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-500">
-              Target Chef Version
-            </label>
-            {versionsLoading ? (
-              <span className="text-xs text-gray-400">Loading…</span>
-            ) : targetVersions.length === 0 ? (
-              <span className="text-xs text-gray-400">
-                No target versions configured
-              </span>
-            ) : (
-              <select
-                value={selectedVersion}
-                onChange={(e) => setSelectedVersion(e.target.value)}
-                className="block w-36 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                {targetVersions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
           {/* Complexity label filter */}
           {complexityLabels.length > 0 && (
             <div className="flex items-center gap-2">

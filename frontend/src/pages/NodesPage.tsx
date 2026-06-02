@@ -440,8 +440,8 @@ export function NodesPage() {
                     />
                     <th>Status</th>
                     <th>Disk</th>
-                    <th>CookStyle</th>
-                    <th>TK</th>
+                    <th title="CookStyle — static analysis for Chef cookbook compatibility">CookStyle</th>
+                    <th title="Test Kitchen — integration test results from matching Git repository">TK</th>
                     <SortableColumnHeader
                       label="Ohai Time"
                       field="ohai_time"

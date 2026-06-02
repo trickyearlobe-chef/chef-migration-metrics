@@ -68,7 +68,7 @@ export function FilterMultiCheckbox({
     : "mb-1 block text-xs font-medium text-gray-500";
 
   const buttonClass = compact
-    ? "block w-28 rounded-md border border-gray-300 bg-white px-1.5 py-1 text-left text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+    ? "inline-flex w-28 items-center justify-between rounded-md border border-gray-300 bg-white px-1.5 py-1 text-xs shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
     : "block w-40 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
   return (
@@ -79,7 +79,12 @@ export function FilterMultiCheckbox({
         onClick={() => setIsOpen((o) => !o)}
         className={buttonClass}
       >
-        {buttonLabel}
+        <span>{buttonLabel}</span>
+        {compact && (
+          <svg className="ml-1 h-3.5 w-3.5 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        )}
       </button>
 
       {isOpen && (

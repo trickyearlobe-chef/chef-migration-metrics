@@ -33,18 +33,12 @@ import { OwnershipAuditLogPage } from "./pages/OwnershipAuditLogPage";
 import { OwnershipImportPage } from "./pages/OwnershipImportPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminActionsPage } from "./pages/AdminActionsPage";
-import { AdminSystemStatsPage } from "./pages/AdminSystemStatsPage";
-import { AdminPerformancePage } from "./pages/AdminPerformancePage";
+import { AdminSystemHealthPage } from "./pages/AdminSystemHealthPage";
 import { AdminCredentialsPage } from "./pages/credentials";
-import { AdminTestKitchenPage } from "./pages/AdminTestKitchenPage";
-import KitchenBatchesPage from "./pages/KitchenBatchesPage";
-import KitchenQueuePage from "./pages/KitchenQueuePage";
-import { AdminKitchenAnalysisPage } from "./pages/AdminKitchenAnalysisPage";
+import { AdminTestKitchenHubPage } from "./pages/AdminTestKitchenHubPage";
 import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
 import { AdminCollectionPage } from "./pages/AdminCollectionPage";
 import { AdminLoggingPage } from "./pages/AdminLoggingPage";
-import { AdminConcurrencyPage } from "./pages/AdminConcurrencyPage";
-import { AdminAnalysisToolsPage } from "./pages/AdminAnalysisToolsPage";
 import { AdminExportsPage } from "./pages/AdminExportsPage";
 import { AdminTargetVersionsPage } from "./pages/AdminTargetVersionsPage";
 import { AdminOrganisationsPage } from "./pages/AdminOrganisationsPage";
@@ -247,7 +241,7 @@ export function App() {
                 path="/admin/system-stats"
                 element={
                   <RequireAdmin>
-                    <AdminSystemStatsPage />
+                    <AdminSystemHealthPage />
                   </RequireAdmin>
                 }
               />
@@ -263,34 +257,21 @@ export function App() {
                 path="/admin/test-kitchen"
                 element={
                   <RequireAdmin>
-                    <AdminTestKitchenPage />
+                    <AdminTestKitchenHubPage />
                   </RequireAdmin>
                 }
               />
               <Route
                 path="/admin/kitchen-batches"
-                element={
-                  <RequireAdmin>
-                    <KitchenBatchesPage />
-                  </RequireAdmin>
-                }
+                element={<Navigate to="/admin/test-kitchen?tab=batches" replace />}
               />
               <Route
                 path="/admin/kitchen-queue"
-                element={
-                  <RequireAdmin>
-                    <KitchenQueuePage />
-                  </RequireAdmin>
-                }
+                element={<Navigate to="/admin/test-kitchen?tab=queue" replace />}
               />
-
               <Route
                 path="/admin/kitchen-analysis"
-                element={
-                  <RequireAdmin>
-                    <AdminKitchenAnalysisPage />
-                  </RequireAdmin>
-                }
+                element={<Navigate to="/admin/test-kitchen?tab=analysis" replace />}
               />
               <Route
                 path="/admin/config/git-urls"
@@ -318,19 +299,11 @@ export function App() {
               />
               <Route
                 path="/admin/config/concurrency"
-                element={
-                  <RequireAdmin>
-                    <AdminConcurrencyPage />
-                  </RequireAdmin>
-                }
+                element={<Navigate to="/admin/test-kitchen?tab=settings" replace />}
               />
               <Route
                 path="/admin/config/analysis-tools"
-                element={
-                  <RequireAdmin>
-                    <AdminAnalysisToolsPage />
-                  </RequireAdmin>
-                }
+                element={<Navigate to="/admin/test-kitchen?tab=settings" replace />}
               />
               <Route
                 path="/admin/config/exports"
@@ -382,11 +355,7 @@ export function App() {
               />
               <Route
                 path="/admin/performance"
-                element={
-                  <RequireAdmin>
-                    <AdminPerformancePage />
-                  </RequireAdmin>
-                }
+                element={<Navigate to="/admin/system-stats?tab=performance" replace />}
               />
               <Route
                 path="/admin/backups"
