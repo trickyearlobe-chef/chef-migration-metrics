@@ -23,10 +23,6 @@ import (
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleOwnershipAliases(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
-
 	switch req.Method {
 	case http.MethodGet:
 		r.handleListOwnerAliases(w, req)
@@ -132,9 +128,6 @@ func (r *Router) handleDeleteOwnerAlias(w http.ResponseWriter, req *http.Request
 
 // handleOwnershipAliasesImport handles POST /api/v1/ownership/aliases/import.
 func (r *Router) handleOwnershipAliasesImport(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
 	if !requireMethod(w, req, http.MethodPost) {
 		return
 	}
@@ -279,9 +272,6 @@ func (r *Router) handleOwnershipAliasesImport(w http.ResponseWriter, req *http.R
 
 // handleOwnershipAliasSuggest handles GET /api/v1/ownership/aliases/suggest.
 func (r *Router) handleOwnershipAliasSuggest(w http.ResponseWriter, req *http.Request) {
-	if !r.requireOwnership(w) {
-		return
-	}
 	if req.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "GET only")
 		return
