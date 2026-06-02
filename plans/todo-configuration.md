@@ -6,7 +6,7 @@ Settings in `specifications/configuration.md` that have **no UI** and are curren
 
 - [ ] **Concurrency**: add `test_kitchen_run` worker spinner to Concurrency page (spec: `concurrency.test_kitchen_run`, default 4 — missing from UI, 6/7 workers shown)
 - [ ] **Elasticsearch export**: add Elasticsearch page or section to Exports page — `elasticsearch.enabled`, `elasticsearch.output_directory`, `elasticsearch.retention_hours`
-- [ ] **Upgrade Readiness**: add `readiness.min_free_disk_mb` to Collection page (minimum free disk for Habitat bundle upgrade check)
+- [ ] **Upgrade Readiness**: add disk space config to Collection/Readiness page — `readiness.install_path_linux`, `readiness.install_path_windows`, `readiness.install_size_mb`, `readiness.min_remaining_free_percent`
 
 Settings intentionally file-only (no UI needed):
 - `server.listen_address`, `server.port` — require restart; changing via UI would disconnect the session

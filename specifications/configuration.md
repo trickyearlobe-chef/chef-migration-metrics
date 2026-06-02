@@ -246,10 +246,18 @@ For driver-specific configuration examples (vCenter, vRA, EC2), see [Test Kitche
 
 ```yaml
 readiness:
-  min_free_disk_mb: 2048  # Minimum free disk space in MB required for Habitat bundle upgrade
+  install_path_linux: /apps/hab     # filesystem path where the Chef Client bundle is installed on Linux
+  install_path_windows: 'd:\apps\hab'  # filesystem path on Windows
+  install_size_mb: 2048             # disk space required for the install bundle (MB)
+  min_remaining_free_percent: 20    # minimum % of the filesystem that must remain free after install
 ```
 
-The default value should be set to accommodate the Habitat-packaged Chef Client bundle including bundled InSpec. This value should be reviewed when new Chef Client versions are released.
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `install_path_linux` | `/apps/hab` | Installation target path on Linux nodes. Used as the input to the longest-prefix-match filesystem lookup. |
+| `install_path_windows` | `d:\apps\hab` | Installation target path on Windows nodes. Matched against the drive letter of each filesystem entry. |
+| `install_size_mb` | `2048` | Disk space in MB required for the Chef Client bundle install. Both thresholds (absolute and percentage) must pass for a node to be considered ready. |
+| `min_remaining_free_percent` | `20` | After reserving `install_size_mb`, at least this percentage of the filesystem's total capacity must remain free. Prevents installs that would leave a nearly-full volume. |
 
 ---
 
@@ -668,7 +676,10 @@ concurrency:
   readiness_evaluation: 20
 
 readiness:
-  min_free_disk_mb: 2048
+  install_path_linux: /apps/hab
+  install_path_windows: 'd:\apps\hab'
+  install_size_mb: 2048
+  min_remaining_free_percent: 20
 
 datastore:
   url: postgres://localhost:5432/chef_migration_metrics
