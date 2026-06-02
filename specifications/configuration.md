@@ -110,7 +110,7 @@ The single Chef Client version to test cookbook compatibility against. Changing 
 target_chef_version: "18.5.0"
 ```
 
-**Note:** The code currently stores this as a list (`target_chef_versions: [...]`) and picks the highest. This is tech debt — it should be a single scalar value. See `todo-tech-debt.md`.
+**Note:** The code currently stores this as a list (`target_chef_versions: [...]`) and picks the highest. This is tech debt — it should be a single scalar value. See `plans/todo-tech-debt.md`.
 
 ---
 

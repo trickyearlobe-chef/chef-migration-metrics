@@ -6,9 +6,9 @@ Trend graphs show data broken down by staleness tier. Fresh-node readiness inclu
 
 ## Specs to Read
 
-- `.claude/specifications/enriched-metric-snapshots.md` (primary)
-- `.claude/specifications/staleness-tiers.md` (staleness computation)
-- `.claude/specifications/semantic-contracts.md` (canonical definitions)
+- `specifications/enriched-metric-snapshots.md` (primary)
+- `specifications/staleness-tiers.md` (staleness computation)
+- `specifications/semantic-contracts.md` (canonical definitions)
 
 ## Steps
 

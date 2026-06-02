@@ -2,7 +2,7 @@
 
 ## Problem
 
-The fleet-wide force-directed graph (`DependencyGraphPage.tsx`, ~1646 lines) renders ALL roles and cookbooks for an organisation in a single SVG simulation. At scale (thousands of roles/cookbooks) it is slow to render and produces an unreadable hairball. Customer feedback confirms this is unusable (see `customer-feedback.md`).
+The fleet-wide force-directed graph (`DependencyGraphPage.tsx`, ~1646 lines) renders ALL roles and cookbooks for an organisation in a single SVG simulation. At scale (thousands of roles/cookbooks) it is slow to render and produces an unreadable hairball.
 
 The graph is useful at smaller scope — a single node's dependency chain or a single role's includes tree — where the number of entities is tens, not thousands.
 
@@ -188,8 +188,7 @@ No new tables required. Existing `role_dependencies`, `node_snapshots`, `server_
 ## Relationship to Other Specs
 
 - **`visualisation.md` § Dependency Graph** — this spec supersedes the fleet-wide graph description. The table view description and filtering requirements still apply.
-- **`todo-visualisation.md` § Dependency Graph View** — the colour-coding todo is addressed by `colorByStatus` on the shared component. Lazy loading todo is obviated by scoped graphs. Role-node linking todo moves to the scoped graph context.
-- **`customer-feedback.md`** — addresses: node-scoped dependency graph, role-scoped dependency graph, fleet-wide graph unusable at scale.
+- **`plans/todo-visualisation.md` § Dependency Graph View** — the colour-coding todo is addressed by `colorByStatus` on the shared component. Lazy loading todo is obviated by scoped graphs. Role-node linking todo moves to the scoped graph context.
 - **Roles spec (in progress)** — the role detail page's "Dependencies" tab is defined here; the roles spec defines the rest of the role detail page.
 - **`web-api.md` § Dependency Graph Endpoints** — two new endpoints added. Existing fleet-wide endpoints unchanged.
 
