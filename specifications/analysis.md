@@ -554,8 +554,8 @@ The `automatic.filesystem` attribute collected from each node contains a map of 
 **Evaluation algorithm:**
 
 1. **Determine the installation target path.** Use the configured path for the node's platform:
-   - Linux: `readiness.install_path_linux` (default: `/apps/hab`)
-   - Windows: `readiness.install_path_windows` (default: `d:\apps\hab`)
+   - Linux: `readiness.install_path_linux` (default: `/hab`)
+   - Windows: `readiness.install_path_windows` (default: `C:\hab`)
 
 2. **Find the matching filesystem entry.** Iterate through the `filesystem` map and find the entry whose `mount` value is the longest prefix match for the installation path. For example:
    - If `/apps/hab` is a mount point, use that entry

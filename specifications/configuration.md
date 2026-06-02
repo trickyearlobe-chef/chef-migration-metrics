@@ -246,16 +246,16 @@ For driver-specific configuration examples (vCenter, vRA, EC2), see [Test Kitche
 
 ```yaml
 readiness:
-  install_path_linux: /apps/hab     # filesystem path where the Chef Client bundle is installed on Linux
-  install_path_windows: 'd:\apps\hab'  # filesystem path on Windows
+  install_path_linux: /hab          # filesystem path where the Chef Client bundle is installed on Linux
+  install_path_windows: 'C:\hab'    # filesystem path on Windows
   install_size_mb: 2048             # disk space required for the install bundle (MB)
   min_remaining_free_percent: 20    # minimum % of the filesystem that must remain free after install
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `install_path_linux` | `/apps/hab` | Installation target path on Linux nodes. Used as the input to the longest-prefix-match filesystem lookup. |
-| `install_path_windows` | `d:\apps\hab` | Installation target path on Windows nodes. Matched against the drive letter of each filesystem entry. |
+| `install_path_linux` | `/hab` | Installation target path on Linux nodes. Used as the input to the longest-prefix-match filesystem lookup. Override only after understanding the risks of a non-standard install location. |
+| `install_path_windows` | `C:\hab` | Installation target path on Windows nodes. Matched against the drive letter of each filesystem entry. Override only after understanding the risks of a non-standard install location. |
 | `install_size_mb` | `2048` | Disk space in MB required for the Chef Client bundle install. Both thresholds (absolute and percentage) must pass for a node to be considered ready. |
 | `min_remaining_free_percent` | `20` | After reserving `install_size_mb`, at least this percentage of the filesystem's total capacity must remain free. Prevents installs that would leave a nearly-full volume. |
 
@@ -676,8 +676,8 @@ concurrency:
   readiness_evaluation: 20
 
 readiness:
-  install_path_linux: /apps/hab
-  install_path_windows: 'd:\apps\hab'
+  install_path_linux: /hab
+  install_path_windows: 'C:\hab'
   install_size_mb: 2048
   min_remaining_free_percent: 20
 
