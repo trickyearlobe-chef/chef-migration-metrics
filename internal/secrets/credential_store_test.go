@@ -500,24 +500,6 @@ func TestStore_Create_Success_WebhookURL(t *testing.T) {
 	}
 }
 
-func TestStore_Create_Success_LDAPBindPassword(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	meta, err := store.Create(ctx, CreateCredentialInput{
-		Name:           "ldap-bind",
-		CredentialType: CredentialTypeLDAPBindPassword,
-		Plaintext:      []byte("ldap-pass-123"),
-		CreatedBy:      "admin",
-	})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-	if meta.CredentialType != CredentialTypeLDAPBindPassword {
-		t.Errorf("CredentialType = %q, want %q", meta.CredentialType, CredentialTypeLDAPBindPassword)
-	}
-}
-
 func TestStore_Create_Success_SMTPPassword(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
@@ -716,7 +698,6 @@ func TestStore_Get_DecryptionRoundTrip_AllTypes(t *testing.T) {
 		value          string
 	}{
 		{"generic-cred", CredentialTypeGeneric, "generic-secret"},
-		{"ldap-cred", CredentialTypeLDAPBindPassword, "ldap-password"},
 		{"smtp-cred", CredentialTypeSMTPPassword, "smtp-password"},
 		{"webhook-cred", CredentialTypeWebhookURL, "https://hooks.example.com/test"},
 	}
@@ -1308,13 +1289,13 @@ func TestStore_List_MixedTypes(t *testing.T) {
 	mustCreateWebhook(t, store, "webhook-1", "https://example.com", "admin")
 
 	_, err := store.Create(ctx, CreateCredentialInput{
-		Name:           "ldap-1",
-		CredentialType: CredentialTypeLDAPBindPassword,
-		Plaintext:      []byte("ldap-pass"),
+		Name:           "smtp-1",
+		CredentialType: CredentialTypeSMTPPassword,
+		Plaintext:      []byte("smtp-pass"),
 		CreatedBy:      "admin",
 	})
 	if err != nil {
-		t.Fatalf("Create LDAP failed: %v", err)
+		t.Fatalf("Create SMTP failed: %v", err)
 	}
 
 	list, err := store.List(ctx)
@@ -1336,8 +1317,8 @@ func TestStore_List_MixedTypes(t *testing.T) {
 	if !types[CredentialTypeWebhookURL] {
 		t.Error("missing webhook type in list")
 	}
-	if !types[CredentialTypeLDAPBindPassword] {
-		t.Error("missing ldap type in list")
+	if !types[CredentialTypeSMTPPassword] {
+		t.Error("missing smtp type in list")
 	}
 }
 
@@ -1430,10 +1411,6 @@ func TestStore_ListByType_AllTypes(t *testing.T) {
 	mustCreateWebhook(t, store, "hook", "https://x.com", "admin")
 
 	_, _ = store.Create(ctx, CreateCredentialInput{
-		Name: "ldap", CredentialType: CredentialTypeLDAPBindPassword,
-		Plaintext: []byte("p"), CreatedBy: "admin",
-	})
-	_, _ = store.Create(ctx, CreateCredentialInput{
 		Name: "smtp", CredentialType: CredentialTypeSMTPPassword,
 		Plaintext: []byte("p"), CreatedBy: "admin",
 	})
@@ -1441,7 +1418,6 @@ func TestStore_ListByType_AllTypes(t *testing.T) {
 	for _, ct := range []string{
 		CredentialTypeGeneric,
 		CredentialTypeWebhookURL,
-		CredentialTypeLDAPBindPassword,
 		CredentialTypeSMTPPassword,
 	} {
 		list, err := store.ListByType(ctx, ct)
@@ -2152,10 +2128,6 @@ func TestStore_MultipleTypes_IndependentStorage(t *testing.T) {
 	mustCreateWebhook(t, store, "webhook-1", "https://example.com/hook", "admin")
 
 	_, _ = store.Create(ctx, CreateCredentialInput{
-		Name: "ldap-1", CredentialType: CredentialTypeLDAPBindPassword,
-		Plaintext: []byte("ldap-pass"), CreatedBy: "admin",
-	})
-	_, _ = store.Create(ctx, CreateCredentialInput{
 		Name: "smtp-1", CredentialType: CredentialTypeSMTPPassword,
 		Plaintext: []byte("smtp-pass"), CreatedBy: "admin",
 	})
@@ -2173,22 +2145,16 @@ func TestStore_MultipleTypes_IndependentStorage(t *testing.T) {
 	}
 	ZeroBytes(cred.Plaintext)
 
-	cred, _ = store.Get(ctx, "ldap-1")
-	if string(cred.Plaintext) != "ldap-pass" {
-		t.Errorf("ldap value = %q", string(cred.Plaintext))
-	}
-	ZeroBytes(cred.Plaintext)
-
 	cred, _ = store.Get(ctx, "smtp-1")
 	if string(cred.Plaintext) != "smtp-pass" {
 		t.Errorf("smtp value = %q", string(cred.Plaintext))
 	}
 	ZeroBytes(cred.Plaintext)
 
-	// Verify list shows all 4.
+	// Verify list shows all 3.
 	list, _ := store.List(ctx)
-	if len(list) != 4 {
-		t.Errorf("List length = %d, want 4", len(list))
+	if len(list) != 3 {
+		t.Errorf("List length = %d, want 3", len(list))
 	}
 }
 

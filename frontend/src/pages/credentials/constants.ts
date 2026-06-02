@@ -1,6 +1,5 @@
 export const CREDENTIAL_TYPES = [
   { value: "chef_client_key", label: "Chef Client Key (PEM)" },
-  { value: "ldap_bind_password", label: "LDAP Bind Password" },
   { value: "smtp_password", label: "SMTP Password" },
   { value: "webhook_url", label: "Webhook URL" },
   { value: "generic", label: "Generic" },
@@ -16,7 +15,6 @@ export const INPUT_CLS =
 
 export const BADGE_STYLES: Record<string, string> = {
   chef_client_key: "bg-blue-100 text-blue-700",
-  ldap_bind_password: "bg-purple-100 text-purple-700",
   smtp_password: "bg-amber-100 text-amber-700",
   webhook_url: "bg-green-100 text-green-700",
   generic: "bg-gray-100 text-gray-700",
@@ -24,7 +22,6 @@ export const BADGE_STYLES: Record<string, string> = {
 
 export const BADGE_LABELS: Record<string, string> = {
   chef_client_key: "Chef Key",
-  ldap_bind_password: "LDAP",
   smtp_password: "SMTP",
   webhook_url: "Webhook",
   generic: "Generic",

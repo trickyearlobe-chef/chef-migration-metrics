@@ -447,7 +447,7 @@ The web UI currently supports **local accounts** with bcrypt password hashing, s
 
 See the [Authentication specification](.claude/specifications/auth/Specification.md) for details.
 
-> **Planned:** LDAP and SAML 2.0 authentication providers are defined in the configuration schema but not yet implemented.
+> **Planned:** SAML 2.0 authentication is defined in the configuration schema but not yet implemented.
 
 ## Security — Never Commit Secrets
 
@@ -485,7 +485,6 @@ The following features are defined in the specifications but not yet implemented
 |---------|--------|
 | Webhook notifications (Slack, Teams, PagerDuty) | Configuration and validation in place; runtime dispatcher not yet built |
 | Email notifications (SMTP) | Configuration and validation in place; SMTP sender not yet built |
-| LDAP authentication | Configuration, validation, and credential storage in place; authenticator not yet built |
 | SAML 2.0 authentication | Configuration and validation in place; SP logic not yet built (endpoints return 501) |
 
 ## Specifications
@@ -499,7 +498,7 @@ Detailed specifications for every component are maintained under `.claude/specif
 | [Analysis](.claude/specifications/analysis/Specification.md) | Cookbook usage, compatibility testing, remediation guidance, complexity scoring, node readiness |
 | [Visualisation](.claude/specifications/visualisation/Specification.md) | Dashboard views, dependency graph, remediation guidance, confidence indicators, exports, notifications, filters, drill-downs, log viewer |
 | [Configuration](.claude/specifications/configuration/Specification.md) | Full YAML schema, environment variable overrides, notification channels, export settings, stale thresholds |
-| [Authentication](.claude/specifications/auth/Specification.md) | Local, LDAP, SAML providers and RBAC |
+| [Authentication](.claude/specifications/auth/Specification.md) | Local and SAML providers and RBAC |
 | [Logging](.claude/specifications/logging/Specification.md) | Structured logging, scopes (including notifications and exports), retention |
 | [Chef API](.claude/specifications/chef-api/Specification.md) | Chef Infra Server API endpoints and signing protocol |
 | [Datastore](.claude/specifications/datastore/Specification.md) | Database schema, tables, indexes, relationships — server cookbooks, git repos, split analysis result tables, remediation, complexity, dependency graph, notifications, and exports |

@@ -78,7 +78,7 @@ export function AdminCredentialsPage() {
             Credential Management
           </h2>
           <p className="text-sm text-gray-500">
-            Manage encrypted credentials for vSphere, LDAP, SMTP, and webhooks.
+            Manage encrypted credentials for Chef API keys, SMTP passwords, and webhooks.
           </p>
         </div>
         <button

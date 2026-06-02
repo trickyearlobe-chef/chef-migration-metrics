@@ -43,7 +43,7 @@ const (
 )
 
 // CredentialSource describes the configured credential sources for a single
-// entity (e.g. one Chef organisation, the LDAP provider, the SMTP sender).
+// entity (e.g. one Chef organisation, the SMTP sender).
 // The resolver walks the fields in precedence order:
 //
 //  1. CredentialName (database)  →  2. EnvVar  →  3. FilePath

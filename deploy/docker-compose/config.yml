@@ -174,9 +174,3 @@ frontend:
 #   session_lifetime_hours: 24
 #   providers:
 #     - type: local
-#     - type: ldap
-#       host: ldap.example.com
-#       port: 636
-#       base_dn: "ou=users,dc=example,dc=com"
-#       bind_dn: "cn=service-account,dc=example,dc=com"
-#       bind_password_env: LDAP_BIND_PASSWORD

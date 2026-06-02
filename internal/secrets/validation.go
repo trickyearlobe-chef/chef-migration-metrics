@@ -32,20 +32,18 @@ var (
 // credentials table and the credential_type values used throughout the
 // application.
 const (
-	CredentialTypeChefClientKey    = "chef_client_key"
-	CredentialTypeLDAPBindPassword = "ldap_bind_password"
-	CredentialTypeSMTPPassword     = "smtp_password"
-	CredentialTypeWebhookURL       = "webhook_url"
-	CredentialTypeGeneric          = "generic"
+	CredentialTypeChefClientKey = "chef_client_key"
+	CredentialTypeSMTPPassword  = "smtp_password"
+	CredentialTypeWebhookURL    = "webhook_url"
+	CredentialTypeGeneric       = "generic"
 )
 
 // ValidCredentialTypes is the set of all recognised credential types.
 var ValidCredentialTypes = map[string]bool{
-	CredentialTypeChefClientKey:    true,
-	CredentialTypeLDAPBindPassword: true,
-	CredentialTypeSMTPPassword:     true,
-	CredentialTypeWebhookURL:       true,
-	CredentialTypeGeneric:          true,
+	CredentialTypeChefClientKey: true,
+	CredentialTypeSMTPPassword:  true,
+	CredentialTypeWebhookURL:    true,
+	CredentialTypeGeneric:       true,
 }
 
 // ValidationResult holds the outcome of a credential value validation,
@@ -90,8 +88,6 @@ func ValidateCredentialValue(credentialType string, value []byte) ValidationResu
 		return validateChefClientKey(value)
 	case CredentialTypeWebhookURL:
 		return validateWebhookURL(value)
-	case CredentialTypeLDAPBindPassword:
-		return validateNonEmpty(value)
 	case CredentialTypeSMTPPassword:
 		return validateNonEmpty(value)
 	case CredentialTypeGeneric:
@@ -227,9 +223,9 @@ func validateWebhookURL(value []byte) ValidationResult {
 }
 
 // validateNonEmpty is the fallback validator for credential types that
-// only require a non-empty value (ldap_bind_password, smtp_password,
-// generic). The empty check is already performed by ValidateCredentialValue
-// before dispatching, so this always succeeds.
+// only require a non-empty value (smtp_password, generic). The empty check
+// is already performed by ValidateCredentialValue before dispatching, so
+// this always succeeds.
 func validateNonEmpty(_ []byte) ValidationResult {
 	return ValidationResult{
 		Valid: true,

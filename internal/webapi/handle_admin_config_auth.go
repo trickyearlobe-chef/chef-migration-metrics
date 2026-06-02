@@ -45,17 +45,6 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 		switch p.Type {
 		case "local":
 			// no additional fields required
-		case "ldap":
-			if p.Host == "" {
-				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-					fmt.Sprintf("%s: host is required for ldap provider", prefix))
-				return
-			}
-			if p.BaseDN == "" {
-				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-					fmt.Sprintf("%s: base_dn is required for ldap provider", prefix))
-				return
-			}
 		case "saml":
 			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
@@ -88,7 +77,7 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 			}
 		default:
 			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				fmt.Sprintf("%s: unknown provider type %q (expected local, ldap, or saml).", prefix, p.Type))
+				fmt.Sprintf("%s: unknown provider type %q (expected local or saml).", prefix, p.Type))
 			return
 		}
 	}
