@@ -143,7 +143,7 @@ function ProviderCard({
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-900">
-            {provider.type === "local" ? "Local" : provider.type === "ldap" ? "LDAP" : "SAML"} Provider
+            {provider.type === "local" ? "Local" : "SAML"} Provider
           </span>
           <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
             {provider.type}
@@ -170,83 +170,12 @@ function ProviderCard({
             disabled={saving}
           >
             <option value="local">Local</option>
-            <option value="ldap">LDAP</option>
             <option value="saml">SAML</option>
           </select>
         </FieldRow>
 
         {provider.type === "local" && (
           <p className="text-sm text-gray-500">Local username/password authentication.</p>
-        )}
-
-        {provider.type === "ldap" && (
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="Host">
-              <input
-                type="text"
-                value={provider.host ?? ""}
-                onChange={(e) => onChange(index, "host", e.target.value)}
-                placeholder="ldap.example.com"
-                className={INPUT_CLASS}
-                disabled={saving}
-              />
-            </FieldRow>
-            <FieldRow label="Port">
-              <input
-                type="number"
-                min={1}
-                max={65535}
-                value={provider.port ?? 389}
-                onChange={(e) => onChange(index, "port", Number(e.target.value))}
-                className={INPUT_CLASS}
-                disabled={saving}
-              />
-            </FieldRow>
-            <div className="col-span-2">
-              <FieldRow label="Base DN" hint="e.g. dc=example,dc=com">
-                <input
-                  type="text"
-                  value={provider.base_dn ?? ""}
-                  onChange={(e) => onChange(index, "base_dn", e.target.value)}
-                  placeholder="dc=example,dc=com"
-                  className={INPUT_CLASS}
-                  disabled={saving}
-                />
-              </FieldRow>
-            </div>
-            <div className="col-span-2">
-              <FieldRow label="Bind DN" hint="Leave empty for anonymous bind">
-                <input
-                  type="text"
-                  value={provider.bind_dn ?? ""}
-                  onChange={(e) => onChange(index, "bind_dn", e.target.value)}
-                  placeholder="cn=admin,dc=example,dc=com"
-                  className={INPUT_CLASS}
-                  disabled={saving}
-                />
-              </FieldRow>
-            </div>
-            <FieldRow label="Bind Password Env" hint="Environment variable containing the bind password">
-              <input
-                type="text"
-                value={provider.bind_password_env ?? ""}
-                onChange={(e) => onChange(index, "bind_password_env", e.target.value)}
-                placeholder="LDAP_BIND_PASSWORD"
-                className={INPUT_CLASS}
-                disabled={saving}
-              />
-            </FieldRow>
-            <FieldRow label="Bind Password Credential" hint="Or reference a stored credential">
-              <input
-                type="text"
-                value={provider.bind_password_credential ?? ""}
-                onChange={(e) => onChange(index, "bind_password_credential", e.target.value)}
-                placeholder="ldap-bind-password"
-                className={INPUT_CLASS}
-                disabled={saving}
-              />
-            </FieldRow>
-          </div>
         )}
 
         {provider.type === "saml" && (
