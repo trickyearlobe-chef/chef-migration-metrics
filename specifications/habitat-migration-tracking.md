@@ -51,24 +51,53 @@ Updated nightly by the CC19 test run on each node.
 
 - **Attribute tier** — are these `normal['chef_migration']` or `automatic['chef_migration']`? Determines the Chef Server partial-search path used during collection.
 
+## Behaviour
+
+### Node Readiness
+
+A node is considered **ready to activate** when:
+- `migration_state` is `hab_dormant` (CC19 is installed)
+- `target_converge_status` is `success` (last speculative converge passed)
+
+These nodes can be switched to `hab_active` with confidence.
+
+### Speculative Converge Status
+
+`target_converge_status` is either `success` or `fail`. Only the latest result per node is stored — no rolling history.
+
 ## What Needs to Change
 
 ### Data Collection
 
-- Add `chef_migration` to the Chef Server partial-search fields fetched per node
+- Add `chef_migration` attributes to the Chef Server partial-search fields fetched per node
 - Map to the correct ohai path once attribute tier is confirmed (see open questions)
 
 ### Datastore
 
-- Add columns (or a JSONB block) to the `nodes` table for all 7 attributes
+- Add columns to the `nodes` table for all 7 attributes
 - Schema migration required
 
-### Dashboard / UI
+### Node List
 
-- Fleet-wide breakdown by `migration_state` (counts + trend over time)
-- Per-node migration state and speculative converge result in the node list
-- Filter nodes by `migration_state` and `target_converge_status`
-- Headline metric: nodes ready to activate (see open questions)
+- Add `migration_state` column (badge: `omnibus_only` / `hab_dormant` / `hab_active`)
+- Add speculative converge result column (`success` / `fail` / not yet run)
+- Mark nodes as **Ready to Activate** where `hab_dormant` + `success`
+- Filter by `migration_state` and `target_converge_status`
+
+### Node Detail View
+
+- Show current `migration_state`, `active_chef_version`, `dormant_chef_version`
+- Show latest speculative converge: status, version tested, execution time
+- Highlight **Ready to Activate** prominently when criteria met
+
+### Dashboard Trend Graph
+
+Two series over time:
+
+1. **Dormant installed** — count of nodes in `hab_dormant` or `hab_active` state (CC19 is present)
+2. **Speculative converge passing** — count of nodes with `target_converge_status = success`
+
+The gap between the two lines represents nodes where CC19 is installed but the nightly test converge is still failing (cookbook or config issues to resolve).
 
 ## Related Specs
 
