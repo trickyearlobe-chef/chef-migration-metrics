@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { StaleBadge } from "./StatusBadge";
+import { StaleBadge, DeploymentStateBadge, ConvergeBadge } from "./StatusBadge";
 
 describe("StaleBadge", () => {
   it("renders Fresh text when stalenesTier is fresh", () => {
@@ -62,5 +62,67 @@ describe("StaleBadge", () => {
   it("tier overrides isStale — stalenesTier fresh wins over isStale true", () => {
     render(<StaleBadge isStale={true} stalenesTier="fresh" />);
     expect(screen.getByText("Fresh")).toBeInTheDocument();
+  });
+});
+
+describe("DeploymentStateBadge", () => {
+  it("renders 'Current only' for null/undefined state", () => {
+    render(<DeploymentStateBadge state={null} />);
+    expect(screen.getByText("Current only")).toBeInTheDocument();
+  });
+
+  it("renders 'Current only' for 'Current only' label", () => {
+    render(<DeploymentStateBadge state="Current only" />);
+    expect(screen.getByText("Current only")).toBeInTheDocument();
+  });
+
+  it("renders 'Staged' label with amber styling", () => {
+    const { container } = render(<DeploymentStateBadge state="Staged" />);
+    expect(screen.getByText("Staged")).toBeInTheDocument();
+    const badge = container.querySelector("span");
+    expect(badge?.className).toContain("bg-amber");
+  });
+
+  it("renders 'Activated' label with green styling", () => {
+    const { container } = render(<DeploymentStateBadge state="Activated" />);
+    expect(screen.getByText("Activated")).toBeInTheDocument();
+    const badge = container.querySelector("span");
+    expect(badge?.className).toContain("bg-green");
+  });
+
+  it("supports sm size", () => {
+    render(<DeploymentStateBadge state="Staged" size="sm" />);
+    expect(screen.getByText("Staged")).toBeInTheDocument();
+  });
+});
+
+describe("ConvergeBadge", () => {
+  it("renders dash for null status", () => {
+    render(<ConvergeBadge status={null} />);
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("renders dash for undefined status", () => {
+    render(<ConvergeBadge status={undefined} />);
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("renders success badge with green styling", () => {
+    const { container } = render(<ConvergeBadge status="success" />);
+    expect(screen.getByText("Success")).toBeInTheDocument();
+    const badge = container.querySelector("span");
+    expect(badge?.className).toContain("bg-green");
+  });
+
+  it("renders fail badge with red styling", () => {
+    const { container } = render(<ConvergeBadge status="fail" />);
+    expect(screen.getByText("Fail")).toBeInTheDocument();
+    const badge = container.querySelector("span");
+    expect(badge?.className).toContain("bg-red");
+  });
+
+  it("supports sm size", () => {
+    render(<ConvergeBadge status="success" size="sm" />);
+    expect(screen.getByText("Success")).toBeInTheDocument();
   });
 });

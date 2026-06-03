@@ -38,6 +38,9 @@ export interface NodeListItem {
   ohai_time_age_hours?: number;
   collected_at: string;
   readiness?: NodeReadinessSummary[];
+  migration_state?: string | null;
+  target_converge_status?: string | null;
+  ready_to_activate?: boolean;
 }
 
 export type NodeListResponse = PaginatedResponse<NodeListItem>;

@@ -490,3 +490,57 @@ export function DiskBadge({
   }
   return <StatusBadge variant={variant} size={size} />;
 }
+
+/** Renders a deployment state badge (Current only / Staged / Activated). */
+export function DeploymentStateBadge({
+  state,
+  size = "md",
+}: {
+  state?: string | null;
+  size?: "sm" | "md";
+}) {
+  let variant: BadgeVariant;
+  switch (state) {
+    case "Staged":
+      variant = "warning";
+      break;
+    case "Activated":
+      variant = "active";
+      break;
+    default:
+      variant = "inactive";
+      break;
+  }
+  const label = state === "Staged" || state === "Activated" ? state : "Current only";
+  return <StatusBadge variant={variant} label={label} size={size} />;
+}
+
+/** Renders a speculative converge status badge (success / fail / —). */
+export function ConvergeBadge({
+  status,
+  size = "md",
+}: {
+  status?: string | null;
+  size?: "sm" | "md";
+}) {
+  if (!status) {
+    return <span className="text-xs text-gray-400">—</span>;
+  }
+  let variant: BadgeVariant;
+  let label: string;
+  switch (status) {
+    case "success":
+      variant = "ready";
+      label = "Success";
+      break;
+    case "fail":
+      variant = "blocked";
+      label = "Fail";
+      break;
+    default:
+      variant = "unknown";
+      label = status;
+      break;
+  }
+  return <StatusBadge variant={variant} label={label} size={size} />;
+}

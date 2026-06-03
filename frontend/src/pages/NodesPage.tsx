@@ -24,7 +24,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StaleBadge, CookStyleBadge, TKBadge, DiskBadge } from "../components/StatusBadge";
+import { StaleBadge, CookStyleBadge, TKBadge, DiskBadge, DeploymentStateBadge, ConvergeBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
 import { PlatformLabel } from "../components/PlatformLabel";
 
@@ -43,6 +43,17 @@ const READINESS_OPTIONS: { value: string; label: string }[] = [
   { value: "cookbooks_blocked", label: "📦 Cookbooks Blocked" },
   { value: "disk_blocked", label: "💾 Disk Blocked" },
   { value: "disk_unknown", label: "💾 Disk Unknown" },
+];
+
+const DEPLOYMENT_STATE_OPTIONS: { value: string; label: string }[] = [
+  { value: "Current only", label: "Current only" },
+  { value: "Staged", label: "Staged" },
+  { value: "Activated", label: "Activated" },
+];
+
+const CONVERGE_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "success", label: "Success" },
+  { value: "fail", label: "Fail" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -89,6 +100,8 @@ export function NodesPage() {
   );
   const [cookstyleFilter, setCookstyleFilter] = useState<string[]>([]);
   const [kitchenFilter, setKitchenFilter] = useState<string[]>([]);
+  const [deploymentStateFilter, setDeploymentStateFilter] = useState<string[]>([]);
+  const [convergeStatusFilter, setConvergeStatusFilter] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -193,6 +206,10 @@ export function NodesPage() {
       filters.cookstyle_status = cookstyleFilter.join(",");
     if (kitchenFilter.length > 0)
       filters.kitchen_status = kitchenFilter.join(",");
+    if (deploymentStateFilter.length > 0)
+      filters.migration_state = deploymentStateFilter.join(",");
+    if (convergeStatusFilter.length > 0)
+      filters.target_converge_status = convergeStatusFilter.join(",");
 
     fetchNodes(filters)
       .then((res) => {
@@ -214,6 +231,8 @@ export function NodesPage() {
     readinessFilter,
     cookstyleFilter,
     kitchenFilter,
+    deploymentStateFilter,
+    convergeStatusFilter,
     selectedTargetVersion,
     page,
     sortField,
@@ -240,6 +259,8 @@ export function NodesPage() {
     readinessFilter,
     cookstyleFilter,
     kitchenFilter,
+    deploymentStateFilter,
+    convergeStatusFilter,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -256,7 +277,9 @@ export function NodesPage() {
     (policyGroups.length > 0 ? 1 : 0) +
     (readinessFilter.length > 0 ? 1 : 0) +
     (cookstyleFilter.length > 0 ? 1 : 0) +
-    (kitchenFilter.length > 0 ? 1 : 0);
+    (kitchenFilter.length > 0 ? 1 : 0) +
+    (deploymentStateFilter.length > 0 ? 1 : 0) +
+    (convergeStatusFilter.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNodeName("");
@@ -269,6 +292,8 @@ export function NodesPage() {
     setReadinessFilter([]);
     setCookstyleFilter([]);
     setKitchenFilter([]);
+    setDeploymentStateFilter([]);
+    setConvergeStatusFilter([]);
   };
 
   // Readiness filtering is now handled server-side via readiness_filter and
@@ -383,6 +408,18 @@ export function NodesPage() {
             { value: "unknown", label: "Unknown" },
           ]}
         />
+        <FilterMultiCheckbox
+          label="Deployment"
+          selected={deploymentStateFilter}
+          onChange={setDeploymentStateFilter}
+          options={DEPLOYMENT_STATE_OPTIONS}
+        />
+        <FilterMultiCheckbox
+          label="Converge"
+          selected={convergeStatusFilter}
+          onChange={setConvergeStatusFilter}
+          options={CONVERGE_STATUS_OPTIONS}
+        />
         {activeFilterCount > 0 && (
           <button
             onClick={clearFilters}
@@ -442,6 +479,8 @@ export function NodesPage() {
                     <th>Disk</th>
                     <th title="CookStyle — static analysis for Chef cookbook compatibility">CookStyle</th>
                     <th title="Test Kitchen — integration test results from matching Git repository">TK</th>
+                    <th title="Deployment state — target version installation status">Deploy</th>
+                    <th title="Speculative converge — nightly test run with staged version">Converge</th>
                     <SortableColumnHeader
                       label="Ohai Time"
                       field="ohai_time"
@@ -464,7 +503,13 @@ export function NodesPage() {
                     return (
                     <tr
                       key={node.id}
-                      className={node.is_stale ? "bg-purple-50/50" : ""}
+                      className={
+                        node.ready_to_activate
+                          ? "bg-green-50/60"
+                          : node.is_stale
+                            ? "bg-purple-50/50"
+                            : ""
+                      }
                     >
                       <td>
                         <Link
@@ -512,6 +557,12 @@ export function NodesPage() {
                         <span title={readinessEntry?.kitchen_detail ?? "Test Kitchen: unknown"}>
                           <TKBadge status={readinessEntry?.kitchen_status ?? "unknown"} size="sm" />
                         </span>
+                      </td>
+                      <td>
+                        <DeploymentStateBadge state={node.migration_state} size="sm" />
+                      </td>
+                      <td>
+                        <ConvergeBadge status={node.target_converge_status} size="sm" />
                       </td>
                       <td className="text-xs text-gray-400">
                         {formatOhaiTime(node.ohai_time)}
