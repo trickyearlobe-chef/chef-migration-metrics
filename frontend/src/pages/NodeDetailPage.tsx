@@ -15,7 +15,8 @@ import type {
   NodeDependencyGraphResponse,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
-import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
+import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge, DeploymentStateBadge, ConvergeBadge } from "../components/StatusBadge";
+import type { NodeSnapshot } from "../types";
 
 // Helper to build the disk detail link for a node.
 function diskDetailPath(org: string, name: string): string {
@@ -453,6 +454,113 @@ function ReadinessSection({
 }
 
 // ---------------------------------------------------------------------------
+// Deployment State panel (parallel deployment tracking)
+// ---------------------------------------------------------------------------
+
+/** Maps raw migration_state values to UI labels. */
+function migrationStateLabel(raw?: string | null): string {
+  switch (raw) {
+    case "omnibus_only":
+      return "Current only";
+    case "hab_dormant":
+      return "Staged";
+    case "hab_active":
+      return "Activated";
+    default:
+      return "";
+  }
+}
+
+function DeploymentStatePanel({ node }: { node: NodeSnapshot }) {
+  // Hide panel entirely when migration cookbook is not deployed
+  if (!node.migration_state) return null;
+
+  const label = migrationStateLabel(node.migration_state);
+  const readyToActivate =
+    node.migration_state === "hab_dormant" &&
+    node.target_converge_status === "success";
+
+  const hasConvergeData = !!node.target_converge_status;
+
+  return (
+    <div className="card">
+      <h3 className="card-header">Deployment State</h3>
+      <div className="space-y-4">
+        {/* Ready to Activate callout */}
+        {readyToActivate && (
+          <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🟢</span>
+              <span className="text-sm font-semibold text-green-800">
+                Ready to Activate
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-green-700">
+              Target version is staged and the last speculative converge passed.
+              This node can be safely switched to the new version.
+            </p>
+          </div>
+        )}
+
+        {/* State + versions */}
+        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          <span className="flex items-center gap-2">
+            <span className="text-gray-400">State:</span>
+            <DeploymentStateBadge state={label} />
+          </span>
+          {node.active_chef_version && (
+            <span>
+              <span className="text-gray-400">Active version:</span>{" "}
+              <span className="font-medium text-gray-800">
+                {node.active_chef_version}
+              </span>
+            </span>
+          )}
+          {node.dormant_chef_version && (
+            <span>
+              <span className="text-gray-400">Staged version:</span>{" "}
+              <span className="font-medium text-gray-800">
+                {node.dormant_chef_version}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {/* Speculative converge section */}
+        {hasConvergeData && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700">
+                Speculative Converge
+              </span>
+              <ConvergeBadge status={node.target_converge_status} />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
+              {node.target_version && (
+                <span>
+                  Version tested:{" "}
+                  <strong className="text-gray-700">
+                    {node.target_version}
+                  </strong>
+                </span>
+              )}
+              {node.target_execution_time && (
+                <span>
+                  Last run:{" "}
+                  <strong className="text-gray-700">
+                    {new Date(node.target_execution_time).toLocaleString()}
+                  </strong>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Node Kitchen Testing section
 // ---------------------------------------------------------------------------
 
@@ -834,6 +942,9 @@ export function NodeDetailPage() {
           </Link>
         </div>
       </div>
+
+      {/* Deployment State — parallel deployment tracking */}
+      <DeploymentStatePanel node={node} />
 
       {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
       <ReadinessSection data={data} org={org} nodeName={name} />
