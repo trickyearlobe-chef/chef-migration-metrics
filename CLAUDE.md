@@ -20,12 +20,15 @@
 
 ## Planning
 
-- Work plans live in `plans/`. One file per task or feature.
-- Before starting work, create a plan in `plans/<task>.md`.
-- Plans are short: goal, which specs to read, ordered steps, and acceptance criteria.
-- Delete the plan when the work is done. Git is the history.
-- **Chunking for context management**: Split plans into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
+- `plans/active.md` is the single active work plan — what we're doing now, chunked for sessions.
+- `plans/todo-*.md` files are area backlogs — the full inventory of known work.
+- **Workflow**: Pull items from a `todo-*.md` into `active.md` as chunked work. On completion, remove from `active.md` and mark done/remove from the todo.
+- **Chunking for context management**: Split the active plan into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
 - **Session boundaries**: One chunk = one session/thread. Do not carry context pollution from prior chunks — start each chunk fresh by reading only the plan and relevant specs.
+- **Reprioritisation**: Rewrite `active.md` freely when priorities shift. Old items stay in their todo files.
+- **Size cap**: If `active.md` exceeds ~100 lines, prune lower-priority chunks back to the todo backlog.
+- **Backlog grooming**: Periodically prune `todo-*.md` files — remove obsolete or irrelevant items.
+- Delete `active.md` only when all planned work is complete and no next chunk is queued.
 
 ## Quality Maintenance
 
