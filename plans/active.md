@@ -49,27 +49,27 @@ Each chunk is a self-contained unit of work suitable for one session/thread.
 
 **Acceptance**: Node list shows badges, highlights ready nodes, filters work.
 
-### Chunk 4 — Node Detail Panel (frontend + small backend)
+### Chunk 4 — Node Detail Panel (frontend + small backend) ✅ DONE
 
 **Files**: `frontend/src/pages/NodeDetailPage.tsx`, `internal/webapi/handle_nodes.go`
 
-1. Expose migration fields in node detail API (already on snapshot — just confirm serialisation)
-2. "Deployment State" panel: state label, active version, staged version
-3. Speculative converge section: status, version tested, timestamp
-4. "Ready to Activate" callout when criteria met
-5. Graceful nil handling (panel hidden when no migration data)
-6. Tests: panel rendering
+1. ✅ Expose migration fields in node detail API (already on snapshot — confirmed serialisation)
+2. ✅ "Deployment State" panel: state label, active version, staged version
+3. ✅ Speculative converge section: status, version tested, timestamp
+4. ✅ "Ready to Activate" callout when criteria met
+5. ✅ Graceful nil handling (panel hidden when no migration data)
+6. ✅ Tests: panel rendering (10 new tests)
 
 **Acceptance**: Node detail shows deployment info when available, hidden when not.
 
-### Chunk 5 — Dashboard Trend (backend + frontend)
+### Chunk 5 — Dashboard Trend (backend + frontend) ✅ DONE
 
 **Files**: `internal/webapi/handle_dashboard.go`, `internal/datastore/`, `frontend/src/pages/DashboardPage.tsx`
 
-1. New API endpoint: deployment progress aggregation (count by state per collection run)
-2. Query: nodes with target version present vs speculative converge passing, over time
-3. Dashboard chart component: two trend lines
-4. Tests: aggregation query, chart rendering
+1. ✅ New API endpoint: deployment progress aggregation (count by state per collection run)
+2. ✅ Query: nodes with target version present vs speculative converge passing, over time
+3. ✅ Dashboard chart component: two trend lines
+4. ✅ Tests: aggregation query, chart rendering (9 new tests total)
 
 **Acceptance**: Dashboard shows deployment progress trend with two series.
 
