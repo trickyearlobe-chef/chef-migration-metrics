@@ -2611,3 +2611,29 @@ func TestBuildComplexitySnapshotPayload_MixedLabels(t *testing.T) {
 		t.Errorf("critical_count = %d, want 2", got.CriticalCount)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// boolPtr helper tests
+// ---------------------------------------------------------------------------
+
+func TestBoolPtr_Present(t *testing.T) {
+	p := boolPtr(true, true)
+	if p == nil || !*p {
+		t.Error("expected *bool = true")
+	}
+	p = boolPtr(false, true)
+	if p == nil || *p {
+		t.Error("expected *bool = false")
+	}
+}
+
+func TestBoolPtr_Absent(t *testing.T) {
+	p := boolPtr(true, false)
+	if p != nil {
+		t.Error("expected nil when present=false")
+	}
+	p = boolPtr(false, false)
+	if p != nil {
+		t.Error("expected nil when present=false")
+	}
+}

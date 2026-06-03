@@ -882,6 +882,13 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			CustomAttributes: customAttrsJSON,
 			IsStale:          nodeIsStale,
 			CollectedAt:      now,
+			MigrationState:       nd.MigrationState(),
+			ActiveChefVersion:    nd.ActiveChefVersion(),
+			DormantInstalled:     boolPtr(nd.DormantInstalled(), nd.HasMigrationData()),
+			DormantChefVersion:   nd.DormantChefVersion(),
+			TargetVersion:        nd.TargetVersion(),
+			TargetExecutionTime:  nd.TargetExecutionTime(),
+			TargetConvergeStatus: nd.TargetConvergeStatus(),
 		})
 	}
 
@@ -1890,4 +1897,13 @@ func (c *Collector) recordComplexitySnapshots(
 				logging.WithCollectionRunID(collectionRunID))
 		}
 	}
+}
+
+// boolPtr returns a *bool set to value if present is true, or nil otherwise.
+// Used to distinguish "field absent" (nil) from "field present with value false".
+func boolPtr(value bool, present bool) *bool {
+	if !present {
+		return nil
+	}
+	return &value
 }

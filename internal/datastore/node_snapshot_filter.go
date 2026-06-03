@@ -144,7 +144,10 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		       cn.platform_caption,
 		       cn.run_list, cn.roles,
 		       cn.policy_name, cn.policy_group,
-		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at`
+		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at,
+		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
+		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
+		       cn.target_converge_status`
 
 	heavyCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
 		       cn.chef_environment, cn.chef_version,
@@ -153,7 +156,10 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		       cn.filesystem, cn.cookbooks, cn.run_list, cn.roles,
 		       cn.policy_name, cn.policy_group,
 		       cn.ohai_time, cn.custom_attributes,
-		       cn.is_stale, cn.collected_at, cn.created_at`
+		       cn.is_stale, cn.collected_at, cn.created_at,
+		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
+		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
+		       cn.target_converge_status`
 
 	cols := lightCols
 	if f.IncludeHeavyJSON {
@@ -249,6 +255,9 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		var ohaiTime sql.NullFloat64
 		var runList, roles []byte
 		var rowTotal int
+		var migrationState, activeChefVer, dormantChefVer sql.NullString
+		var dormantInstalled sql.NullBool
+		var targetVer, targetExecTime, targetConvergeStatus sql.NullString
 
 		if includeHeavy {
 			var filesystem, cookbooks, customAttributes []byte
@@ -273,6 +282,13 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&ns.IsStale,
 				&ns.CollectedAt,
 				&ns.CreatedAt,
+				&migrationState,
+				&activeChefVer,
+				&dormantInstalled,
+				&dormantChefVer,
+				&targetVer,
+				&targetExecTime,
+				&targetConvergeStatus,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (heavy): %w", err)
@@ -299,6 +315,13 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&ns.IsStale,
 				&ns.CollectedAt,
 				&ns.CreatedAt,
+				&migrationState,
+				&activeChefVer,
+				&dormantInstalled,
+				&dormantChefVer,
+				&targetVer,
+				&targetExecTime,
+				&targetConvergeStatus,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (light): %w", err)
@@ -317,6 +340,13 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		ns.OhaiTime = floatFromNull(ohaiTime)
 		ns.RunList = jsonFromNullBytes(runList)
 		ns.Roles = jsonFromNullBytes(roles)
+		ns.MigrationState = stringFromNull(migrationState)
+		ns.ActiveChefVersion = stringFromNull(activeChefVer)
+		ns.DormantInstalled = boolFromNull(dormantInstalled)
+		ns.DormantChefVersion = stringFromNull(dormantChefVer)
+		ns.TargetVersion = stringFromNull(targetVer)
+		ns.TargetExecutionTime = stringFromNull(targetExecTime)
+		ns.TargetConvergeStatus = stringFromNull(targetConvergeStatus)
 
 		totalCount = rowTotal
 		snapshots = append(snapshots, ns)
@@ -582,7 +612,10 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		       ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
 		       ns.policy_name, ns.policy_group,
 		       ns.ohai_time, ns.custom_attributes,
-		       ns.is_stale, ns.collected_at, ns.created_at
+		       ns.is_stale, ns.collected_at, ns.created_at,
+		       ns.migration_state, ns.active_chef_version, ns.dormant_installed,
+		       ns.dormant_chef_version, ns.target_version, ns.target_execution_time,
+		       ns.target_converge_status
 		  FROM node_snapshots ns
 	)`
 

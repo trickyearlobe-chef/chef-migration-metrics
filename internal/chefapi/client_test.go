@@ -668,6 +668,7 @@ func TestNodeSearchAttributes(t *testing.T) {
 		"platform_version", "platform_family", "kernel_os_info_caption",
 		"lsb_description", "filesystem", "cookbooks",
 		"run_list", "roles", "policy_name", "policy_group", "ohai_time",
+		"chef_migration",
 	}
 	for _, key := range expected {
 		if _, ok := attrs[key]; !ok {
@@ -709,6 +710,141 @@ func TestNodeSearchAttributes_NoAutomaticPrefix(t *testing.T) {
 // ---------------------------------------------------------------------------
 // NodeSearchAttributesWithExtra tests
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// NodeData chef_migration accessor tests
+// ---------------------------------------------------------------------------
+
+func TestNodeData_MigrationFields_Nil(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"name": "node1",
+	})
+	if nd.HasMigrationData() {
+		t.Error("expected HasMigrationData() false when chef_migration absent")
+	}
+	if nd.MigrationState() != "" {
+		t.Errorf("expected empty MigrationState, got %q", nd.MigrationState())
+	}
+	if nd.ActiveChefVersion() != "" {
+		t.Errorf("expected empty ActiveChefVersion, got %q", nd.ActiveChefVersion())
+	}
+	if nd.DormantInstalled() {
+		t.Error("expected DormantInstalled false when chef_migration absent")
+	}
+	if nd.DormantChefVersion() != "" {
+		t.Errorf("expected empty DormantChefVersion, got %q", nd.DormantChefVersion())
+	}
+	if nd.TargetVersion() != "" {
+		t.Errorf("expected empty TargetVersion, got %q", nd.TargetVersion())
+	}
+	if nd.TargetExecutionTime() != "" {
+		t.Errorf("expected empty TargetExecutionTime, got %q", nd.TargetExecutionTime())
+	}
+	if nd.TargetConvergeStatus() != "" {
+		t.Errorf("expected empty TargetConvergeStatus, got %q", nd.TargetConvergeStatus())
+	}
+}
+
+func TestNodeData_MigrationFields_Partial(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"name": "node2",
+		"chef_migration": map[string]interface{}{
+			"migration_state":      "hab_dormant",
+			"active_chef_version":  "16.18.30",
+			"dormant_installed":    true,
+			"dormant_chef_version": "19.3.15",
+		},
+	})
+	if !nd.HasMigrationData() {
+		t.Error("expected HasMigrationData() true")
+	}
+	if nd.MigrationState() != "hab_dormant" {
+		t.Errorf("expected hab_dormant, got %q", nd.MigrationState())
+	}
+	if nd.ActiveChefVersion() != "16.18.30" {
+		t.Errorf("expected 16.18.30, got %q", nd.ActiveChefVersion())
+	}
+	if !nd.DormantInstalled() {
+		t.Error("expected DormantInstalled true")
+	}
+	if nd.DormantChefVersion() != "19.3.15" {
+		t.Errorf("expected 19.3.15, got %q", nd.DormantChefVersion())
+	}
+	// Speculative converge fields not set.
+	if nd.TargetVersion() != "" {
+		t.Errorf("expected empty TargetVersion, got %q", nd.TargetVersion())
+	}
+	if nd.TargetExecutionTime() != "" {
+		t.Errorf("expected empty TargetExecutionTime, got %q", nd.TargetExecutionTime())
+	}
+	if nd.TargetConvergeStatus() != "" {
+		t.Errorf("expected empty TargetConvergeStatus, got %q", nd.TargetConvergeStatus())
+	}
+}
+
+func TestNodeData_MigrationFields_Full(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"name": "node3",
+		"chef_migration": map[string]interface{}{
+			"migration_state":        "hab_dormant",
+			"active_chef_version":    "16.18.30",
+			"dormant_installed":      true,
+			"dormant_chef_version":   "19.3.15",
+			"target_version":         "19.3.15",
+			"target_execution_time":  "2026-06-02T22:00:00Z",
+			"target_converge_status": "success",
+		},
+	})
+	if !nd.HasMigrationData() {
+		t.Error("expected HasMigrationData() true")
+	}
+	if nd.MigrationState() != "hab_dormant" {
+		t.Errorf("expected hab_dormant, got %q", nd.MigrationState())
+	}
+	if nd.ActiveChefVersion() != "16.18.30" {
+		t.Errorf("expected 16.18.30, got %q", nd.ActiveChefVersion())
+	}
+	if !nd.DormantInstalled() {
+		t.Error("expected DormantInstalled true")
+	}
+	if nd.DormantChefVersion() != "19.3.15" {
+		t.Errorf("expected 19.3.15, got %q", nd.DormantChefVersion())
+	}
+	if nd.TargetVersion() != "19.3.15" {
+		t.Errorf("expected 19.3.15, got %q", nd.TargetVersion())
+	}
+	if nd.TargetExecutionTime() != "2026-06-02T22:00:00Z" {
+		t.Errorf("expected 2026-06-02T22:00:00Z, got %q", nd.TargetExecutionTime())
+	}
+	if nd.TargetConvergeStatus() != "success" {
+		t.Errorf("expected success, got %q", nd.TargetConvergeStatus())
+	}
+}
+
+func TestNodeData_MigrationFields_WrongType(t *testing.T) {
+	// chef_migration is not a map — should be handled gracefully.
+	nd := NewNodeData(map[string]interface{}{
+		"name":           "node4",
+		"chef_migration": "not-a-map",
+	})
+	if nd.HasMigrationData() {
+		t.Error("expected HasMigrationData() false when chef_migration is wrong type")
+	}
+	if nd.MigrationState() != "" {
+		t.Errorf("expected empty MigrationState, got %q", nd.MigrationState())
+	}
+}
+
+func TestNodeSearchAttributes_IncludesChefMigration(t *testing.T) {
+	attrs := NodeSearchAttributes()
+	path, ok := attrs["chef_migration"]
+	if !ok {
+		t.Fatal("chef_migration key missing from NodeSearchAttributes")
+	}
+	if len(path) != 1 || path[0] != "chef_migration" {
+		t.Errorf("expected path [\"chef_migration\"], got %v", path)
+	}
+}
 
 func TestNodeSearchAttributesWithExtra_Nil(t *testing.T) {
 	attrs := NodeSearchAttributesWithExtra(nil)
