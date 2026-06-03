@@ -36,16 +36,16 @@ Each chunk is a self-contained unit of work suitable for one session/thread.
 
 **Acceptance**: Node list API returns new fields, filters work, existing tests unbroken.
 
-### Chunk 3 — Node List UI (frontend only)
+### Chunk 3 — Node List UI (frontend only) ✅ DONE
 
-**Files**: `frontend/src/pages/NodeListPage.tsx`, `frontend/src/types/nodes.ts`, `frontend/src/components/`
+**Files**: `frontend/src/pages/NodesPage.tsx`, `frontend/src/types/nodes.ts`, `frontend/src/components/StatusBadge.tsx`
 
-1. Add TypeScript types for new fields
-2. Deployment state badge column (Current only / Staged / Activated)
-3. Speculative converge status badge column (success / fail / —)
-4. "Ready to Activate" row highlight
-5. Filter controls for deployment state and converge status
-6. Tests: component rendering, badge variants
+1. ✅ Add TypeScript types for new fields
+2. ✅ Deployment state badge column (Current only / Staged / Activated)
+3. ✅ Speculative converge status badge column (success / fail / —)
+4. ✅ "Ready to Activate" row highlight
+5. ✅ Filter controls for deployment state and converge status
+6. ✅ Tests: component rendering, badge variants (10 new tests)
 
 **Acceptance**: Node list shows badges, highlights ready nodes, filters work.
 
