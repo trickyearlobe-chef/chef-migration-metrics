@@ -687,3 +687,151 @@ var (
 	_ = datastore.NodeSnapshot{}
 	_ = json.RawMessage{}
 )
+
+// ---------------------------------------------------------------------------
+// migrationStateLabel tests
+// ---------------------------------------------------------------------------
+
+func TestMigrationStateLabel(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"omnibus_only", "Current only"},
+		{"hab_dormant", "Staged"},
+		{"hab_active", "Activated"},
+		{"", ""},
+		{"unknown_value", ""},
+	}
+	for _, tc := range cases {
+		got := migrationStateLabel(tc.raw)
+		if got != tc.want {
+			t.Errorf("migrationStateLabel(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildNodeResp migration fields tests
+// ---------------------------------------------------------------------------
+
+func TestBuildNodeResp_MigrationFields_Absent(t *testing.T) {
+	r := testRouter()
+	n := datastore.NodeSnapshot{
+		OrganisationName: "org1",
+		NodeName:         "node1",
+		CollectedAt:      time.Now(),
+	}
+	resp := r.buildNodeResp(n, nil, nil)
+	if resp.MigrationState != "" {
+		t.Errorf("expected empty MigrationState, got %q", resp.MigrationState)
+	}
+	if resp.TargetConvergeStatus != "" {
+		t.Errorf("expected empty TargetConvergeStatus, got %q", resp.TargetConvergeStatus)
+	}
+	if resp.ReadyToActivate {
+		t.Error("expected ReadyToActivate false when no migration data")
+	}
+}
+
+func TestBuildNodeResp_MigrationFields_Staged(t *testing.T) {
+	r := testRouter()
+	n := datastore.NodeSnapshot{
+		OrganisationName:     "org1",
+		NodeName:             "node2",
+		MigrationState:       "hab_dormant",
+		TargetConvergeStatus: "fail",
+		CollectedAt:          time.Now(),
+	}
+	resp := r.buildNodeResp(n, nil, nil)
+	if resp.MigrationState != "Staged" {
+		t.Errorf("expected 'Staged', got %q", resp.MigrationState)
+	}
+	if resp.TargetConvergeStatus != "fail" {
+		t.Errorf("expected 'fail', got %q", resp.TargetConvergeStatus)
+	}
+	if resp.ReadyToActivate {
+		t.Error("expected ReadyToActivate false when converge failed")
+	}
+}
+
+func TestBuildNodeResp_MigrationFields_ReadyToActivate(t *testing.T) {
+	r := testRouter()
+	n := datastore.NodeSnapshot{
+		OrganisationName:     "org1",
+		NodeName:             "node3",
+		MigrationState:       "hab_dormant",
+		TargetConvergeStatus: "success",
+		CollectedAt:          time.Now(),
+	}
+	resp := r.buildNodeResp(n, nil, nil)
+	if resp.MigrationState != "Staged" {
+		t.Errorf("expected 'Staged', got %q", resp.MigrationState)
+	}
+	if !resp.ReadyToActivate {
+		t.Error("expected ReadyToActivate true when staged + success")
+	}
+}
+
+func TestBuildNodeResp_MigrationFields_Activated(t *testing.T) {
+	r := testRouter()
+	n := datastore.NodeSnapshot{
+		OrganisationName:     "org1",
+		NodeName:             "node4",
+		MigrationState:       "hab_active",
+		TargetConvergeStatus: "success",
+		CollectedAt:          time.Now(),
+	}
+	resp := r.buildNodeResp(n, nil, nil)
+	if resp.MigrationState != "Activated" {
+		t.Errorf("expected 'Activated', got %q", resp.MigrationState)
+	}
+	if resp.ReadyToActivate {
+		t.Error("expected ReadyToActivate false when already activated")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// nodeSnapshotFilterFromRequest migration filter tests
+// ---------------------------------------------------------------------------
+
+func TestNodeSnapshotFilterFromRequest_MigrationState(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/nodes?migration_state=hab_dormant,hab_active", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org1"}, 72, 7)
+	if len(f.MigrationStates) != 2 {
+		t.Fatalf("expected 2 MigrationStates, got %d", len(f.MigrationStates))
+	}
+	if f.MigrationStates[0] != "hab_dormant" || f.MigrationStates[1] != "hab_active" {
+		t.Errorf("unexpected MigrationStates: %v", f.MigrationStates)
+	}
+}
+
+func TestNodeSnapshotFilterFromRequest_TargetConvergeStatus(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/nodes?target_converge_status=success", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org1"}, 72, 7)
+	if len(f.TargetConvergeStatuses) != 1 || f.TargetConvergeStatuses[0] != "success" {
+		t.Errorf("unexpected TargetConvergeStatuses: %v", f.TargetConvergeStatuses)
+	}
+}
+
+func TestNodeSnapshotFilterFromRequest_ReadyToActivate(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/nodes?ready_to_activate=true", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org1"}, 72, 7)
+	if f.ReadyToActivate == nil || !*f.ReadyToActivate {
+		t.Error("expected ReadyToActivate=true")
+	}
+}
+
+func TestNodeSnapshotFilterFromRequest_NoMigrationFilters(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/nodes", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org1"}, 72, 7)
+	if len(f.MigrationStates) != 0 {
+		t.Errorf("expected empty MigrationStates, got %v", f.MigrationStates)
+	}
+	if len(f.TargetConvergeStatuses) != 0 {
+		t.Errorf("expected empty TargetConvergeStatuses, got %v", f.TargetConvergeStatuses)
+	}
+	if f.ReadyToActivate != nil {
+		t.Errorf("expected nil ReadyToActivate, got %v", f.ReadyToActivate)
+	}
+}

@@ -1130,3 +1130,57 @@ func intToStr(n int) string {
 	}
 	return string(digits)
 }
+
+// ---------------------------------------------------------------------------
+// Parallel deployment tracking filter tests
+// ---------------------------------------------------------------------------
+
+func TestBuildNodeSnapshotFilterQuery_MigrationStates(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		MigrationStates: []string{"hab_dormant", "hab_active"},
+	})
+	if !strings.Contains(q, "cn.migration_state = ANY(") {
+		t.Error("query missing migration_state ANY clause")
+	}
+	if len(args) != 1 {
+		t.Errorf("expected 1 arg, got %d", len(args))
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_TargetConvergeStatuses(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		TargetConvergeStatuses: []string{"success"},
+	})
+	if !strings.Contains(q, "cn.target_converge_status = ANY(") {
+		t.Error("query missing target_converge_status ANY clause")
+	}
+	if len(args) != 1 {
+		t.Errorf("expected 1 arg, got %d", len(args))
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadyToActivate(t *testing.T) {
+	v := true
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadyToActivate: &v,
+	})
+	if !strings.Contains(q, "cn.migration_state = 'hab_dormant'") {
+		t.Error("query missing hab_dormant condition for ready_to_activate")
+	}
+	if !strings.Contains(q, "cn.target_converge_status = 'success'") {
+		t.Error("query missing target_converge_status = 'success' condition for ready_to_activate")
+	}
+	// ready_to_activate uses literal values, not args.
+	if len(args) != 0 {
+		t.Errorf("expected 0 args for ready_to_activate, got %d", len(args))
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_SortMigrationState(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Sort: "migration_state",
+	})
+	if !strings.Contains(q, "ORDER BY cn.migration_state") {
+		t.Error("query should sort by cn.migration_state")
+	}
+}

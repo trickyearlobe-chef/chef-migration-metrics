@@ -37,6 +37,11 @@ type nodeResp struct {
 	OhaiTime            float64                     `json:"ohai_time,omitempty"`
 	CollectedAt         string                      `json:"collected_at"`
 	Readiness           []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
+
+	// Parallel deployment tracking
+	MigrationState       string `json:"migration_state,omitempty"`
+	TargetConvergeStatus string `json:"target_converge_status,omitempty"`
+	ReadyToActivate      bool   `json:"ready_to_activate,omitempty"`
 }
 
 // buildNodeResp constructs a nodeResp from a NodeSnapshot, computing the
@@ -77,6 +82,24 @@ func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadine
 		OhaiTime:            n.OhaiTime,
 		CollectedAt:         n.CollectedAt.Format("2006-01-02T15:04:05Z"),
 		Readiness:           readiness,
+		MigrationState:       migrationStateLabel(n.MigrationState),
+		TargetConvergeStatus: n.TargetConvergeStatus,
+		ReadyToActivate:      n.MigrationState == "hab_dormant" && n.TargetConvergeStatus == "success",
+	}
+}
+
+// migrationStateLabel maps raw migration_state values to UI-friendly labels.
+// Returns "" when state is empty (migration cookbook not deployed).
+func migrationStateLabel(raw string) string {
+	switch raw {
+	case "omnibus_only":
+		return "Current only"
+	case "hab_dormant":
+		return "Staged"
+	case "hab_active":
+		return "Activated"
+	default:
+		return ""
 	}
 }
 
@@ -544,6 +567,18 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	f.ReadinessFilter = q.Get("readiness_filter")
 	f.CookstyleStatusFilter = q.Get("cookstyle_status")
 	f.KitchenStatusFilter = q.Get("kitchen_status")
+
+	// Parallel deployment tracking filters.
+	if ms := q.Get("migration_state"); ms != "" {
+		f.MigrationStates = strings.Split(ms, ",")
+	}
+	if tcs := q.Get("target_converge_status"); tcs != "" {
+		f.TargetConvergeStatuses = strings.Split(tcs, ",")
+	}
+	if rta := q.Get("ready_to_activate"); rta == "true" {
+		v := true
+		f.ReadyToActivate = &v
+	}
 
 	// Map the stale parameter — supports legacy bool, single tier, or comma-separated tiers.
 	staleParam := q.Get("stale")

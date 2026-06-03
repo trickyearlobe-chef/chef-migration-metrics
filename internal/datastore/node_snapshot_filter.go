@@ -127,6 +127,18 @@ type NodeSnapshotFilter struct {
 	// (even without ReadinessFilter), a LEFT JOIN to node_readiness is
 	// included so callers can access readiness columns.
 	TargetChefVersion string
+
+	// MigrationStates filters by exact match on migration_state column.
+	// Values: "omnibus_only", "hab_dormant", "hab_active". Empty means no filter.
+	MigrationStates []string
+
+	// TargetConvergeStatuses filters by exact match on target_converge_status.
+	// Values: "success", "fail". Empty means no filter.
+	TargetConvergeStatuses []string
+
+	// ReadyToActivate when true filters to nodes that are ready to activate
+	// (migration_state = 'hab_dormant' AND target_converge_status = 'success').
+	ReadyToActivate *bool
 }
 
 // buildNodeSnapshotFilterQuery constructs the SQL query and args for
@@ -191,6 +203,8 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		sortCol = "cn.platform"
 	case "ohai_time":
 		sortCol = "cn.ohai_time"
+	case "migration_state":
+		sortCol = "cn.migration_state"
 	}
 	sortDir := "ASC"
 	if strings.EqualFold(f.SortOrder, "desc") {
@@ -752,6 +766,19 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 			where += " AND COALESCE(nr.kitchen_status, '') = ANY(" + nextArg() + ")"
 			args = append(args, pq.Array(splitCSV(f.KitchenStatusFilter)))
 		}
+	}
+
+	// Parallel deployment tracking filters.
+	if len(f.MigrationStates) > 0 {
+		where += " AND cn.migration_state = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.MigrationStates))
+	}
+	if len(f.TargetConvergeStatuses) > 0 {
+		where += " AND cn.target_converge_status = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.TargetConvergeStatuses))
+	}
+	if f.ReadyToActivate != nil && *f.ReadyToActivate {
+		where += " AND cn.migration_state = 'hab_dormant' AND cn.target_converge_status = 'success'"
 	}
 
 	return cte, join, where, args
