@@ -117,8 +117,9 @@ describe("NodeKitchenSection", () => {
   it("renders run table with correct column headers", async () => {
     vi.mocked(api.fetchNodeKitchenRuns).mockResolvedValue([makeRun()]);
     render(<NodeDetailPage />);
+    // Wait for the table to render (runs have loaded)
     await waitFor(() =>
-      expect(screen.getByText("Node Kitchen Testing")).toBeInTheDocument(),
+      expect(screen.getByRole("columnheader", { name: "Target" })).toBeInTheDocument(),
     );
     const section = getKitchenSection();
     for (const col of [
