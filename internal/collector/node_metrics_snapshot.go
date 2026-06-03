@@ -26,6 +26,7 @@ type nodeMetricsPayload struct {
 	TargetChefVer    string             `json:"target_chef_version"`
 	ByStaleness      stalenessBreakdown `json:"by_staleness"`
 	Fresh            freshBreakdown     `json:"fresh"`
+	Deployment       deploymentBreakdown `json:"deployment"`
 	Thresholds       thresholdsRecord   `json:"thresholds"`
 }
 
@@ -54,6 +55,12 @@ type blockedByCount struct {
 	Disk        int `json:"disk"`
 	FoodCritic  int `json:"foodcritic"`
 	ChefSpec    int `json:"chefspec"`
+}
+
+// deploymentBreakdown holds parallel deployment progress counts across all nodes.
+type deploymentBreakdown struct {
+	StagedOrActivated int `json:"staged_or_activated"`
+	ConvergePassing   int `json:"converge_passing"`
 }
 
 // thresholdsRecord captures the configuration at collection time.
@@ -104,6 +111,14 @@ func buildNodeMetricsPayload(input nodeMetricsInput) (json.RawMessage, error) {
 	}
 
 	for _, p := range input.SnapshotParams {
+		// Deployment progress — applies to all nodes regardless of staleness.
+		if p.MigrationState == "hab_dormant" || p.MigrationState == "hab_active" {
+			payload.Deployment.StagedOrActivated++
+		}
+		if p.TargetConvergeStatus == "success" {
+			payload.Deployment.ConvergePassing++
+		}
+
 		// Compute staleness tier for this node.
 		var ohaiTime time.Time
 		if p.OhaiTime > 0 {

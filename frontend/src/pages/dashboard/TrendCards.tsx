@@ -4,12 +4,14 @@ import {
   fetchReadinessTrend,
   fetchComplexityTrend,
   fetchStaleTrend,
+  fetchDeploymentTrend,
 } from "../../api";
 import type {
   VersionDistributionTrendResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
   StaleTrendResponse,
+  DeploymentTrendResponse,
 } from "../../types";
 import { LoadingSpinner, ErrorAlert } from "../../components/Feedback";
 import { TrendChart, breakdownToSeries } from "../../components/TrendChart";
@@ -452,6 +454,87 @@ export function StaleTrendCard({ organisation }: { organisation?: string }) {
         Nodes that have stopped checking in. "Missing" nodes may be temporarily offline; "Gone" nodes have not reported for an extended period.
       </p>
       {loading && <LoadingSpinner message="Loading stale node trend…" />}
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {!loading && !error && (
+        <TrendChart
+          series={trendSeries}
+          yLabel="Node count"
+          showArea={true}
+          height={220}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deployment Progress Trend Card (historical)
+// ---------------------------------------------------------------------------
+
+export function DeploymentTrendCard({
+  organisation,
+}: {
+  organisation?: string;
+}) {
+  const [data, setData] = useState<DeploymentTrendResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchDeploymentTrend(organisation)
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [organisation]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const trendSeries: TrendSeries[] = (() => {
+    if (!data || data.data.length === 0) return [];
+
+    const sorted = [...data.data]
+      .filter((pt) => pt.completed_at !== "")
+      .sort(
+        (a, b) =>
+          new Date(a.completed_at).getTime() -
+          new Date(b.completed_at).getTime(),
+      );
+
+    if (sorted.length === 0) return [];
+
+    return [
+      {
+        key: "staged-or-activated",
+        label: "Staged or Activated",
+        colour: "#3b82f6", // blue-500
+        data: sorted.map((pt) => ({
+          timestamp: pt.completed_at,
+          value: pt.staged_or_activated,
+        })),
+      },
+      {
+        key: "converge-passing",
+        label: "Speculative Converge Passing",
+        colour: "#22c55e", // green-500
+        data: sorted.map((pt) => ({
+          timestamp: pt.completed_at,
+          value: pt.converge_passing,
+        })),
+      },
+    ];
+  })();
+
+  return (
+    <div className="card">
+      <h3 className="card-header">Deployment Progress — Trend</h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Nodes with the target version staged or activated vs. nodes where the nightly speculative converge is passing. The gap represents nodes needing investigation.
+      </p>
+      {loading && <LoadingSpinner message="Loading deployment trend…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
         <TrendChart

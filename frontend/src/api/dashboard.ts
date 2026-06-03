@@ -8,6 +8,7 @@ import type {
   ReadinessTrendResponse,
   ComplexityTrendResponse,
   StaleTrendResponse,
+  DeploymentTrendResponse,
   CookbookCompatibilityResponse,
   GitRepoCompatibilityResponse,
   TestKitchenCompatibilityResponse,
@@ -67,6 +68,14 @@ export function fetchComplexityTrend(
 export function fetchStaleTrend(organisation?: string): Promise<StaleTrendResponse> {
   return apiFetch<StaleTrendResponse>(
     buildUrl("/dashboard/stale/trend", { organisation }),
+  );
+}
+
+export function fetchDeploymentTrend(
+  organisation?: string,
+): Promise<DeploymentTrendResponse> {
+  return apiFetch<DeploymentTrendResponse>(
+    buildUrl("/dashboard/deployment/trend", { organisation }),
   );
 }
 

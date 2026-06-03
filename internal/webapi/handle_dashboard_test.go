@@ -3393,3 +3393,127 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_WithOwnership(t *
 
 // Ensure the _ = fmt.Sprintf is used (keeps the import alive).
 var _ = fmt.Sprintf
+
+// ---------------------------------------------------------------------------
+// handleDashboardDeploymentTrend
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardDeploymentTrend_HappyPath(t *testing.T) {
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"deployment":{"staged_or_activated":30,"converge_passing":20},"by_staleness":{"fresh":80,"warning":15,"critical":5},"fresh":{"total":80}}`),
+					SnapshotAt:       t1,
+				},
+				{
+					ID:               2,
+					CollectionRunOrg: "run-2",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"deployment":{"staged_or_activated":50,"converge_passing":45},"by_staleness":{"fresh":85,"warning":10,"critical":5},"fresh":{"total":85}}`),
+					SnapshotAt:       t2,
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []deploymentTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+	if body.Data[0].StagedOrActivated != 30 {
+		t.Errorf("data[0].staged_or_activated = %d, want 30", body.Data[0].StagedOrActivated)
+	}
+	if body.Data[0].ConvergePassing != 20 {
+		t.Errorf("data[0].converge_passing = %d, want 20", body.Data[0].ConvergePassing)
+	}
+	if body.Data[1].StagedOrActivated != 50 {
+		t.Errorf("data[1].staged_or_activated = %d, want 50", body.Data[1].StagedOrActivated)
+	}
+	if body.Data[1].ConvergePassing != 45 {
+		t.Errorf("data[1].converge_passing = %d, want 45", body.Data[1].ConvergePassing)
+	}
+}
+
+func TestHandleDashboardDeploymentTrend_EmptyWhenNoDeploymentData(t *testing.T) {
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			// Pre-deployment snapshots: no deployment field in JSON.
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"by_staleness":{"fresh":80,"warning":15,"critical":5},"fresh":{"total":80}}`),
+					SnapshotAt:       t1,
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []deploymentTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0 (pre-deployment snapshots should be skipped)", len(body.Data))
+	}
+}
+
+func TestHandleDashboardDeploymentTrend_StoreError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, errors.New("db down")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}

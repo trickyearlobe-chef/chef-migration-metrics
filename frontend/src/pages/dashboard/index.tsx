@@ -13,6 +13,7 @@ import {
   ReadinessTrendCard,
   ComplexityTrendCard,
   StaleTrendCard,
+  DeploymentTrendCard,
 } from "./TrendCards";
 
 // ---------------------------------------------------------------------------
@@ -100,6 +101,7 @@ export function DashboardPage() {
           <ReadinessTrendCard organisation={org} />
           <ComplexityTrendCard organisation={org} />
           <StaleTrendCard organisation={org} />
+          <DeploymentTrendCard organisation={org} />
         </div>
       )}
     </div>

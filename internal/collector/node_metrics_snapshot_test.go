@@ -425,6 +425,43 @@ func TestBuildNodeMetricsPayload_UntestedCookbookCountsAsCookstyle(t *testing.T)
 	}
 }
 
+func TestBuildNodeMetricsPayload_DeploymentCounts(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "omnibus", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "omnibus_only"},
+		{NodeName: "staged-pass", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", TargetConvergeStatus: "success"},
+		{NodeName: "staged-fail", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", TargetConvergeStatus: "fail"},
+		{NodeName: "activated", ChefVersion: "19.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", TargetConvergeStatus: "success"},
+		{NodeName: "no-migration", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix())},
+	}
+
+	raw, err := buildNodeMetricsPayload(nodeMetricsInput{
+		SnapshotParams:    params,
+		ReadinessResults:  nil,
+		TargetChefVersion: "19.0.0",
+		WarningHours:      72,
+		CriticalDays:      7,
+		RequiredDiskMB:    3000,
+		Now:               now,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got nodeMetricsPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.Deployment.StagedOrActivated != 3 {
+		t.Errorf("deployment.staged_or_activated = %d, want 3 (2 dormant + 1 active)", got.Deployment.StagedOrActivated)
+	}
+	if got.Deployment.ConvergePassing != 2 {
+		t.Errorf("deployment.converge_passing = %d, want 2 (staged-pass + activated)", got.Deployment.ConvergePassing)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // classifyBlockingCookbooks tests
 // ---------------------------------------------------------------------------
