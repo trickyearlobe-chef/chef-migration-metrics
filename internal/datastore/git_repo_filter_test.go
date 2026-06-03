@@ -164,7 +164,7 @@ func TestBuildGitRepoFilterQuery_InvalidSortFallsToDefault(t *testing.T) {
 }
 
 func TestBuildGitRepoFilterQuery_TieBreaker(t *testing.T) {
-	q, _ := buildGitRepoFilterQuery(GitRepoFilter{Sort: "last_fetched_at"})
+	q, _ := buildGitRepoFilterQuery(GitRepoFilter{Sort: "last_fetched"})
 
 	// Should have primary sort + tie-breaker.
 	idx := strings.Index(q, "ORDER BY")
