@@ -30,10 +30,14 @@ function DiskSpacePanel({
   r,
   org,
   nodeName,
+  installPath,
+  minRemainingFreePercent,
 }: {
   r: NodeReadiness;
   org?: string;
   nodeName?: string;
+  installPath?: string;
+  minRemainingFreePercent?: number;
 }) {
   const available = r.available_disk_mb;
   const required = r.required_disk_mb;
@@ -73,12 +77,6 @@ function DiskSpacePanel({
   }
 
   // Known state
-  const pct =
-    available != null && required != null && required > 0
-      ? Math.min(100, Math.round((available / required) * 100))
-      : null;
-
-  const barColor = sufficient ? "bg-green-500" : "bg-red-500";
   const borderColor = sufficient ? "border-green-200" : "border-red-200";
   const bgColor = sufficient ? "bg-green-50" : "bg-red-50";
   const badgeBg = sufficient
@@ -97,37 +95,39 @@ function DiskSpacePanel({
         </span>
       </div>
 
-      {/* Bar chart */}
-      {available != null && required != null && pct != null && (
-        <div className="mt-2">
-          <div className="flex justify-between text-xs text-gray-500">
-            <span>
-              Available:{" "}
-              <strong className="text-gray-700">{formatMB(available)}</strong>
-            </span>
-            <span>
-              Required:{" "}
-              <strong className="text-gray-700">{formatMB(required)}</strong>
-            </span>
+      {/* Disk details */}
+      {available != null && required != null && (
+        <div className="mt-2 space-y-0.5 text-xs text-gray-500">
+          <div>
+            Available:{" "}
+            <strong className="text-gray-700">{formatMB(available)}</strong>
+            {installPath && (
+              <span className="text-gray-400"> on <code className="font-mono">{installPath}</code></span>
+            )}
           </div>
-          <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-gray-200">
-            <div
-              className={`h-full rounded-full transition-all ${barColor}`}
-              style={{ width: `${Math.min(pct, 100)}%` }}
-            />
+          <div>
+            Required:{" "}
+            <strong className="text-gray-700">{formatMB(required)}</strong> for install
+            {minRemainingFreePercent != null && minRemainingFreePercent > 0 && (
+              <span> + <strong className="text-gray-700">{minRemainingFreePercent}%</strong> free after</span>
+            )}
           </div>
-          <div className="mt-0.5 text-right text-[10px] text-gray-400">
-            {pct >= 100
-              ? `${formatMB(available - required)} headroom`
-              : `${formatMB(required - available)} short`}
+          <div className={sufficient ? "text-green-600" : "text-red-600"}>
+            {sufficient
+              ? `✓ ${formatMB(available - required)} headroom after install`
+              : `✗ ${formatMB(required - available)} short`}
           </div>
         </div>
       )}
 
       {available != null && required == null && (
         <p className="mt-1 text-xs text-gray-500">
-          Available: <strong>{formatMB(available)}</strong> (no minimum
-          configured)
+          Available:{" "}
+          <strong>{formatMB(available)}</strong>
+          {installPath && (
+            <span className="text-gray-400"> on <code className="font-mono">{installPath}</code></span>
+          )}{" "}
+          (no minimum configured)
         </p>
       )}
 
@@ -159,11 +159,15 @@ function ReadinessCard({
   org,
   nodeName,
   targetChefVersion,
+  installPath,
+  minRemainingFreePercent,
 }: {
   r: NodeReadiness;
   org?: string;
   nodeName?: string;
   targetChefVersion?: string;
+  installPath?: string;
+  minRemainingFreePercent?: number;
 }) {
   const ready = r.is_ready;
 
@@ -236,7 +240,7 @@ function ReadinessCard({
             blockingCookbooks={r.blocking_cookbooks}
           />
         )}
-        <DiskSpacePanel r={r} org={org} nodeName={nodeName} />
+        <DiskSpacePanel r={r} org={org} nodeName={nodeName} installPath={installPath} minRemainingFreePercent={minRemainingFreePercent} />
       </div>
     </div>
   );
@@ -439,6 +443,8 @@ function ReadinessSection({
             org={org}
             nodeName={nodeName}
             targetChefVersion={r.target_chef_version}
+            installPath={data.install_path}
+            minRemainingFreePercent={data.min_remaining_free_percent}
           />
         ))}
       </div>

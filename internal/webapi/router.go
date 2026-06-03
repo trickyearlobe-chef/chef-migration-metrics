@@ -626,6 +626,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
+	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness)
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
@@ -867,6 +868,15 @@ func (r *Router) liveConfig() *config.Config {
 		return r.configHolder.Get()
 	}
 	return r.cfg
+}
+
+// installPathForNode returns the configured install path based on node platform.
+func (r *Router) installPathForNode(platform string) string {
+	cfg := r.liveConfig()
+	if strings.EqualFold(platform, "windows") {
+		return cfg.Readiness.InstallPathWindows
+	}
+	return cfg.Readiness.InstallPathLinux
 }
 
 // buildHypervisor returns a hypervisor client. If a static client was

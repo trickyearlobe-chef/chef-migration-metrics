@@ -30,6 +30,14 @@ export interface LoggingConfig {
   retention_days: number;
 }
 
+export interface ReadinessConfig {
+  install_path_linux: string;
+  install_path_windows: string;
+  install_size_mb_linux: number;
+  install_size_mb_windows: number;
+  min_remaining_free_percent: number;
+}
+
 export interface ExportsConfig {
   max_rows: number;
   async_threshold: number;

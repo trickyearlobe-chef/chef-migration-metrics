@@ -215,7 +215,7 @@ func (c *Collector) recordNodeMetricsSnapshot(
 		TargetChefVersion: targetVersion,
 		WarningHours:      c.cfg.Collection.StaleNodeWarningHours,
 		CriticalDays:      c.cfg.Collection.StaleNodeCriticalDays,
-		RequiredDiskMB:    c.cfg.Readiness.MinFreeDiskMB,
+		RequiredDiskMB:    c.cfg.Readiness.InstallSizeMBLinux,
 		Now:               time.Now().UTC(),
 	})
 	if err != nil {

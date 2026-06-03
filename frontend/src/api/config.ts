@@ -6,6 +6,7 @@ import type {
   AnalysisToolsConfig,
   LoggingConfig,
   ExportsConfig,
+  ReadinessConfig,
   ConfigOrganisation,
   ServerConfig,
   AuthConfig,
@@ -20,6 +21,7 @@ export type {
   AnalysisToolsConfig,
   LoggingConfig,
   ExportsConfig,
+  ReadinessConfig,
   ConfigOrganisation,
   ConfigOrganisation as Organisation,
   ServerConfig,
@@ -129,6 +131,16 @@ export function saveExportsConfig(
   value: ExportsConfig,
 ): Promise<PutConfigResponse<ExportsConfig>> {
   return apiMutateConfig<ExportsConfig>(buildUrl("/admin/config/exports"), value);
+}
+
+export function fetchReadinessConfig(): Promise<ReadinessConfig> {
+  return apiFetch<ReadinessConfig>(buildUrl("/admin/config/readiness"));
+}
+
+export function saveReadinessConfig(
+  value: ReadinessConfig,
+): Promise<PutConfigResponse<ReadinessConfig>> {
+  return apiMutateConfig<ReadinessConfig>(buildUrl("/admin/config/readiness"), value);
 }
 
 export function fetchConfigOrganisations(): Promise<ConfigOrganisation[]> {

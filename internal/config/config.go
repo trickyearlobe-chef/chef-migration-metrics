@@ -440,7 +440,14 @@ func (tk *TestKitchenConfig) EffectiveOrphanSweepAge() time.Duration {
 
 // ReadinessConfig controls the upgrade readiness evaluation parameters.
 type ReadinessConfig struct {
-	MinFreeDiskMB int `yaml:"min_free_disk_mb"`
+	// Deprecated: use InstallSizeMBLinux/InstallSizeMBWindows instead.
+	MinFreeDiskMB int `yaml:"min_free_disk_mb,omitempty"`
+
+	InstallPathLinux        string `yaml:"install_path_linux"`
+	InstallPathWindows      string `yaml:"install_path_windows"`
+	InstallSizeMBLinux      int    `yaml:"install_size_mb_linux"`
+	InstallSizeMBWindows    int    `yaml:"install_size_mb_windows"`
+	MinRemainingFreePercent int    `yaml:"min_remaining_free_percent"`
 }
 
 // SystemHealthConfig controls host-level resource monitoring and the
@@ -858,8 +865,30 @@ func (c *Config) setDefaults() {
 	}
 
 	// Readiness
-	if c.Readiness.MinFreeDiskMB == 0 {
-		c.Readiness.MinFreeDiskMB = 2048
+	if c.Readiness.InstallPathLinux == "" {
+		c.Readiness.InstallPathLinux = "/hab"
+	}
+	if c.Readiness.InstallPathWindows == "" {
+		c.Readiness.InstallPathWindows = `C:\hab`
+	}
+	if c.Readiness.InstallSizeMBLinux == 0 {
+		c.Readiness.InstallSizeMBLinux = 3072
+	}
+	if c.Readiness.InstallSizeMBWindows == 0 {
+		c.Readiness.InstallSizeMBWindows = 6144
+	}
+	if c.Readiness.MinRemainingFreePercent == 0 {
+		c.Readiness.MinRemainingFreePercent = 20
+	}
+	// Backward compat: if old min_free_disk_mb is set but new fields are
+	// at defaults, honour it for both platforms.
+	if c.Readiness.MinFreeDiskMB != 0 {
+		if c.Readiness.InstallSizeMBLinux == 3072 {
+			c.Readiness.InstallSizeMBLinux = c.Readiness.MinFreeDiskMB
+		}
+		if c.Readiness.InstallSizeMBWindows == 6144 {
+			c.Readiness.InstallSizeMBWindows = c.Readiness.MinFreeDiskMB
+		}
 	}
 
 	// Exports

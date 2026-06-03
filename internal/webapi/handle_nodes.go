@@ -238,6 +238,7 @@ type nodeReadinessSummaryEntry struct {
 	DiskDetail             *string `json:"disk_detail"`
 	CookstyleDetail        *string `json:"cookstyle_detail"`
 	KitchenDetail          *string `json:"kitchen_detail"`
+	InstallPath            string  `json:"install_path"`
 }
 
 // countBlockingCookbooks returns the number of blocking cookbooks from the
@@ -324,10 +325,12 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	pdn := resolvePlatformDisplayName(snapshot.Platform, snapshot.PlatformVersion, mappings)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"node":                  snapshot,
-		"organisation_name":     org.Name,
-		"readiness":             readiness,
-		"platform_display_name": pdn,
+		"node":                        snapshot,
+		"organisation_name":           org.Name,
+		"readiness":                   readiness,
+		"platform_display_name":       pdn,
+		"install_path":                r.installPathForNode(snapshot.Platform),
+		"min_remaining_free_percent":  r.liveConfig().Readiness.MinRemainingFreePercent,
 	})
 }
 
@@ -591,8 +594,10 @@ func applyOwnerFilter(ctx context.Context, r *Router, nodes []datastore.NodeSnap
 func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.NodeSnapshot, r *Router) map[string][]nodeReadinessSummaryEntry {
 	// Group node names by organisation ID.
 	namesByOrg := make(map[string][]string)
+	platformByNode := make(map[string]string, len(nodes))
 	for _, n := range nodes {
 		namesByOrg[n.OrganisationName] = append(namesByOrg[n.OrganisationName], n.NodeName)
+		platformByNode[n.NodeName] = n.Platform
 	}
 
 	result := make(map[string][]nodeReadinessSummaryEntry, len(nodes))
@@ -604,7 +609,8 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 		}
 		for nodeName, recs := range bulk {
 			for _, rec := range recs {
-				cs := deriveCheckStatus(rec)
+				installPath := r.installPathForNode(platformByNode[nodeName])
+				cs := deriveCheckStatus(rec, installPath)
 				result[nodeName] = append(result[nodeName], nodeReadinessSummaryEntry{
 					TargetChefVersion:      rec.TargetChefVersion,
 					IsReady:                rec.IsReady,
@@ -618,6 +624,7 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 					DiskDetail:             cs.DiskDetail,
 					CookstyleDetail:        cs.CookstyleDetail,
 					KitchenDetail:          cs.KitchenDetail,
+					InstallPath:            installPath,
 				})
 			}
 		}
