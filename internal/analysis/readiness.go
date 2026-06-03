@@ -255,10 +255,14 @@ func buildReadinessCache(
 
 // ReadinessEvaluator computes per-node per-target-version upgrade readiness.
 type ReadinessEvaluator struct {
-	db            ReadinessDataStore
-	logger        *logging.Logger
-	concurrency   int
-	minFreeDiskMB int
+	db                      ReadinessDataStore
+	logger                  *logging.Logger
+	concurrency             int
+	installPathLinux        string
+	installPathWindows      string
+	installSizeMBLinux      int
+	installSizeMBWindows    int
+	minRemainingFreePercent int
 }
 
 // ReadinessEvaluatorOption configures a ReadinessEvaluator.
@@ -276,6 +280,7 @@ func WithReadinessDataStore(ds ReadinessDataStore) ReadinessEvaluatorOption {
 //   - logger: structured logger (may be nil for silent operation)
 //   - concurrency: max parallel node evaluations (worker pool size)
 //   - minFreeDiskMB: minimum free disk in MB required for Habitat bundle
+//     (deprecated — prefer NewReadinessEvaluatorFromConfig)
 //   - opts: optional overrides
 func NewReadinessEvaluator(
 	db ReadinessDataStore,
@@ -292,10 +297,68 @@ func NewReadinessEvaluator(
 	}
 
 	e := &ReadinessEvaluator{
-		db:            db,
-		logger:        logger,
-		concurrency:   concurrency,
-		minFreeDiskMB: minFreeDiskMB,
+		db:                      db,
+		logger:                  logger,
+		concurrency:             concurrency,
+		installPathLinux:        "/hab",
+		installPathWindows:      `C:\hab`,
+		installSizeMBLinux:      minFreeDiskMB,
+		installSizeMBWindows:    minFreeDiskMB,
+		minRemainingFreePercent: 20,
+	}
+	for _, o := range opts {
+		o(e)
+	}
+	return e
+}
+
+// ReadinessEvalConfig holds the disk-space evaluation parameters passed to
+// NewReadinessEvaluatorFromConfig.
+type ReadinessEvalConfig struct {
+	InstallPathLinux        string
+	InstallPathWindows      string
+	InstallSizeMBLinux      int
+	InstallSizeMBWindows    int
+	MinRemainingFreePercent int
+}
+
+// NewReadinessEvaluatorFromConfig creates an evaluator with full per-platform
+// disk space configuration.
+func NewReadinessEvaluatorFromConfig(
+	db ReadinessDataStore,
+	logger *logging.Logger,
+	concurrency int,
+	cfg ReadinessEvalConfig,
+	opts ...ReadinessEvaluatorOption,
+) *ReadinessEvaluator {
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	if cfg.InstallPathLinux == "" {
+		cfg.InstallPathLinux = "/hab"
+	}
+	if cfg.InstallPathWindows == "" {
+		cfg.InstallPathWindows = `C:\hab`
+	}
+	if cfg.InstallSizeMBLinux <= 0 {
+		cfg.InstallSizeMBLinux = 3072
+	}
+	if cfg.InstallSizeMBWindows <= 0 {
+		cfg.InstallSizeMBWindows = 6144
+	}
+	if cfg.MinRemainingFreePercent <= 0 {
+		cfg.MinRemainingFreePercent = 20
+	}
+
+	e := &ReadinessEvaluator{
+		db:                      db,
+		logger:                  logger,
+		concurrency:             concurrency,
+		installPathLinux:        cfg.InstallPathLinux,
+		installPathWindows:      cfg.InstallPathWindows,
+		installSizeMBLinux:      cfg.InstallSizeMBLinux,
+		installSizeMBWindows:    cfg.InstallSizeMBWindows,
+		minRemainingFreePercent: cfg.MinRemainingFreePercent,
 	}
 	for _, o := range opts {
 		o(e)
@@ -438,7 +501,7 @@ func (e *ReadinessEvaluator) evaluateOne(
 		NodeName:          snapshot.NodeName,
 		TargetChefVersion: targetChefVersion,
 		StaleData:         snapshot.IsStale,
-		RequiredDiskMB:    e.minFreeDiskMB,
+		RequiredDiskMB:    e.installSizeForPlatform(snapshot.Platform),
 		EvaluatedAt:       now,
 	}
 
@@ -453,10 +516,20 @@ func (e *ReadinessEvaluator) evaluateOne(
 		result.SufficientDiskSpace = nil
 		result.AvailableDiskMB = nil
 	} else {
-		availMB, known := e.evaluateDiskSpace(snapshot)
+		availMB, totalMB, known := e.evaluateDiskSpace(snapshot)
 		if known {
 			result.AvailableDiskMB = &availMB
-			sufficient := availMB >= e.minFreeDiskMB
+			requiredMB := e.installSizeForPlatform(snapshot.Platform)
+			// Dual threshold: (1) absolute size and (2) remaining free %.
+			absoluteOK := availMB >= requiredMB
+			percentOK := true
+			if totalMB > 0 && e.minRemainingFreePercent > 0 {
+				remainingAfterInstallKB := (int64(availMB) - int64(requiredMB)) * 1024
+				totalKB := int64(totalMB) * 1024
+				pctRemaining := float64(remainingAfterInstallKB) / float64(totalKB) * 100
+				percentOK = pctRemaining >= float64(e.minRemainingFreePercent)
+			}
+			sufficient := absoluteOK && percentOK
 			result.SufficientDiskSpace = &sufficient
 		}
 		// If not known: SufficientDiskSpace and AvailableDiskMB remain nil.
@@ -887,37 +960,55 @@ type filesystemEntry struct {
 }
 
 // evaluateDiskSpace determines the available disk space on the installation
-// target mount point and returns it in MB along with whether the data is
-// known.
-func (e *ReadinessEvaluator) evaluateDiskSpace(snapshot datastore.NodeSnapshot) (availableMB int, known bool) {
+// target mount point and returns (available MB, total MB, known).
+func (e *ReadinessEvaluator) evaluateDiskSpace(snapshot datastore.NodeSnapshot) (availableMB int, totalMB int, known bool) {
 	if len(snapshot.Filesystem) == 0 {
-		return 0, false
+		return 0, 0, false
 	}
 
 	fsMap := parseFilesystemAttribute(snapshot.Filesystem)
 	if len(fsMap) == 0 {
-		return 0, false
+		return 0, 0, false
 	}
 
 	// Determine the installation target path based on platform.
-	installPath := determineInstallPath(snapshot.Platform)
+	installPath := e.installPathForPlatform(snapshot.Platform)
 
 	// Find the filesystem entry whose mount is the longest prefix match.
 	matchedMount, entry := findBestMount(fsMap, installPath, snapshot.Platform)
 	if matchedMount == "" && entry == nil {
-		return 0, false
+		return 0, 0, false
 	}
 
-	// Extract kb_available.
+	// Extract kb_available and kb_size.
 	kbAvail := toInt64(entry.KBAvailable)
 	if kbAvail < 0 {
-		// kb_available missing or unparseable — treat as 0.
 		kbAvail = 0
 	}
+	kbSize := toInt64(entry.KBSize)
+	if kbSize < 0 {
+		kbSize = 0
+	}
 
-	// Convert KB to MB.
 	availableMB = int(kbAvail / 1024)
-	return availableMB, true
+	totalMB = int(kbSize / 1024)
+	return availableMB, totalMB, true
+}
+
+// installPathForPlatform returns the configured install path for the platform.
+func (e *ReadinessEvaluator) installPathForPlatform(platform string) string {
+	if strings.ToLower(platform) == "windows" {
+		return e.installPathWindows
+	}
+	return e.installPathLinux
+}
+
+// installSizeForPlatform returns the required install size in MB for the platform.
+func (e *ReadinessEvaluator) installSizeForPlatform(platform string) int {
+	if strings.ToLower(platform) == "windows" {
+		return e.installSizeMBWindows
+	}
+	return e.installSizeMBLinux
 }
 
 // parseFilesystemAttribute parses the automatic.filesystem JSONB into a map

@@ -40,6 +40,7 @@ import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
 import { AdminCollectionPage } from "./pages/AdminCollectionPage";
 import { AdminLoggingPage } from "./pages/AdminLoggingPage";
 import { AdminExportsPage } from "./pages/AdminExportsPage";
+import { AdminReadinessPage } from "./pages/AdminReadinessPage";
 import { AdminTargetVersionsPage } from "./pages/AdminTargetVersionsPage";
 import { AdminOrganisationsPage } from "./pages/AdminOrganisationsPage";
 import { AdminServerPage } from "./pages/AdminServerPage";
@@ -310,6 +311,14 @@ export function App() {
                 element={
                   <RequireAdmin>
                     <AdminExportsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/config/readiness"
+                element={
+                  <RequireAdmin>
+                    <AdminReadinessPage />
                   </RequireAdmin>
                 }
               />

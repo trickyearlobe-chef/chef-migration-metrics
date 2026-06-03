@@ -840,10 +840,16 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)
 	collOpts = append(collOpts, collector.WithComplexityScorer(cxScorer))
 
-	readinessEval := analysis.NewReadinessEvaluator(
+	readinessEval := analysis.NewReadinessEvaluatorFromConfig(
 		app.db, app.logger,
 		app.cfg.Concurrency.ReadinessEvaluation,
-		app.cfg.Readiness.MinFreeDiskMB,
+		analysis.ReadinessEvalConfig{
+			InstallPathLinux:        app.cfg.Readiness.InstallPathLinux,
+			InstallPathWindows:      app.cfg.Readiness.InstallPathWindows,
+			InstallSizeMBLinux:      app.cfg.Readiness.InstallSizeMBLinux,
+			InstallSizeMBWindows:    app.cfg.Readiness.InstallSizeMBWindows,
+			MinRemainingFreePercent: app.cfg.Readiness.MinRemainingFreePercent,
+		},
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
 

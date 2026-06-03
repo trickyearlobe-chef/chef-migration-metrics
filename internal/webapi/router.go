@@ -626,6 +626,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
+	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness)
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)

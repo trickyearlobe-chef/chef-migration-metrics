@@ -876,7 +876,7 @@ func TestEvaluateDiskSpace_LinuxSufficientSpace(t *testing.T) {
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known, got unknown")
 	}
@@ -892,7 +892,7 @@ func TestEvaluateDiskSpace_LinuxInsufficientSpace(t *testing.T) {
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "2097152", KBUsed: "1048576", KBAvailable: "1048576", PercentUsed: "50%", Mount: "/"},
 		}))
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known, got unknown")
 	}
@@ -905,7 +905,7 @@ func TestEvaluateDiskSpace_LinuxInsufficientSpace(t *testing.T) {
 func TestEvaluateDiskSpace_MissingFilesystem(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false, nil, nil)
-	_, known := e.evaluateDiskSpace(snap)
+	_, _, known := e.evaluateDiskSpace(snap)
 	if known {
 		t.Error("expected unknown for missing filesystem")
 	}
@@ -914,7 +914,7 @@ func TestEvaluateDiskSpace_MissingFilesystem(t *testing.T) {
 func TestEvaluateDiskSpace_EmptyFilesystem(t *testing.T) {
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false, nil, json.RawMessage(`{}`))
-	_, known := e.evaluateDiskSpace(snap)
+	_, _, known := e.evaluateDiskSpace(snap)
 	if known {
 		t.Error("expected unknown for empty filesystem")
 	}
@@ -927,7 +927,7 @@ func TestEvaluateDiskSpace_StringValues(t *testing.T) {
 		linuxFilesystemJSON(map[string]linuxMount{
 			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
 		}))
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known")
 	}
@@ -941,7 +941,7 @@ func TestEvaluateDiskSpace_IntegerValues(t *testing.T) {
 	raw := json.RawMessage(`{"/dev/sda1": {"kb_size": 20511356, "kb_used": 5123456, "kb_available": 10240000, "percent_used": "26%", "mount": "/"}}`)
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false, nil, raw)
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known")
 	}
@@ -954,7 +954,7 @@ func TestEvaluateDiskSpace_MissingKBAvailable(t *testing.T) {
 	raw := json.RawMessage(`{"/dev/sda1": {"kb_size": "20511356", "mount": "/"}}`)
 	e := NewReadinessEvaluator(newFakeReadinessDS(), nil, 1, 2048)
 	snap := makeSnapshot("org-1", "node-1", false, nil, raw)
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known (with 0 available)")
 	}
@@ -970,7 +970,7 @@ func TestEvaluateDiskSpace_WindowsDrive(t *testing.T) {
 			"C:": {KBSize: "104857600", KBUsed: "52428800", KBAvailable: "52428800", PercentUsed: "50%"},
 		}))
 	snap.Platform = "windows"
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known")
 	}
@@ -2290,8 +2290,8 @@ func TestNewReadinessEvaluator_Defaults(t *testing.T) {
 	if e.concurrency != 1 {
 		t.Errorf("expected concurrency 1, got %d", e.concurrency)
 	}
-	if e.minFreeDiskMB != 2048 {
-		t.Errorf("expected minFreeDiskMB 2048, got %d", e.minFreeDiskMB)
+	if e.installSizeMBLinux != 2048 {
+		t.Errorf("expected installSizeMBLinux 2048, got %d", e.installSizeMBLinux)
 	}
 }
 
@@ -2300,8 +2300,8 @@ func TestNewReadinessEvaluator_NegativeValues(t *testing.T) {
 	if e.concurrency != 1 {
 		t.Errorf("expected concurrency 1, got %d", e.concurrency)
 	}
-	if e.minFreeDiskMB != 2048 {
-		t.Errorf("expected minFreeDiskMB 2048, got %d", e.minFreeDiskMB)
+	if e.installSizeMBLinux != 2048 {
+		t.Errorf("expected installSizeMBLinux 2048, got %d", e.installSizeMBLinux)
 	}
 }
 
@@ -2310,8 +2310,8 @@ func TestNewReadinessEvaluator_CustomValues(t *testing.T) {
 	if e.concurrency != 10 {
 		t.Errorf("expected concurrency 10, got %d", e.concurrency)
 	}
-	if e.minFreeDiskMB != 4096 {
-		t.Errorf("expected minFreeDiskMB 4096, got %d", e.minFreeDiskMB)
+	if e.installSizeMBLinux != 4096 {
+		t.Errorf("expected installSizeMBLinux 4096, got %d", e.installSizeMBLinux)
 	}
 }
 
@@ -2562,7 +2562,7 @@ func TestEvaluateDiskSpace_Ohai14_LinuxSufficientSpace(t *testing.T) {
 			},
 		}))
 
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected disk space to be known for Ohai 14+ format")
 	}
@@ -2584,7 +2584,7 @@ func TestEvaluateDiskSpace_Ohai14_LinuxInsufficientSpace(t *testing.T) {
 			},
 		}))
 
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected disk space to be known")
 	}
@@ -2610,7 +2610,7 @@ func TestEvaluateDiskSpace_Ohai14_LinuxDedicatedHabMount(t *testing.T) {
 			},
 		}))
 
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected disk space to be known")
 	}
@@ -2634,7 +2634,7 @@ func TestEvaluateDiskSpace_Ohai14_WindowsDrive(t *testing.T) {
 		}))
 	snap.Platform = "windows"
 
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected disk space to be known for Ohai 14+ Windows format")
 	}
@@ -2657,7 +2657,7 @@ func TestEvaluateDiskSpace_Ohai14_IntegerValues(t *testing.T) {
 			},
 		}))
 
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected disk space to be known with integer values")
 	}
@@ -2738,7 +2738,7 @@ func TestEvaluateDiskSpace_HabUnderOpt(t *testing.T) {
 			"/dev/sdb1": {KBSize: "10000000", KBUsed: "1000000", KBAvailable: "8000000", PercentUsed: "10%", Mount: "/opt"},
 		}))
 
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known")
 	}
@@ -2757,7 +2757,7 @@ func TestEvaluateDiskSpace_DedicatedHabOverridesRoot(t *testing.T) {
 			"/dev/sdb1": {KBSize: "5000000", KBUsed: "1000000", KBAvailable: "3000000", PercentUsed: "20%", Mount: "/hab"},
 		}))
 
-	availMB, known := e.evaluateDiskSpace(snap)
+	availMB, _, known := e.evaluateDiskSpace(snap)
 	if !known {
 		t.Fatal("expected known")
 	}
@@ -2776,10 +2776,14 @@ func TestEvaluateOne_ExactDiskSpaceBoundary(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
-	// Exactly 2048 MB free = 2048 * 1024 = 2097152 KB.
+	// 2048 MB free on a 10240 MB filesystem (20 GB).
+	// After install: remaining = 0 MB. Remaining% = 0/10240 = 0% — fails 20% threshold.
+	// For the absolute check to pass AND the percentage check:
+	// Need 2048 + 20% of total. With 10240 total, need 2048 + 2048 = 4096 free.
+	// Use exactly 4096 MB free: absolute OK (4096 >= 2048), remaining = 2048/10240 = 20% — passes.
 	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
-			"/dev/sda1": {KBSize: "4194304", KBUsed: "2097152", KBAvailable: "2097152", PercentUsed: "50%", Mount: "/"},
+			"/dev/sda1": {KBSize: "10485760", KBUsed: "6291456", KBAvailable: "4194304", PercentUsed: "60%", Mount: "/"},
 		}))
 
 	cache := ds.buildFakeCache()
@@ -2788,9 +2792,8 @@ func TestEvaluateOne_ExactDiskSpaceBoundary(t *testing.T) {
 	if result.SufficientDiskSpace == nil {
 		t.Fatal("expected disk space known")
 	}
-	// 2097152 KB / 1024 = 2048 MB, which equals the threshold.
 	if !*result.SufficientDiskSpace {
-		t.Error("expected sufficient disk space at exactly the threshold")
+		t.Error("expected sufficient disk space (absolute OK and remaining% = 20%)")
 	}
 }
 
@@ -2798,10 +2801,10 @@ func TestEvaluateOne_OneBelowDiskSpaceBoundary(t *testing.T) {
 	ds := newFakeReadinessDS()
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
 
-	// 2047 MB free = 2047 * 1024 = 2096128 KB.
+	// 2047 MB free = 2047 * 1024 = 2096128 KB — fails absolute threshold (2047 < 2048).
 	snap := makeSnapshot("org-1", "node-1", false, nil,
 		linuxFilesystemJSON(map[string]linuxMount{
-			"/dev/sda1": {KBSize: "4194304", KBUsed: "2098176", KBAvailable: "2096128", PercentUsed: "50%", Mount: "/"},
+			"/dev/sda1": {KBSize: "10485760", KBUsed: "8389632", KBAvailable: "2096128", PercentUsed: "80%", Mount: "/"},
 		}))
 
 	cache := ds.buildFakeCache()
@@ -2847,6 +2850,64 @@ func TestReadinessResult_EvaluatedAtSet(t *testing.T) {
 
 	if result.EvaluatedAt.Before(before) || result.EvaluatedAt.After(after) {
 		t.Errorf("evaluatedAt %v not in range [%v, %v]", result.EvaluatedAt, before, after)
+	}
+}
+
+func TestNewReadinessEvaluatorFromConfig_DualThreshold(t *testing.T) {
+	ds := newFakeReadinessDS()
+	e := NewReadinessEvaluatorFromConfig(ds, nil, 1, ReadinessEvalConfig{
+		InstallPathLinux:        "/hab",
+		InstallPathWindows:      `C:\hab`,
+		InstallSizeMBLinux:      3072,
+		InstallSizeMBWindows:    6144,
+		MinRemainingFreePercent: 20,
+	})
+
+	// 10 GB total, 5 GB free. After 3 GB install: 2 GB remaining = 20% of 10 GB. Passes.
+	snap := makeSnapshot("org-1", "node-pass", false, nil,
+		linuxFilesystemJSON(map[string]linuxMount{
+			"/dev/sda1": {KBSize: "10485760", KBUsed: "5242880", KBAvailable: "5242880", PercentUsed: "50%", Mount: "/"},
+		}))
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
+	if result.SufficientDiskSpace == nil || !*result.SufficientDiskSpace {
+		t.Error("expected sufficient: absolute OK (5120 >= 3072) and remaining% = 20%")
+	}
+
+	// 10 GB total, 4 GB free. After 3 GB install: 1 GB remaining = 10% < 20%. Fails pct.
+	snap2 := makeSnapshot("org-1", "node-fail-pct", false, nil,
+		linuxFilesystemJSON(map[string]linuxMount{
+			"/dev/sda1": {KBSize: "10485760", KBUsed: "6291456", KBAvailable: "4194304", PercentUsed: "60%", Mount: "/"},
+		}))
+	result2 := e.evaluateOne(snap2, "18.0", ds.cookbookIDs, cache)
+	if result2.SufficientDiskSpace == nil || *result2.SufficientDiskSpace {
+		t.Error("expected insufficient: remaining% = 10% < 20%")
+	}
+}
+
+func TestNewReadinessEvaluatorFromConfig_WindowsUsesWindowsSize(t *testing.T) {
+	ds := newFakeReadinessDS()
+	e := NewReadinessEvaluatorFromConfig(ds, nil, 1, ReadinessEvalConfig{
+		InstallPathLinux:        "/hab",
+		InstallPathWindows:      `C:\hab`,
+		InstallSizeMBLinux:      3072,
+		InstallSizeMBWindows:    6144,
+		MinRemainingFreePercent: 0, // disable percentage check
+	})
+
+	// Windows node with 5 GB free — less than 6144 MB required.
+	snap := makeSnapshot("org-1", "win-node", false, nil,
+		windowsFilesystemJSON(map[string]windowsDrive{
+			"C:": {KBSize: "104857600", KBUsed: "99614720", KBAvailable: "5242880", PercentUsed: "95%"},
+		}))
+	snap.Platform = "windows"
+	cache := ds.buildFakeCache()
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
+	if result.RequiredDiskMB != 6144 {
+		t.Errorf("expected RequiredDiskMB 6144 for windows, got %d", result.RequiredDiskMB)
+	}
+	if result.SufficientDiskSpace == nil || *result.SufficientDiskSpace {
+		t.Error("expected insufficient: 5120 MB < 6144 MB required for Windows")
 	}
 }
 

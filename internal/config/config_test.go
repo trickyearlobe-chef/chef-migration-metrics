@@ -293,8 +293,20 @@ func TestTestKitchenIsEnabled_NilPointer(t *testing.T) {
 
 func TestDefaults_Readiness(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
-	if cfg.Readiness.MinFreeDiskMB != 2048 {
-		t.Errorf("expected min_free_disk_mb 2048, got %d", cfg.Readiness.MinFreeDiskMB)
+	if cfg.Readiness.InstallPathLinux != "/hab" {
+		t.Errorf("expected install_path_linux /hab, got %q", cfg.Readiness.InstallPathLinux)
+	}
+	if cfg.Readiness.InstallPathWindows != `C:\hab` {
+		t.Errorf("expected install_path_windows C:\\hab, got %q", cfg.Readiness.InstallPathWindows)
+	}
+	if cfg.Readiness.InstallSizeMBLinux != 3072 {
+		t.Errorf("expected install_size_mb_linux 3072, got %d", cfg.Readiness.InstallSizeMBLinux)
+	}
+	if cfg.Readiness.InstallSizeMBWindows != 6144 {
+		t.Errorf("expected install_size_mb_windows 6144, got %d", cfg.Readiness.InstallSizeMBWindows)
+	}
+	if cfg.Readiness.MinRemainingFreePercent != 20 {
+		t.Errorf("expected min_remaining_free_percent 20, got %d", cfg.Readiness.MinRemainingFreePercent)
 	}
 }
 

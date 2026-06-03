@@ -78,7 +78,11 @@ func diagnosticAnalysisTools(cfg config.Config) map[string]any {
 
 func diagnosticReadiness(cfg config.Config) map[string]any {
 	return map[string]any{
-		"min_free_disk_mb": cfg.Readiness.MinFreeDiskMB,
+		"install_path_linux":          cfg.Readiness.InstallPathLinux,
+		"install_path_windows":        cfg.Readiness.InstallPathWindows,
+		"install_size_mb_linux":       cfg.Readiness.InstallSizeMBLinux,
+		"install_size_mb_windows":     cfg.Readiness.InstallSizeMBWindows,
+		"min_remaining_free_percent":  cfg.Readiness.MinRemainingFreePercent,
 	}
 }
 
