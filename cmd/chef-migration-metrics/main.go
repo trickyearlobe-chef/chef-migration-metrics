@@ -850,6 +850,16 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			InstallSizeMBWindows:    app.cfg.Readiness.InstallSizeMBWindows,
 			MinRemainingFreePercent: app.cfg.Readiness.MinRemainingFreePercent,
 		},
+		analysis.WithConfigFunc(func() analysis.ReadinessEvalConfig {
+			cfg := app.configHolder.Get()
+			return analysis.ReadinessEvalConfig{
+				InstallPathLinux:        cfg.Readiness.InstallPathLinux,
+				InstallPathWindows:      cfg.Readiness.InstallPathWindows,
+				InstallSizeMBLinux:      cfg.Readiness.InstallSizeMBLinux,
+				InstallSizeMBWindows:    cfg.Readiness.InstallSizeMBWindows,
+				MinRemainingFreePercent: cfg.Readiness.MinRemainingFreePercent,
+			}
+		}),
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
 

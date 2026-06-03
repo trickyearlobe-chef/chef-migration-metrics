@@ -870,6 +870,15 @@ func (r *Router) liveConfig() *config.Config {
 	return r.cfg
 }
 
+// installPathForNode returns the configured install path based on node platform.
+func (r *Router) installPathForNode(platform string) string {
+	cfg := r.liveConfig()
+	if strings.EqualFold(platform, "windows") {
+		return cfg.Readiness.InstallPathWindows
+	}
+	return cfg.Readiness.InstallPathLinux
+}
+
 // buildHypervisor returns a hypervisor client. If a static client was
 // injected via WithHypervisor (e.g. in tests), it is returned directly.
 // Otherwise, a fresh client is built from the current live config and

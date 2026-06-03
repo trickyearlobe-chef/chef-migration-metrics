@@ -287,7 +287,7 @@ func TestDeriveCheckStatus_NilBlockingCookbooks(t *testing.T) {
 		BlockingCookbooks:      nil,
 		AvailableDiskMB:        intPtr(4096),
 	}
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 	if got.DiskStatus != DiskStatusSufficient {
 		t.Errorf("DiskStatus = %q, want %q", got.DiskStatus, DiskStatusSufficient)
 	}
@@ -307,7 +307,7 @@ func TestDeriveCheckStatus_EmptyBlockingCookbooks(t *testing.T) {
 		AvailableDiskMB:        intPtr(512),
 		RequiredDiskMB:         intPtr(2048),
 	}
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 	if got.DiskStatus != DiskStatusInsufficient {
 		t.Errorf("DiskStatus = %q, want %q", got.DiskStatus, DiskStatusInsufficient)
 	}
@@ -325,7 +325,7 @@ func TestDeriveCheckStatus_InvalidJSON(t *testing.T) {
 		AllCookbooksCompatible: false,
 		BlockingCookbooks:      json.RawMessage(`{not valid`),
 	}
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 	// Invalid JSON should not panic; returns unknown.
 	if got.CookstyleStatus != CookstyleStatusUnknown {
 		t.Errorf("CookstyleStatus = %q, want %q", got.CookstyleStatus, CookstyleStatusUnknown)
@@ -341,7 +341,7 @@ func TestDeriveCheckStatus_NullJSON(t *testing.T) {
 		AllCookbooksCompatible: true,
 		BlockingCookbooks:      json.RawMessage(`null`),
 	}
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 	if got.CookstyleStatus != CookstyleStatusPassed {
 		t.Errorf("CookstyleStatus = %q, want %q", got.CookstyleStatus, CookstyleStatusPassed)
 	}
@@ -357,11 +357,11 @@ func TestDiskDetail_WithAvailableAndRequired(t *testing.T) {
 		AvailableDiskMB:     intPtr(512),
 		RequiredDiskMB:      intPtr(2048),
 	}
-	got := diskDetail(nr)
+	got := diskDetail(nr, "/hab")
 	if got == nil {
 		t.Fatal("diskDetail returned nil")
 	}
-	want := "Disk: insufficient (0.5 GB free, need 2.0 GB)"
+	want := "Disk: insufficient (0.5 GB free on /hab, need 2.0 GB)"
 	if *got != want {
 		t.Errorf("diskDetail = %q, want %q", *got, want)
 	}
@@ -372,11 +372,11 @@ func TestDiskDetail_Sufficient_WithMB(t *testing.T) {
 		SufficientDiskSpace: boolPtr(true),
 		AvailableDiskMB:     intPtr(4096),
 	}
-	got := diskDetail(nr)
+	got := diskDetail(nr, "/hab")
 	if got == nil {
 		t.Fatal("diskDetail returned nil")
 	}
-	want := "Disk: sufficient (4.0 GB free)"
+	want := "Disk: sufficient (4.0 GB free on /hab)"
 	if *got != want {
 		t.Errorf("diskDetail = %q, want %q", *got, want)
 	}
@@ -386,7 +386,7 @@ func TestDiskDetail_Sufficient_NoMB(t *testing.T) {
 	nr := datastore.NodeReadiness{
 		SufficientDiskSpace: boolPtr(true),
 	}
-	got := diskDetail(nr)
+	got := diskDetail(nr, "/hab")
 	if got == nil {
 		t.Fatal("diskDetail returned nil")
 	}
@@ -399,7 +399,7 @@ func TestDiskDetail_Insufficient_NoMB(t *testing.T) {
 	nr := datastore.NodeReadiness{
 		SufficientDiskSpace: boolPtr(false),
 	}
-	got := diskDetail(nr)
+	got := diskDetail(nr, "/hab")
 	if got == nil {
 		t.Fatal("diskDetail returned nil")
 	}
@@ -413,11 +413,11 @@ func TestDiskDetail_Insufficient_AvailableOnly(t *testing.T) {
 		SufficientDiskSpace: boolPtr(false),
 		AvailableDiskMB:     intPtr(256),
 	}
-	got := diskDetail(nr)
+	got := diskDetail(nr, "/hab")
 	if got == nil {
 		t.Fatal("diskDetail returned nil")
 	}
-	want := "Disk: insufficient (0.2 GB free)"
+	want := "Disk: insufficient (0.2 GB free on /hab)"
 	if *got != want {
 		t.Errorf("diskDetail = %q, want %q", *got, want)
 	}
@@ -425,7 +425,7 @@ func TestDiskDetail_Insufficient_AvailableOnly(t *testing.T) {
 
 func TestDiskDetail_Unknown(t *testing.T) {
 	nr := datastore.NodeReadiness{SufficientDiskSpace: nil}
-	got := diskDetail(nr)
+	got := diskDetail(nr, "/hab")
 	if got == nil {
 		t.Fatal("diskDetail returned nil")
 	}

@@ -16,6 +16,7 @@ export interface NodeReadinessSummary {
   disk_detail?: string | null;
   cookstyle_detail?: string | null;
   kitchen_detail?: string | null;
+  install_path?: string;
 }
 
 export interface NodeListItem {
@@ -100,6 +101,8 @@ export interface NodeDetailResponse {
   node: NodeSnapshot;
   organisation_name: string;
   readiness: NodeReadiness[] | null;
+  install_path?: string;
+  min_remaining_free_percent?: number;
 }
 
 export interface NodesByVersionResponse {

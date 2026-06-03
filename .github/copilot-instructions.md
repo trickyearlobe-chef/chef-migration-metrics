@@ -130,6 +130,12 @@ This file contains the rules and conventions that must be followed at all times 
 
 - Project-specific conventions (Go, DB, frontend, naming, error handling) are in `specifications/project-conventions.md`.
 
+## Configuration
+
+- All configuration must be dynamic — changes via the UI or config store take effect immediately without a restart.
+- Components MUST read config via a live accessor (e.g. `configHolder.Get()` or a `configFn`) rather than caching values at construction time.
+- Static config fields are acceptable only for tests or as fallback defaults when no dynamic provider is set.
+
 ## Licensing
 
 - All components must be licensed under Apache 2.0 and a copy of the Apache 2.0 license must exist in the project root.

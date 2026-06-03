@@ -62,7 +62,7 @@ type blockingEntry struct {
 // When persisted status values are available (non-empty), they take precedence
 // over re-derivation from blocking cookbooks. This ensures the node detail and
 // list views agree with the analysis write-time computation.
-func deriveCheckStatus(nr datastore.NodeReadiness) checkStatusResult {
+func deriveCheckStatus(nr datastore.NodeReadiness, installPath string) checkStatusResult {
 	result := checkStatusResult{
 		DiskStatus: deriveDiskStatus(nr),
 	}
@@ -81,7 +81,7 @@ func deriveCheckStatus(nr datastore.NodeReadiness) checkStatusResult {
 		result.KitchenStatus = deriveKitchenStatus(nr)
 	}
 
-	result.DiskDetail = diskDetail(nr)
+	result.DiskDetail = diskDetail(nr, installPath)
 	result.CookstyleDetail = cookstyleDetail(nr, result.CookstyleStatus)
 	result.KitchenDetail = kitchenDetail(nr, result.KitchenStatus)
 	return result
@@ -206,13 +206,13 @@ func deriveKitchenStatus(nr datastore.NodeReadiness) string {
 }
 
 // diskDetail returns a human-readable detail string for the disk check.
-func diskDetail(nr datastore.NodeReadiness) *string {
+func diskDetail(nr datastore.NodeReadiness, installPath string) *string {
 	if nr.SufficientDiskSpace == nil {
 		return strPtr("Disk: unknown")
 	}
 	if *nr.SufficientDiskSpace {
 		if nr.AvailableDiskMB != nil {
-			s := fmt.Sprintf("Disk: sufficient (%.1f GB free)", float64(*nr.AvailableDiskMB)/1024.0)
+			s := fmt.Sprintf("Disk: sufficient (%.1f GB free on %s)", float64(*nr.AvailableDiskMB)/1024.0, installPath)
 			return &s
 		}
 		return strPtr("Disk: sufficient")
@@ -220,11 +220,11 @@ func diskDetail(nr datastore.NodeReadiness) *string {
 	// Insufficient.
 	switch {
 	case nr.AvailableDiskMB != nil && nr.RequiredDiskMB != nil:
-		s := fmt.Sprintf("Disk: insufficient (%.1f GB free, need %.1f GB)",
-			float64(*nr.AvailableDiskMB)/1024.0, float64(*nr.RequiredDiskMB)/1024.0)
+		s := fmt.Sprintf("Disk: insufficient (%.1f GB free on %s, need %.1f GB)",
+			float64(*nr.AvailableDiskMB)/1024.0, installPath, float64(*nr.RequiredDiskMB)/1024.0)
 		return &s
 	case nr.AvailableDiskMB != nil:
-		s := fmt.Sprintf("Disk: insufficient (%.1f GB free)", float64(*nr.AvailableDiskMB)/1024.0)
+		s := fmt.Sprintf("Disk: insufficient (%.1f GB free on %s)", float64(*nr.AvailableDiskMB)/1024.0, installPath)
 		return &s
 	default:
 		return strPtr("Disk: insufficient")

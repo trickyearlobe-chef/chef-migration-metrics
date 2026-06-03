@@ -32,7 +32,7 @@ func TestPersistedStatus_KitchenPartialServedDirectly(t *testing.T) {
 		KitchenStatus:          "partial", // persisted by analysis (has full TK coverage context)
 	}
 
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 
 	if got.KitchenStatus != "partial" {
 		t.Errorf("KitchenStatus = %q, want %q (persisted value)", got.KitchenStatus, "partial")
@@ -65,7 +65,7 @@ func TestPersistedStatus_KitchenPassedWithBlocking(t *testing.T) {
 		KitchenStatus:          "passed", // persisted by analysis
 	}
 
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 
 	if got.KitchenStatus != "passed" {
 		t.Errorf("KitchenStatus = %q, want %q (persisted value)", got.KitchenStatus, "passed")
@@ -97,7 +97,7 @@ func TestPersistedStatus_FallbackWhenEmpty(t *testing.T) {
 		KitchenStatus:          "", // legacy empty — triggers fallback
 	}
 
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 
 	if got.CookstyleStatus != CookstyleStatusFailed {
 		t.Errorf("CookstyleStatus fallback = %q, want %q", got.CookstyleStatus, CookstyleStatusFailed)
@@ -125,7 +125,7 @@ func TestPersistedStatus_CookstyleOverridesDerivation(t *testing.T) {
 		CookstyleStatus:        "unknown", // persisted — analysis had reason
 	}
 
-	got := deriveCheckStatus(nr)
+	got := deriveCheckStatus(nr, "/hab")
 
 	if got.CookstyleStatus != "unknown" {
 		t.Errorf("CookstyleStatus = %q, want %q (persisted value)", got.CookstyleStatus, "unknown")

@@ -263,6 +263,9 @@ type ReadinessEvaluator struct {
 	installSizeMBLinux      int
 	installSizeMBWindows    int
 	minRemainingFreePercent int
+	// configFn, when set, returns the current readiness config dynamically.
+	// This allows the evaluator to pick up config changes without a restart.
+	configFn func() ReadinessEvalConfig
 }
 
 // ReadinessEvaluatorOption configures a ReadinessEvaluator.
@@ -271,6 +274,12 @@ type ReadinessEvaluatorOption func(*ReadinessEvaluator)
 // WithReadinessDataStore overrides the datastore (for testing).
 func WithReadinessDataStore(ds ReadinessDataStore) ReadinessEvaluatorOption {
 	return func(e *ReadinessEvaluator) { e.db = ds }
+}
+
+// WithConfigFunc sets a dynamic config provider. When set, the evaluator
+// reads readiness config on each evaluation rather than using baked-in values.
+func WithConfigFunc(fn func() ReadinessEvalConfig) ReadinessEvaluatorOption {
+	return func(e *ReadinessEvaluator) { e.configFn = fn }
 }
 
 // NewReadinessEvaluator creates an evaluator.
@@ -523,11 +532,12 @@ func (e *ReadinessEvaluator) evaluateOne(
 			// Dual threshold: (1) absolute size and (2) remaining free %.
 			absoluteOK := availMB >= requiredMB
 			percentOK := true
-			if totalMB > 0 && e.minRemainingFreePercent > 0 {
+			minPct := e.getMinRemainingFreePercent()
+			if totalMB > 0 && minPct > 0 {
 				remainingAfterInstallKB := (int64(availMB) - int64(requiredMB)) * 1024
 				totalKB := int64(totalMB) * 1024
 				pctRemaining := float64(remainingAfterInstallKB) / float64(totalKB) * 100
-				percentOK = pctRemaining >= float64(e.minRemainingFreePercent)
+				percentOK = pctRemaining >= float64(minPct)
 			}
 			sufficient := absoluteOK && percentOK
 			result.SufficientDiskSpace = &sufficient
@@ -997,6 +1007,13 @@ func (e *ReadinessEvaluator) evaluateDiskSpace(snapshot datastore.NodeSnapshot) 
 
 // installPathForPlatform returns the configured install path for the platform.
 func (e *ReadinessEvaluator) installPathForPlatform(platform string) string {
+	if e.configFn != nil {
+		cfg := e.configFn()
+		if strings.ToLower(platform) == "windows" {
+			return cfg.InstallPathWindows
+		}
+		return cfg.InstallPathLinux
+	}
 	if strings.ToLower(platform) == "windows" {
 		return e.installPathWindows
 	}
@@ -1005,10 +1022,25 @@ func (e *ReadinessEvaluator) installPathForPlatform(platform string) string {
 
 // installSizeForPlatform returns the required install size in MB for the platform.
 func (e *ReadinessEvaluator) installSizeForPlatform(platform string) int {
+	if e.configFn != nil {
+		cfg := e.configFn()
+		if strings.ToLower(platform) == "windows" {
+			return cfg.InstallSizeMBWindows
+		}
+		return cfg.InstallSizeMBLinux
+	}
 	if strings.ToLower(platform) == "windows" {
 		return e.installSizeMBWindows
 	}
 	return e.installSizeMBLinux
+}
+
+// getMinRemainingFreePercent returns the current buffer percentage threshold.
+func (e *ReadinessEvaluator) getMinRemainingFreePercent() int {
+	if e.configFn != nil {
+		return e.configFn().MinRemainingFreePercent
+	}
+	return e.minRemainingFreePercent
 }
 
 // parseFilesystemAttribute parses the automatic.filesystem JSONB into a map
