@@ -155,29 +155,13 @@ function DiskRow({
         className={canExpand ? "cursor-pointer hover:bg-gray-50" : ""}
         onClick={() => canExpand && setExpanded((prev) => !prev)}
       >
-        <td className="font-mono">
-          {canExpand && (
-            <span className="mr-1 inline-block w-3 text-gray-400">
-              {expanded ? "▾" : "▸"}
-            </span>
-          )}
-          {disk.mount}
-          {canExpand && inodePressure(disk) && (
-            <span
-              className="ml-1.5 text-amber-500"
-              title="Free inodes below 70%"
-            >
-              ⚠
-            </span>
-          )}
-        </td>
-        <td className="font-mono">{disk.device}</td>
-        <td>{disk.fs_type}</td>
-        <td>{formatKB(disk.kb_size)}</td>
-        <td>{formatKB(disk.kb_used)}</td>
-        <td>{formatKB(disk.kb_available)}</td>
         <td>
           <div className="flex items-center gap-2">
+            {canExpand && (
+              <span className="inline-block w-3 text-gray-400">
+                {expanded ? "▾" : "▸"}
+              </span>
+            )}
             <div className="h-2 w-16 overflow-hidden rounded-full bg-gray-200">
               <div
                 className={`h-full rounded-full transition-all ${percentBarColor(pct)}`}
@@ -189,6 +173,22 @@ function DiskRow({
             </span>
           </div>
         </td>
+        <td className="font-mono max-w-[300px] truncate" title={disk.mount}>
+          {disk.mount}
+          {canExpand && inodePressure(disk) && (
+            <span
+              className="ml-1.5 text-amber-500"
+              title="Free inodes below 70%"
+            >
+              ⚠
+            </span>
+          )}
+        </td>
+        <td className="font-mono max-w-[200px] truncate" title={disk.device}>{disk.device}</td>
+        <td>{disk.fs_type}</td>
+        <td>{formatKB(disk.kb_size)}</td>
+        <td>{formatKB(disk.kb_used)}</td>
+        <td>{formatKB(disk.kb_available)}</td>
         {showWindows && (
           <>
             <td>{disk.drive_type ?? "—"}</td>
@@ -336,6 +336,13 @@ export function NodeDiskDetailPage() {
                 <thead>
                   <tr>
                     <SortableColumnHeader
+                      label="% Used"
+                      field="percent_used"
+                      currentField={sortField}
+                      currentOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <SortableColumnHeader
                       label="Mount Point"
                       field="mount"
                       currentField={sortField}
@@ -373,13 +380,6 @@ export function NodeDiskDetailPage() {
                     <SortableColumnHeader
                       label="Available"
                       field="kb_available"
-                      currentField={sortField}
-                      currentOrder={sortOrder}
-                      onSort={handleSort}
-                    />
-                    <SortableColumnHeader
-                      label="% Used"
-                      field="percent_used"
                       currentField={sortField}
                       currentOrder={sortOrder}
                       onSort={handleSort}
