@@ -24,10 +24,14 @@
 - Before starting work, create a plan in `plans/<task>.md`.
 - Plans are short: goal, which specs to read, ordered steps, and acceptance criteria.
 - Delete the plan when the work is done. Git is the history.
+- **Chunking for context management**: Split plans into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
+- **Session boundaries**: One chunk = one session/thread. Do not carry context pollution from prior chunks — start each chunk fresh by reading only the plan and relevant specs.
 
 ## Quality Maintenance
 
 - Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status.
+- **Context pollution checks**: After every 3-4 tool calls, assess whether accumulated context is still relevant. If the conversation has drifted into debugging a tangent or contains large blocks of superseded output, suggest the user start a fresh thread for the next chunk.
+- **Signal a fresh thread** when: (a) the current chunk is complete, (b) context is >50% stale/irrelevant, or (c) the task has shifted scope significantly from the original plan.
 - Always update todos when items are completed or blocked to avoid losing context.
 
 ## File Format
