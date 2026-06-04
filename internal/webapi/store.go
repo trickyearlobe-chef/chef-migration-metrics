@@ -94,6 +94,11 @@ type DataStore interface {
 	// node counts for the given collection run.
 	CountStaleFreshByCollectionRun(ctx context.Context, collectionRunID string) (total, stale, fresh int, err error)
 
+	// CountNodesByDeploymentVersion returns per-version deployment state
+	// counts (staged, activated, converge_passing, converge_failing) for
+	// nodes matching the given filter. Also returns total node count.
+	CountNodesByDeploymentVersion(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.DeploymentVersionRow, int, error)
+
 	// -----------------------------------------------------------------
 	// Metric snapshots
 	// -----------------------------------------------------------------

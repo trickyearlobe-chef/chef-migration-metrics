@@ -523,6 +523,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend)
 	r.protect("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend)
 	r.protect("/api/v1/dashboard/deployment/trend", r.handleDashboardDeploymentTrend)
+	r.protect("/api/v1/dashboard/deployment/status", r.handleDashboardDeploymentStatus)
 	r.protect("/api/v1/dashboard/platform-distribution", r.handleDashboardPlatformDistribution)
 	r.protect("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility)
 	r.protect("/api/v1/dashboard/git-repo-compatibility", r.handleDashboardGitRepoCompatibility)

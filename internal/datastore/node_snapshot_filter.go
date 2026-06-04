@@ -784,6 +784,72 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 	return cte, join, where, args
 }
 
+// DeploymentVersionRow holds per-version deployment state counts from a live
+// GROUP BY query on node_snapshots.
+type DeploymentVersionRow struct {
+	Version         string
+	Staged          int
+	Activated       int
+	ConvergePassing int
+	ConvergeFailing int
+}
+
+// CountNodesByDeploymentVersion returns per-version deployment state counts
+// for nodes matching the given filter. Only nodes with migration_state
+// 'hab_dormant' or 'hab_active' (and a non-empty deployed version) are
+// included. Also returns totalNodes (all nodes in filter, regardless of state).
+func (db *DB) CountNodesByDeploymentVersion(ctx context.Context, f NodeSnapshotFilter) ([]DeploymentVersionRow, int, error) {
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
+
+	// Total nodes (all states).
+	totalQuery := fmt.Sprintf(`%s SELECT COUNT(*) FROM current_nodes cn %s%s`, cte, join, where)
+	var totalNodes int
+	if err := db.pool.QueryRowContext(ctx, totalQuery, args...).Scan(&totalNodes); err != nil {
+		return nil, 0, fmt.Errorf("datastore: counting total nodes for deployment version: %w", err)
+	}
+
+	// Per-version deployment breakdown.
+	query := fmt.Sprintf(`%s
+		SELECT
+		  CASE WHEN cn.migration_state = 'hab_dormant' THEN cn.dormant_chef_version
+		       WHEN cn.migration_state = 'hab_active' THEN cn.active_chef_version
+		  END AS deployed_version,
+		  COUNT(*) FILTER (WHERE cn.migration_state = 'hab_dormant') AS staged,
+		  COUNT(*) FILTER (WHERE cn.migration_state = 'hab_active') AS activated,
+		  COUNT(*) FILTER (WHERE cn.target_converge_status = 'success') AS converge_passing,
+		  COUNT(*) FILTER (WHERE cn.target_converge_status = 'fail') AS converge_failing
+		FROM current_nodes cn
+		%s%s
+		  AND cn.migration_state IN ('hab_dormant', 'hab_active')
+		  AND COALESCE(
+		    CASE WHEN cn.migration_state = 'hab_dormant' THEN cn.dormant_chef_version
+		         WHEN cn.migration_state = 'hab_active' THEN cn.active_chef_version
+		    END, '') != ''
+		GROUP BY deployed_version
+		ORDER BY (COUNT(*)) DESC, deployed_version ASC
+	`, cte, join, where)
+
+	rows, err := db.pool.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("datastore: counting deployment version distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var result []DeploymentVersionRow
+	for rows.Next() {
+		var r DeploymentVersionRow
+		if err := rows.Scan(&r.Version, &r.Staged, &r.Activated, &r.ConvergePassing, &r.ConvergeFailing); err != nil {
+			return nil, 0, fmt.Errorf("datastore: scanning deployment version row: %w", err)
+		}
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("datastore: iterating deployment version rows: %w", err)
+	}
+
+	return result, totalNodes, nil
+}
+
 // splitCSV splits a comma-separated string into trimmed non-empty values.
 func splitCSV(s string) []string {
 	parts := strings.Split(s, ",")
