@@ -1030,6 +1030,26 @@ export function AdminTestKitchenPage() {
                 )}
               </div>
 
+              {/* IP-release pre_destroy hook (opt-in spike, default off) */}
+              <div className="mb-3">
+                <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={img.release_ip_on_destroy === true}
+                    onChange={(e) =>
+                      updateImage(idx, { release_ip_on_destroy: e.target.checked })
+                    }
+                    disabled={saving}
+                    className="rounded border-gray-300"
+                  />
+                  Release the DHCP lease on teardown (best-effort)
+                </label>
+                <p className="mt-1 text-xs text-gray-400">
+                  Spike: enable only on images confirmed to release the lease without
+                  failing the run. The VM start-rate limiter is the pool-exhaustion guarantee.
+                </p>
+              </div>
+
               {/* Chef Download URLs */}
               <div className="mb-3">
                 <label className="mb-1 block text-xs font-medium text-gray-600">

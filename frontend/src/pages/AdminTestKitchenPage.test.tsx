@@ -247,6 +247,32 @@ describe("AdminTestKitchenPage — Platform Map Section", () => {
     expect(saved.start_rate_max_per_window).toBe(25);
   });
 
+  it("opts an image in to IP-release on teardown and saves the flag", async () => {
+    const user = userEvent.setup();
+    vi.mocked(saveTestKitchenConfig).mockResolvedValue({
+      value: defaultConfig,
+      restartRequired: false,
+    });
+
+    render(<AdminTestKitchenPage />);
+
+    const checkboxes = await screen.findAllByLabelText(
+      /Release the DHCP lease on teardown/,
+    );
+    // Default off for the first image.
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
+
+    await user.click(checkboxes[0]);
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(saveTestKitchenConfig).toHaveBeenCalled();
+    });
+    const saved = vi.mocked(saveTestKitchenConfig).mock.calls[0][0];
+    expect(saved.images[0].release_ip_on_destroy).toBe(true);
+    expect(saved.images[1].release_ip_on_destroy).not.toBe(true);
+  });
+
   it("shows empty state when no platforms discovered", async () => {
     vi.mocked(fetchPlatformMappingStatus).mockResolvedValue({
       discovered_platforms: [],

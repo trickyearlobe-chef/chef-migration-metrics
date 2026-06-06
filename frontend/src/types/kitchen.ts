@@ -14,6 +14,12 @@ export interface ImageEntry {
   chef_download_urls?: Record<string, string>;
   install_method?: "download" | "baked_in";
   chef_client_path?: string;
+  /**
+   * Opt in to the best-effort IP-release pre_destroy hook (default off).
+   * Spike — enable only where confirmed to release the DHCP lease without
+   * abending the run. The VM start-rate limiter, not this, is the guarantee.
+   */
+  release_ip_on_destroy?: boolean;
 }
 
 export interface PlatformMapEntry {
