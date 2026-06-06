@@ -14,6 +14,12 @@ export interface ImageEntry {
   chef_download_urls?: Record<string, string>;
   install_method?: "download" | "baked_in";
   chef_client_path?: string;
+  /**
+   * Opt in to the best-effort IP-release pre_destroy hook (default off).
+   * Spike — enable only where confirmed to release the DHCP lease without
+   * abending the run. The VM start-rate limiter, not this, is the guarantee.
+   */
+  release_ip_on_destroy?: boolean;
 }
 
 export interface PlatformMapEntry {
@@ -34,6 +40,10 @@ export interface TestKitchenConfig {
   chef_license_key_credential: string;
   images: ImageEntry[];
   platform_map: PlatformMapEntry[];
+  /** VM start-rate limiter window in minutes (= DHCP lease time). 0 disables. */
+  start_rate_window_minutes: number;
+  /** Max VM starts per window (= usable DHCP pool size). 0 disables. */
+  start_rate_max_per_window: number;
 }
 
 export interface DiscoveredPlatformStatus {
@@ -124,7 +134,6 @@ export interface KitchenBatch {
   name: string;
   filters: BatchFilters;
   max_count: number | null;
-  max_concurrent_vms: number | null;
   dry_run: boolean;
   status: "draft" | "previewing" | "preparing" | "running" | "completed" | "cancelled" | "failed";
   created_by?: string;

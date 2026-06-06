@@ -187,6 +187,49 @@ func TestRunInstance_OverlayGenerated(t *testing.T) {
 	}
 }
 
+func TestRunInstance_IPReleaseHook_ComposesRepoPreDestroy(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	// Cookbook ships its own pre_destroy hook in .kitchen.yml.
+	kitchenYML := "lifecycle:\n  pre_destroy:\n    - remote: echo repo-teardown\n"
+	if err := os.WriteFile(filepath.Join(repoDir, ".kitchen.yml"), []byte(kitchenYML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tkConfig := baseTKConfig()
+	tkConfig.Images[0].ReleaseIPOnDestroy = true
+
+	exec := &mockExecutor{exitCode: 0}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	RunInstance(context.Background(), baseParams(repoDir), tkConfig, exec, cred)
+
+	overlay, ok := exec.capturedFiles[".kitchen.local.yml"]
+	if !ok {
+		t.Fatal("overlay was not written in workspace")
+	}
+	repoIdx := strings.Index(overlay, "repo-teardown")
+	cmmIdx := strings.Index(overlay, "dhclient")
+	if repoIdx < 0 || cmmIdx < 0 {
+		t.Fatalf("expected composed pre_destroy with repo hook + release command, got:\n%s", overlay)
+	}
+	if repoIdx > cmmIdx {
+		t.Errorf("expected repo hook before injected release, got:\n%s", overlay)
+	}
+}
+
+func TestRunInstance_IPReleaseHook_OffByDefault(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	exec := &mockExecutor{exitCode: 0}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	overlay := exec.capturedFiles[".kitchen.local.yml"]
+	if strings.Contains(overlay, "pre_destroy:") {
+		t.Errorf("expected no pre_destroy hook when opt-in is off, got:\n%s", overlay)
+	}
+}
+
 func TestRunInstance_ExistingLocalOverride_Backed(t *testing.T) {
 	repoDir := setupRepoDir(t)
 	// Place an existing .kitchen.local.yml in the repo

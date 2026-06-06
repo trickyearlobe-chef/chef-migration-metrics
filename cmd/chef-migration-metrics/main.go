@@ -1176,8 +1176,19 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 				return app.configHolder.Get().AnalysisTools.TestKitchen
 			},
 		})
+		// Global VM start-rate limiter. Reads window/max live from config on
+		// every wait, so on-site tuning takes effect with no restart. Disabled
+		// (pass-through) until both values are configured.
+		startLimiter := kitchenqueue.NewRateLimiter(func() (time.Duration, int) {
+			window, max, enabled := app.configHolder.Get().AnalysisTools.TestKitchen.StartRateLimit()
+			if !enabled {
+				return 0, 0
+			}
+			return window, max
+		})
 		app.kitchenQueue = kitchenqueue.New(app.db, gitExecutor,
 			kitchenqueue.WithWorkerCount(app.cfg.AnalysisTools.TestKitchen.EffectiveMaxConcurrentVMs()),
+			kitchenqueue.WithRateLimiter(startLimiter),
 			kitchenqueue.WithLogFunc(func(level, msg string, args ...any) {
 				formatted := fmt.Sprintf(msg, args...)
 				switch level {

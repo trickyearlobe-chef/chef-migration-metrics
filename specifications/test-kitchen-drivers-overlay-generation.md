@@ -56,6 +56,37 @@ Transport env var naming uses the **image name** (not the kitchen_name) since mu
 4. Remove `.kitchen.local.yml`.
 5. Clear environment variables and zero credential memory.
 
+## Lifecycle Hooks
+
+Test Kitchen merges `.kitchen.local.yml` over the cookbook's untouched `.kitchen.yml`. The overlay deep-merges hashes but **replaces arrays**. `lifecycle:` is a hash of phase → command array, so a phase the overlay defines (e.g. `pre_destroy`) replaces the cookbook's array for that same phase; phases the overlay does not mention are preserved unchanged.
+
+### Repo-provided setup hooks (preserve)
+
+Some cookbook repos rely on their own lifecycle hooks (setup scripts) in `.kitchen.yml` to provision the instance correctly — STUB, contract to be finalised. Requirements:
+
+- The overlay MUST NOT clobber lifecycle phases the cookbook defines that CMM does not need to inject. Only inject phases CMM owns (see below).
+- If CMM must inject a phase the cookbook also uses, the overlay MUST compose (append the cookbook's commands), not silently replace them — exact merge mechanism TBD (e.g. read existing `.kitchen.yml`, concatenate arrays before writing the overlay).
+- Document which phases CMM reserves vs. leaves to the repo.
+
+### App-injected IP-release hook (pre_destroy) — opt-in spike
+
+An *opportunistic optimisation* to return DHCP leases promptly across long scans (see `bulk-kitchen-scanning.md` § IP lease release on teardown). It is NOT the pool-exhaustion guarantee — the global VM start-rate limiter is. Unproven across a heterogeneous OS mix; treated as a spike requiring empirical validation before being relied upon. STUB — contract to be finalised:
+
+- **Opt-in per platform/image** (default off). Enabled only where it is confirmed to both release the lease *and* not abend the run. Configuration is **dynamic** (live accessor, no restart) — there will be on-site experimentation.
+- **Failure-isolated — the overriding requirement.** A non-zero Test Kitchen lifecycle hook aborts the action, so an otherwise-successful run would be marked failed and the VM + lease would leak (worse than doing nothing). Therefore the injected command MUST always exit 0 regardless of release success, a missing/variant release binary, or OS differences.
+- **Detached from the transport.** Releasing the IP can sever the SSH/WinRM link the hook runs over; the command must be detached (e.g. `setsid`/`nohup`, backgrounded, stdio redirected) so a dropped connection is never seen as a hook failure. Tradeoff: detaching races the hypervisor power-off — the DHCPRELEASE packet must leave the guest first; only empirically verifiable.
+- Runs remotely over the existing transport (`remote:`), not on the CMM host.
+- Per-platform command, OS family derived from the resolved image/platform entry. Linux has no single universal command (a mix of `dhclient` / `dhcpcd` / `networkctl` / `nmcli`) — the command must tolerate the absent ones; Windows uses `ipconfig /release`.
+- Relies on `kitchen destroy` being a hypervisor API call, not guest-network-dependent.
+- Composes with any repo-provided `pre_destroy` hook per the preservation rule above.
+
+```
+# injected into .kitchen.local.yml — illustrative, not final
+lifecycle:
+  pre_destroy:
+    - remote: <linux-or-windows IP release command for this platform>
+```
+
 ## Startup Validation
 
 | Condition | Check | Failure Behaviour |

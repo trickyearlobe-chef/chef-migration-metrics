@@ -241,6 +241,99 @@ func TestManager_BoundsConcurrency(t *testing.T) {
 	}
 }
 
+// recordingLimiter records the order of limiter waits against executor calls.
+type recordingLimiter struct {
+	mu    sync.Mutex
+	order *[]string
+	waits int
+}
+
+func (l *recordingLimiter) Wait(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	l.waits++
+	*l.order = append(*l.order, "wait")
+	l.mu.Unlock()
+	return nil
+}
+
+// orderRecordingExecutor appends "exec" to a shared order slice on each call.
+type orderRecordingExecutor struct {
+	mu    sync.Mutex
+	order *[]string
+}
+
+func (e *orderRecordingExecutor) Execute(ctx context.Context, item *datastore.KitchenQueueItem) (string, error) {
+	e.mu.Lock()
+	*e.order = append(*e.order, "exec")
+	e.mu.Unlock()
+	return "ok", nil
+}
+
+// TestManager_RateLimiterGatesBeforeExecute proves every VM start passes
+// through the limiter, and the wait precedes the executor call. A single worker
+// makes the interleaving deterministic.
+func TestManager_RateLimiterGatesBeforeExecute(t *testing.T) {
+	items := []*datastore.KitchenQueueItem{
+		{ID: "g-1", RunType: "git", Status: datastore.QueueStatusQueued, TargetChefVersion: "18"},
+		{ID: "g-2", RunType: "git", Status: datastore.QueueStatusQueued, TargetChefVersion: "18"},
+		{ID: "g-3", RunType: "git", Status: datastore.QueueStatusQueued, TargetChefVersion: "18"},
+	}
+	store := newMockStore(items...)
+	var order []string
+	exec := &orderRecordingExecutor{order: &order}
+	lim := &recordingLimiter{order: &order}
+
+	mgr := kitchenqueue.New(store, exec,
+		kitchenqueue.WithWorkerCount(1),
+		kitchenqueue.WithPollInterval(5*time.Millisecond),
+		kitchenqueue.WithRateLimiter(lim),
+	)
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for items to complete")
+		default:
+		}
+		done := true
+		for _, item := range items {
+			if store.getItem(item.ID).Status != datastore.QueueStatusCompleted {
+				done = false
+				break
+			}
+		}
+		if done {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mgr.Stop(5 * time.Second)
+
+	lim.mu.Lock()
+	waits := lim.waits
+	lim.mu.Unlock()
+	if waits != len(items) {
+		t.Fatalf("expected %d limiter waits, got %d", len(items), waits)
+	}
+
+	// Every "exec" must be immediately preceded by a "wait".
+	if len(order) != 2*len(items) {
+		t.Fatalf("expected %d order entries, got %d: %v", 2*len(items), len(order), order)
+	}
+	for i := 0; i < len(order); i += 2 {
+		if order[i] != "wait" || order[i+1] != "exec" {
+			t.Fatalf("expected wait/exec pairs, got %v at index %d", order, i)
+		}
+	}
+}
+
 func TestManager_FailedItems(t *testing.T) {
 	items := []*datastore.KitchenQueueItem{
 		{ID: "fail-1", RunType: "git", Status: datastore.QueueStatusQueued, TargetChefVersion: "18"},

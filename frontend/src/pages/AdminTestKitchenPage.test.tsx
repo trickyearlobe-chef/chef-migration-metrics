@@ -41,6 +41,8 @@ const defaultConfig = {
     { name: "ubuntu-tmpl", id: "tmpl-102", transport: null },
   ],
   platform_map: [],
+  start_rate_window_minutes: 0,
+  start_rate_max_per_window: 0,
 };
 
 const defaultMappingStatus = {
@@ -211,6 +213,64 @@ describe("AdminTestKitchenPage — Platform Map Section", () => {
 
     expect(screen.getByText("1 mapped")).toBeInTheDocument();
     expect(screen.getByText("2 unmapped")).toBeInTheDocument();
+  });
+
+  it("renders rate-limit fields from config and saves edited values", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchTestKitchenConfig).mockResolvedValue({
+      ...defaultConfig,
+      start_rate_window_minutes: 60,
+      start_rate_max_per_window: 25,
+    });
+    vi.mocked(saveTestKitchenConfig).mockResolvedValue({
+      value: defaultConfig,
+      restartRequired: false,
+    });
+
+    render(<AdminTestKitchenPage />);
+
+    const windowInput = await screen.findByLabelText(/Window \(minutes\)/);
+    const maxInput = screen.getByLabelText(/Max starts per window/);
+    expect((windowInput as HTMLInputElement).value).toBe("60");
+    expect((maxInput as HTMLInputElement).value).toBe("25");
+
+    await user.clear(windowInput);
+    await user.type(windowInput, "90");
+
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(saveTestKitchenConfig).toHaveBeenCalled();
+    });
+    const saved = vi.mocked(saveTestKitchenConfig).mock.calls[0][0];
+    expect(saved.start_rate_window_minutes).toBe(90);
+    expect(saved.start_rate_max_per_window).toBe(25);
+  });
+
+  it("opts an image in to IP-release on teardown and saves the flag", async () => {
+    const user = userEvent.setup();
+    vi.mocked(saveTestKitchenConfig).mockResolvedValue({
+      value: defaultConfig,
+      restartRequired: false,
+    });
+
+    render(<AdminTestKitchenPage />);
+
+    const checkboxes = await screen.findAllByLabelText(
+      /Release the DHCP lease on teardown/,
+    );
+    // Default off for the first image.
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
+
+    await user.click(checkboxes[0]);
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(saveTestKitchenConfig).toHaveBeenCalled();
+    });
+    const saved = vi.mocked(saveTestKitchenConfig).mock.calls[0][0];
+    expect(saved.images[0].release_ip_on_destroy).toBe(true);
+    expect(saved.images[1].release_ip_on_destroy).not.toBe(true);
   });
 
   it("shows empty state when no platforms discovered", async () => {

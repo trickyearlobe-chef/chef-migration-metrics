@@ -350,3 +350,109 @@ func TestGenerateOverlay_VCenterVMName(t *testing.T) {
 		t.Errorf("expected vm_name with cmm- prefix in vcenter overlay, got:\n%s", overlay)
 	}
 }
+
+// ipReleaseConfig builds a minimal proxmox config with one image whose
+// IP-release opt-in is controlled by the caller.
+func ipReleaseConfig(platform, image string, optIn bool) config.TestKitchenConfig {
+	return config.TestKitchenConfig{
+		Driver: "proxmox",
+		PlatformMap: []config.PlatformMapEntry{
+			{KitchenName: platform, Image: image},
+		},
+		Images: []config.ImageEntry{
+			{Name: image, ID: "tpl-" + image, ReleaseIPOnDestroy: optIn},
+		},
+	}
+}
+
+func TestGenerateOverlay_IPReleaseHook_DisabledByDefault(t *testing.T) {
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", false)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(overlay, "lifecycle:") || strings.Contains(overlay, "pre_destroy:") {
+		t.Errorf("expected no lifecycle hook when opt-in is off, got:\n%s", overlay)
+	}
+}
+
+func TestGenerateOverlay_IPReleaseHook_LinuxEnabled(t *testing.T) {
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", true)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"lifecycle:", "pre_destroy:", "remote:", "dhclient"} {
+		if !strings.Contains(overlay, want) {
+			t.Errorf("expected overlay to contain %q, got:\n%s", want, overlay)
+		}
+	}
+	// Failure isolation: command must always exit 0, be detached (&), and
+	// redirect stdio so a severed transport is never seen as a hook failure.
+	for _, want := range []string{"exit 0", " &", "/dev/null"} {
+		if !strings.Contains(overlay, want) {
+			t.Errorf("expected failure-isolated linux command to contain %q, got:\n%s", want, overlay)
+		}
+	}
+	// Must not be a Windows command.
+	if strings.Contains(overlay, "ipconfig") {
+		t.Errorf("did not expect windows release command for a linux platform, got:\n%s", overlay)
+	}
+}
+
+func TestGenerateOverlay_IPReleaseHook_Windows(t *testing.T) {
+	tkConfig := ipReleaseConfig("windows-2022", "win2022", true)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "windows-2022", TargetChefVersion: "18.4.2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(overlay, "ipconfig /release") {
+		t.Errorf("expected windows ipconfig release command, got:\n%s", overlay)
+	}
+	if !strings.Contains(overlay, "pre_destroy:") {
+		t.Errorf("expected pre_destroy hook for windows, got:\n%s", overlay)
+	}
+	if strings.Contains(overlay, "dhclient") {
+		t.Errorf("did not expect linux release command for a windows platform, got:\n%s", overlay)
+	}
+}
+
+func TestGenerateOverlay_IPReleaseHook_ComposesExistingPreDestroy(t *testing.T) {
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", true)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "ubuntu-2204",
+		TargetChefVersion: "18.4.2",
+		ExistingPreDestroy: []any{
+			map[string]any{"remote": "echo repo-setup-hook"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	repoIdx := strings.Index(overlay, "repo-setup-hook")
+	cmmIdx := strings.Index(overlay, "dhclient")
+	if repoIdx < 0 || cmmIdx < 0 {
+		t.Fatalf("expected both repo and CMM pre_destroy commands, got:\n%s", overlay)
+	}
+	// The cookbook's own hook must be preserved and run before CMM's release.
+	if repoIdx > cmmIdx {
+		t.Errorf("expected repo pre_destroy hook before the injected release, got:\n%s", overlay)
+	}
+}
+
+func TestGenerateOverlay_IPReleaseHook_OptInButNoMatch(t *testing.T) {
+	// Opt-in image but the platform does not resolve — no overlay, no panic.
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", true)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "centos-7", TargetChefVersion: "18.4.2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if overlay != "" {
+		t.Errorf("expected empty overlay for unmatched platform, got:\n%s", overlay)
+	}
+}

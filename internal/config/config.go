@@ -245,8 +245,10 @@ type TestKitchenConfig struct {
 	// Defaults to "cmm".
 	VMNamePrefix string `yaml:"vm_name_prefix" json:"vm_name_prefix"`
 
-	// MaxConcurrentVMs is the global ceiling on concurrent VMs across
-	// all batches. Defaults to 10.
+	// MaxConcurrentVMs is the global ceiling on concurrent VMs (the
+	// kitchen queue worker-pool size). Concurrency is global only — there
+	// is no per-batch concurrency. Defaults to DefaultMaxConcurrentVMs
+	// when unset (<= 0). Changes apply dynamically (no restart).
 	MaxConcurrentVMs int `yaml:"max_concurrent_vms" json:"max_concurrent_vms"`
 
 	// OrphanSweepIntervalMinutes controls how often the background
@@ -257,6 +259,18 @@ type TestKitchenConfig struct {
 	// OrphanSweepAgeMinutes is the minimum VM age before a VM is
 	// eligible for sweep destruction. 0 = default (2× timeout).
 	OrphanSweepAgeMinutes int `yaml:"orphan_sweep_age_minutes" json:"orphan_sweep_age_minutes"`
+
+	// StartRateWindowMinutes is the global VM start-rate limiter window, set to
+	// the DHCP lease time (e.g. 60, 90). With StartRateMaxPerWindow it bounds
+	// cumulative lease consumption: no more than max starts occur in any
+	// trailing window, charged for the full window regardless of early
+	// teardown. 0 (with either value unset) disables the limiter. Dynamic.
+	StartRateWindowMinutes int `yaml:"start_rate_window_minutes" json:"start_rate_window_minutes"`
+
+	// StartRateMaxPerWindow is the maximum VM starts allowed per window, set to
+	// the usable DHCP pool size (e.g. 25, 64). See StartRateWindowMinutes. 0
+	// disables the limiter. Dynamic.
+	StartRateMaxPerWindow int `yaml:"start_rate_max_per_window" json:"start_rate_max_per_window"`
 }
 
 // ImageEntry defines a single infrastructure image in the image registry.
@@ -293,6 +307,16 @@ type ImageEntry struct {
 	// is "baked_in" (e.g. "/usr/bin/chef-client", "/opt/chef/bin/chef-client").
 	// Ignored when InstallMethod is "download".
 	ChefClientPath string `yaml:"chef_client_path,omitempty" json:"chef_client_path,omitempty"`
+
+	// ReleaseIPOnDestroy opts this image in to the best-effort IP-release
+	// pre_destroy lifecycle hook (default off). When true, the generated
+	// overlay injects a failure-isolated, transport-detached DHCP release
+	// command (OS family derived from the platform name) so the lease is
+	// returned promptly on teardown. A spike — enable only on images where
+	// it is empirically confirmed to release the lease without abending the
+	// run. Dynamic (read live from config, no restart). See
+	// test-kitchen-drivers-overlay-generation.md § App-injected IP-release hook.
+	ReleaseIPOnDestroy bool `yaml:"release_ip_on_destroy,omitempty" json:"release_ip_on_destroy,omitempty"`
 }
 
 // EffectiveInstallMethod returns the install method for the image,
@@ -385,12 +409,30 @@ func (c TestKitchenConfig) EffectiveVMNamePrefix() string {
 	return "cmm"
 }
 
-// EffectiveMaxConcurrentVMs returns the configured max concurrent VMs or 4.
+// DefaultMaxConcurrentVMs is the conservative global ceiling on concurrent
+// kitchen VMs used when none is configured. Deliberately low because the
+// target environment is DHCP-pool constrained; raise it via config (applies
+// dynamically). The VM start-rate limiter, not this value, is the guarantee
+// against DHCP pool exhaustion.
+const DefaultMaxConcurrentVMs = 2
+
+// EffectiveMaxConcurrentVMs returns the configured max concurrent VMs, or
+// DefaultMaxConcurrentVMs when unset.
 func (c TestKitchenConfig) EffectiveMaxConcurrentVMs() int {
 	if c.MaxConcurrentVMs > 0 {
 		return c.MaxConcurrentVMs
 	}
-	return 4
+	return DefaultMaxConcurrentVMs
+}
+
+// StartRateLimit returns the global VM start-rate limiter parameters. enabled
+// is false unless both window and max are positive — a partial config cannot
+// bound anything, so the limiter stays off rather than guessing a value.
+func (c TestKitchenConfig) StartRateLimit() (window time.Duration, maxPerWindow int, enabled bool) {
+	if c.StartRateWindowMinutes <= 0 || c.StartRateMaxPerWindow <= 0 {
+		return 0, 0, false
+	}
+	return time.Duration(c.StartRateWindowMinutes) * time.Minute, c.StartRateMaxPerWindow, true
 }
 
 // EffectiveHypervisorType returns the hypervisor type — either explicitly
@@ -1392,6 +1434,16 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	}
 	if tk.MaxConcurrentVMs < 0 {
 		ve.add("analysis_tools.test_kitchen.max_concurrent_vms must be >= 0")
+	}
+	if tk.StartRateWindowMinutes < 0 {
+		ve.add("analysis_tools.test_kitchen.start_rate_window_minutes must be >= 0")
+	}
+	if tk.StartRateMaxPerWindow < 0 {
+		ve.add("analysis_tools.test_kitchen.start_rate_max_per_window must be >= 0")
+	}
+	if (tk.StartRateWindowMinutes > 0) != (tk.StartRateMaxPerWindow > 0) {
+		w.addf("analysis_tools.test_kitchen: start-rate limiter needs both " +
+			"start_rate_window_minutes and start_rate_max_per_window; only one is set, so the limiter is disabled")
 	}
 
 	// Image registry validation.
