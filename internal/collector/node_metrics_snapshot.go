@@ -144,7 +144,7 @@ func buildNodeMetricsPayload(input nodeMetricsInput) (json.RawMessage, error) {
 				}
 				if p.TargetConvergeStatus == "success" {
 					vb.ConvergePassing++
-				} else if p.TargetConvergeStatus == "fail" {
+				} else if p.TargetConvergeStatus == "failed" {
 					vb.ConvergeFailing++
 				}
 				payload.Deployment.ByVersion[deployedVersion] = vb

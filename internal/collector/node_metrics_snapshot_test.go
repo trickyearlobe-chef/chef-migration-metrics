@@ -431,7 +431,7 @@ func TestBuildNodeMetricsPayload_DeploymentCounts(t *testing.T) {
 	params := []datastore.InsertNodeSnapshotParams{
 		{NodeName: "omnibus", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "omnibus_only"},
 		{NodeName: "staged-pass", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", TargetConvergeStatus: "success"},
-		{NodeName: "staged-fail", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", TargetConvergeStatus: "fail"},
+		{NodeName: "staged-fail", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", TargetConvergeStatus: "failed"},
 		{NodeName: "activated", ChefVersion: "19.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", TargetConvergeStatus: "success"},
 		{NodeName: "no-migration", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix())},
 	}
@@ -475,7 +475,7 @@ func TestBuildNodeMetricsPayload_DeploymentByVersion_MultipleVersions(t *testing
 		// Version 19.3.5: 1 activated, converge pass
 		{NodeName: "n2", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", ActiveChefVersion: "19.3.5", TargetConvergeStatus: "success", TargetVersion: "19.3.5"},
 		// Version 19.3.15: 1 staged (dormant), converge fail
-		{NodeName: "n3", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.15", TargetConvergeStatus: "fail", TargetVersion: "19.3.15"},
+		{NodeName: "n3", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.15", TargetConvergeStatus: "failed", TargetVersion: "19.3.15"},
 		// Version 19.3.15: 1 staged (dormant), converge pass
 		{NodeName: "n4", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.15", TargetConvergeStatus: "success", TargetVersion: "19.3.15"},
 		// omnibus_only — not part of deployment
@@ -585,7 +585,7 @@ func TestBuildNodeMetricsPayload_DeploymentByVersion_SingleVersion(t *testing.T)
 
 	params := []datastore.InsertNodeSnapshotParams{
 		{NodeName: "n1", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.5", TargetConvergeStatus: "success", TargetVersion: "19.3.5"},
-		{NodeName: "n2", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.5", TargetConvergeStatus: "fail", TargetVersion: "19.3.5"},
+		{NodeName: "n2", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.5", TargetConvergeStatus: "failed", TargetVersion: "19.3.5"},
 		{NodeName: "n3", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", ActiveChefVersion: "19.3.5", TargetConvergeStatus: "success", TargetVersion: "19.3.5"},
 	}
 

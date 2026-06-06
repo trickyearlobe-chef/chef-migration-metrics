@@ -114,9 +114,9 @@ describe("ConvergeBadge", () => {
     expect(badge?.className).toContain("bg-green");
   });
 
-  it("renders fail badge with red styling", () => {
-    const { container } = render(<ConvergeBadge status="fail" />);
-    expect(screen.getByText("Fail")).toBeInTheDocument();
+  it("renders failed badge with red styling", () => {
+    const { container } = render(<ConvergeBadge status="failed" />);
+    expect(screen.getByText("Failed")).toBeInTheDocument();
     const badge = container.querySelector("span");
     expect(badge?.className).toContain("bg-red");
   });

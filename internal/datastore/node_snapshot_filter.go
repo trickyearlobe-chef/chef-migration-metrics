@@ -133,8 +133,12 @@ type NodeSnapshotFilter struct {
 	MigrationStates []string
 
 	// TargetConvergeStatuses filters by exact match on target_converge_status.
-	// Values: "success", "fail". Empty means no filter.
+	// Values: "success", "failed". Empty means no filter.
 	TargetConvergeStatuses []string
+
+	// TargetVersions filters by exact match on target_version column.
+	// Empty means no filter.
+	TargetVersions []string
 
 	// ReadyToActivate when true filters to nodes that are ready to activate
 	// (migration_state = 'hab_dormant' AND target_converge_status = 'success').
@@ -777,6 +781,10 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		where += " AND cn.target_converge_status = ANY(" + nextArg() + ")"
 		args = append(args, pq.Array(f.TargetConvergeStatuses))
 	}
+	if len(f.TargetVersions) > 0 {
+		where += " AND cn.target_version = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.TargetVersions))
+	}
 	if f.ReadyToActivate != nil && *f.ReadyToActivate {
 		where += " AND cn.migration_state = 'hab_dormant' AND cn.target_converge_status = 'success'"
 	}
@@ -817,7 +825,7 @@ func (db *DB) CountNodesByDeploymentVersion(ctx context.Context, f NodeSnapshotF
 		  COUNT(*) FILTER (WHERE cn.migration_state = 'hab_dormant') AS staged,
 		  COUNT(*) FILTER (WHERE cn.migration_state = 'hab_active') AS activated,
 		  COUNT(*) FILTER (WHERE cn.target_converge_status = 'success') AS converge_passing,
-		  COUNT(*) FILTER (WHERE cn.target_converge_status = 'fail') AS converge_failing
+		  COUNT(*) FILTER (WHERE cn.target_converge_status = 'failed') AS converge_failing
 		FROM current_nodes cn
 		%s%s
 		  AND cn.migration_state IN ('hab_dormant', 'hab_active')

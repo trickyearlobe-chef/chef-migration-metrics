@@ -1209,7 +1209,7 @@ func (n NodeData) TargetExecutionTime() string {
 }
 
 // TargetConvergeStatus returns the speculative converge result ("success" or
-// "fail"). Returns "" if not set.
+// "failed"). Returns "" if not set.
 func (n NodeData) TargetConvergeStatus() string {
 	m := n.chefMigration()
 	if m == nil {

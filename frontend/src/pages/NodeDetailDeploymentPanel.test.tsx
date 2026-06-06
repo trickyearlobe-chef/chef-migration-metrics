@@ -166,7 +166,7 @@ describe("NodeDetailPage — Deployment State Panel", () => {
         active_chef_version: "17.10.0",
         dormant_chef_version: "19.3.15",
         target_version: "19.3.15",
-        target_converge_status: "fail",
+        target_converge_status: "failed",
         target_execution_time: "2025-06-01T22:00:00Z",
       }),
     );
@@ -174,7 +174,7 @@ describe("NodeDetailPage — Deployment State Panel", () => {
     await waitFor(() =>
       expect(screen.getByText("Speculative Converge")).toBeInTheDocument(),
     );
-    expect(screen.getByText("Fail")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 
   it("shows 'Ready to Activate' callout when staged + converge success", async () => {
@@ -218,7 +218,7 @@ describe("NodeDetailPage — Deployment State Panel", () => {
         active_chef_version: "17.10.0",
         dormant_chef_version: "19.3.15",
         target_version: "19.3.15",
-        target_converge_status: "fail",
+        target_converge_status: "failed",
         target_execution_time: "2025-06-01T22:00:00Z",
       }),
     );

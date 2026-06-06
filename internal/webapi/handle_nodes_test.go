@@ -740,15 +740,15 @@ func TestBuildNodeResp_MigrationFields_Staged(t *testing.T) {
 		OrganisationName:     "org1",
 		NodeName:             "node2",
 		MigrationState:       "hab_dormant",
-		TargetConvergeStatus: "fail",
+		TargetConvergeStatus: "failed",
 		CollectedAt:          time.Now(),
 	}
 	resp := r.buildNodeResp(n, nil, nil)
 	if resp.MigrationState != "Staged" {
 		t.Errorf("expected 'Staged', got %q", resp.MigrationState)
 	}
-	if resp.TargetConvergeStatus != "fail" {
-		t.Errorf("expected 'fail', got %q", resp.TargetConvergeStatus)
+	if resp.TargetConvergeStatus != "failed" {
+		t.Errorf("expected 'failed', got %q", resp.TargetConvergeStatus)
 	}
 	if resp.ReadyToActivate {
 		t.Error("expected ReadyToActivate false when converge failed")

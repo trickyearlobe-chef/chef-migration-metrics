@@ -575,6 +575,9 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 	if tcs := q.Get("target_converge_status"); tcs != "" {
 		f.TargetConvergeStatuses = strings.Split(tcs, ",")
 	}
+	if tv := q.Get("target_version"); tv != "" {
+		f.TargetVersions = strings.Split(tv, ",")
+	}
 	if rta := q.Get("ready_to_activate"); rta == "true" {
 		v := true
 		f.ReadyToActivate = &v

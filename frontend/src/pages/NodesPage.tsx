@@ -53,7 +53,7 @@ const DEPLOYMENT_STATE_OPTIONS: { value: string; label: string }[] = [
 
 const CONVERGE_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "success", label: "Success" },
-  { value: "fail", label: "Fail" },
+  { value: "failed", label: "Failed" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -100,8 +100,15 @@ export function NodesPage() {
   );
   const [cookstyleFilter, setCookstyleFilter] = useState<string[]>([]);
   const [kitchenFilter, setKitchenFilter] = useState<string[]>([]);
-  const [deploymentStateFilter, setDeploymentStateFilter] = useState<string[]>([]);
-  const [convergeStatusFilter, setConvergeStatusFilter] = useState<string[]>([]);
+  const [deploymentStateFilter, setDeploymentStateFilter] = useState<string[]>(
+    searchParams.get("migration_state")?.split(",").filter(Boolean) ?? [],
+  );
+  const [convergeStatusFilter, setConvergeStatusFilter] = useState<string[]>(
+    searchParams.get("target_converge_status")?.split(",").filter(Boolean) ?? [],
+  );
+  const [targetVersionFilter, setTargetVersionFilter] = useState<string[]>(
+    searchParams.get("target_version")?.split(",").filter(Boolean) ?? [],
+  );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -139,7 +146,9 @@ export function NodesPage() {
       searchParams.has("environment") ||
       searchParams.has("role") ||
       searchParams.has("policy_name") ||
-      searchParams.has("policy_group")
+      searchParams.has("policy_group") ||
+      searchParams.has("migration_state") ||
+      searchParams.has("target_converge_status")
     ) {
       setSearchParams({}, { replace: true });
     }
@@ -210,6 +219,8 @@ export function NodesPage() {
       filters.migration_state = deploymentStateFilter.join(",");
     if (convergeStatusFilter.length > 0)
       filters.target_converge_status = convergeStatusFilter.join(",");
+    if (targetVersionFilter.length > 0)
+      filters.target_version = targetVersionFilter.join(",");
 
     fetchNodes(filters)
       .then((res) => {
@@ -233,6 +244,7 @@ export function NodesPage() {
     kitchenFilter,
     deploymentStateFilter,
     convergeStatusFilter,
+    targetVersionFilter,
     selectedTargetVersion,
     page,
     sortField,
@@ -279,7 +291,8 @@ export function NodesPage() {
     (cookstyleFilter.length > 0 ? 1 : 0) +
     (kitchenFilter.length > 0 ? 1 : 0) +
     (deploymentStateFilter.length > 0 ? 1 : 0) +
-    (convergeStatusFilter.length > 0 ? 1 : 0);
+    (convergeStatusFilter.length > 0 ? 1 : 0) +
+    (targetVersionFilter.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNodeName("");
@@ -294,6 +307,7 @@ export function NodesPage() {
     setKitchenFilter([]);
     setDeploymentStateFilter([]);
     setConvergeStatusFilter([]);
+    setTargetVersionFilter([]);
   };
 
   // Readiness filtering is now handled server-side via readiness_filter and

@@ -533,9 +533,9 @@ export function ConvergeBadge({
       variant = "ready";
       label = "Success";
       break;
-    case "fail":
+    case "failed":
       variant = "blocked";
-      label = "Fail";
+      label = "Failed";
       break;
     default:
       variant = "unknown";
