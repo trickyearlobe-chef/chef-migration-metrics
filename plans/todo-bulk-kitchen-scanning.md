@@ -17,13 +17,14 @@ No wiring, cancellation, progress-endpoint, or restart-resilience work remains.
 - [x] Resolve global default inconsistency (comment "10" vs `EffectiveMaxConcurrentVMs` 4) — `DefaultMaxConcurrentVMs = 2`, comment matches code
 - [x] Confirm global concurrency change is dynamic — `SetWorkerCount` scale up/down tested; live-config wiring in `handle_admin_config_analysis.go`
 
-## VM start-rate limiter (active — Chunk 2, core deliverable)
+## VM start-rate limiter (Chunk 2 — DONE)
 
-- [ ] TDD global rate limiter: sliding window, evenly paced (min inter-start gap ≈ window/max)
-- [ ] Config `window` (= DHCP lease time) + `max_starts_per_window` (= pool size); both dynamic (live accessor, no restart)
-- [ ] Gate VM start at the worker layer before boot; counts starts, charges full window regardless of early finish/release
-- [ ] Limiter is independent of IP release working (hard worst-case guarantee)
-- [ ] Confirm: single global window/max, or per-scope if subnets differ in lease time / pool size (open question)
+- [x] TDD global rate limiter: sliding window, evenly paced (min inter-start gap ≈ window/max) — `ratelimiter.go`
+- [x] Config `window` + `max_starts_per_window`; both dynamic (live accessor, no restart) — disabled unless both > 0
+- [x] Gate VM start at the worker layer before boot; counts starts, charges full window regardless of early finish/release
+- [x] Limiter is independent of IP release working (hard worst-case guarantee)
+- [x] Confirmed: single global window/max. Per-scope deferred (see active.md open questions)
+- [x] Admin TK config UI exposes window + max-per-window
 
 ## Orphan Sweep
 
@@ -75,7 +76,7 @@ empirically on customer OS mix before relying on it.
 
 ## Tests
 
-- [ ] Unit tests for rate limiter — never exceeds max per trailing window; paced gap; dynamic window/max change mid-run
+- [x] Unit tests for rate limiter — never exceeds max per trailing window; paced gap; dynamic window/max change mid-run; ctx cancel; disabled pass-through (`ratelimiter_test.go`, `manager_test.go` gate test)
 - [ ] Unit tests for global concurrency dynamic change (`SetWorkerCount` on live config)
 - [ ] Unit tests for orphan sweep — scoping rules (folder, prefix, age threshold)
 - [ ] Unit tests for overlay lifecycle-hook composition — repo hooks preserved, CMM `pre_destroy` injected, arrays merged not clobbered

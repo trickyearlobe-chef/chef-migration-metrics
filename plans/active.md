@@ -15,19 +15,20 @@ Note: Run→Scheduler wiring is already implemented (queue-based). No wiring wor
 - `DefaultMaxConcurrentVMs = 2` single source of truth; comment fixed.
 - Dynamic worker-count already wired + tested.
 
-## Chunk 2 — VM start-rate limiter (core deliverable) — NEXT
+## Chunk 2 — VM start-rate limiter (core deliverable) — DONE
 
-Scope: `internal/kitchenqueue/` (worker layer), `internal/config/config.go`, admin TK config UI.
-Depends on: nothing.
-- TDD a global rate limiter: sliding window, evenly paced (min inter-start gap ≈ window/max).
-  Config: `window` (= lease time) + `max_starts_per_window` (= pool size). Both dynamic.
-- Gate VM start at the worker, before boot: if starts-in-trailing-window ≥ max, wait.
-- Counts starts, charges full window regardless of early finish/release (worst-case guarantee).
-- Read params via live accessor each cycle — never cache at construction.
-Acceptance (tests): never exceeds max starts in any trailing window; paced gap enforced;
-window/max change mid-run takes effect; limiter independent of IP-release working.
-Open question to confirm before build: single global window/max, or per-scope (if the
-customer's subnets have different lease times / pool sizes)?
+Decision: single global window/max (per-scope deferred to backlog).
+Delivered:
+- `internal/kitchenqueue/ratelimiter.go` — global sliding-window + even-pacing limiter
+  (`RateLimiter`), live config accessor read each `Wait`, charges full window, lock-serialised
+  decision-and-record. Tests in `ratelimiter_test.go` (virtual clock).
+- `manager.go` — `WithRateLimiter` option + `StartLimiter` gate in `worker` after claim,
+  before boot; `m.ctx` cancelled on `Stop` to unblock a waiting worker. Test in `manager_test.go`.
+- `config.go` — `StartRateWindowMinutes` + `StartRateMaxPerWindow` (both dynamic, disabled
+  unless both > 0), `StartRateLimit()` accessor, non-negative + partial-config validation.
+- `main.go` — live limiter wired into `kitchenqueue.New` via `configHolder.Get()`.
+- Admin TK config UI: rate-limit section in `AdminTestKitchenPage.tsx` + `TestKitchenConfig`
+  type/test fixtures; handler-level validation in `handle_admin_config_analysis.go`.
 
 ## Chunk 3 — IP-release pre_destroy hook (spike, AFTER chunk 2)
 
@@ -44,4 +45,6 @@ and never blocks destroy (tests with simulated hook failure).
 
 - TK lifecycle-hook failure semantics for the installed kitchen version (does a non-zero
   `remote:` hook abort? does a transport drop count as failure?) — verify, don't assume.
-- Per-scope rate limiting (see Chunk 2).
+- Per-scope rate limiting — deferred. Single global limiter shipped (Chunk 2). Revisit only
+  if the customer's subnets prove to have materially different lease times / pool sizes;
+  would need an instance→scope mapping that does not exist yet.
