@@ -6,7 +6,7 @@
 -- every row. These indexes allow Postgres to efficiently evaluate the
 -- filter predicates directly.
 --
--- See: .claude/specifications/sql-filter-pushdown.md
+-- See: specifications/server-side-pagination.md
 -- =============================================================================
 
 -- GIN index on the roles JSONB column to support the EXISTS subquery

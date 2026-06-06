@@ -10,7 +10,7 @@
 # lay it down on fresh install and never overwrite operator edits on upgrade.
 # No seeding logic is needed here — the package manager handles it.
 #
-# See: .claude/specifications/packaging/Specification.md § 2.6
+# See: specifications/packaging.md § 2.6
 # =============================================================================
 
 set -e

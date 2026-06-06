@@ -113,6 +113,9 @@ tags
 .zed/*
 !.zed/settings.json
 
+# Claude Code — ignore the entire local Claude Code working directory
+.claude/
+
 # =============================================================================
 # Operating System
 # =============================================================================

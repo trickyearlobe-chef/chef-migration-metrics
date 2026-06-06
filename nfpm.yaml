@@ -13,7 +13,7 @@
 #   VERSION=1.2.3 ARCH=amd64 nfpm package --packager rpm --target build/
 #   VERSION=1.2.3 ARCH=amd64 nfpm package --packager deb --target build/
 #
-# See: .claude/specifications/packaging/Specification.md § 9
+# See: specifications/packaging.md § 9
 # yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
 # =============================================================================
 
