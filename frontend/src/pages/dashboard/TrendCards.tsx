@@ -506,11 +506,55 @@ export function DeploymentTrendCard({
 
     if (sorted.length === 0) return [];
 
+    // If per-version data is available, render per-version series.
+    const hasPerVersion = sorted.some((pt) => pt.by_version && Object.keys(pt.by_version).length > 0);
+
+    if (hasPerVersion) {
+      const versions = new Set<string>();
+      for (const pt of sorted) {
+        if (pt.by_version) {
+          for (const v of Object.keys(pt.by_version)) versions.add(v);
+        }
+      }
+
+      const colours = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"];
+      const series: TrendSeries[] = [];
+      let idx = 0;
+
+      for (const version of [...versions].sort()) {
+        const colour = colours[idx % colours.length];
+        idx++;
+        series.push(
+          {
+            key: `deployed-${version}`,
+            label: `${version} Staged/Activated`,
+            colour,
+            data: sorted.map((pt) => ({
+              timestamp: pt.completed_at,
+              value: pt.by_version?.[version]?.staged_or_activated ?? 0,
+            })),
+          },
+          {
+            key: `converge-${version}`,
+            label: `${version} Converge Passing`,
+            colour: colour + "80", // semi-transparent variant
+            data: sorted.map((pt) => ({
+              timestamp: pt.completed_at,
+              value: pt.by_version?.[version]?.converge_passing ?? 0,
+            })),
+          },
+        );
+      }
+
+      return series;
+    }
+
+    // Fallback: aggregate series (backward-compat).
     return [
       {
         key: "staged-or-activated",
         label: "Staged or Activated",
-        colour: "#3b82f6", // blue-500
+        colour: "#3b82f6",
         data: sorted.map((pt) => ({
           timestamp: pt.completed_at,
           value: pt.staged_or_activated,
@@ -519,7 +563,7 @@ export function DeploymentTrendCard({
       {
         key: "converge-passing",
         label: "Speculative Converge Passing",
-        colour: "#22c55e", // green-500
+        colour: "#22c55e",
         data: sorted.map((pt) => ({
           timestamp: pt.completed_at,
           value: pt.converge_passing,
