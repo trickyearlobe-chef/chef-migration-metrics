@@ -11,11 +11,11 @@ cancel-func map + `handleCancelKitchenBatch` stops in-flight work; `GET …/prog
 `batch_progress`/`batch_complete` events; startup `CancelStaleBatches` restart recovery.
 No wiring, cancellation, progress-endpoint, or restart-resilience work remains.
 
-## Concurrency cleanup (active — Chunk 1)
+## Concurrency cleanup (Chunk 1 — DONE)
 
-- [ ] Remove per-batch `max_concurrent_vms` from data model, API/handlers, and batch UI (dead knob; concurrency is global only)
-- [ ] Resolve global default inconsistency (comment "10" vs `EffectiveMaxConcurrentVMs` 4) — one conservative value, comment matches code
-- [ ] Confirm global concurrency change is dynamic (live config → `SetWorkerCount`, already wired) with a test
+- [x] Remove per-batch `max_concurrent_vms` from data model, API/handlers, and batch UI (dead knob; concurrency is global only) — migration 0036
+- [x] Resolve global default inconsistency (comment "10" vs `EffectiveMaxConcurrentVMs` 4) — `DefaultMaxConcurrentVMs = 2`, comment matches code
+- [x] Confirm global concurrency change is dynamic — `SetWorkerCount` scale up/down tested; live-config wiring in `handle_admin_config_analysis.go`
 
 ## VM start-rate limiter (active — Chunk 2, core deliverable)
 

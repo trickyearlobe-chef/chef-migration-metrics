@@ -9,18 +9,13 @@ Branch: `feature/kitchen-vm-rate-limiter`.
 
 Note: Run→Scheduler wiring is already implemented (queue-based). No wiring work.
 
-## Chunk 1 — Concurrency cleanup (small)
+## Chunk 1 — Concurrency cleanup — DONE (commits 134147e, 434c3fb)
 
-Scope: `internal/config/config.go`, batch data model + UI, admin TK config.
-- Remove per-batch `max_concurrent_vms` from data model (`datastore/kitchen_batches.go`),
-  API/handlers, and the batch create/edit UI. It is a dead, misleading knob.
-- Resolve the global default inconsistency (comment "10" vs `EffectiveMaxConcurrentVMs` 4):
-  one conservative value, single source of truth, comment matches code.
-- Confirm dynamic path intact: live config change → `SetWorkerCount` (already wired).
-Acceptance: per-batch field gone end-to-end; default consistent; changing global
-concurrency takes effect with no restart (test).
+- Removed dead per-batch `max_concurrent_vms` (migration 0036, datastore, frontend type/fixtures).
+- `DefaultMaxConcurrentVMs = 2` single source of truth; comment fixed.
+- Dynamic worker-count already wired + tested.
 
-## Chunk 2 — VM start-rate limiter (core deliverable)
+## Chunk 2 — VM start-rate limiter (core deliverable) — NEXT
 
 Scope: `internal/kitchenqueue/` (worker layer), `internal/config/config.go`, admin TK config UI.
 Depends on: nothing.
