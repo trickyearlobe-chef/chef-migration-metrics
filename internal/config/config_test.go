@@ -2886,8 +2886,11 @@ func TestHypervisorConfigDefaults(t *testing.T) {
 	if got := tk.EffectiveVMNamePrefix(); got != "cmm" {
 		t.Errorf("EffectiveVMNamePrefix() = %q, want %q", got, "cmm")
 	}
-	if got := tk.EffectiveMaxConcurrentVMs(); got != 4 {
-		t.Errorf("EffectiveMaxConcurrentVMs() = %d, want 4", got)
+	if got := tk.EffectiveMaxConcurrentVMs(); got != DefaultMaxConcurrentVMs {
+		t.Errorf("EffectiveMaxConcurrentVMs() = %d, want %d", got, DefaultMaxConcurrentVMs)
+	}
+	if DefaultMaxConcurrentVMs != 2 {
+		t.Errorf("DefaultMaxConcurrentVMs = %d, want conservative default 2", DefaultMaxConcurrentVMs)
 	}
 	if got := tk.EffectiveHypervisorType(); got != "" {
 		t.Errorf("EffectiveHypervisorType() = %q, want %q", got, "")

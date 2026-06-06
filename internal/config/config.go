@@ -245,8 +245,10 @@ type TestKitchenConfig struct {
 	// Defaults to "cmm".
 	VMNamePrefix string `yaml:"vm_name_prefix" json:"vm_name_prefix"`
 
-	// MaxConcurrentVMs is the global ceiling on concurrent VMs across
-	// all batches. Defaults to 10.
+	// MaxConcurrentVMs is the global ceiling on concurrent VMs (the
+	// kitchen queue worker-pool size). Concurrency is global only — there
+	// is no per-batch concurrency. Defaults to DefaultMaxConcurrentVMs
+	// when unset (<= 0). Changes apply dynamically (no restart).
 	MaxConcurrentVMs int `yaml:"max_concurrent_vms" json:"max_concurrent_vms"`
 
 	// OrphanSweepIntervalMinutes controls how often the background
@@ -385,12 +387,20 @@ func (c TestKitchenConfig) EffectiveVMNamePrefix() string {
 	return "cmm"
 }
 
-// EffectiveMaxConcurrentVMs returns the configured max concurrent VMs or 4.
+// DefaultMaxConcurrentVMs is the conservative global ceiling on concurrent
+// kitchen VMs used when none is configured. Deliberately low because the
+// target environment is DHCP-pool constrained; raise it via config (applies
+// dynamically). The VM start-rate limiter, not this value, is the guarantee
+// against DHCP pool exhaustion.
+const DefaultMaxConcurrentVMs = 2
+
+// EffectiveMaxConcurrentVMs returns the configured max concurrent VMs, or
+// DefaultMaxConcurrentVMs when unset.
 func (c TestKitchenConfig) EffectiveMaxConcurrentVMs() int {
 	if c.MaxConcurrentVMs > 0 {
 		return c.MaxConcurrentVMs
 	}
-	return 4
+	return DefaultMaxConcurrentVMs
 }
 
 // EffectiveHypervisorType returns the hypervisor type — either explicitly
