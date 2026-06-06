@@ -298,12 +298,30 @@ for file in "${STAGED_FILES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
+# 4. Specification size limit — keep specs splittable for LLM retrieval
+# ---------------------------------------------------------------------------
+# Specs are consumed by AI agents; oversized files defeat targeted retrieval.
+# Split a spec over the limit into a thin index + <spec>-<section>.md parts.
+SPEC_LINE_LIMIT=500
+
+for file in "${STAGED_FILES[@]}"; do
+  case "$file" in
+    specifications/*.md)
+      lines=$(git show ":$file" 2>/dev/null | wc -l | tr -d ' ') || continue
+      if [[ $lines -gt $SPEC_LINE_LIMIT ]]; then
+        block "$file" "spec is ${lines} lines (limit ${SPEC_LINE_LIMIT}) — split into an index + <spec>-<section>.md parts"
+      fi
+      ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 if [[ $BLOCKED -gt 0 ]]; then
   echo "" >&2
-  printf "${RED}✗ Commit blocked: %d file(s) contain potential secrets.${RESET}\n" "$BLOCKED" >&2
-  echo "  Review the files above and remove credentials before committing." >&2
+  printf "${RED}✗ Commit blocked: %d issue(s) found in staged files.${RESET}\n" "$BLOCKED" >&2
+  echo "  Review the files above (secrets, denied patterns, or oversized specs) before committing." >&2
   echo "  If you are certain these are safe, use: git commit --no-verify" >&2
   echo "" >&2
   exit 1
