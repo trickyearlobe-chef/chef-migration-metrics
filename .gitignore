@@ -109,8 +109,9 @@ tags
 *.sublime-project
 *.sublime-workspace
 
-# Zed
-.zed/
+# Zed — ignore everything except shared workspace settings
+.zed/*
+!.zed/settings.json
 
 # =============================================================================
 # Operating System

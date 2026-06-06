@@ -1,0 +1,29 @@
+{
+  "agent": {
+    "default_model": {
+      "model": "claude-opus-4.6",
+      "provider": "copilot_chat"
+    }
+  },
+  "// file_scan_exclusions": "Keeps generated/vendored paths out of Zed's file scan, search and project tree so they aren't pulled into Agent/Copilot context. This OVERRIDES Zed's defaults, so the default VCS/OS entries are repeated below. See .github/copilot-instructions.md.",
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/.sl",
+    "**/.repo",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    "**/node_modules",
+    "**/dist",
+    "**/build",
+    "**/embedded",
+    "**/*.tsbuildinfo",
+    "frontend/package-lock.json",
+    "migrations"
+  ]
+}

@@ -12,8 +12,12 @@ the same applies to GitHub Copilot.
 
 - These are operating rules, not project documentation. Keep this file tiny — it
   is injected into every request.
-- To reduce context cost, the workspace excludes generated/vendored paths
-  (`node_modules`, `dist`, `build`, lockfiles, migrations) via
-  `.vscode/settings.json`. Don't pull those into context unless asked.
+- To reduce context cost, generated/vendored paths (`node_modules`, `dist`,
+  `build`, `embedded`, lockfiles, `migrations`) are excluded from editor
+  indexing: VS Code via `.vscode/settings.json`, Zed via `.zed/settings.json`
+  (`file_scan_exclusions`). The Copilot **CLI** enforces no local ignore file —
+  it relies on `.gitignore` (which already covers the generated dirs), so do not
+  read into those paths or the tracked-but-noisy ones (`migrations/`,
+  `frontend/package-lock.json`) unless the task requires it.
 - Specs in `specifications/` are large — open only the relevant section, never a
   whole spec file, unless the task needs it.
