@@ -40,16 +40,26 @@ type EventListener func(item *datastore.KitchenQueueItem)
 // LogFunc receives structured log messages.
 type LogFunc func(level, msg string, args ...any)
 
+// StartLimiter gates VM starts. Wait blocks until a start is permitted or the
+// context is cancelled. *RateLimiter implements this.
+type StartLimiter interface {
+	Wait(ctx context.Context) error
+}
+
 // Manager coordinates the worker pool and dequeue loop.
 type Manager struct {
 	store    Store
 	executor Executor
+	limiter  StartLimiter
 	logFn    LogFunc
 	eventFn  EventListener
 	outputFn OutputListener
 
 	workerCount  int
 	pollInterval time.Duration
+
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	mu            sync.Mutex
 	running       map[string]context.CancelFunc // item ID → cancel func
@@ -97,6 +107,12 @@ func WithOutputListener(fn OutputListener) Option {
 	return func(m *Manager) { m.outputFn = fn }
 }
 
+// WithRateLimiter gates VM starts through the given limiter. When unset, starts
+// are not rate-limited (concurrency alone bounds load).
+func WithRateLimiter(l StartLimiter) Option {
+	return func(m *Manager) { m.limiter = l }
+}
+
 // New creates a Manager with the given options.
 func New(store Store, executor Executor, opts ...Option) *Manager {
 	m := &Manager{
@@ -107,6 +123,7 @@ func New(store Store, executor Executor, opts ...Option) *Manager {
 		running:      make(map[string]context.CancelFunc),
 		stopCh:       make(chan struct{}),
 	}
+	m.ctx, m.cancel = context.WithCancel(context.Background())
 	for _, opt := range opts {
 		opt(m)
 	}
@@ -144,6 +161,7 @@ func (m *Manager) Start(ctx context.Context) error {
 func (m *Manager) Stop(timeout time.Duration) {
 	m.stopOnce.Do(func() {
 		close(m.stopCh)
+		m.cancel() // unblock any worker waiting on the rate limiter
 	})
 
 	done := make(chan struct{})
@@ -261,6 +279,17 @@ func (m *Manager) worker(id int) {
 		if item == nil {
 			m.sleep()
 			continue
+		}
+
+		// Gate the VM start on the global rate limiter. Charges a lease against
+		// the trailing window and paces starts; blocks here, before boot, when
+		// at the cap. On shutdown m.ctx is cancelled — leave the claimed item
+		// for startup recovery rather than booting a VM we're about to abandon.
+		if m.limiter != nil {
+			if err := m.limiter.Wait(m.ctx); err != nil {
+				m.log("WARN", "worker %d: rate-limiter wait aborted for %s: %v", id, item.ID, err)
+				continue
+			}
 		}
 
 		m.log("INFO", "worker %d: executing %s (%s/%s/%s)",
