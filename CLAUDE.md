@@ -11,6 +11,17 @@
 - Only read specs, todos, or plans relevant to the current task.
 - Be concise when creating or updating specs and todos so tokens are not wasted retrieving context.
 
+## Customer Data Protection
+
+- NEVER include real customer names, organisation names, internal hostnames, or other identifying information in any file that will be committed to git. This includes code, tests, specs, plans, comments, commit messages, and documentation.
+- Use generic placeholders: `example-corp`, `acme`, `x-custom-*`, `customer`, `org-a`, `10.0.0.1`, `user@example.com`.
+- If real customer data is needed for local testing, put it in a file listed in `.gitignore` (e.g. `.git-deny-patterns`, `.env`, `.local/`).
+- A pre-commit hook enforces this by scanning staged files against patterns in `.git-deny-patterns`. Keep that file up to date when new customers are onboarded.
+
+## File Operations
+
+- NEVER use the console/terminal for file editing. Do not use `sed`, `awk`, `cat >`, `echo >>`, or similar shell commands to create or modify files.
+
 ## Knowledge
 
 - Component specs live in `specifications/` (top-level, flat layout, one file per component).
@@ -33,6 +44,7 @@
 ## Quality Maintenance
 
 - Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status.
+- TODO hygiene: a session should not end with a net increase in TODOs unless they are genuinely open questions.
 - **Context pollution checks**: After every 3-4 tool calls, assess whether accumulated context is still relevant. If the conversation has drifted into debugging a tangent or contains large blocks of superseded output, suggest the user start a fresh thread for the next chunk.
 - **Signal a fresh thread** when: (a) the current chunk is complete, (b) context is >50% stale/irrelevant, or (c) the task has shifted scope significantly from the original plan.
 - Always update todos when items are completed or blocked to avoid losing context.
