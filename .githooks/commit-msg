@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# =============================================================================
+# commit-msg hook — strip AI authorship trailers from commit messages
+# =============================================================================
+# Removes any "Co-Authored-By: Claude/Anthropic ..." line and the
+# "Generated with Claude Code" line, regardless of which tool added them.
+# Active via core.hooksPath=.githooks (make install-hooks).
+# =============================================================================
+
+set -euo pipefail
+
+MSG_FILE="$1"
+[[ -f "$MSG_FILE" ]] || exit 0
+
+tmp=$(mktemp)
+
+# Drop the offending lines (case-insensitive):
+#  - Co-Authored-By trailers naming Claude or Anthropic
+#  - the "Generated with [Claude Code]" attribution line (with or without emoji)
+grep -viE '^(Co-Authored-By:.*(Claude|Anthropic|noreply@anthropic\.com)|.*Generated with .*Claude)' \
+  "$MSG_FILE" > "$tmp" || true
+
+# Collapse any trailing blank lines left behind, then ensure a single newline.
+awk 'BEGIN{blank=0} { if ($0 ~ /^[[:space:]]*$/) {blank++} else {while(blank>0){print ""; blank--}; print} }' \
+  "$tmp" > "$MSG_FILE"
+
+rm -f "$tmp"
+exit 0
