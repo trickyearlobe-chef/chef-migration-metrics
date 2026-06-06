@@ -34,6 +34,10 @@ export interface TestKitchenConfig {
   chef_license_key_credential: string;
   images: ImageEntry[];
   platform_map: PlatformMapEntry[];
+  /** VM start-rate limiter window in minutes (= DHCP lease time). 0 disables. */
+  start_rate_window_minutes: number;
+  /** Max VM starts per window (= usable DHCP pool size). 0 disables. */
+  start_rate_max_per_window: number;
 }
 
 export interface DiscoveredPlatformStatus {

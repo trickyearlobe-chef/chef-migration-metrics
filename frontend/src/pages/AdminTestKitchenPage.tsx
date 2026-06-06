@@ -74,6 +74,8 @@ function emptyConfig(): TestKitchenConfig {
     chef_license_key_credential: "",
     images: [],
     platform_map: [],
+    start_rate_window_minutes: 0,
+    start_rate_max_per_window: 0,
   };
 }
 
@@ -636,6 +638,65 @@ export function AdminTestKitchenPage() {
             >
               Enabled
             </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 1b: VM Start-Rate Limiting */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          VM Start-Rate Limiting
+        </h3>
+        <p className="mb-4 text-sm text-gray-500">
+          Caps cumulative DHCP lease consumption: no more than{" "}
+          <em>max starts</em> in any trailing <em>window</em>, evenly paced.
+          Set the window to your DHCP lease time and max starts to the usable
+          pool size. Leave either at 0 to disable. Changes apply with no
+          restart.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label
+              htmlFor="tk-start-rate-window"
+              className="mb-1 block text-sm font-medium text-gray-700"
+            >
+              Window (minutes) — DHCP lease time
+            </label>
+            <input
+              id="tk-start-rate-window"
+              type="number"
+              min={0}
+              value={config.start_rate_window_minutes}
+              onChange={(e) =>
+                updateConfig({
+                  start_rate_window_minutes: Number(e.target.value) || 0,
+                })
+              }
+              disabled={saving}
+              className={INPUT_CLASS}
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="tk-start-rate-max"
+              className="mb-1 block text-sm font-medium text-gray-700"
+            >
+              Max starts per window — usable pool size
+            </label>
+            <input
+              id="tk-start-rate-max"
+              type="number"
+              min={0}
+              value={config.start_rate_max_per_window}
+              onChange={(e) =>
+                updateConfig({
+                  start_rate_max_per_window: Number(e.target.value) || 0,
+                })
+              }
+              disabled={saving}
+              className={INPUT_CLASS}
+            />
           </div>
         </div>
       </div>
