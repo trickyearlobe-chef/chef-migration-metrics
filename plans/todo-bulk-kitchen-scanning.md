@@ -23,7 +23,7 @@ No wiring, cancellation, progress-endpoint, or restart-resilience work remains.
 - [x] Config `window` + `max_starts_per_window`; both dynamic (live accessor, no restart) — disabled unless both > 0
 - [x] Gate VM start at the worker layer before boot; counts starts, charges full window regardless of early finish/release
 - [x] Limiter is independent of IP release working (hard worst-case guarantee)
-- [x] Confirmed: single global window/max. Per-scope deferred (see active.md open questions)
+- [x] Confirmed: single global window/max. Per-scope rate limiting DEFERRED — revisit only if the customer's subnets prove to have materially different lease times / pool sizes; would need an instance→scope mapping that does not exist yet.
 - [x] Admin TK config UI exposes window + max-per-window
 
 ## Orphan Sweep
@@ -62,22 +62,23 @@ Spec: `test-kitchen-drivers-overlay-generation.md` § Lifecycle Hooks.
 - [ ] When CMM must inject a phase the cookbook also uses, compose (append) rather than replace — read existing `.kitchen.yml`, merge arrays before writing overlay
 - [ ] Document which lifecycle phases CMM reserves vs. leaves to the repo
 
-### App-injected IP-release hook (pre_destroy) — opt-in spike, AFTER rate limiter
+### App-injected IP-release hook (pre_destroy) — opt-in spike (Chunk 3 — DONE)
 
 Opportunistic optimisation, NOT the pool guarantee (rate limiter is). Spike — validate
 empirically on customer OS mix before relying on it.
 
-- [ ] Opt-in per platform/image, default off; config dynamic (live accessor, no restart)
-- [ ] Failure-isolated: command always exits 0 (missing/variant binary, non-zero result must never abend the run — a non-zero kitchen hook aborts the action and leaks the VM+lease)
-- [ ] Detached from transport (`setsid`/`nohup`, backgrounded, redirected) so a dropped link is not a hook failure (note: races hypervisor power-off — verify empirically)
-- [ ] Per-platform command: Linux tolerant of `dhclient`/`dhcpcd`/`networkctl`/`nmcli` absence; Windows `ipconfig /release`; OS family from resolved image/platform entry
-- [ ] Compose with any repo-provided `pre_destroy` hook (see preservation item above)
-- [ ] Verify TK lifecycle-hook failure semantics for the installed kitchen version (non-zero `remote:` hook abort? transport drop = failure?)
+- [x] Opt-in per image (`ImageEntry.release_ip_on_destroy`), default off; dynamic (live accessor)
+- [x] Failure-isolated: command always exits 0 (`overlay.go` `ipReleaseCommand`)
+- [x] Detached from transport (`nohup`/`start /b`, backgrounded, stdio redirected)
+- [x] Per-platform command: Linux tolerant of `dhclient`/`dhcpcd`/`networkctl`/`nmcli`; Windows `ipconfig /release`; OS family from `analysis.NormalisePlatformName`
+- [x] Compose with any repo-provided `pre_destroy` hook (`writeLifecycleHook` + `readExistingPreDestroy`)
+- [x] Admin UI per-image opt-in checkbox (`AdminTestKitchenPage.tsx`)
+- [ ] EMPIRICAL (remaining): verify TK lifecycle-hook failure semantics for the installed kitchen version (non-zero `remote:` hook abort? transport drop = failure?) and that the release packet leaves the guest before power-off — see `todo-tech-debt.md` § IP-Release pre_destroy Hook
 
 ## Tests
 
 - [x] Unit tests for rate limiter — never exceeds max per trailing window; paced gap; dynamic window/max change mid-run; ctx cancel; disabled pass-through (`ratelimiter_test.go`, `manager_test.go` gate test)
 - [ ] Unit tests for global concurrency dynamic change (`SetWorkerCount` on live config)
 - [ ] Unit tests for orphan sweep — scoping rules (folder, prefix, age threshold)
-- [ ] Unit tests for overlay lifecycle-hook composition — repo hooks preserved, CMM `pre_destroy` injected, arrays merged not clobbered
-- [ ] Unit tests for IP-release hook failure isolation — simulated hook failure/transport drop leaves result unchanged and VM destroyed
+- [x] Unit tests for overlay lifecycle-hook composition — repo hooks preserved, CMM `pre_destroy` injected, arrays merged not clobbered (`overlay_test.go`, `executor_test.go`)
+- [x] Unit tests for IP-release hook failure isolation (by construction) — injected command always `exit 0`, detached, stdio redirected (`overlay_test.go`); live simulated-failure verification remains empirical

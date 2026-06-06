@@ -47,6 +47,13 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 - [ ] **Some git repos contain shell scripts (e.g. `users.sh`) that must be executed on the VM before converge** — these set up prerequisite state (users, groups, packages) that the cookbook expects to exist. Without them, converge fails for the wrong reason. **Strategic fix:** add a configurable pre-converge hook mechanism — detect scripts matching a naming convention or path (e.g. `scripts/pre-converge/*.sh`, or a top-level `users.sh`), upload and execute them on the VM before the Chef run. Could be a per-repo config item specifying which scripts to run and in what order.
 
+## Test Kitchen — IP-Release pre_destroy Hook (Unvalidated Spike)
+
+- [ ] **The opt-in IP-release `pre_destroy` hook is shipped but empirically unvalidated** — `gitkitchen/overlay.go` injects an OS-family DHCP-release command (`linuxIPReleaseCommand` / `windowsIPReleaseCommand`) when an image sets `release_ip_on_destroy`. It is failure-isolated (always `exit 0`, detached, stdio redirected) so it cannot fail a run, but whether it actually releases the lease before hypervisor power-off is only verifiable on the customer OS mix. **Before relying on it:** validate per platform that (a) the DHCPRELEASE leaves the guest ahead of destroy, and (b) the run result is unchanged on a simulated hook failure. Until validated, the VM start-rate limiter remains the sole pool-exhaustion guarantee. Known limitations to revisit:
+  - **No `sudo`** — the Linux command runs the release binaries directly, so it is a no-op on images whose transport user is non-root with passwordless sudo. Add a tolerant `sudo -n` prefix once an image needs it.
+  - **Composition is `pre_destroy`-only and primary-file-only** — `readExistingPreDestroy` reads only the cookbook's primary `.kitchen.yml` (via `DiscoverKitchenFiles`), not variant files or driver-specific overlays. If CMM ever injects a second lifecycle phase, the no-clobber composition must be generalised beyond the single hard-coded phase.
+  - **Detach-vs-power-off race** — detaching to survive a severed transport races the hypervisor destroy; the release packet must leave first. Only empirically tunable, no code guarantee.
+
 ## Kitchen Queue — Live Output Streaming
 
 - [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (already available via `GET /kitchen/queue/:id`) covers 90% of the use case.
