@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
@@ -85,12 +86,19 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 		}
 	}
 
-	// Generate overlay
+	// Generate overlay. Only read the cookbook's own pre_destroy hooks when at
+	// least one image opts in to the IP-release hook — otherwise the overlay
+	// injects no pre_destroy phase and there is nothing to compose with.
+	var existingPreDestroy []any
+	if anyImageReleasesIP(tkConfig) {
+		existingPreDestroy = readExistingPreDestroy(workDir)
+	}
 	overlay, err := generateOverlay(tkConfig, OverlayParams{
-		PlatformName:      params.PlatformName,
-		TargetChefVersion: params.TargetChefVersion,
-		CookbookName:      params.GitRepoName,
-		SuiteName:         params.SuiteName,
+		PlatformName:       params.PlatformName,
+		TargetChefVersion:  params.TargetChefVersion,
+		CookbookName:       params.GitRepoName,
+		SuiteName:          params.SuiteName,
+		ExistingPreDestroy: existingPreDestroy,
 	})
 	if err != nil {
 		return RunInstanceResult{
@@ -151,6 +159,45 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 	}
 
 	return result
+}
+
+// anyImageReleasesIP reports whether any configured image opts in to the
+// IP-release pre_destroy hook.
+func anyImageReleasesIP(tkConfig config.TestKitchenConfig) bool {
+	for _, img := range tkConfig.Images {
+		if img.ReleaseIPOnDestroy {
+			return true
+		}
+	}
+	return false
+}
+
+// readExistingPreDestroy returns the cookbook's own lifecycle.pre_destroy
+// entries from its untouched .kitchen.yml, or nil when absent or unparseable.
+// Best-effort: any error yields nil so the IP-release hook is still injected
+// (without composition) rather than failing overlay generation.
+func readExistingPreDestroy(workDir string) []any {
+	primary, _, _ := analysis.DiscoverKitchenFiles(workDir)
+	if primary == "" {
+		return nil
+	}
+	data, err := os.ReadFile(primary)
+	if err != nil {
+		return nil
+	}
+	raw, err := analysis.ParseKitchenYAML(data)
+	if err != nil {
+		return nil
+	}
+	lifecycle, ok := raw["lifecycle"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	entries, ok := lifecycle["pre_destroy"].([]any)
+	if !ok {
+		return nil
+	}
+	return entries
 }
 
 // copyRepoToWorkspace creates a temporary directory and copies the repo contents into it.

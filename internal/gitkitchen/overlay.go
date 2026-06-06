@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
@@ -22,6 +24,13 @@ type OverlayParams struct {
 	TargetChefVersion string
 	CookbookName      string // used for VM naming (vcenter)
 	SuiteName         string // used for VM naming (vcenter)
+
+	// ExistingPreDestroy holds the cookbook's own lifecycle.pre_destroy
+	// entries (raw YAML values: strings or {local|remote: cmd} maps) read
+	// from its untouched .kitchen.yml. When the IP-release hook is injected
+	// these are preserved and run before it, so the overlay composes with —
+	// rather than clobbers — repo-provided hooks for the same phase.
+	ExistingPreDestroy []any
 }
 
 // generateOverlay produces the contents of a .kitchen.local.yml overlay
@@ -150,10 +159,67 @@ func generateOverlay(tkConfig config.TestKitchenConfig, params OverlayParams) (s
 	}
 	hasContent = true
 
+	// IP-release pre_destroy hook (opt-in per image, default off). Best-effort
+	// optimisation to return the DHCP lease promptly on teardown — never a
+	// correctness requirement, so it must never fail or block a run.
+	if imgOK && img.ReleaseIPOnDestroy {
+		_, osFamily, _ := analysis.NormalisePlatformName(platformName)
+		if cmd := ipReleaseCommand(osFamily); cmd != "" {
+			writeLifecycleHook(&buf, params.ExistingPreDestroy, cmd)
+		}
+	}
+
 	if !hasContent {
 		return "", nil
 	}
 	return buf.String(), nil
+}
+
+// linuxIPReleaseCommand returns the DHCP lease back on Linux. It is engineered
+// to never fail an otherwise-successful run: it tries the common release
+// binaries in turn (tolerating the absent ones), detaches via nohup + `&` so a
+// transport severed by the release is not seen as a hook failure, redirects all
+// stdio, and forces the outer shell to exit 0 regardless of outcome.
+const linuxIPReleaseCommand = `nohup sh -c 'dhclient -r >/dev/null 2>&1 || dhcpcd -k >/dev/null 2>&1 || networkctl renew >/dev/null 2>&1 || nmcli -t networking off >/dev/null 2>&1 || true' >/dev/null 2>&1 </dev/null & exit 0`
+
+// windowsIPReleaseCommand releases the lease on Windows. `start /b` detaches it
+// from the WinRM session and `exit /b 0` forces success regardless of outcome.
+const windowsIPReleaseCommand = `start /b "" ipconfig /release & exit /b 0`
+
+// ipReleaseCommand returns the remote IP-release command for the given OS
+// family, or "" when no command applies. Everything that is not Windows is
+// treated as Linux best-effort — the per-image opt-in is the real gate.
+func ipReleaseCommand(osFamily string) string {
+	if osFamily == "windows" {
+		return windowsIPReleaseCommand
+	}
+	return linuxIPReleaseCommand
+}
+
+// writeLifecycleHook emits a lifecycle.pre_destroy block composing any
+// repo-provided entries (preserved, run first) with the injected release
+// command. Test Kitchen replaces arrays on merge, so the cookbook's own
+// pre_destroy commands must be carried forward here rather than clobbered.
+func writeLifecycleHook(buf *bytes.Buffer, existing []any, releaseCmd string) {
+	items := make([]any, 0, len(existing)+1)
+	items = append(items, existing...)
+	items = append(items, map[string]any{"remote": releaseCmd})
+
+	marshalled, err := yaml.Marshal(items)
+	if err != nil {
+		// Never break overlay generation for a best-effort optimisation.
+		return
+	}
+
+	buf.WriteString("\nlifecycle:\n")
+	buf.WriteString("  pre_destroy:\n")
+	for _, line := range strings.Split(strings.TrimRight(string(marshalled), "\n"), "\n") {
+		if line == "" {
+			buf.WriteByte('\n')
+			continue
+		}
+		fmt.Fprintf(buf, "    %s\n", line)
+	}
 }
 
 // buildImageIndex creates a lookup map from image name to ImageEntry.
