@@ -18,10 +18,6 @@
 - If real customer data is needed for local testing, put it in a file listed in `.gitignore` (e.g. `.git-deny-patterns`, `.env`, `.local/`).
 - A pre-commit hook enforces this by scanning staged files against patterns in `.git-deny-patterns`. Keep that file up to date when new customers are onboarded.
 
-## File Operations
-
-- NEVER use the console/terminal for file editing. Do not use `sed`, `awk`, `cat >`, `echo >>`, or similar shell commands to create or modify files.
-
 ## Knowledge
 
 - Component specs live in `specifications/` (top-level, flat layout, one file per component).
@@ -101,7 +97,7 @@
 
 - Scope spawned agents tightly. One file or one narrow topic per agent.
 - If a task requires many changes, split across multiple agents rather than risking context exhaustion.
-- Every spawn message MUST include: Do NOT use the console for file operations.
+- Spawned agents NEVER run git commands; the caller handles git.
 
 
 ## Permission Boundaries
