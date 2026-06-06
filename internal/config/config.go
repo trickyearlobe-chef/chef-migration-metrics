@@ -307,6 +307,16 @@ type ImageEntry struct {
 	// is "baked_in" (e.g. "/usr/bin/chef-client", "/opt/chef/bin/chef-client").
 	// Ignored when InstallMethod is "download".
 	ChefClientPath string `yaml:"chef_client_path,omitempty" json:"chef_client_path,omitempty"`
+
+	// ReleaseIPOnDestroy opts this image in to the best-effort IP-release
+	// pre_destroy lifecycle hook (default off). When true, the generated
+	// overlay injects a failure-isolated, transport-detached DHCP release
+	// command (OS family derived from the platform name) so the lease is
+	// returned promptly on teardown. A spike — enable only on images where
+	// it is empirically confirmed to release the lease without abending the
+	// run. Dynamic (read live from config, no restart). See
+	// test-kitchen-drivers-overlay-generation.md § App-injected IP-release hook.
+	ReleaseIPOnDestroy bool `yaml:"release_ip_on_destroy,omitempty" json:"release_ip_on_destroy,omitempty"`
 }
 
 // EffectiveInstallMethod returns the install method for the image,
