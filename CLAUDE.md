@@ -20,7 +20,8 @@
 
 ## Knowledge
 
-- Component specs live in `specifications/` (top-level, flat layout, one file per component).
+- Component specs live in `specifications/` (top-level, flat layout). `specifications/overview.md` is the routing index — start there to find the right spec.
+- Specs are sized for LLM retrieval: keep each under 500 lines (enforced by the pre-commit hook). Split an oversized spec into a thin index (`<spec>.md`, keeping title/TL;DR/Overview/Related plus a stub per moved section) and flat prefixed part files (`<spec>-<section>.md`). Open only the part you need.
 - Todos and plans live in `plans/` (todo-*.md for open work, named plans for active tasks).
 - Each component spec is self-contained. Read only what you need for the current task.
 - Background research is available via Nuclia RAG through MCP. Query it when specs are insufficient.
