@@ -453,6 +453,23 @@ func intFromNull(ni sql.NullInt64) int {
 	return 0
 }
 
+// nullBool converts a *bool to sql.NullBool. A nil pointer is treated as NULL.
+func nullBool(b *bool) sql.NullBool {
+	if b == nil {
+		return sql.NullBool{}
+	}
+	return sql.NullBool{Bool: *b, Valid: true}
+}
+
+// boolFromNull converts a sql.NullBool to a *bool. NULL becomes nil.
+func boolFromNull(nb sql.NullBool) *bool {
+	if nb.Valid {
+		v := nb.Bool
+		return &v
+	}
+	return nil
+}
+
 // normaliseJSON converts a potentially nil byte slice from a JSONB column
 // scan into a json.RawMessage, returning nil when the value is SQL NULL.
 func normaliseJSON(b []byte) json.RawMessage {

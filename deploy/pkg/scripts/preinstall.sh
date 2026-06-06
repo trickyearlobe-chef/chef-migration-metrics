@@ -5,7 +5,7 @@
 # Creates the service account and group if they do not already exist.
 # Runs before package files are laid down on disk.
 #
-# See: .claude/specifications/packaging/Specification.md § 2.6
+# See: specifications/packaging.md § 2.6
 # =============================================================================
 
 set -e

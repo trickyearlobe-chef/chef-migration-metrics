@@ -102,6 +102,10 @@ export interface NodeFilterQuery extends PaginationQuery {
   cookstyle_status?: string;
   kitchen_status?: string;
   target_chef_version?: string;
+  migration_state?: string;
+  target_converge_status?: string;
+  target_version?: string;
+  ready_to_activate?: string;
   sort?: string;
   order?: string;
   search?: string;

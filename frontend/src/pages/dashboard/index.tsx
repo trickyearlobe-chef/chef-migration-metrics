@@ -13,26 +13,30 @@ import {
   ReadinessTrendCard,
   ComplexityTrendCard,
   StaleTrendCard,
+  DeploymentTrendCard,
 } from "./TrendCards";
+import { DeploymentStatusCard } from "./DeploymentCards";
 
 // ---------------------------------------------------------------------------
-// Dashboard page — two tabs:
+// Dashboard page — three tabs:
 //   "Current Status" — point-in-time summary cards
 //   "Trends"         — historical trend charts
+//   "Deployment"     — per-version deployment progress
 //
-// The active tab is persisted in the URL via ?tab=status|trends so that
-// bookmarks and shared links preserve the view.
+// The active tab is persisted in the URL via ?tab=status|trends|deployment so
+// that bookmarks and shared links preserve the view.
 // ---------------------------------------------------------------------------
 
-type DashboardTab = "status" | "trends";
+type DashboardTab = "status" | "trends" | "deployment";
 
 const TABS: { key: DashboardTab; label: string }[] = [
   { key: "status", label: "Current Status" },
   { key: "trends", label: "Trends" },
+  { key: "deployment", label: "Deployment" },
 ];
 
 function isValidTab(value: string | null): value is DashboardTab {
-  return value === "status" || value === "trends";
+  return value === "status" || value === "trends" || value === "deployment";
 }
 
 export function DashboardPage() {
@@ -100,6 +104,14 @@ export function DashboardPage() {
           <ReadinessTrendCard organisation={org} />
           <ComplexityTrendCard organisation={org} />
           <StaleTrendCard organisation={org} />
+        </div>
+      )}
+
+      {/* ---- Deployment tab ---- */}
+      {activeTab === "deployment" && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <DeploymentStatusCard organisation={org} />
+          <DeploymentTrendCard organisation={org} />
         </div>
       )}
     </div>

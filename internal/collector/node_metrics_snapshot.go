@@ -26,6 +26,7 @@ type nodeMetricsPayload struct {
 	TargetChefVer    string             `json:"target_chef_version"`
 	ByStaleness      stalenessBreakdown `json:"by_staleness"`
 	Fresh            freshBreakdown     `json:"fresh"`
+	Deployment       deploymentBreakdown `json:"deployment"`
 	Thresholds       thresholdsRecord   `json:"thresholds"`
 }
 
@@ -54,6 +55,21 @@ type blockedByCount struct {
 	Disk        int `json:"disk"`
 	FoodCritic  int `json:"foodcritic"`
 	ChefSpec    int `json:"chefspec"`
+}
+
+// deploymentBreakdown holds parallel deployment progress counts across all nodes.
+type deploymentBreakdown struct {
+	StagedOrActivated int                                `json:"staged_or_activated"`
+	ConvergePassing   int                                `json:"converge_passing"`
+	ByVersion         map[string]deploymentVersionBreakdown `json:"by_version"`
+}
+
+// deploymentVersionBreakdown holds per-version deployment state counts.
+type deploymentVersionBreakdown struct {
+	Staged          int `json:"staged"`
+	Activated       int `json:"activated"`
+	ConvergePassing int `json:"converge_passing"`
+	ConvergeFailing int `json:"converge_failing"`
 }
 
 // thresholdsRecord captures the configuration at collection time.
@@ -96,6 +112,9 @@ func buildNodeMetricsPayload(input nodeMetricsInput) (json.RawMessage, error) {
 			ByVersion:        make(map[string]int),
 			ByPlatformFamily: make(map[string]int),
 		},
+		Deployment: deploymentBreakdown{
+			ByVersion: make(map[string]deploymentVersionBreakdown),
+		},
 		Thresholds: thresholdsRecord{
 			WarningHours:   input.WarningHours,
 			CriticalDays:   input.CriticalDays,
@@ -104,6 +123,37 @@ func buildNodeMetricsPayload(input nodeMetricsInput) (json.RawMessage, error) {
 	}
 
 	for _, p := range input.SnapshotParams {
+		// Deployment progress — applies to all nodes regardless of staleness.
+		if p.MigrationState == "hab_dormant" || p.MigrationState == "hab_active" {
+			payload.Deployment.StagedOrActivated++
+
+			// Determine the deployed version for per-version breakdown.
+			var deployedVersion string
+			if p.MigrationState == "hab_dormant" {
+				deployedVersion = p.DormantChefVersion
+			} else {
+				deployedVersion = p.ActiveChefVersion
+			}
+
+			if deployedVersion != "" {
+				vb := payload.Deployment.ByVersion[deployedVersion]
+				if p.MigrationState == "hab_dormant" {
+					vb.Staged++
+				} else {
+					vb.Activated++
+				}
+				if p.TargetConvergeStatus == "success" {
+					vb.ConvergePassing++
+				} else if p.TargetConvergeStatus == "failed" {
+					vb.ConvergeFailing++
+				}
+				payload.Deployment.ByVersion[deployedVersion] = vb
+			}
+		}
+		if p.TargetConvergeStatus == "success" {
+			payload.Deployment.ConvergePassing++
+		}
+
 		// Compute staleness tier for this node.
 		var ohaiTime time.Time
 		if p.OhaiTime > 0 {

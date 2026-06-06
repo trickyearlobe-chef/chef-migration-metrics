@@ -127,6 +127,22 @@ type NodeSnapshotFilter struct {
 	// (even without ReadinessFilter), a LEFT JOIN to node_readiness is
 	// included so callers can access readiness columns.
 	TargetChefVersion string
+
+	// MigrationStates filters by exact match on migration_state column.
+	// Values: "omnibus_only", "hab_dormant", "hab_active". Empty means no filter.
+	MigrationStates []string
+
+	// TargetConvergeStatuses filters by exact match on target_converge_status.
+	// Values: "success", "failed". Empty means no filter.
+	TargetConvergeStatuses []string
+
+	// TargetVersions filters by exact match on target_version column.
+	// Empty means no filter.
+	TargetVersions []string
+
+	// ReadyToActivate when true filters to nodes that are ready to activate
+	// (migration_state = 'hab_dormant' AND target_converge_status = 'success').
+	ReadyToActivate *bool
 }
 
 // buildNodeSnapshotFilterQuery constructs the SQL query and args for
@@ -144,7 +160,10 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		       cn.platform_caption,
 		       cn.run_list, cn.roles,
 		       cn.policy_name, cn.policy_group,
-		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at`
+		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at,
+		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
+		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
+		       cn.target_converge_status`
 
 	heavyCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
 		       cn.chef_environment, cn.chef_version,
@@ -153,7 +172,10 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		       cn.filesystem, cn.cookbooks, cn.run_list, cn.roles,
 		       cn.policy_name, cn.policy_group,
 		       cn.ohai_time, cn.custom_attributes,
-		       cn.is_stale, cn.collected_at, cn.created_at`
+		       cn.is_stale, cn.collected_at, cn.created_at,
+		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
+		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
+		       cn.target_converge_status`
 
 	cols := lightCols
 	if f.IncludeHeavyJSON {
@@ -185,6 +207,8 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		sortCol = "cn.platform"
 	case "ohai_time":
 		sortCol = "cn.ohai_time"
+	case "migration_state":
+		sortCol = "cn.migration_state"
 	}
 	sortDir := "ASC"
 	if strings.EqualFold(f.SortOrder, "desc") {
@@ -249,6 +273,9 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		var ohaiTime sql.NullFloat64
 		var runList, roles []byte
 		var rowTotal int
+		var migrationState, activeChefVer, dormantChefVer sql.NullString
+		var dormantInstalled sql.NullBool
+		var targetVer, targetExecTime, targetConvergeStatus sql.NullString
 
 		if includeHeavy {
 			var filesystem, cookbooks, customAttributes []byte
@@ -273,6 +300,13 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&ns.IsStale,
 				&ns.CollectedAt,
 				&ns.CreatedAt,
+				&migrationState,
+				&activeChefVer,
+				&dormantInstalled,
+				&dormantChefVer,
+				&targetVer,
+				&targetExecTime,
+				&targetConvergeStatus,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (heavy): %w", err)
@@ -299,6 +333,13 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&ns.IsStale,
 				&ns.CollectedAt,
 				&ns.CreatedAt,
+				&migrationState,
+				&activeChefVer,
+				&dormantInstalled,
+				&dormantChefVer,
+				&targetVer,
+				&targetExecTime,
+				&targetConvergeStatus,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (light): %w", err)
@@ -317,6 +358,13 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		ns.OhaiTime = floatFromNull(ohaiTime)
 		ns.RunList = jsonFromNullBytes(runList)
 		ns.Roles = jsonFromNullBytes(roles)
+		ns.MigrationState = stringFromNull(migrationState)
+		ns.ActiveChefVersion = stringFromNull(activeChefVer)
+		ns.DormantInstalled = boolFromNull(dormantInstalled)
+		ns.DormantChefVersion = stringFromNull(dormantChefVer)
+		ns.TargetVersion = stringFromNull(targetVer)
+		ns.TargetExecutionTime = stringFromNull(targetExecTime)
+		ns.TargetConvergeStatus = stringFromNull(targetConvergeStatus)
 
 		totalCount = rowTotal
 		snapshots = append(snapshots, ns)
@@ -582,7 +630,10 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		       ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
 		       ns.policy_name, ns.policy_group,
 		       ns.ohai_time, ns.custom_attributes,
-		       ns.is_stale, ns.collected_at, ns.created_at
+		       ns.is_stale, ns.collected_at, ns.created_at,
+		       ns.migration_state, ns.active_chef_version, ns.dormant_installed,
+		       ns.dormant_chef_version, ns.target_version, ns.target_execution_time,
+		       ns.target_converge_status
 		  FROM node_snapshots ns
 	)`
 
@@ -721,7 +772,90 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		}
 	}
 
+	// Parallel deployment tracking filters.
+	if len(f.MigrationStates) > 0 {
+		where += " AND cn.migration_state = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.MigrationStates))
+	}
+	if len(f.TargetConvergeStatuses) > 0 {
+		where += " AND cn.target_converge_status = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.TargetConvergeStatuses))
+	}
+	if len(f.TargetVersions) > 0 {
+		where += " AND cn.target_version = ANY(" + nextArg() + ")"
+		args = append(args, pq.Array(f.TargetVersions))
+	}
+	if f.ReadyToActivate != nil && *f.ReadyToActivate {
+		where += " AND cn.migration_state = 'hab_dormant' AND cn.target_converge_status = 'success'"
+	}
+
 	return cte, join, where, args
+}
+
+// DeploymentVersionRow holds per-version deployment state counts from a live
+// GROUP BY query on node_snapshots.
+type DeploymentVersionRow struct {
+	Version         string
+	Staged          int
+	Activated       int
+	ConvergePassing int
+	ConvergeFailing int
+}
+
+// CountNodesByDeploymentVersion returns per-version deployment state counts
+// for nodes matching the given filter. Only nodes with migration_state
+// 'hab_dormant' or 'hab_active' (and a non-empty deployed version) are
+// included. Also returns totalNodes (all nodes in filter, regardless of state).
+func (db *DB) CountNodesByDeploymentVersion(ctx context.Context, f NodeSnapshotFilter) ([]DeploymentVersionRow, int, error) {
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
+
+	// Total nodes (all states).
+	totalQuery := fmt.Sprintf(`%s SELECT COUNT(*) FROM current_nodes cn %s%s`, cte, join, where)
+	var totalNodes int
+	if err := db.pool.QueryRowContext(ctx, totalQuery, args...).Scan(&totalNodes); err != nil {
+		return nil, 0, fmt.Errorf("datastore: counting total nodes for deployment version: %w", err)
+	}
+
+	// Per-version deployment breakdown.
+	query := fmt.Sprintf(`%s
+		SELECT
+		  CASE WHEN cn.migration_state = 'hab_dormant' THEN cn.dormant_chef_version
+		       WHEN cn.migration_state = 'hab_active' THEN cn.active_chef_version
+		  END AS deployed_version,
+		  COUNT(*) FILTER (WHERE cn.migration_state = 'hab_dormant') AS staged,
+		  COUNT(*) FILTER (WHERE cn.migration_state = 'hab_active') AS activated,
+		  COUNT(*) FILTER (WHERE cn.target_converge_status = 'success') AS converge_passing,
+		  COUNT(*) FILTER (WHERE cn.target_converge_status = 'failed') AS converge_failing
+		FROM current_nodes cn
+		%s%s
+		  AND cn.migration_state IN ('hab_dormant', 'hab_active')
+		  AND COALESCE(
+		    CASE WHEN cn.migration_state = 'hab_dormant' THEN cn.dormant_chef_version
+		         WHEN cn.migration_state = 'hab_active' THEN cn.active_chef_version
+		    END, '') != ''
+		GROUP BY deployed_version
+		ORDER BY (COUNT(*)) DESC, deployed_version ASC
+	`, cte, join, where)
+
+	rows, err := db.pool.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("datastore: counting deployment version distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var result []DeploymentVersionRow
+	for rows.Next() {
+		var r DeploymentVersionRow
+		if err := rows.Scan(&r.Version, &r.Staged, &r.Activated, &r.ConvergePassing, &r.ConvergeFailing); err != nil {
+			return nil, 0, fmt.Errorf("datastore: scanning deployment version row: %w", err)
+		}
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("datastore: iterating deployment version rows: %w", err)
+	}
+
+	return result, totalNodes, nil
 }
 
 // splitCSV splits a comma-separated string into trimmed non-empty values.

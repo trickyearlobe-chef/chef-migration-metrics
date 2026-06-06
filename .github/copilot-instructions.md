@@ -12,6 +12,9 @@ the same applies to GitHub Copilot.
 
 - These are operating rules, not project documentation. Keep this file tiny — it
   is injected into every request.
+- Do NOT add a `Co-authored-by: Copilot` trailer (or any AI authorship line) to
+  commits or PRs — see the Commits rule in `/CLAUDE.md`. A `commit-msg` hook
+  strips it as a backstop, but don't add it in the first place.
 - To reduce context cost, generated/vendored paths (`node_modules`, `dist`,
   `build`, `embedded`, lockfiles, `migrations`) are excluded from editor
   indexing: VS Code via `.vscode/settings.json`, Zed via `.zed/settings.json`

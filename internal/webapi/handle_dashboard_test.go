@@ -3393,3 +3393,392 @@ func TestHandleDashboardVersionDistribution_MidCollectionGuard_WithOwnership(t *
 
 // Ensure the _ = fmt.Sprintf is used (keeps the import alive).
 var _ = fmt.Sprintf
+
+// ---------------------------------------------------------------------------
+// handleDashboardDeploymentTrend
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardDeploymentTrend_HappyPath(t *testing.T) {
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"deployment":{"staged_or_activated":30,"converge_passing":20},"by_staleness":{"fresh":80,"warning":15,"critical":5},"fresh":{"total":80}}`),
+					SnapshotAt:       t1,
+				},
+				{
+					ID:               2,
+					CollectionRunOrg: "run-2",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"deployment":{"staged_or_activated":50,"converge_passing":45},"by_staleness":{"fresh":85,"warning":10,"critical":5},"fresh":{"total":85}}`),
+					SnapshotAt:       t2,
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []deploymentTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+	if body.Data[0].StagedOrActivated != 30 {
+		t.Errorf("data[0].staged_or_activated = %d, want 30", body.Data[0].StagedOrActivated)
+	}
+	if body.Data[0].ConvergePassing != 20 {
+		t.Errorf("data[0].converge_passing = %d, want 20", body.Data[0].ConvergePassing)
+	}
+	if body.Data[1].StagedOrActivated != 50 {
+		t.Errorf("data[1].staged_or_activated = %d, want 50", body.Data[1].StagedOrActivated)
+	}
+	if body.Data[1].ConvergePassing != 45 {
+		t.Errorf("data[1].converge_passing = %d, want 45", body.Data[1].ConvergePassing)
+	}
+}
+
+func TestHandleDashboardDeploymentTrend_EmptyWhenNoDeploymentData(t *testing.T) {
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			// Pre-deployment snapshots: no deployment field in JSON.
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"by_staleness":{"fresh":80,"warning":15,"critical":5},"fresh":{"total":80}}`),
+					SnapshotAt:       t1,
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []deploymentTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0 (pre-deployment snapshots should be skipped)", len(body.Data))
+	}
+}
+
+func TestHandleDashboardDeploymentTrend_StoreError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, errors.New("db down")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardDeploymentStatus
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardDeploymentStatus_HappyPath(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		CountNodesByDeploymentVersionFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.DeploymentVersionRow, int, error) {
+			return []datastore.DeploymentVersionRow{
+				{Version: "19.3.5", Staged: 0, Activated: 8, ConvergePassing: 8, ConvergeFailing: 0},
+				{Version: "19.3.15", Staged: 5, Activated: 2, ConvergePassing: 4, ConvergeFailing: 1},
+			}, 100, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/status", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		Data       []deploymentStatusVersionEntry `json:"data"`
+		TotalNodes int                            `json:"total_nodes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.TotalNodes != 100 {
+		t.Errorf("total_nodes = %d, want 100", body.TotalNodes)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+
+	if body.Data[0].Version != "19.3.5" {
+		t.Errorf("data[0].version = %q, want 19.3.5", body.Data[0].Version)
+	}
+	if body.Data[0].Staged != 0 {
+		t.Errorf("data[0].staged = %d, want 0", body.Data[0].Staged)
+	}
+	if body.Data[0].Activated != 8 {
+		t.Errorf("data[0].activated = %d, want 8", body.Data[0].Activated)
+	}
+	if body.Data[0].ConvergePassing != 8 {
+		t.Errorf("data[0].converge_passing = %d, want 8", body.Data[0].ConvergePassing)
+	}
+	if body.Data[0].Total != 8 {
+		t.Errorf("data[0].total = %d, want 8", body.Data[0].Total)
+	}
+
+	if body.Data[1].Version != "19.3.15" {
+		t.Errorf("data[1].version = %q, want 19.3.15", body.Data[1].Version)
+	}
+	if body.Data[1].Staged != 5 {
+		t.Errorf("data[1].staged = %d, want 5", body.Data[1].Staged)
+	}
+	if body.Data[1].Activated != 2 {
+		t.Errorf("data[1].activated = %d, want 2", body.Data[1].Activated)
+	}
+	if body.Data[1].ConvergeFailing != 1 {
+		t.Errorf("data[1].converge_failing = %d, want 1", body.Data[1].ConvergeFailing)
+	}
+	if body.Data[1].Total != 7 {
+		t.Errorf("data[1].total = %d, want 7", body.Data[1].Total)
+	}
+}
+
+func TestHandleDashboardDeploymentStatus_Empty(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		CountNodesByDeploymentVersionFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.DeploymentVersionRow, int, error) {
+			return nil, 50, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/status", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body struct {
+		Data       []deploymentStatusVersionEntry `json:"data"`
+		TotalNodes int                            `json:"total_nodes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.TotalNodes != 50 {
+		t.Errorf("total_nodes = %d, want 50", body.TotalNodes)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0", len(body.Data))
+	}
+}
+
+func TestHandleDashboardDeploymentStatus_StoreError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return nil, errors.New("db down")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/status", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleDashboardDeploymentTrend — per-version extension
+// ---------------------------------------------------------------------------
+
+func TestHandleDashboardDeploymentTrend_WithByVersion(t *testing.T) {
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data: []byte(`{
+						"total_nodes":100,
+						"deployment":{
+							"staged_or_activated":15,
+							"converge_passing":11,
+							"by_version":{
+								"19.3.5":{"staged":2,"activated":8,"converge_passing":8,"converge_failing":0},
+								"19.3.15":{"staged":5,"activated":0,"converge_passing":3,"converge_failing":2}
+							}
+						},
+						"by_staleness":{"fresh":80,"warning":15,"critical":5},
+						"fresh":{"total":80}
+					}`),
+					SnapshotAt: t1,
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		Data []deploymentTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+
+	pt := body.Data[0]
+	if pt.StagedOrActivated != 15 {
+		t.Errorf("staged_or_activated = %d, want 15", pt.StagedOrActivated)
+	}
+	if pt.ConvergePassing != 11 {
+		t.Errorf("converge_passing = %d, want 11", pt.ConvergePassing)
+	}
+	if pt.ByVersion == nil {
+		t.Fatal("by_version should not be nil")
+	}
+	if len(pt.ByVersion) != 2 {
+		t.Fatalf("by_version has %d entries, want 2", len(pt.ByVersion))
+	}
+
+	v1 := pt.ByVersion["19.3.5"]
+	if v1.StagedOrActivated != 10 {
+		t.Errorf("by_version[19.3.5].staged_or_activated = %d, want 10", v1.StagedOrActivated)
+	}
+	if v1.ConvergePassing != 8 {
+		t.Errorf("by_version[19.3.5].converge_passing = %d, want 8", v1.ConvergePassing)
+	}
+
+	v2 := pt.ByVersion["19.3.15"]
+	if v2.StagedOrActivated != 5 {
+		t.Errorf("by_version[19.3.15].staged_or_activated = %d, want 5", v2.StagedOrActivated)
+	}
+	if v2.ConvergePassing != 3 {
+		t.Errorf("by_version[19.3.15].converge_passing = %d, want 3", v2.ConvergePassing)
+	}
+}
+
+func TestHandleDashboardDeploymentTrend_BackwardCompatibleWithoutByVersion(t *testing.T) {
+	t1 := time.Date(2025, 6, 14, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDailyMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
+			if snapshotType != "node_metrics" {
+				return nil, nil
+			}
+			// Old-format snapshot without by_version.
+			return []datastore.MetricSnapshot{
+				{
+					ID:               1,
+					CollectionRunOrg: "run-1",
+					OrganisationName: "prod",
+					SnapshotType:     "node_metrics",
+					Data:             []byte(`{"total_nodes":100,"deployment":{"staged_or_activated":30,"converge_passing":20},"by_staleness":{"fresh":80,"warning":15,"critical":5},"fresh":{"total":80}}`),
+					SnapshotAt:       t1,
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/deployment/trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body struct {
+		Data []deploymentTrendPoint `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+
+	pt := body.Data[0]
+	if pt.StagedOrActivated != 30 {
+		t.Errorf("staged_or_activated = %d, want 30", pt.StagedOrActivated)
+	}
+	if pt.ConvergePassing != 20 {
+		t.Errorf("converge_passing = %d, want 20", pt.ConvergePassing)
+	}
+	// by_version should be omitted (nil) for old snapshots.
+	if pt.ByVersion != nil {
+		t.Errorf("by_version should be nil for old snapshots, got %v", pt.ByVersion)
+	}
+}

@@ -92,6 +92,7 @@
   - First line `<type>(<scope>): <summary>`
   - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
 - Do not commit secrets, credentials, or API keys. Use environment variables.
+- NEVER add an AI/assistant authorship trailer to commit messages or PR bodies, from ANY tool — no `Co-authored-by:` line naming Claude, Anthropic, Copilot, Cursor, or any AI agent, and no "Generated with …" attribution line. This applies equally to Claude Code and GitHub Copilot and overrides their default behaviour. Genuine human co-authors are fine. A `commit-msg` hook strips AI trailers as a backstop.
 
 
 ## Spawned Agents

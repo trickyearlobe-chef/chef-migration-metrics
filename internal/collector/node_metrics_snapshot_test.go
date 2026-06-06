@@ -425,6 +425,249 @@ func TestBuildNodeMetricsPayload_UntestedCookbookCountsAsCookstyle(t *testing.T)
 	}
 }
 
+func TestBuildNodeMetricsPayload_DeploymentCounts(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "omnibus", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "omnibus_only"},
+		{NodeName: "staged-pass", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", TargetConvergeStatus: "success"},
+		{NodeName: "staged-fail", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", TargetConvergeStatus: "failed"},
+		{NodeName: "activated", ChefVersion: "19.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", TargetConvergeStatus: "success"},
+		{NodeName: "no-migration", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix())},
+	}
+
+	raw, err := buildNodeMetricsPayload(nodeMetricsInput{
+		SnapshotParams:    params,
+		ReadinessResults:  nil,
+		TargetChefVersion: "19.0.0",
+		WarningHours:      72,
+		CriticalDays:      7,
+		RequiredDiskMB:    3000,
+		Now:               now,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got nodeMetricsPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.Deployment.StagedOrActivated != 3 {
+		t.Errorf("deployment.staged_or_activated = %d, want 3 (2 dormant + 1 active)", got.Deployment.StagedOrActivated)
+	}
+	if got.Deployment.ConvergePassing != 2 {
+		t.Errorf("deployment.converge_passing = %d, want 2 (staged-pass + activated)", got.Deployment.ConvergePassing)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Per-version deployment breakdown tests
+// ---------------------------------------------------------------------------
+
+func TestBuildNodeMetricsPayload_DeploymentByVersion_MultipleVersions(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	params := []datastore.InsertNodeSnapshotParams{
+		// Version 19.3.5: 1 staged (dormant), converge pass
+		{NodeName: "n1", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.5", TargetConvergeStatus: "success", TargetVersion: "19.3.5"},
+		// Version 19.3.5: 1 activated, converge pass
+		{NodeName: "n2", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", ActiveChefVersion: "19.3.5", TargetConvergeStatus: "success", TargetVersion: "19.3.5"},
+		// Version 19.3.15: 1 staged (dormant), converge fail
+		{NodeName: "n3", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.15", TargetConvergeStatus: "failed", TargetVersion: "19.3.15"},
+		// Version 19.3.15: 1 staged (dormant), converge pass
+		{NodeName: "n4", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.15", TargetConvergeStatus: "success", TargetVersion: "19.3.15"},
+		// omnibus_only — not part of deployment
+		{NodeName: "n5", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "omnibus_only"},
+	}
+
+	raw, err := buildNodeMetricsPayload(nodeMetricsInput{
+		SnapshotParams:    params,
+		ReadinessResults:  nil,
+		TargetChefVersion: "19.3.15",
+		WarningHours:      72,
+		CriticalDays:      7,
+		RequiredDiskMB:    3000,
+		Now:               now,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got nodeMetricsPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	// Aggregate still works (backward-compatible).
+	if got.Deployment.StagedOrActivated != 4 {
+		t.Errorf("deployment.staged_or_activated = %d, want 4", got.Deployment.StagedOrActivated)
+	}
+	if got.Deployment.ConvergePassing != 3 {
+		t.Errorf("deployment.converge_passing = %d, want 3", got.Deployment.ConvergePassing)
+	}
+
+	// Per-version breakdown.
+	if got.Deployment.ByVersion == nil {
+		t.Fatal("deployment.by_version should not be nil")
+	}
+	if len(got.Deployment.ByVersion) != 2 {
+		t.Fatalf("deployment.by_version has %d entries, want 2", len(got.Deployment.ByVersion))
+	}
+
+	v1 := got.Deployment.ByVersion["19.3.5"]
+	if v1.Staged != 1 {
+		t.Errorf("by_version[19.3.5].staged = %d, want 1", v1.Staged)
+	}
+	if v1.Activated != 1 {
+		t.Errorf("by_version[19.3.5].activated = %d, want 1", v1.Activated)
+	}
+	if v1.ConvergePassing != 2 {
+		t.Errorf("by_version[19.3.5].converge_passing = %d, want 2", v1.ConvergePassing)
+	}
+	if v1.ConvergeFailing != 0 {
+		t.Errorf("by_version[19.3.5].converge_failing = %d, want 0", v1.ConvergeFailing)
+	}
+
+	v2 := got.Deployment.ByVersion["19.3.15"]
+	if v2.Staged != 2 {
+		t.Errorf("by_version[19.3.15].staged = %d, want 2", v2.Staged)
+	}
+	if v2.Activated != 0 {
+		t.Errorf("by_version[19.3.15].activated = %d, want 0", v2.Activated)
+	}
+	if v2.ConvergePassing != 1 {
+		t.Errorf("by_version[19.3.15].converge_passing = %d, want 1", v2.ConvergePassing)
+	}
+	if v2.ConvergeFailing != 1 {
+		t.Errorf("by_version[19.3.15].converge_failing = %d, want 1", v2.ConvergeFailing)
+	}
+}
+
+func TestBuildNodeMetricsPayload_DeploymentByVersion_Empty(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// All nodes are omnibus_only — no deployment versions.
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "n1", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "omnibus_only"},
+		{NodeName: "n2", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix())},
+	}
+
+	raw, err := buildNodeMetricsPayload(nodeMetricsInput{
+		SnapshotParams:    params,
+		ReadinessResults:  nil,
+		TargetChefVersion: "19.0.0",
+		WarningHours:      72,
+		CriticalDays:      7,
+		RequiredDiskMB:    3000,
+		Now:               now,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got nodeMetricsPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if got.Deployment.ByVersion == nil {
+		t.Fatal("deployment.by_version should be empty map, not nil")
+	}
+	if len(got.Deployment.ByVersion) != 0 {
+		t.Errorf("deployment.by_version has %d entries, want 0", len(got.Deployment.ByVersion))
+	}
+}
+
+func TestBuildNodeMetricsPayload_DeploymentByVersion_SingleVersion(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "n1", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.5", TargetConvergeStatus: "success", TargetVersion: "19.3.5"},
+		{NodeName: "n2", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.5", TargetConvergeStatus: "failed", TargetVersion: "19.3.5"},
+		{NodeName: "n3", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", ActiveChefVersion: "19.3.5", TargetConvergeStatus: "success", TargetVersion: "19.3.5"},
+	}
+
+	raw, err := buildNodeMetricsPayload(nodeMetricsInput{
+		SnapshotParams:    params,
+		ReadinessResults:  nil,
+		TargetChefVersion: "19.3.5",
+		WarningHours:      72,
+		CriticalDays:      7,
+		RequiredDiskMB:    3000,
+		Now:               now,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got nodeMetricsPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if len(got.Deployment.ByVersion) != 1 {
+		t.Fatalf("deployment.by_version has %d entries, want 1", len(got.Deployment.ByVersion))
+	}
+
+	v := got.Deployment.ByVersion["19.3.5"]
+	if v.Staged != 2 {
+		t.Errorf("by_version[19.3.5].staged = %d, want 2", v.Staged)
+	}
+	if v.Activated != 1 {
+		t.Errorf("by_version[19.3.5].activated = %d, want 1", v.Activated)
+	}
+	if v.ConvergePassing != 2 {
+		t.Errorf("by_version[19.3.5].converge_passing = %d, want 2", v.ConvergePassing)
+	}
+	if v.ConvergeFailing != 1 {
+		t.Errorf("by_version[19.3.5].converge_failing = %d, want 1", v.ConvergeFailing)
+	}
+}
+
+func TestBuildNodeMetricsPayload_DeploymentByVersion_NoConvergeStatus(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// Nodes deployed but no converge result yet.
+	params := []datastore.InsertNodeSnapshotParams{
+		{NodeName: "n1", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_dormant", DormantChefVersion: "19.3.5"},
+		{NodeName: "n2", ChefVersion: "17.0.0", OhaiTime: float64(now.Add(-1 * time.Hour).Unix()), MigrationState: "hab_active", ActiveChefVersion: "19.3.5"},
+	}
+
+	raw, err := buildNodeMetricsPayload(nodeMetricsInput{
+		SnapshotParams:    params,
+		ReadinessResults:  nil,
+		TargetChefVersion: "19.3.5",
+		WarningHours:      72,
+		CriticalDays:      7,
+		RequiredDiskMB:    3000,
+		Now:               now,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got nodeMetricsPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	v := got.Deployment.ByVersion["19.3.5"]
+	if v.Staged != 1 {
+		t.Errorf("by_version[19.3.5].staged = %d, want 1", v.Staged)
+	}
+	if v.Activated != 1 {
+		t.Errorf("by_version[19.3.5].activated = %d, want 1", v.Activated)
+	}
+	if v.ConvergePassing != 0 {
+		t.Errorf("by_version[19.3.5].converge_passing = %d, want 0", v.ConvergePassing)
+	}
+	if v.ConvergeFailing != 0 {
+		t.Errorf("by_version[19.3.5].converge_failing = %d, want 0", v.ConvergeFailing)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // classifyBlockingCookbooks tests
 // ---------------------------------------------------------------------------

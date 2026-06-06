@@ -728,10 +728,10 @@ generate: ## Run go generate
 # =============================================================================
 
 .PHONY: install-hooks
-install-hooks: ## Install git pre-commit hook (secret scanning + spec-size checks)
+install-hooks: ## Install git hooks (secret scanning, spec-size checks, commit-msg trailer strip)
 	@echo "$(GREEN)Installing git hooks...$(RESET)"
 	@git config core.hooksPath .githooks
-	@echo "$(GREEN)Git hooks installed. Pre-commit checks (secret scanning + spec size) are now active.$(RESET)"
+	@echo "$(GREEN)Git hooks installed: pre-commit (secret scanning + spec size) and commit-msg (AI-trailer strip) are now active.$(RESET)"
 	@echo "  Hook directory: .githooks/"
 	@echo "  To bypass (use with caution): git commit --no-verify"
 

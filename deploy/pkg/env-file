@@ -9,7 +9,7 @@
 #   RPM:  /etc/sysconfig/chef-migration-metrics
 #   DEB:  /etc/default/chef-migration-metrics
 #
-# See: .claude/specifications/packaging/Specification.md §§ 2.5, 3.4
+# See: specifications/packaging.md §§ 2.5, 3.4
 # =============================================================================
 
 # Database connection string (overrides config.yml datastore.dsn)

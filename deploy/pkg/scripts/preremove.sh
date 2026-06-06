@@ -7,7 +7,7 @@
 # RPM: $1 = 0 means final removal, $1 = 1 means upgrade
 # DEB: $1 = "remove" or "purge" means removal, $1 = "upgrade" means upgrade
 #
-# See: .claude/specifications/packaging/Specification.md § 2.6
+# See: specifications/packaging.md § 2.6
 # =============================================================================
 
 set -e

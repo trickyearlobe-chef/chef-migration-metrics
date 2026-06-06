@@ -12,7 +12,7 @@ import (
 //
 // These tests verify that the analysis write-time derivation functions produce
 // results consistent with the semantic contracts defined in
-// .claude/specifications/semantic-contracts.md
+// specifications/semantic-contracts.md
 //
 // The key contract: for the SAME set of blocking cookbooks and stale/compatible
 // flags, deriveCookstyleStatusFromBlocking and deriveKitchenStatusFromBlocking

@@ -116,6 +116,34 @@ export interface StaleTrendResponse {
   data: StaleTrendPoint[];
 }
 
+export interface DeploymentTrendPoint {
+  organisation_name: string;
+  collection_run_org: string;
+  completed_at: string;
+  total_nodes: number;
+  staged_or_activated: number;
+  converge_passing: number;
+  by_version?: Record<string, { staged_or_activated: number; converge_passing: number }>;
+}
+
+export interface DeploymentTrendResponse {
+  data: DeploymentTrendPoint[];
+}
+
+export interface DeploymentStatusVersionEntry {
+  version: string;
+  staged: number;
+  activated: number;
+  converge_passing: number;
+  converge_failing: number;
+  total: number;
+}
+
+export interface DeploymentStatusResponse {
+  data: DeploymentStatusVersionEntry[];
+  total_nodes: number;
+}
+
 export interface CookbookCompatibilitySummary {
   target_chef_version: string;
   total_cookbooks: number;

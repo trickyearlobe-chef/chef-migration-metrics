@@ -38,6 +38,15 @@ type NodeSnapshot struct {
 	IsStale          bool            `json:"is_stale"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	CreatedAt        time.Time       `json:"created_at"`
+
+	// Parallel deployment tracking (nullable — absent when migration cookbook not deployed)
+	MigrationState       string `json:"migration_state,omitempty"`
+	ActiveChefVersion    string `json:"active_chef_version,omitempty"`
+	DormantInstalled     *bool  `json:"dormant_installed,omitempty"`
+	DormantChefVersion   string `json:"dormant_chef_version,omitempty"`
+	TargetVersion        string `json:"target_version,omitempty"`
+	TargetExecutionTime  string `json:"target_execution_time,omitempty"`
+	TargetConvergeStatus string `json:"target_converge_status,omitempty"`
 }
 
 // IsPolicyfileNode returns true if the node is managed by Policyfiles
@@ -78,6 +87,15 @@ type InsertNodeSnapshotParams struct {
 	CustomAttributes json.RawMessage // raw JSON — flat map keyed by dot-separated attribute path
 	IsStale          bool
 	CollectedAt      time.Time
+
+	// Parallel deployment tracking
+	MigrationState       string
+	ActiveChefVersion    string
+	DormantInstalled     *bool
+	DormantChefVersion   string
+	TargetVersion        string
+	TargetExecutionTime  string
+	TargetConvergeStatus string
 }
 
 // UpsertNodeSnapshot inserts a node snapshot or updates the existing row for
@@ -106,10 +124,14 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			chef_environment, chef_version, platform, platform_version,
 			platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 			policy_name, policy_group, ohai_time, custom_attributes,
-			is_stale, collected_at
+			is_stale, collected_at,
+			migration_state, active_chef_version, dormant_installed,
+			dormant_chef_version, target_version, target_execution_time,
+			target_converge_status
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19
+			$14, $15, $16, $17, $18, $19,
+			$20, $21, $22, $23, $24, $25, $26
 		)
 		ON CONFLICT (organisation_name, node_name) DO UPDATE SET
 			collection_run_org = EXCLUDED.collection_run_org,
@@ -128,12 +150,22 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			ohai_time          = EXCLUDED.ohai_time,
 			custom_attributes  = EXCLUDED.custom_attributes,
 			is_stale           = EXCLUDED.is_stale,
-			collected_at       = EXCLUDED.collected_at
+			collected_at       = EXCLUDED.collected_at,
+			migration_state       = EXCLUDED.migration_state,
+			active_chef_version   = EXCLUDED.active_chef_version,
+			dormant_installed     = EXCLUDED.dormant_installed,
+			dormant_chef_version  = EXCLUDED.dormant_chef_version,
+			target_version        = EXCLUDED.target_version,
+			target_execution_time = EXCLUDED.target_execution_time,
+			target_converge_status = EXCLUDED.target_converge_status
 		RETURNING collection_run_org, organisation_name, node_name,
 		          chef_environment, chef_version, platform, platform_version,
 		          platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 		          policy_name, policy_group, ohai_time, custom_attributes,
-		          is_stale, collected_at, created_at
+		          is_stale, collected_at, created_at,
+		          migration_state, active_chef_version, dormant_installed,
+		          dormant_chef_version, target_version, target_execution_time,
+		          target_converge_status
 	`
 
 	return scanNodeSnapshot(q.QueryRowContext(ctx, query,
@@ -156,6 +188,13 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 		nullJSON(p.CustomAttributes),
 		p.IsStale,
 		p.CollectedAt,
+		nullString(p.MigrationState),
+		nullString(p.ActiveChefVersion),
+		nullBool(p.DormantInstalled),
+		nullString(p.DormantChefVersion),
+		nullString(p.TargetVersion),
+		nullString(p.TargetExecutionTime),
+		nullString(p.TargetConvergeStatus),
 	))
 }
 
@@ -186,7 +225,7 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 	}
 
 	const batchSize = 500
-	const numCols = 19
+	const numCols = 26
 	inserted := 0
 
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
@@ -219,7 +258,10 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					chef_environment, chef_version, platform, platform_version,
 					platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 					policy_name, policy_group, ohai_time, custom_attributes,
-					is_stale, collected_at
+					is_stale, collected_at,
+					migration_state, active_chef_version, dormant_installed,
+					dormant_chef_version, target_version, target_execution_time,
+					target_converge_status
 				) VALUES `)
 
 			// ON CONFLICT clause will be appended after the VALUES rows.
@@ -231,10 +273,12 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 				}
 				offset := i * numCols
 				fmt.Fprintf(&sb,
-					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 					offset+1, offset+2, offset+3, offset+4, offset+5, offset+6,
 					offset+7, offset+8, offset+9, offset+10, offset+11, offset+12,
-					offset+13, offset+14, offset+15, offset+16, offset+17, offset+18, offset+19,
+					offset+13, offset+14, offset+15, offset+16, offset+17, offset+18,
+					offset+19, offset+20, offset+21, offset+22, offset+23, offset+24,
+					offset+25, offset+26,
 				)
 
 				if p.CollectedAt.IsZero() {
@@ -261,6 +305,13 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					nullJSON(p.CustomAttributes),
 					p.IsStale,
 					p.CollectedAt,
+					nullString(p.MigrationState),
+					nullString(p.ActiveChefVersion),
+					nullBool(p.DormantInstalled),
+					nullString(p.DormantChefVersion),
+					nullString(p.TargetVersion),
+					nullString(p.TargetExecutionTime),
+					nullString(p.TargetConvergeStatus),
 				)
 			}
 
@@ -283,7 +334,14 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					ohai_time          = EXCLUDED.ohai_time,
 					custom_attributes  = EXCLUDED.custom_attributes,
 					is_stale           = EXCLUDED.is_stale,
-					collected_at       = EXCLUDED.collected_at
+					collected_at       = EXCLUDED.collected_at,
+					migration_state       = EXCLUDED.migration_state,
+					active_chef_version   = EXCLUDED.active_chef_version,
+					dormant_installed     = EXCLUDED.dormant_installed,
+					dormant_chef_version  = EXCLUDED.dormant_chef_version,
+					target_version        = EXCLUDED.target_version,
+					target_execution_time = EXCLUDED.target_execution_time,
+					target_converge_status = EXCLUDED.target_converge_status
 			`)
 
 			if returnKeys {
@@ -339,7 +397,10 @@ func (db *DB) listNodeSnapshotsByCollectionRun(ctx context.Context, q queryable,
 		       chef_environment, chef_version, platform, platform_version,
 		       platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 		       policy_name, policy_group, ohai_time, custom_attributes,
-		       is_stale, collected_at, created_at
+		       is_stale, collected_at, created_at,
+		       migration_state, active_chef_version, dormant_installed,
+		       dormant_chef_version, target_version, target_execution_time,
+		       target_converge_status
 		FROM node_snapshots
 		WHERE collection_run_org = $1
 		ORDER BY node_name
@@ -363,7 +424,10 @@ func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, 
 		       ns.chef_environment, ns.chef_version, ns.platform, ns.platform_version,
 		       ns.platform_family, ns.platform_caption, ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
 		       ns.policy_name, ns.policy_group, ns.ohai_time, ns.custom_attributes,
-		       ns.is_stale, ns.collected_at, ns.created_at
+		       ns.is_stale, ns.collected_at, ns.created_at,
+		       ns.migration_state, ns.active_chef_version, ns.dormant_installed,
+		       ns.dormant_chef_version, ns.target_version, ns.target_execution_time,
+		       ns.target_converge_status
 		FROM node_snapshots ns
 		WHERE ns.organisation_name = $1
 		ORDER BY ns.node_name
@@ -384,7 +448,10 @@ func (db *DB) getNodeSnapshotByName(ctx context.Context, q queryable, organisati
 		       chef_environment, chef_version, platform, platform_version,
 		       platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
 		       policy_name, policy_group, ohai_time, custom_attributes,
-		       is_stale, collected_at, created_at
+		       is_stale, collected_at, created_at,
+		       migration_state, active_chef_version, dormant_installed,
+		       dormant_chef_version, target_version, target_execution_time,
+		       target_converge_status
 		FROM node_snapshots
 		WHERE organisation_name = $1 AND node_name = $2
 		ORDER BY collected_at DESC
@@ -529,6 +596,9 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	var policyName, policyGroup sql.NullString
 	var ohaiTime sql.NullFloat64
 	var filesystem, cookbooks, runList, roles, customAttributes []byte
+	var migrationState, activeChefVer, dormantChefVer sql.NullString
+	var dormantInstalled sql.NullBool
+	var targetVer, targetExecTime, targetConvergeStatus sql.NullString
 
 	err := row.Scan(
 		&collectionRunOrg,
@@ -551,6 +621,13 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 		&ns.IsStale,
 		&ns.CollectedAt,
 		&ns.CreatedAt,
+		&migrationState,
+		&activeChefVer,
+		&dormantInstalled,
+		&dormantChefVer,
+		&targetVer,
+		&targetExecTime,
+		&targetConvergeStatus,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -574,6 +651,13 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	ns.RunList = jsonFromNullBytes(runList)
 	ns.Roles = jsonFromNullBytes(roles)
 	ns.CustomAttributes = jsonFromNullBytes(customAttributes)
+	ns.MigrationState = stringFromNull(migrationState)
+	ns.ActiveChefVersion = stringFromNull(activeChefVer)
+	ns.DormantInstalled = boolFromNull(dormantInstalled)
+	ns.DormantChefVersion = stringFromNull(dormantChefVer)
+	ns.TargetVersion = stringFromNull(targetVer)
+	ns.TargetExecutionTime = stringFromNull(targetExecTime)
+	ns.TargetConvergeStatus = stringFromNull(targetConvergeStatus)
 	return ns, nil
 }
 
@@ -592,6 +676,9 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		var policyName, policyGroup sql.NullString
 		var ohaiTime sql.NullFloat64
 		var filesystem, cookbooks, runList, roles, customAttributes []byte
+		var migrationState, activeChefVer, dormantChefVer sql.NullString
+		var dormantInstalled sql.NullBool
+		var targetVer, targetExecTime, targetConvergeStatus sql.NullString
 
 		if err := rows.Scan(
 			&collectionRunOrg,
@@ -614,6 +701,13 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 			&ns.IsStale,
 			&ns.CollectedAt,
 			&ns.CreatedAt,
+			&migrationState,
+			&activeChefVer,
+			&dormantInstalled,
+			&dormantChefVer,
+			&targetVer,
+			&targetExecTime,
+			&targetConvergeStatus,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning node snapshot row: %w", err)
 		}
@@ -633,6 +727,13 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		ns.RunList = jsonFromNullBytes(runList)
 		ns.Roles = jsonFromNullBytes(roles)
 		ns.CustomAttributes = jsonFromNullBytes(customAttributes)
+		ns.MigrationState = stringFromNull(migrationState)
+		ns.ActiveChefVersion = stringFromNull(activeChefVer)
+		ns.DormantInstalled = boolFromNull(dormantInstalled)
+		ns.DormantChefVersion = stringFromNull(dormantChefVer)
+		ns.TargetVersion = stringFromNull(targetVer)
+		ns.TargetExecutionTime = stringFromNull(targetExecTime)
+		ns.TargetConvergeStatus = stringFromNull(targetConvergeStatus)
 		snapshots = append(snapshots, ns)
 	}
 	if err := rows.Err(); err != nil {

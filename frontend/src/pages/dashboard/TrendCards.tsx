@@ -4,12 +4,14 @@ import {
   fetchReadinessTrend,
   fetchComplexityTrend,
   fetchStaleTrend,
+  fetchDeploymentTrend,
 } from "../../api";
 import type {
   VersionDistributionTrendResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
   StaleTrendResponse,
+  DeploymentTrendResponse,
 } from "../../types";
 import { LoadingSpinner, ErrorAlert } from "../../components/Feedback";
 import { TrendChart, breakdownToSeries } from "../../components/TrendChart";
@@ -452,6 +454,131 @@ export function StaleTrendCard({ organisation }: { organisation?: string }) {
         Nodes that have stopped checking in. "Missing" nodes may be temporarily offline; "Gone" nodes have not reported for an extended period.
       </p>
       {loading && <LoadingSpinner message="Loading stale node trend…" />}
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {!loading && !error && (
+        <TrendChart
+          series={trendSeries}
+          yLabel="Node count"
+          showArea={true}
+          height={220}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deployment Progress Trend Card (historical)
+// ---------------------------------------------------------------------------
+
+export function DeploymentTrendCard({
+  organisation,
+}: {
+  organisation?: string;
+}) {
+  const [data, setData] = useState<DeploymentTrendResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchDeploymentTrend(organisation)
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [organisation]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const trendSeries: TrendSeries[] = (() => {
+    if (!data || data.data.length === 0) return [];
+
+    const sorted = [...data.data]
+      .filter((pt) => pt.completed_at !== "")
+      .sort(
+        (a, b) =>
+          new Date(a.completed_at).getTime() -
+          new Date(b.completed_at).getTime(),
+      );
+
+    if (sorted.length === 0) return [];
+
+    // If per-version data is available, render per-version series.
+    const hasPerVersion = sorted.some((pt) => pt.by_version && Object.keys(pt.by_version).length > 0);
+
+    if (hasPerVersion) {
+      const versions = new Set<string>();
+      for (const pt of sorted) {
+        if (pt.by_version) {
+          for (const v of Object.keys(pt.by_version)) versions.add(v);
+        }
+      }
+
+      const colours = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"];
+      const series: TrendSeries[] = [];
+      let idx = 0;
+
+      for (const version of [...versions].sort()) {
+        const colour = colours[idx % colours.length];
+        idx++;
+        series.push(
+          {
+            key: `deployed-${version}`,
+            label: `${version} Staged/Activated`,
+            colour,
+            data: sorted.map((pt) => ({
+              timestamp: pt.completed_at,
+              value: pt.by_version?.[version]?.staged_or_activated ?? 0,
+            })),
+          },
+          {
+            key: `converge-${version}`,
+            label: `${version} Converge Passing`,
+            colour: colour + "80", // semi-transparent variant
+            data: sorted.map((pt) => ({
+              timestamp: pt.completed_at,
+              value: pt.by_version?.[version]?.converge_passing ?? 0,
+            })),
+          },
+        );
+      }
+
+      return series;
+    }
+
+    // Fallback: aggregate series (backward-compat).
+    return [
+      {
+        key: "staged-or-activated",
+        label: "Staged or Activated",
+        colour: "#3b82f6",
+        data: sorted.map((pt) => ({
+          timestamp: pt.completed_at,
+          value: pt.staged_or_activated,
+        })),
+      },
+      {
+        key: "converge-passing",
+        label: "Speculative Converge Passing",
+        colour: "#22c55e",
+        data: sorted.map((pt) => ({
+          timestamp: pt.completed_at,
+          value: pt.converge_passing,
+        })),
+      },
+    ];
+  })();
+
+  return (
+    <div className="card">
+      <h3 className="card-header">Deployment Progress — Trend</h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Nodes with the target version staged or activated vs. nodes where the nightly speculative converge is passing. The gap represents nodes needing investigation.
+      </p>
+      {loading && <LoadingSpinner message="Loading deployment trend…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
         <TrendChart

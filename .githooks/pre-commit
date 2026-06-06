@@ -136,10 +136,10 @@ skip_content_allowlist() {
   local f="$1"
   case "$f" in
     .githooks/pre-commit) return 0 ;;
-    .claude/Claude.md|.claude/Structure.md) return 0 ;;
     cmd/chef-migration-metrics/main.go) return 0 ;; # default seed password constant, not a real secret
     deploy/docker-compose/.env.example) return 0 ;;
     deploy/docker-compose/README.md) return 0 ;;
+    deploy/pkg/env-file) return 0 ;; # packaged env template — placeholder DATABASE_URL, not a real secret
     deploy/elk/.env.example) return 0 ;;
     deploy/elk/README.md) return 0 ;;
     README.md) return 0 ;;
@@ -147,10 +147,6 @@ skip_content_allowlist() {
   esac
   # Subdirectory patterns (case globs don't reliably handle deep nesting)
   [[ "$f" == .github/workflows/*.yml ]] && return 0
-  [[ "$f" == .claude/specifications/*.md ]] && return 0
-  [[ "$f" == .claude/specifications/*/*.md ]] && return 0
-  [[ "$f" == .claude/specifications/*/*/*.md ]] && return 0
-  [[ "$f" == .claude/summaries/*.md ]] && return 0
   return 1
 }
 

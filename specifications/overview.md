@@ -16,6 +16,7 @@
 | [data-export](data-export.md) | Exporting metrics and data (synchronous and async job-based). |
 | [datastore](datastore.md) | PostgreSQL schema and data-access layer. DDL lives in `migrations/`; see the stub for the table map. |
 | [dependency-graph](dependency-graph.md) | Cookbook and role dependency graph construction and queries. |
+| [deployment-dashboard](deployment-dashboard.md) | Per-version deployment progress dashboard. |
 | [diagnostic-bundle](diagnostic-bundle.md) | Support/diagnostic bundle for offline troubleshooting (VDI/file-transfer constraints). |
 | [dual-compatibility-signals](dual-compatibility-signals.md) | Combining Test Kitchen and CookStyle signals into a compatibility verdict. |
 | [encrypted-config-store](encrypted-config-store.md) | Encrypted storage backend for configuration values. |

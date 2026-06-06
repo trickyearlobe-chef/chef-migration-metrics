@@ -418,6 +418,7 @@ func NodeSearchAttributes() PartialSearchQuery {
 		"policy_name":             {"policy_name"},
 		"policy_group":            {"policy_group"},
 		"ohai_time":               {"ohai_time"},
+		"chef_migration":          {"chef_migration"},
 	}
 }
 
@@ -1123,4 +1124,97 @@ func (n NodeData) FreeDiskMB() int64 {
 	}
 
 	return -1
+}
+
+// ---------------------------------------------------------------------------
+// Chef Migration attributes (parallel deployment tracking)
+// ---------------------------------------------------------------------------
+
+// chefMigration returns the chef_migration sub-map, or nil if absent/wrong type.
+func (n NodeData) chefMigration() map[string]interface{} {
+	m, _ := n.Raw["chef_migration"].(map[string]interface{})
+	return m
+}
+
+// HasMigrationData returns true if the chef_migration attribute block is
+// present in the node data (i.e. the migration cookbook is deployed).
+func (n NodeData) HasMigrationData() bool {
+	return n.chefMigration() != nil
+}
+
+// MigrationState returns the raw migration_state value (e.g. "omnibus_only",
+// "hab_dormant", "hab_active"). Returns "" if not set.
+func (n NodeData) MigrationState() string {
+	m := n.chefMigration()
+	if m == nil {
+		return ""
+	}
+	s, _ := m["migration_state"].(string)
+	return s
+}
+
+// ActiveChefVersion returns the version of the currently active chef-client
+// as reported by the migration cookbook. Returns "" if not set.
+func (n NodeData) ActiveChefVersion() string {
+	m := n.chefMigration()
+	if m == nil {
+		return ""
+	}
+	s, _ := m["active_chef_version"].(string)
+	return s
+}
+
+// DormantInstalled returns whether a staged (non-active) chef-client binary
+// is present. Returns false if the field is missing.
+func (n NodeData) DormantInstalled() bool {
+	m := n.chefMigration()
+	if m == nil {
+		return false
+	}
+	b, _ := m["dormant_installed"].(bool)
+	return b
+}
+
+// DormantChefVersion returns the version of the staged binary. Returns "" if
+// none installed or field is missing.
+func (n NodeData) DormantChefVersion() string {
+	m := n.chefMigration()
+	if m == nil {
+		return ""
+	}
+	s, _ := m["dormant_chef_version"].(string)
+	return s
+}
+
+// TargetVersion returns the CC version used for the speculative converge.
+// Returns "" if not set.
+func (n NodeData) TargetVersion() string {
+	m := n.chefMigration()
+	if m == nil {
+		return ""
+	}
+	s, _ := m["target_version"].(string)
+	return s
+}
+
+// TargetExecutionTime returns the timestamp of the speculative converge run.
+// Returns "" if not set.
+func (n NodeData) TargetExecutionTime() string {
+	m := n.chefMigration()
+	if m == nil {
+		return ""
+	}
+	s, _ := m["target_execution_time"].(string)
+	return s
+}
+
+// TargetConvergeStatus returns the speculative converge result ("success" or
+// "failed"). Returns "" if not set.
+func (n NodeData) TargetConvergeStatus() string {
+	m := n.chefMigration()
+	if m == nil {
+		return ""
+	}
+	s, _ := m["target_converge_status"].(string)
+	return s
 }

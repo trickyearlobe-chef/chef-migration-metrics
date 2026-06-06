@@ -38,6 +38,9 @@ export interface NodeListItem {
   ohai_time_age_hours?: number;
   collected_at: string;
   readiness?: NodeReadinessSummary[];
+  migration_state?: string | null;
+  target_converge_status?: string | null;
+  ready_to_activate?: boolean;
 }
 
 export type NodeListResponse = PaginatedResponse<NodeListItem>;
@@ -65,6 +68,15 @@ export interface NodeSnapshot {
   ohai_time_age_hours?: number;
   collected_at: string;
   created_at: string;
+
+  // Parallel deployment tracking (nullable — absent when migration cookbook not deployed)
+  migration_state?: string | null;
+  active_chef_version?: string | null;
+  dormant_installed?: boolean | null;
+  dormant_chef_version?: string | null;
+  target_version?: string | null;
+  target_execution_time?: string | null;
+  target_converge_status?: string | null;
 }
 
 export interface BlockingCookbook {
