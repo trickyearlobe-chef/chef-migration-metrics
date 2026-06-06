@@ -2,8 +2,9 @@
 # =============================================================================
 # commit-msg hook — strip AI authorship trailers from commit messages
 # =============================================================================
-# Removes any "Co-Authored-By: Claude/Anthropic ..." line and the
-# "Generated with Claude Code" line, regardless of which tool added them.
+# Removes AI/assistant authorship trailers regardless of which tool added them
+# (Claude Code, GitHub Copilot, Cursor, etc.). Runs at the git layer, so it
+# applies to commits made from any tool or by hand.
 # Active via core.hooksPath=.githooks (make install-hooks).
 # =============================================================================
 
@@ -14,10 +15,14 @@ MSG_FILE="$1"
 
 tmp=$(mktemp)
 
-# Drop the offending lines (case-insensitive):
-#  - Co-Authored-By trailers naming Claude or Anthropic
-#  - the "Generated with [Claude Code]" attribution line (with or without emoji)
-grep -viE '^(Co-Authored-By:.*(Claude|Anthropic|noreply@anthropic\.com)|.*Generated with .*Claude)' \
+# Drop the offending lines (case-insensitive). Targets KNOWN AI assistants only,
+# so genuine human Co-authored-by trailers are preserved:
+#  - Co-authored-by trailers naming Claude/Anthropic/Copilot/Cursor/ChatGPT/etc.
+#    or their bot emails (noreply@anthropic.com, copilot@github.com, the Copilot
+#    GitHub bot id, *@users.noreply.github.com lines that name Copilot)
+#  - "Generated with [Claude Code]" / "Generated with ... Copilot" attribution
+#    lines (with or without the 🤖 emoji)
+grep -viE '^(Co-authored-by:.*(Claude|Anthropic|noreply@anthropic\.com|Copilot|copilot@github\.com|ChatGPT|OpenAI|Cursor|Codeium|Gemini|Bard)|.*Generated with .*(Claude|Copilot))' \
   "$MSG_FILE" > "$tmp" || true
 
 # Collapse any trailing blank lines left behind, then ensure a single newline.
