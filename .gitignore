@@ -81,8 +81,10 @@ package-lock.json.bak
 # IDE and Editor
 # =============================================================================
 
-# Visual Studio Code
-.vscode/
+# Visual Studio Code — ignore everything except shared workspace settings
+# (Copilot/search exclusions, tracked for the whole team).
+.vscode/*
+!.vscode/settings.json
 *.code-workspace
 
 # JetBrains (GoLand, IntelliJ, WebStorm)
@@ -107,8 +109,9 @@ tags
 *.sublime-project
 *.sublime-workspace
 
-# Zed
-.zed/
+# Zed — ignore everything except shared workspace settings
+.zed/*
+!.zed/settings.json
 
 # =============================================================================
 # Operating System

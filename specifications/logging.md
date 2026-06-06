@@ -1,7 +1,7 @@
 # Logging - Component Specification
 
 > Component specification for the Chef Migration Metrics logging subsystem.
-> See the [top-level specification](../Specification.md) for project context.
+> See the [top-level specification](overview.md) for project context.
 
 ---
 
@@ -77,7 +77,7 @@ When the application invokes an external process (Test Kitchen, CookStyle, git),
 
 ## Retention
 
-Log entries must be retained for a configurable period (see [Configuration specification](../configuration/Specification.md)). Entries older than the configured retention period must be automatically purged from the datastore during each collection run.
+Log entries must be retained for a configurable period (see [Configuration specification](configuration.md)). Entries older than the configured retention period must be automatically purged from the datastore during each collection run.
 
 ---
 
@@ -99,7 +99,7 @@ Notification delivery attempts must be logged with the `notification_dispatch` s
 - **Successful deliveries** are logged at `INFO` severity with the channel name, event type, and a summary of the notification content.
 - **Failed deliveries** are logged at `ERROR` severity with the channel name, event type, error message, and retry count.
 - **Retries** are logged at `WARN` severity with the retry attempt number and delay before the next attempt.
-- The notification payload is not stored in the log entry `process_output` field (it is stored in the `notification_history` table instead — see [Datastore Specification](../datastore/Specification.md)).
+- The notification payload is not stored in the log entry `process_output` field (it is stored in the `notification_history` table instead — see [Datastore Specification](datastore.md)).
 
 ---
 
@@ -115,7 +115,7 @@ Export operations are logged with the `export_job` scope:
 
 ## TLS Logging
 
-TLS certificate lifecycle events are logged with the `tls` scope. See the [TLS and Certificate Management specification](../tls/Specification.md) for full details on the TLS subsystem.
+TLS certificate lifecycle events are logged with the `tls` scope. See the [TLS and Certificate Management specification](tls.md) for full details on the TLS subsystem.
 
 ### Startup Events
 
@@ -160,13 +160,13 @@ The `tls_domain` field is populated for all `tls`-scoped log entries where a spe
 
 ## Web UI Log Viewer
 
-The log viewer is documented in the [Visualisation specification](../visualisation/Specification.md). This component specification covers only the production and storage of log entries; the viewer specification covers display, filtering, and navigation.
+The log viewer is documented in the [Visualisation specification](visualisation.md). This component specification covers only the production and storage of log entries; the viewer specification covers display, filtering, and navigation.
 
 ---
 
 ## Related Specifications
 
-- [Top-level Specification](../Specification.md)
-- [Visualisation Specification](../visualisation/Specification.md) — log viewer UI
-- [Configuration Specification](../configuration/Specification.md) — `logging.level` and `logging.retention_days`
-- [TLS and Certificate Management Specification](../tls/Specification.md) — defines the TLS events logged under the `tls` scope
+- [Top-level Specification](overview.md)
+- [Visualisation Specification](visualisation.md) — log viewer UI
+- [Configuration Specification](configuration.md) — `logging.level` and `logging.retention_days`
+- [TLS and Certificate Management Specification](tls.md) — defines the TLS events logged under the `tls` scope

@@ -1,0 +1,58 @@
+# Configuration — Validation
+
+On startup, the application must validate the configuration and fail fast with a descriptive error message if:
+
+- Any required field is missing
+- A referenced key file does not exist or is not readable
+- A `*_credential` reference names a credential that does not exist in the `credentials` table (log `ERROR` with the credential name and the config field that references it)
+- A `*_credential` reference exists but `CMM_CREDENTIAL_ENCRYPTION_KEY` is not set or is invalid (fatal — cannot decrypt database credentials)
+- `CMM_CREDENTIAL_ENCRYPTION_KEY` is set but is not valid Base64 or decodes to fewer than 32 bytes (fatal)
+- A credential in the `credentials` table cannot be decrypted with the current or previous master key (log `ERROR` per credential; fatal if the credential is required by an active organisation or provider)
+- An organisation has neither `client_key_path` nor `client_key_credential` configured (no credential source available)
+- The datastore is not reachable
+- An unknown configuration key is present (to catch typos)
+- A cron expression is invalid
+- A target Chef Client version string is not a valid semver
+- The `server.port` is not a valid port number (1–65535)
+- `server.tls.mode` is not one of `off`, `static`, or `acme`
+- `server.tls.min_version` is not one of `"1.2"` or `"1.3"` (when mode is `static` or `acme`)
+- `server.tls.http_redirect_port` is set but is not a valid port number (1–65535)
+- **Static mode validation:**
+  - `server.tls.mode` is `static` but `cert_path` or `key_path` is missing or empty
+  - The certificate file at `cert_path` does not exist or is not readable
+  - The key file at `key_path` does not exist or is not readable
+  - The certificate and key do not form a valid pair
+  - The certificate is expired at startup time (log `WARN` — do not prevent startup, as the operator may be in the process of renewing)
+  - `ca_path` is set but the file does not exist or is not a valid PEM bundle
+- **ACME mode validation:**
+  - `server.tls.mode` is `acme` but `acme.domains` is empty
+  - `server.tls.mode` is `acme` but `acme.email` is empty
+  - `server.tls.mode` is `acme` but `acme.agree_to_tos` is not `true`
+  - `acme.storage_path` does not exist or is not writable
+  - `acme.challenge` is not one of `http-01`, `tls-alpn-01`, or `dns-01`
+  - `acme.challenge` is `dns-01` but `acme.dns_provider` is empty
+  - `acme.challenge` is `dns-01` but required `dns_provider_config` keys for the selected provider are missing
+  - `acme.challenge` is `http-01` but `http_redirect_port` is `0` (fatal — the HTTP-01 challenge cannot be served)
+  - `acme.renew_before_days` is less than 1 or greater than 89
+  - `acme.ca_url` is not a valid URL
+  - `acme.trusted_roots` is set but the file does not exist or is not a valid PEM bundle
+- **Backward compatibility:** Both `server.tls.enabled` and `server.tls.mode` are present (log `WARN` — `mode` takes precedence)
+- The exports output directory does not exist or is not writable
+- `stale_node_threshold_days` or `stale_cookbook_threshold_days` is less than 1
+- `analysis_tools.cookstyle_timeout_minutes` is less than 1
+- `analysis_tools.test_kitchen_timeout_minutes` is less than 1
+- `analysis_tools.embedded_bin_dir` is set to a non-empty value but the directory does not exist (log `WARN` — not fatal, as the application falls back to `PATH` lookup)
+- `elasticsearch.output_directory` does not exist or is not writable when `elasticsearch.enabled` is `true`
+- `elasticsearch.retention_hours` is less than 1
+- `ownership.auto_rules[].name` must be unique across all rules
+- `ownership.auto_rules[].owner` must reference an existing owner when auto-derivation runs (validated at rule evaluation time, not startup — owners may be created after config is written)
+- `ownership.auto_rules[].type` must be one of: `node_attribute`, `node_name_pattern`, `policy_match`, `cookbook_name_pattern`, `git_repo_url_pattern`, `role_match`
+- `ownership.auto_rules[].pattern` must be a valid Go regex when required by the rule type
+- `ownership.auto_rules[].attribute_path` is required when type is `node_attribute`
+- `ownership.auto_rules[].match_value` is required when type is `node_attribute`
+- `ownership.auto_rules[].policy_name` is required when type is `policy_match`
+- `ownership.audit_log.retention_days` must be a non-negative integer
+
+---
+
+> **Note:** See [Web API specification § WebSocket Real-Time Events](web-api.md#websocket-real-time-events) for the event types, envelope format, and client reconnection behaviour.

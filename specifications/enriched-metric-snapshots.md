@@ -39,8 +39,7 @@ A single `node_metrics` snapshot type replaces `chef_version_distribution` and `
       "cookstyle": 8000,
       "test_kitchen": 5000,
       "disk": 4000,
-      "foodcritic": 0,
-      "chefspec": 0
+      "foodcritic": 0
     },
     "by_version": {
       "17.10.3": 40000,
@@ -83,7 +82,6 @@ A single `node_metrics` snapshot type replaces `chef_version_distribution` and `
 | `test_kitchen` | Test Kitchen failed for at least one cookbook | Git repo TK runs |
 | `disk` | Insufficient disk space (or unknown) | Node filesystem data vs `required_disk_mb` |
 | `foodcritic` | FoodCritic failed (placeholder — not yet implemented) | — |
-| `chefspec` | ChefSpec failed (placeholder — not yet implemented) | — |
 
 Nodes can be blocked by multiple reasons simultaneously, so `blocked_by` values may sum to more than `blocked_total`.
 
@@ -142,7 +140,7 @@ The `recordMetricSnapshots` function (currently writes version distribution) and
 - **Platform-filtered readiness**: Add `fresh.by_platform_family_readiness` cross-tab if users want readiness broken down by platform within fresh nodes
 - **Re-aggregation**: Store raw `ohai_time` per node in a separate lightweight table if threshold changes need to rewrite historical `by_staleness` counts
 - **Ownership on trends**: If needed, add `node_fact_snapshots` table (one row per node per day) for historical ownership joins
-- **FoodCritic / ChefSpec**: When implemented, populate the placeholder keys
+- **FoodCritic**: When implemented, populate the placeholder keys
 
 ## Migration
 
