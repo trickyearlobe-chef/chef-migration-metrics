@@ -185,6 +185,14 @@ When kitchen times out and the output contains no converge activity (no resource
 - Log a WARN with the platform name — repeated `network_timeout` on one platform suggests the DHCP pool is exhausted for that subnet.
 - Do not retry automatically (retrying into an exhausted pool wastes time).
 
+### IP lease release on teardown
+
+To avoid exhausting the DHCP pool over a long scan, CMM injects a `pre_destroy` lifecycle hook that releases the instance's DHCP lease (Linux/Windows) before `kitchen destroy` runs. Contract in `test-kitchen-drivers-overlay-generation.md` § Lifecycle Hooks. Best-effort: a failed release never blocks destroy.
+
+### Repo-provided setup hooks
+
+Cookbook repos may define their own lifecycle hooks (setup scripts) in `.kitchen.yml`. The generated overlay MUST preserve these and compose with — not clobber — any phase CMM injects. Contract in `test-kitchen-drivers-overlay-generation.md` § Lifecycle Hooks.
+
 ### Inter-instance orphan sweep
 
 Run a lightweight orphan check between batch instances (not just on a timer). After each instance completes, if `timed_out` or `network_timeout`, trigger a targeted sweep for that specific VM name before starting the next instance. This keeps the slot count honest and prevents leaked VMs from consuming DHCP leases.
@@ -217,3 +225,5 @@ Batches must survive application restarts. The batch status is `running` in the 
 - Kitchen timeouts with no converge output are classified as network_timeout, not test failure.
 - Inter-instance orphan sweep runs after timed-out instances before starting the next.
 - Batches interrupted by restart are transitioned to cancelled on next startup; results already persisted are preserved.
+- Repo-provided lifecycle hooks in a cookbook's `.kitchen.yml` still run; the overlay does not clobber them.
+- CMM injects a best-effort `pre_destroy` IP-release hook (Linux/Windows); a failed release does not block destroy.

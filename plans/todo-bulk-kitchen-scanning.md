@@ -58,9 +58,30 @@ The batch scheduling logic needs a design pass before wiring. Current state is m
 - [ ] "Cancel" button sends cancel request, updates UI immediately
 - [ ] Show sweep status on admin TK config page
 
+## Lifecycle Hooks
+
+Spec: `test-kitchen-drivers-overlay-generation.md` § Lifecycle Hooks.
+
+### Repo-provided setup hooks (preserve)
+
+- [ ] Confirm overlay merge behaviour for `lifecycle:` — Test Kitchen replaces arrays per phase; verify which phases CMM currently clobbers
+- [ ] Overlay generation MUST preserve cookbook-provided lifecycle hooks; only inject phases CMM owns
+- [ ] When CMM must inject a phase the cookbook also uses, compose (append) rather than replace — read existing `.kitchen.yml`, merge arrays before writing overlay
+- [ ] Document which lifecycle phases CMM reserves vs. leaves to the repo
+
+### App-injected IP-release hook (pre_destroy)
+
+- [ ] Inject a `pre_destroy` lifecycle hook into the overlay that releases the DHCP lease on the target before destroy
+- [ ] Run remotely over the existing transport (`remote:` command), not on the CMM host
+- [ ] Per-platform command: Linux (e.g. `dhclient -r`) / Windows (`ipconfig /release`) — derive OS family from resolved image/platform entry
+- [ ] Best-effort: a failed release MUST NOT block or fail `kitchen destroy`
+- [ ] Compose with any repo-provided `pre_destroy` hook (see preservation item above)
+
 ## Tests
 
 - [ ] Unit tests for `RunBatch` — concurrency, cancellation, progress callback
 - [ ] Unit tests for orphan sweep — scoping rules (folder, prefix, age threshold)
 - [ ] Unit tests for `network_timeout` classification
 - [ ] Unit tests for startup cancelled-batch recovery
+- [ ] Unit tests for overlay lifecycle-hook composition — repo hooks preserved, CMM `pre_destroy` injected, arrays merged not clobbered
+- [ ] Unit tests for per-platform IP-release command selection (Linux vs Windows)

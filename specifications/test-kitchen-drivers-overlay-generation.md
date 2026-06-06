@@ -56,6 +56,35 @@ Transport env var naming uses the **image name** (not the kitchen_name) since mu
 4. Remove `.kitchen.local.yml`.
 5. Clear environment variables and zero credential memory.
 
+## Lifecycle Hooks
+
+Test Kitchen merges `.kitchen.local.yml` over the cookbook's untouched `.kitchen.yml`. The overlay deep-merges hashes but **replaces arrays**. `lifecycle:` is a hash of phase → command array, so a phase the overlay defines (e.g. `pre_destroy`) replaces the cookbook's array for that same phase; phases the overlay does not mention are preserved unchanged.
+
+### Repo-provided setup hooks (preserve)
+
+Some cookbook repos rely on their own lifecycle hooks (setup scripts) in `.kitchen.yml` to provision the instance correctly — STUB, contract to be finalised. Requirements:
+
+- The overlay MUST NOT clobber lifecycle phases the cookbook defines that CMM does not need to inject. Only inject phases CMM owns (see below).
+- If CMM must inject a phase the cookbook also uses, the overlay MUST compose (append the cookbook's commands), not silently replace them — exact merge mechanism TBD (e.g. read existing `.kitchen.yml`, concatenate arrays before writing the overlay).
+- Document which phases CMM reserves vs. leaves to the repo.
+
+### App-injected IP-release hook (pre_destroy)
+
+To keep the DHCP pool healthy across long scans (see `bulk-kitchen-scanning.md` § Capacity constraints), CMM injects a `pre_destroy` lifecycle hook that releases the instance's DHCP lease on the target **before** the VM is destroyed. STUB — contract to be finalised:
+
+- Runs remotely on the instance over the existing transport (`remote:` command), not on the CMM host.
+- Per-platform command: Linux releases via the DHCP client (e.g. `dhclient -r`); Windows releases via `ipconfig /release`.
+- Platform OS family is derived from the resolved image/platform entry.
+- MUST be best-effort: a failed release MUST NOT block or fail `kitchen destroy`.
+- Composes with any repo-provided `pre_destroy` hook per the preservation rule above.
+
+```
+# injected into .kitchen.local.yml — illustrative, not final
+lifecycle:
+  pre_destroy:
+    - remote: <linux-or-windows IP release command for this platform>
+```
+
 ## Startup Validation
 
 | Condition | Check | Failure Behaviour |
