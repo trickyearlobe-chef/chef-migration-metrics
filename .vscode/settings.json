@@ -1,0 +1,25 @@
+{
+  "// note": "Excludes generated/vendored paths from search and Copilot workspace context to cut token usage. See .github/copilot-instructions.md.",
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/embedded": true,
+    "frontend/package-lock.json": true,
+    "**/*.tsbuildinfo": true,
+    "migrations/**": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/build/**": true
+  },
+  "github.copilot.advanced": {
+    "contentExclusions": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "frontend/package-lock.json"
+    ]
+  }
+}
