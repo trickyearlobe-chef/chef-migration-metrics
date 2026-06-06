@@ -73,7 +73,15 @@ empirically on customer OS mix before relying on it.
 - [x] Per-platform command: Linux tolerant of `dhclient`/`dhcpcd`/`networkctl`/`nmcli`; Windows `ipconfig /release`; OS family from `analysis.NormalisePlatformName`
 - [x] Compose with any repo-provided `pre_destroy` hook (`writeLifecycleHook` + `readExistingPreDestroy`)
 - [x] Admin UI per-image opt-in checkbox (`AdminTestKitchenPage.tsx`)
-- [ ] EMPIRICAL (remaining): verify TK lifecycle-hook failure semantics for the installed kitchen version (non-zero `remote:` hook abort? transport drop = failure?) and that the release packet leaves the guest before power-off — see `todo-tech-debt.md` § IP-Release pre_destroy Hook
+**ACTION — on-site validation (blocks "rely on it", not "ship it"):** run before trusting the hook. Per platform/image in the customer OS mix:
+
+- [ ] Enable `release_ip_on_destroy` on one image; run a single kitchen instance; confirm the run result is **unchanged** vs the same run with it off (pass stays pass).
+- [ ] Confirm the DHCP lease is actually released (check the DHCP server's lease table / pool count drops for that IP after destroy) — i.e. the release packet left the guest before power-off.
+- [ ] Force the hook to fail (e.g. point at an image where the release binary is absent / transport user lacks rights) and confirm the run still **passes and the VM is destroyed** — no leak, no abort.
+- [ ] Note the transport user: if non-root, the Linux release is a no-op (no `sudo`) — record which images need a `sudo -n` prefix (tech-debt item).
+- [ ] Confirm TK lifecycle-hook failure semantics for the installed kitchen version (does a non-zero `remote:` hook abort? does a transport drop count as failure?).
+
+See `todo-tech-debt.md` § Test Kitchen — IP-Release pre_destroy Hook for the known limitations.
 
 ## Tests
 
