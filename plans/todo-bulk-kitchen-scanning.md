@@ -2,36 +2,28 @@
 
 Spec: `bulk-kitchen-scanning.md`
 
-## Scheduler Refactor (prerequisite)
+## Run → Scheduler Wiring (DONE — already implemented via queue)
 
-The batch scheduling logic needs a design pass before wiring. Current state is messy. Key design concerns:
+Implemented via DB-backed `kitchenqueue.Manager`, not the `Scheduler.RunAll` the spec
+imagined. Verified present in code: batch run launches a detached `executeBatch` goroutine
+that enqueues mapped instances; `IsEnabled()` 409 gate; single-running-batch guard;
+cancel-func map + `handleCancelKitchenBatch` stops in-flight work; `GET …/progress`;
+`batch_progress`/`batch_complete` events; startup `CancelStaleBatches` restart recovery.
+No wiring, cancellation, progress-endpoint, or restart-resilience work remains.
 
-- [ ] Review and clarify responsibilities between `batch.Resolver`, `Scheduler`, and the batch run handler — boundaries are currently blurry
-- [ ] Add a **rate limiter / time-window throttle** to cap how many VM slots can be started within a rolling time window (e.g. max N new VMs per minute). This is distinct from `max_concurrent_vms` (which caps simultaneous running VMs) — the rate limiter prevents flooding the DHCP pool when many VMs are starting/finishing in rapid succession
-- [ ] Design the rate limiter as a configurable parameter: `test_kitchen.vm_start_rate_per_minute` (or similar) — default conservative (e.g. 2/min)
-- [ ] Document the interaction between `max_concurrent_vms`, `vm_start_rate`, and `network_timeout` detection in `bulk-kitchen-scanning.md`
+## Concurrency cleanup (active — Chunk 1)
 
-## Run → Scheduler Wiring (core stub)
+- [ ] Remove per-batch `max_concurrent_vms` from data model, API/handlers, and batch UI (dead knob; concurrency is global only)
+- [ ] Resolve global default inconsistency (comment "10" vs `EffectiveMaxConcurrentVMs` 4) — one conservative value, comment matches code
+- [ ] Confirm global concurrency change is dynamic (live config → `SetWorkerCount`, already wired) with a test
 
-- [ ] Implement `Scheduler.RunBatch(ctx, []PlanResult, config, progressCallback)` — flattens instances across repos into one work queue with shared semaphore
-- [ ] Wire `handleRunKitchenBatch` to call `RunBatch` in a detached background goroutine
-- [ ] Store cancel func in router-level `map[string]context.CancelFunc` (mutex-protected)
-- [ ] Gate both `handleGitKitchenRun` and `handleRunKitchenBatch` on `tkCfg.IsEnabled()` — return 409 when disabled
-- [ ] Enforce single running batch constraint — return 409 if another batch is already `running`
-- [ ] On completion/cancellation, transition batch to `completed`/`cancelled`, set `completed_at`, broadcast `batch_complete` WebSocket event
+## VM start-rate limiter (active — Chunk 2, core deliverable)
 
-## Cancellation
-
-- [ ] Wire `handleCancelKitchenBatch` to call the stored cancel func (currently sets DB state only, no goroutine stop)
-
-## Progress Endpoint
-
-- [ ] Restore `GET /kitchen/batches/:id/progress` — derive counts from `git_kitchen_results` rows matching the batch's resolved cookbook list
-- [ ] Broadcast `batch_progress` WebSocket event after each instance completes (batch_id, instance_name, git_repo_name, passed, completed, total)
-
-## Restart Resilience
-
-- [ ] On startup, transition any batch stuck in `running` to `cancelled` with note "interrupted by restart"
+- [ ] TDD global rate limiter: sliding window, evenly paced (min inter-start gap ≈ window/max)
+- [ ] Config `window` (= DHCP lease time) + `max_starts_per_window` (= pool size); both dynamic (live accessor, no restart)
+- [ ] Gate VM start at the worker layer before boot; counts starts, charges full window regardless of early finish/release
+- [ ] Limiter is independent of IP release working (hard worst-case guarantee)
+- [ ] Confirm: single global window/max, or per-scope if subnets differ in lease time / pool size (open question)
 
 ## Orphan Sweep
 
@@ -43,11 +35,11 @@ The batch scheduling logic needs a design pass before wiring. Current state is m
 - [ ] Sweep reports: log at INFO, broadcast `orphan_sweep_complete` WebSocket event, expose on admin TK config page ("last sweep: N VMs cleaned, time ago")
 - [ ] Sweep does nothing when TK is disabled or no hypervisor configured
 
-## DHCP / Network Timeout Classification
+## DHCP / Network Timeout Classification (DONE)
 
-- [ ] Classify kitchen timeout with no converge output as `network_timeout` (not test failure)
-- [ ] Store `error_message: "probable DHCP/network timeout"` on result
-- [ ] Log WARN per platform — repeated `network_timeout` on same platform → DHCP pool likely exhausted
+Implemented in `internal/gitkitchen/executor.go` (~:140) — `network_timeout` classification
+when a timeout has no converge activity, `error_message: "probable DHCP/network timeout"`.
+- [ ] Log WARN per platform — repeated `network_timeout` on same platform → DHCP pool likely exhausted (verify present)
 
 ## Frontend
 
@@ -69,19 +61,22 @@ Spec: `test-kitchen-drivers-overlay-generation.md` § Lifecycle Hooks.
 - [ ] When CMM must inject a phase the cookbook also uses, compose (append) rather than replace — read existing `.kitchen.yml`, merge arrays before writing overlay
 - [ ] Document which lifecycle phases CMM reserves vs. leaves to the repo
 
-### App-injected IP-release hook (pre_destroy)
+### App-injected IP-release hook (pre_destroy) — opt-in spike, AFTER rate limiter
 
-- [ ] Inject a `pre_destroy` lifecycle hook into the overlay that releases the DHCP lease on the target before destroy
-- [ ] Run remotely over the existing transport (`remote:` command), not on the CMM host
-- [ ] Per-platform command: Linux (e.g. `dhclient -r`) / Windows (`ipconfig /release`) — derive OS family from resolved image/platform entry
-- [ ] Best-effort: a failed release MUST NOT block or fail `kitchen destroy`
+Opportunistic optimisation, NOT the pool guarantee (rate limiter is). Spike — validate
+empirically on customer OS mix before relying on it.
+
+- [ ] Opt-in per platform/image, default off; config dynamic (live accessor, no restart)
+- [ ] Failure-isolated: command always exits 0 (missing/variant binary, non-zero result must never abend the run — a non-zero kitchen hook aborts the action and leaks the VM+lease)
+- [ ] Detached from transport (`setsid`/`nohup`, backgrounded, redirected) so a dropped link is not a hook failure (note: races hypervisor power-off — verify empirically)
+- [ ] Per-platform command: Linux tolerant of `dhclient`/`dhcpcd`/`networkctl`/`nmcli` absence; Windows `ipconfig /release`; OS family from resolved image/platform entry
 - [ ] Compose with any repo-provided `pre_destroy` hook (see preservation item above)
+- [ ] Verify TK lifecycle-hook failure semantics for the installed kitchen version (non-zero `remote:` hook abort? transport drop = failure?)
 
 ## Tests
 
-- [ ] Unit tests for `RunBatch` — concurrency, cancellation, progress callback
+- [ ] Unit tests for rate limiter — never exceeds max per trailing window; paced gap; dynamic window/max change mid-run
+- [ ] Unit tests for global concurrency dynamic change (`SetWorkerCount` on live config)
 - [ ] Unit tests for orphan sweep — scoping rules (folder, prefix, age threshold)
-- [ ] Unit tests for `network_timeout` classification
-- [ ] Unit tests for startup cancelled-batch recovery
 - [ ] Unit tests for overlay lifecycle-hook composition — repo hooks preserved, CMM `pre_destroy` injected, arrays merged not clobbered
-- [ ] Unit tests for per-platform IP-release command selection (Linux vs Windows)
+- [ ] Unit tests for IP-release hook failure isolation — simulated hook failure/transport drop leaves result unchanged and VM destroyed
