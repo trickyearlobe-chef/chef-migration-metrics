@@ -40,7 +40,7 @@ go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(GIT_COMMIT) -X ma
 
 The version string is used in:
 
-- The `User-Agent` header for Chef API requests (see [Chef API specification](../chef-api/Specification.md))
+- The `User-Agent` header for Chef API requests (see [Chef API specification](chef-api.md))
 - The `/api/v1/admin/status` endpoint response
 - Package metadata (RPM, DEB)
 - The `--version` CLI flag

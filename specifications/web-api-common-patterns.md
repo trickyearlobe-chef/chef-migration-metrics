@@ -48,7 +48,7 @@ Filter parameters are passed as query string parameters. Multiple values for the
 | `cookbook_status` | string | `active`, `unused`, or `all` (default: `active`) |
 | `stale_status` | string | `all`, `stale`, or `fresh` (default: `all`). Filters nodes by stale check-in status. |
 | `complexity_label` | string | Comma-separated list of complexity labels: `low`, `medium`, `high`, `critical`. Filters cookbooks by remediation complexity. |
-| `owner` | string | Comma-separated list of owner names. Filters to entities owned by specified owners (see [Ownership Specification](../ownership/Specification.md) § 4.5). Only active when ownership is enabled. |
+| `owner` | string | Comma-separated list of owner names. Filters to entities owned by specified owners (see [Ownership Specification](ownership.md) § 4.5). Only active when ownership is enabled. |
 | `unowned` | boolean | When `true`, filters to entities with no resolved owner. Cannot be combined with `owner`. Only active when ownership is enabled. |
 
 ### Sorting

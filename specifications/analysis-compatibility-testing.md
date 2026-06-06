@@ -34,8 +34,8 @@ Rather than running CookStyle with its full default rule set, the analysis compo
 
 #### Concurrency
 
-- Test Kitchen runs are independent per cookbook + target Chef Client version combination. Each run must be dispatched as a goroutine, bounded by the `concurrency.test_kitchen_run` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
-- CookStyle scans are independent per cookbook version. Scans must run in parallel using goroutines, bounded by the `concurrency.cookstyle_scan` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
+- Test Kitchen runs are independent per cookbook + target Chef Client version combination. Each run must be dispatched as a goroutine, bounded by the `concurrency.test_kitchen_run` worker pool setting (see [Configuration Specification](configuration.md)).
+- CookStyle scans are independent per cookbook version. Scans must run in parallel using goroutines, bounded by the `concurrency.cookstyle_scan` worker pool setting (see [Configuration Specification](configuration.md)).
 - Each goroutine must capture stdout/stderr from the external process and return it alongside the pass/fail result to the coordinator. Errors must not be silently discarded.
 
 ---
@@ -48,11 +48,11 @@ Test Kitchen is invoked as an external process. The application does **not** lin
 
 **Embedded Tools**
 
-Test Kitchen, multiple kitchen drivers (`kitchen-dokken`, `kitchen-vcenter`, `kitchen-vra`, `kitchen-ec2`, `kitchen-azurerm`, and others), and a self-contained Ruby runtime are **embedded** in all packaging formats under `/opt/chef-migration-metrics/embedded/`. The application resolves the `kitchen` binary from this embedded directory by default (configurable via the `embedded_bin_dir` setting — see [Configuration Specification](../configuration/Specification.md)).
+Test Kitchen, multiple kitchen drivers (`kitchen-dokken`, `kitchen-vcenter`, `kitchen-vra`, `kitchen-ec2`, `kitchen-azurerm`, and others), and a self-contained Ruby runtime are **embedded** in all packaging formats under `/opt/chef-migration-metrics/embedded/`. The application resolves the `kitchen` binary from this embedded directory by default (configurable via the `embedded_bin_dir` setting — see [Configuration Specification](configuration.md)).
 
 External prerequisites depend on the configured driver: Docker for `dokken`, vCenter API access for `vcenter`, AWS credentials for `ec2`, etc. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) for the full driver list and requirements.
 
-> **Note:** The embedded Ruby environment is fully self-contained and does not interfere with any system Ruby, Chef Workstation, or other gem installation on the host. See the [Packaging Specification](../packaging/Specification.md) for details on how the embedded environment is built and laid out.
+> **Note:** The embedded Ruby environment is fully self-contained and does not interfere with any system Ruby, Chef Workstation, or other gem installation on the host. See the [Packaging Specification](packaging.md) for details on how the embedded environment is built and laid out.
 
 **Invocation sequence per cookbook + target Chef Client version**
 

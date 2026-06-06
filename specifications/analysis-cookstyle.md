@@ -8,7 +8,7 @@ CookStyle is invoked as an external process against cookbooks downloaded from th
 
 **Embedded Tools**
 
-CookStyle and its Ruby runtime are **embedded** in all packaging formats under `/opt/chef-migration-metrics/embedded/`. The application resolves the `cookstyle` binary from this embedded directory by default (configurable via the `embedded_bin_dir` setting — see [Configuration Specification](../configuration/Specification.md)).
+CookStyle and its Ruby runtime are **embedded** in all packaging formats under `/opt/chef-migration-metrics/embedded/`. The application resolves the `cookstyle` binary from this embedded directory by default (configurable via the `embedded_bin_dir` setting — see [Configuration Specification](configuration.md)).
 
 No additional installation or configuration is required. CookStyle has no external runtime dependencies beyond the embedded Ruby environment.
 

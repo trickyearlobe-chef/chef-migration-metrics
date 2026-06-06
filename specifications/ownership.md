@@ -1,9 +1,9 @@
 # Ownership Tracking - Component Specification
 
-> **Implementation language:** Go. See `../../Claude.md` for language and concurrency rules.
+> **Implementation language:** Go. See `../CLAUDE.md` for language and concurrency rules.
 
 > Component specification for Ownership Tracking in Chef Migration Metrics.
-> See the [top-level specification](../Specification.md) for project overview and scope.
+> See the [top-level specification](overview.md) for project overview and scope.
 
 ---
 
@@ -81,11 +81,11 @@ Moved to [ownership-operations.md](ownership-operations.md).
 
 ## Related Specifications
 
-- [Top-level Specification](../Specification.md) — project overview and scope
-- [Data Collection Specification](../data-collection/Specification.md) — node collection, cookbook fetching, partial search
-- [Datastore Specification](../datastore/Specification.md) — database schema and tables
-- [Web API Specification](../web-api/Specification.md) — HTTP API endpoints
-- [Visualisation Specification](../visualisation/Specification.md) — dashboard views, filters, drill-downs
-- [Configuration Specification](../configuration/Specification.md) — YAML configuration schema
-- [Analysis Specification](../analysis/Specification.md) — complexity scoring, blast radius (related to ownership-scoped remediation)
-- [Logging Specification](../logging/Specification.md) — structured logging with ownership scope
+- [Top-level Specification](overview.md) — project overview and scope
+- [Data Collection Specification](data-collection.md) — node collection, cookbook fetching, partial search
+- [Datastore Specification](datastore.md) — database schema and tables
+- [Web API Specification](web-api.md) — HTTP API endpoints
+- [Visualisation Specification](visualisation.md) — dashboard views, filters, drill-downs
+- [Configuration Specification](configuration.md) — YAML configuration schema
+- [Analysis Specification](analysis.md) — complexity scoring, blast radius (related to ownership-scoped remediation)
+- [Logging Specification](logging.md) — structured logging with ownership scope

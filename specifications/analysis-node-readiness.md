@@ -15,7 +15,7 @@ Readiness status is computed and persisted after each collection and testing cyc
 
 #### Concurrency
 
-- Readiness computation is independent per node per target Chef Client version. Nodes must be evaluated in parallel using goroutines, bounded by the `concurrency.readiness_evaluation` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
+- Readiness computation is independent per node per target Chef Client version. Nodes must be evaluated in parallel using goroutines, bounded by the `concurrency.readiness_evaluation` worker pool setting (see [Configuration Specification](configuration.md)).
 
 ---
 
@@ -94,7 +94,7 @@ The `automatic.filesystem` attribute collected from each node contains a map of 
 
 #### Design: Stale Node Handling
 
-Nodes flagged as **stale** by the data collection component (see [Data Collection Specification](../data-collection/Specification.md)) require special handling during readiness evaluation:
+Nodes flagged as **stale** by the data collection component (see [Data Collection Specification](data-collection.md)) require special handling during readiness evaluation:
 
 - Stale nodes are still evaluated for readiness, but their disk space data is treated as **unknown** (same as missing filesystem data) since the data may be outdated.
 - The readiness result for stale nodes includes an additional `stale_data` flag set to `true`.

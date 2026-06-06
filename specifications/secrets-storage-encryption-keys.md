@@ -24,7 +24,7 @@ All credentials stored in the `credentials` table are encrypted at the applicati
 
 ### Database Schema
 
-The `credentials` table (fully specified in the [Datastore Specification](../datastore/Specification.md)):
+The `credentials` table (fully specified in the [Datastore Specification](datastore.md)):
 
 | Column | Type | Nullable | Description |
 |--------|------|----------|-------------|

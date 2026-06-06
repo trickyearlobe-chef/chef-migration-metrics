@@ -48,7 +48,7 @@ exports:
 
 ### Elasticsearch Export
 
-Controls the export of data to Elasticsearch for analysis with Kibana. The application writes NDJSON (newline-delimited JSON) files to a directory, which a Logstash pipeline reads and indexes into Elasticsearch. See the [Elasticsearch Export Specification](../elasticsearch/Specification.md) for the full document type reference, pipeline design, and ELK testing stack.
+Controls the export of data to Elasticsearch for analysis with Kibana. The application writes NDJSON (newline-delimited JSON) files to a directory, which a Logstash pipeline reads and indexes into Elasticsearch. See the Elasticsearch Export Specification for the full document type reference, pipeline design, and ELK testing stack.
 
 ```yaml
 elasticsearch:
@@ -103,7 +103,7 @@ Database schema changes must be managed through migrations. Migrations ensure th
 
 ### Web Server
 
-Controls the HTTP listener for the Web API and dashboard frontend. The server supports three TLS modes: plain HTTP (`off`), externally-managed certificates (`static`), and automatic certificate management via ACME (`acme`). See the [TLS and Certificate Management specification](../tls/Specification.md) for full details on certificate lifecycle, ACME challenge types, renewal, and security considerations.
+Controls the HTTP listener for the Web API and dashboard frontend. The server supports three TLS modes: plain HTTP (`off`), externally-managed certificates (`static`), and automatic certificate management via ACME (`acme`). See the [TLS and Certificate Management specification](tls.md) for full details on certificate lifecycle, ACME challenge types, renewal, and security considerations.
 
 ```yaml
 server:
@@ -174,7 +174,7 @@ server:
 | `tls.key_path` | Yes | — | Path to PEM-encoded private key file. Must be readable by the application process. Never commit to source control. |
 | `tls.ca_path` | No | `""` | Path to a PEM-encoded CA bundle. When set, enables mutual TLS (mTLS) — the server requires and validates client certificates against this CA. |
 
-Certificates are automatically reloaded on `SIGHUP` or when file changes are detected via filesystem watching. See [TLS specification § 2.3](../tls/Specification.md#23-certificate-reload).
+Certificates are automatically reloaded on `SIGHUP` or when file changes are detected via filesystem watching. See [TLS specification § 2.3](tls.md#23-certificate-reload).
 
 #### ACME Settings (mode: acme)
 
@@ -191,7 +191,7 @@ Certificates are automatically reloaded on `SIGHUP` or when file changes are det
 | `tls.acme.agree_to_tos` | Yes | `false` | Must be explicitly set to `true`. The application refuses to start in ACME mode until the operator accepts the CA's Terms of Service. |
 | `tls.acme.trusted_roots` | No | `""` | Path to a PEM file of additional CA roots to trust when communicating with the ACME CA (useful for private ACME servers). |
 
-See [TLS specification § 3](../tls/Specification.md#3-acme-automatic-certificate-management) for full details on challenge types, DNS provider configuration, certificate storage, renewal, multi-replica coordination, and rate limits.
+See [TLS specification § 3](tls.md#3-acme-automatic-certificate-management) for full details on challenge types, DNS provider configuration, certificate storage, renewal, multi-replica coordination, and rate limits.
 
 #### Backward Compatibility
 
@@ -201,7 +201,7 @@ The previous `server.tls.enabled` boolean is deprecated but still recognised for
 - If `tls.enabled: false` (or absent) and `tls.mode` is not set, the application defaults to `mode: off`.
 - If both `tls.enabled` and `tls.mode` are present, `tls.mode` takes precedence and `tls.enabled` is ignored (with a warning).
 
-> **Note on HTTPS:** The [authentication specification](../auth/Specification.md) requires all login flows to be over HTTPS. In production, enable native TLS (static or ACME mode) or place the application behind a TLS-terminating reverse proxy.
+> **Note on HTTPS:** The [authentication specification](auth.md) requires all login flows to be over HTTPS. In production, enable native TLS (static or ACME mode) or place the application behind a TLS-terminating reverse proxy.
 
 ---
 
@@ -218,7 +218,7 @@ frontend:
 |---------|---------|-------|
 | `base_path` | `/` | Set to e.g. `/chef-metrics/` if the application is served under a sub-path behind a reverse proxy. Must include trailing slash. |
 
-The frontend communicates with the backend exclusively through the `/api/v1` endpoints documented in the [Web API specification](../web-api/Specification.md). All routes not matching `/api/` serve the SPA's `index.html` to support client-side routing.
+The frontend communicates with the backend exclusively through the `/api/v1` endpoints documented in the [Web API specification](web-api.md). All routes not matching `/api/` serve the SPA's `index.html` to support client-side routing.
 
 ---
 
@@ -234,7 +234,7 @@ logging:
 
 ### Ownership
 
-Controls ownership tracking features. When disabled (default), all ownership UI elements are hidden and ownership tables are not populated. See the [Ownership Specification](../ownership/Specification.md) for the full feature design.
+Controls ownership tracking features. When disabled (default), all ownership UI elements are hidden and ownership tables are not populated. See the [Ownership Specification](ownership.md) for the full feature design.
 
 ```yaml
 ownership:
@@ -273,13 +273,13 @@ ownership:
 |---------|---------|-------------|
 | `ownership.enabled` | `false` | Enable ownership tracking. When disabled, tables still exist but are not populated and UI elements are hidden. |
 | `ownership.audit_log.retention_days` | `365` | Days to retain ownership audit log entries. Set to `0` to disable purging. |
-| `ownership.auto_rules` | `[]` | List of auto-derivation rules. See [Ownership Specification](../ownership/Specification.md) § 2.2 for rule types and field definitions. |
+| `ownership.auto_rules` | `[]` | List of auto-derivation rules. See [Ownership Specification](ownership.md) § 2.2 for rule types and field definitions. |
 
 ---
 
 ### Authentication
 
-See the [Authentication and Authorisation specification](../auth/Specification.md) for full details. Authentication providers are configured under the `auth` key.
+See the [Authentication and Authorisation specification](auth.md) for full details. Authentication providers are configured under the `auth` key.
 
 ```yaml
 auth:

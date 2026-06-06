@@ -32,7 +32,7 @@ When creating or updating credentials via the Web API:
 
 ## Web API Endpoints
 
-Credential management is exposed through admin-only endpoints. Full request/response schemas are in the [Web API Specification](../web-api/Specification.md) § Credential Management.
+Credential management is exposed through admin-only endpoints. Full request/response schemas are in the [Web API Specification](web-api.md) § Credential Management.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -53,7 +53,7 @@ Credential management is exposed through admin-only endpoints. Full request/resp
 
 ## Configuration Reference
 
-The following YAML configuration settings relate to secrets storage. See the [Configuration Specification](../configuration/Specification.md) for the full schema.
+The following YAML configuration settings relate to secrets storage. See the [Configuration Specification](configuration.md) for the full schema.
 
 ### Master Key Configuration
 

@@ -312,13 +312,13 @@ The Chef Infra Server rejects requests where the `X-Ops-Timestamp` differs from 
 - Each organisation must have its own dedicated API client and key.
 - Three credential storage methods are supported, in order of resolution precedence:
 
-  1. **Database** — The RSA private key is stored encrypted (AES-256-GCM) in the `credentials` table and referenced by the organisation via `client_key_credential_id`. The application decrypts the key in memory at the point of request signing and discards it immediately after. This is the recommended approach for multi-organisation and containerised deployments. See the [Datastore Specification](../datastore/Specification.md) for the encryption model and the [Web API Specification](../web-api/Specification.md) for the credential management endpoints.
+  1. **Database** — The RSA private key is stored encrypted (AES-256-GCM) in the `credentials` table and referenced by the organisation via `client_key_credential_id`. The application decrypts the key in memory at the point of request signing and discards it immediately after. This is the recommended approach for multi-organisation and containerised deployments. See the [Datastore Specification](datastore.md) for the encryption model and the [Web API Specification](web-api.md) for the credential management endpoints.
   2. **Environment variable** — For container orchestrators that inject secrets (Kubernetes Secrets, ECS task definitions). The environment variable name is referenced in the configuration.
   3. **File path** — The traditional approach: `client_key_path` in the YAML configuration file points to a PEM file on disk. The file must be readable only by the application's service account (`0600` or `0400` permissions).
 
 - Regardless of storage method, the plaintext key must only be held in memory for the duration of the signing operation. It must not be cached in a long-lived in-memory store, written to temporary files, or included in log output, error messages, or API responses.
 - When using database storage, the credential encryption master key (`CMM_CREDENTIAL_ENCRYPTION_KEY`) must be managed separately from the database — typically as a Kubernetes Secret, a HashiCorp Vault value, or a host-level environment variable. The master key and the encrypted credentials must never reside in the same storage system.
-- Key rotation (both the Chef API client key and the credential encryption master key) must be possible without application downtime. See the [Configuration Specification](../configuration/Specification.md) for the rotation procedure.
+- Key rotation (both the Chef API client key and the credential encryption master key) must be possible without application downtime. See the [Configuration Specification](configuration.md) for the rotation procedure.
 
 ---
 

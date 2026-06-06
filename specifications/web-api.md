@@ -1,15 +1,15 @@
 # Web API - Component Specification
 
-> **Implementation language:** Go. See `../../Claude.md` for language and concurrency rules.
+> **Implementation language:** Go. See `../CLAUDE.md` for language and concurrency rules.
 
 > Component specification for the HTTP API layer of Chef Migration Metrics.
-> See the [top-level specification](../Specification.md) for project overview and scope.
+> See the [top-level specification](overview.md) for project overview and scope.
 
 ---
 
 ## TL;DR
 
-RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config) and operator actions (ownership management, bulk import/reassignment). Key endpoint groups: nodes, server cookbooks, git repos, compatibility results, readiness, remediation, ownership, dependency graph, exports, notifications, logs, and admin. Cookbooks are split into **server cookbooks** (sourced from Chef Infra Server) and **git repos** (cloned from Git), each with their own endpoints. Dashboard and remediation priority endpoints aggregate across both sources. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label, owner), and sorting. Auth via session cookie with RBAC middleware (viewer / operator / admin). CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Notification endpoints manage webhook/email channels and history. Ownership endpoints manage owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows (see [Ownership Specification](../ownership/Specification.md)). See `../auth/Specification.md` for auth details, `../datastore/Specification.md` for schema.
+RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config) and operator actions (ownership management, bulk import/reassignment). Key endpoint groups: nodes, server cookbooks, git repos, compatibility results, readiness, remediation, ownership, dependency graph, exports, notifications, logs, and admin. Cookbooks are split into **server cookbooks** (sourced from Chef Infra Server) and **git repos** (cloned from Git), each with their own endpoints. Dashboard and remediation priority endpoints aggregate across both sources. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label, owner), and sorting. Auth via session cookie with RBAC middleware (viewer / operator / admin). CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Notification endpoints manage webhook/email channels and history. Ownership endpoints manage owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows (see [Ownership Specification](ownership.md)). See `auth.md` for auth details, `datastore.md` for schema.
 
 ---
 
@@ -19,7 +19,7 @@ The Web API is the HTTP layer between the Go backend and the web dashboard front
 
 This component is purely a read/query layer over the datastore for dashboard data. The only write operations are administrative (user management, manual rescan triggers, configuration of authentication providers).
 
-All endpoints require authentication unless explicitly marked as public. See the [Authentication specification](../auth/Specification.md) for provider details and the [Session Management](#session-management) section below for how sessions are enforced.
+All endpoints require authentication unless explicitly marked as public. See the [Authentication specification](auth.md) for provider details and the [Session Management](#session-management) section below for how sessions are enforced.
 
 ---
 
@@ -113,13 +113,13 @@ Moved to [web-api-static-rate-cors.md](web-api-static-rate-cors.md).
 
 ## Related Specifications
 
-- [Top-level Specification](../Specification.md)
-- [Authentication and Authorisation](../auth/Specification.md)
-- [Ownership](../ownership/Specification.md) — owner management, assignments, bulk reassignment, audit log, committer workflows
-- [Visualisation](../visualisation/Specification.md)
-- [Logging](../logging/Specification.md)
-- [Configuration](../configuration/Specification.md) — credential encryption key, `client_key_credential` and `bind_password_credential` settings
-- [Datastore](../datastore/Specification.md) — `credentials` table encryption model, `organisations` table credential FK
-- [Chef API](../chef-api/Specification.md) — credentials security requirements for API signing
-- [Analysis](../analysis/Specification.md) — for remediation guidance, complexity scoring, and auto-correct preview details
-- [Data Collection](../data-collection/Specification.md) — for Policyfile support and dependency graph collection
+- [Top-level Specification](overview.md)
+- [Authentication and Authorisation](auth.md)
+- [Ownership](ownership.md) — owner management, assignments, bulk reassignment, audit log, committer workflows
+- [Visualisation](visualisation.md)
+- [Logging](logging.md)
+- [Configuration](configuration.md) — credential encryption key, `client_key_credential` and `bind_password_credential` settings
+- [Datastore](datastore.md) — `credentials` table encryption model, `organisations` table credential FK
+- [Chef API](chef-api.md) — credentials security requirements for API signing
+- [Analysis](analysis.md) — for remediation guidance, complexity scoring, and auto-correct preview details
+- [Data Collection](data-collection.md) — for Policyfile support and dependency graph collection

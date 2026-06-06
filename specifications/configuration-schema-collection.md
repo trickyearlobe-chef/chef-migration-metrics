@@ -118,7 +118,7 @@ concurrency:
 
 Controls the location and behaviour of the embedded CookStyle and Test Kitchen tools used for cookbook compatibility testing.
 
-All packaging formats (RPM, DEB) ship with a self-contained Ruby environment under `/opt/chef-migration-metrics/embedded/` that includes CookStyle, Test Kitchen, the `kitchen-dokken` driver, and their gem dependencies. This eliminates external dependencies on Chef Workstation or system Ruby. See the [Packaging Specification](../packaging/Specification.md) for the embedded environment build and layout.
+All packaging formats (RPM, DEB) ship with a self-contained Ruby environment under `/opt/chef-migration-metrics/embedded/` that includes CookStyle, Test Kitchen, the `kitchen-dokken` driver, and their gem dependencies. This eliminates external dependencies on Chef Workstation or system Ruby. See the [Packaging Specification](packaging.md) for the embedded environment build and layout.
 
 ```yaml
 analysis_tools:
@@ -168,6 +168,6 @@ analysis_tools:
 
 For driver-specific configuration examples (vCenter, vRA, EC2), see [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) § Configuration Schema.
 
-> **Docker requirement:** The three analysis tools have independent Docker requirements. **CookStyle** never needs Docker — it runs as a host process performing static analysis. **Test Kitchen** only needs Docker when `test_kitchen.driver` is `dokken` (the default); non-dokken drivers (vcenter, ec2, vra, etc.) provision real VMs via their own APIs and have no Docker dependency. **ChefSpec** always needs Docker regardless of the Test Kitchen driver — it runs cookbook code inside disposable containers to isolate side effects from Ruby execution (see [ChefSpec Specification](chefspec.md) § 2. Why Docker). If Docker is unavailable: dokken-based Test Kitchen and ChefSpec are disabled, but CookStyle scanning and non-dokken Test Kitchen testing still function.
+> **Docker requirement:** The two analysis tools have independent Docker requirements. **CookStyle** never needs Docker — it runs as a host process performing static analysis. **Test Kitchen** only needs Docker when `test_kitchen.driver` is `dokken` (the default); non-dokken drivers (vcenter, ec2, vra, etc.) provision real VMs via their own APIs and have no Docker dependency. If Docker is unavailable: dokken-based Test Kitchen is disabled, but CookStyle scanning and non-dokken Test Kitchen testing still function.
 
 > **Disabling Test Kitchen:** To disable Test Kitchen without uninstalling Docker or Kitchen, set `analysis_tools.test_kitchen.enabled: false`. This is useful in environments where Docker is present for other purposes but Test Kitchen runs are not wanted (e.g. resource-constrained hosts, CI pipelines that only need CookStyle results, or during initial evaluation). When disabled, the startup log emits an informational message confirming the override.

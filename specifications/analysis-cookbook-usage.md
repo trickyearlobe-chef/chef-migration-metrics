@@ -17,7 +17,7 @@ From each node's `automatic.cookbooks` attribute (the resolved, deduplicated coo
 
 #### Concurrency
 
-- Cookbook usage statistics must be computed by fanning out over the collected node records using goroutines, bounded by the `concurrency.readiness_evaluation` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
+- Cookbook usage statistics must be computed by fanning out over the collected node records using goroutines, bounded by the `concurrency.readiness_evaluation` worker pool setting (see [Configuration Specification](configuration.md)).
 - Aggregation of results (node counts, platform counts, active/unused flags) must be performed safely using channels or mutex-protected accumulators.
 
 #### Design: Computation Steps

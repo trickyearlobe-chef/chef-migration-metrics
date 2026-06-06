@@ -50,7 +50,7 @@ The distinction between green (Test Kitchen pass) and amber (CookStyle-only pass
 **Complexity scoring:**
 
 - Each incompatible or CookStyle-only cookbook must display its **complexity score** and **complexity label** (`low`, `medium`, `high`, `critical`) alongside the compatibility status.
-- The complexity score is computed by the Analysis component (see [Analysis Specification](../analysis/Specification.md)).
+- The complexity score is computed by the Analysis component (see [Analysis Specification](analysis.md)).
 - Cookbooks must be sortable by complexity score to help teams identify quick wins (low complexity) and plan for harder remediation (high complexity).
 
 **Stale cookbook indicator:**
@@ -146,7 +146,7 @@ All dashboard views must support filtering by the following dimensions. Filters 
 | Active/unused cookbook status | Show or hide cookbooks not applied to any node (default: hide unused) |
 | Stale node status | Show all nodes, only stale nodes, or only fresh nodes (default: all) |
 | Complexity label | Filter cookbooks by complexity label (`low`, `medium`, `high`, `critical`) |
-| Owner | Filter by owner name(s) or show only unowned entities. Multi-select. See [Ownership Specification](../ownership/Specification.md) § 5.1. Only visible when `ownership.enabled` is `true`. |
+| Owner | Filter by owner name(s) or show only unowned entities. Multi-select. See [Ownership Specification](ownership.md) § 5.1. Only visible when `ownership.enabled` is `true`. |
 
 ---
 
@@ -205,7 +205,7 @@ Accessible from the node detail page via "View Filesystem Details" links in both
 
 ## Ownership Views
 
-When `ownership.enabled` is `true`, the dashboard includes ownership-aware views and indicators. These are fully specified in the [Ownership Specification](../ownership/Specification.md) § 5 and summarised here:
+When `ownership.enabled` is `true`, the dashboard includes ownership-aware views and indicators. These are fully specified in the [Ownership Specification](ownership.md) § 5 and summarised here:
 
 - **Owner filter** — An Owner multi-select filter in the filter bar, applied consistently across all views (§ 5.1).
 - **Ownership summary view** — A top-level "Ownership" navigation item showing per-owner migration progress, ownership coverage metrics, and drill-down to owner-scoped dashboards (§ 5.2).
@@ -230,7 +230,7 @@ When `ownership.enabled` is `true`, the dashboard includes ownership-aware views
 
 ## Log Viewer
 
-The log viewer allows operators to diagnose failures without requiring access to the underlying host or log files. See also the [Logging component specification](../logging/Specification.md).
+The log viewer allows operators to diagnose failures without requiring access to the underlying host or log files. See also the [Logging component specification](logging.md).
 
 - Display logs scoped to the following job types:
   - **Collection job run** — per organisation, per run
@@ -295,7 +295,7 @@ The dashboard must support configuring notifications that alert practitioners wh
 
 ### Notification Configuration
 
-Notifications are configured under the `notifications` key in the application configuration (see [Configuration Specification](../configuration/Specification.md)). Each notification rule specifies a trigger, optional filters (e.g. only for specific organisations or cookbooks), and one or more channels.
+Notifications are configured under the `notifications` key in the application configuration (see [Configuration Specification](configuration.md)). Each notification rule specifies a trigger, optional filters (e.g. only for specific organisations or cookbooks), and one or more channels.
 
 The notification history must be viewable in the dashboard so that operators can see what notifications have been sent and when.
 
@@ -303,7 +303,7 @@ The notification history must be viewable in the dashboard so that operators can
 
 ## Real-Time Updates
 
-The dashboard receives live event notifications from the backend via a WebSocket connection (see [Web API specification § WebSocket Real-Time Events](../web-api/Specification.md#websocket-real-time-events)). This eliminates polling and makes the UI feel immediately responsive to backend activity.
+The dashboard receives live event notifications from the backend via a WebSocket connection (see [Web API specification § WebSocket Real-Time Events](web-api.md#websocket-real-time-events)). This eliminates polling and makes the UI feel immediately responsive to backend activity.
 
 ### Update Behaviour
 
@@ -348,10 +348,10 @@ Chef organisations can contain many thousands of nodes. The dashboard must remai
 
 ## References
 
-- [Top-level Specification](../Specification.md)
-- [Analysis component specification](../analysis/Specification.md)
-- [Logging component specification](../logging/Specification.md)
-- [Data Collection component specification](../data-collection/Specification.md)
-- [Configuration Specification](../configuration/Specification.md)
-- [Web API Specification](../web-api/Specification.md) — REST endpoints and WebSocket real-time events
-- [Ownership Specification](../ownership/Specification.md) — ownership views, filters, and management UI
+- [Top-level Specification](overview.md)
+- [Analysis component specification](analysis.md)
+- [Logging component specification](logging.md)
+- [Data Collection component specification](data-collection.md)
+- [Configuration Specification](configuration.md)
+- [Web API Specification](web-api.md) — REST endpoints and WebSocket real-time events
+- [Ownership Specification](ownership.md) — ownership views, filters, and management UI

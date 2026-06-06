@@ -14,13 +14,13 @@ This specification is the authoritative reference for secrets management. The fo
 
 | Specification | Related section |
 |---------------|----------------|
-| [`configuration/Specification.md`](../configuration/Specification.md) | § Secrets and Credentials, § Environment Variable Overrides |
-| [`datastore/Specification.md`](../datastore/Specification.md) | § `credentials` table, § Credential Storage Security |
-| [`web-api/Specification.md`](../web-api/Specification.md) | § Credential Management (Admin Endpoints) |
-| [`chef-api/Specification.md`](../chef-api/Specification.md) | § Credentials Security |
-| [`packaging/Specification.md`](../packaging/Specification.md) | § Docker Compose Configuration, § Environment File |
-| [`tls/Specification.md`](../tls/Specification.md) | § Static certificate key files, § ACME storage |
-| [`auth/Specification.md`](../auth/Specification.md) | § Local account password hashing |
+| [`configuration/Specification.md`](configuration.md) | § Secrets and Credentials, § Environment Variable Overrides |
+| [`datastore/Specification.md`](datastore.md) | § `credentials` table, § Credential Storage Security |
+| [`web-api/Specification.md`](web-api.md) | § Credential Management (Admin Endpoints) |
+| [`chef-api/Specification.md`](chef-api.md) | § Credentials Security |
+| [`packaging/Specification.md`](packaging.md) | § Docker Compose Configuration, § Environment File |
+| [`tls/Specification.md`](tls.md) | § Static certificate key files, § ACME storage |
+| [`auth/Specification.md`](auth.md) | § Local account password hashing |
 
 ---
 
@@ -94,11 +94,11 @@ Moved to [secrets-storage-validation-api.md](secrets-storage-validation-api.md).
 
 | Specification | Relevance |
 |---------------|-----------|
-| [`configuration/Specification.md`](../configuration/Specification.md) | YAML schema for credential references and env var overrides |
-| [`datastore/Specification.md`](../datastore/Specification.md) | `credentials` table schema, encryption model, retention, deletion |
-| [`web-api/Specification.md`](../web-api/Specification.md) | Admin credential CRUD + test endpoints |
-| [`chef-api/Specification.md`](../chef-api/Specification.md) | Chef API signing using resolved credentials |
-| [`packaging/Specification.md`](../packaging/Specification.md) | RPM/DEB env files, Docker Compose configuration |
-| [`tls/Specification.md`](../tls/Specification.md) | TLS key file handling, ACME storage |
-| [`auth/Specification.md`](../auth/Specification.md) | Local account password hashing |
-| [`logging/Specification.md`](../logging/Specification.md) | `secrets` log scope definition |
+| [`configuration/Specification.md`](configuration.md) | YAML schema for credential references and env var overrides |
+| [`datastore/Specification.md`](datastore.md) | `credentials` table schema, encryption model, retention, deletion |
+| [`web-api/Specification.md`](web-api.md) | Admin credential CRUD + test endpoints |
+| [`chef-api/Specification.md`](chef-api.md) | Chef API signing using resolved credentials |
+| [`packaging/Specification.md`](packaging.md) | RPM/DEB env files, Docker Compose configuration |
+| [`tls/Specification.md`](tls.md) | TLS key file handling, ACME storage |
+| [`auth/Specification.md`](auth.md) | Local account password hashing |
+| [`logging/Specification.md`](logging.md) | `secrets` log scope definition |

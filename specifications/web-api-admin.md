@@ -6,7 +6,7 @@ All endpoints in this section require the `admin` role.
 
 ### Credential Management
 
-These endpoints manage encrypted credentials stored in the database. Credentials are used for Chef API private keys, SMTP passwords, and webhook URLs. All credential values are encrypted at the application layer using AES-256-GCM before storage — see the [Datastore Specification](../datastore/Specification.md) for the encryption model.
+These endpoints manage encrypted credentials stored in the database. Credentials are used for Chef API private keys, SMTP passwords, and webhook URLs. All credential values are encrypted at the application layer using AES-256-GCM before storage — see the [Datastore Specification](datastore.md) for the encryption model.
 
 > **Security principles:**
 > - The API **never** returns the plaintext or encrypted value of a credential in any response.

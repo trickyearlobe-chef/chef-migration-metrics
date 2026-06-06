@@ -125,6 +125,10 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 - [ ] **Target version dropdown is dead weight** — the project uses a single-target model where changing the target invalidates all previous analysis (cookstyle, TK, readiness) and the startup reconciliation purges live-state data for old versions. This means there's only ever one version of live data. Despite this, the UI shows a `<select>` dropdown (via `GlobalFilterContext.targetChefVersion`) populated from `GET /filters/target-chef-versions`. Since the config list always has exactly one entry, the dropdown shows a single option that cannot be changed. On the dashboard trends page, the selected version isn't even passed to the API — the backend iterates all configured versions internally. **Strategic fix:** hide the selector entirely when `targetVersions.length <= 1` (in `AppLayout.tsx` where the global filter bar is rendered). Longer term, align with the scalar config change (`target_chef_version: string` instead of `target_chef_versions: []string`) tracked above under "Backend — Code Smells".
 
+## Specifications — Stub / Incomplete
+
+- [ ] **`specifications/datastore.md` is a stub** — the datastore is referenced by ~10 other specs but has no full prose specification; the authoritative schema currently lives only in `migrations/*.up.sql`. A stub was added (during the spec-split/link-fix work) so cross-spec links resolve and the LLM is oriented. **Fix:** write the full datastore spec — table definitions and relationships, data-access patterns per consuming component (collector, analysis, web API, ownership), and retention/snapshot behaviour — using the migrations as the source of truth.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

@@ -1,9 +1,9 @@
 # Data Collection - Component Specification
 
-> **Implementation language:** Go. See `../../Claude.md` for language and concurrency rules.
+> **Implementation language:** Go. See `../CLAUDE.md` for language and concurrency rules.
 
 > Component specification for the Data Collection component of Chef Migration Metrics.
-> See the [top-level specification](../Specification.md) for project overview and scope.
+> See the [top-level specification](overview.md) for project overview and scope.
 
 ---
 
@@ -20,7 +20,7 @@ The Data Collection component is responsible for:
 1. Periodically collecting node data from one or more Chef Infra Server organisations using the Chef Infra Server API
 2. Fetching cookbooks in active use from git repositories and/or directly from the Chef Infra Server
 
-All Chef Infra Server API interactions must conform to [`../chef-api/Specification.md`](../chef-api/Specification.md).
+All Chef Infra Server API interactions must conform to [`chef-api.md`](chef-api.md).
 
 ---
 
@@ -29,8 +29,8 @@ All Chef Infra Server API interactions must conform to [`../chef-api/Specificati
 ### 1.1 Scheduling
 
 - Node collection runs as a **periodic background job**.
-- The collection interval is configurable (see [Configuration Specification](../configuration/Specification.md)).
-- Each collection run is assigned a unique run ID and logged (see [Logging Specification](../logging/Specification.md)).
+- The collection interval is configurable (see [Configuration Specification](configuration.md)).
+- Each collection run is assigned a unique run ID and logged (see [Logging Specification](logging.md)).
 
 ### 1.2 Multi-Organisation Support
 
@@ -38,14 +38,14 @@ All Chef Infra Server API interactions must conform to [`../chef-api/Specificati
 - Each organisation is independently configured with its own Chef server URL, organisation name, client name, and private key path.
 - Each organisation is collected independently. A failure collecting from one organisation must not prevent collection from continuing for others.
 - Organisations must be collected **in parallel** using goroutines — one goroutine per organisation. An `errgroup` or equivalent must be used to coordinate goroutines and aggregate errors without cancelling successful collections.
-- Concurrency must be bounded by the `concurrency.organisation_collection` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
+- Concurrency must be bounded by the `concurrency.organisation_collection` worker pool setting (see [Configuration Specification](configuration.md)).
 
 ### 1.3 Partial Search
 
 - Node data must be collected using **partial search** (`POST /organizations/<ORG>/search/node`) to minimise payload size and Chef server load.
-- The required attributes to collect are defined in [`../chef-api/Specification.md`](../chef-api/Specification.md).
+- The required attributes to collect are defined in [`chef-api.md`](chef-api.md).
 - Results must be **paginated** using the `rows` and `start` parameters. The recommended batch size is 1000 nodes per request.
-- Pages within a single organisation may be fetched concurrently using goroutines once the total node count is known from the first response. Concurrency must be bounded by the `concurrency.node_page_fetching` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
+- Pages within a single organisation may be fetched concurrently using goroutines once the total node count is known from the first response. Concurrency must be bounded by the `concurrency.node_page_fetching` worker pool setting (see [Configuration Specification](configuration.md)).
 
 ### 1.4 Collected Attributes
 
@@ -67,7 +67,7 @@ The following attributes must be collected per node:
 | `policy_group` | `policy_group` | Policyfile policy group (null for non-Policyfile nodes) |
 | `ohai_time` | `automatic.ohai_time` | Unix timestamp of last Chef client run (used for stale check-in detection) |
 
-> **Note:** See `../chef-api/Specification.md` for the difference in JSON structure between `GET /nodes/:name` and search responses. Automatic attributes are hoisted to the root of the `data` object in search responses.
+> **Note:** See `chef-api.md` for the difference in JSON structure between `GET /nodes/:name` and search responses. Automatic attributes are hoisted to the root of the `data` object in search responses.
 
 ### 1.5 Policyfile Support
 
@@ -76,7 +76,7 @@ Many modern Chef deployments use **Policyfiles** instead of roles and run-lists.
 - The `policy_name` and `policy_group` attributes must be collected for every node.
 - Nodes are classified as either **Policyfile nodes** (both `policy_name` and `policy_group` are non-null) or **classic nodes** (using roles and run-lists).
 - For Policyfile nodes, the `cookbooks` attribute (`automatic.cookbooks`) still contains the fully-resolved set of cookbooks and versions. This is the authoritative source for cookbook usage analysis regardless of whether the node uses Policyfiles or classic mode.
-- The dashboard must support filtering by `policy_name` and `policy_group` in addition to environment and role (see [Visualisation Specification](../visualisation/Specification.md)).
+- The dashboard must support filtering by `policy_name` and `policy_group` in addition to environment and role (see [Visualisation Specification](visualisation.md)).
 
 ### 1.6 Stale Check-in Detection
 
@@ -85,7 +85,7 @@ Nodes that have not checked in recently may have stale attribute data (especiall
 - After collection, compute the age of each node's data by comparing `ohai_time` against the current time.
 - Nodes whose `ohai_time` is older than a configurable threshold (`collection.stale_node_threshold_days`, default: 7 days) must be flagged as **stale** in the datastore.
 - Stale nodes are still included in analysis and dashboard views but must be visually distinguished so that operators know the data may be outdated.
-- The dashboard must support filtering to show only stale nodes for investigation (see [Visualisation Specification](../visualisation/Specification.md)).
+- The dashboard must support filtering to show only stale nodes for investigation (see [Visualisation Specification](visualisation.md)).
 
 ### 1.7 Persistence
 
@@ -118,8 +118,8 @@ Nodes that have not checked in recently may have stale attribute data (especiall
 - The **HEAD commit SHA** of the default branch must be recorded in `git_repos` after each pull. This is used by the Analysis component to skip test runs when HEAD has not changed.
 - The **default branch** name and **`has_test_suite`** flag are also stored in the `git_repos` row.
 - Git-sourced cookbooks include test suites (Test Kitchen, InSpec profiles, etc.) and are eligible for full compatibility testing.
-- All git operations must be logged (see [Logging Specification](../logging/Specification.md)).
-- Git pull operations across multiple repositories must run **in parallel** using goroutines, bounded by the `concurrency.git_pull` worker pool setting (see [Configuration Specification](../configuration/Specification.md)).
+- All git operations must be logged (see [Logging Specification](logging.md)).
+- Git pull operations across multiple repositories must run **in parallel** using goroutines, bounded by the `concurrency.git_pull` worker pool setting (see [Configuration Specification](configuration.md)).
 
 #### Git Command Reference (Machine-Parseable Invocations)
 
@@ -195,10 +195,10 @@ These failures must be handled as follows:
 
 ### 3.1 Scheduler
 
-- The collection job is driven by a **cron-style scheduler** embedded in the Go application process. The schedule is configured via the `collection.schedule` setting (see [Configuration Specification](../configuration/Specification.md)).
+- The collection job is driven by a **cron-style scheduler** embedded in the Go application process. The schedule is configured via the `collection.schedule` setting (see [Configuration Specification](configuration.md)).
 - The scheduler must use a cron parsing library (e.g. `robfig/cron`) to evaluate the schedule expression. The expression follows standard five-field cron syntax (`minute hour day-of-month month day-of-week`).
 - Only **one collection run** may be active at a time. If a run is still in progress when the next scheduled tick fires, the tick must be skipped and a `WARN` log emitted. This prevents overlapping runs from competing for resources or producing duplicate data.
-- A collection run may also be triggered manually via the Web API (see [Web API Specification](../web-api/Specification.md)). Manual triggers are subject to the same single-run constraint.
+- A collection run may also be triggered manually via the Web API (see [Web API Specification](web-api.md)). Manual triggers are subject to the same single-run constraint.
 
 ### 3.2 Run Lifecycle
 
@@ -263,7 +263,7 @@ A single collection run proceeds in the following order:
 3. **Active/unused determination** — Compare the cookbook versions observed in the collected node data against the full inventory to flag active vs. unused cookbooks.
 4. **Cookbook fetching** — Fetch cookbooks from git (pull) and Chef server (download new versions only), in parallel per source type (bounded by `concurrency.git_pull`).
 5. **Stale node flagging** — Compare each node's `ohai_time` against the configured stale threshold and flag stale nodes.
-6. **Hand off to analysis** — Signal the analysis component that new data is available. The analysis component runs cookbook usage analysis, CookStyle scans, Test Kitchen tests, and readiness evaluation (see [Analysis Specification](../analysis/Specification.md)).
+6. **Hand off to analysis** — Signal the analysis component that new data is available. The analysis component runs cookbook usage analysis, CookStyle scans, Test Kitchen tests, and readiness evaluation (see [Analysis Specification](analysis.md)).
 7. **Metric snapshot** — After analysis completes, write pre-aggregated metric snapshots for historical trending.
 8. **Log retention purge** — Purge log entries older than the configured retention period.
 
@@ -293,7 +293,7 @@ To support the dependency graph view in the dashboard, the data collection compo
   - **Cookbook references** — entries like `recipe[cookbook::recipe]` or `recipe[cookbook]`
   - **Nested role references** — entries like `role[other_role]`
 - Build a directed graph of role → role and role → cookbook dependencies.
-- Persist the dependency graph to the datastore (see [Datastore Specification](../datastore/Specification.md)).
+- Persist the dependency graph to the datastore (see [Datastore Specification](datastore.md)).
 
 ### 5.2 Dependency Graph Use Cases
 
@@ -302,13 +302,13 @@ The dependency graph enables the dashboard to answer questions such as:
 - "If I fix cookbook X, how many roles and nodes become unblocked?"
 - "Which roles have the deepest dependency chains and therefore the most complex upgrade path?"
 
-See the [Visualisation Specification](../visualisation/Specification.md) for how the dependency graph is rendered in the dashboard.
+See the [Visualisation Specification](visualisation.md) for how the dependency graph is rendered in the dashboard.
 
 ---
 
 ## 6. Ownership Data Collection
 
-When `ownership.enabled` is `true`, the data collection component has two additional responsibilities: collecting git committer data and triggering ownership auto-derivation rules. These are fully specified in the [Ownership Specification](../ownership/Specification.md) § 7 and summarised here.
+When `ownership.enabled` is `true`, the data collection component has two additional responsibilities: collecting git committer data and triggering ownership auto-derivation rules. These are fully specified in the [Ownership Specification](ownership.md) § 7 and summarised here.
 
 ### 6.1 Git Committer Collection
 
@@ -318,7 +318,7 @@ After fetching/pulling each git-sourced cookbook repository, the collector extra
 - Total commit count
 - Earliest and most recent commit dates
 
-This data is stored in the `git_repo_committers` table (see [Datastore Specification](../datastore/Specification.md)) and fully replaced on each collection run for each repository. The committer data powers the cookbook detail → committers sub-page in the dashboard, where operators can identify active contributors and assign them as owners.
+This data is stored in the `git_repo_committers` table (see [Datastore Specification](datastore.md)) and fully replaced on each collection run for each repository. The committer data powers the cookbook detail → committers sub-page in the dashboard, where operators can identify active contributors and assign them as owners.
 
 **Git command:** Use `git log --format='%aE%x00%aN%x00%aI' --all` with post-processing to aggregate by author email, count commits, and extract min/max dates. The `%x00` NUL separator ensures robust parsing even with unusual author names.
 
@@ -342,16 +342,16 @@ When `node_attribute` auto-derivation rules are configured, the collector must e
 3. Merge them into the partial search key map sent to the Chef API.
 4. Store the returned values in the `custom_attributes` JSONB column on `node_snapshots`.
 
-See the [Ownership Specification](../ownership/Specification.md) § 2.4 for details on attribute path resolution.
+See the [Ownership Specification](ownership.md) § 2.4 for details on attribute path resolution.
 
 ---
 
 ## Related Specifications
 
-- [Analysis Specification](../analysis/Specification.md)
-- [Logging Specification](../logging/Specification.md)
-- [Configuration Specification](../configuration/Specification.md)
-- [Chef API Specification](../chef-api/Specification.md)
-- [Datastore Specification](../datastore/Specification.md)
-- [Web API Specification](../web-api/Specification.md)
-- [Ownership Specification](../ownership/Specification.md) — git committer collection, auto-derivation rules, custom attribute collection
+- [Analysis Specification](analysis.md)
+- [Logging Specification](logging.md)
+- [Configuration Specification](configuration.md)
+- [Chef API Specification](chef-api.md)
+- [Datastore Specification](datastore.md)
+- [Web API Specification](web-api.md)
+- [Ownership Specification](ownership.md) — git committer collection, auto-derivation rules, custom attribute collection

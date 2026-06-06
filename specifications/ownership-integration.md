@@ -103,7 +103,7 @@ The `owner` and `unowned` filters are available in export requests, allowing ope
 
 ### 9.1 Owner-Scoped Notifications
 
-Notification channels (see [Configuration Specification](../configuration/Specification.md)) gain an optional `owners` filter:
+Notification channels (see [Configuration Specification](configuration.md)) gain an optional `owners` filter:
 
 ```yaml
 notifications:

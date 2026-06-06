@@ -46,7 +46,7 @@ Test Kitchen, CookStyle, and their Ruby runtime are **embedded** in the package 
 
 Configuration files are marked `%config(noreplace)` so that upgrades do not overwrite user-customised files.
 
-The embedded Ruby tree is fully self-contained and does not interfere with any system Ruby installation. The application resolves `cookstyle` and `kitchen` from `/opt/chef-migration-metrics/embedded/bin/` by default (see [Configuration Specification](../configuration/Specification.md) for the `embedded_bin_dir` setting), falling back to `PATH` lookup if the embedded directory does not exist.
+The embedded Ruby tree is fully self-contained and does not interfere with any system Ruby installation. The application resolves `cookstyle` and `kitchen` from `/opt/chef-migration-metrics/embedded/bin/` by default (see [Configuration Specification](configuration.md) for the `embedded_bin_dir` setting), falling back to `PATH` lookup if the embedded directory does not exist.
 
 ### 2.5 systemd Unit File
 

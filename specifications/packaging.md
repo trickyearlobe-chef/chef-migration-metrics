@@ -1,7 +1,7 @@
 # Packaging and Deployment - Component Specification
 
 > Component specification for the packaging and deployment of Chef Migration Metrics.
-> See the [top-level specification](../Specification.md) for project overview and scope.
+> See the [top-level specification](overview.md) for project overview and scope.
 
 ---
 
@@ -72,9 +72,9 @@ Moved to [packaging-ci-cd-repository-layout.md](packaging-ci-cd-repository-layou
 
 ## Related Specifications
 
-- [Top-level Specification](../Specification.md)
-- [Configuration Specification](../configuration/Specification.md)
-- [Analysis Specification](../analysis/Specification.md) — startup validation for external tools
-- [Data Collection Specification](../data-collection/Specification.md) — background job serialisation
-- [Web API Specification](../web-api/Specification.md) — health endpoint used by status checks
-- [Datastore Specification](../datastore/Specification.md) — advisory locks for collection serialisation
+- [Top-level Specification](overview.md)
+- [Configuration Specification](configuration.md)
+- [Analysis Specification](analysis.md) — startup validation for external tools
+- [Data Collection Specification](data-collection.md) — background job serialisation
+- [Web API Specification](web-api.md) — health endpoint used by status checks
+- [Datastore Specification](datastore.md) — advisory locks for collection serialisation

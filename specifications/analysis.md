@@ -1,6 +1,6 @@
 # Analysis Component - Specification
 
-> **Implementation language:** Go. See `../../Claude.md` for language and concurrency rules.
+> **Implementation language:** Go. See `../CLAUDE.md` for language and concurrency rules.
 
 ## TL;DR
 
@@ -44,12 +44,12 @@ Moved to [analysis-data-io.md](analysis-data-io.md).
 
 ## Related Specifications
 
-- [`../Specification.md`](../Specification.md) — top-level project specification
-- [`../data-collection/Specification.md`](../data-collection/Specification.md) — data collection component
-- [`../visualisation/Specification.md`](../visualisation/Specification.md) — dashboard and log viewer
-- [`../chef-api/Specification.md`](../chef-api/Specification.md) — Chef Infra Server API reference
-- [`../datastore/Specification.md`](../datastore/Specification.md) — database schema
-- [`../configuration/Specification.md`](../configuration/Specification.md) — configuration schema (includes `embedded_bin_dir` setting)
-- [`../logging/Specification.md`](../logging/Specification.md) — logging subsystem
-- [`../packaging/Specification.md`](../packaging/Specification.md) — embedded Ruby environment build and layout
+- [`overview.md`](overview.md) — top-level project specification
+- [`data-collection.md`](data-collection.md) — data collection component
+- [`visualisation.md`](visualisation.md) — dashboard and log viewer
+- [`chef-api.md`](chef-api.md) — Chef Infra Server API reference
+- [`datastore.md`](datastore.md) — database schema
+- [`configuration.md`](configuration.md) — configuration schema (includes `embedded_bin_dir` setting)
+- [`logging.md`](logging.md) — logging subsystem
+- [`packaging.md`](packaging.md) — embedded Ruby environment build and layout
 - [`test-kitchen-drivers.md`](test-kitchen-drivers.md) — Test Kitchen driver abstraction (multi-driver overlay, credential injection, platform mapping, coverage analysis)

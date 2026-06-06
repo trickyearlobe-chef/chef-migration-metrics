@@ -62,7 +62,7 @@ Returns the full detail of a sent notification, including the payload.
 
 ## Ownership Endpoints
 
-Ownership tracking endpoints allow managing owners, ownership assignments, bulk reassignment, bulk import, audit log, and committer-to-owner workflows. These endpoints are fully specified in the [Ownership Specification](../ownership/Specification.md) § 4 and are summarised here for cross-reference.
+Ownership tracking endpoints allow managing owners, ownership assignments, bulk reassignment, bulk import, audit log, and committer-to-owner workflows. These endpoints are fully specified in the [Ownership Specification](ownership.md) § 4 and are summarised here for cross-reference.
 
 | Endpoint | Method | Description | Auth |
 |----------|--------|-------------|------|
@@ -81,6 +81,6 @@ Ownership tracking endpoints allow managing owners, ownership assignments, bulk 
 | `/api/v1/cookbooks/:name/committers` | GET | List git committers for a cookbook | viewer+ |
 | `/api/v1/cookbooks/:name/committers/assign` | POST | Assign committers as owners | operator+ |
 
-→ Full endpoint specifications: [Ownership Specification § 4](../ownership/Specification.md)
+→ Full endpoint specifications: [Ownership Specification § 4](ownership.md)
 
 ---

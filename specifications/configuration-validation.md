@@ -55,4 +55,4 @@ On startup, the application must validate the configuration and fail fast with a
 
 ---
 
-> **Note:** See [Web API specification § WebSocket Real-Time Events](../web-api/Specification.md#websocket-real-time-events) for the event types, envelope format, and client reconnection behaviour.
+> **Note:** See [Web API specification § WebSocket Real-Time Events](web-api.md#websocket-real-time-events) for the event types, envelope format, and client reconnection behaviour.

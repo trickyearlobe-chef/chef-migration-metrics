@@ -75,7 +75,7 @@ Invalidates the current session.
   ```
 - Alternatively, the token may be sent in a secure, HTTP-only cookie named `session`.
 - If the token is missing, expired, or invalid, the API returns `401 Unauthorized`.
-- Session expiry is configured via `auth.session_expiry` (see [Configuration specification](../configuration/Specification.md)).
+- Session expiry is configured via `auth.session_expiry` (see [Configuration specification](configuration.md)).
 
 ### Current User
 

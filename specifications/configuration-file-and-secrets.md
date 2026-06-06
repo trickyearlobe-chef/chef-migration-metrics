@@ -22,7 +22,7 @@ When multiple sources are configured for the same credential, database takes pre
 
 ### Credential Encryption Key
 
-Credentials stored in the database are encrypted at the application layer using AES-256-GCM. The master encryption key must be provided externally — it is never stored in the database alongside the encrypted values. See the [Datastore Specification](../datastore/Specification.md) for the full encryption model.
+Credentials stored in the database are encrypted at the application layer using AES-256-GCM. The master encryption key must be provided externally — it is never stored in the database alongside the encrypted values. See the [Datastore Specification](datastore.md) for the full encryption model.
 
 ```yaml
 credential_encryption_key_env: CMM_CREDENTIAL_ENCRYPTION_KEY
