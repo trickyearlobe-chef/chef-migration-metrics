@@ -2895,6 +2895,58 @@ func TestHypervisorConfigDefaults(t *testing.T) {
 	if got := tk.EffectiveHypervisorType(); got != "" {
 		t.Errorf("EffectiveHypervisorType() = %q, want %q", got, "")
 	}
+	// Rate limiter is disabled by default (no safe window/pool size to assume).
+	if _, _, enabled := tk.StartRateLimit(); enabled {
+		t.Error("StartRateLimit() enabled by default, want disabled")
+	}
+}
+
+func TestStartRateLimit_Explicit(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: vcenter
+    start_rate_window_minutes: 90
+    start_rate_max_per_window: 25
+    platform_map:
+      - kitchen_name: centos-7
+        image: centos7-tmpl
+    images:
+      - name: centos7-tmpl
+        id: tmpl-centos-7
+`
+	cfg := mustParse(t, yaml)
+	tk := cfg.AnalysisTools.TestKitchen
+	window, max, enabled := tk.StartRateLimit()
+	if !enabled {
+		t.Fatal("StartRateLimit() disabled, want enabled")
+	}
+	if window != 90*time.Minute {
+		t.Errorf("window = %v, want 90m", window)
+	}
+	if max != 25 {
+		t.Errorf("maxPerWindow = %d, want 25", max)
+	}
+}
+
+func TestStartRateLimit_PartialConfigDisabled(t *testing.T) {
+	// Only one of the two values set → limiter cannot function, stays disabled.
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: vcenter
+    start_rate_window_minutes: 60
+    platform_map:
+      - kitchen_name: centos-7
+        image: centos7-tmpl
+    images:
+      - name: centos7-tmpl
+        id: tmpl-centos-7
+`
+	cfg := mustParse(t, yaml)
+	if _, _, enabled := cfg.AnalysisTools.TestKitchen.StartRateLimit(); enabled {
+		t.Error("StartRateLimit() enabled with only window set, want disabled")
+	}
 }
 
 func TestHypervisorConfigExplicit(t *testing.T) {

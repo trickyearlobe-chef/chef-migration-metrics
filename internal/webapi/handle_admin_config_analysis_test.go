@@ -151,6 +151,31 @@ func TestAdminConfigAnalysisTools_PUT_422_NegativeTKTimeout(t *testing.T) {
 	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
+func TestAdminConfigAnalysisTools_PUT_422_NegativeStartRateWindow(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "start_rate_window_minutes": -1}}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigAnalysisTools_PUT_StartRateLimitRoundTrips(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "start_rate_window_minutes": 90, "start_rate_max_per_window": 25}}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+}
+
 func TestAdminConfigAnalysisTools_PUT_422_UnknownDriver(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)

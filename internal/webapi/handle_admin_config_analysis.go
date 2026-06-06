@@ -195,6 +195,13 @@ func validateAdminTKConfig(tk config.TestKitchenConfig) string {
 		return "analysis_tools.test_kitchen.timeout_minutes must be >= 0."
 	}
 
+	if tk.StartRateWindowMinutes < 0 {
+		return "analysis_tools.test_kitchen.start_rate_window_minutes must be >= 0."
+	}
+	if tk.StartRateMaxPerWindow < 0 {
+		return "analysis_tools.test_kitchen.start_rate_max_per_window must be >= 0."
+	}
+
 	driver := tk.EffectiveDriver()
 	if driver != "" && !knownTKDrivers[driver] {
 		return fmt.Sprintf("analysis_tools.test_kitchen.driver %q is not a recognised driver profile.", driver)

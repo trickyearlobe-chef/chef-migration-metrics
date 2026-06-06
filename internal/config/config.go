@@ -259,6 +259,18 @@ type TestKitchenConfig struct {
 	// OrphanSweepAgeMinutes is the minimum VM age before a VM is
 	// eligible for sweep destruction. 0 = default (2× timeout).
 	OrphanSweepAgeMinutes int `yaml:"orphan_sweep_age_minutes" json:"orphan_sweep_age_minutes"`
+
+	// StartRateWindowMinutes is the global VM start-rate limiter window, set to
+	// the DHCP lease time (e.g. 60, 90). With StartRateMaxPerWindow it bounds
+	// cumulative lease consumption: no more than max starts occur in any
+	// trailing window, charged for the full window regardless of early
+	// teardown. 0 (with either value unset) disables the limiter. Dynamic.
+	StartRateWindowMinutes int `yaml:"start_rate_window_minutes" json:"start_rate_window_minutes"`
+
+	// StartRateMaxPerWindow is the maximum VM starts allowed per window, set to
+	// the usable DHCP pool size (e.g. 25, 64). See StartRateWindowMinutes. 0
+	// disables the limiter. Dynamic.
+	StartRateMaxPerWindow int `yaml:"start_rate_max_per_window" json:"start_rate_max_per_window"`
 }
 
 // ImageEntry defines a single infrastructure image in the image registry.
@@ -401,6 +413,16 @@ func (c TestKitchenConfig) EffectiveMaxConcurrentVMs() int {
 		return c.MaxConcurrentVMs
 	}
 	return DefaultMaxConcurrentVMs
+}
+
+// StartRateLimit returns the global VM start-rate limiter parameters. enabled
+// is false unless both window and max are positive — a partial config cannot
+// bound anything, so the limiter stays off rather than guessing a value.
+func (c TestKitchenConfig) StartRateLimit() (window time.Duration, maxPerWindow int, enabled bool) {
+	if c.StartRateWindowMinutes <= 0 || c.StartRateMaxPerWindow <= 0 {
+		return 0, 0, false
+	}
+	return time.Duration(c.StartRateWindowMinutes) * time.Minute, c.StartRateMaxPerWindow, true
 }
 
 // EffectiveHypervisorType returns the hypervisor type — either explicitly
@@ -1402,6 +1424,16 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	}
 	if tk.MaxConcurrentVMs < 0 {
 		ve.add("analysis_tools.test_kitchen.max_concurrent_vms must be >= 0")
+	}
+	if tk.StartRateWindowMinutes < 0 {
+		ve.add("analysis_tools.test_kitchen.start_rate_window_minutes must be >= 0")
+	}
+	if tk.StartRateMaxPerWindow < 0 {
+		ve.add("analysis_tools.test_kitchen.start_rate_max_per_window must be >= 0")
+	}
+	if (tk.StartRateWindowMinutes > 0) != (tk.StartRateMaxPerWindow > 0) {
+		w.addf("analysis_tools.test_kitchen: start-rate limiter needs both " +
+			"start_rate_window_minutes and start_rate_max_per_window; only one is set, so the limiter is disabled")
 	}
 
 	// Image registry validation.
