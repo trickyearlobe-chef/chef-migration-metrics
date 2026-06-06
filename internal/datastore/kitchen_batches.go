@@ -46,7 +46,6 @@ type KitchenBatch struct {
 	Name             string       `json:"name"`
 	Filters          BatchFilters `json:"filters"`
 	MaxCount         *int         `json:"max_count"`
-	MaxConcurrentVMs *int         `json:"max_concurrent_vms"`
 	DryRun           bool         `json:"dry_run"`
 	Status           string       `json:"status"`
 	CreatedBy        string       `json:"created_by,omitempty"`
@@ -57,21 +56,19 @@ type KitchenBatch struct {
 
 // CreateKitchenBatchParams holds the fields required to create a kitchen batch.
 type CreateKitchenBatchParams struct {
-	Name             string
-	Filters          BatchFilters
-	MaxCount         *int
-	MaxConcurrentVMs *int
-	DryRun           bool
-	CreatedBy        string
+	Name      string
+	Filters   BatchFilters
+	MaxCount  *int
+	DryRun    bool
+	CreatedBy string
 }
 
 // UpdateKitchenBatchParams holds the fields that can be updated on a draft batch.
 type UpdateKitchenBatchParams struct {
-	Name             string
-	Filters          BatchFilters
-	MaxCount         *int
-	MaxConcurrentVMs *int
-	DryRun           bool
+	Name     string
+	Filters  BatchFilters
+	MaxCount *int
+	DryRun   bool
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +76,7 @@ type UpdateKitchenBatchParams struct {
 // ---------------------------------------------------------------------------
 
 const kitchenBatchColumns = `
-	id, name, filters, max_count, max_concurrent_vms,
+	id, name, filters, max_count,
 	dry_run, status, created_by, created_at, started_at, completed_at
 `
 
@@ -106,16 +103,12 @@ func (db *DB) createKitchenBatch(ctx context.Context, q queryable, p CreateKitch
 	if p.MaxCount != nil {
 		maxCount = sql.NullInt64{Int64: int64(*p.MaxCount), Valid: true}
 	}
-	var maxConcurrentVMs sql.NullInt64
-	if p.MaxConcurrentVMs != nil {
-		maxConcurrentVMs = sql.NullInt64{Int64: int64(*p.MaxConcurrentVMs), Valid: true}
-	}
 
 	const query = `
 		INSERT INTO kitchen_batches (
-			name, filters, max_count, max_concurrent_vms, dry_run, created_by
+			name, filters, max_count, dry_run, created_by
 		) VALUES (
-			$1, $2, $3, $4, $5, $6
+			$1, $2, $3, $4, $5
 		)
 		RETURNING ` + kitchenBatchColumns
 
@@ -123,7 +116,6 @@ func (db *DB) createKitchenBatch(ctx context.Context, q queryable, p CreateKitch
 		p.Name,
 		filtersJSON,
 		maxCount,
-		maxConcurrentVMs,
 		p.DryRun,
 		nullString(p.CreatedBy),
 	))
@@ -187,18 +179,13 @@ func (db *DB) updateKitchenBatch(ctx context.Context, q queryable, id string, p 
 	if p.MaxCount != nil {
 		maxCount = sql.NullInt64{Int64: int64(*p.MaxCount), Valid: true}
 	}
-	var maxConcurrentVMs sql.NullInt64
-	if p.MaxConcurrentVMs != nil {
-		maxConcurrentVMs = sql.NullInt64{Int64: int64(*p.MaxConcurrentVMs), Valid: true}
-	}
 
 	const query = `
 		UPDATE kitchen_batches SET
 			name = $2,
 			filters = $3,
 			max_count = $4,
-			max_concurrent_vms = $5,
-			dry_run = $6
+			dry_run = $5
 		WHERE id = $1 AND status = 'draft'
 		RETURNING ` + kitchenBatchColumns
 
@@ -207,7 +194,6 @@ func (db *DB) updateKitchenBatch(ctx context.Context, q queryable, id string, p 
 		p.Name,
 		filtersJSON,
 		maxCount,
-		maxConcurrentVMs,
 		p.DryRun,
 	))
 }
@@ -356,7 +342,7 @@ func (db *DB) listExcludedGitRepos(ctx context.Context, q queryable) ([]GitRepo,
 func scanKitchenBatch(row *sql.Row) (KitchenBatch, error) {
 	var kb KitchenBatch
 	var filtersJSON []byte
-	var maxCount, maxConcurrentVMs sql.NullInt64
+	var maxCount sql.NullInt64
 	var createdBy sql.NullString
 	var startedAt, completedAt sql.NullTime
 
@@ -365,7 +351,6 @@ func scanKitchenBatch(row *sql.Row) (KitchenBatch, error) {
 		&kb.Name,
 		&filtersJSON,
 		&maxCount,
-		&maxConcurrentVMs,
 		&kb.DryRun,
 		&kb.Status,
 		&createdBy,
@@ -385,7 +370,6 @@ func scanKitchenBatch(row *sql.Row) (KitchenBatch, error) {
 	}
 
 	kb.MaxCount = intPtrFromNull(maxCount)
-	kb.MaxConcurrentVMs = intPtrFromNull(maxConcurrentVMs)
 	kb.CreatedBy = stringFromNull(createdBy)
 	kb.StartedAt = timePtrFromNull(startedAt)
 	kb.CompletedAt = timePtrFromNull(completedAt)
@@ -403,7 +387,7 @@ func scanKitchenBatches(rows *sql.Rows, err error) ([]KitchenBatch, error) {
 	for rows.Next() {
 		var kb KitchenBatch
 		var filtersJSON []byte
-		var maxCount, maxConcurrentVMs sql.NullInt64
+		var maxCount sql.NullInt64
 		var createdBy sql.NullString
 		var startedAt, completedAt sql.NullTime
 
@@ -412,7 +396,6 @@ func scanKitchenBatches(rows *sql.Rows, err error) ([]KitchenBatch, error) {
 			&kb.Name,
 			&filtersJSON,
 			&maxCount,
-			&maxConcurrentVMs,
 			&kb.DryRun,
 			&kb.Status,
 			&createdBy,
@@ -428,7 +411,6 @@ func scanKitchenBatches(rows *sql.Rows, err error) ([]KitchenBatch, error) {
 		}
 
 		kb.MaxCount = intPtrFromNull(maxCount)
-		kb.MaxConcurrentVMs = intPtrFromNull(maxConcurrentVMs)
 		kb.CreatedBy = stringFromNull(createdBy)
 		kb.StartedAt = timePtrFromNull(startedAt)
 		kb.CompletedAt = timePtrFromNull(completedAt)

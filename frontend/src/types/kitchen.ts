@@ -124,7 +124,6 @@ export interface KitchenBatch {
   name: string;
   filters: BatchFilters;
   max_count: number | null;
-  max_concurrent_vms: number | null;
   dry_run: boolean;
   status: "draft" | "previewing" | "preparing" | "running" | "completed" | "cancelled" | "failed";
   created_by?: string;
