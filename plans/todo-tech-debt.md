@@ -54,9 +54,13 @@ Status key: [ ] Not started | [~] In progress | [x] Done
   - **Composition is `pre_destroy`-only and primary-file-only** — `readExistingPreDestroy` reads only the cookbook's primary `.kitchen.yml` (via `DiscoverKitchenFiles`), not variant files or driver-specific overlays. If CMM ever injects a second lifecycle phase, the no-clobber composition must be generalised beyond the single hard-coded phase.
   - **Detach-vs-power-off race** — detaching to survive a severed transport races the hypervisor destroy; the release packet must leave first. Only empirically tunable, no code guarantee.
 
+## Kitchen Queue — Completed Output Not Shown in Queue UI (BUG)
+
+- [ ] **The queue UI never shows output, even for completed/failed jobs** — output is stored (`CompleteKitchenRun`/`FailKitchenRun` write `output`) and returned by the detail endpoint `GET /kitchen/queue/:id` (`GetKitchenQueueItem` selects `COALESCE(output,'')`), but: (a) `ListKitchenQueue` deliberately omits the `output` column (payload size), so list items always have `output=""`, and (b) the frontend (`KitchenQueuePage.tsx` ~L297, `KitchenQueuePanel.tsx` L158/L172) gates the output display on `item.output` from the **list** response and never calls the detail endpoint. `fetchKitchenQueueItem(id)` exists in `api/kitchen.ts` but is unused. Net: output is only visible by navigating to the git-repo run view, which is hard to find (runs scattered per repo). **Fix:** lazy-fetch the detail on row expand — call `fetchKitchenQueueItem(id)` when `expanded` flips true and render its `output` (keeps list payloads small). This is the "post-completion output covers 90%" path below — it just isn't wired up.
+
 ## Kitchen Queue — Live Output Streaming
 
-- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (already available via `GET /kitchen/queue/:id`) covers 90% of the use case.
+- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (available via `GET /kitchen/queue/:id`, once the detail-fetch bug above is fixed) covers 90% of the use case.
 
 ## Kitchen — Proxmox VMID Race Condition (Upstream)
 
@@ -84,6 +88,14 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 5. **Random high-range strategy works** — 3 concurrent full clones to pre-selected unique VMIDs (900001-900003) all succeeded without conflict. VMID range is 100–999,999,999. Using `rand(900000..999999)` gives ~0.003% collision probability with 10 concurrent clients.
 
 6. **Recommended approach**: generate a random VMID in a high range, validate with `nextid?vmid=X`, clone, poll task `exitstatus`, retry on conflict. The retry logic in `fix/lock-timeout-retry` covers this but should be updated to use random high-range VMIDs as the primary allocation strategy rather than relying on sequential `nextid`.
+
+## Kitchen — Cancel Can't Abort In-Flight Proxmox Clone
+
+- [ ] **Cancelling a running queue item kills `kitchen` but not the Proxmox clone it already started** — `handleKitchenQueueCancel` → `Manager.CancelItem` cancels the worker context and the `kitchen` subprocess, but `kitchen` has already issued an async `qmclone` API call. The 32 GB copy continues server-side on the hypervisor and (on full-clone storage) leaks its disk on timeout. Observed 2026-06-08: after cancelling all queue items, fresh `qmclone:117` tasks kept appearing until each Proxmox task was killed directly. **Strategic fix:** on cancel of a running item, capture the clone UPID from the proxmox driver and issue `DELETE /nodes/<n>/tasks/<upid>` (or have the executor track and kill the in-flight hypervisor task) so cancellation actually stops the clone. Lower-priority once templates are on linked-clone storage (clones become ~1 s). See `proxmox-lvm-full-clone-timeout` field knowledge.
+
+## Kitchen — Orphan Sweep Misses Unnamed Failed-Clone Debris
+
+- [ ] **The orphan sweep keys on the `cmm-` `vm_name_prefix`, so failed-clone debris is never reclaimed** — a timed-out full clone leaves either an *unnamed* temp VM (`VM 911480`, `lock=clone`) or a bare `vm-<id>-disk-0` LV with no VM config. Neither carries the `cmm-` prefix, so the name/timestamp-based sweep skips them and the 32 GB disks accumulate (128 GB leaked in one storm on 2026-06-08, cleaned manually). **Strategic fix:** extend the sweep to also detect (a) VMs locked `clone` with a `qmclone temporary file` description older than N minutes, and (b) storage volumes (`vm-<id>-disk-0`) whose owning VMID has no config / no live clone task, and reclaim both. Compose with the cloud-driver tagging item below.
 
 ## Kitchen — Cloud Driver Orphan Detection
 
