@@ -60,13 +60,25 @@ Transport env var naming uses the **image name** (not the kitchen_name) since mu
 
 Test Kitchen merges `.kitchen.local.yml` over the cookbook's untouched `.kitchen.yml`. The overlay deep-merges hashes but **replaces arrays**. `lifecycle:` is a hash of phase → command array, so a phase the overlay defines (e.g. `pre_destroy`) replaces the cookbook's array for that same phase; phases the overlay does not mention are preserved unchanged.
 
-### Repo-provided setup hooks (preserve)
+### Reserved vs repo-owned phases (preserve)
 
-Some cookbook repos rely on their own lifecycle hooks (setup scripts) in `.kitchen.yml` to provision the instance correctly — STUB, contract to be finalised. Requirements:
+CMM reserves exactly one lifecycle phase: **`pre_destroy`** (the opt-in IP-release hook below). Every other phase — all `pre_/post_/finally_` × `create|converge|verify|destroy` — is **repo-owned**: the cookbook's `.kitchen.yml` is authoritative and the overlay MUST NOT write them.
 
-- The overlay MUST NOT clobber lifecycle phases the cookbook defines that CMM does not need to inject. Only inject phases CMM owns (see below).
-- If CMM must inject a phase the cookbook also uses, the overlay MUST compose (append the cookbook's commands), not silently replace them — exact merge mechanism TBD (e.g. read existing `.kitchen.yml`, concatenate arrays before writing the overlay).
-- Document which phases CMM reserves vs. leaves to the repo.
+Preservation rule:
+
+- TK hash-merges `lifecycle:` and **replaces per-phase arrays**. Because the overlay only ever writes phases CMM owns, repo-defined phases the overlay never mentions survive unchanged — no read-back of `.kitchen.yml` is needed to preserve them.
+- The single exception is a phase CMM owns that the repo also defines (`pre_destroy`): there the overlay MUST compose by reading the repo's existing array and appending, never replacing (see IP-release hook).
+- `pre_converge` is repo-owned in general, but is the phase into which CMM injects opt-in customer setup scripts (below). When CMM injects there, it composes with any repo `pre_converge` array the same way.
+
+### Customer setup scripts (inline pre_converge) — opt-in
+
+Some cookbooks depend on setup steps (e.g. creating users) carried as Windows and Linux scripts in the repo but not wired into `.kitchen.yml`. CMM can run them on the guest before converge.
+
+- **Mechanism: inline.** TK lifecycle hooks take command strings only — there is no `path:`-to-script option and no file upload (confirmed against test-kitchen 4.0.0: `remote:` runs the string via `transport.connection.execute`; `local:` runs it on the workstation). To run a repo script on the guest, CMM reads the script body at overlay-generation time and **inlines it** into a `remote:` hook. Hand-rolling scp/WinRM in a `local:` hook is rejected — it re-implements transport auth TK already owns.
+- **Phase: `pre_converge`** — the guest exists and is reachable, before the cookbook's converge.
+- **Discovery: operator-configurable patterns.** One or more glob patterns matched against repo file paths (customers' conventions vary; regex is a possible later extension). Patterns are scoped **per OS family** (`linux`/`windows`) — scripts are inherently OS-keyed (sh/SSH vs ps1/WinRM), and CMM already derives `osFamily` from the resolved platform. Per-image override is deferred. Multiple matches produce separate `remote:` hooks in deterministic **sorted-by-path** order.
+- **OS targeting:** emit `includes:` for the matched OS family so a hook runs only on its intended platforms.
+- **Failure semantics (overriding requirement): setup hooks MUST fail the run.** This is the opposite of the failure-isolated IP-release hook — the cookbook depends on these steps, so a non-zero exit MUST abort the run. No `skippable:`, no exit-0 swallowing, no detachment.
 
 ### App-injected IP-release hook (pre_destroy) — opt-in spike
 
