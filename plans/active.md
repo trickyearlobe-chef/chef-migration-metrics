@@ -67,17 +67,15 @@ Hooks:
     the failure-isolated IP-release hook — the cookbook depends on them).
 Acceptance: section is no longer a stub; decisions above recorded.
 
-## Chunk 2 — Preserve repo lifecycle hooks (correctness)
+## Chunk 2 — Preserve repo lifecycle hooks (correctness)  [DONE 2026-06-07]
 
-Scope: `internal/gitkitchen/overlay.go`, `executor.go` + tests.
-- Add regression tests: repo defines `pre_create`/`pre_converge`; assert the
-  overlay (with and without IP-release on) does not clobber them.
-- Confirm/extend `readExistingPreDestroy` story — does CMM need to read other
-  phases at all, or does the untouched `.kitchen.yml` + hash-merge suffice?
-- Document reserved vs repo-owned phases.
-- Tick the `todo-bulk-kitchen-scanning.md` preserve items.
-Acceptance: tests prove all repo phases survive overlay generation; `pre_destroy`
-IP-release still composes.
+Regression tests lock the preservation rule: the overlay names `pre_destroy`
+only (CMM's single reserved phase), so every other repo-defined lifecycle phase
+survives TK's array-replace merge untouched. No read-back beyond `pre_destroy`
+is needed. `overlay_test.go`: `WritesOnlyPreDestroyPhase_IPReleaseOn`,
+`NoLifecycleBlock_IPReleaseOff`. `executor_test.go`:
+`PreservesRepoLifecyclePhases` (repo `pre_create`/`pre_converge`/`post_converge`
+never leak into the overlay; `pre_destroy` still composes). Todo items ticked.
 
 ## Chunk 3 — Customer setup scripts (opt-in)
 
