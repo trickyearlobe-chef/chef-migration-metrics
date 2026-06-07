@@ -273,6 +273,46 @@ describe("AdminTestKitchenPage — Platform Map Section", () => {
     expect(saved.images[1].release_ip_on_destroy).not.toBe(true);
   });
 
+  it("edits per-OS-family setup-script patterns and saves them", async () => {
+    const user = userEvent.setup();
+    vi.mocked(saveTestKitchenConfig).mockResolvedValue({
+      value: defaultConfig,
+      restartRequired: false,
+    });
+
+    render(<AdminTestKitchenPage />);
+
+    const linux = await screen.findByLabelText(/Linux patterns/);
+    await user.type(linux, "test/setup/a.sh{Enter}test/setup/b.sh");
+
+    const windows = screen.getByLabelText(/Windows patterns/);
+    await user.type(windows, "test/setup/users.ps1");
+
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(saveTestKitchenConfig).toHaveBeenCalled();
+    });
+    const saved = vi.mocked(saveTestKitchenConfig).mock.calls[0][0];
+    expect(saved.setup_scripts?.linux).toEqual([
+      "test/setup/a.sh",
+      "test/setup/b.sh",
+    ]);
+    expect(saved.setup_scripts?.windows).toEqual(["test/setup/users.ps1"]);
+  });
+
+  it("renders existing setup-script patterns from config", async () => {
+    vi.mocked(fetchTestKitchenConfig).mockResolvedValue({
+      ...defaultConfig,
+      setup_scripts: { linux: ["scripts/*.sh"], windows: [] },
+    });
+
+    render(<AdminTestKitchenPage />);
+
+    const linux = await screen.findByLabelText(/Linux patterns/);
+    expect((linux as HTMLTextAreaElement).value).toBe("scripts/*.sh");
+  });
+
   it("shows empty state when no platforms discovered", async () => {
     vi.mocked(fetchPlatformMappingStatus).mockResolvedValue({
       discovered_platforms: [],
