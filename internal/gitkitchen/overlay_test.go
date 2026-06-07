@@ -444,6 +444,55 @@ func TestGenerateOverlay_IPReleaseHook_ComposesExistingPreDestroy(t *testing.T) 
 	}
 }
 
+// repoOwnedPhases are every lifecycle phase CMM does NOT reserve. The overlay
+// must never name any of them: TK hash-merges lifecycle: and replaces per-phase
+// arrays, so a phase the overlay mentions would clobber the cookbook's own. CMM
+// reserves pre_destroy only (the IP-release hook composes within it).
+var repoOwnedPhases = []string{
+	"pre_create", "post_create", "finally_create",
+	"pre_converge", "post_converge", "finally_converge",
+	"pre_verify", "post_verify", "finally_verify",
+	"post_destroy", "finally_destroy",
+}
+
+// assertNoRepoOwnedPhases fails if the overlay names any non-pre_destroy phase.
+func assertNoRepoOwnedPhases(t *testing.T, overlay string) {
+	t.Helper()
+	for _, phase := range repoOwnedPhases {
+		if strings.Contains(overlay, phase) {
+			t.Errorf("overlay must not write repo-owned phase %q (TK replaces the phase array, clobbering the cookbook's own), got:\n%s", phase, overlay)
+		}
+	}
+}
+
+func TestGenerateOverlay_WritesOnlyPreDestroyPhase_IPReleaseOn(t *testing.T) {
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", true)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(overlay, "pre_destroy:") {
+		t.Fatalf("expected the reserved pre_destroy phase, got:\n%s", overlay)
+	}
+	assertNoRepoOwnedPhases(t, overlay)
+}
+
+func TestGenerateOverlay_NoLifecycleBlock_IPReleaseOff(t *testing.T) {
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", false)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{PlatformName: "ubuntu-2204", TargetChefVersion: "18.4.2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// With no reserved phase to write, the overlay must omit lifecycle: entirely
+	// so every repo-defined phase survives the merge untouched.
+	if strings.Contains(overlay, "lifecycle:") {
+		t.Errorf("expected no lifecycle block when IP-release is off, got:\n%s", overlay)
+	}
+	assertNoRepoOwnedPhases(t, overlay)
+}
+
 func TestGenerateOverlay_IPReleaseHook_OptInButNoMatch(t *testing.T) {
 	// Opt-in image but the platform does not resolve — no overlay, no panic.
 	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", true)
