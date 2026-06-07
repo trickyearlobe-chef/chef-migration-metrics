@@ -29,7 +29,7 @@ a customer setup script that isn't already wired into `.kitchen.yml`.
 Customer constraint: repos carry Windows + Linux shell scripts (e.g. user
 creation) that cookbooks need before converge; without running them, TK fails.
 
-## Chunk 1 — Finalise the lifecycle-hooks contract (spec)  [needs approval to edit spec]
+## Chunk 1 — Finalise the lifecycle-hooks contract (spec)  [DONE 2026-06-07]
 
 TK lifecycle-hook facts (from kitchen.ci, 2026-06-07):
 - Phases `pre_/post_/finally_` × `create|converge|verify|destroy`. `local:` runs
