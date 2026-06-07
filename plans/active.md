@@ -77,22 +77,26 @@ is needed. `overlay_test.go`: `WritesOnlyPreDestroyPhase_IPReleaseOn`,
 `PreservesRepoLifecyclePhases` (repo `pre_create`/`pre_converge`/`post_converge`
 never leak into the overlay; `pre_destroy` still composes). Todo items ticked.
 
-## Chunk 3 — Customer setup scripts (opt-in)
+## Chunk 3 — Customer setup scripts (opt-in)  [DONE 2026-06-07]
 
-Scope: config struct + overlay emission + UI, per the Chunk 1 contract.
-- Config: per-OS-family setup-script **patterns** (lists), e.g.
-  `setup_scripts.linux: [...]`, `setup_scripts.windows: [...]`. Glob match
-  against repo file paths.
-- Overlay: read the script body from the repo at generation time and INLINE it
-  into a `remote:` `pre_converge` hook (no `skippable:` — must fail the run),
-  using `includes:` for Windows vs Linux targeting. Handle YAML block-scalar
-  quoting of multi-line script bodies.
-- UI: option in Test Kitchen image/settings config to set the setup script path.
-- Failure semantics: a failed setup hook fails the run.
-- TDD: overlay emission tests (linux sh + windows), YAML-escaping of script
-  bodies, config validation, UI test.
-Acceptance: a repo with a create-users script runs it before converge on both OS
-families; failure of the setup step fails the run.
+- Config: `TestKitchenConfig.SetupScripts` (`SetupScriptsConfig{Linux,Windows}`)
+  — per-OS-family glob pattern lists; `config.go` + admin validators reject
+  empty/malformed globs.
+- Overlay: `writeLifecycle` emits one `lifecycle:` block; setup bodies are
+  inlined into `remote: pre_converge` hooks (no `skippable:` → must fail the
+  run), composing with the `pre_destroy` IP-release hook. yaml.Marshal handles
+  block-scalar quoting (round-trip verified). `includes:` omitted — overlay is
+  per-platform and TK invokes `kitchen test <instance>` (spec updated, decided
+  2026-06-07).
+- Executor: `discoverSetupScripts` globs the OS-family patterns against the
+  workspace, reads bodies, dedupes, sorts by path.
+- UI: AdminTestKitchenPage "Setup Scripts (pre-converge)" section, per-family
+  textareas; sanitised at save. Types + tests added.
+Acceptance met: linux + windows emission, multi-line escaping, config
+validation, executor discovery, UI save/load all tested and green.
+
+All chunks (1–3) complete — git-kitchen runs can now preserve repo lifecycle
+hooks and run opt-in customer setup scripts before converge.
 
 ## Notes
 
