@@ -6,6 +6,7 @@ package webapi
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
@@ -238,6 +239,26 @@ func validateAdminTKConfig(tk config.TestKitchenConfig) string {
 		if entry.Image != "" {
 			if _, ok := seenImages[entry.Image]; !ok {
 				return fmt.Sprintf("analysis_tools.test_kitchen.platform_map[%d].image %q does not match any defined image.", i, entry.Image)
+			}
+		}
+	}
+
+	// Validate setup-script glob patterns: non-empty and syntactically valid.
+	if tk.SetupScripts != nil {
+		for _, fam := range []struct {
+			name     string
+			patterns []string
+		}{
+			{"linux", tk.SetupScripts.Linux},
+			{"windows", tk.SetupScripts.Windows},
+		} {
+			for i, p := range fam.patterns {
+				if p == "" {
+					return fmt.Sprintf("analysis_tools.test_kitchen.setup_scripts.%s[%d] is empty.", fam.name, i)
+				}
+				if _, err := filepath.Match(p, ""); err != nil {
+					return fmt.Sprintf("analysis_tools.test_kitchen.setup_scripts.%s[%d] %q is not a valid glob pattern.", fam.name, i, p)
+				}
 			}
 		}
 	}

@@ -279,6 +279,73 @@ func TestRunInstance_PreservesRepoLifecyclePhases(t *testing.T) {
 	}
 }
 
+func TestRunInstance_SetupScripts_InlinedForOSFamily(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	setupDir := filepath.Join(repoDir, "test", "setup")
+	if err := os.MkdirAll(setupDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Two linux scripts (matched, sorted) + one windows script (not matched
+	// on a linux platform).
+	for name, body := range map[string]string{
+		"a-users.sh": "useradd -m svc\n",
+		"b-dirs.sh":  "mkdir -p /opt/app\n",
+		"win.ps1":    "New-LocalUser svc\n",
+	} {
+		if err := os.WriteFile(filepath.Join(setupDir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tkConfig := baseTKConfig()
+	tkConfig.SetupScripts = &config.SetupScriptsConfig{
+		Linux:   []string{"test/setup/*.sh"},
+		Windows: []string{"test/setup/*.ps1"},
+	}
+
+	exec := &mockExecutor{exitCode: 0}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	// baseParams resolves to ubuntu-2204 (linux).
+	RunInstance(context.Background(), baseParams(repoDir), tkConfig, exec, cred)
+
+	overlay := exec.capturedFiles[".kitchen.local.yml"]
+	if !strings.Contains(overlay, "pre_converge:") {
+		t.Fatalf("expected setup scripts in pre_converge, got:\n%s", overlay)
+	}
+	aIdx := strings.Index(overlay, "useradd -m svc")
+	bIdx := strings.Index(overlay, "mkdir -p /opt/app")
+	if aIdx < 0 || bIdx < 0 {
+		t.Fatalf("expected both linux setup scripts inlined, got:\n%s", overlay)
+	}
+	if aIdx > bIdx {
+		t.Errorf("expected scripts in sorted-by-path order (a before b), got:\n%s", overlay)
+	}
+	// Windows script must not leak onto a linux platform.
+	if strings.Contains(overlay, "New-LocalUser") {
+		t.Errorf("windows setup script must not be inlined on a linux platform, got:\n%s", overlay)
+	}
+}
+
+func TestRunInstance_SetupScripts_NoneWhenNoMatch(t *testing.T) {
+	repoDir := setupRepoDir(t)
+
+	tkConfig := baseTKConfig()
+	tkConfig.SetupScripts = &config.SetupScriptsConfig{
+		Linux: []string{"test/setup/*.sh"}, // no such files in the repo
+	}
+
+	exec := &mockExecutor{exitCode: 0}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	RunInstance(context.Background(), baseParams(repoDir), tkConfig, exec, cred)
+
+	overlay := exec.capturedFiles[".kitchen.local.yml"]
+	if strings.Contains(overlay, "pre_converge:") {
+		t.Errorf("expected no pre_converge block when no script matches, got:\n%s", overlay)
+	}
+}
+
 func TestRunInstance_IPReleaseHook_OffByDefault(t *testing.T) {
 	repoDir := setupRepoDir(t)
 	exec := &mockExecutor{exitCode: 0}

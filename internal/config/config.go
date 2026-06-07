@@ -271,6 +271,24 @@ type TestKitchenConfig struct {
 	// the usable DHCP pool size (e.g. 25, 64). See StartRateWindowMinutes. 0
 	// disables the limiter. Dynamic.
 	StartRateMaxPerWindow int `yaml:"start_rate_max_per_window" json:"start_rate_max_per_window"`
+
+	// SetupScripts opts cookbooks in to running repo-provided setup scripts
+	// (e.g. user creation) on the guest before converge. Patterns are glob
+	// patterns matched against repo file paths, scoped per OS family. Each
+	// matched script body is inlined into a remote: pre_converge lifecycle
+	// hook at overlay-generation time. These hooks MUST fail the run on a
+	// non-zero exit — the cookbook depends on them. Dynamic. See
+	// test-kitchen-drivers-overlay-generation.md § Customer setup scripts.
+	SetupScripts *SetupScriptsConfig `yaml:"setup_scripts,omitempty" json:"setup_scripts,omitempty"`
+}
+
+// SetupScriptsConfig holds per-OS-family glob patterns for repo-provided
+// setup scripts inlined into pre_converge. Per-image override is deferred.
+type SetupScriptsConfig struct {
+	// Linux globs match shell scripts run over SSH on linux platforms.
+	Linux []string `yaml:"linux,omitempty" json:"linux,omitempty"`
+	// Windows globs match scripts run over WinRM on windows platforms.
+	Windows []string `yaml:"windows,omitempty" json:"windows,omitempty"`
 }
 
 // ImageEntry defines a single infrastructure image in the image registry.
@@ -1444,6 +1462,23 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	if (tk.StartRateWindowMinutes > 0) != (tk.StartRateMaxPerWindow > 0) {
 		w.addf("analysis_tools.test_kitchen: start-rate limiter needs both " +
 			"start_rate_window_minutes and start_rate_max_per_window; only one is set, so the limiter is disabled")
+	}
+
+	// Setup-script glob patterns must be syntactically valid and non-empty.
+	if tk.SetupScripts != nil {
+		validateSetupScriptGlobs := func(family string, patterns []string) {
+			for i, p := range patterns {
+				if p == "" {
+					ve.addf("analysis_tools.test_kitchen.setup_scripts.%s[%d] is empty", family, i)
+					continue
+				}
+				if _, err := filepath.Match(p, ""); err != nil {
+					ve.addf("analysis_tools.test_kitchen.setup_scripts.%s[%d] %q is not a valid glob: %v", family, i, p, err)
+				}
+			}
+		}
+		validateSetupScriptGlobs("linux", tk.SetupScripts.Linux)
+		validateSetupScriptGlobs("windows", tk.SetupScripts.Windows)
 	}
 
 	// Image registry validation.

@@ -31,6 +31,21 @@ type OverlayParams struct {
 	// these are preserved and run before it, so the overlay composes with —
 	// rather than clobbers — repo-provided hooks for the same phase.
 	ExistingPreDestroy []any
+
+	// SetupScripts are opt-in customer setup scripts discovered in the repo
+	// for this instance's OS family, in deterministic sorted-by-path order.
+	// Each body is inlined into a remote: pre_converge lifecycle hook so the
+	// cookbook's converge has its prerequisites (e.g. created users). These
+	// hooks MUST fail the run on non-zero exit — never skippable.
+	SetupScripts []SetupScript
+}
+
+// SetupScript is a repo-provided setup script whose body is inlined into a
+// remote: pre_converge hook. Path is the repo-relative path (used only for
+// deterministic ordering); Body is the verbatim script contents.
+type SetupScript struct {
+	Path string
+	Body string
 }
 
 // generateOverlay produces the contents of a .kitchen.local.yml overlay
@@ -159,15 +174,15 @@ func generateOverlay(tkConfig config.TestKitchenConfig, params OverlayParams) (s
 	}
 	hasContent = true
 
-	// IP-release pre_destroy hook (opt-in per image, default off). Best-effort
-	// optimisation to return the DHCP lease promptly on teardown — never a
-	// correctness requirement, so it must never fail or block a run.
+	// Lifecycle hooks share a single block: opt-in customer setup scripts in
+	// pre_converge (a correctness requirement — must fail the run) and the
+	// opt-in, best-effort IP-release command in pre_destroy (must never fail).
+	var releaseCmd string
 	if imgOK && img.ReleaseIPOnDestroy {
 		_, osFamily, _ := analysis.NormalisePlatformName(platformName)
-		if cmd := ipReleaseCommand(osFamily); cmd != "" {
-			writeLifecycleHook(&buf, params.ExistingPreDestroy, cmd)
-		}
+		releaseCmd = ipReleaseCommand(osFamily)
 	}
+	writeLifecycle(&buf, params.SetupScripts, params.ExistingPreDestroy, releaseCmd)
 
 	if !hasContent {
 		return "", nil
@@ -196,23 +211,47 @@ func ipReleaseCommand(osFamily string) string {
 	return linuxIPReleaseCommand
 }
 
-// writeLifecycleHook emits a lifecycle.pre_destroy block composing any
-// repo-provided entries (preserved, run first) with the injected release
-// command. Test Kitchen replaces arrays on merge, so the cookbook's own
-// pre_destroy commands must be carried forward here rather than clobbered.
-func writeLifecycleHook(buf *bytes.Buffer, existing []any, releaseCmd string) {
-	items := make([]any, 0, len(existing)+1)
-	items = append(items, existing...)
-	items = append(items, map[string]any{"remote": releaseCmd})
+// writeLifecycle emits a single lifecycle: block covering the phases CMM
+// owns. Setup scripts (opt-in, repo-provided) are inlined into pre_converge as
+// remote: hooks and carry no skippable flag — the cookbook depends on them, so
+// a non-zero exit MUST fail the run. The IP-release command and any repo
+// pre_destroy hooks compose in pre_destroy (TK replaces arrays on merge, so the
+// cookbook's own pre_destroy commands are carried forward, run first). Emits
+// nothing when neither phase has content. Phases are written in lifecycle
+// order: pre_converge before pre_destroy.
+func writeLifecycle(buf *bytes.Buffer, setupScripts []SetupScript, existingPreDestroy []any, releaseCmd string) {
+	preConverge := make([]any, 0, len(setupScripts))
+	for _, s := range setupScripts {
+		preConverge = append(preConverge, map[string]any{"remote": s.Body})
+	}
 
-	marshalled, err := yaml.Marshal(items)
-	if err != nil {
-		// Never break overlay generation for a best-effort optimisation.
+	preDestroy := make([]any, 0, len(existingPreDestroy)+1)
+	preDestroy = append(preDestroy, existingPreDestroy...)
+	if releaseCmd != "" {
+		preDestroy = append(preDestroy, map[string]any{"remote": releaseCmd})
+	}
+
+	if len(preConverge) == 0 && len(preDestroy) == 0 {
 		return
 	}
 
 	buf.WriteString("\nlifecycle:\n")
-	buf.WriteString("  pre_destroy:\n")
+	writeLifecyclePhase(buf, "pre_converge", preConverge)
+	writeLifecyclePhase(buf, "pre_destroy", preDestroy)
+}
+
+// writeLifecyclePhase emits one "  <phase>:" key with its command array,
+// indented under the lifecycle: block. yaml.Marshal handles block-scalar
+// quoting of multi-line inlined script bodies. Skips empty phases.
+func writeLifecyclePhase(buf *bytes.Buffer, phase string, items []any) {
+	if len(items) == 0 {
+		return
+	}
+	marshalled, err := yaml.Marshal(items)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(buf, "  %s:\n", phase)
 	for _, line := range strings.Split(strings.TrimRight(string(marshalled), "\n"), "\n") {
 		if line == "" {
 			buf.WriteByte('\n')

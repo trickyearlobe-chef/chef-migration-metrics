@@ -1979,6 +1979,42 @@ analysis_tools:
 	expectParseError(t, yaml, "kitchen_name is required")
 }
 
+func TestValidation_SetupScriptsBadGlob(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: proxmox
+    setup_scripts:
+      linux:
+        - "test/setup/[unterminated"
+`
+	expectParseError(t, yaml, "setup_scripts")
+}
+
+func TestValidation_SetupScriptsValid(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  test_kitchen:
+    driver: proxmox
+    setup_scripts:
+      linux:
+        - "test/setup/*.sh"
+      windows:
+        - "test/setup/*.ps1"
+`
+	cfg := mustParse(t, yaml)
+	ss := cfg.AnalysisTools.TestKitchen.SetupScripts
+	if ss == nil {
+		t.Fatal("expected setup_scripts to be parsed")
+	}
+	if len(ss.Linux) != 1 || ss.Linux[0] != "test/setup/*.sh" {
+		t.Errorf("expected one linux pattern, got %v", ss.Linux)
+	}
+	if len(ss.Windows) != 1 || ss.Windows[0] != "test/setup/*.ps1" {
+		t.Errorf("expected one windows pattern, got %v", ss.Windows)
+	}
+}
+
 func TestValidation_VCenterDriverConfig(t *testing.T) {
 	yaml := minimalValidYAML() + `
 analysis_tools:

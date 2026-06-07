@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 )
 
@@ -441,6 +443,122 @@ func TestGenerateOverlay_IPReleaseHook_ComposesExistingPreDestroy(t *testing.T) 
 	// The cookbook's own hook must be preserved and run before CMM's release.
 	if repoIdx > cmmIdx {
 		t.Errorf("expected repo pre_destroy hook before the injected release, got:\n%s", overlay)
+	}
+}
+
+// parseLifecyclePhase extracts the lifecycle.<phase> command array from an
+// overlay, asserting the overlay is valid YAML so block-scalar quoting of
+// inlined script bodies is verified by round-trip, not substring matching.
+func parseLifecyclePhase(t *testing.T, overlay, phase string) []any {
+	t.Helper()
+	var doc struct {
+		Lifecycle map[string][]any `yaml:"lifecycle"`
+	}
+	if err := yaml.Unmarshal([]byte(overlay), &doc); err != nil {
+		t.Fatalf("overlay is not valid YAML: %v\n%s", err, overlay)
+	}
+	return doc.Lifecycle[phase]
+}
+
+func TestGenerateOverlay_SetupScripts_LinuxInline(t *testing.T) {
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", false)
+	body := "#!/bin/sh\nuseradd -m svc\n"
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "ubuntu-2204",
+		TargetChefVersion: "18.4.2",
+		SetupScripts:      []SetupScript{{Path: "test/setup/users.sh", Body: body}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	preConverge := parseLifecyclePhase(t, overlay, "pre_converge")
+	if len(preConverge) != 1 {
+		t.Fatalf("expected one pre_converge hook, got %d:\n%s", len(preConverge), overlay)
+	}
+	hook, ok := preConverge[0].(map[string]any)
+	if !ok || hook["remote"] != body {
+		t.Errorf("expected script body inlined verbatim into remote:, got %#v\n%s", preConverge[0], overlay)
+	}
+	// Setup hooks must fail the run — never skippable, no exit-0 swallowing.
+	if strings.Contains(overlay, "skippable") {
+		t.Errorf("setup hook must not be skippable, got:\n%s", overlay)
+	}
+}
+
+func TestGenerateOverlay_SetupScripts_MultipleSorted(t *testing.T) {
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", false)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "ubuntu-2204",
+		TargetChefVersion: "18.4.2",
+		SetupScripts: []SetupScript{
+			{Path: "test/setup/a.sh", Body: "echo a"},
+			{Path: "test/setup/b.sh", Body: "echo b"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	preConverge := parseLifecyclePhase(t, overlay, "pre_converge")
+	if len(preConverge) != 2 {
+		t.Fatalf("expected two pre_converge hooks, got %d:\n%s", len(preConverge), overlay)
+	}
+	aIdx := strings.Index(overlay, "echo a")
+	bIdx := strings.Index(overlay, "echo b")
+	if aIdx < 0 || bIdx < 0 || aIdx > bIdx {
+		t.Errorf("expected scripts emitted in sorted-by-path order (a before b), got:\n%s", overlay)
+	}
+}
+
+func TestGenerateOverlay_SetupScripts_MultilineBlockScalar(t *testing.T) {
+	tkConfig := ipReleaseConfig("windows-2022", "win2022", false)
+	body := "New-LocalUser svc\nAdd-LocalGroupMember Administrators svc\n"
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "windows-2022",
+		TargetChefVersion: "18.4.2",
+		SetupScripts:      []SetupScript{{Path: "test/setup/users.ps1", Body: body}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Round-trip proves the multi-line body survives YAML quoting unchanged.
+	preConverge := parseLifecyclePhase(t, overlay, "pre_converge")
+	if len(preConverge) != 1 {
+		t.Fatalf("expected one pre_converge hook, got %d:\n%s", len(preConverge), overlay)
+	}
+	if got := preConverge[0].(map[string]any)["remote"]; got != body {
+		t.Errorf("multi-line body not preserved through YAML round-trip:\nwant %q\ngot  %q", body, got)
+	}
+}
+
+func TestGenerateOverlay_SetupScripts_ComposesWithIPRelease(t *testing.T) {
+	// IP-release opt-in (pre_destroy) AND a setup script (pre_converge) must
+	// share a single lifecycle block, each in its own phase.
+	tkConfig := ipReleaseConfig("ubuntu-2204", "ubuntu22", true)
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "ubuntu-2204",
+		TargetChefVersion: "18.4.2",
+		SetupScripts:      []SetupScript{{Path: "test/setup/users.sh", Body: "echo setup"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if n := strings.Count(overlay, "lifecycle:"); n != 1 {
+		t.Errorf("expected exactly one lifecycle block, got %d:\n%s", n, overlay)
+	}
+	if len(parseLifecyclePhase(t, overlay, "pre_converge")) != 1 {
+		t.Errorf("expected setup script in pre_converge, got:\n%s", overlay)
+	}
+	preDestroy := parseLifecyclePhase(t, overlay, "pre_destroy")
+	if len(preDestroy) != 1 {
+		t.Errorf("expected IP-release hook in pre_destroy, got:\n%s", overlay)
 	}
 }
 
