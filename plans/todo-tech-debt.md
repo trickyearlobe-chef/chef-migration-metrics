@@ -54,13 +54,9 @@ Status key: [ ] Not started | [~] In progress | [x] Done
   - **Composition is `pre_destroy`-only and primary-file-only** — `readExistingPreDestroy` reads only the cookbook's primary `.kitchen.yml` (via `DiscoverKitchenFiles`), not variant files or driver-specific overlays. If CMM ever injects a second lifecycle phase, the no-clobber composition must be generalised beyond the single hard-coded phase.
   - **Detach-vs-power-off race** — detaching to survive a severed transport races the hypervisor destroy; the release packet must leave first. Only empirically tunable, no code guarantee.
 
-## Kitchen Queue — Completed Output Not Shown in Queue UI (BUG)
-
-- [ ] **The queue UI never shows output, even for completed/failed jobs** — output is stored (`CompleteKitchenRun`/`FailKitchenRun` write `output`) and returned by the detail endpoint `GET /kitchen/queue/:id` (`GetKitchenQueueItem` selects `COALESCE(output,'')`), but: (a) `ListKitchenQueue` deliberately omits the `output` column (payload size), so list items always have `output=""`, and (b) the frontend (`KitchenQueuePage.tsx` ~L297, `KitchenQueuePanel.tsx` L158/L172) gates the output display on `item.output` from the **list** response and never calls the detail endpoint. `fetchKitchenQueueItem(id)` exists in `api/kitchen.ts` but is unused. Net: output is only visible by navigating to the git-repo run view, which is hard to find (runs scattered per repo). **Fix:** lazy-fetch the detail on row expand — call `fetchKitchenQueueItem(id)` when `expanded` flips true and render its `output` (keeps list payloads small). This is the "post-completion output covers 90%" path below — it just isn't wired up.
-
 ## Kitchen Queue — Live Output Streaming
 
-- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (available via `GET /kitchen/queue/:id`, once the detail-fetch bug above is fixed — fix in progress on branch `fix/kitchen-queue-output`) covers 90% of the use case.
+- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (available via `GET /kitchen/queue/:id`, now shown in the queue UI via lazy detail fetch on row expand) covers 90% of the use case.
 
 ## Kitchen Queue — `started_at` Records Claim Time, Not VM-Start Time
 

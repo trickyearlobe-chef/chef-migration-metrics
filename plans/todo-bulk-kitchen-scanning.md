@@ -44,11 +44,11 @@ when a timeout has no converge activity, `error_message: "probable DHCP/network 
 
 ## Frontend
 
-- [ ] Disable "Run" button when TK config `enabled: false` with tooltip "Test Kitchen is disabled"
-- [ ] Poll `GET /kitchen/batches/:id/progress` every 5s (or subscribe to `batch_progress` WebSocket events) when batch is `running`
-- [ ] Update `BatchProgressBar` in real time
-- [ ] Show per-cookbook results table in batch detail (expandable rows, instance-level pass/fail)
-- [ ] "Cancel" button sends cancel request, updates UI immediately
+- [x] Disable "Run" button when TK config `enabled: false` with tooltip (Batch UX Chunk 1)
+- [x] Poll `GET /kitchen/batches/:id/progress` every 5s + subscribe to `batch_progress` WebSocket events when `running` (Batch UX Chunks 2–3)
+- [x] Update `BatchProgressBar` in real time (Batch UX Chunk 3)
+- [x] Show per-cookbook results table in batch detail (expandable rows, instance-level pass/fail) (Batch UX Chunk 2)
+- [x] "Cancel" button sends cancel request, updates UI immediately — confirm dialog + optimistic "Cancelling…" + refetch (Batch UX Chunk 4)
 - [ ] Show sweep status on admin TK config page
 
 ## Lifecycle Hooks

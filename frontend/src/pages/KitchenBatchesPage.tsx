@@ -1,7 +1,7 @@
 // Copyright 2025 Chef Migration Metrics Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   listKitchenBatches,
   createKitchenBatch,
@@ -13,6 +13,7 @@ import {
   excludeGitRepo,
   clearGitRepoExclusion,
   fetchBatchProgress,
+  fetchBatchInstances,
   fetchTestKitchenConfig,
 } from "../api";
 import type {
@@ -23,8 +24,19 @@ import type {
   ResolvedCookbook,
   GitRepoListItem,
   BatchProgress,
+  KitchenBatchInstance,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
+import { useWebSocket } from "../hooks/useWebSocket";
+
+/** Extract the batch_id from a WebSocket event payload, if present. */
+function eventBatchId(data: unknown): string | undefined {
+  if (data && typeof data === "object" && "batch_id" in data) {
+    const v = (data as Record<string, unknown>).batch_id;
+    return typeof v === "string" ? v : undefined;
+  }
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Status badge helpers
@@ -39,6 +51,28 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "bg-red-100 text-red-700",
   failed: "bg-red-200 text-red-800",
 };
+
+const INSTANCE_STATUS_COLORS: Record<string, string> = {
+  pending: "bg-gray-100 text-gray-600",
+  running: "bg-yellow-100 text-yellow-800",
+  passed: "bg-green-100 text-green-700",
+  failed: "bg-red-200 text-red-800",
+  errored: "bg-orange-100 text-orange-700",
+  timed_out: "bg-yellow-100 text-yellow-800",
+  network_timeout: "bg-violet-100 text-violet-700",
+  cancelled: "bg-red-100 text-red-700",
+};
+
+function InstanceStatusBadge({ status }: { status: string }) {
+  const cls = INSTANCE_STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {status}
+    </span>
+  );
+}
 
 function BatchProgressBar({ progress }: { progress: BatchProgress }) {
   const total = progress.total || 1;
@@ -224,12 +258,16 @@ export function batchToForm(b: KitchenBatch): BatchFormData {
 function BatchForm({
   initial,
   saving,
+  runEnabled,
   onSave,
+  onSaveAndRun,
   onCancel,
 }: {
   initial: BatchFormData;
   saving: boolean;
+  runEnabled: boolean;
   onSave: (form: BatchFormData) => void;
+  onSaveAndRun: (form: BatchFormData) => void;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<BatchFormData>(initial);
@@ -366,6 +404,18 @@ function BatchForm({
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
           <button
+            className={BTN_SUCCESS}
+            disabled={saving || !form.name.trim() || !runEnabled}
+            onClick={() => onSaveAndRun(form)}
+            title={
+              runEnabled
+                ? "Create the batch and start it immediately"
+                : "Enable Test Kitchen in settings to run batches"
+            }
+          >
+            {saving ? "Working…" : "Create & Run"}
+          </button>
+          <button
             className={BTN_PRIMARY}
             disabled={saving || !form.name.trim()}
             onClick={() => onSave(form)}
@@ -386,6 +436,127 @@ function BatchForm({
 }
 
 // ---------------------------------------------------------------------------
+// Per-instance results table
+// ---------------------------------------------------------------------------
+
+function groupInstancesByRepo(
+  instances: KitchenBatchInstance[],
+): [string, KitchenBatchInstance[]][] {
+  const groups = new Map<string, KitchenBatchInstance[]>();
+  for (const inst of instances) {
+    const arr = groups.get(inst.git_repo_name);
+    if (arr) arr.push(inst);
+    else groups.set(inst.git_repo_name, [inst]);
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function summariseStatuses(instances: KitchenBatchInstance[]): string {
+  const counts = new Map<string, number>();
+  for (const inst of instances) {
+    counts.set(inst.status, (counts.get(inst.status) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([status, n]) => `${n} ${status}`)
+    .join(", ");
+}
+
+function BatchInstancesTable({
+  instances,
+}: {
+  instances: KitchenBatchInstance[];
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const groups = groupInstancesByRepo(instances);
+
+  function toggle(repo: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(repo)) next.delete(repo);
+      else next.add(repo);
+      return next;
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 px-4 py-3">
+        <h4 className="text-sm font-semibold text-gray-700">
+          Instance Results ({instances.length})
+        </h4>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {groups.map(([repo, rows]) => {
+          const isOpen = expanded.has(repo);
+          return (
+            <div key={repo}>
+              <button
+                className="flex w-full items-center justify-between px-4 py-2 text-left hover:bg-gray-50"
+                onClick={() => toggle(repo)}
+                aria-expanded={isOpen}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">
+                    {isOpen ? "▲" : "▼"}
+                  </span>
+                  <span className="font-medium text-gray-800">{repo}</span>
+                  <span className="text-xs text-gray-500">
+                    ({rows.length})
+                  </span>
+                </span>
+                <span className="text-xs text-gray-500">
+                  {summariseStatuses(rows)}
+                </span>
+              </button>
+
+              {isOpen && (
+                <div className="overflow-x-auto bg-gray-50/50 px-4 pb-3">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        <th className="px-2 py-1">Instance</th>
+                        <th className="px-2 py-1">Suite</th>
+                        <th className="px-2 py-1">Platform</th>
+                        <th className="px-2 py-1">Status</th>
+                        <th className="px-2 py-1">Error</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {rows.map((inst) => (
+                        <tr key={inst.id} className="hover:bg-white">
+                          <td className="whitespace-nowrap px-2 py-1 font-medium text-gray-800">
+                            {inst.instance_name}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1 text-gray-600">
+                            {inst.suite_name}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1 text-gray-600">
+                            {inst.platform_name}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1">
+                            <InstanceStatusBadge status={inst.status} />
+                          </td>
+                          <td
+                            className="max-w-xs truncate px-2 py-1 text-gray-500"
+                            title={inst.error_message || ""}
+                          >
+                            {inst.error_message || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Batch Detail View
 // ---------------------------------------------------------------------------
 
@@ -395,6 +566,7 @@ function BatchDetailView({
   onCancel,
   onDelete,
   onBack,
+  onBatchComplete,
   busy,
 }: {
   batch: KitchenBatchDetail;
@@ -402,31 +574,80 @@ function BatchDetailView({
   onCancel: () => void;
   onDelete: () => void;
   onBack: () => void;
+  onBatchComplete: () => void;
   busy: boolean;
 }) {
   const [progress, setProgress] = useState<BatchProgress | null>(null);
+  const [instances, setInstances] = useState<KitchenBatchInstance[]>([]);
+  const [cancelling, setCancelling] = useState(false);
+  const { onEvent } = useWebSocket();
 
+  const isTerminal =
+    batch.status === "completed" ||
+    batch.status === "cancelled" ||
+    batch.status === "failed";
+
+  // Clear the optimistic cancelling state once the batch reaches a terminal
+  // status (the parent refetch / batch_complete event delivers it).
   useEffect(() => {
+    if (isTerminal) setCancelling(false);
+  }, [isTerminal]);
+
+  function handleCancelClick() {
     if (
-      batch.status === "running" ||
-      batch.status === "preparing" ||
+      !window.confirm(
+        "Cancel this batch? Pending instances will be cancelled and in-flight ones interrupted.",
+      )
+    )
+      return;
+    setCancelling(true);
+    onCancel();
+  }
+
+  const refresh = useCallback(() => {
+    fetchBatchProgress(batch.id)
+      .then(setProgress)
+      .catch(() => {});
+    fetchBatchInstances(batch.id)
+      .then(setInstances)
+      .catch(() => {});
+  }, [batch.id]);
+
+  // Initial fetch + 5s poll fallback while the batch is active.
+  useEffect(() => {
+    const active = batch.status === "running" || batch.status === "preparing";
+    const hasRun =
+      active ||
       batch.status === "completed" ||
       batch.status === "cancelled" ||
-      batch.status === "failed"
-    ) {
-      fetchBatchProgress(batch.id)
-        .then(setProgress)
-        .catch(() => {});
-    }
-    if (batch.status === "running" || batch.status === "preparing") {
-      const interval = setInterval(() => {
-        fetchBatchProgress(batch.id)
-          .then(setProgress)
-          .catch(() => {});
-      }, 5000);
+      batch.status === "failed";
+    if (!hasRun) return;
+
+    refresh();
+
+    if (active) {
+      const interval = setInterval(refresh, 5000);
       return () => clearInterval(interval);
     }
-  }, [batch.id, batch.status]);
+  }, [batch.id, batch.status, refresh]);
+
+  // Live updates: refresh on backend batch events for this batch. On
+  // completion, ask the parent to refetch the detail so the status flips
+  // (which also stops the poll above).
+  useEffect(() => {
+    const unsubProgress = onEvent("batch_progress", (data) => {
+      if (eventBatchId(data) === batch.id) refresh();
+    });
+    const unsubComplete = onEvent("batch_complete", (data) => {
+      if (eventBatchId(data) !== batch.id) return;
+      refresh();
+      onBatchComplete();
+    });
+    return () => {
+      unsubProgress();
+      unsubComplete();
+    };
+  }, [batch.id, onEvent, refresh, onBatchComplete]);
 
   const est = batch.estimate;
   return (
@@ -436,7 +657,13 @@ function BatchDetailView({
         <div>
           <h3 className="text-lg font-semibold text-gray-800">{batch.name}</h3>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-gray-500">
-            <StatusBadge status={batch.status} />
+            {cancelling && !isTerminal ? (
+              <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+                cancelling…
+              </span>
+            ) : (
+              <StatusBadge status={batch.status} />
+            )}
             {batch.dry_run && (
               <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
                 dry run
@@ -508,6 +735,9 @@ function BatchDetailView({
       {progress && progress.total > 0 && (
         <BatchProgressBar progress={progress} />
       )}
+
+      {/* Per-instance results */}
+      {instances.length > 0 && <BatchInstancesTable instances={instances} />}
 
       {/* Estimate summary */}
       {est && (
@@ -628,8 +858,12 @@ function BatchDetailView({
           </button>
         )}
         {(batch.status === "running" || batch.status === "previewing" || batch.status === "preparing") && (
-          <button className={BTN_DANGER} disabled={busy} onClick={onCancel}>
-            {busy ? "Cancelling…" : "Cancel Batch"}
+          <button
+            className={BTN_DANGER}
+            disabled={busy || cancelling}
+            onClick={handleCancelClick}
+          >
+            {cancelling ? "Cancelling…" : "Cancel Batch"}
           </button>
         )}
         {(batch.status === "draft" ||
@@ -869,6 +1103,7 @@ export default function KitchenBatchesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [tkEnabled, setTkEnabled] = useState<boolean | null>(null);
 
   const loadBatches = useCallback(async () => {
@@ -891,15 +1126,25 @@ export default function KitchenBatchesPage() {
       .catch(() => setTkEnabled(false));
   }, [loadBatches]);
 
-  async function handleCreate(form: BatchFormData) {
+  async function handleCreate(form: BatchFormData, run = false) {
     setBusy(true);
     setError(null);
     try {
-      await createKitchenBatch(formToRequest(form));
+      const created = await createKitchenBatch(formToRequest(form));
       setShowCreate(false);
+      const detail = run
+        ? await runKitchenBatch(created.id)
+        : await getKitchenBatch(created.id);
+      setSelectedBatch(detail);
       await loadBatches();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create batch");
+      setError(
+        e instanceof Error
+          ? e.message
+          : run
+            ? "Failed to create and run batch"
+            : "Failed to create batch",
+      );
     } finally {
       setBusy(false);
     }
@@ -938,8 +1183,11 @@ export default function KitchenBatchesPage() {
     setBusy(true);
     setError(null);
     try {
-      const updated = await cancelKitchenBatch(selectedBatch.id);
-      setSelectedBatch({ ...updated, estimate: selectedBatch.estimate });
+      await cancelKitchenBatch(selectedBatch.id);
+      // Refetch the full detail so the status badge flips to its terminal
+      // value (and the estimate is preserved).
+      const detail = await getKitchenBatch(selectedBatch.id);
+      setSelectedBatch(detail);
       await loadBatches();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to cancel batch");
@@ -947,6 +1195,25 @@ export default function KitchenBatchesPage() {
       setBusy(false);
     }
   }
+
+  // Stable ref to the open batch id so handleBatchComplete can stay stable
+  // (avoids re-subscribing the detail view's WebSocket listeners).
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedIdRef.current = selectedBatch?.id ?? null;
+  }, [selectedBatch]);
+
+  const handleBatchComplete = useCallback(async () => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    try {
+      const detail = await getKitchenBatch(id);
+      setSelectedBatch(detail);
+    } catch {
+      /* ignore — the poll/next event will retry */
+    }
+    await loadBatches();
+  }, [loadBatches]);
 
   async function handleDelete() {
     if (!selectedBatch) return;
@@ -988,6 +1255,7 @@ export default function KitchenBatchesPage() {
           onRun={handleRun}
           onCancel={handleCancel}
           onDelete={handleDelete}
+          onBatchComplete={handleBatchComplete}
           onBack={() => setSelectedBatch(null)}
           busy={busy}
         />
@@ -1015,7 +1283,9 @@ export default function KitchenBatchesPage() {
         <BatchForm
           initial={emptyForm()}
           saving={busy}
-          onSave={handleCreate}
+          runEnabled={tkEnabled === true}
+          onSave={(form) => handleCreate(form, false)}
+          onSaveAndRun={(form) => handleCreate(form, true)}
           onCancel={() => setShowCreate(false)}
         />
       </div>
@@ -1105,8 +1375,16 @@ export default function KitchenBatchesPage() {
                           b.status === "previewing" ||
                           b.status === "preparing") && (
                           <button
-                            className="text-sm font-medium text-red-600 hover:text-red-800"
+                            className="text-sm font-medium text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={cancellingId === b.id}
                             onClick={async () => {
+                              if (
+                                !window.confirm(
+                                  "Cancel this batch? Pending instances will be cancelled and in-flight ones interrupted.",
+                                )
+                              )
+                                return;
+                              setCancellingId(b.id);
                               try {
                                 await cancelKitchenBatch(b.id);
                                 await loadBatches();
@@ -1116,10 +1394,12 @@ export default function KitchenBatchesPage() {
                                     ? e.message
                                     : "Failed to cancel",
                                 );
+                              } finally {
+                                setCancellingId(null);
                               }
                             }}
                           >
-                            Cancel
+                            {cancellingId === b.id ? "Cancelling…" : "Cancel"}
                           </button>
                         )}
                         {(b.status === "draft" ||

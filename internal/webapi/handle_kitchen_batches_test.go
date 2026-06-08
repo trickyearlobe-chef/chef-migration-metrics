@@ -901,6 +901,118 @@ func TestHandleBatchProgress_Success(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// GET /api/v1/kitchen/batches/:id/instances
+// ---------------------------------------------------------------------------
+
+func TestHandleListBatchInstances_Success(t *testing.T) {
+	started := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	var gotBatchID string
+	store := &mockStore{
+		ListBatchInstancesFn: func(_ context.Context, batchID string) ([]datastore.KitchenBatchInstance, error) {
+			gotBatchID = batchID
+			return []datastore.KitchenBatchInstance{
+				{
+					ID:           "inst-1",
+					BatchID:      batchID,
+					GitRepoName:  "nginx",
+					InstanceName: "default-ubuntu-2204",
+					PlatformName: "ubuntu-22.04",
+					SuiteName:    "default",
+					Status:       "passed",
+					StartedAt:    &started,
+				},
+				{
+					ID:           "inst-2",
+					BatchID:      batchID,
+					GitRepoName:  "apache",
+					InstanceName: "default-centos-8",
+					PlatformName: "centos-8",
+					SuiteName:    "default",
+					Status:       "failed",
+					ErrorMessage: "converge failed",
+				},
+			}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/batches/test-uuid-1/instances", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if gotBatchID != "test-uuid-1" {
+		t.Errorf("ListBatchInstances called with %q, want %q", gotBatchID, "test-uuid-1")
+	}
+
+	var result []datastore.KitchenBatchInstance
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+	if result[0].GitRepoName != "nginx" || result[0].Status != "passed" {
+		t.Errorf("result[0] = %+v, want nginx/passed", result[0])
+	}
+	if result[1].ErrorMessage != "converge failed" {
+		t.Errorf("result[1].ErrorMessage = %q, want %q", result[1].ErrorMessage, "converge failed")
+	}
+}
+
+func TestHandleListBatchInstances_Empty(t *testing.T) {
+	store := &mockStore{
+		ListBatchInstancesFn: func(_ context.Context, _ string) ([]datastore.KitchenBatchInstance, error) {
+			return nil, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/batches/test-uuid-1/instances", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	// Empty list must serialise as [] not null.
+	if got := w.Body.String(); got != "[]\n" && got != "[]" {
+		t.Errorf("body = %q, want empty JSON array", got)
+	}
+}
+
+func TestHandleListBatchInstances_Error(t *testing.T) {
+	store := &mockStore{
+		ListBatchInstancesFn: func(_ context.Context, _ string) ([]datastore.KitchenBatchInstance, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+	r := newTestRouterWithMock(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kitchen/batches/test-uuid-1/instances", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleListBatchInstances_MethodNotAllowed(t *testing.T) {
+	r := newTestRouterWithMock(&mockStore{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/kitchen/batches/test-uuid-1/instances", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
 func TestHandleBatchProgress_Empty(t *testing.T) {
 	store := &mockStore{
 		CountBatchInstancesByStatusFn: func(_ context.Context, _ string) (map[string]int, error) {

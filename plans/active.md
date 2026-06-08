@@ -1,107 +1,52 @@
-# Active Plan — Kitchen Lifecycle Setup Hooks
+# Active Plan — Sweep status on admin TK page
 
-Goal: make git-kitchen runs succeed for cookbooks that depend on setup steps.
-Two parts: (1) preserve repo-provided lifecycle hooks (they're test setup),
-(2) let operators run setup scripts — e.g. create users, on Windows and Linux —
-before converge so cookbooks that depend on them pass. Both chunks are in scope:
-(2) is a general capability for any tenant whose setup lives outside
-`.kitchen.yml`, not specific to the current customer (decided 2026-06-07).
+Goal: surface orphan-sweep outcomes on the admin Test Kitchen config page so an
+operator can see the result of the *background* sweep (not just a manually
+triggered one) — "last sweep: N destroyed of N scanned, <time> ago".
 
-Source todo: `plans/todo-bulk-kitchen-scanning.md` § Lifecycle Hooks.
-Spec: `specifications/test-kitchen-drivers-overlay-generation.md` § Lifecycle
-Hooks — currently a STUB, finalise first.
-Branch: fresh `feature/kitchen-setup-hooks`.
+Source todo: `plans/todo-bulk-kitchen-scanning.md` § Frontend (last open item)
+and § Orphan Sweep (the "expose on admin TK config page" bullet).
 
-Start each chunk in a fresh thread; read only this plan + the spec section.
-TDD: write/extend tests before code.
+Context (verified 2026-06-08):
+- Backend is built. `POST /api/v1/kitchen/orphan-sweep?dry_run=…`
+  (`handleOrphanSweep`) and the `StartSweepTicker` background goroutine both
+  broadcast an `orphan_sweep_complete` WebSocket event whose `Data` is the
+  `SweepResult` (scanned/destroyed/skipped_too_young/skipped_unparsed/errors/
+  dry_run/details) with a top-level event `Timestamp`.
+- Frontend `OrphanSweepSection` (`AdminTestKitchenPage.tsx` ~:1318) has a manual
+  "Run Sweep" button + dry-run toggle and renders the returned `SweepResult`.
+  It does **not** subscribe to `orphan_sweep_complete`, so background-ticker
+  sweeps never appear, and `result` is null on page load.
 
-## Context
+Predecessor: Batch UX plan (Chunks 1–4) complete — see git history and the
+checked-off Frontend items in the bulk-kitchen-scanning todo.
 
-The overlay (`internal/gitkitchen/overlay.go`) writes `.kitchen.local.yml`;
-the cookbook's `.kitchen.yml` is untouched. Today the overlay injects only the
-opt-in `pre_destroy` IP-release hook, composing with any repo `pre_destroy` via
-`writeLifecycleHook` + `readExistingPreDestroy`. Test Kitchen hash-merges
-`lifecycle:` (per-phase arrays replace), so phases the overlay never writes are
-preserved — but this is unverified for non-`pre_destroy` phases and the
-repo-setup-hook contract is an admitted spec stub. There is no mechanism to run
-a customer setup script that isn't already wired into `.kitchen.yml`.
+## Chunk 1 — Live sweep status in OrphanSweepSection  [next]
 
-Customer constraint: repos carry Windows + Linux shell scripts (e.g. user
-creation) that cookbooks need before converge; without running them, TK fails.
-
-## Chunk 1 — Finalise the lifecycle-hooks contract (spec)  [DONE 2026-06-07]
-
-TK lifecycle-hook facts (from kitchen.ci, 2026-06-07):
-- Phases `pre_/post_/finally_` × `create|converge|verify|destroy`. `local:` runs
-  on the workstation (`cwd:`, `environment:`, `KITCHEN_INSTANCE_HOSTNAME` set);
-  `remote:` runs on the guest via SSH/WinRM. `remote:` is unavailable at
-  `pre_create`/`post_destroy`. Platform targeting via `includes:`/`excludes:`.
-- Hooks take COMMAND STRINGS — there is no `path:`-to-script option. Confirmed
-  against test-kitchen 4.0.0 source (`lifecycle_hook/remote.rb`,`local.rb`):
-  `remote:` does `transport.connection.execute(command)` (inline string on the
-  guest, no upload); `local:` runs the string on the workstation (cwd=kitchen
-  root, `KITCHEN_INSTANCE_HOSTNAME` in env). There is NO file-transfer in a
-  hook. Therefore to run a repo script ON THE GUEST the body must be **inlined**
-  into a `remote:` hook — "upload" (B) would mean hand-rolling scp/winrm in a
-  `local:` hook, re-implementing transport auth TK already owns. Decision:
-  inline (A) is the mechanism, not a preference.
-
-Resolve and write into `test-kitchen-drivers-overlay-generation.md` § Lifecycle
-Hooks:
-- Reserved vs repo-owned phases (CMM owns `pre_destroy` only?).
-- Preservation rule for every repo-defined phase (TK hash-merges `lifecycle:`,
-  replaces per-phase arrays; overlay must not clobber phases it doesn't own).
-- Setup-script mechanism — the decisions:
-  - Mechanism: **inline** the script body into a `remote:` hook (resolved above;
-    TK hooks have no upload).
-  - Phase: `pre_converge` (guest exists, before the cookbook converge).
-  - Discovery: operator-configurable **patterns** (one or more) matched against
-    repo file paths — customers' conventions vary. Default glob (path-friendly);
-    regex a possible later extension. Scoped **per OS family** (linux/windows):
-    scripts are inherently OS-keyed (sh/SSH vs ps1/WinRM) and CMM already derives
-    `osFamily` from the platform → maps to the hook `includes:`. Per-image
-    override deferred (not needed initially). Multiple matches → separate
-    `remote:` hooks in deterministic (sorted-by-path) order.
-  - Windows vs Linux: emit `includes:` per the matched OS family.
-  - Failure semantics: setup hooks MUST fail the run when they fail (opposite of
-    the failure-isolated IP-release hook — the cookbook depends on them).
-Acceptance: section is no longer a stub; decisions above recorded.
-
-## Chunk 2 — Preserve repo lifecycle hooks (correctness)  [DONE 2026-06-07]
-
-Regression tests lock the preservation rule: the overlay names `pre_destroy`
-only (CMM's single reserved phase), so every other repo-defined lifecycle phase
-survives TK's array-replace merge untouched. No read-back beyond `pre_destroy`
-is needed. `overlay_test.go`: `WritesOnlyPreDestroyPhase_IPReleaseOn`,
-`NoLifecycleBlock_IPReleaseOff`. `executor_test.go`:
-`PreservesRepoLifecyclePhases` (repo `pre_create`/`pre_converge`/`post_converge`
-never leak into the overlay; `pre_destroy` still composes). Todo items ticked.
-
-## Chunk 3 — Customer setup scripts (opt-in)  [DONE 2026-06-07]
-
-- Config: `TestKitchenConfig.SetupScripts` (`SetupScriptsConfig{Linux,Windows}`)
-  — per-OS-family glob pattern lists; `config.go` + admin validators reject
-  empty/malformed globs.
-- Overlay: `writeLifecycle` emits one `lifecycle:` block; setup bodies are
-  inlined into `remote: pre_converge` hooks (no `skippable:` → must fail the
-  run), composing with the `pre_destroy` IP-release hook. yaml.Marshal handles
-  block-scalar quoting (round-trip verified). `includes:` omitted — overlay is
-  per-platform and TK invokes `kitchen test <instance>` (spec updated, decided
-  2026-06-07).
-- Executor: `discoverSetupScripts` globs the OS-family patterns against the
-  workspace, reads bodies, dedupes, sorts by path.
-- UI: AdminTestKitchenPage "Setup Scripts (pre-converge)" section, per-family
-  textareas; sanitised at save. Types + tests added.
-Acceptance met: linux + windows emission, multi-line escaping, config
-validation, executor discovery, UI save/load all tested and green.
-
-All chunks (1–3) complete — git-kitchen runs can now preserve repo lifecycle
-hooks and run opt-in customer setup scripts before converge.
+Scope: `frontend/src/pages/AdminTestKitchenPage.tsx`,
+`frontend/src/pages/AdminTestKitchenPage.test.tsx`. Frontend only — the backend
+already emits the event.
+- Subscribe `OrphanSweepSection` to `orphan_sweep_complete` via
+  `useWebSocket().onEvent`; store the event's `SweepResult` + its timestamp as
+  the displayed "last sweep" (replaces/augments the manual-only `result`).
+- Render a "Last sweep: N destroyed of N scanned · <relative time> ago" line
+  (with the dry-run badge) above the existing detail table; updates whether the
+  sweep was manual or from the ticker. Reuse the existing relative-time helper
+  if one exists; otherwise add a small `… ago` formatter.
+- Manual "Run Sweep" still works; its own broadcast (or direct response) feeds
+  the same display — avoid double-rendering.
+- TDD: (a) an `orphan_sweep_complete` event with no prior manual run populates
+  the last-sweep line; (b) the relative-time label renders; (c) manual run still
+  shows its result. Mock `useWebSocket` per the `KitchenBatchesPage.test.tsx`
+  hoisted-listener pattern.
+Acceptance: a background sweep's outcome shows on the admin TK page without a
+manual click; the line shows counts + how long ago.
 
 ## Notes
 
-- Elasticsearch is NOT in scope. Kept as config scaffolding only (no exporter
-  exists); deferred behind the data-export re-spec in `todo-data-layer.md`. Do
-  NOT add an ES config UI. Re-point the `todo-configuration.md` ES item at the
-  re-spec decision rather than treating it as ready work.
-- `roadmap.md` is stale (all 3 phases already built) — prune as a follow-up chore.
+- Out of scope: persistence across a full page reload (showing a sweep that
+  completed before the page opened) needs a backend `GET` last-sweep endpoint
+  storing the most recent `SweepResult` — none exists today. If wanted, that's a
+  follow-up backend chunk; record it in the todo rather than scope-creeping here.
+- Remaining Orphan Sweep backend bullets (folder filter, inter-instance sweep,
+  age/prefix scoping) stay in the todo; independent of this UI chunk.

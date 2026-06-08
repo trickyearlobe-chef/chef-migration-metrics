@@ -13,6 +13,7 @@ import type {
   GitRepoExcludeRequest,
   GitRepoListItem,
   BatchProgress,
+  KitchenBatchInstance,
   KitchenAnalysisCookbook,
   GitKitchenPlanResult,
   GitKitchenResult,
@@ -161,6 +162,14 @@ export async function listExcludedGitRepos(): Promise<GitRepoListItem[]> {
 
 export async function fetchBatchProgress(batchId: string): Promise<BatchProgress> {
   return apiFetch<BatchProgress>(`/kitchen/batches/${batchId}/progress`);
+}
+
+export async function fetchBatchInstances(
+  batchId: string,
+): Promise<KitchenBatchInstance[]> {
+  return apiFetch<KitchenBatchInstance[]>(
+    `/kitchen/batches/${batchId}/instances`,
+  );
 }
 
 export async function fetchKitchenAnalysisCookbook(

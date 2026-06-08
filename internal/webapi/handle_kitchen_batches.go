@@ -109,6 +109,11 @@ func (r *Router) handleKitchenBatchDetail(w http.ResponseWriter, req *http.Reque
 		r.handleBatchProgress(w, req, id)
 		return
 	}
+	// /api/v1/kitchen/batches/:id/instances
+	if len(segments) == 2 && segments[1] == "instances" {
+		r.handleListBatchInstances(w, req, id)
+		return
+	}
 
 	// /api/v1/kitchen/batches/:id/run
 	if len(segments) == 2 && segments[1] == "run" {
@@ -473,6 +478,30 @@ func (r *Router) handleBatchProgress(w http.ResponseWriter, req *http.Request, i
 		"network_timeout": counts["network_timeout"],
 		"cancelled":       counts["cancelled"],
 	})
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/kitchen/batches/:id/instances
+// ---------------------------------------------------------------------------
+
+// handleListBatchInstances returns every per-instance record for a batch,
+// ordered by git_repo_name, instance_name. This is the authoritative source
+// for the detail view's per-instance results table.
+func (r *Router) handleListBatchInstances(w http.ResponseWriter, req *http.Request, id string) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	instances, err := r.db.ListBatchInstances(req.Context(), id)
+	if err != nil {
+		r.logf("ERROR", "kitchen-batches: listing instances for %s: %v", id, err)
+		WriteInternalError(w, "Failed to retrieve batch instances.")
+		return
+	}
+	if instances == nil {
+		instances = []datastore.KitchenBatchInstance{}
+	}
+	WriteJSON(w, http.StatusOK, instances)
 }
 
 // handleRunDryRunBatch handles the dry-run path: resolve, preview, complete.
