@@ -802,17 +802,26 @@ func TestBuildNodeSnapshotFilterQuery_ReadinessCookbooksBlocked(t *testing.T) {
 	}
 }
 
+// Disk readiness is version-invariant: the verdict is computed from platform
+// install size and the node's free space, identical across every target-version
+// row. The disk filters must therefore resolve against ANY readiness row for
+// the node (a correlated EXISTS), NOT the version-scoped `nr` JOIN alias, so the
+// list view agrees with the detail view regardless of the selected target.
 func TestBuildNodeSnapshotFilterQuery_ReadinessDiskBlocked(t *testing.T) {
 	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
 		ReadinessFilter:   "disk_blocked",
 		TargetChefVersion: "18.5.0",
 	})
 
-	if !strings.Contains(q, "LEFT JOIN node_readiness") {
-		t.Error("query missing LEFT JOIN node_readiness")
+	if !strings.Contains(q, "EXISTS (SELECT 1 FROM node_readiness nrd") {
+		t.Error("query missing version-agnostic EXISTS subquery for disk_blocked")
 	}
-	if !strings.Contains(q, "nr.sufficient_disk_space = false") {
-		t.Error("query missing nr.sufficient_disk_space = false")
+	if !strings.Contains(q, "nrd.sufficient_disk_space = false") {
+		t.Error("query missing nrd.sufficient_disk_space = false")
+	}
+	// Disk filter must not be tied to the version-scoped alias.
+	if strings.Contains(q, "nr.sufficient_disk_space") {
+		t.Error("disk filter must not reference the version-scoped nr alias")
 	}
 }
 
@@ -822,11 +831,49 @@ func TestBuildNodeSnapshotFilterQuery_ReadinessDiskUnknown(t *testing.T) {
 		TargetChefVersion: "18.5.0",
 	})
 
-	if !strings.Contains(q, "LEFT JOIN node_readiness") {
-		t.Error("query missing LEFT JOIN node_readiness")
+	// "Unknown" = the node has no determinate disk verdict in ANY readiness row
+	// (covers both "no rows at all" and "rows present but disk indeterminate").
+	if !strings.Contains(q, "NOT EXISTS (SELECT 1 FROM node_readiness nrd") {
+		t.Error("query missing version-agnostic NOT EXISTS subquery for disk_unknown")
 	}
-	if !strings.Contains(q, "nr.sufficient_disk_space IS NULL") {
-		t.Error("query missing nr.sufficient_disk_space IS NULL")
+	if !strings.Contains(q, "nrd.sufficient_disk_space IS NOT NULL") {
+		t.Error("query missing nrd.sufficient_disk_space IS NOT NULL")
+	}
+	if strings.Contains(q, "nr.sufficient_disk_space") {
+		t.Error("disk filter must not reference the version-scoped nr alias")
+	}
+}
+
+// Disk filters are version-agnostic and must work even when no target Chef
+// version is selected (the LEFT JOIN is absent in that case).
+func TestBuildNodeSnapshotFilterQuery_ReadinessDiskBlocked_NoTargetVersion(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "disk_blocked",
+		TargetChefVersion: "",
+	})
+
+	if strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query should NOT join the version-scoped nr alias when no target version is set")
+	}
+	if !strings.Contains(q, "EXISTS (SELECT 1 FROM node_readiness nrd") {
+		t.Error("disk_blocked must still apply (via EXISTS) without a target version")
+	}
+	if !strings.Contains(q, "nrd.sufficient_disk_space = false") {
+		t.Error("query missing nrd.sufficient_disk_space = false")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessDiskUnknown_NoTargetVersion(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "disk_unknown",
+		TargetChefVersion: "",
+	})
+
+	if strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query should NOT join the version-scoped nr alias when no target version is set")
+	}
+	if !strings.Contains(q, "NOT EXISTS (SELECT 1 FROM node_readiness nrd") {
+		t.Error("disk_unknown must still apply (via NOT EXISTS) without a target version")
 	}
 }
 

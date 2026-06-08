@@ -744,7 +744,26 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		args = append(args, *f.Stale)
 	}
 
-	// Readiness filter — JOIN node_readiness when TargetChefVersion is set.
+	// Disk readiness filters are version-invariant: the disk verdict is computed
+	// from the node's platform install size and free space, identical across
+	// every target-version row (see internal/analysis/readiness.go). Resolve
+	// them from ANY readiness row for the node via a correlated subquery — not
+	// the version-scoped `nr` JOIN — so the list view agrees with the detail
+	// view regardless of the selected target version, and so they work even when
+	// no target version is selected.
+	switch f.ReadinessFilter {
+	case "disk_blocked":
+		where += " AND EXISTS (SELECT 1 FROM node_readiness nrd WHERE nrd.organisation_name = cn.organisation_name AND nrd.node_name = cn.node_name AND nrd.sufficient_disk_space = false)"
+	case "disk_unknown":
+		// Unknown = no determinate disk verdict in any readiness row. Covers
+		// both "node has no readiness row" and "row(s) present but disk
+		// indeterminate (missing/stale filesystem data)".
+		where += " AND NOT EXISTS (SELECT 1 FROM node_readiness nrd WHERE nrd.organisation_name = cn.organisation_name AND nrd.node_name = cn.node_name AND nrd.sufficient_disk_space IS NOT NULL)"
+	}
+
+	// Version-scoped readiness filters — JOIN node_readiness when
+	// TargetChefVersion is set. These checks (ready/blocked/cookbooks, plus
+	// cookstyle/kitchen status) genuinely depend on the target Chef version.
 	if f.TargetChefVersion != "" {
 		join = "\n LEFT JOIN node_readiness nr ON nr.organisation_name = cn.organisation_name AND nr.node_name = cn.node_name AND nr.target_chef_version = " + nextArg()
 		args = append(args, f.TargetChefVersion)
@@ -756,10 +775,6 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 			where += " AND (nr.is_ready = false OR nr.is_ready IS NULL)"
 		case "cookbooks_blocked":
 			where += " AND (nr.all_cookbooks_compatible = false OR nr.all_cookbooks_compatible IS NULL)"
-		case "disk_blocked":
-			where += " AND nr.sufficient_disk_space = false"
-		case "disk_unknown":
-			where += " AND (nr.sufficient_disk_space IS NULL)"
 		}
 
 		if f.CookstyleStatusFilter != "" {
