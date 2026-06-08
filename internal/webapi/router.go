@@ -161,6 +161,12 @@ type Router struct {
 	// Defaults to os.Exit. Overridable for testing.
 	exitFunc func(code int)
 
+	// restartFunc signals the main goroutine to perform a graceful restart
+	// (drain workers + HTTP server, then exit with a supervisor-restart code).
+	// Provided by main via WithRestartTrigger. Nil when no supervisor is wired
+	// — the POST /admin/restart endpoint then returns 503.
+	restartFunc func()
+
 	// maintenanceMode is set to true during restore operations.
 	// When true, all API routes except health and backup status return 503.
 	maintenanceMode atomic.Bool
@@ -323,6 +329,14 @@ func WithRestoreHook(fn func()) RouterOption {
 // Defaults to os.Exit. Intended for testing.
 func WithExitFunc(fn func(int)) RouterOption {
 	return func(r *Router) { r.exitFunc = fn }
+}
+
+// WithRestartTrigger wires the function used by POST /admin/restart to request
+// a graceful restart. The function must be non-blocking: it signals the main
+// goroutine, which performs the graceful shutdown and process exit. When nil,
+// the restart endpoint returns 503.
+func WithRestartTrigger(fn func()) RouterOption {
+	return func(r *Router) { r.restartFunc = fn }
 }
 
 // NewRouter creates a new Router with all routes registered. The EventHub
@@ -698,6 +712,7 @@ func (r *Router) registerRoutes() {
 		r.adminOnly("/api/v1/admin/users", r.handleNotImplemented)
 		r.adminOnly("/api/v1/admin/users/", r.handleNotImplemented)
 	}
+	r.adminOnly("/api/v1/admin/restart", r.handleAdminRestart)
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)

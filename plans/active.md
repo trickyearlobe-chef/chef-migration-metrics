@@ -49,15 +49,21 @@ and test-binds a changed address/port (`apptls.TestBind`) before persisting
 port, restart-required). Specs `encrypted-config-store.md` +
 `configuration-schema-server.md` updated. TDD across all five layers.
 
-## Chunk 4 — Apply & Restart action (depends on Chunk 1)
+## Chunk 4 — Apply & Restart action (depends on Chunk 1)  [DONE]
 
-Scope: `internal/webapi` new `POST /admin/restart` (admin-only, graceful exit),
-`AdminServerPage.tsx` (button + reconnect UX), spec `configuration-live-reload.md`.
-- Endpoint triggers graceful shutdown then exits with a supervisor-restart code.
-- Frontend "Apply & Restart" after a successful save; shows "restarting…" and
-  polls health until back. Gated on the save having passed preflight.
-- TDD (backend handler auth + shutdown trigger; frontend button calls endpoint + reconnect).
-Acceptance: one click applies a restart-required change end to end.
+Done: `POST /api/v1/admin/restart` (admin-only, `handleAdminRestart`) returns
+202 then signals a `restartFunc` (wired via `WithRestartTrigger`). `main.go`
+adds a buffered `restartCh`; `awaitShutdown` selects on it, drains gracefully
+(scheduler/kitchen queue/HTTP), and returns `exitCodeRestart` (=2, non-zero) so
+systemd `Restart=on-failure` starts a fresh process — a clean SIGTERM still
+exits 0 and is not restarted. 503 when no trigger wired. Frontend: amber
+"Apply & Restart" button on `AdminServerPage` (shown when restart pending,
+enabled only when not dirty) → `restartServer()` then `waitForServerHealthy()`
+polls `/health` until back, then reloads. New api: `restartServer`,
+`waitForServerHealthy`. Spec `configuration-live-reload.md` gained
+§ Restart-Required Settings + § Apply & Restart. TDD across handler (503/405/
+202+trigger), `awaitShutdown` restart-code, and the page (button visibility/
+enablement, trigger+poll, error path).
 
 ## Chunk 5 — Privileged-port binding (443/80): packaging + dev (pairs with Chunk 3)
 

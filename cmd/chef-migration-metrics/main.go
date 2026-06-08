@@ -136,7 +136,19 @@ type serverApp struct {
 	// fell open to plain HTTP (tls.md § 2.4). Shared with the webapi router so
 	// the /api/v1/server/tls-status endpoint and UI banner can report it.
 	tlsStatus *webapi.TLSStatusHolder
+
+	// restartCh signals an admin-requested graceful restart (POST
+	// /api/v1/admin/restart). awaitShutdown selects on it, drains gracefully,
+	// and returns a non-zero restart exit code so the supervisor
+	// (systemd Restart=on-failure) starts a fresh process that re-reads config.
+	// See configuration-live-reload.md § Apply & Restart.
+	restartCh chan struct{}
 }
+
+// exitCodeRestart is the process exit code used for an admin-requested restart.
+// It is non-zero so that systemd (Restart=on-failure) restarts the process; a
+// clean SIGTERM/systemctl stop still exits 0 and is not restarted.
+const exitCodeRestart = 2
 
 // dbRefChecker implements configstore.CredentialReferenceChecker by querying
 // the organisations table for credentials referenced via client_key_credential_name.
@@ -1351,6 +1363,17 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		app.startup.Info(fmt.Sprintf("frontend SPA assets not found (checked embedded binary and %s) — serving plain-text placeholder", frontend.DistDir))
 	}
 
+	// Wire the admin-requested restart trigger. The closure is non-blocking:
+	// it signals awaitShutdown, which drains gracefully and exits with the
+	// restart code so the supervisor starts a fresh process.
+	app.restartCh = make(chan struct{}, 1)
+	routerOpts = append(routerOpts, webapi.WithRestartTrigger(func() {
+		select {
+		case app.restartCh <- struct{}{}:
+		default: // a restart is already pending — ignore duplicate requests
+		}
+	}))
+
 	apiRouter := webapi.NewRouter(app.db, app.cfg, app.hub, routerOpts...)
 	app.startup.Info("webapi router initialised with all API routes")
 
@@ -1543,8 +1566,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
 	running := true
+	restartRequested := false
 	for running {
 		select {
+		case <-app.restartCh:
+			app.startup.Info("restart requested via admin API, shutting down gracefully for supervisor restart...")
+			restartRequested = true
+			running = false
 		case sig := <-sigCh:
 			switch sig {
 			case syscall.SIGHUP:
@@ -1597,6 +1625,11 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 			app.startup.Error(fmt.Sprintf("HTTP server shutdown: %v", err))
 			return 1
 		}
+	}
+
+	if restartRequested {
+		app.startup.Info(fmt.Sprintf("server stopped cleanly; exiting %d for supervisor restart", exitCodeRestart))
+		return exitCodeRestart
 	}
 
 	app.startup.Info("server stopped cleanly")

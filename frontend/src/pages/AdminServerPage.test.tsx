@@ -100,4 +100,66 @@ describe("AdminServerPage", () => {
     const arg = vi.mocked(api.saveServerConfig).mock.calls[0][0];
     expect(arg.port).toBe(9090);
   });
+
+  it("does not show Apply & Restart before a save", async () => {
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("HTTP Listener"));
+    expect(
+      screen.queryByRole("button", { name: /apply & restart/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  async function saveAChange() {
+    vi.mocked(api.saveServerConfig).mockResolvedValue({
+      value: { ...mockServerConfig, port: 9090 },
+      restartRequired: true,
+    } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("HTTP Listener"));
+    const portInput = screen.getByDisplayValue("8080");
+    await user.clear(portInput);
+    await user.type(portInput, "9090");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    return user;
+  }
+
+  it("shows an enabled Apply & Restart button after a successful save", async () => {
+    await saveAChange();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /apply & restart/i }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("triggers a restart and waits for the server to come back", async () => {
+    vi.mocked(api.restartServer).mockResolvedValue({
+      status: "restarting",
+      message: "ok",
+    });
+    vi.mocked(api.waitForServerHealthy).mockResolvedValue(undefined);
+
+    const user = await saveAChange();
+    await user.click(
+      await screen.findByRole("button", { name: /apply & restart/i }),
+    );
+
+    await waitFor(() => expect(api.restartServer).toHaveBeenCalled());
+    await waitFor(() => expect(api.waitForServerHealthy).toHaveBeenCalled());
+  });
+
+  it("shows an error when the restart request fails", async () => {
+    vi.mocked(api.restartServer).mockRejectedValue(new Error("boom"));
+
+    const user = await saveAChange();
+    await user.click(
+      await screen.findByRole("button", { name: /apply & restart/i }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/boom/i)).toBeInTheDocument(),
+    );
+  });
 });

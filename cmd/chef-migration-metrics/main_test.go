@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
 )
@@ -51,6 +52,24 @@ func shutdown(t *testing.T, res serverResult) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = res.plainSrv.Shutdown(ctx)
+}
+
+// An admin-requested restart (signalled on restartCh) must drain gracefully
+// and return the non-zero restart exit code so the supervisor restarts the
+// process. A plain SIGTERM/clean stop returns 0 (covered by the default path).
+func TestAwaitShutdown_RestartRequestReturnsRestartCode(t *testing.T) {
+	app := newTestApp(t)
+	app.sched = &collector.Scheduler{} // unstarted — Stop() is a safe no-op
+	app.restartCh = make(chan struct{}, 1)
+	app.cfg.Server.GracefulShutdownSeconds = 1
+
+	// Pre-load a restart request so awaitShutdown returns immediately.
+	app.restartCh <- struct{}{}
+
+	code := app.awaitShutdown(serverResult{})
+	if code != exitCodeRestart {
+		t.Fatalf("expected restart exit code %d, got %d", exitCodeRestart, code)
+	}
 }
 
 // A static-TLS setup failure must flip the degraded flag and still return a
