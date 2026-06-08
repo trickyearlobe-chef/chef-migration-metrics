@@ -48,6 +48,12 @@ type Router struct {
 	version       string
 	schemaVersion int
 
+	// tlsStatus reports whether the server fell back to plain HTTP because the
+	// configured static TLS listener could not be started (see tls.md § 2.4).
+	// nil on plain-HTTP/ACME deployments — the status endpoint then reports
+	// healthy. Set via WithTLSStatus.
+	tlsStatus *TLSStatusHolder
+
 	// frontendFS holds the built React SPA assets (index.html, JS, CSS).
 	// When non-nil, the frontend fallback handler serves files from this
 	// filesystem instead of returning a plain-text placeholder. Set via
@@ -419,6 +425,8 @@ func (r *Router) isMaintenanceBlocked(urlPath string) bool {
 		return false
 	case urlPath == "/api/v1/admin/backups/status":
 		return false
+	case urlPath == "/api/v1/server/tls-status":
+		return false
 	default:
 		return true
 	}
@@ -470,6 +478,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.mux.HandleFunc("/api/v1/health", r.handleHealth)
 	r.mux.HandleFunc("/api/v1/version", r.handleVersion)
+	r.mux.HandleFunc("/api/v1/server/tls-status", r.handleServerTLSStatus)
 
 	// -----------------------------------------------------------------
 	// WebSocket real-time events

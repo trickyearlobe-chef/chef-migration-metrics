@@ -123,6 +123,11 @@ type serverApp struct {
 	backupSched   *backup.Scheduler
 	schemaVersion int
 	stopKitchenQueueCleanup func()
+
+	// tlsStatus records whether static TLS failed at startup and the server
+	// fell open to plain HTTP (tls.md § 2.4). Shared with the webapi router so
+	// the /api/v1/server/tls-status endpoint and UI banner can report it.
+	tlsStatus *webapi.TLSStatusHolder
 }
 
 // dbRefChecker implements configstore.CredentialReferenceChecker by querying
@@ -1075,6 +1080,12 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		}),
 	}
 
+	// Holder for degraded-TLS state. Wired into the router up front so that a
+	// later static-TLS fallback (see the switch below) can flip it and have the
+	// status endpoint + UI banner report INSECURE without restarting.
+	app.tlsStatus = webapi.NewTLSStatusHolder()
+	routerOpts = append(routerOpts, webapi.WithTLSStatus(app.tlsStatus))
+
 	if recorder != nil {
 		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))
 	}
@@ -1354,8 +1365,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			TrustedProxy:            app.cfg.Server.TrustedProxy,
 		}, tlsLog)
 		if tlsErr != nil {
-			app.startup.Error(fmt.Sprintf("TLS listener setup failed: %v", tlsErr))
-			return res, tlsErr
+			// Fail open (tls.md § 2.4): a bad certificate must never prevent
+			// reaching the UI to fix it. Record degraded state and serve plain
+			// HTTP instead of exiting.
+			return app.degradeToPlainHTTP(apiRouter, tlsErr), nil
 		}
 
 		app.startup.Info(fmt.Sprintf("TLS certificate: %s", tlsListener.CertSummary()))
@@ -1373,29 +1386,50 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		return res, fmt.Errorf("TLS mode 'acme' is not yet implemented")
 
 	default:
-		listenAddr := app.cfg.Server.ListenAddress
-		if listenAddr == "" {
-			listenAddr = "0.0.0.0"
-		}
-		port := app.cfg.Server.Port
-		if port == 0 {
-			port = 8080
-		}
-
-		plainSrv := apptls.NewPlainListener(apiRouter, listenAddr, port)
-		plainErrCh := make(chan error, 1)
-		go func() {
-			app.startup.Info(fmt.Sprintf("HTTP server listening on %s", plainSrv.Addr))
-			if err := plainSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				plainErrCh <- err
-			}
-			close(plainErrCh)
-		}()
-		res.errCh = plainErrCh
-		res.plainSrv = plainSrv
+		res = app.servePlainHTTP(apiRouter)
 	}
 
 	return res, nil
+}
+
+// servePlainHTTP starts a plain HTTP listener on the configured
+// listen_address:port (falling back to 0.0.0.0:8080 when unset) and returns the
+// running server plus its fatal-error channel. Shared by plain-HTTP mode and the
+// degraded TLS fallback (degradeToPlainHTTP).
+func (app *serverApp) servePlainHTTP(handler http.Handler) serverResult {
+	listenAddr := app.cfg.Server.ListenAddress
+	if listenAddr == "" {
+		listenAddr = "0.0.0.0"
+	}
+	port := app.cfg.Server.Port
+	if port == 0 {
+		port = 8080
+	}
+
+	plainSrv := apptls.NewPlainListener(handler, listenAddr, port)
+	plainErrCh := make(chan error, 1)
+	go func() {
+		app.startup.Info(fmt.Sprintf("HTTP server listening on %s", plainSrv.Addr))
+		if err := plainSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			plainErrCh <- err
+		}
+		close(plainErrCh)
+	}()
+	return serverResult{errCh: plainErrCh, plainSrv: plainSrv}
+}
+
+// degradeToPlainHTTP records the degraded TLS state and starts a plain HTTP
+// listener as a fallback (tls.md § 2.4). The operator-facing reason never
+// includes private key material — it is the listener-setup error, which reports
+// file paths and parse failures only.
+func (app *serverApp) degradeToPlainHTTP(handler http.Handler, cause error) serverResult {
+	reason := fmt.Sprintf("TLS listener setup failed: %v", cause)
+	app.startup.Error(reason +
+		" — falling back to plain HTTP (INSECURE); fix the certificate and restart")
+	if app.tlsStatus != nil {
+		app.tlsStatus.SetDegraded(reason)
+	}
+	return app.servePlainHTTP(handler)
 }
 
 // ---------------------------------------------------------------------------
