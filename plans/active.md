@@ -35,18 +35,19 @@ Spec `tls.md` §2.4 rewritten fail-fast → fail-open and §5.3 status/recovery 
 TDD: webapi endpoint (holder/public/degraded), cmd fallback (degraded+serves),
 frontend banner (healthy/degraded/error).
 
-## Chunk 3 — Editable port/listen_address (depends on Chunk 2)
+## Chunk 3 — Editable port/listen_address (depends on Chunk 2)  [DONE]
 
-Scope: `internal/configstore` (new section key for listen_address+port),
-`cmd/.../main.go` carryover, `AdminServerPage.tsx` + test, specs
-`configuration-schema-server.md`, `encrypted-config-store.md`.
-- Add a `server.listen` section to the config store; source port/listen_address
-  from DB. Keep bootstrap YAML/default as the **bind-failure fallback** (bad port →
-  retry on bootstrap/default port, flag degraded — reuses Chunk 2's holder).
-- Add editable fields to the Server & TLS page (restart-required, with preflight
-  errors surfaced from Chunk 1).
-- TDD: round-trip port via DB; bad port falls back + degraded; UI renders/saves fields.
-Acceptance: port/listen_address editable in UI; a bad value can't permanently lock out.
+Done: new `server.listen` config-store section (`configstore.KeyServerListen` +
+`ServerListenSection`); `AssembleConfig`/`ConfigToSections` round-trip it and
+`HasKey` distinguishes DB-sourced from absent. `main.go` captures the bootstrap
+listen target, sources listen from DB when present, and `servePlainHTTP` now
+pre-binds with a candidate fallback (configured → bootstrap → 0.0.0.0:8080),
+flagging degraded (Chunk 2 holder) when it falls back. `ConfigHolder.Reload`
+sources listen from DB too. `PUT /admin/config/server` validates the port range
+and test-binds a changed address/port (`apptls.TestBind`) before persisting
+`server.listen`. `AdminServerPage` gained an HTTP Listener section (address +
+port, restart-required). Specs `encrypted-config-store.md` +
+`configuration-schema-server.md` updated. TDD across all five layers.
 
 ## Chunk 4 — Apply & Restart action (depends on Chunk 1)
 

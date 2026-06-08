@@ -29,7 +29,7 @@ listen_address: "127.0.0.1"
 listen_port: 8080
 ```
 
-These three values (plus `CMM_CREDENTIAL_ENCRYPTION_KEY` from the environment) are the only things not stored in the DB. Everything else comes from `config_store` after the DB connection is established.
+`CMM_CREDENTIAL_ENCRYPTION_KEY` (from the environment) and `database_url` are the only values not stored in the DB. `listen_address`/`listen_port` are **also** stored in the DB as the `server.listen` section — the DB copy is the source of truth for UI editing, while the bootstrap-file copy is retained solely as the **bind-failure fallback**: if the DB-sourced address/port cannot be bound at startup, the server falls back to the bootstrap value (then the hardwired `0.0.0.0:8080` default) and flags degraded mode rather than failing to start. Everything else comes from `config_store` after the DB connection is established.
 
 Environment variable overrides for bootstrap values:
 
@@ -109,6 +109,7 @@ Config keys use dot notation matching the YAML structure:
 | `concurrency` | `{"organisation_collection":5, ...}` | false |
 | `analysis_tools` | `{"embedded_bin_dir":"...", ...}` | false |
 | `readiness` | `{"min_free_disk_mb":2048}` | false |
+| `server.listen` | `{"listen_address":"0.0.0.0","port":8080}` | false |
 | `server.tls` | `{"mode":"off", ...}` | false |
 | `server.websocket` | `{"enabled":true, ...}` | false |
 | `server.graceful_shutdown_seconds` | `30` | false |
@@ -297,6 +298,8 @@ Tag-style input — type a version, press Enter to add. Click × to remove. Vali
 
 | Field | Input Type | Notes |
 |-------|-----------|-------|
+| Listen Address | Text | Interface to bind (e.g. `0.0.0.0`, `127.0.0.1`). Restart required. |
+| Port | Number | Listen port (1–65535). Save-time preflight test-binds when the address/port changes; a value that cannot be bound is rejected. Restart required. |
 | TLS Mode | Dropdown | off / static / acme |
 | Certificate (static) | Textarea | PEM content, shown when mode=static |
 | Key (static) | Textarea | PEM content, shown when mode=static, write-only |

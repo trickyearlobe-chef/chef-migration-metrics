@@ -9,8 +9,10 @@ Settings in `specifications/configuration.md` that have **no UI** and are curren
 - [x] **Upgrade Readiness**: add disk space config to Collection/Readiness page — `readiness.install_path_linux`, `readiness.install_path_windows`, `readiness.install_size_mb_linux`, `readiness.install_size_mb_windows`, `readiness.min_remaining_free_percent`; install path fields must show a prominent warning about non-default path risks (cookbook assumptions, Windows knife bootstrap config dir issue)
 
 Settings intentionally file-only (no UI needed):
-- `server.listen_address`, `server.port` — require restart; changing via UI would disconnect the session
 - `frontend.base_path` — deployment-time reverse proxy config
+
+`server.listen_address`/`server.port` are now DB-managed and UI-editable
+(restart-required, bind-failure fallback) — see Chunk 3 in `plans/active.md`.
 
 ---
 
