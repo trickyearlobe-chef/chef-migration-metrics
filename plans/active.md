@@ -1,52 +1,106 @@
-# Active Plan — Sweep status on admin TK page
+# Active Plan — Server/TLS config: safe-apply, recovery, editable bind
 
-Goal: surface orphan-sweep outcomes on the admin Test Kitchen config page so an
-operator can see the result of the *background* sweep (not just a manually
-triggered one) — "last sweep: N destroyed of N scanned, <time> ago".
+Goal: make the HTTP listener fully configurable from the UI without the ability
+to lock yourself out. Driven by three decisions:
+1. Bad TLS at startup → **fall back to plain HTTP + loud banner**, never crash-loop.
+2. `port` / `listen_address` become **DB-managed and UI-editable** (restart-required).
+3. Config needing a restart gets an **"Apply & Restart"** admin action (graceful
+   self-exit; external supervisor restarts the process).
 
-Source todo: `plans/todo-bulk-kitchen-scanning.md` § Frontend (last open item)
-and § Orphan Sweep (the "expose on admin TK config page" bullet).
+Key facts (verified 2026-06-08): `port`/`listen_address` are bootstrap-only —
+`setupConfigStore` carries them (+`Datastore.URL`) over from YAML, the rest comes
+from the DB (`config_store` key `server.tls`, encrypted) (`main.go:668-671`). Bad
+static certs hard-fail the listener at *restart* → `run()` exits 1 (no env escape
+hatch; only recovery is deleting the `server.tls` DB row). Specs to change (signed
+off): `tls.md` §2.4 fail-fast → fail-open; `configuration-schema-server.md` (port/
+listen_address now DB/UI); `configuration-live-reload.md` (restart-required set).
+Predecessor: Batch UX done; sweep-status item back in the todo backlog.
 
-Context (verified 2026-06-08):
-- Backend is built. `POST /api/v1/kitchen/orphan-sweep?dry_run=…`
-  (`handleOrphanSweep`) and the `StartSweepTicker` background goroutine both
-  broadcast an `orphan_sweep_complete` WebSocket event whose `Data` is the
-  `SweepResult` (scanned/destroyed/skipped_too_young/skipped_unparsed/errors/
-  dry_run/details) with a top-level event `Timestamp`.
-- Frontend `OrphanSweepSection` (`AdminTestKitchenPage.tsx` ~:1318) has a manual
-  "Run Sweep" button + dry-run toggle and renders the returned `SweepResult`.
-  It does **not** subscribe to `orphan_sweep_complete`, so background-ticker
-  sweeps never appear, and `result` is null on page load.
+## Chunk 1 — Preflight validation on save  [DONE]
 
-Predecessor: Batch UX plan (Chunks 1–4) complete — see git history and the
-checked-off Frontend items in the bulk-kitchen-scanning todo.
+Done (`bc0c657` code, `a5455d0` specs): `tls.ValidateStaticPair` (cert/key/CA
+load, shared with startup); `PUT /admin/config/server` rejects (422, no persist)
+unusable static certs and `http_redirect_port == listen port`. Test-bind on a
+changed port deferred to Chunk 3 (port not UI-editable until then).
 
-## Chunk 1 — Live sweep status in OrphanSweepSection  [next]
+## Chunk 2 — Startup TLS fallback + degraded banner (depends on none; enables 3)
 
-Scope: `frontend/src/pages/AdminTestKitchenPage.tsx`,
-`frontend/src/pages/AdminTestKitchenPage.test.tsx`. Frontend only — the backend
-already emits the event.
-- Subscribe `OrphanSweepSection` to `orphan_sweep_complete` via
-  `useWebSocket().onEvent`; store the event's `SweepResult` + its timestamp as
-  the displayed "last sweep" (replaces/augments the manual-only `result`).
-- Render a "Last sweep: N destroyed of N scanned · <relative time> ago" line
-  (with the dry-run badge) above the existing detail table; updates whether the
-  sweep was manual or from the ticker. Reuse the existing relative-time helper
-  if one exists; otherwise add a small `… ago` formatter.
-- Manual "Run Sweep" still works; its own broadcast (or direct response) feeds
-  the same display — avoid double-rendering.
-- TDD: (a) an `orphan_sweep_complete` event with no prior manual run populates
-  the last-sweep line; (b) the relative-time label renders; (c) manual run still
-  shows its result. Mock `useWebSocket` per the `KitchenBatchesPage.test.tsx`
-  hoisted-listener pattern.
-Acceptance: a background sweep's outcome shows on the admin TK page without a
-manual click; the line shows counts + how long ago.
+Scope: `cmd/.../main.go` `setupAndServeHTTP`, a degraded-state holder, status
+endpoint, `frontend/src/pages/AdminServerPage.tsx` + global banner, spec `tls.md`.
+- On static-mode listener-setup failure: log ERROR, record `{degraded:true,reason}`,
+  start plain HTTP on the configured `listen_address:port` instead of exiting.
+- Expose degraded state on a status endpoint; frontend shows a prominent
+  "TLS failed — running INSECURE, fix and restart: <reason>" banner.
+- Rewrite `tls.md` §2.4 (fail-fast → fail-open) + add a Recovery section.
+- TDD: bad cert → server still serves (plain) + degraded flag set; good cert → not degraded.
+Acceptance: a bad cert never prevents reaching the UI.
+
+## Chunk 3 — Editable port/listen_address (depends on Chunk 2)
+
+Scope: `internal/configstore` (new section key for listen_address+port),
+`cmd/.../main.go` carryover, `AdminServerPage.tsx` + test, specs
+`configuration-schema-server.md`, `encrypted-config-store.md`.
+- Add a `server.listen` section to the config store; source port/listen_address
+  from DB. Keep bootstrap YAML/default as the **bind-failure fallback** (bad port →
+  retry on bootstrap/default port, flag degraded — reuses Chunk 2's holder).
+- Add editable fields to the Server & TLS page (restart-required, with preflight
+  errors surfaced from Chunk 1).
+- TDD: round-trip port via DB; bad port falls back + degraded; UI renders/saves fields.
+Acceptance: port/listen_address editable in UI; a bad value can't permanently lock out.
+
+## Chunk 4 — Apply & Restart action (depends on Chunk 1)
+
+Scope: `internal/webapi` new `POST /admin/restart` (admin-only, graceful exit),
+`AdminServerPage.tsx` (button + reconnect UX), spec `configuration-live-reload.md`.
+- Endpoint triggers graceful shutdown then exits with a supervisor-restart code.
+- Frontend "Apply & Restart" after a successful save; shows "restarting…" and
+  polls health until back. Gated on the save having passed preflight.
+- TDD (backend handler auth + shutdown trigger; frontend button calls endpoint + reconnect).
+Acceptance: one click applies a restart-required change end to end.
+
+## Chunk 5 — Privileged-port binding (443/80): packaging + dev (pairs with Chunk 3)
+
+Scope: `deploy/pkg/chef-migration-metrics.service`, `deploy/pkg/scripts/postinstall.sh`,
+`Makefile` (`run`/new target), specs `packaging.md` + `tls.md` (a "binding low ports" note).
+Context: service runs non-root (`User=chef-migration-metrics`) with
+`NoNewPrivileges=true`; that combination silently ignores `setcap` file caps, so
+the binary cannot bind 443 today.
+- systemd unit: add `AmbientCapabilities=CAP_NET_BIND_SERVICE` +
+  `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (compatible with `NoNewPrivileges=true`;
+  ambient caps are granted by systemd and survive the drop to the service user).
+- SELinux: 80/443 are already `http_port_t` so they bind under the default
+  targeted policy. For a non-standard low/custom port, document/emit
+  `semanage port -a -t http_port_t -p tcp <port>`. Add a startup check that, on a
+  bind-permission denial, logs a precise remediation (capability vs SELinux label)
+  — reuses Chunk 2's degraded path rather than crashing.
+- `make run`: keep default 8080; add a `run-privileged` (or doc) path that does
+  `sudo setcap cap_net_bind_service=+ep $(BINARY)` before running (works in dev —
+  no `NoNewPrivileges` there).
+- Tests: unit-test the bind-denial remediation message; verify the unit file
+  parses (systemd-analyze verify if available in CI) — no privileged bind in CI.
+Acceptance: a packaged install can serve on 443 as the non-root service; a clear,
+actionable message when the OS blocks the bind.
+
+## Chunk 6 — Export SAML SP metadata to XML (independent)
+
+Scope: `frontend/src/pages/AdminAuthPage.tsx` + test, spec `auth.md` (done).
+Backend already serves it: `GET /api/v1/auth/saml/metadata` → `HandleMetadata`
+→ `provider.Metadata()` (`application/samlmetadata+xml`, XML declaration
+prepended); wired only when SAML is configured, else `501`.
+- Add an "Export SP Metadata (XML)" button to the SAML section that fetches the
+  endpoint and saves the response as `sp-metadata.xml` (blob download).
+- Show/enable only when a SAML provider is configured; surface a clear message
+  on `501`/error rather than downloading an error body.
+- TDD: button visible when SAML configured + triggers fetch/download; hidden/
+  disabled otherwise; error path shows a message.
+Acceptance: an admin can download the live SP metadata XML to hand to the IdP.
 
 ## Notes
-
-- Out of scope: persistence across a full page reload (showing a sweep that
-  completed before the page opened) needs a backend `GET` last-sweep endpoint
-  storing the most recent `SweepResult` — none exists today. If wanted, that's a
-  follow-up backend chunk; record it in the todo rather than scope-creeping here.
-- Remaining Orphan Sweep backend bullets (folder filter, inter-instance sweep,
-  age/prefix scoping) stay in the todo; independent of this UI chunk.
+- Order: 1 → 2 → 3 → 4 (2 before 3; 1 before 4). Chunk 6 is independent. Chunk 5 pairs with Chunk 3
+  (editable port) and can land alongside it. Each chunk = one session; update spec
+  first, then TDD.
+- Out of scope: changing ACME-mode behaviour; multi-replica restart coordination;
+  containerised (Docker) capability config beyond a doc note.
+- Capability vs SELinux are distinct layers: `CAP_NET_BIND_SERVICE` grants the
+  privilege to bind <1024; SELinux port labels (`http_port_t`) separately permit
+  the bind. Both must be satisfied on enforcing RHEL for a non-standard port.

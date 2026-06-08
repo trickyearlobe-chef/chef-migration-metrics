@@ -39,6 +39,18 @@ The application acts as a SAML 2.0 Service Provider (SP). An external Identity P
 | `/saml/acs` | POST | Assertion Consumer Service — process IdP response |
 | `/saml/slo` | POST | Inbound Single Logout — process IdP LogoutRequest |
 
+### SP Metadata Export (UI)
+
+The admin SAML configuration page provides an **Export SP Metadata (XML)** button
+that downloads this SP's metadata document so an administrator can hand it to the
+IdP during setup. The button fetches the existing `/saml/metadata` endpoint and
+saves the response as a file (e.g. `sp-metadata.xml`, `application/samlmetadata+xml`).
+
+The button is available only when a SAML provider is configured and initialised —
+the metadata endpoint returns `501 Not Implemented` otherwise (no SP to describe).
+The exported document is the live SP metadata (entity ID, ACS/SLO URLs, SP signing
+certificate, NameID format); it contains no private key material.
+
 ### SP-Initiated SSO Flow
 
 1. User navigates to `/saml/login` (or clicks "Sign in with SSO")
