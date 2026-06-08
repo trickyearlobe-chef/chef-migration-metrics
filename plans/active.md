@@ -47,12 +47,19 @@ status badge to terminal and stopping the poll (a stable `selectedIdRef` keeps
 the callback identity fixed so listeners don't churn). Tests: progress refresh
 without poll, different-batch event ignored, complete refetches detail.
 
-## Chunk 4 — Cancel UX polish (independent of Chunk 3)  [next]
+## Chunk 4 — Cancel UX polish (independent of Chunk 3)  [done]
 
-Scope: `KitchenBatchesPage.tsx`.
-- Confirm dialog; optimistic UI ("Cancelling…", disabled) then refetch.
-- TDD: optimistic transition + refetch.
-Acceptance: Cancel updates the UI immediately; batch ends `cancelled`.
+Done (`KitchenBatchesPage.tsx`): both cancel surfaces now guard on a
+`window.confirm` dialog. Detail view holds an optimistic `cancelling` state —
+on confirm the button flips to "Cancelling…" + disabled and the status badge
+shows a "cancelling…" pill immediately; the page `handleCancel` then refetches
+the detail via `getKitchenBatch` so the badge settles on the terminal status
+(the optimistic state clears once `batch.status` is terminal). List-view row
+cancel mirrors the confirm + per-row "Cancelling…" disable (`cancellingId`).
+Tests: declined confirm is a no-op (detail + list), confirmed cancel shows the
+optimistic transition then refetches the cancelled detail.
+
+All four chunks of the Batch UX plan are complete.
 
 ## Notes
 
