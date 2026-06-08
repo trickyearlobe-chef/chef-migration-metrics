@@ -23,17 +23,17 @@ load, shared with startup); `PUT /admin/config/server` rejects (422, no persist)
 unusable static certs and `http_redirect_port == listen port`. Test-bind on a
 changed port deferred to Chunk 3 (port not UI-editable until then).
 
-## Chunk 2 — Startup TLS fallback + degraded banner (depends on none; enables 3)
+## Chunk 2 — Startup TLS fallback + degraded banner  [DONE]
 
-Scope: `cmd/.../main.go` `setupAndServeHTTP`, a degraded-state holder, status
-endpoint, `frontend/src/pages/AdminServerPage.tsx` + global banner, spec `tls.md`.
-- On static-mode listener-setup failure: log ERROR, record `{degraded:true,reason}`,
-  start plain HTTP on the configured `listen_address:port` instead of exiting.
-- Expose degraded state on a status endpoint; frontend shows a prominent
-  "TLS failed — running INSECURE, fix and restart: <reason>" banner.
-- Rewrite `tls.md` §2.4 (fail-fast → fail-open) + add a Recovery section.
-- TDD: bad cert → server still serves (plain) + degraded flag set; good cert → not degraded.
-Acceptance: a bad cert never prevents reaching the UI.
+Done: static-mode listener-setup failure now fails open — `main.go`
+`degradeToPlainHTTP`/`servePlainHTTP` log ERROR, set a shared
+`webapi.TLSStatusHolder` (`{degraded,reason}`), and serve plain HTTP on the
+configured `listen_address:port` instead of exiting. Public DB-free endpoint
+`GET /api/v1/server/tls-status`. Frontend `TLSDegradedBanner` polls it and shows
+a red "running INSECURE" banner globally (AppLayout) + inline on AdminServerPage.
+Spec `tls.md` §2.4 rewritten fail-fast → fail-open and §5.3 status/recovery added.
+TDD: webapi endpoint (holder/public/degraded), cmd fallback (degraded+serves),
+frontend banner (healthy/degraded/error).
 
 ## Chunk 3 — Editable port/listen_address (depends on Chunk 2)
 
