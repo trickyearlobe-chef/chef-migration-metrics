@@ -25,6 +25,8 @@ When TLS is active (`mode: static` or `mode: acme`), an optional secondary liste
 
 The redirect listener serves **only** redirects — no API responses, no static assets, no health checks. This prevents accidental exposure of sensitive data over plain HTTP.
 
+`http_redirect_port` must differ from `server.port` (the HTTPS listen port). If they are equal, both listeners would attempt to bind the same port and one would fail at startup. This is rejected by validation — at startup and at save time (see § 2.6).
+
 **Exception:** The ACME HTTP-01 challenge path (`/.well-known/acme-challenge/`) is served on the redirect listener when `mode: acme` and the HTTP-01 solver is in use (see section 3.4).
 
 ### 1.3 Port Defaults
@@ -92,6 +94,17 @@ On startup, the application must fail fast if:
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_CA_PATH` | `server.tls.ca_path` |
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_MIN_VERSION` | `server.tls.min_version` |
 | `CHEF_MIGRATION_METRICS_SERVER_TLS_HTTP_REDIRECT_PORT` | `server.tls.http_redirect_port` |
+
+### 2.6 Save-Time Preflight Validation
+
+When the static-mode configuration is changed through the admin API
+(`PUT /api/v1/admin/config/server`), the certificate is validated **before the
+change is persisted**, using the same load path as startup (cert/key readable,
+PEM parses, key matches certificate, and `ca_path` — when set — is a valid PEM
+bundle). On failure the API returns `422` and does not write to the config
+store, so an unusable certificate can never be committed and brick the listener
+on the next restart. The redirect-vs-listen-port collision (§ 1.2) is checked the
+same way. See [configuration-validation.md § Save-time preflight](configuration-validation.md).
 
 ## 3. ACME Automatic Certificate Management
 
