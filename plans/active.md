@@ -17,23 +17,15 @@ Start each chunk in a fresh thread; read only this plan + the named files.
 TDD: write/extend tests before code. `KitchenBatchesPage.tsx` is ~1160 lines
 (flagged in tech-debt) — prefer small child components over growing it.
 
-## Chunk 1 — One-step batch submission  [next]
+## Chunk 1 — One-step batch submission  [done]
 
-Frontend only: `KitchenBatchesPage.tsx` (+ `api/kitchen.ts` if a helper helps).
-No preview/estimate work — blast radius is already bounded by the form's
-`maxCount` cap and `previousStatus` filter (`passed`/`failed`/`untested` =
-never-ran), so the operator doesn't need a VM count to launch safely.
-- **"Create & Run"** primary action on the form: `createKitchenBatch` →
-  `runKitchenBatch` in one handler, then show the running detail. One path from
-  form to running.
-- **Save lands on the detail** (not the list): `handleCreate` →
-  `getKitchenBatch(id)` → `setSelectedBatch(detail)`, so a plain Save still puts
-  the runnable batch in front of the operator. Removes the hunt-and-open step.
-- TDD: frontend tests for Create & Run → running, and Save → detail.
-Acceptance: an operator goes form → running in one click; plain Save lands on
-the runnable detail rather than the list.
+Done (`KitchenBatchesPage.tsx` + tests): "Create & Run" action (gated on TK
+enabled) creates then runs in one handler and lands on the running detail; plain
+Save now fetches the detail and lands there (not the list). No preview/estimate
+work — blast radius stays bounded by the form's `maxCount` cap and
+`previousStatus` filter.
 
-## Chunk 2 — Per-instance results table (full-stack)
+## Chunk 2 — Per-instance results table (full-stack)  [next]
 
 Scope: `handle_kitchen_batches.go` + `router.go`, `api/kitchen.ts`,
 `types/kitchen.ts`, `KitchenBatchesPage.tsx`.
