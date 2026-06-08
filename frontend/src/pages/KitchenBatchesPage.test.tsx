@@ -142,6 +142,18 @@ const mockCompletedDetail: KitchenBatchDetail = {
   },
 };
 
+const mockCancelledBatch: KitchenBatch = {
+  ...mockRunningBatch,
+  name: "Cancelled Batch",
+  status: "cancelled",
+  completed_at: "2025-01-02T00:10:00Z",
+};
+
+const mockCancelledDetail: KitchenBatchDetail = {
+  ...mockCancelledBatch,
+  estimate: mockRunningDetail.estimate,
+};
+
 const mockProgress: BatchProgress = {
   passed: 3,
   failed: 1,
@@ -445,6 +457,102 @@ describe("KitchenBatchesPage", () => {
     expect(screen.getByText(/2 pending/)).toBeInTheDocument();
     expect(screen.getByText(/1 timed out/)).toBeInTheDocument();
     expect(screen.getByText(/Total: 7/)).toBeInTheDocument();
+  });
+
+  // 11b. Cancel in the detail view asks for confirmation; declining is a no-op
+  it("detail cancel asks for confirmation and is a no-op when declined", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getAllByText("View")[1]);
+    await waitFor(() => {
+      expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Cancel Batch"));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(api.cancelKitchenBatch).not.toHaveBeenCalled();
+    // Button stays idle — no optimistic transition on a declined confirm.
+    expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    expect(screen.queryByText("Cancelling…")).not.toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  // 11c. Confirmed cancel optimistically flips the UI, then refetches the detail
+  it("detail cancel optimistically shows Cancelling… then refetches cancelled detail", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
+
+    // Hold the cancel request open so the optimistic state is observable.
+    let resolveCancel!: (b: KitchenBatch) => void;
+    vi.mocked(api.cancelKitchenBatch).mockReturnValue(
+      new Promise<KitchenBatch>((res) => {
+        resolveCancel = res;
+      }),
+    );
+
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getAllByText("View")[1]);
+    await waitFor(() => {
+      expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    });
+    const detailCalls = vi.mocked(api.getKitchenBatch).mock.calls.length;
+
+    await user.click(screen.getByText("Cancel Batch"));
+
+    // Optimistic: button flips and disables before the request resolves, and
+    // the status reads as cancelling in the header.
+    const cancelling = await screen.findByText("Cancelling…");
+    expect(cancelling).toBeDisabled();
+    expect(screen.getByText("cancelling…")).toBeInTheDocument();
+    expect(api.cancelKitchenBatch).toHaveBeenCalledWith("batch-2");
+
+    // Resolve the cancel — the page refetches the now-cancelled detail.
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockCancelledDetail);
+    await act(async () => {
+      resolveCancel(mockCancelledBatch);
+    });
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(api.getKitchenBatch).mock.calls.length,
+      ).toBeGreaterThan(detailCalls);
+    });
+    expect(
+      await screen.findByRole("heading", { level: 3, name: "Cancelled Batch" }),
+    ).toBeInTheDocument();
+    // Terminal status — cancel/optimistic affordances are gone.
+    expect(screen.queryByText("Cancel Batch")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cancelling…")).not.toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  // 11d. List-view cancel also asks for confirmation
+  it("list-view cancel asks for confirmation and is a no-op when declined", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    // The running row exposes a bare "Cancel" action.
+    await user.click(screen.getByText("Cancel"));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(api.cancelKitchenBatch).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   // 12a. Save lands on the runnable detail (not the list)

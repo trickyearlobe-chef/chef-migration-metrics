@@ -579,7 +579,30 @@ function BatchDetailView({
 }) {
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [instances, setInstances] = useState<KitchenBatchInstance[]>([]);
+  const [cancelling, setCancelling] = useState(false);
   const { onEvent } = useWebSocket();
+
+  const isTerminal =
+    batch.status === "completed" ||
+    batch.status === "cancelled" ||
+    batch.status === "failed";
+
+  // Clear the optimistic cancelling state once the batch reaches a terminal
+  // status (the parent refetch / batch_complete event delivers it).
+  useEffect(() => {
+    if (isTerminal) setCancelling(false);
+  }, [isTerminal]);
+
+  function handleCancelClick() {
+    if (
+      !window.confirm(
+        "Cancel this batch? Pending instances will be cancelled and in-flight ones interrupted.",
+      )
+    )
+      return;
+    setCancelling(true);
+    onCancel();
+  }
 
   const refresh = useCallback(() => {
     fetchBatchProgress(batch.id)
@@ -634,7 +657,13 @@ function BatchDetailView({
         <div>
           <h3 className="text-lg font-semibold text-gray-800">{batch.name}</h3>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-gray-500">
-            <StatusBadge status={batch.status} />
+            {cancelling && !isTerminal ? (
+              <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+                cancelling…
+              </span>
+            ) : (
+              <StatusBadge status={batch.status} />
+            )}
             {batch.dry_run && (
               <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
                 dry run
@@ -829,8 +858,12 @@ function BatchDetailView({
           </button>
         )}
         {(batch.status === "running" || batch.status === "previewing" || batch.status === "preparing") && (
-          <button className={BTN_DANGER} disabled={busy} onClick={onCancel}>
-            {busy ? "Cancelling…" : "Cancel Batch"}
+          <button
+            className={BTN_DANGER}
+            disabled={busy || cancelling}
+            onClick={handleCancelClick}
+          >
+            {cancelling ? "Cancelling…" : "Cancel Batch"}
           </button>
         )}
         {(batch.status === "draft" ||
@@ -1070,6 +1103,7 @@ export default function KitchenBatchesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [tkEnabled, setTkEnabled] = useState<boolean | null>(null);
 
   const loadBatches = useCallback(async () => {
@@ -1149,8 +1183,11 @@ export default function KitchenBatchesPage() {
     setBusy(true);
     setError(null);
     try {
-      const updated = await cancelKitchenBatch(selectedBatch.id);
-      setSelectedBatch({ ...updated, estimate: selectedBatch.estimate });
+      await cancelKitchenBatch(selectedBatch.id);
+      // Refetch the full detail so the status badge flips to its terminal
+      // value (and the estimate is preserved).
+      const detail = await getKitchenBatch(selectedBatch.id);
+      setSelectedBatch(detail);
       await loadBatches();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to cancel batch");
@@ -1338,8 +1375,16 @@ export default function KitchenBatchesPage() {
                           b.status === "previewing" ||
                           b.status === "preparing") && (
                           <button
-                            className="text-sm font-medium text-red-600 hover:text-red-800"
+                            className="text-sm font-medium text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={cancellingId === b.id}
                             onClick={async () => {
+                              if (
+                                !window.confirm(
+                                  "Cancel this batch? Pending instances will be cancelled and in-flight ones interrupted.",
+                                )
+                              )
+                                return;
+                              setCancellingId(b.id);
                               try {
                                 await cancelKitchenBatch(b.id);
                                 await loadBatches();
@@ -1349,10 +1394,12 @@ export default function KitchenBatchesPage() {
                                     ? e.message
                                     : "Failed to cancel",
                                 );
+                              } finally {
+                                setCancellingId(null);
                               }
                             }}
                           >
-                            Cancel
+                            {cancellingId === b.id ? "Cancelling…" : "Cancel"}
                           </button>
                         )}
                         {(b.status === "draft" ||
