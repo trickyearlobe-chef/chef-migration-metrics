@@ -83,6 +83,12 @@ Project-specific technical conventions for the Chef Migration Metrics dashboard.
 - Background jobs (collection, analysis, export) must log errors and continue processing remaining items. A single failing organisation, cookbook, or node must not abort the entire job.
 - External process execution (CookStyle, Test Kitchen, git) must enforce timeouts, capture stderr, and return structured error information — not raw exec failures.
 
+## Cross-View Consistency
+
+- When the same entity attribute appears in more than one view (list, detail, filter, export), all views must agree on **both** (a) the derivation function **and** (b) which underlying record represents the entity. Sharing only the derivation is not enough — divergent record selection still produces inconsistent results.
+- If an attribute is invariant over some dimension (e.g. the disk verdict is invariant over target Chef version), resolve it independently of that dimension in every view. Do not scope a lookup by a key the value does not depend on.
+- Never let a `LEFT JOIN ... IS NULL` (or equivalent) conflate "no record" with "indeterminate value" — they are distinct states and must be filtered and displayed distinctly.
+
 ## Naming Conventions
 
 - **Go packages**: lowercase, single-word where possible (`chefapi`, `webapi`, `datastore`), matching the directory name.
