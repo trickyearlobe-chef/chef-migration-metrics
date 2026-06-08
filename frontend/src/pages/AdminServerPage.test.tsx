@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import * as api from "../api";
 import { AdminServerPage } from "./AdminServerPage";
 
@@ -71,5 +72,32 @@ describe("AdminServerPage", () => {
     render(<AdminServerPage />);
     await waitFor(() => screen.getByText("Server & TLS"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("renders listen address and port loaded from config", async () => {
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("HTTP Listener"));
+    expect(screen.getByDisplayValue("0.0.0.0")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("8080")).toBeInTheDocument();
+  });
+
+  it("saves an edited listen port", async () => {
+    vi.mocked(api.saveServerConfig).mockResolvedValue({
+      value: { ...mockServerConfig, port: 9090 },
+      restart_required: true,
+    } as never);
+    const user = userEvent.setup();
+
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("HTTP Listener"));
+
+    const portInput = screen.getByDisplayValue("8080");
+    await user.clear(portInput);
+    await user.type(portInput, "9090");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    const arg = vi.mocked(api.saveServerConfig).mock.calls[0][0];
+    expect(arg.port).toBe(9090);
   });
 });

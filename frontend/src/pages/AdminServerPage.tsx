@@ -143,6 +143,33 @@ export function AdminServerPage() {
         <TLSDegradedBanner />
       </div>
 
+      {/* HTTP Listener */}
+      <SectionCard title="HTTP Listener">
+        <div className="grid grid-cols-2 gap-4">
+          <FieldRow label="Listen Address" hint="Interface to bind (e.g. 0.0.0.0, 127.0.0.1)">
+            <input
+              type="text"
+              value={config.listen_address}
+              onChange={(e) => setField("listen_address", e.target.value)}
+              placeholder="0.0.0.0"
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+          </FieldRow>
+          <FieldRow label="Port" hint="Listen port (1–65535)">
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={config.port}
+              onChange={(e) => setField("port", Number(e.target.value))}
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+          </FieldRow>
+        </div>
+      </SectionCard>
+
       {/* TLS Settings */}
       <SectionCard title="TLS Settings">
         <FieldRow label="TLS Mode">
