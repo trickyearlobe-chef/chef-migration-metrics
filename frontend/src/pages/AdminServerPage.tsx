@@ -5,6 +5,7 @@ import {
   type ServerConfig,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
+import { TLSDegradedBanner } from "../components/TLSDegradedBanner";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -134,6 +135,12 @@ export function AdminServerPage() {
           HTTP server settings, TLS/HTTPS configuration, and WebSocket settings. Changes require
           an application restart.
         </p>
+      </div>
+
+      {/* Insecure-TLS fallback warning, surfaced inline beside the cert fields
+          the operator needs to fix (tls.md § 2.4). */}
+      <div className="overflow-hidden rounded-lg">
+        <TLSDegradedBanner />
       </div>
 
       {/* TLS Settings */}

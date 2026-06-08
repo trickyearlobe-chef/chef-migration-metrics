@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { HealthResponse, VersionResponse, OrganisationsResponse } from "../types";
+import type {
+  HealthResponse,
+  VersionResponse,
+  OrganisationsResponse,
+  TLSStatus,
+} from "../types";
 import { apiFetch, buildUrl } from "./client";
 
 export function fetchHealth(): Promise<HealthResponse> {
@@ -13,6 +18,13 @@ export function fetchVersion(): Promise<VersionResponse> {
 
 export function fetchOrganisations(): Promise<OrganisationsResponse> {
   return apiFetch<OrganisationsResponse>(buildUrl("/organisations"));
+}
+
+// fetchTLSStatus reports whether the server fell back to plain HTTP because the
+// configured static TLS certificate failed to load at startup (tls.md § 2.4).
+// Public + DB-independent, so it is safe to poll from a global banner.
+export function fetchTLSStatus(): Promise<TLSStatus> {
+  return apiFetch<TLSStatus>(buildUrl("/server/tls-status"));
 }
 
 export function pollHealth(
