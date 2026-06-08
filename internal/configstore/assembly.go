@@ -6,11 +6,27 @@ package configstore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"gopkg.in/yaml.v3"
 )
+
+// HasKey reports whether the given config key exists in the store. It is used
+// to decide whether a config section came from the database (authoritative)
+// or is absent and should fall back to a bootstrap/default value — notably for
+// server.listen, where the DB copy overrides the bootstrap YAML when present.
+func HasKey(ctx context.Context, store *Store, key string) (bool, error) {
+	_, err := store.Get(ctx, key)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return false, err
+}
 
 // ConfigSectionKey constants define the config_store keys for each
 // configuration section. These match the key naming convention in the
@@ -25,6 +41,7 @@ const (
 	KeyReadiness                  = "readiness"
 	KeyExports                    = "exports"
 	KeyElasticsearch              = "elasticsearch"
+	KeyServerListen               = "server.listen"
 	KeyServerTLS                  = "server.tls"
 	KeyServerWebSocket            = "server.websocket"
 	KeyServerGracefulShutdown     = "server.graceful_shutdown_seconds"
@@ -38,6 +55,15 @@ const (
 	KeyBackup                     = "backup"
 	KeyCredentialEncryptionKeyEnv = "credential_encryption_key_env"
 )
+
+// ServerListenSection is the JSON/YAML shape of the `server.listen` config
+// store section. It holds the listen address and port, which are DB-managed
+// and UI-editable (the bootstrap YAML keeps a copy only as the bind-failure
+// fallback — see encrypted-config-store.md).
+type ServerListenSection struct {
+	ListenAddress string `yaml:"listen_address" json:"listen_address"`
+	Port          int    `yaml:"port" json:"port"`
+}
 
 // AllConfigKeys returns the complete list of known config section keys in
 // the order they should be processed. This is useful for YAML auto-migration
@@ -53,6 +79,7 @@ func AllConfigKeys() []string {
 		KeyReadiness,
 		KeyExports,
 		KeyElasticsearch,
+		KeyServerListen,
 		KeyServerTLS,
 		KeyServerWebSocket,
 		KeyServerGracefulShutdown,
@@ -157,6 +184,14 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 		return yamlUnmarshalInto(&cfg.Exports, raw, key)
 	case KeyElasticsearch:
 		return yamlUnmarshalInto(&cfg.Elasticsearch, raw, key)
+	case KeyServerListen:
+		var listen ServerListenSection
+		if err := yamlUnmarshalInto(&listen, raw, key); err != nil {
+			return err
+		}
+		cfg.Server.ListenAddress = listen.ListenAddress
+		cfg.Server.Port = listen.Port
+		return nil
 	case KeyServerTLS:
 		return yamlUnmarshalInto(&cfg.Server.TLS, raw, key)
 	case KeyServerWebSocket:
@@ -209,20 +244,26 @@ func yamlUnmarshalInto[T any](target *T, raw json.RawMessage, key string) error 
 // snake_case keys, we round-trip through YAML marshal → JSON-compatible map
 // via yamlToJSON.
 //
-// Bootstrap-only fields (Datastore.URL, Server.ListenAddress, Server.Port)
-// are excluded — they remain in the bootstrap YAML file.
+// Datastore.URL remains a bootstrap-only field (it is excluded — it stays in
+// the bootstrap YAML). Server.ListenAddress/Port are written to the
+// `server.listen` section (DB is authoritative for UI editing; the bootstrap
+// YAML keeps a copy only as the bind-failure fallback).
 func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 	sections := map[string]any{
-		KeyOrganisations:          cfg.Organisations,
-		KeyTargetChefVersions:     cfg.TargetChefVersions,
-		KeyGitBaseURLs:            cfg.GitBaseURLs,
-		KeyCollection:             cfg.Collection,
-		KeyConcurrency:            cfg.Concurrency,
-		KeyAnalysisTools:          cfg.AnalysisTools,
-		KeyReadiness:              cfg.Readiness,
-		KeyExports:                cfg.Exports,
-		KeyElasticsearch:          cfg.Elasticsearch,
-		KeyServerTLS:              cfg.Server.TLS,
+		KeyOrganisations:      cfg.Organisations,
+		KeyTargetChefVersions: cfg.TargetChefVersions,
+		KeyGitBaseURLs:        cfg.GitBaseURLs,
+		KeyCollection:         cfg.Collection,
+		KeyConcurrency:        cfg.Concurrency,
+		KeyAnalysisTools:      cfg.AnalysisTools,
+		KeyReadiness:          cfg.Readiness,
+		KeyExports:            cfg.Exports,
+		KeyElasticsearch:      cfg.Elasticsearch,
+		KeyServerListen: ServerListenSection{
+			ListenAddress: cfg.Server.ListenAddress,
+			Port:          cfg.Server.Port,
+		},
+		KeyServerTLS: cfg.Server.TLS,
 		KeyServerWebSocket:        cfg.Server.WebSocket,
 		KeyServerGracefulShutdown: cfg.Server.GracefulShutdownSeconds,
 		KeyFrontend:               cfg.Frontend,

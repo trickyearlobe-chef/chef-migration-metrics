@@ -234,6 +234,40 @@ func TestConfigHolder_Reload_SwapsConfig(t *testing.T) {
 	}
 }
 
+// Reload — when the server.listen section is present in the DB, it is the
+// source of truth and overrides the current (bootstrap) listen target.
+func TestConfigHolder_Reload_SourcesListenFromDB(t *testing.T) {
+	db := newFakeDB()
+	store := mustNewStore(t, db)
+	ctx := context.Background()
+
+	orgs := `[{"name":"org1","chef_server_url":"https://chef.example.com","org_name":"org1","client_name":"client","client_key_credential":"key1"}]`
+	if err := store.Set(ctx, KeyOrganisations, json.RawMessage(orgs), false, "test"); err != nil {
+		t.Fatalf("Set organisations: %v", err)
+	}
+	if err := store.Set(ctx, KeyServerListen, json.RawMessage(`{"listen_address":"10.0.0.1","port":9443}`), false, "test"); err != nil {
+		t.Fatalf("Set server.listen: %v", err)
+	}
+
+	// The current config carries a different (bootstrap) listen target.
+	initialCfg := &config.Config{
+		Server: config.ServerConfig{ListenAddress: "127.0.0.1", Port: 8080},
+	}
+	holder := NewConfigHolder(initialCfg, store)
+
+	if err := holder.Reload(ctx); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	got := holder.Get()
+	if got.Server.ListenAddress != "10.0.0.1" {
+		t.Errorf("ListenAddress = %q, want 10.0.0.1 (from DB)", got.Server.ListenAddress)
+	}
+	if got.Server.Port != 9443 {
+		t.Errorf("Port = %d, want 9443 (from DB)", got.Server.Port)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Reload — validation failure preserves existing config
 // ---------------------------------------------------------------------------
