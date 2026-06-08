@@ -99,4 +99,65 @@ describe("AdminAuthPage", () => {
     );
     expect(screen.getByDisplayValue(/BEGIN CERTIFICATE/)).toBeInTheDocument();
   });
+
+  it("shows Export SP Metadata button when SAML provider exists", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Export SP Metadata (XML)" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("does not show Export SP Metadata button without a SAML provider", async () => {
+    render(<AdminAuthPage />);
+    await waitFor(() => screen.getByText("Authentication"));
+    expect(
+      screen.queryByRole("button", { name: "Export SP Metadata (XML)" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("downloads metadata XML on Export click", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLMetadata).mockResolvedValue(
+      '<?xml version="1.0"?><EntityDescriptor/>',
+    );
+    const createObjectURL = vi.fn(() => "blob:metadata");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Export SP Metadata (XML)" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export SP Metadata (XML)" }));
+
+    await waitFor(() => expect(api.fetchSAMLMetadata).toHaveBeenCalledTimes(1));
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows an error message when metadata export fails", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLMetadata).mockRejectedValue(
+      new Error("SAML provider not initialised"),
+    );
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Export SP Metadata (XML)" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export SP Metadata (XML)" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/SAML provider not initialised/)).toBeInTheDocument(),
+    );
+  });
 });

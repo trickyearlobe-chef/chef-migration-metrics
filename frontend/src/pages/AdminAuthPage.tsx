@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchAuthConfig,
   fetchSAMLCertificate,
+  fetchSAMLMetadata,
   generateSAMLKeypair,
   saveAuthConfig,
   type AuthConfig,
@@ -312,6 +313,10 @@ export function AdminAuthPage() {
   const [certError, setCertError] = useState<string | null>(null);
   const [certCopied, setCertCopied] = useState(false);
 
+  // SP metadata export state.
+  const [exportingMetadata, setExportingMetadata] = useState(false);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+
   const load = useCallback(() => {
     let cancelled = false;
     setLoading(true);
@@ -409,6 +414,29 @@ export function AdminAuthPage() {
       setCertError(err instanceof Error ? err.message : "Failed to generate keypair.");
     } finally {
       setGeneratingCert(false);
+    }
+  }
+
+  async function handleExportMetadata() {
+    setExportingMetadata(true);
+    setMetadataError(null);
+    try {
+      // Download the live SP metadata exactly as the endpoint emits it —
+      // standard SAML 2.0 EntityDescriptor XML the IdP can ingest directly.
+      const xml = await fetchSAMLMetadata();
+      const blob = new Blob([xml], { type: "application/samlmetadata+xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "sp-metadata.xml";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setMetadataError(err instanceof Error ? err.message : "Failed to export SP metadata.");
+    } finally {
+      setExportingMetadata(false);
     }
   }
 
@@ -557,6 +585,27 @@ export function AdminAuthPage() {
               the certificate in your Identity Provider.
             </p>
           )}
+
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-sm text-gray-500">
+              Download this Service Provider&apos;s metadata as standard SAML 2.0 XML
+              (entity ID, ACS/SLO URLs, signing certificate) to upload during IdP setup.
+            </p>
+            {metadataError && (
+              <div className="mt-2">
+                <ErrorAlert message="Failed to export SP metadata" detail={metadataError} />
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={handleExportMetadata}
+              disabled={exportingMetadata}
+              className="mt-3 inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              {exportingMetadata && <InlineSpinner />}
+              Export SP Metadata (XML)
+            </button>
+          </div>
         </SectionCard>
       )}
 
