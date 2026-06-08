@@ -378,6 +378,99 @@ describe("KitchenBatchesPage", () => {
     expect(screen.getByText(/Total: 7/)).toBeInTheDocument();
   });
 
+  // 12a. Save lands on the runnable detail (not the list)
+  it("Save lands on the batch detail rather than the list", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("+ New Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("+ New Batch"));
+    await user.type(
+      screen.getByPlaceholderText("e.g. Phase 1 — Linux cookbooks"),
+      "My Batch",
+    );
+    await user.click(screen.getByText("Save"));
+
+    await waitFor(() => {
+      expect(api.createKitchenBatch).toHaveBeenCalled();
+    });
+    // Lands on the detail (draft) — Run Batch action present, not back on list
+    await waitFor(() => {
+      expect(api.getKitchenBatch).toHaveBeenCalledWith(mockDraftBatch.id);
+    });
+    expect(
+      await screen.findByRole("heading", { level: 3, name: "Draft Batch" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Run Batch")).toBeInTheDocument();
+    expect(api.runKitchenBatch).not.toHaveBeenCalled();
+  });
+
+  // 12b. Create & Run goes from form straight to a running batch
+  it("Create & Run creates then runs the batch in one action", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(api.fetchTestKitchenConfig).mockResolvedValue({
+      enabled: true,
+      driver: "proxmox",
+      timeout_minutes: 30,
+      driver_settings: {},
+      driver_secrets: {},
+      image_field_name: "",
+      chef_license_key_credential: "",
+      images: [],
+      platform_map: [],
+      start_rate_window_minutes: 0,
+      start_rate_max_per_window: 0,
+    });
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("+ New Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("+ New Batch"));
+    await user.type(
+      screen.getByPlaceholderText("e.g. Phase 1 — Linux cookbooks"),
+      "My Batch",
+    );
+    // Wait for the TK-enabled config to propagate so the button is active
+    await waitFor(() => {
+      expect(screen.getByText("Create & Run")).toBeEnabled();
+    });
+    await user.click(screen.getByText("Create & Run"));
+
+    await waitFor(() => {
+      expect(api.createKitchenBatch).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(api.runKitchenBatch).toHaveBeenCalledWith(mockDraftBatch.id);
+    });
+    // Lands on the running detail — Cancel Batch action present
+    expect(
+      await screen.findByRole("heading", { level: 3, name: "Running Batch" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    expect(api.getKitchenBatch).not.toHaveBeenCalled();
+  });
+
+  // 12c. Create & Run is disabled until Test Kitchen is enabled
+  it("Create & Run is disabled when Test Kitchen is not enabled", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("+ New Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("+ New Batch"));
+    await user.type(
+      screen.getByPlaceholderText("e.g. Phase 1 — Linux cookbooks"),
+      "My Batch",
+    );
+    // Default config mock has enabled: false
+    expect(screen.getByText("Create & Run")).toBeDisabled();
+    expect(screen.getByText("Save")).toBeEnabled();
+  });
+
   // 13. ExcludedCookbooksSection renders when expanded
   it("ExcludedCookbooksSection renders when expanded", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

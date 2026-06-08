@@ -224,12 +224,16 @@ export function batchToForm(b: KitchenBatch): BatchFormData {
 function BatchForm({
   initial,
   saving,
+  runEnabled,
   onSave,
+  onSaveAndRun,
   onCancel,
 }: {
   initial: BatchFormData;
   saving: boolean;
+  runEnabled: boolean;
   onSave: (form: BatchFormData) => void;
+  onSaveAndRun: (form: BatchFormData) => void;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<BatchFormData>(initial);
@@ -365,6 +369,18 @@ function BatchForm({
 
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
+          <button
+            className={BTN_SUCCESS}
+            disabled={saving || !form.name.trim() || !runEnabled}
+            onClick={() => onSaveAndRun(form)}
+            title={
+              runEnabled
+                ? "Create the batch and start it immediately"
+                : "Enable Test Kitchen in settings to run batches"
+            }
+          >
+            {saving ? "Working…" : "Create & Run"}
+          </button>
           <button
             className={BTN_PRIMARY}
             disabled={saving || !form.name.trim()}
@@ -891,15 +907,25 @@ export default function KitchenBatchesPage() {
       .catch(() => setTkEnabled(false));
   }, [loadBatches]);
 
-  async function handleCreate(form: BatchFormData) {
+  async function handleCreate(form: BatchFormData, run = false) {
     setBusy(true);
     setError(null);
     try {
-      await createKitchenBatch(formToRequest(form));
+      const created = await createKitchenBatch(formToRequest(form));
       setShowCreate(false);
+      const detail = run
+        ? await runKitchenBatch(created.id)
+        : await getKitchenBatch(created.id);
+      setSelectedBatch(detail);
       await loadBatches();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create batch");
+      setError(
+        e instanceof Error
+          ? e.message
+          : run
+            ? "Failed to create and run batch"
+            : "Failed to create batch",
+      );
     } finally {
       setBusy(false);
     }
@@ -1015,7 +1041,9 @@ export default function KitchenBatchesPage() {
         <BatchForm
           initial={emptyForm()}
           saving={busy}
-          onSave={handleCreate}
+          runEnabled={tkEnabled === true}
+          onSave={(form) => handleCreate(form, false)}
+          onSaveAndRun={(form) => handleCreate(form, true)}
           onCancel={() => setShowCreate(false)}
         />
       </div>
