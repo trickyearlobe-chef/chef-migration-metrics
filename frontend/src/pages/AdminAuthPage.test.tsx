@@ -160,4 +160,37 @@ describe("AdminAuthPage", () => {
       expect(screen.getByText(/SAML provider not initialised/)).toBeInTheDocument(),
     );
   });
+
+  it("shows the metadata URL for IdPs that fetch it directly", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.samlMetadataUrl).mockReturnValue(
+      "https://app.example.com/api/v1/auth/saml/metadata",
+    );
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("https://app.example.com/api/v1/auth/saml/metadata"),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("copies the metadata URL to the clipboard", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.samlMetadataUrl).mockReturnValue(
+      "https://app.example.com/api/v1/auth/saml/metadata",
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Copy URL" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
+
+    expect(writeText).toHaveBeenCalledWith(
+      "https://app.example.com/api/v1/auth/saml/metadata",
+    );
+    vi.unstubAllGlobals();
+  });
 });

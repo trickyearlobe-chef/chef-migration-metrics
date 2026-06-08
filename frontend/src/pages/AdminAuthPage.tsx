@@ -3,6 +3,7 @@ import {
   fetchAuthConfig,
   fetchSAMLCertificate,
   fetchSAMLMetadata,
+  samlMetadataUrl,
   generateSAMLKeypair,
   saveAuthConfig,
   type AuthConfig,
@@ -316,6 +317,7 @@ export function AdminAuthPage() {
   // SP metadata export state.
   const [exportingMetadata, setExportingMetadata] = useState(false);
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [metadataUrlCopied, setMetadataUrlCopied] = useState(false);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -438,6 +440,13 @@ export function AdminAuthPage() {
     } finally {
       setExportingMetadata(false);
     }
+  }
+
+  function handleCopyMetadataUrl() {
+    navigator.clipboard.writeText(samlMetadataUrl()).then(() => {
+      setMetadataUrlCopied(true);
+      setTimeout(() => setMetadataUrlCopied(false), 2000);
+    });
   }
 
   function handleCopyCert() {
@@ -586,21 +595,43 @@ export function AdminAuthPage() {
             </p>
           )}
 
-          <div className="border-t border-gray-100 pt-4">
+          <div className="space-y-3 border-t border-gray-100 pt-4">
             <p className="text-sm text-gray-500">
-              Download this Service Provider&apos;s metadata as standard SAML 2.0 XML
-              (entity ID, ACS/SLO URLs, signing certificate) to upload during IdP setup.
+              Provide this Service Provider&apos;s metadata to your Identity Provider. Some
+              IdPs (ADFS, Shibboleth, Keycloak, PingFederate) fetch it from a URL and
+              refresh automatically; others (Google, Okta) need the XML file uploaded.
             </p>
-            {metadataError && (
-              <div className="mt-2">
-                <ErrorAlert message="Failed to export SP metadata" detail={metadataError} />
+
+            <FieldRow
+              label="SP Metadata URL"
+              hint="Public endpoint — paste into IdPs that fetch metadata by URL."
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={samlMetadataUrl()}
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                  className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyMetadataUrl}
+                  className="shrink-0 rounded-md border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50"
+                >
+                  {metadataUrlCopied ? "Copied!" : "Copy URL"}
+                </button>
               </div>
+            </FieldRow>
+
+            {metadataError && (
+              <ErrorAlert message="Failed to export SP metadata" detail={metadataError} />
             )}
             <button
               type="button"
               onClick={handleExportMetadata}
               disabled={exportingMetadata}
-              className="mt-3 inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
             >
               {exportingMetadata && <InlineSpinner />}
               Export SP Metadata (XML)

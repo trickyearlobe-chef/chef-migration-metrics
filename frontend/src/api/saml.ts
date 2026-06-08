@@ -24,6 +24,14 @@ export function fetchSAMLCertificate(): Promise<SAMLCertificateResponse | null> 
   );
 }
 
+// samlMetadataUrl returns the absolute, externally-reachable URL of the SP
+// metadata endpoint. IdPs that support metadata-by-URL (ADFS, Shibboleth,
+// Keycloak, PingFederate, …) can be pointed at this to auto-refresh; others
+// (Google, Okta) take the downloaded file instead. The endpoint is public.
+export function samlMetadataUrl(): string {
+  return `${window.location.origin}${buildUrl("/auth/saml/metadata")}`;
+}
+
 // fetchSAMLMetadata returns the live SP metadata document as raw XML. The
 // endpoint serves application/samlmetadata+xml (not JSON), so we read the body
 // as text rather than going through apiFetch. Returns 501 when no SAML provider

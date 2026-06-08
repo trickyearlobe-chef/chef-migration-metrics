@@ -51,6 +51,12 @@ the metadata endpoint returns `501 Not Implemented` otherwise (no SP to describe
 The exported document is the live SP metadata (entity ID, ACS/SLO URLs, SP signing
 certificate, NameID format); it contains no private key material.
 
+The page also surfaces the absolute **SP Metadata URL** (with a copy action) for
+IdPs that fetch metadata by URL and refresh it automatically (e.g. ADFS,
+Shibboleth, Keycloak, PingFederate); IdPs without URL support (e.g. Google, Okta)
+take the downloaded file. `/saml/metadata` is a public endpoint (no session
+required) so the IdP can poll it directly — it exposes no private key material.
+
 ### SP-Initiated SSO Flow
 
 1. User navigates to `/saml/login` (or clicks "Sign in with SSO")

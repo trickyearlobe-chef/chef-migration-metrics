@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fetchSAMLMetadata } from "./saml";
+import { fetchSAMLMetadata, samlMetadataUrl } from "./saml";
 
 function makeResponse(
   status: number,
@@ -65,5 +65,13 @@ describe("fetchSAMLMetadata", () => {
       status: 500,
       message: "Failed to generate SP metadata.",
     });
+  });
+});
+
+describe("samlMetadataUrl", () => {
+  it("returns an absolute URL to the metadata endpoint", () => {
+    expect(samlMetadataUrl()).toBe(
+      `${window.location.origin}/api/v1/auth/saml/metadata`,
+    );
   });
 });
