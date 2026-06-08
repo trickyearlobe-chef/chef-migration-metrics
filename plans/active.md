@@ -35,15 +35,19 @@ cookbook (collapsible, per-status summary on each header) with instance-level
 status badges; refreshes on the same 5s tick as progress while active. Backend +
 frontend handler/render/expand tests.
 
-## Chunk 3 — Live updates via WebSocket (depends on Chunk 2)  [next]
+## Chunk 3 — Live updates via WebSocket (depends on Chunk 2)  [done]
 
-Scope: `KitchenBatchesPage.tsx` (+ `useWebSocket`).
-- Subscribe to `batch_progress`/`batch_complete` (backend already broadcasts);
-  refresh progress + instances on event; keep the 5s poll only while active.
-- TDD: a `batch_progress` event updates the bar without the poll firing.
-Acceptance: progress + results update within ~1s of a status change.
+Done (`KitchenBatchesPage.tsx`): `BatchDetailView` consumes
+`useWebSocket().onEvent` and listens for `batch_progress`/`batch_complete`
+(non-gated, broadcast to all clients), filtered by `batch_id`. Progress +
+instances `refresh()` on each matching event; the 5s poll stays as a fallback
+only while active. On `batch_complete` the detail view calls a new
+`onBatchComplete` parent callback that refetches the batch detail — flipping the
+status badge to terminal and stopping the poll (a stable `selectedIdRef` keeps
+the callback identity fixed so listeners don't churn). Tests: progress refresh
+without poll, different-batch event ignored, complete refetches detail.
 
-## Chunk 4 — Cancel UX polish (independent of Chunk 3)
+## Chunk 4 — Cancel UX polish (independent of Chunk 3)  [next]
 
 Scope: `KitchenBatchesPage.tsx`.
 - Confirm dialog; optimistic UI ("Cancelling…", disabled) then refetch.
