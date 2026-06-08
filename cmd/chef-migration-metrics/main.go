@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -96,6 +97,13 @@ type serverApp struct {
 	isFullYAML   bool   // true when the loaded YAML has organisations (not bootstrap-only)
 	cfgStore     *configstore.Store
 	configHolder *configstore.ConfigHolder
+
+	// Bootstrap listen target (from the bootstrap YAML / env). listen_address
+	// and port are normally sourced from the DB (server.listen section); these
+	// are retained as the bind-failure fallback so a bad DB-sourced value can
+	// never permanently lock out the UI (encrypted-config-store.md).
+	bootstrapListenAddr string
+	bootstrapPort       int
 
 	// Auth components.
 	localAuth      *auth.LocalAuthenticator
@@ -622,6 +630,11 @@ func (app *serverApp) setupSecrets(ctx context.Context) error {
 func (app *serverApp) setupConfigStore(ctx context.Context) error {
 	csLog := app.logger.WithScope(logging.ScopeStartup)
 
+	// Capture the bootstrap listen target (from YAML/env) before any DB
+	// assembly overwrites app.cfg. This is the bind-failure fallback.
+	app.bootstrapListenAddr = app.cfg.Server.ListenAddress
+	app.bootstrapPort = app.cfg.Server.Port
+
 	// Run legacy data migration (runtime_settings → config_store).
 	migrateResult, err := configstore.MigrateFromLegacy(ctx, app.db.Pool(), app.cfgStore)
 	if err != nil {
@@ -669,10 +682,23 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 			}
 		}
 
-		// Carry over bootstrap values from the YAML-loaded config.
+		// Carry over the bootstrap database URL (never stored in the DB).
 		assembled.Datastore.URL = app.cfg.Datastore.URL
-		assembled.Server.ListenAddress = app.cfg.Server.ListenAddress
-		assembled.Server.Port = app.cfg.Server.Port
+
+		// listen_address/port are DB-managed (server.listen section). When the
+		// DB has them, AssembleConfig already populated `assembled` and the DB
+		// value wins. Only carry over the bootstrap value when the section is
+		// absent, so an existing deployment keeps its YAML listen target until
+		// it is edited in the UI.
+		hasListen, hlErr := configstore.HasKey(ctx, app.cfgStore, configstore.KeyServerListen)
+		if hlErr != nil {
+			csLog.Error(fmt.Sprintf("checking %s: %v", configstore.KeyServerListen, hlErr))
+			return hlErr
+		}
+		if !hasListen {
+			assembled.Server.ListenAddress = app.bootstrapListenAddr
+			assembled.Server.Port = app.bootstrapPort
+		}
 
 		app.cfg = assembled
 		csLog.Info("configuration assembled from database")
@@ -1392,25 +1418,96 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	return res, nil
 }
 
-// servePlainHTTP starts a plain HTTP listener on the configured
-// listen_address:port (falling back to 0.0.0.0:8080 when unset) and returns the
-// running server plus its fatal-error channel. Shared by plain-HTTP mode and the
-// degraded TLS fallback (degradeToPlainHTTP).
-func (app *serverApp) servePlainHTTP(handler http.Handler) serverResult {
-	listenAddr := app.cfg.Server.ListenAddress
-	if listenAddr == "" {
-		listenAddr = "0.0.0.0"
-	}
-	port := app.cfg.Server.Port
-	if port == 0 {
-		port = 8080
+// listenTarget is a resolved (address, port) the server may bind.
+type listenTarget struct {
+	addr string
+	port int
+}
+
+func (t listenTarget) String() string {
+	return fmt.Sprintf("%s:%d", t.addr, t.port)
+}
+
+// listenCandidates returns the ordered, de-duplicated list of listen targets to
+// try, starting with the configured (DB-sourced) target and falling back to the
+// bootstrap target then the hardwired 0.0.0.0:8080 default. A bad DB-sourced
+// listen_address/port can therefore never permanently lock out the UI — the
+// server binds the first usable fallback and runs in degraded mode.
+func (app *serverApp) listenCandidates() []listenTarget {
+	norm := func(addr string, port int) listenTarget {
+		if addr == "" {
+			addr = "0.0.0.0"
+		}
+		if port == 0 {
+			port = 8080
+		}
+		return listenTarget{addr: addr, port: port}
 	}
 
-	plainSrv := apptls.NewPlainListener(handler, listenAddr, port)
+	ordered := []listenTarget{
+		norm(app.cfg.Server.ListenAddress, app.cfg.Server.Port),
+		norm(app.bootstrapListenAddr, app.bootstrapPort),
+		norm("0.0.0.0", 8080),
+	}
+
+	seen := make(map[listenTarget]bool, len(ordered))
+	out := ordered[:0]
+	for _, t := range ordered {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// servePlainHTTP starts a plain HTTP listener on the configured
+// listen_address:port. If that target cannot be bound (e.g. a bad DB-sourced
+// port), it falls back to the bootstrap then default target and flags degraded
+// mode (reusing Chunk 2's TLS-status holder). Shared by plain-HTTP mode and the
+// degraded TLS fallback (degradeToPlainHTTP).
+func (app *serverApp) servePlainHTTP(handler http.Handler) serverResult {
+	candidates := app.listenCandidates()
+
+	var firstErr error
+	for i, target := range candidates {
+		ln, err := net.Listen("tcp", target.String())
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			app.startup.Error(fmt.Sprintf("cannot bind HTTP listener on %s: %v", target, err))
+			continue
+		}
+		if i > 0 {
+			// The configured target failed; we bound a fallback. Flag degraded
+			// so the operator sees the banner and fixes listen_address/port.
+			reason := fmt.Sprintf("cannot bind configured listen address %s (%v) — running on fallback %s",
+				candidates[0], firstErr, target)
+			app.startup.Error(reason + "; fix listen_address/port and restart")
+			if app.tlsStatus != nil {
+				app.tlsStatus.SetDegraded(reason)
+			}
+		}
+		return app.serveOnListener(handler, ln)
+	}
+
+	// No candidate could be bound — return a fatal error result so run() exits.
+	errCh := make(chan error, 1)
+	errCh <- fmt.Errorf("HTTP listener bind failed on all candidates: %w", firstErr)
+	close(errCh)
+	return serverResult{errCh: errCh}
+}
+
+// serveOnListener serves the handler on an already-bound listener and returns
+// the running server plus its fatal-error channel.
+func (app *serverApp) serveOnListener(handler http.Handler, ln net.Listener) serverResult {
+	plainSrv := apptls.NewPlainListener(handler, "", 0)
+	plainSrv.Addr = ln.Addr().String()
 	plainErrCh := make(chan error, 1)
 	go func() {
-		app.startup.Info(fmt.Sprintf("HTTP server listening on %s", plainSrv.Addr))
-		if err := plainSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		app.startup.Info(fmt.Sprintf("HTTP server listening on %s", ln.Addr()))
+		if err := plainSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			plainErrCh <- err
 		}
 		close(plainErrCh)
