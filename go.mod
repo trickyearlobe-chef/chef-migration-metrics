@@ -2,6 +2,8 @@ module github.com/trickyearlobe-chef/chef-migration-metrics
 
 go 1.26.2
 
+toolchain go1.26.4
+
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/crewjam/saml v0.5.1
