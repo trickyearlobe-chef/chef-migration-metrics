@@ -67,6 +67,10 @@ RestartSec=10
 EnvironmentFile=-/etc/sysconfig/chef-migration-metrics
 LimitNOFILE=65536
 
+# Privileged-port binding (80/443) as a non-root service
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
@@ -79,6 +83,8 @@ WantedBy=multi-user.target
 ```
 
 The `EnvironmentFile` directive points to `/etc/sysconfig/chef-migration-metrics` (RPM convention) where operators can set environment variable overrides such as `DATABASE_URL` and `CMM_CREDENTIAL_ENCRYPTION_KEY` without modifying the config file.
+
+`AmbientCapabilities=CAP_NET_BIND_SERVICE` lets the non-root service bind privileged ports (`80`/`443`) without running as root. It is granted by systemd and survives the drop to the service user, so it is compatible with `NoNewPrivileges=true` — unlike file-based `setcap`, which `NoNewPrivileges` silently ignores. `CapabilityBoundingSet` caps the process to exactly that one capability. On an enforcing SELinux host, `80`/`443` are already `http_port_t`; a non-standard low port must additionally be labelled with `semanage port -a -t http_port_t -p tcp <port>`. See [TLS Specification](tls.md) § 1.4.
 
 ### 2.6 Pre/Post Install Scripts
 

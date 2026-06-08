@@ -691,6 +691,13 @@ run: build ## Build and run the application locally
 	@echo "$(GREEN)Starting $(BINARY_NAME)...$(RESET)"
 	$(BUILD_DIR)/$(BINARY_NAME) --config deploy/pkg/config.yml
 
+.PHONY: run-privileged
+run-privileged: build ## Grant CAP_NET_BIND_SERVICE then run (binds ports <1024 in dev)
+	@echo "$(YELLOW)Granting CAP_NET_BIND_SERVICE to the binary (needs sudo)...$(RESET)"
+	sudo setcap cap_net_bind_service=+ep $(BUILD_DIR)/$(BINARY_NAME)
+	@echo "$(GREEN)Starting $(BINARY_NAME) (can bind privileged ports)...$(RESET)"
+	$(BUILD_DIR)/$(BINARY_NAME) --config deploy/pkg/config.yml
+
 .PHONY: dev
 dev: ## Run with go run (faster iteration, no binary output)
 	go run ./cmd/chef-migration-metrics/ --config deploy/pkg/config.yml

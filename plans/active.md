@@ -65,28 +65,20 @@ polls `/health` until back, then reloads. New api: `restartServer`,
 202+trigger), `awaitShutdown` restart-code, and the page (button visibility/
 enablement, trigger+poll, error path).
 
-## Chunk 5 — Privileged-port binding (443/80): packaging + dev (pairs with Chunk 3)
+## Chunk 5 — Privileged-port binding (443/80): packaging + dev  [DONE]
 
-Scope: `deploy/pkg/chef-migration-metrics.service`, `deploy/pkg/scripts/postinstall.sh`,
-`Makefile` (`run`/new target), specs `packaging.md` + `tls.md` (a "binding low ports" note).
-Context: service runs non-root (`User=chef-migration-metrics`) with
-`NoNewPrivileges=true`; that combination silently ignores `setcap` file caps, so
-the binary cannot bind 443 today.
-- systemd unit: add `AmbientCapabilities=CAP_NET_BIND_SERVICE` +
-  `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (compatible with `NoNewPrivileges=true`;
-  ambient caps are granted by systemd and survive the drop to the service user).
-- SELinux: 80/443 are already `http_port_t` so they bind under the default
-  targeted policy. For a non-standard low/custom port, document/emit
-  `semanage port -a -t http_port_t -p tcp <port>`. Add a startup check that, on a
-  bind-permission denial, logs a precise remediation (capability vs SELinux label)
-  — reuses Chunk 2's degraded path rather than crashing.
-- `make run`: keep default 8080; add a `run-privileged` (or doc) path that does
-  `sudo setcap cap_net_bind_service=+ep $(BINARY)` before running (works in dev —
-  no `NoNewPrivileges` there).
-- Tests: unit-test the bind-denial remediation message; verify the unit file
-  parses (systemd-analyze verify if available in CI) — no privileged bind in CI.
-Acceptance: a packaged install can serve on 443 as the non-root service; a clear,
-actionable message when the OS blocks the bind.
+Done: systemd unit (`deploy/pkg/chef-migration-metrics.service`, packaged for
+both RPM/DEB via `nfpm.yaml`) gained `AmbientCapabilities=CAP_NET_BIND_SERVICE` +
+`CapabilityBoundingSet=CAP_NET_BIND_SERVICE` so the non-root service can bind
+80/443 (survives the privilege drop, unlike `setcap` under `NoNewPrivileges`).
+New `apptls.BindPermissionRemediation(addr, port, err)` returns capability +
+SELinux remediation guidance on an EACCES bind denial and "" otherwise;
+`servePlainHTTP` logs it on each failed candidate (reuses Chunk 2's degraded
+fallback — no crash). `make run-privileged` does `sudo setcap
+cap_net_bind_service=+ep` then runs (dev). Specs `tls.md` § 1.4 (binding low
+ports) + `packaging-rpm-deb.md` § 2.5 (capability directives). TDD: remediation
+message (EACCES/wrapped/other), `TestBind` happy/in-use, unit-file directives +
+optional `systemd-analyze verify` (skipped without the binary).
 
 ## Chunk 6 — Export SAML SP metadata to XML (independent)
 

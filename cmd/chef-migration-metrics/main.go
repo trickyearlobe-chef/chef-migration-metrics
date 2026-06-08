@@ -1500,6 +1500,9 @@ func (app *serverApp) servePlainHTTP(handler http.Handler) serverResult {
 				firstErr = err
 			}
 			app.startup.Error(fmt.Sprintf("cannot bind HTTP listener on %s: %v", target, err))
+			if rem := apptls.BindPermissionRemediation(target.addr, target.port, err); rem != "" {
+				app.startup.Error(rem)
+			}
 			continue
 		}
 		if i > 0 {

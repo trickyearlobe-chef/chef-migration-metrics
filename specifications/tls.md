@@ -33,6 +33,26 @@ The redirect listener serves **only** redirects — no API responses, no static 
 
 The `server.port` default remains `8080` regardless of TLS mode. Operators who enable TLS and want the standard HTTPS port should explicitly set `server.port: 443`. This avoids surprising behaviour changes when toggling TLS on and off.
 
+### 1.4 Binding Privileged (Low) Ports
+
+Binding a port below `1024` (e.g. `80`/`443`) requires elevated privilege. The
+service runs non-root, so two OS layers must each permit the bind:
+
+- **Capability:** the process needs `CAP_NET_BIND_SERVICE`. The packaged systemd
+  unit grants this via `AmbientCapabilities` (compatible with
+  `NoNewPrivileges=true`; file-based `setcap` is silently ignored under
+  `NoNewPrivileges`). For a manual/dev run, grant it on the binary with
+  `setcap cap_net_bind_service=+ep <binary>`.
+- **SELinux:** on an enforcing host the target port must carry a permitted label.
+  `80`/`443` are already `http_port_t`; a non-standard low port must be labelled
+  with `semanage port -a -t http_port_t -p tcp <port>`.
+
+When a bind is denied by the OS (permission error), the server does not
+crash-loop: it logs a precise, actionable remediation message naming both layers
+and the affected port, then falls back to the next listen candidate and runs in
+degraded mode (§ 2.4, § 5.3). Capability vs SELinux are distinct — both must be
+satisfied for a non-standard low port on enforcing RHEL.
+
 ## 2. Static Certificate Mode
 
 ### 2.1 Configuration
