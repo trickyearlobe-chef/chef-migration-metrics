@@ -1,8 +1,8 @@
 # Active Plan — Batch UX (submission + progress)
 
-Goal: make bulk kitchen batches (1) quick and safe to launch — fewer steps,
-with the VM estimate visible before committing — and (2) observable while they
-run, with live per-instance results.
+Goal: make bulk kitchen batches (1) quick to launch — form to running in one
+action, blast radius bounded by the existing max-count cap and previous-status
+filter — and (2) observable while they run, with live per-instance results.
 
 Source todo: `plans/todo-bulk-kitchen-scanning.md` § Batch run UI.
 
@@ -19,21 +19,19 @@ TDD: write/extend tests before code. `KitchenBatchesPage.tsx` is ~1160 lines
 
 ## Chunk 1 — One-step batch submission  [next]
 
-Scope: `frontend/src/pages/KitchenBatchesPage.tsx`, `frontend/src/api/kitchen.ts`,
-`frontend/src/types/kitchen.ts`; backend `internal/webapi/handle_kitchen_batches.go`
-only if adding a preview endpoint.
-- Land on the batch **detail** after Save (not the list): `handleCreate` →
-  `getKitchenBatch(id)` → `setSelectedBatch(detail)`, so the estimate + "Run
-  Batch" are immediately in front of the operator. Removes the hunt-and-open step.
-- Add a **live estimate in the create form**: a `POST /kitchen/batches/preview`
-  (filters → `BatchEstimate`, no persistence; reuse `resolveBatch`) called
-  debounced as filters change, showing estimated VMs/cookbooks before Save.
-- Add a **"Create & Run"** primary action: creates, shows a confirm with the
-  estimated VM count, then runs — one path from form to running.
-- TDD: backend preview-endpoint test; frontend tests for land-on-detail, live
-  estimate, and Create & Run confirm→run.
-Acceptance: an operator can go form → running in one confirmed action, with the
-VM estimate visible beforehand; plain Save still lands on the runnable detail.
+Frontend only: `KitchenBatchesPage.tsx` (+ `api/kitchen.ts` if a helper helps).
+No preview/estimate work — blast radius is already bounded by the form's
+`maxCount` cap and `previousStatus` filter (`passed`/`failed`/`untested` =
+never-ran), so the operator doesn't need a VM count to launch safely.
+- **"Create & Run"** primary action on the form: `createKitchenBatch` →
+  `runKitchenBatch` in one handler, then show the running detail. One path from
+  form to running.
+- **Save lands on the detail** (not the list): `handleCreate` →
+  `getKitchenBatch(id)` → `setSelectedBatch(detail)`, so a plain Save still puts
+  the runnable batch in front of the operator. Removes the hunt-and-open step.
+- TDD: frontend tests for Create & Run → running, and Save → detail.
+Acceptance: an operator goes form → running in one click; plain Save lands on
+the runnable detail rather than the list.
 
 ## Chunk 2 — Per-instance results table (full-stack)
 
