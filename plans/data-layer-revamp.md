@@ -28,6 +28,15 @@ These drive the need for this revamp:
 | 14 | Blast radius / complexity scores calculated independently everywhere | Phase 7 | ✅ Already resolved — scores materialised at write-time by ComplexityScorer; all handlers read stored values |
 | 15 | Collection-run gating missing — trends include partial data | Phase 2 | ✅ Fixed |
 | 16 | Metric snapshots don't partition cleanly by collection run | Phase 2 | ✅ Fixed (implicit) |
+| 17 | Disk space differs between node list ("Unknown") and detail ("Sufficient") | Phase 4 | ✅ Fixed (`fix/disk-status-version-agnostic`) |
+
+### Bug 17 root cause & prevention
+
+The disk verdict (`sufficient_disk_space`) is **version-invariant** — computed from platform install size + node free space in `evaluateOne`, independent of `target_chef_version` — but stored in every per-target `node_readiness` row and **looked up by target version** in the list view. The detail view renders whichever target rows exist (target-agnostic); the list view selected the row for the globally-selected target version (`highestSemver`, `GlobalFilterContext.tsx`). When that target had no row for a node, the list's `LEFT JOIN` produced `NULL`, rendered as "Disk Unknown", while detail still showed the actual `19.1.164` row as "Sufficient".
+
+**Why the revamp missed it:** the source-of-truth work unified the *derivation* (`deriveDiskStatus`) across views but not *which record represents a node*. Consistency needs the record-**selection** step shared too, not just the derivation function. A `LEFT JOIN` that maps "no row for this target" to the same `NULL` as "evaluated but indeterminate" silently merges two distinct states.
+
+**Fix (read path):** disk filter uses a version-agnostic correlated `EXISTS`/`NOT EXISTS` (`node_snapshot_filter.go`); list badge falls back to any readiness row (`NodesPage.tsx`). **Residual (see tech debt "Duplicated Derived Calculations"):** stop storing the version-invariant disk verdict per target version on the write path.
 
 ## Phases
 

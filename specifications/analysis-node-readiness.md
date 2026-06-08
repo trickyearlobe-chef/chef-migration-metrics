@@ -90,6 +90,12 @@ The `automatic.filesystem` attribute collected from each node contains a map of 
 - If `kb_available` is missing from a filesystem entry, treat that filesystem as having 0 KB available.
 - Values in the `filesystem` map are strings in some Chef Client versions and integers in others. The implementation must handle both.
 
+**Version invariance and cross-view consistency:**
+
+- The disk verdict depends only on the node's platform (install path/size) and its filesystem free space — it does **not** depend on the target Chef Client version. The verdict is therefore identical across every per-target readiness row for a node.
+- Consequently, all views (node list, node detail, filters, exports) MUST surface the same disk status for a given node, resolved **independently of the selected target version**. A view must not report disk status as unknown merely because the selected target version has no readiness row — it must fall back to the node's disk verdict from any available readiness row.
+- "Unknown" (evaluated, but disk indeterminate — missing/stale filesystem data) is a distinct state from "not evaluated for the selected target". Filters and badges must not conflate the two (e.g. a `LEFT JOIN ... IS NULL` that maps an absent row to the same value as an indeterminate verdict).
+
 ---
 
 #### Design: Stale Node Handling
