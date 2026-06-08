@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchKitchenQueue, cancelKitchenQueueItem, retryKitchenQueueItem } from "../api";
+import {
+  fetchKitchenQueue,
+  fetchKitchenQueueItem,
+  cancelKitchenQueueItem,
+  retryKitchenQueueItem,
+} from "../api";
 import type { KitchenQueueItem, KitchenQueueStats } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -244,6 +249,35 @@ function QueueRow({
   const canRetry = item.status === "failed" || item.status === "cancelled" || item.status === "interrupted";
   const repoOrNode = item.run_type === "git" ? item.git_repo_name ?? "—" : item.node_name ?? "—";
 
+  // The list endpoint omits `output` for payload size, so lazy-fetch the full
+  // item the first time a row is expanded. Cached in `detail` to avoid refetch.
+  const [detail, setDetail] = useState<KitchenQueueItem | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  useEffect(() => {
+    if (!expanded || detail || item.output) return;
+    let cancelled = false;
+    setLoadingDetail(true);
+    fetchKitchenQueueItem(item.id)
+      .then((full) => {
+        if (!cancelled) setDetail(full);
+      })
+      .catch(() => {
+        // Leave detail null — the row falls back to "No output available".
+      })
+      .finally(() => {
+        // Clear unconditionally: setting detail above re-runs this effect and
+        // flips `cancelled`, but the load is genuinely finished either way.
+        setLoadingDetail(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, detail, item.id, item.output]);
+
+  const output = detail?.output ?? item.output;
+  const errorMessage = detail?.error_message ?? item.error_message;
+
   return (
     <>
       <tr
@@ -288,16 +322,18 @@ function QueueRow({
       {expanded && (
         <tr>
           <td colSpan={9} className="bg-gray-50 px-6 py-3">
-            {item.error_message && (
+            {errorMessage && (
               <div className="mb-2">
                 <span className="text-xs font-medium text-red-700">Error: </span>
-                <span className="text-xs text-red-600">{item.error_message}</span>
+                <span className="text-xs text-red-600">{errorMessage}</span>
               </div>
             )}
-            {item.output ? (
+            {output ? (
               <pre className="max-h-60 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100">
-                {item.output}
+                {output}
               </pre>
+            ) : loadingDetail ? (
+              <p className="text-xs text-gray-500">Loading output…</p>
             ) : (
               <p className="text-xs text-gray-500">No output available.</p>
             )}
