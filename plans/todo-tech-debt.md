@@ -60,7 +60,15 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ## Kitchen Queue — Live Output Streaming
 
-- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (available via `GET /kitchen/queue/:id`, once the detail-fetch bug above is fixed) covers 90% of the use case.
+- [ ] The kitchen queue shows output only after a run completes. True live streaming during execution would require: (a) an SSE endpoint per queue item, (b) a ring buffer in the executor to capture output lines as they arrive, (c) frontend `EventSource` subscription. Deferred because the project has no existing SSE infrastructure and the post-completion output (available via `GET /kitchen/queue/:id`, once the detail-fetch bug above is fixed — fix in progress on branch `fix/kitchen-queue-output`) covers 90% of the use case.
+
+## Kitchen Queue — `started_at` Records Claim Time, Not VM-Start Time
+
+- [ ] **`kitchen_run_queue.started_at` is set at claim time, before the rate-limiter gate, so the queue view over-reports concurrency** — `ClaimNextKitchenRun` does `SET status='running', started_at=now()` (`kitchen_run_queue.go:139`) at `manager.go:272`, *before* `limiter.Wait()` at `manager.go:288`. A free worker claims an item immediately (stamping `started_at`), then may block in the limiter for minutes before the VM actually boots (logged as `worker N: executing` at `manager.go:295`, right before the clone). With N workers, several items get near-identical `started_at` values while their real starts are paced by the limiter. Observed 2026-06-08: two items shared an identical `started_at` to the microsecond, yet the `executing` log showed their VM starts 5 min apart — exactly `window/max`. The limiter was correct; `started_at` made it *look* breached. **Fix:** record a distinct `vm_started_at` (stamped at the `executing` point, after the limiter grants) and surface that — plus duration — in the queue API/UI, leaving `started_at`/`enqueued_at` as queue-lifecycle timestamps. Any "starts per window" reasoning must use the VM-start time, not claim time.
+
+## Kitchen — Rate Limiter State Is In-Memory (Window Resets on Restart)
+
+- [ ] **The global VM start-rate limiter holds its trailing-window state only in memory** (`ratelimiter.go:37`, `starts []time.Time`), so an app/queue restart forgets all prior starts and refills the window from empty. After a restart the limiter can admit up to `maxPerWindow` immediately even if that many started just before the restart — a transient breach of the lease cap exactly when on-site tuning/experimentation causes frequent restarts. Observed 2026-06-08: a restart at 00:07:28→00:08:04 reset the window (no actual breach that time, as the next starts were well-paced). **Strategic fix:** persist start timestamps (e.g. derive the trailing window from `vm_started_at` in the DB on startup, or a small `vm_starts` ledger) so the limiter reconstructs its window across restarts. Composes with the `vm_started_at` item above — both want a truthful VM-start timestamp.
 
 ## Kitchen — Proxmox VMID Race Condition (Upstream)
 
