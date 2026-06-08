@@ -25,20 +25,17 @@ Save now fetches the detail and lands there (not the list). No preview/estimate
 work — blast radius stays bounded by the form's `maxCount` cap and
 `previousStatus` filter.
 
-## Chunk 2 — Per-instance results table (full-stack)  [next]
+## Chunk 2 — Per-instance results table (full-stack)  [done]
 
-Scope: `handle_kitchen_batches.go` + `router.go`, `api/kitchen.ts`,
-`types/kitchen.ts`, `KitchenBatchesPage.tsx`.
-- Backend: `GET /kitchen/batches/:id/instances` → `ListBatchInstances` (method
-  exists), returning per-instance {git_repo_name, suite, platform, instance_name,
-  status, error_message, started_at, completed_at}. Route + handler test.
-- Frontend: `fetchBatchInstances(id)` + type; expandable table in the detail view
-  grouped by cookbook with instance-level status badges; refresh on each tick.
-- TDD: backend handler test; frontend rows-render/expand test.
-Acceptance: detail lists every instance with status, grouped/expandable by
-cookbook, refreshing as the batch runs.
+Done: `GET /kitchen/batches/:id/instances` → `handleListBatchInstances` →
+`ListBatchInstances` (dispatched in `handleKitchenBatchDetail`; returns the full
+`KitchenBatchInstance` rows, `[]` when empty). Frontend `fetchBatchInstances(id)`
++ `KitchenBatchInstance` type; `BatchInstancesTable` in the detail view groups by
+cookbook (collapsible, per-status summary on each header) with instance-level
+status badges; refreshes on the same 5s tick as progress while active. Backend +
+frontend handler/render/expand tests.
 
-## Chunk 3 — Live updates via WebSocket (depends on Chunk 2)
+## Chunk 3 — Live updates via WebSocket (depends on Chunk 2)  [next]
 
 Scope: `KitchenBatchesPage.tsx` (+ `useWebSocket`).
 - Subscribe to `batch_progress`/`batch_complete` (backend already broadcasts);
