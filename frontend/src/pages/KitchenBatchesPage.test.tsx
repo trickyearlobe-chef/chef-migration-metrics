@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../api";
 import KitchenBatchesPage from "./KitchenBatchesPage";
@@ -15,6 +15,32 @@ import type {
 } from "../types";
 
 vi.mock("../api");
+
+// WebSocket mock: capture onEvent listeners so tests can fire live events.
+const { wsListeners, emitWsEvent } = vi.hoisted(() => {
+  const listeners: Record<string, Set<(data: unknown) => void>> = {};
+  return {
+    wsListeners: listeners,
+    emitWsEvent: (event: string, data: unknown) => {
+      listeners[event]?.forEach((cb) => cb(data));
+    },
+  };
+});
+
+vi.mock("../hooks/useWebSocket", () => ({
+  useWebSocket: () => ({
+    status: "connected",
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    onEvent: (event: string, cb: (data: unknown) => void) => {
+      if (!wsListeners[event]) wsListeners[event] = new Set();
+      wsListeners[event].add(cb);
+      return () => wsListeners[event].delete(cb);
+    },
+    disconnect: vi.fn(),
+    reconnect: vi.fn(),
+  }),
+}));
 
 const mockDraftBatch: KitchenBatch = {
   id: "batch-1",
@@ -207,6 +233,7 @@ function setupDefaultMocks() {
 describe("KitchenBatchesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    for (const key of Object.keys(wsListeners)) delete wsListeners[key];
     vi.useFakeTimers({ shouldAdvanceTime: true });
     setupDefaultMocks();
   });
@@ -570,6 +597,105 @@ describe("KitchenBatchesPage", () => {
     expect(
       vi.mocked(api.fetchBatchInstances).mock.calls.length,
     ).toBeGreaterThan(callsAfterMount);
+  });
+
+  // 12f. A batch_progress event refreshes the detail without the poll firing
+  it("refreshes progress on a batch_progress event without waiting for the poll", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
+    vi.mocked(api.fetchBatchInstances).mockResolvedValue(mockInstances);
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getAllByText("View")[1]);
+    await waitFor(() => {
+      expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    });
+
+    const progressCalls = vi.mocked(api.fetchBatchProgress).mock.calls.length;
+    const instanceCalls = vi.mocked(api.fetchBatchInstances).mock.calls.length;
+
+    // Fire a live event for this batch — no timer advance.
+    act(() => {
+      emitWsEvent("batch_progress", {
+        batch_id: "batch-2",
+        instance_name: "default-ubuntu-2204",
+        git_repo_name: "nginx",
+        passed: true,
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(api.fetchBatchProgress).mock.calls.length,
+      ).toBeGreaterThan(progressCalls);
+    });
+    expect(
+      vi.mocked(api.fetchBatchInstances).mock.calls.length,
+    ).toBeGreaterThan(instanceCalls);
+  });
+
+  // 12g. A batch_progress event for a different batch is ignored
+  it("ignores a batch_progress event for a different batch", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getAllByText("View")[1]);
+    await waitFor(() => {
+      expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    });
+
+    const progressCalls = vi.mocked(api.fetchBatchProgress).mock.calls.length;
+
+    act(() => {
+      emitWsEvent("batch_progress", { batch_id: "some-other-batch", passed: true });
+    });
+
+    // No refresh should be triggered for an unrelated batch.
+    await Promise.resolve();
+    expect(vi.mocked(api.fetchBatchProgress).mock.calls.length).toBe(progressCalls);
+  });
+
+  // 12h. A batch_complete event refetches the batch detail (status flips)
+  it("refetches the batch detail on a batch_complete event", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getAllByText("View")[1]);
+    await waitFor(() => {
+      expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    });
+
+    // After running, the detail comes back completed.
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockCompletedDetail);
+    const detailCalls = vi.mocked(api.getKitchenBatch).mock.calls.length;
+
+    act(() => {
+      emitWsEvent("batch_complete", {
+        batch_id: "batch-2",
+        status: "completed",
+        total: 7,
+        passed: 6,
+        failed: 1,
+        errored: 0,
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(api.getKitchenBatch).mock.calls.length,
+      ).toBeGreaterThan(detailCalls);
+    });
   });
 
   // 13. ExcludedCookbooksSection renders when expanded

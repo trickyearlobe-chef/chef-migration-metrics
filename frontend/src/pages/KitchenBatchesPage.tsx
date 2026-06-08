@@ -1,7 +1,7 @@
 // Copyright 2025 Chef Migration Metrics Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   listKitchenBatches,
   createKitchenBatch,
@@ -27,6 +27,16 @@ import type {
   KitchenBatchInstance,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
+import { useWebSocket } from "../hooks/useWebSocket";
+
+/** Extract the batch_id from a WebSocket event payload, if present. */
+function eventBatchId(data: unknown): string | undefined {
+  if (data && typeof data === "object" && "batch_id" in data) {
+    const v = (data as Record<string, unknown>).batch_id;
+    return typeof v === "string" ? v : undefined;
+  }
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Status badge helpers
@@ -556,6 +566,7 @@ function BatchDetailView({
   onCancel,
   onDelete,
   onBack,
+  onBatchComplete,
   busy,
 }: {
   batch: KitchenBatchDetail;
@@ -563,11 +574,23 @@ function BatchDetailView({
   onCancel: () => void;
   onDelete: () => void;
   onBack: () => void;
+  onBatchComplete: () => void;
   busy: boolean;
 }) {
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [instances, setInstances] = useState<KitchenBatchInstance[]>([]);
+  const { onEvent } = useWebSocket();
 
+  const refresh = useCallback(() => {
+    fetchBatchProgress(batch.id)
+      .then(setProgress)
+      .catch(() => {});
+    fetchBatchInstances(batch.id)
+      .then(setInstances)
+      .catch(() => {});
+  }, [batch.id]);
+
+  // Initial fetch + 5s poll fallback while the batch is active.
   useEffect(() => {
     const active = batch.status === "running" || batch.status === "preparing";
     const hasRun =
@@ -577,21 +600,31 @@ function BatchDetailView({
       batch.status === "failed";
     if (!hasRun) return;
 
-    const refresh = () => {
-      fetchBatchProgress(batch.id)
-        .then(setProgress)
-        .catch(() => {});
-      fetchBatchInstances(batch.id)
-        .then(setInstances)
-        .catch(() => {});
-    };
     refresh();
 
     if (active) {
       const interval = setInterval(refresh, 5000);
       return () => clearInterval(interval);
     }
-  }, [batch.id, batch.status]);
+  }, [batch.id, batch.status, refresh]);
+
+  // Live updates: refresh on backend batch events for this batch. On
+  // completion, ask the parent to refetch the detail so the status flips
+  // (which also stops the poll above).
+  useEffect(() => {
+    const unsubProgress = onEvent("batch_progress", (data) => {
+      if (eventBatchId(data) === batch.id) refresh();
+    });
+    const unsubComplete = onEvent("batch_complete", (data) => {
+      if (eventBatchId(data) !== batch.id) return;
+      refresh();
+      onBatchComplete();
+    });
+    return () => {
+      unsubProgress();
+      unsubComplete();
+    };
+  }, [batch.id, onEvent, refresh, onBatchComplete]);
 
   const est = batch.estimate;
   return (
@@ -1126,6 +1159,25 @@ export default function KitchenBatchesPage() {
     }
   }
 
+  // Stable ref to the open batch id so handleBatchComplete can stay stable
+  // (avoids re-subscribing the detail view's WebSocket listeners).
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedIdRef.current = selectedBatch?.id ?? null;
+  }, [selectedBatch]);
+
+  const handleBatchComplete = useCallback(async () => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    try {
+      const detail = await getKitchenBatch(id);
+      setSelectedBatch(detail);
+    } catch {
+      /* ignore — the poll/next event will retry */
+    }
+    await loadBatches();
+  }, [loadBatches]);
+
   async function handleDelete() {
     if (!selectedBatch) return;
     setBusy(true);
@@ -1166,6 +1218,7 @@ export default function KitchenBatchesPage() {
           onRun={handleRun}
           onCancel={handleCancel}
           onDelete={handleDelete}
+          onBatchComplete={handleBatchComplete}
           onBack={() => setSelectedBatch(null)}
           busy={busy}
         />
