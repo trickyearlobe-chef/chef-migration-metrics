@@ -95,7 +95,7 @@ Per-batch `max_concurrent_vms` is enforced as: at most N items from this batch m
 ### Cancellation
 
 - `DELETE /kitchen/queue/:id` — cancels a queued item (transitions to `cancelled`)
-- `POST /kitchen/queue/:id/cancel` — cancels a running item (sends context cancellation to worker, VM destroyed via `--destroy=always` or explicit teardown, transitions to `cancelled`)
+- `POST /kitchen/queue/:id/cancel` — cancels a running item (sends context cancellation to worker, VM destroyed via the run's always-run `destroy` phase or explicit teardown, transitions to `cancelled`)
 - Batch cancel — marks all `queued` items for that batch as `cancelled`, sends cancel to running items
 - Shutdown — stop dequeuing, drain running items with configurable timeout, mark survivors `interrupted`
 
@@ -117,7 +117,7 @@ On application startup:
 On SIGTERM/SIGINT:
 1. Stop accepting new queue items (enqueue returns 503).
 2. Stop dequeuing — workers finish their current item but don't pick up new ones.
-3. Wait up to `timeout_minutes` (from TK config, default 30) for running items to complete. Kitchen runs include `--destroy=always` so the VM is cleaned up as part of normal execution.
+3. Wait up to `timeout_minutes` (from TK config, default 30) for running items to complete. Kitchen runs always end with a `destroy` phase so the VM is cleaned up as part of normal execution.
 4. If timeout expires, mark remaining running items as `interrupted`. The orphan sweep will clean up their VMs on the next run (or the immediate startup sweep on next boot).
 
 ### Backpressure

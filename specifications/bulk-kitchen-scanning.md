@@ -11,7 +11,7 @@ Connect the existing batch management UI/API to the scheduler/executor so that "
 - **Batch data model** — `kitchen_batches` table with lifecycle (`draft → running → completed/cancelled`), filters (cookbook names, platforms, previous status, exclusions), limits (`max_count`, `max_concurrent_vms`), and dry-run flag.
 - **Batch API** — full CRUD, run, cancel endpoints. Run handler validates state and computes estimate but does not invoke the scheduler.
 - **Scheduler** — `RunAll(ctx, plan, config, tkConfig, progressCallback)` runs instances in parallel with semaphore-based concurrency. `RunOne` for single-instance. Both persist results via `UpsertGitKitchenResult`.
-- **Executor** — `RunInstance` copies repo to temp dir, generates `.kitchen.local.yml` overlay, resolves credentials, runs `kitchen test --destroy=always`, captures output.
+- **Executor** — `RunInstance` copies repo to temp dir, generates `.kitchen.local.yml` overlay, resolves credentials, runs the kitchen phases `converge → verify → destroy` (not `kitchen test`, whose instance-less initial destroy trips a remote `pre_destroy` hook — see `test-kitchen-drivers-overlay-generation.md`), captures output. `destroy` always runs for teardown.
 - **Planner** — `PlanRepo(analysis, platformMap)` expands suites × platforms into `PlannedInstance` list with status classification (mapped/unmapped/skipped/excluded).
 - **Batch resolver** — `batch.Resolver.ResolveBatch(filters, maxCount)` expands filters into matching cookbooks with per-platform VM estimates.
 - **Frontend** — batch list, create/edit form, detail view with estimate, progress bar component, run/cancel/delete actions.
@@ -98,7 +98,7 @@ The router keeps a `map[string]context.CancelFunc` for running batches (protecte
 
 1. Look up the cancel func for the batch ID.
 2. Call it — this cancels the scheduler's context.
-3. Scheduler stops spawning new workers; in-flight workers finish their current `kitchen test` invocation.
+3. Scheduler stops spawning new workers; in-flight workers finish their current kitchen run.
 4. The background goroutine detects context cancellation and transitions batch to `cancelled`.
 
 ### Dry-run
@@ -109,7 +109,7 @@ Dry-run batches resolve and show the estimate but do not execute. This already w
 
 Concurrency is managed **globally**, not per batch. A batch is a selection mechanism (which cookbooks/suites land on the shared queue); load is a property of the queue's worker pool. The per-batch `max_concurrent_vms` field is being removed from the data model and UI — it was never wired and is a misleading dead knob.
 
-- Global concurrency is `TestKitchenConfig.MaxConcurrentVMs` (via `EffectiveMaxConcurrentVMs()`), which sizes the `kitchenqueue.Manager` worker pool. Each worker runs one `kitchen test` (one VM) at a time, so worker count = max simultaneous VMs.
+- Global concurrency is `TestKitchenConfig.MaxConcurrentVMs` (via `EffectiveMaxConcurrentVMs()`), which sizes the `kitchenqueue.Manager` worker pool. Each worker runs one kitchen run (one VM) at a time, so worker count = max simultaneous VMs.
 - Changing it is **dynamic**: `SetWorkerCount` is called on live config change — no restart.
 - Default must be conservative and consistent across code and docs (the historical inconsistency — comment "10", code 4 — is resolved to a single source of truth).
 - Only one non-dry-run batch may be `running` at a time. Attempting to run a second returns `409 Conflict`.
@@ -124,7 +124,7 @@ Concurrency is managed **globally**, not per batch. A batch is a selection mecha
 
 ## Hypervisor-side orphan sweep
 
-Kitchen VMs occasionally leak when `kitchen test --destroy=always` fails mid-run (host crash, network timeout, process kill). The DB-based orphan tracker only catches VMs it knows about. A hypervisor-side sweep catches everything.
+Kitchen VMs occasionally leak when a run fails mid-phase before `destroy` completes (host crash, network timeout, process kill). The DB-based orphan tracker only catches VMs it knows about. A hypervisor-side sweep catches everything.
 
 ### Scoping (triple safety)
 
