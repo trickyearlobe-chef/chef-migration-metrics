@@ -68,6 +68,37 @@ describe("AdminServerPage", () => {
     expect(screen.queryByText("Key Path")).not.toBeInTheDocument();
   });
 
+  it("CA Path field label states it enables mutual TLS", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...mockServerConfig,
+      tls: { ...mockServerConfig.tls, mode: "static", cert_path: "/c", key_path: "/k", ca_path: "" },
+    } as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByText(/enables mutual TLS/i)).toBeInTheDocument();
+  });
+
+  it("warns about mTLS lockout only when CA Path is set", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...mockServerConfig,
+      tls: { ...mockServerConfig.tls, mode: "static", cert_path: "/c", key_path: "/k", ca_path: "" },
+    } as never);
+    const { unmount } = render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.queryByText(/enforces mutual TLS/i)).not.toBeInTheDocument();
+    unmount();
+
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...mockServerConfig,
+      tls: { ...mockServerConfig.tls, mode: "static", cert_path: "/c", key_path: "/k", ca_path: "/etc/ssl/client-ca.crt" },
+    } as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByText(/enforces mutual TLS/i)).toBeInTheDocument();
+    expect(screen.getByText(/locks everyone out/i)).toBeInTheDocument();
+    expect(screen.getByText(/ERR_BAD_SSL_CLIENT_AUTH_CERT/)).toBeInTheDocument();
+  });
+
   it("save button is disabled when no changes", async () => {
     render(<AdminServerPage />);
     await waitFor(() => screen.getByText("Server & TLS"));
