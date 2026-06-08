@@ -11,7 +11,7 @@ require (
 	github.com/lib/pq v1.12.1
 	github.com/russellhaering/goxmldsig v1.6.0
 	github.com/vmware/govmomi v0.53.1
-	golang.org/x/crypto v0.49.0
+	golang.org/x/crypto v0.52.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
