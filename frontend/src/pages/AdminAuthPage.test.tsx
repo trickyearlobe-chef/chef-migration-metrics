@@ -193,4 +193,51 @@ describe("AdminAuthPage", () => {
     );
     vi.unstubAllGlobals();
   });
+
+  it("shows Sign AuthnRequests checkbox for a SAML provider", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+      ).toBeInTheDocument(),
+    );
+    // Defaults to unchecked when sign_requests is absent.
+    expect(
+      screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    ).not.toBeChecked();
+  });
+
+  it("does not show SAML option checkboxes for a local provider", async () => {
+    render(<AdminAuthPage />);
+    await waitFor(() => screen.getByText("Authentication"));
+    expect(
+      screen.queryByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reflects sign_requests=true as checked", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue({
+      ...mockSAMLAuthConfig,
+      providers: [{ type: "saml", sign_requests: true }],
+    } as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+      ).toBeChecked(),
+    );
+  });
+
+  it("toggling Sign AuthnRequests enables Save", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }));
+    expect(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
 });

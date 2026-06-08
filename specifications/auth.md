@@ -304,3 +304,10 @@ auth:
       clock_skew_tolerance: "5m"
       metadata_refresh_interval: "24h"
 ```
+
+`sign_requests` and `allow_idp_initiated` are editable as checkboxes on the admin
+auth page (per SAML provider). When `sign_requests` is enabled, outgoing
+AuthnRequests are signed with the SP key (RSA-SHA256) and the SP metadata
+advertises `AuthnRequestsSigned="true"`; the IdP validates the signature against
+the SP signing certificate published in that metadata. Both settings are
+restart-required (the provider is constructed at startup).
