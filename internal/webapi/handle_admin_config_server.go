@@ -184,7 +184,40 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// --- Persist all three sub-keys then reload ---
+	// --- Listen address / port validation ---
+
+	if input.Port != 0 && (input.Port < 1 || input.Port > 65535) {
+		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+			fmt.Sprintf("server.port: %d is not a valid port number (1-65535).", input.Port))
+		return
+	}
+
+	// Test-bind the listen target as a preflight when a concrete port is given
+	// that differs from the running listener. A zero port means "unchanged /
+	// use default" and is skipped. The running process already holds the
+	// current address/port, so test-binding the unchanged value would always
+	// fail — hence the change check. This catches an unbindable address/port
+	// before it is persisted and forces the degraded fallback on the next
+	// restart (encrypted-config-store.md).
+	if input.Port != 0 {
+		live := r.liveConfig()
+		changed := live == nil ||
+			input.Port != live.Server.Port || input.ListenAddress != live.Server.ListenAddress
+		if changed {
+			if err := apptls.TestBind(input.ListenAddress, input.Port); err != nil {
+				addr := input.ListenAddress
+				if addr == "" {
+					addr = "0.0.0.0"
+				}
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("server: cannot bind %s:%d (%v) — choose a bindable address and port; the server cannot start on a port it cannot bind.",
+						addr, input.Port, err))
+				return
+			}
+		}
+	}
+
+	// --- Persist all listen/TLS/WebSocket/shutdown sub-keys then reload ---
 
 	sections, err := configstore.ConfigToSections(&config.Config{Server: input})
 	if err != nil {
@@ -194,7 +227,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	ctx := req.Context()
-	for _, key := range []string{configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown} {
+	for _, key := range []string{configstore.KeyServerListen, configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown} {
 		if err := r.configStore.Set(ctx, key, sections[key], false, "admin"); err != nil {
 			r.logf("ERROR", "admin/config/server: store %s: %v", key, err)
 			WriteInternalError(w, "Failed to store server config.")

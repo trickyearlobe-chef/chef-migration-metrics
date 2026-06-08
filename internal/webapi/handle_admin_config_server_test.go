@@ -10,9 +10,11 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -365,6 +367,103 @@ func TestAdminConfigServer_PUT_422_PongNotGreaterThanPing(t *testing.T) {
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
 	body := `{"tls":{"mode":"off"},"websocket":{"ping_interval_seconds":30,"pong_timeout_seconds":30}}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+// freeTestPort returns a currently-free loopback TCP port.
+func freeTestPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("freeTestPort: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// GET returns the DB-managed listen_address and port so the UI can edit them.
+func TestAdminConfigServer_GET_ReturnsListen(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.ListenAddress = "127.0.0.1"
+	cfg.Server.Port = 9443
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	r := newTestRouterForAdminConfig(cfg, nil, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/server", nil)
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got map[string]any
+	decodeBody(t, w, &got)
+	if got["listen_address"] != "127.0.0.1" {
+		t.Errorf("listen_address = %v, want 127.0.0.1", got["listen_address"])
+	}
+	if got["port"] != float64(9443) {
+		t.Errorf("port = %v, want 9443", got["port"])
+	}
+}
+
+// A valid, bindable, changed listen target is persisted as the server.listen
+// section and reported restart-required.
+func TestAdminConfigServer_PUT_PersistsListen(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	port := freeTestPort(t)
+	body := fmt.Sprintf(`{"listen_address":"127.0.0.1","port":%d,"tls":{"mode":"off"}}`, port)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+
+	stored, err := store.Get(context.Background(), configstore.KeyServerListen)
+	if err != nil {
+		t.Fatalf("store.Get %s: %v", configstore.KeyServerListen, err)
+	}
+	var section configstore.ServerListenSection
+	if err := json.Unmarshal(stored, &section); err != nil {
+		t.Fatalf("unmarshal server.listen: %v", err)
+	}
+	if section.ListenAddress != "127.0.0.1" || section.Port != port {
+		t.Errorf("stored server.listen = %+v, want {127.0.0.1 %d}", section, port)
+	}
+}
+
+// A port outside the valid range is rejected.
+func TestAdminConfigServer_PUT_422_BadPort(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"port":70000,"tls":{"mode":"off"}}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+// A changed port that cannot be bound (already in use) is rejected by the
+// save-time test-bind preflight, so it can never brick the next restart.
+func TestAdminConfigServer_PUT_422_UnbindablePort(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occupy port: %v", err)
+	}
+	defer occupied.Close()
+	badPort := occupied.Addr().(*net.TCPAddr).Port
+
+	body := fmt.Sprintf(`{"listen_address":"127.0.0.1","port":%d,"tls":{"mode":"off"}}`, badPort)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
 	r.ServeHTTP(w, req)
