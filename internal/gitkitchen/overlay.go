@@ -177,12 +177,12 @@ func generateOverlay(tkConfig config.TestKitchenConfig, params OverlayParams) (s
 	// Lifecycle hooks share a single block: opt-in customer setup scripts in
 	// pre_converge (a correctness requirement — must fail the run) and the
 	// opt-in, best-effort IP-release command in pre_destroy (must never fail).
+	_, osFamily, _ := analysis.NormalisePlatformName(platformName)
 	var releaseCmd string
 	if imgOK && img.ReleaseIPOnDestroy {
-		_, osFamily, _ := analysis.NormalisePlatformName(platformName)
 		releaseCmd = ipReleaseCommand(osFamily)
 	}
-	writeLifecycle(&buf, params.SetupScripts, params.ExistingPreDestroy, releaseCmd)
+	writeLifecycle(&buf, params.SetupScripts, params.ExistingPreDestroy, releaseCmd, osFamily)
 
 	if !hasContent {
 		return "", nil
@@ -211,6 +211,21 @@ func ipReleaseCommand(osFamily string) string {
 	return linuxIPReleaseCommand
 }
 
+// setupHookCommand returns the remote command for a setup-script body. TK runs
+// lifecycle hooks as the (non-root) transport user — unlike the sudo-by-default
+// provisioner — so a Linux script that creates users/groups is otherwise denied
+// (groupadd: cannot lock /etc/group). Linux bodies therefore run under a sudo
+// heredoc; passwordless sudo is already required for the chef converge. The body
+// is kept verbatim (and readable) inside the heredoc, and a non-zero exit still
+// fails the run — no exit-0 swallowing (unlike the best-effort IP-release hook).
+// Windows runs over WinRM (typically as Administrator) and is returned unchanged.
+func setupHookCommand(body, osFamily string) string {
+	if osFamily == "windows" {
+		return body
+	}
+	return "sudo -E bash <<'CMM_SETUP_EOF'\n" + body + "\nCMM_SETUP_EOF"
+}
+
 // writeLifecycle emits a single lifecycle: block covering the phases CMM
 // owns. Setup scripts (opt-in, repo-provided) are inlined into pre_converge as
 // remote: hooks and carry no skippable flag — the cookbook depends on them, so
@@ -219,10 +234,10 @@ func ipReleaseCommand(osFamily string) string {
 // cookbook's own pre_destroy commands are carried forward, run first). Emits
 // nothing when neither phase has content. Phases are written in lifecycle
 // order: pre_converge before pre_destroy.
-func writeLifecycle(buf *bytes.Buffer, setupScripts []SetupScript, existingPreDestroy []any, releaseCmd string) {
+func writeLifecycle(buf *bytes.Buffer, setupScripts []SetupScript, existingPreDestroy []any, releaseCmd, osFamily string) {
 	preConverge := make([]any, 0, len(setupScripts))
 	for _, s := range setupScripts {
-		preConverge = append(preConverge, map[string]any{"remote": s.Body})
+		preConverge = append(preConverge, map[string]any{"remote": setupHookCommand(s.Body, osFamily)})
 	}
 
 	preDestroy := make([]any, 0, len(existingPreDestroy)+1)

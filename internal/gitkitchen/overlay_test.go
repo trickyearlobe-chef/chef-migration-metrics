@@ -478,12 +478,49 @@ func TestGenerateOverlay_SetupScripts_LinuxInline(t *testing.T) {
 		t.Fatalf("expected one pre_converge hook, got %d:\n%s", len(preConverge), overlay)
 	}
 	hook, ok := preConverge[0].(map[string]any)
-	if !ok || hook["remote"] != body {
-		t.Errorf("expected script body inlined verbatim into remote:, got %#v\n%s", preConverge[0], overlay)
+	remote, _ := hook["remote"].(string)
+	if !ok {
+		t.Fatalf("expected a remote hook map, got %#v\n%s", preConverge[0], overlay)
+	}
+	// Linux setup scripts must run as root — TK runs lifecycle hooks as the
+	// non-root transport user (unlike the sudo-by-default provisioner), so a
+	// raw groupadd/useradd is denied. The body is wrapped in a sudo heredoc but
+	// kept readable (verbatim inside the heredoc).
+	if !strings.Contains(remote, "sudo") {
+		t.Errorf("expected linux setup hook to run under sudo, got %q\n%s", remote, overlay)
+	}
+	if !strings.Contains(remote, body) {
+		t.Errorf("expected script body preserved inside the sudo wrapper, got %q\n%s", remote, overlay)
 	}
 	// Setup hooks must fail the run — never skippable, no exit-0 swallowing.
 	if strings.Contains(overlay, "skippable") {
 		t.Errorf("setup hook must not be skippable, got:\n%s", overlay)
+	}
+	if strings.Contains(remote, "exit 0") {
+		t.Errorf("setup hook must not swallow failures with exit 0, got %q", remote)
+	}
+}
+
+func TestGenerateOverlay_SetupScripts_WindowsNotSudoWrapped(t *testing.T) {
+	tkConfig := ipReleaseConfig("windows-2022", "win2022", false)
+	body := "New-LocalUser svc\n"
+
+	overlay, err := generateOverlay(tkConfig, OverlayParams{
+		PlatformName:      "windows-2022",
+		TargetChefVersion: "18.4.2",
+		SetupScripts:      []SetupScript{{Path: "test/setup/users.ps1", Body: body}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	preConverge := parseLifecyclePhase(t, overlay, "pre_converge")
+	if len(preConverge) != 1 {
+		t.Fatalf("expected one pre_converge hook, got %d:\n%s", len(preConverge), overlay)
+	}
+	// Windows runs over WinRM (typically as Administrator) — no sudo, body verbatim.
+	if got := preConverge[0].(map[string]any)["remote"]; got != body {
+		t.Errorf("expected windows body verbatim (no sudo), want %q got %q\n%s", body, got, overlay)
 	}
 }
 

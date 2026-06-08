@@ -14,16 +14,30 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 )
 
+// mockResult is the result for a single Run call when per-call results are set.
+type mockResult struct {
+	stdout   string
+	stderr   string
+	exitCode int
+	err      error
+}
+
 type mockExecutor struct {
 	stdout   string
 	stderr   string
 	exitCode int
 	err      error
 
+	// results, when non-empty, supplies a distinct outcome per call (call i
+	// uses results[i]); otherwise every call returns the single stdout/exitCode/
+	// err above. Used to model multi-phase runs (converge/verify/destroy).
+	results []mockResult
+
 	// Captured invocation
 	dir      string
 	extraEnv []string
-	args     []string
+	args     []string   // args of the LAST call (back-compat)
+	calls    [][]string // args of every call, in order
 
 	// Files captured during Run (before workspace cleanup)
 	capturedFiles map[string]string
@@ -33,6 +47,8 @@ func (m *mockExecutor) Run(_ context.Context, dir string, extraEnv []string, arg
 	m.dir = dir
 	m.extraEnv = extraEnv
 	m.args = args
+	callIdx := len(m.calls)
+	m.calls = append(m.calls, args)
 	// Capture files from workspace before returning (workspace is cleaned after RunInstance)
 	if m.capturedFiles == nil {
 		m.capturedFiles = make(map[string]string)
@@ -43,7 +59,22 @@ func (m *mockExecutor) Run(_ context.Context, dir string, extraEnv []string, arg
 			m.capturedFiles[name] = string(data)
 		}
 	}
+	if callIdx < len(m.results) {
+		r := m.results[callIdx]
+		return r.stdout, r.stderr, r.exitCode, r.err
+	}
 	return m.stdout, m.stderr, m.exitCode, m.err
+}
+
+// phaseSeq returns the first arg (the kitchen subcommand) of each recorded call.
+func (m *mockExecutor) phaseSeq() []string {
+	seq := make([]string, 0, len(m.calls))
+	for _, c := range m.calls {
+		if len(c) > 0 {
+			seq = append(seq, c[0])
+		}
+	}
+	return seq
 }
 
 type mockCredResolver struct {
@@ -139,6 +170,95 @@ func TestRunInstance_KitchenFailure(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "ERROR: Chef run failed") {
 		t.Error("expected stderr in output")
+	}
+}
+
+// kitchen test always begins with an instance-less cleanup destroy, which the
+// remote pre_destroy IP-release hook rejects ("cannot use remote lifecycle
+// hooks during phases where the instance is not available"), aborting before
+// create. CMM must instead run converge -> verify -> destroy, with no leading
+// destroy, so the pre_destroy hook only fires on a destroy with a live instance.
+func TestRunInstance_PhaseSequence_NoInitialDestroy(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	exec := &mockExecutor{exitCode: 0}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	got := exec.phaseSeq()
+	want := []string{"converge", "verify", "destroy"}
+	if len(got) != len(want) {
+		t.Fatalf("expected phases %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected phases %v, got %v", want, got)
+		}
+	}
+	for _, c := range exec.calls {
+		if len(c) > 0 && c[0] == "test" {
+			t.Errorf("must not use `kitchen test` (it does an instance-less initial destroy), got call %v", c)
+		}
+		// Each phase targets the instance and disables colour.
+		if len(c) < 3 || c[1] != "default-ubuntu-2204" || c[len(c)-1] != "--no-color" {
+			t.Errorf("unexpected phase invocation: %v", c)
+		}
+	}
+}
+
+func TestRunInstance_ConvergeFailure_SkipsVerify_StillDestroys(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	exec := &mockExecutor{results: []mockResult{
+		{stderr: "ERROR: Chef run failed\n", exitCode: 1}, // converge fails
+		{exitCode: 0}, // destroy
+	}}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	result := RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	if seq := exec.phaseSeq(); len(seq) != 2 || seq[0] != "converge" || seq[1] != "destroy" {
+		t.Fatalf("expected converge then destroy (verify skipped), got %v", seq)
+	}
+	if result.Passed == nil || *result.Passed {
+		t.Errorf("expected Passed=false on converge failure, got %v", result.Passed)
+	}
+	if !strings.Contains(result.Output, "ERROR: Chef run failed") {
+		t.Error("expected converge failure output to be captured")
+	}
+}
+
+func TestRunInstance_VerifyFailure_StillDestroys(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	exec := &mockExecutor{results: []mockResult{
+		{exitCode: 0}, // converge
+		{stderr: "verify failed\n", exitCode: 1}, // verify fails
+		{exitCode: 0}, // destroy
+	}}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	result := RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	if seq := exec.phaseSeq(); len(seq) != 3 || seq[2] != "destroy" {
+		t.Fatalf("expected converge, verify, destroy, got %v", seq)
+	}
+	if result.Passed == nil || *result.Passed {
+		t.Errorf("expected Passed=false on verify failure, got %v", result.Passed)
+	}
+}
+
+func TestRunInstance_DestroyFailure_FailsRun(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	exec := &mockExecutor{results: []mockResult{
+		{exitCode: 0}, // converge
+		{exitCode: 0}, // verify
+		{stderr: "destroy failed\n", exitCode: 1}, // destroy fails (orphan risk)
+	}}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	result := RunInstance(context.Background(), baseParams(repoDir), baseTKConfig(), exec, cred)
+
+	if result.Passed == nil || *result.Passed {
+		t.Errorf("expected Passed=false when teardown fails, got %v", result.Passed)
 	}
 }
 

@@ -131,35 +131,79 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 	// Build env var slice from credentials
 	extraEnv := buildEnvSlice(credEnvVars)
 
-	// Run kitchen test
-	stdout, stderr, exitCode, execErr := executor.Run(ctx, workDir, extraEnv,
-		"test", params.InstanceName, "--destroy=always", "--no-color")
+	// Run the kitchen phases explicitly rather than `kitchen test`. `kitchen
+	// test` always begins with an instance-less cleanup destroy, which a remote
+	// pre_destroy IP-release hook rejects ("cannot use remote lifecycle hooks
+	// during phases where the instance is not available"), aborting before
+	// create so the VM never starts. We run converge (auto-creates + pre_converge
+	// hooks) -> verify -> destroy, omitting the leading destroy; the pre_destroy
+	// hook then only fires on a teardown with a live instance.
+	var output strings.Builder
+	fmt.Fprintf(&output, "[workdir: %s] [started: %s]\n", workDir, start.UTC().Format(time.RFC3339))
 
-	duration := int(time.Since(start).Seconds())
-	output := fmt.Sprintf("[workdir: %s] [started: %s]\n", workDir, start.UTC().Format(time.RFC3339)) + combineOutput(stdout, stderr)
+	result := RunInstanceResult{DriverUsed: tkConfig.Driver}
 
-	result := RunInstanceResult{
-		Output:          output,
-		DurationSeconds: intPtr(duration),
-		DriverUsed:      tkConfig.Driver,
+	finish := func() RunInstanceResult {
+		result.Output = output.String()
+		result.DurationSeconds = intPtr(int(time.Since(start).Seconds()))
+		return result
 	}
 
-	if execErr != nil {
+	// runPhase runs one kitchen phase, appends its output, and returns the exit
+	// code and any executor error.
+	runPhase := func(phase string) (int, error) {
+		stdout, stderr, exitCode, execErr := executor.Run(ctx, workDir, extraEnv,
+			phase, params.InstanceName, "--no-color")
+		fmt.Fprintf(&output, "\n$$$$$$ kitchen %s\n", phase)
+		output.WriteString(combineOutput(stdout, stderr))
+		return exitCode, execErr
+	}
+
+	// classifyExecErr records an executor (process/context) error. A deadline is
+	// a timeout; a timeout with no converge activity is a DHCP/network timeout.
+	// Leaves Passed nil — the run state is unknown.
+	classifyExecErr := func(execErr error) {
 		result.ErrorMessage = fmt.Sprintf("gitkitchen: executor error: %v", execErr)
 		if errors.Is(execErr, context.DeadlineExceeded) {
 			result.TimedOut = true
-			if !hasConvergeActivity(output) {
+			if !hasConvergeActivity(output.String()) {
 				result.NetworkTimeout = true
 				result.ErrorMessage = "probable DHCP/network timeout"
 			}
 		}
-		// Passed remains nil — unknown state
-	} else {
-		passed := exitCode == 0
-		result.Passed = boolPtr(passed)
 	}
 
-	return result
+	convergeCode, execErr := runPhase("converge")
+	if execErr != nil {
+		// Context/process error before an instance is usable — stop here. Any
+		// leaked VM is reaped by the orphan sweep.
+		classifyExecErr(execErr)
+		return finish()
+	}
+
+	verifyOK := false
+	if convergeCode == 0 {
+		verifyCode, verifyErr := runPhase("verify")
+		if verifyErr != nil {
+			classifyExecErr(verifyErr)
+			return finish()
+		}
+		verifyOK = verifyCode == 0
+	}
+	// else: converge failed — skip verify, but still tear down (the instance was
+	// created before converge failed).
+
+	// Always tear down. The instance exists, so the pre_destroy IP-release hook
+	// runs validly here. A destroy failure leaks a VM, so it fails the run.
+	destroyCode, destroyErr := runPhase("destroy")
+	if destroyErr != nil {
+		classifyExecErr(destroyErr)
+		return finish()
+	}
+
+	passed := convergeCode == 0 && verifyOK && destroyCode == 0
+	result.Passed = boolPtr(passed)
+	return finish()
 }
 
 // anyImageReleasesIP reports whether any configured image opts in to the
