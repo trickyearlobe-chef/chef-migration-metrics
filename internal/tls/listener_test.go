@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -544,6 +545,33 @@ func TestNewListener_WithCAPath_mTLS(t *testing.T) {
 
 	if !l.IsMTLSEnabled() {
 		t.Error("IsMTLSEnabled() = false, want true")
+	}
+}
+
+// A valid cert/key with a ca_path that points at a missing/moved file must make
+// NewListener return an error, so the caller fails open to plain HTTP
+// (tls.md § 2.4). This is the listener half of the mTLS lockout escape hatch:
+// moving the CA bundle away on the host recovers a deployment bricked by an
+// mTLS (RequireAndVerifyClientCert) misconfiguration.
+func TestNewListener_MissingCAPath_Errors(t *testing.T) {
+	dir := t.TempDir()
+	tc := generateTestCert(t, dir, "mtls-missing-ca",
+		time.Now().Add(-1*time.Hour),
+		time.Now().Add(24*time.Hour),
+		"localhost",
+	)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	_, err := NewListener(handler, ListenerConfig{
+		CertPath: tc.CertPath,
+		KeyPath:  tc.KeyPath,
+		CAPath:   filepath.Join(dir, "nonexistent-ca.pem"),
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error when ca_path is missing, got nil (caller could not fail open)")
 	}
 }
 
