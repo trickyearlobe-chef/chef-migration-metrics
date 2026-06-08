@@ -11,6 +11,7 @@ import type {
   KitchenBatchDetail,
   BatchProgress,
   GitRepoListItem,
+  KitchenBatchInstance,
 } from "../types";
 
 vi.mock("../api");
@@ -124,6 +125,46 @@ const mockProgress: BatchProgress = {
   total: 7,
 };
 
+const mockInstances: KitchenBatchInstance[] = [
+  {
+    id: "inst-1",
+    batch_id: "batch-2",
+    git_repo_name: "nginx",
+    git_repo_url: "https://example.com/nginx.git",
+    instance_name: "default-ubuntu-2204",
+    platform_name: "ubuntu-22.04",
+    suite_name: "default",
+    target_chef_version: "18",
+    status: "passed",
+    created_at: "2025-01-02T00:05:00Z",
+  },
+  {
+    id: "inst-2",
+    batch_id: "batch-2",
+    git_repo_name: "nginx",
+    git_repo_url: "https://example.com/nginx.git",
+    instance_name: "default-centos-8",
+    platform_name: "centos-8",
+    suite_name: "default",
+    target_chef_version: "18",
+    status: "failed",
+    error_message: "converge failed",
+    created_at: "2025-01-02T00:05:00Z",
+  },
+  {
+    id: "inst-3",
+    batch_id: "batch-2",
+    git_repo_name: "apache",
+    git_repo_url: "https://example.com/apache.git",
+    instance_name: "default-ubuntu-2204",
+    platform_name: "ubuntu-22.04",
+    suite_name: "default",
+    target_chef_version: "18",
+    status: "running",
+    created_at: "2025-01-02T00:05:00Z",
+  },
+];
+
 const mockExcludedRepos: GitRepoListItem[] = [
   {
     id: "repo-1",
@@ -139,6 +180,7 @@ function setupDefaultMocks() {
   vi.mocked(api.listKitchenBatches).mockResolvedValue(mockBatches);
   vi.mocked(api.listExcludedGitRepos).mockResolvedValue(mockExcludedRepos);
   vi.mocked(api.fetchBatchProgress).mockResolvedValue(mockProgress);
+  vi.mocked(api.fetchBatchInstances).mockResolvedValue([]);
   vi.mocked(api.createKitchenBatch).mockResolvedValue(mockDraftBatch);
   vi.mocked(api.getKitchenBatch).mockResolvedValue(mockDraftDetail);
   vi.mocked(api.runKitchenBatch).mockResolvedValue(mockRunningDetail);
@@ -469,6 +511,65 @@ describe("KitchenBatchesPage", () => {
     // Default config mock has enabled: false
     expect(screen.getByText("Create & Run")).toBeDisabled();
     expect(screen.getByText("Save")).toBeEnabled();
+  });
+
+  // 12d. Detail view lists per-instance results grouped by cookbook
+  it("detail view shows per-instance results grouped by cookbook, expandable", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
+    vi.mocked(api.fetchBatchInstances).mockResolvedValue(mockInstances);
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    const viewButtons = screen.getAllByText("View");
+    await user.click(viewButtons[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cancel Batch")).toBeInTheDocument();
+    });
+
+    // Group headers (cookbooks) render with instance counts
+    expect(await screen.findByText("Instance Results (3)")).toBeInTheDocument();
+    expect(screen.getByText("apache")).toBeInTheDocument();
+    expect(screen.getByText("nginx")).toBeInTheDocument();
+
+    // Collapsed by default — instance rows not yet shown
+    expect(screen.queryByText("default-centos-8")).not.toBeInTheDocument();
+
+    // Expand the nginx group → its instance rows appear
+    await user.click(screen.getByText("nginx"));
+    expect(await screen.findByText("default-centos-8")).toBeInTheDocument();
+    expect(screen.getByText("converge failed")).toBeInTheDocument();
+    // Status badges for the nginx instances
+    expect(screen.getByText("passed")).toBeInTheDocument();
+    expect(screen.getByText("failed")).toBeInTheDocument();
+
+    expect(api.fetchBatchInstances).toHaveBeenCalledWith("batch-2");
+  });
+
+  // 12e. Instance table refreshes on the poll tick while running
+  it("refreshes instances on the poll tick while running", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(api.getKitchenBatch).mockResolvedValue(mockRunningDetail);
+    vi.mocked(api.fetchBatchInstances).mockResolvedValue(mockInstances);
+    render(<KitchenBatchesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Running Batch")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getAllByText("View")[1]);
+    await waitFor(() => {
+      expect(screen.getByText("Instance Results (3)")).toBeInTheDocument();
+    });
+
+    const callsAfterMount = vi.mocked(api.fetchBatchInstances).mock.calls.length;
+    // Advance past the 5s poll interval
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(
+      vi.mocked(api.fetchBatchInstances).mock.calls.length,
+    ).toBeGreaterThan(callsAfterMount);
   });
 
   // 13. ExcludedCookbooksSection renders when expanded

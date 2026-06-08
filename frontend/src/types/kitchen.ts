@@ -194,6 +194,22 @@ export interface GitRepoExcludeRequest {
   excluded_by: string;
 }
 
+export interface KitchenBatchInstance {
+  id: string;
+  batch_id: string;
+  git_repo_name: string;
+  git_repo_url: string;
+  instance_name: string;
+  platform_name: string;
+  suite_name: string;
+  target_chef_version: string;
+  status: string;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
 export interface BatchProgress {
   passed: number;
   failed: number;

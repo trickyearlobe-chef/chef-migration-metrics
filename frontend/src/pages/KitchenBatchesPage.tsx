@@ -13,6 +13,7 @@ import {
   excludeGitRepo,
   clearGitRepoExclusion,
   fetchBatchProgress,
+  fetchBatchInstances,
   fetchTestKitchenConfig,
 } from "../api";
 import type {
@@ -23,6 +24,7 @@ import type {
   ResolvedCookbook,
   GitRepoListItem,
   BatchProgress,
+  KitchenBatchInstance,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 
@@ -39,6 +41,28 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "bg-red-100 text-red-700",
   failed: "bg-red-200 text-red-800",
 };
+
+const INSTANCE_STATUS_COLORS: Record<string, string> = {
+  pending: "bg-gray-100 text-gray-600",
+  running: "bg-yellow-100 text-yellow-800",
+  passed: "bg-green-100 text-green-700",
+  failed: "bg-red-200 text-red-800",
+  errored: "bg-orange-100 text-orange-700",
+  timed_out: "bg-yellow-100 text-yellow-800",
+  network_timeout: "bg-violet-100 text-violet-700",
+  cancelled: "bg-red-100 text-red-700",
+};
+
+function InstanceStatusBadge({ status }: { status: string }) {
+  const cls = INSTANCE_STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {status}
+    </span>
+  );
+}
 
 function BatchProgressBar({ progress }: { progress: BatchProgress }) {
   const total = progress.total || 1;
@@ -402,6 +426,127 @@ function BatchForm({
 }
 
 // ---------------------------------------------------------------------------
+// Per-instance results table
+// ---------------------------------------------------------------------------
+
+function groupInstancesByRepo(
+  instances: KitchenBatchInstance[],
+): [string, KitchenBatchInstance[]][] {
+  const groups = new Map<string, KitchenBatchInstance[]>();
+  for (const inst of instances) {
+    const arr = groups.get(inst.git_repo_name);
+    if (arr) arr.push(inst);
+    else groups.set(inst.git_repo_name, [inst]);
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function summariseStatuses(instances: KitchenBatchInstance[]): string {
+  const counts = new Map<string, number>();
+  for (const inst of instances) {
+    counts.set(inst.status, (counts.get(inst.status) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([status, n]) => `${n} ${status}`)
+    .join(", ");
+}
+
+function BatchInstancesTable({
+  instances,
+}: {
+  instances: KitchenBatchInstance[];
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const groups = groupInstancesByRepo(instances);
+
+  function toggle(repo: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(repo)) next.delete(repo);
+      else next.add(repo);
+      return next;
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 px-4 py-3">
+        <h4 className="text-sm font-semibold text-gray-700">
+          Instance Results ({instances.length})
+        </h4>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {groups.map(([repo, rows]) => {
+          const isOpen = expanded.has(repo);
+          return (
+            <div key={repo}>
+              <button
+                className="flex w-full items-center justify-between px-4 py-2 text-left hover:bg-gray-50"
+                onClick={() => toggle(repo)}
+                aria-expanded={isOpen}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">
+                    {isOpen ? "▲" : "▼"}
+                  </span>
+                  <span className="font-medium text-gray-800">{repo}</span>
+                  <span className="text-xs text-gray-500">
+                    ({rows.length})
+                  </span>
+                </span>
+                <span className="text-xs text-gray-500">
+                  {summariseStatuses(rows)}
+                </span>
+              </button>
+
+              {isOpen && (
+                <div className="overflow-x-auto bg-gray-50/50 px-4 pb-3">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                        <th className="px-2 py-1">Instance</th>
+                        <th className="px-2 py-1">Suite</th>
+                        <th className="px-2 py-1">Platform</th>
+                        <th className="px-2 py-1">Status</th>
+                        <th className="px-2 py-1">Error</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {rows.map((inst) => (
+                        <tr key={inst.id} className="hover:bg-white">
+                          <td className="whitespace-nowrap px-2 py-1 font-medium text-gray-800">
+                            {inst.instance_name}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1 text-gray-600">
+                            {inst.suite_name}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1 text-gray-600">
+                            {inst.platform_name}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-1">
+                            <InstanceStatusBadge status={inst.status} />
+                          </td>
+                          <td
+                            className="max-w-xs truncate px-2 py-1 text-gray-500"
+                            title={inst.error_message || ""}
+                          >
+                            {inst.error_message || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Batch Detail View
 // ---------------------------------------------------------------------------
 
@@ -421,25 +566,29 @@ function BatchDetailView({
   busy: boolean;
 }) {
   const [progress, setProgress] = useState<BatchProgress | null>(null);
+  const [instances, setInstances] = useState<KitchenBatchInstance[]>([]);
 
   useEffect(() => {
-    if (
-      batch.status === "running" ||
-      batch.status === "preparing" ||
+    const active = batch.status === "running" || batch.status === "preparing";
+    const hasRun =
+      active ||
       batch.status === "completed" ||
       batch.status === "cancelled" ||
-      batch.status === "failed"
-    ) {
+      batch.status === "failed";
+    if (!hasRun) return;
+
+    const refresh = () => {
       fetchBatchProgress(batch.id)
         .then(setProgress)
         .catch(() => {});
-    }
-    if (batch.status === "running" || batch.status === "preparing") {
-      const interval = setInterval(() => {
-        fetchBatchProgress(batch.id)
-          .then(setProgress)
-          .catch(() => {});
-      }, 5000);
+      fetchBatchInstances(batch.id)
+        .then(setInstances)
+        .catch(() => {});
+    };
+    refresh();
+
+    if (active) {
+      const interval = setInterval(refresh, 5000);
       return () => clearInterval(interval);
     }
   }, [batch.id, batch.status]);
@@ -524,6 +673,9 @@ function BatchDetailView({
       {progress && progress.total > 0 && (
         <BatchProgressBar progress={progress} />
       )}
+
+      {/* Per-instance results */}
+      {instances.length > 0 && <BatchInstancesTable instances={instances} />}
 
       {/* Estimate summary */}
       {est && (
