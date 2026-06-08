@@ -303,6 +303,15 @@ export function AdminTestKitchenPage() {
     setConfig((prev) => ({ ...prev, ...patch }));
   }
 
+  // Keep raw lines (including blanks) while editing so multi-line entry isn't
+  // collapsed on each keystroke; empties are trimmed out at save time.
+  function updateSetupScripts(family: "linux" | "windows", text: string) {
+    setConfig((prev) => ({
+      ...prev,
+      setup_scripts: { ...prev.setup_scripts, [family]: text.split("\n") },
+    }));
+  }
+
   function handleDriverChange(driver: string) {
     updateConfig({ driver });
     if (driverSettings.length === 0 && DRIVER_SETTING_HINTS[driver]) {
@@ -432,11 +441,20 @@ export function AdminTestKitchenPage() {
       };
     });
 
+    // Trim and drop blank pattern lines that accumulate during editing.
+    const cleanPatterns = (patterns?: string[]) =>
+      (patterns ?? []).map((p) => p.trim()).filter(Boolean);
+    const setupScripts = {
+      linux: cleanPatterns(config.setup_scripts?.linux),
+      windows: cleanPatterns(config.setup_scripts?.windows),
+    };
+
     const payload: TestKitchenConfig = {
       ...config,
       driver_settings: kvToRecord(driverSettings),
       driver_secrets: kvToRecord(driverSecrets),
       images,
+      setup_scripts: setupScripts,
     };
 
     try {
@@ -695,6 +713,56 @@ export function AdminTestKitchenPage() {
                 })
               }
               disabled={saving}
+              className={INPUT_CLASS}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Section 1c: Setup Scripts (pre_converge) */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500">
+          Setup Scripts (pre-converge)
+        </h3>
+        <p className="mb-4 text-sm text-gray-500">
+          Glob patterns matched against repo file paths. Each matched script is
+          inlined and run on the guest <em>before converge</em> (e.g. user
+          creation), one pattern per line. Scoped per OS family — Linux scripts
+          run over SSH, Windows over WinRM. A failed setup script fails the run.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label
+              htmlFor="tk-setup-scripts-linux"
+              className="mb-1 block text-sm font-medium text-gray-700"
+            >
+              Linux patterns
+            </label>
+            <textarea
+              id="tk-setup-scripts-linux"
+              rows={3}
+              value={(config.setup_scripts?.linux ?? []).join("\n")}
+              onChange={(e) => updateSetupScripts("linux", e.target.value)}
+              disabled={saving}
+              placeholder="test/setup/*.sh"
+              className={INPUT_CLASS}
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="tk-setup-scripts-windows"
+              className="mb-1 block text-sm font-medium text-gray-700"
+            >
+              Windows patterns
+            </label>
+            <textarea
+              id="tk-setup-scripts-windows"
+              rows={3}
+              value={(config.setup_scripts?.windows ?? []).join("\n")}
+              onChange={(e) => updateSetupScripts("windows", e.target.value)}
+              disabled={saving}
+              placeholder="test/setup/*.ps1"
               className={INPUT_CLASS}
             />
           </div>

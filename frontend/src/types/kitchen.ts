@@ -30,6 +30,17 @@ export interface PlatformMapEntry {
   transport?: PlatformMapTransport | null;
 }
 
+/**
+ * Opt-in repo-provided setup scripts inlined into a remote: pre_converge
+ * lifecycle hook before converge (e.g. user creation). Patterns are glob
+ * patterns matched against repo file paths, scoped per OS family. These hooks
+ * MUST fail the run on a non-zero exit — the cookbook depends on them.
+ */
+export interface SetupScriptsConfig {
+  linux?: string[];
+  windows?: string[];
+}
+
 export interface TestKitchenConfig {
   enabled: boolean | null;
   driver: string;
@@ -44,6 +55,8 @@ export interface TestKitchenConfig {
   start_rate_window_minutes: number;
   /** Max VM starts per window (= usable DHCP pool size). 0 disables. */
   start_rate_max_per_window: number;
+  /** Opt-in setup scripts inlined into pre_converge, per OS family. */
+  setup_scripts?: SetupScriptsConfig | null;
 }
 
 export interface DiscoveredPlatformStatus {

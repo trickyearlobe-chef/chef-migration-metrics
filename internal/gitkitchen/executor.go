@@ -99,6 +99,7 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 		CookbookName:       params.GitRepoName,
 		SuiteName:          params.SuiteName,
 		ExistingPreDestroy: existingPreDestroy,
+		SetupScripts:       discoverSetupScripts(workDir, params.PlatformName, tkConfig),
 	})
 	if err != nil {
 		return RunInstanceResult{
@@ -198,6 +199,57 @@ func readExistingPreDestroy(workDir string) []any {
 		return nil
 	}
 	return entries
+}
+
+// discoverSetupScripts globs the OS-family setup-script patterns against the
+// workspace, reads each matched script body, and returns them sorted by
+// repo-relative path. The OS family is derived from the resolved platform
+// (linux scripts run over SSH, windows over WinRM). Returns nil when no
+// patterns are configured for the family or nothing matches. A script that
+// cannot be read is skipped — discovery never aborts overlay generation; the
+// hook's own non-zero exit is what fails a run.
+func discoverSetupScripts(workDir, platformName string, tkConfig config.TestKitchenConfig) []SetupScript {
+	if tkConfig.SetupScripts == nil {
+		return nil
+	}
+	_, osFamily, _ := analysis.NormalisePlatformName(platformName)
+	patterns := tkConfig.SetupScripts.Linux
+	if osFamily == "windows" {
+		patterns = tkConfig.SetupScripts.Windows
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var scripts []SetupScript
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(workDir, pattern))
+		if err != nil {
+			continue // malformed pattern — already surfaced by config validation
+		}
+		for _, abs := range matches {
+			rel, relErr := filepath.Rel(workDir, abs)
+			if relErr != nil {
+				rel = abs
+			}
+			if seen[rel] {
+				continue
+			}
+			info, statErr := os.Stat(abs)
+			if statErr != nil || info.IsDir() {
+				continue
+			}
+			body, readErr := os.ReadFile(abs)
+			if readErr != nil {
+				continue
+			}
+			seen[rel] = true
+			scripts = append(scripts, SetupScript{Path: rel, Body: string(body)})
+		}
+	}
+	sort.Slice(scripts, func(i, j int) bool { return scripts[i].Path < scripts[j].Path })
+	return scripts
 }
 
 // copyRepoToWorkspace creates a temporary directory and copies the repo contents into it.

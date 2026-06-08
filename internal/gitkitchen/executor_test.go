@@ -217,6 +217,135 @@ func TestRunInstance_IPReleaseHook_ComposesRepoPreDestroy(t *testing.T) {
 	}
 }
 
+// A cookbook ships hooks in several phases. CMM reserves pre_destroy only, so
+// every other phase must be absent from the overlay — TK's untouched .kitchen.yml
+// plus its array-replace merge then preserves them. Asserted with IP-release both
+// on and off so the reserved pre_destroy hook does not leak into other phases.
+func TestRunInstance_PreservesRepoLifecyclePhases(t *testing.T) {
+	kitchenYML := "lifecycle:\n" +
+		"  pre_create:\n    - remote: echo repo-pre-create\n" +
+		"  pre_converge:\n    - remote: echo repo-pre-converge\n" +
+		"  post_converge:\n    - remote: echo repo-post-converge\n" +
+		"  pre_destroy:\n    - remote: echo repo-pre-destroy\n"
+
+	for _, tc := range []struct {
+		name      string
+		releaseIP bool
+	}{
+		{"IPReleaseOff", false},
+		{"IPReleaseOn", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir := setupRepoDir(t)
+			if err := os.WriteFile(filepath.Join(repoDir, ".kitchen.yml"), []byte(kitchenYML), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			tkConfig := baseTKConfig()
+			tkConfig.Images[0].ReleaseIPOnDestroy = tc.releaseIP
+
+			exec := &mockExecutor{exitCode: 0}
+			cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+			RunInstance(context.Background(), baseParams(repoDir), tkConfig, exec, cred)
+
+			overlay := exec.capturedFiles[".kitchen.local.yml"]
+
+			// The overlay must never echo a repo-owned phase: it leaves them in the
+			// untouched .kitchen.yml for the merge to preserve.
+			for _, phase := range []string{"pre_create", "pre_converge", "post_converge"} {
+				if strings.Contains(overlay, phase) {
+					t.Errorf("overlay must not write repo-owned phase %q, got:\n%s", phase, overlay)
+				}
+			}
+			for _, body := range []string{"repo-pre-create", "repo-pre-converge", "repo-post-converge"} {
+				if strings.Contains(overlay, body) {
+					t.Errorf("overlay must not echo repo hook %q from a non-reserved phase, got:\n%s", body, overlay)
+				}
+			}
+
+			if tc.releaseIP {
+				// CMM owns pre_destroy: it composes (repo hook preserved, run first).
+				if !strings.Contains(overlay, "pre_destroy:") || !strings.Contains(overlay, "repo-pre-destroy") {
+					t.Errorf("expected composed pre_destroy carrying the repo hook, got:\n%s", overlay)
+				}
+			} else {
+				// No reserved phase written → no lifecycle block at all.
+				if strings.Contains(overlay, "lifecycle:") {
+					t.Errorf("expected no lifecycle block when IP-release is off, got:\n%s", overlay)
+				}
+			}
+		})
+	}
+}
+
+func TestRunInstance_SetupScripts_InlinedForOSFamily(t *testing.T) {
+	repoDir := setupRepoDir(t)
+	setupDir := filepath.Join(repoDir, "test", "setup")
+	if err := os.MkdirAll(setupDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Two linux scripts (matched, sorted) + one windows script (not matched
+	// on a linux platform).
+	for name, body := range map[string]string{
+		"a-users.sh": "useradd -m svc\n",
+		"b-dirs.sh":  "mkdir -p /opt/app\n",
+		"win.ps1":    "New-LocalUser svc\n",
+	} {
+		if err := os.WriteFile(filepath.Join(setupDir, name), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tkConfig := baseTKConfig()
+	tkConfig.SetupScripts = &config.SetupScriptsConfig{
+		Linux:   []string{"test/setup/*.sh"},
+		Windows: []string{"test/setup/*.ps1"},
+	}
+
+	exec := &mockExecutor{exitCode: 0}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	// baseParams resolves to ubuntu-2204 (linux).
+	RunInstance(context.Background(), baseParams(repoDir), tkConfig, exec, cred)
+
+	overlay := exec.capturedFiles[".kitchen.local.yml"]
+	if !strings.Contains(overlay, "pre_converge:") {
+		t.Fatalf("expected setup scripts in pre_converge, got:\n%s", overlay)
+	}
+	aIdx := strings.Index(overlay, "useradd -m svc")
+	bIdx := strings.Index(overlay, "mkdir -p /opt/app")
+	if aIdx < 0 || bIdx < 0 {
+		t.Fatalf("expected both linux setup scripts inlined, got:\n%s", overlay)
+	}
+	if aIdx > bIdx {
+		t.Errorf("expected scripts in sorted-by-path order (a before b), got:\n%s", overlay)
+	}
+	// Windows script must not leak onto a linux platform.
+	if strings.Contains(overlay, "New-LocalUser") {
+		t.Errorf("windows setup script must not be inlined on a linux platform, got:\n%s", overlay)
+	}
+}
+
+func TestRunInstance_SetupScripts_NoneWhenNoMatch(t *testing.T) {
+	repoDir := setupRepoDir(t)
+
+	tkConfig := baseTKConfig()
+	tkConfig.SetupScripts = &config.SetupScriptsConfig{
+		Linux: []string{"test/setup/*.sh"}, // no such files in the repo
+	}
+
+	exec := &mockExecutor{exitCode: 0}
+	cred := &mockCredResolver{envVars: map[string][]byte{}}
+
+	RunInstance(context.Background(), baseParams(repoDir), tkConfig, exec, cred)
+
+	overlay := exec.capturedFiles[".kitchen.local.yml"]
+	if strings.Contains(overlay, "pre_converge:") {
+		t.Errorf("expected no pre_converge block when no script matches, got:\n%s", overlay)
+	}
+}
+
 func TestRunInstance_IPReleaseHook_OffByDefault(t *testing.T) {
 	repoDir := setupRepoDir(t)
 	exec := &mockExecutor{exitCode: 0}

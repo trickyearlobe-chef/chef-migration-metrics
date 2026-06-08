@@ -55,12 +55,12 @@ when a timeout has no converge activity, `error_message: "probable DHCP/network 
 
 Spec: `test-kitchen-drivers-overlay-generation.md` § Lifecycle Hooks.
 
-### Repo-provided setup hooks (preserve)
+### Repo-provided setup hooks (preserve) — Chunk 2 DONE 2026-06-07
 
-- [ ] Confirm overlay merge behaviour for `lifecycle:` — Test Kitchen replaces arrays per phase; verify which phases CMM currently clobbers
-- [ ] Overlay generation MUST preserve cookbook-provided lifecycle hooks; only inject phases CMM owns
-- [ ] When CMM must inject a phase the cookbook also uses, compose (append) rather than replace — read existing `.kitchen.yml`, merge arrays before writing overlay
-- [ ] Document which lifecycle phases CMM reserves vs. leaves to the repo
+- [x] Confirm overlay merge behaviour for `lifecycle:` — TK replaces arrays per phase; overlay names `pre_destroy` only, so all other phases survive untouched (regression-locked in `overlay_test.go`, `executor_test.go`)
+- [x] Overlay generation MUST preserve cookbook-provided lifecycle hooks; only inject phases CMM owns (CMM reserves `pre_destroy` only)
+- [x] When CMM must inject a phase the cookbook also uses, compose (append) rather than replace — `pre_destroy` composes via `readExistingPreDestroy` + `writeLifecycleHook`
+- [x] Document which lifecycle phases CMM reserves vs. leaves to the repo — spec § Reserved vs repo-owned phases
 
 ### App-injected IP-release hook (pre_destroy) — opt-in spike (Chunk 3 — DONE)
 
