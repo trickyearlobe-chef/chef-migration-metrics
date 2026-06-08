@@ -72,17 +72,35 @@ The application must support **automatic certificate reload** without restart:
 - Alternatively, the application may use filesystem watching (e.g. `fsnotify`) to detect changes to the certificate files and reload automatically. This is particularly useful in Kubernetes where cert-manager updates the Secret (and therefore the mounted files) in place.
 - If the new certificate files are invalid (unparseable, mismatched key), the reload must fail gracefully: the application continues serving with the previous valid certificate and logs an `ERROR`-level message describing the failure.
 
-### 2.4 Startup Validation
+### 2.4 Startup Behaviour (Fail-Open)
 
-On startup, the application must fail fast if:
+When `mode: static`, the application builds the TLS listener at startup using the
+same load path as save-time preflight (§ 2.6): `cert_path`/`key_path` present and
+readable, PEM parses, the key matches the certificate, `ca_path` (when set) is a
+valid PEM bundle, and `min_version` is `"1.2"` or `"1.3"`.
 
-- `mode` is `static` but `cert_path` or `key_path` is missing or empty.
-- The certificate file does not exist or is not readable.
-- The key file does not exist or is not readable.
-- The certificate and key do not form a valid pair (the public key in the certificate does not match the private key).
-- The certificate is expired at startup time (log `WARN` but do not prevent startup — operators may be in the process of renewing).
-- `ca_path` is set but the file does not exist or is not a valid PEM bundle.
-- `min_version` is not one of `"1.2"` or `"1.3"`.
+If the listener **cannot** be built for any of these reasons, the application
+MUST NOT exit. Instead it:
+
+- Logs an `ERROR` on the `tls` scope describing the failure (never including
+  private key material).
+- Records a **degraded** state (`{degraded: true, reason}`) exposed on the status
+  endpoint (§ 5.3).
+- Starts a **plain HTTP** listener on the configured
+  `server.listen_address:server.port` so the admin UI stays reachable to fix the
+  problem.
+
+This fail-open behaviour guarantees a bad certificate can never lock an operator
+out of the UI. Save-time preflight (§ 2.6) makes this path rare — it normally
+only triggers when certificate files change on disk underneath an already-running
+deployment, or when `server.tls` was written before preflight existed.
+
+An **expired** certificate that otherwise loads is not a failure: the listener
+starts in static (HTTPS) mode and logs a `WARN` (operators may be mid-renewal).
+
+There is no runtime auto-recovery — the plain listener is already bound to the
+port. The degraded state clears on the next restart with a working certificate
+(see § 5.3).
 
 ### 2.5 Environment Variable Overrides
 
@@ -210,7 +228,37 @@ TLS-related events use the `tls` log scope. Key events:
 
 - **INFO:** mode selected, certificate loaded/reloaded, ACME certificate obtained/renewed, redirect listener started.
 - **WARN:** certificate expiring soon (within 7 days), staging CA URL detected.
-- **ERROR:** certificate reload failed (continues with previous cert), ACME renewal failed (includes current expiry), ToS not accepted.
+- **ERROR:** certificate reload failed (continues with previous cert), ACME renewal failed (includes current expiry), ToS not accepted, static TLS failed at startup → fell back to plain HTTP (§ 2.4).
+
+### 5.3 Degraded TLS Status and Recovery
+
+When startup falls open to plain HTTP (§ 2.4), the degraded state is published on
+a public, DB-independent endpoint so the UI can warn on every page — including
+before login:
+
+```
+GET /api/v1/server/tls-status   →   200 OK
+{ "degraded": true, "reason": "TLS listener setup failed: <cause>" }
+```
+
+When TLS is healthy (or `mode` is `off`/`acme`), the endpoint returns
+`{ "degraded": false }`. The endpoint requires no authentication and never
+queries the database, so the banner renders even when other subsystems are down.
+The `reason` never contains private key material.
+
+The frontend shows a prominent global banner whenever `degraded` is true:
+**"TLS failed — running INSECURE. Fix the certificate and restart: <reason>"**.
+The Server & TLS admin page surfaces the same state inline.
+
+**Operator recovery:**
+
+1. The banner confirms the server is serving plain HTTP and gives the reason.
+2. Correct the certificate/key files (or the `cert_path`/`key_path`/`ca_path`
+   values) under `server.tls`. Save-time preflight (§ 2.6) rejects an unusable
+   pair before it is persisted.
+3. Restart the service. On restart with a valid pair, static HTTPS resumes and
+   the degraded state clears. There is no in-place recovery — the fallback plain
+   listener holds the port until the process restarts.
 
 ## 6. Backward Compatibility
 
