@@ -1,67 +1,71 @@
-# Active Plan — Batch Progress UI
+# Active Plan — Batch UX (submission + progress)
 
-Goal: make the kitchen batch detail view show live, per-instance results so an
-operator can watch a bulk scan and see exactly which cookbook/instance passed,
-failed, or timed out — without digging through the queue or per-repo views.
+Goal: make bulk kitchen batches (1) quick and safe to launch — fewer steps,
+with the VM estimate visible before committing — and (2) observable while they
+run, with live per-instance results.
 
-Source todo: `plans/todo-bulk-kitchen-scanning.md` § Batch run UI items (poll
-progress / real-time bar / per-cookbook results table / cancel).
+Source todo: `plans/todo-bulk-kitchen-scanning.md` § Batch run UI.
 
-Current state (verified 2026-06-08):
-- Backend is largely DONE: `GET /kitchen/batches/:id/progress` (aggregate
-  counts via `CountBatchInstancesByStatus`), `batch_progress`/`batch_complete`
-  WebSocket events, `/cancel`, restart recovery. `kitchen_batch_instances`
-  holds per-instance status; `ListBatchInstances(batchID)` exists in the
-  datastore but has NO HTTP endpoint.
-- Frontend `BatchDetailView` (`KitchenBatchesPage.tsx`) already polls progress
-  every 5s, renders `BatchProgressBar`, and has a Cancel button. It shows the
-  PLANNED cookbooks (`estimate.cookbooks`), not per-instance results, and does
-  NOT subscribe to the WebSocket events.
+Current flow to run a batch (verified 2026-06-08, `KitchenBatchesPage.tsx`):
+New Batch → fill form → Save (creates a *draft*, returns to the **list**) →
+find & open the batch → "Run Batch". Four actions + navigation. `createKitchenBatch`
+returns a bare `KitchenBatch` (no estimate); the estimate only appears in the
+detail view via `getKitchenBatch`. The form shows no live estimate, so the
+operator commits before seeing how many VMs the batch will start.
 
 Start each chunk in a fresh thread; read only this plan + the named files.
-TDD: write/extend tests before code. Note: `KitchenBatchesPage.tsx` is ~1160
-lines (already flagged in tech-debt) — prefer adding small child components.
+TDD: write/extend tests before code. `KitchenBatchesPage.tsx` is ~1160 lines
+(flagged in tech-debt) — prefer small child components over growing it.
 
-## Chunk 1 — Per-instance results table (full-stack)  [next]
+## Chunk 1 — One-step batch submission  [next]
 
-Scope: `internal/webapi/handle_kitchen_batches.go` + `router.go` + `store.go`
-(if needed), `internal/datastore` (method exists), `frontend/src/api/kitchen.ts`,
-`frontend/src/types/kitchen.ts`, `frontend/src/pages/KitchenBatchesPage.tsx`.
-- Backend: add `GET /api/v1/kitchen/batches/:id/instances` → `ListBatchInstances`,
-  returning per-instance {git_repo_name, suite, platform, instance_name, status,
-  error_message, started_at, completed_at}. Add route + handler test.
-- Frontend: `fetchBatchInstances(id)` + `KitchenBatchInstance` type; render an
-  expandable table in `BatchDetailView` grouped by cookbook, with instance-level
-  status badges (reuse `StatusBadge`). Fetch on open and on each progress tick.
-- TDD: backend handler test (instances returned for a batch); frontend test
-  (rows render + group expand).
-Acceptance: batch detail lists every instance with its status, grouped/expandable
-by cookbook; refreshes as the batch runs.
+Scope: `frontend/src/pages/KitchenBatchesPage.tsx`, `frontend/src/api/kitchen.ts`,
+`frontend/src/types/kitchen.ts`; backend `internal/webapi/handle_kitchen_batches.go`
+only if adding a preview endpoint.
+- Land on the batch **detail** after Save (not the list): `handleCreate` →
+  `getKitchenBatch(id)` → `setSelectedBatch(detail)`, so the estimate + "Run
+  Batch" are immediately in front of the operator. Removes the hunt-and-open step.
+- Add a **live estimate in the create form**: a `POST /kitchen/batches/preview`
+  (filters → `BatchEstimate`, no persistence; reuse `resolveBatch`) called
+  debounced as filters change, showing estimated VMs/cookbooks before Save.
+- Add a **"Create & Run"** primary action: creates, shows a confirm with the
+  estimated VM count, then runs — one path from form to running.
+- TDD: backend preview-endpoint test; frontend tests for land-on-detail, live
+  estimate, and Create & Run confirm→run.
+Acceptance: an operator can go form → running in one confirmed action, with the
+VM estimate visible beforehand; plain Save still lands on the runnable detail.
 
-## Chunk 2 — Live updates via WebSocket (depends on Chunk 1)
+## Chunk 2 — Per-instance results table (full-stack)
 
-Scope: `frontend/src/pages/KitchenBatchesPage.tsx` (+ `useWebSocket`).
-- Subscribe to `batch_progress` and `batch_complete` in `BatchDetailView`;
-  on event for this batch id, refresh progress + instances immediately.
-- Keep the 5s poll as a fallback only while `running`/`preparing`; stop it on
-  terminal status.
-- TDD: frontend test that a `batch_progress` event updates the bar without the
-  poll firing.
-Acceptance: progress + results update within ~1s of a status change, no 5s lag.
+Scope: `handle_kitchen_batches.go` + `router.go`, `api/kitchen.ts`,
+`types/kitchen.ts`, `KitchenBatchesPage.tsx`.
+- Backend: `GET /kitchen/batches/:id/instances` → `ListBatchInstances` (method
+  exists), returning per-instance {git_repo_name, suite, platform, instance_name,
+  status, error_message, started_at, completed_at}. Route + handler test.
+- Frontend: `fetchBatchInstances(id)` + type; expandable table in the detail view
+  grouped by cookbook with instance-level status badges; refresh on each tick.
+- TDD: backend handler test; frontend rows-render/expand test.
+Acceptance: detail lists every instance with status, grouped/expandable by
+cookbook, refreshing as the batch runs.
 
-## Chunk 3 — Cancel UX polish (independent of Chunk 2)
+## Chunk 3 — Live updates via WebSocket (depends on Chunk 2)
 
-Scope: `frontend/src/pages/KitchenBatchesPage.tsx`.
-- Confirm dialog before cancel; optimistic UI (button → "Cancelling…", disabled)
-  then refetch; surface errors.
-- TDD: frontend test for the optimistic transition + refetch.
-Acceptance: clicking Cancel updates the UI immediately and the batch ends in
-`cancelled`.
+Scope: `KitchenBatchesPage.tsx` (+ `useWebSocket`).
+- Subscribe to `batch_progress`/`batch_complete` (backend already broadcasts);
+  refresh progress + instances on event; keep the 5s poll only while active.
+- TDD: a `batch_progress` event updates the bar without the poll firing.
+Acceptance: progress + results update within ~1s of a status change.
+
+## Chunk 4 — Cancel UX polish (independent of Chunk 3)
+
+Scope: `KitchenBatchesPage.tsx`.
+- Confirm dialog; optimistic UI ("Cancelling…", disabled) then refetch.
+- TDD: optimistic transition + refetch.
+Acceptance: Cancel updates the UI immediately; batch ends `cancelled`.
 
 ## Notes
 
-- Per-instance data source is `kitchen_batch_instances` (authoritative for batch
-  runs), not the queue or `git_kitchen_results` (the `/results` endpoint was
-  removed in the git-kitchen rebuild).
-- Out of scope: live per-line log streaming (separate SSE tech-debt item);
-  extracting `KitchenBatchesPage.tsx` into smaller files (tracked in tech-debt).
+- Per-instance data source is `kitchen_batch_instances` (authoritative), not the
+  queue or `git_kitchen_results` (the `/results` endpoint was removed).
+- Out of scope: live per-line log streaming (SSE tech-debt item); splitting
+  `KitchenBatchesPage.tsx` into smaller files (tech-debt).
