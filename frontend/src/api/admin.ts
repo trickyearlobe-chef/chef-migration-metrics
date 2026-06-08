@@ -60,3 +60,15 @@ export function deleteUser(username: string): Promise<void> {
     { method: "DELETE" },
   );
 }
+
+// restartServer requests a graceful restart of the running process so that
+// restart-required configuration changes take effect. The server returns 202
+// and then exits for the supervisor to restart; the caller should poll
+// waitForServerHealthy to detect when it is back online.
+// See configuration-live-reload.md § Apply & Restart.
+export function restartServer(): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    buildUrl("/admin/restart"),
+    { method: "POST" },
+  );
+}

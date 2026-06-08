@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchAuthConfig,
   fetchSAMLCertificate,
+  fetchSAMLMetadata,
+  samlMetadataUrl,
   generateSAMLKeypair,
   saveAuthConfig,
   type AuthConfig,
@@ -289,6 +291,42 @@ function ProviderCard({
               disabled={saving}
               onChange={(m) => onChange(index, "role_mapping", m)}
             />
+
+            <div className="space-y-2 border-t border-gray-100 pt-4">
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={provider.sign_requests ?? false}
+                  onChange={(e) => onChange(index, "sign_requests", e.target.checked)}
+                  disabled={saving}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span>
+                  Sign AuthnRequests
+                  <span className="block text-xs text-gray-400">
+                    Sign outgoing SSO requests with the SP key (RSA-SHA256) and advertise
+                    <code className="mx-1">AuthnRequestsSigned</code>in metadata. The IdP
+                    validates against the SP signing certificate.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={provider.allow_idp_initiated ?? false}
+                  onChange={(e) => onChange(index, "allow_idp_initiated", e.target.checked)}
+                  disabled={saving}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span>
+                  Allow IdP-initiated SSO
+                  <span className="block text-xs text-gray-400">
+                    Accept unsolicited assertions (no matching AuthnRequest). Leave off
+                    unless your IdP requires it — it weakens replay protection.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
         )}
       </div>
@@ -311,6 +349,11 @@ export function AdminAuthPage() {
   const [generatingCert, setGeneratingCert] = useState(false);
   const [certError, setCertError] = useState<string | null>(null);
   const [certCopied, setCertCopied] = useState(false);
+
+  // SP metadata export state.
+  const [exportingMetadata, setExportingMetadata] = useState(false);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [metadataUrlCopied, setMetadataUrlCopied] = useState(false);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -410,6 +453,36 @@ export function AdminAuthPage() {
     } finally {
       setGeneratingCert(false);
     }
+  }
+
+  async function handleExportMetadata() {
+    setExportingMetadata(true);
+    setMetadataError(null);
+    try {
+      // Download the live SP metadata exactly as the endpoint emits it —
+      // standard SAML 2.0 EntityDescriptor XML the IdP can ingest directly.
+      const xml = await fetchSAMLMetadata();
+      const blob = new Blob([xml], { type: "application/samlmetadata+xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "sp-metadata.xml";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setMetadataError(err instanceof Error ? err.message : "Failed to export SP metadata.");
+    } finally {
+      setExportingMetadata(false);
+    }
+  }
+
+  function handleCopyMetadataUrl() {
+    navigator.clipboard.writeText(samlMetadataUrl()).then(() => {
+      setMetadataUrlCopied(true);
+      setTimeout(() => setMetadataUrlCopied(false), 2000);
+    });
   }
 
   function handleCopyCert() {
@@ -557,6 +630,49 @@ export function AdminAuthPage() {
               the certificate in your Identity Provider.
             </p>
           )}
+
+          <div className="space-y-3 border-t border-gray-100 pt-4">
+            <p className="text-sm text-gray-500">
+              Provide this Service Provider&apos;s metadata to your Identity Provider. Some
+              IdPs (ADFS, Shibboleth, Keycloak, PingFederate) fetch it from a URL and
+              refresh automatically; others (Google, Okta) need the XML file uploaded.
+            </p>
+
+            <FieldRow
+              label="SP Metadata URL"
+              hint="Public endpoint — paste into IdPs that fetch metadata by URL."
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={samlMetadataUrl()}
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                  className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyMetadataUrl}
+                  className="shrink-0 rounded-md border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50"
+                >
+                  {metadataUrlCopied ? "Copied!" : "Copy URL"}
+                </button>
+              </div>
+            </FieldRow>
+
+            {metadataError && (
+              <ErrorAlert message="Failed to export SP metadata" detail={metadataError} />
+            )}
+            <button
+              type="button"
+              onClick={handleExportMetadata}
+              disabled={exportingMetadata}
+              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              {exportingMetadata && <InlineSpinner />}
+              Export SP Metadata (XML)
+            </button>
+          </div>
         </SectionCard>
       )}
 

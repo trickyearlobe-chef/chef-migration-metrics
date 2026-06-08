@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { OrgSelector } from "./OrgSelector";
 import { HealthBadge } from "./HealthBadge";
+import { TLSDegradedBanner } from "./TLSDegradedBanner";
 import { FilterMultiCheckbox } from "./FilterMultiCheckbox";
 import { useAuth } from "../context/AuthContext";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
@@ -315,6 +316,8 @@ export function AppLayout() {
 
       {/* Main content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Global insecure-TLS banner (tls.md § 2.4 fail-open fallback) */}
+        <TLSDegradedBanner />
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
           <h1 className="text-lg font-semibold text-gray-800">

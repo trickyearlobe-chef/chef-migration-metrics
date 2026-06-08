@@ -99,4 +99,145 @@ describe("AdminAuthPage", () => {
     );
     expect(screen.getByDisplayValue(/BEGIN CERTIFICATE/)).toBeInTheDocument();
   });
+
+  it("shows Export SP Metadata button when SAML provider exists", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Export SP Metadata (XML)" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("does not show Export SP Metadata button without a SAML provider", async () => {
+    render(<AdminAuthPage />);
+    await waitFor(() => screen.getByText("Authentication"));
+    expect(
+      screen.queryByRole("button", { name: "Export SP Metadata (XML)" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("downloads metadata XML on Export click", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLMetadata).mockResolvedValue(
+      '<?xml version="1.0"?><EntityDescriptor/>',
+    );
+    const createObjectURL = vi.fn(() => "blob:metadata");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Export SP Metadata (XML)" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export SP Metadata (XML)" }));
+
+    await waitFor(() => expect(api.fetchSAMLMetadata).toHaveBeenCalledTimes(1));
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows an error message when metadata export fails", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLMetadata).mockRejectedValue(
+      new Error("SAML provider not initialised"),
+    );
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Export SP Metadata (XML)" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export SP Metadata (XML)" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/SAML provider not initialised/)).toBeInTheDocument(),
+    );
+  });
+
+  it("shows the metadata URL for IdPs that fetch it directly", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.samlMetadataUrl).mockReturnValue(
+      "https://app.example.com/api/v1/auth/saml/metadata",
+    );
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("https://app.example.com/api/v1/auth/saml/metadata"),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("copies the metadata URL to the clipboard", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.samlMetadataUrl).mockReturnValue(
+      "https://app.example.com/api/v1/auth/saml/metadata",
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Copy URL" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
+
+    expect(writeText).toHaveBeenCalledWith(
+      "https://app.example.com/api/v1/auth/saml/metadata",
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("shows Sign AuthnRequests checkbox for a SAML provider", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+      ).toBeInTheDocument(),
+    );
+    // Defaults to unchecked when sign_requests is absent.
+    expect(
+      screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    ).not.toBeChecked();
+  });
+
+  it("does not show SAML option checkboxes for a local provider", async () => {
+    render(<AdminAuthPage />);
+    await waitFor(() => screen.getByText("Authentication"));
+    expect(
+      screen.queryByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reflects sign_requests=true as checked", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue({
+      ...mockSAMLAuthConfig,
+      providers: [{ type: "saml", sign_requests: true }],
+    } as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+      ).toBeChecked(),
+    );
+  });
+
+  it("toggling Sign AuthnRequests enables Save", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }));
+    expect(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
 });

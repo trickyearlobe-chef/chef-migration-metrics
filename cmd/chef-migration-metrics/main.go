@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -97,6 +98,13 @@ type serverApp struct {
 	cfgStore     *configstore.Store
 	configHolder *configstore.ConfigHolder
 
+	// Bootstrap listen target (from the bootstrap YAML / env). listen_address
+	// and port are normally sourced from the DB (server.listen section); these
+	// are retained as the bind-failure fallback so a bad DB-sourced value can
+	// never permanently lock out the UI (encrypted-config-store.md).
+	bootstrapListenAddr string
+	bootstrapPort       int
+
 	// Auth components.
 	localAuth      *auth.LocalAuthenticator
 	sessionMgr     *auth.SessionManager
@@ -123,7 +131,24 @@ type serverApp struct {
 	backupSched   *backup.Scheduler
 	schemaVersion int
 	stopKitchenQueueCleanup func()
+
+	// tlsStatus records whether static TLS failed at startup and the server
+	// fell open to plain HTTP (tls.md § 2.4). Shared with the webapi router so
+	// the /api/v1/server/tls-status endpoint and UI banner can report it.
+	tlsStatus *webapi.TLSStatusHolder
+
+	// restartCh signals an admin-requested graceful restart (POST
+	// /api/v1/admin/restart). awaitShutdown selects on it, drains gracefully,
+	// and returns a non-zero restart exit code so the supervisor
+	// (systemd Restart=on-failure) starts a fresh process that re-reads config.
+	// See configuration-live-reload.md § Apply & Restart.
+	restartCh chan struct{}
 }
+
+// exitCodeRestart is the process exit code used for an admin-requested restart.
+// It is non-zero so that systemd (Restart=on-failure) restarts the process; a
+// clean SIGTERM/systemctl stop still exits 0 and is not restarted.
+const exitCodeRestart = 2
 
 // dbRefChecker implements configstore.CredentialReferenceChecker by querying
 // the organisations table for credentials referenced via client_key_credential_name.
@@ -617,6 +642,11 @@ func (app *serverApp) setupSecrets(ctx context.Context) error {
 func (app *serverApp) setupConfigStore(ctx context.Context) error {
 	csLog := app.logger.WithScope(logging.ScopeStartup)
 
+	// Capture the bootstrap listen target (from YAML/env) before any DB
+	// assembly overwrites app.cfg. This is the bind-failure fallback.
+	app.bootstrapListenAddr = app.cfg.Server.ListenAddress
+	app.bootstrapPort = app.cfg.Server.Port
+
 	// Run legacy data migration (runtime_settings → config_store).
 	migrateResult, err := configstore.MigrateFromLegacy(ctx, app.db.Pool(), app.cfgStore)
 	if err != nil {
@@ -664,10 +694,23 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 			}
 		}
 
-		// Carry over bootstrap values from the YAML-loaded config.
+		// Carry over the bootstrap database URL (never stored in the DB).
 		assembled.Datastore.URL = app.cfg.Datastore.URL
-		assembled.Server.ListenAddress = app.cfg.Server.ListenAddress
-		assembled.Server.Port = app.cfg.Server.Port
+
+		// listen_address/port are DB-managed (server.listen section). When the
+		// DB has them, AssembleConfig already populated `assembled` and the DB
+		// value wins. Only carry over the bootstrap value when the section is
+		// absent, so an existing deployment keeps its YAML listen target until
+		// it is edited in the UI.
+		hasListen, hlErr := configstore.HasKey(ctx, app.cfgStore, configstore.KeyServerListen)
+		if hlErr != nil {
+			csLog.Error(fmt.Sprintf("checking %s: %v", configstore.KeyServerListen, hlErr))
+			return hlErr
+		}
+		if !hasListen {
+			assembled.Server.ListenAddress = app.bootstrapListenAddr
+			assembled.Server.Port = app.bootstrapPort
+		}
 
 		app.cfg = assembled
 		csLog.Info("configuration assembled from database")
@@ -1075,6 +1118,12 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		}),
 	}
 
+	// Holder for degraded-TLS state. Wired into the router up front so that a
+	// later static-TLS fallback (see the switch below) can flip it and have the
+	// status endpoint + UI banner report INSECURE without restarting.
+	app.tlsStatus = webapi.NewTLSStatusHolder()
+	routerOpts = append(routerOpts, webapi.WithTLSStatus(app.tlsStatus))
+
 	if recorder != nil {
 		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))
 	}
@@ -1314,6 +1363,17 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		app.startup.Info(fmt.Sprintf("frontend SPA assets not found (checked embedded binary and %s) — serving plain-text placeholder", frontend.DistDir))
 	}
 
+	// Wire the admin-requested restart trigger. The closure is non-blocking:
+	// it signals awaitShutdown, which drains gracefully and exits with the
+	// restart code so the supervisor starts a fresh process.
+	app.restartCh = make(chan struct{}, 1)
+	routerOpts = append(routerOpts, webapi.WithRestartTrigger(func() {
+		select {
+		case app.restartCh <- struct{}{}:
+		default: // a restart is already pending — ignore duplicate requests
+		}
+	}))
+
 	apiRouter := webapi.NewRouter(app.db, app.cfg, app.hub, routerOpts...)
 	app.startup.Info("webapi router initialised with all API routes")
 
@@ -1354,8 +1414,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			TrustedProxy:            app.cfg.Server.TrustedProxy,
 		}, tlsLog)
 		if tlsErr != nil {
-			app.startup.Error(fmt.Sprintf("TLS listener setup failed: %v", tlsErr))
-			return res, tlsErr
+			// Fail open (tls.md § 2.4): a bad certificate must never prevent
+			// reaching the UI to fix it. Record degraded state and serve plain
+			// HTTP instead of exiting.
+			return app.degradeToPlainHTTP(apiRouter, tlsErr), nil
 		}
 
 		app.startup.Info(fmt.Sprintf("TLS certificate: %s", tlsListener.CertSummary()))
@@ -1373,29 +1435,124 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		return res, fmt.Errorf("TLS mode 'acme' is not yet implemented")
 
 	default:
-		listenAddr := app.cfg.Server.ListenAddress
-		if listenAddr == "" {
-			listenAddr = "0.0.0.0"
-		}
-		port := app.cfg.Server.Port
-		if port == 0 {
-			port = 8080
-		}
-
-		plainSrv := apptls.NewPlainListener(apiRouter, listenAddr, port)
-		plainErrCh := make(chan error, 1)
-		go func() {
-			app.startup.Info(fmt.Sprintf("HTTP server listening on %s", plainSrv.Addr))
-			if err := plainSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				plainErrCh <- err
-			}
-			close(plainErrCh)
-		}()
-		res.errCh = plainErrCh
-		res.plainSrv = plainSrv
+		res = app.servePlainHTTP(apiRouter)
 	}
 
 	return res, nil
+}
+
+// listenTarget is a resolved (address, port) the server may bind.
+type listenTarget struct {
+	addr string
+	port int
+}
+
+func (t listenTarget) String() string {
+	return fmt.Sprintf("%s:%d", t.addr, t.port)
+}
+
+// listenCandidates returns the ordered, de-duplicated list of listen targets to
+// try, starting with the configured (DB-sourced) target and falling back to the
+// bootstrap target then the hardwired 0.0.0.0:8080 default. A bad DB-sourced
+// listen_address/port can therefore never permanently lock out the UI — the
+// server binds the first usable fallback and runs in degraded mode.
+func (app *serverApp) listenCandidates() []listenTarget {
+	norm := func(addr string, port int) listenTarget {
+		if addr == "" {
+			addr = "0.0.0.0"
+		}
+		if port == 0 {
+			port = 8080
+		}
+		return listenTarget{addr: addr, port: port}
+	}
+
+	ordered := []listenTarget{
+		norm(app.cfg.Server.ListenAddress, app.cfg.Server.Port),
+		norm(app.bootstrapListenAddr, app.bootstrapPort),
+		norm("0.0.0.0", 8080),
+	}
+
+	seen := make(map[listenTarget]bool, len(ordered))
+	out := ordered[:0]
+	for _, t := range ordered {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// servePlainHTTP starts a plain HTTP listener on the configured
+// listen_address:port. If that target cannot be bound (e.g. a bad DB-sourced
+// port), it falls back to the bootstrap then default target and flags degraded
+// mode (reusing Chunk 2's TLS-status holder). Shared by plain-HTTP mode and the
+// degraded TLS fallback (degradeToPlainHTTP).
+func (app *serverApp) servePlainHTTP(handler http.Handler) serverResult {
+	candidates := app.listenCandidates()
+
+	var firstErr error
+	for i, target := range candidates {
+		ln, err := net.Listen("tcp", target.String())
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			app.startup.Error(fmt.Sprintf("cannot bind HTTP listener on %s: %v", target, err))
+			if rem := apptls.BindPermissionRemediation(target.addr, target.port, err); rem != "" {
+				app.startup.Error(rem)
+			}
+			continue
+		}
+		if i > 0 {
+			// The configured target failed; we bound a fallback. Flag degraded
+			// so the operator sees the banner and fixes listen_address/port.
+			reason := fmt.Sprintf("cannot bind configured listen address %s (%v) — running on fallback %s",
+				candidates[0], firstErr, target)
+			app.startup.Error(reason + "; fix listen_address/port and restart")
+			if app.tlsStatus != nil {
+				app.tlsStatus.SetDegraded(reason)
+			}
+		}
+		return app.serveOnListener(handler, ln)
+	}
+
+	// No candidate could be bound — return a fatal error result so run() exits.
+	errCh := make(chan error, 1)
+	errCh <- fmt.Errorf("HTTP listener bind failed on all candidates: %w", firstErr)
+	close(errCh)
+	return serverResult{errCh: errCh}
+}
+
+// serveOnListener serves the handler on an already-bound listener and returns
+// the running server plus its fatal-error channel.
+func (app *serverApp) serveOnListener(handler http.Handler, ln net.Listener) serverResult {
+	plainSrv := apptls.NewPlainListener(handler, "", 0)
+	plainSrv.Addr = ln.Addr().String()
+	plainErrCh := make(chan error, 1)
+	go func() {
+		app.startup.Info(fmt.Sprintf("HTTP server listening on %s", ln.Addr()))
+		if err := plainSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			plainErrCh <- err
+		}
+		close(plainErrCh)
+	}()
+	return serverResult{errCh: plainErrCh, plainSrv: plainSrv}
+}
+
+// degradeToPlainHTTP records the degraded TLS state and starts a plain HTTP
+// listener as a fallback (tls.md § 2.4). The operator-facing reason never
+// includes private key material — it is the listener-setup error, which reports
+// file paths and parse failures only.
+func (app *serverApp) degradeToPlainHTTP(handler http.Handler, cause error) serverResult {
+	reason := fmt.Sprintf("TLS listener setup failed: %v", cause)
+	app.startup.Error(reason +
+		" — falling back to plain HTTP (INSECURE); fix the certificate and restart")
+	if app.tlsStatus != nil {
+		app.tlsStatus.SetDegraded(reason)
+	}
+	return app.servePlainHTTP(handler)
 }
 
 // ---------------------------------------------------------------------------
@@ -1412,8 +1569,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
 	running := true
+	restartRequested := false
 	for running {
 		select {
+		case <-app.restartCh:
+			app.startup.Info("restart requested via admin API, shutting down gracefully for supervisor restart...")
+			restartRequested = true
+			running = false
 		case sig := <-sigCh:
 			switch sig {
 			case syscall.SIGHUP:
@@ -1466,6 +1628,11 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 			app.startup.Error(fmt.Sprintf("HTTP server shutdown: %v", err))
 			return 1
 		}
+	}
+
+	if restartRequested {
+		app.startup.Info(fmt.Sprintf("server stopped cleanly; exiting %d for supervisor restart", exitCodeRestart))
+		return exitCodeRestart
 	}
 
 	app.startup.Info("server stopped cleanly")

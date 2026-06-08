@@ -29,6 +29,14 @@ export interface VersionResponse {
   version: string;
 }
 
+// TLSStatus mirrors GET /api/v1/server/tls-status. When static TLS fails at
+// startup the server falls open to plain HTTP (tls.md § 2.4) and reports
+// degraded=true so the UI can warn that traffic is INSECURE.
+export interface TLSStatus {
+  degraded: boolean;
+  reason?: string;
+}
+
 export interface Organisation {
   name: string;
   chef_server_url: string;

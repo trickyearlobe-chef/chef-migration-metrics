@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchServerConfig,
   saveServerConfig,
+  restartServer,
+  waitForServerHealthy,
   type ServerConfig,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
+import { TLSDegradedBanner } from "../components/TLSDegradedBanner";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -42,6 +45,8 @@ export function AdminServerPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [newDomain, setNewDomain] = useState("");
+  const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -118,6 +123,25 @@ export function AdminServerPage() {
     }
   }
 
+  async function handleRestart() {
+    setRestarting(true);
+    setRestartError(null);
+    try {
+      await restartServer();
+      // The process exits and the supervisor starts a fresh one. Poll health
+      // until it is back, then refresh and clear the pending-restart state.
+      await waitForServerHealthy();
+      setRestartRequired(false);
+      load();
+    } catch (err: unknown) {
+      setRestartError(
+        err instanceof Error ? err.message : "Failed to restart the server.",
+      );
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   if (loading) return <LoadingSpinner message="Loading server config…" />;
   if (loadError)
     return <ErrorAlert message="Failed to load server config" detail={loadError} onRetry={load} />;
@@ -135,6 +159,39 @@ export function AdminServerPage() {
           an application restart.
         </p>
       </div>
+
+      {/* Insecure-TLS fallback warning, surfaced inline beside the cert fields
+          the operator needs to fix (tls.md § 2.4). */}
+      <div className="overflow-hidden rounded-lg">
+        <TLSDegradedBanner />
+      </div>
+
+      {/* HTTP Listener */}
+      <SectionCard title="HTTP Listener">
+        <div className="grid grid-cols-2 gap-4">
+          <FieldRow label="Listen Address" hint="Interface to bind (e.g. 0.0.0.0, 127.0.0.1)">
+            <input
+              type="text"
+              value={config.listen_address}
+              onChange={(e) => setField("listen_address", e.target.value)}
+              placeholder="0.0.0.0"
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+          </FieldRow>
+          <FieldRow label="Port" hint="Listen port (1–65535)">
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={config.port}
+              onChange={(e) => setField("port", Number(e.target.value))}
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+          </FieldRow>
+        </div>
+      </SectionCard>
 
       {/* TLS Settings */}
       <SectionCard title="TLS Settings">
@@ -404,13 +461,15 @@ export function AdminServerPage() {
 
       {saveError && <ErrorAlert message="Failed to save" detail={saveError} />}
 
+      {restartError && <ErrorAlert message="Failed to restart" detail={restartError} />}
+
       {success && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
           Settings saved successfully.
         </div>
       )}
 
-      <div className="flex justify-end gap-3">
+      <div className="flex items-center justify-end gap-3">
         {restartRequired && (
           <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
             <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
@@ -419,10 +478,22 @@ export function AdminServerPage() {
             Restart required to apply changes
           </div>
         )}
+        {restartRequired && (
+          <button
+            type="button"
+            onClick={handleRestart}
+            disabled={restarting || saving || isDirty}
+            title={isDirty ? "Save your changes before restarting." : undefined}
+            className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50"
+          >
+            {restarting && <InlineSpinner />}
+            {restarting ? "Restarting…" : "Apply & Restart"}
+          </button>
+        )}
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving || !isDirty}
+          disabled={saving || restarting || !isDirty}
           className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
           {saving && <InlineSpinner />}

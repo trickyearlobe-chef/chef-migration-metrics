@@ -39,6 +39,24 @@ The application acts as a SAML 2.0 Service Provider (SP). An external Identity P
 | `/saml/acs` | POST | Assertion Consumer Service — process IdP response |
 | `/saml/slo` | POST | Inbound Single Logout — process IdP LogoutRequest |
 
+### SP Metadata Export (UI)
+
+The admin SAML configuration page provides an **Export SP Metadata (XML)** button
+that downloads this SP's metadata document so an administrator can hand it to the
+IdP during setup. The button fetches the existing `/saml/metadata` endpoint and
+saves the response as a file (e.g. `sp-metadata.xml`, `application/samlmetadata+xml`).
+
+The button is available only when a SAML provider is configured and initialised —
+the metadata endpoint returns `501 Not Implemented` otherwise (no SP to describe).
+The exported document is the live SP metadata (entity ID, ACS/SLO URLs, SP signing
+certificate, NameID format); it contains no private key material.
+
+The page also surfaces the absolute **SP Metadata URL** (with a copy action) for
+IdPs that fetch metadata by URL and refresh it automatically (e.g. ADFS,
+Shibboleth, Keycloak, PingFederate); IdPs without URL support (e.g. Google, Okta)
+take the downloaded file. `/saml/metadata` is a public endpoint (no session
+required) so the IdP can poll it directly — it exposes no private key material.
+
 ### SP-Initiated SSO Flow
 
 1. User navigates to `/saml/login` (or clicks "Sign in with SSO")
@@ -286,3 +304,10 @@ auth:
       clock_skew_tolerance: "5m"
       metadata_refresh_interval: "24h"
 ```
+
+`sign_requests` and `allow_idp_initiated` are editable as checkboxes on the admin
+auth page (per SAML provider). When `sign_requests` is enabled, outgoing
+AuthnRequests are signed with the SP key (RSA-SHA256) and the SP metadata
+advertises `AuthnRequestsSigned="true"`; the IdP validates the signature against
+the SP signing certificate published in that metadata. Both settings are
+restart-required (the provider is constructed at startup).

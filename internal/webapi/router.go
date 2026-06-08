@@ -48,6 +48,12 @@ type Router struct {
 	version       string
 	schemaVersion int
 
+	// tlsStatus reports whether the server fell back to plain HTTP because the
+	// configured static TLS listener could not be started (see tls.md § 2.4).
+	// nil on plain-HTTP/ACME deployments — the status endpoint then reports
+	// healthy. Set via WithTLSStatus.
+	tlsStatus *TLSStatusHolder
+
 	// frontendFS holds the built React SPA assets (index.html, JS, CSS).
 	// When non-nil, the frontend fallback handler serves files from this
 	// filesystem instead of returning a plain-text placeholder. Set via
@@ -154,6 +160,12 @@ type Router struct {
 	// exitFunc is called after a successful restore to terminate the process.
 	// Defaults to os.Exit. Overridable for testing.
 	exitFunc func(code int)
+
+	// restartFunc signals the main goroutine to perform a graceful restart
+	// (drain workers + HTTP server, then exit with a supervisor-restart code).
+	// Provided by main via WithRestartTrigger. Nil when no supervisor is wired
+	// — the POST /admin/restart endpoint then returns 503.
+	restartFunc func()
 
 	// maintenanceMode is set to true during restore operations.
 	// When true, all API routes except health and backup status return 503.
@@ -319,6 +331,14 @@ func WithExitFunc(fn func(int)) RouterOption {
 	return func(r *Router) { r.exitFunc = fn }
 }
 
+// WithRestartTrigger wires the function used by POST /admin/restart to request
+// a graceful restart. The function must be non-blocking: it signals the main
+// goroutine, which performs the graceful shutdown and process exit. When nil,
+// the restart endpoint returns 503.
+func WithRestartTrigger(fn func()) RouterOption {
+	return func(r *Router) { r.restartFunc = fn }
+}
+
 // NewRouter creates a new Router with all routes registered. The EventHub
 // must already be running (via go hub.Run()) before requests are served.
 //
@@ -419,6 +439,8 @@ func (r *Router) isMaintenanceBlocked(urlPath string) bool {
 		return false
 	case urlPath == "/api/v1/admin/backups/status":
 		return false
+	case urlPath == "/api/v1/server/tls-status":
+		return false
 	default:
 		return true
 	}
@@ -470,6 +492,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.mux.HandleFunc("/api/v1/health", r.handleHealth)
 	r.mux.HandleFunc("/api/v1/version", r.handleVersion)
+	r.mux.HandleFunc("/api/v1/server/tls-status", r.handleServerTLSStatus)
 
 	// -----------------------------------------------------------------
 	// WebSocket real-time events
@@ -689,6 +712,7 @@ func (r *Router) registerRoutes() {
 		r.adminOnly("/api/v1/admin/users", r.handleNotImplemented)
 		r.adminOnly("/api/v1/admin/users/", r.handleNotImplemented)
 	}
+	r.adminOnly("/api/v1/admin/restart", r.handleAdminRestart)
 	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)

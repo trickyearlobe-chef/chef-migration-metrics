@@ -17,6 +17,7 @@ On startup, the application must validate the configuration and fail fast with a
 - `server.tls.mode` is not one of `off`, `static`, or `acme`
 - `server.tls.min_version` is not one of `"1.2"` or `"1.3"` (when mode is `static` or `acme`)
 - `server.tls.http_redirect_port` is set but is not a valid port number (1–65535)
+- `server.tls.http_redirect_port` equals the HTTPS listen port (`server.port`) when TLS is active (`static`/`acme`) — both listeners would bind the same port and one would fail
 - **Static mode validation:**
   - `server.tls.mode` is `static` but `cert_path` or `key_path` is missing or empty
   - The certificate file at `cert_path` does not exist or is not readable
@@ -52,6 +53,28 @@ On startup, the application must validate the configuration and fail fast with a
 - `ownership.auto_rules[].match_value` is required when type is `node_attribute`
 - `ownership.auto_rules[].policy_name` is required when type is `policy_match`
 - `ownership.audit_log.retention_days` must be a non-negative integer
+
+---
+
+### Save-time preflight (admin config API)
+
+Configuration changed through the admin API (`PUT /api/v1/admin/config/server`)
+must be validated **before it is persisted**, not only at the next startup. This
+prevents an operator from saving a server/TLS configuration that would brick the
+listener on restart (the config store is the source of truth at boot, so a bad
+value cannot be corrected through the UI once the server fails to start).
+
+The handler applies the same checks as startup and returns `422 Unprocessable
+Entity` (error code `validation_error`) without writing to the config store when:
+
+- `server.tls.mode` is `static` and the cert/key pair fails to load exactly as
+  the listener loads it at startup — files unreadable, PEM unparseable, or the
+  private key does not match the certificate (`ca_path`, when set, must also be a
+  valid PEM bundle). Implemented by `tls.ValidateStaticPair`, shared with startup.
+- `server.tls.http_redirect_port` equals the effective HTTPS listen port when TLS
+  is active (the submitted `server.port` if present, otherwise the running port).
+
+The error message names the failing element and never includes key material.
 
 ---
 

@@ -148,8 +148,10 @@ server:
 
 | Setting | Default | Notes |
 |---------|---------|-------|
-| `listen_address` | `0.0.0.0` | Set to `127.0.0.1` to restrict to localhost only. |
-| `port` | `8080` | Any available port. Operators should set to `443` when TLS is active. The default does not change when TLS is enabled. |
+| `listen_address` | `0.0.0.0` | Set to `127.0.0.1` to restrict to localhost only. DB-managed and UI-editable (restart required). |
+| `port` | `8080` | Any available port. Operators should set to `443` when TLS is active. The default does not change when TLS is enabled. DB-managed and UI-editable (restart required). |
+
+> **`listen_address`/`port` are DB-managed and UI-editable.** They are stored in the config store (`server.listen` section) and edited from the Server & TLS admin page; changes take effect on restart. The bootstrap YAML retains a copy as the **bind-failure fallback** — if the DB-sourced address/port cannot be bound at startup, the server falls back to the bootstrap value, then the `0.0.0.0:8080` default, and runs in degraded mode rather than refusing to start, so a bad value can never permanently lock out the UI. See the [Encrypted Config Store specification](encrypted-config-store.md).
 | `tls.mode` | `off` | `off` — plain HTTP, no encryption. `static` — HTTPS using certificate/key files from disk. `acme` — HTTPS using certificates obtained automatically via the ACME protocol. |
 | `tls.min_version` | `"1.2"` | Minimum TLS protocol version. Valid values: `"1.2"`, `"1.3"`. Applies to both `static` and `acme` modes. TLS 1.0 and 1.1 are not supported. |
 | `tls.http_redirect_port` | `0` (disabled) | When set to a valid port (e.g. `80`), starts a secondary HTTP listener that responds with `301` redirects to HTTPS. In `acme` mode with `http-01` challenge, this listener also serves ACME challenge responses. |

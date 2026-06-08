@@ -9,6 +9,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
+	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 )
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,14 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 				"server.tls.key_path is required when tls.mode is 'static'.")
 			return
 		}
+		// Preflight the certificate exactly as the listener does at startup
+		// (files readable, PEM parses, key matches cert). This prevents saving
+		// a TLS configuration that would brick the listener on the next restart.
+		if err := apptls.ValidateStaticPair(input.TLS.CertPath, input.TLS.KeyPath, input.TLS.CAPath); err != nil {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+			return
+		}
 	}
 
 	if input.TLS.Mode == "acme" {
@@ -115,10 +124,29 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
-	if input.TLS.HTTPRedirectPort != 0 && (input.TLS.HTTPRedirectPort < 1 || input.TLS.HTTPRedirectPort > 65535) {
-		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-			fmt.Sprintf("server.tls.http_redirect_port: %d is not a valid port number (1-65535).", input.TLS.HTTPRedirectPort))
-		return
+	if input.TLS.HTTPRedirectPort != 0 {
+		if input.TLS.HTTPRedirectPort < 1 || input.TLS.HTTPRedirectPort > 65535 {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("server.tls.http_redirect_port: %d is not a valid port number (1-65535).", input.TLS.HTTPRedirectPort))
+			return
+		}
+		// The redirect listener only runs when TLS is active, and it must not
+		// collide with the HTTPS listen port (both would bind the same port and
+		// one would fail at startup). Compare against the port that will be in
+		// effect: the submitted port if present, else the running listen port.
+		if input.TLS.Mode == "static" || input.TLS.Mode == "acme" {
+			effPort := input.Port
+			if effPort == 0 {
+				if lc := r.liveConfig(); lc != nil {
+					effPort = lc.Server.Port
+				}
+			}
+			if effPort != 0 && input.TLS.HTTPRedirectPort == effPort {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("server.tls.http_redirect_port (%d) must differ from the HTTPS listen port; both would bind the same port.", effPort))
+				return
+			}
+		}
 	}
 
 	// --- WebSocket validation (zero means "use default") ---
@@ -156,7 +184,40 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// --- Persist all three sub-keys then reload ---
+	// --- Listen address / port validation ---
+
+	if input.Port != 0 && (input.Port < 1 || input.Port > 65535) {
+		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+			fmt.Sprintf("server.port: %d is not a valid port number (1-65535).", input.Port))
+		return
+	}
+
+	// Test-bind the listen target as a preflight when a concrete port is given
+	// that differs from the running listener. A zero port means "unchanged /
+	// use default" and is skipped. The running process already holds the
+	// current address/port, so test-binding the unchanged value would always
+	// fail — hence the change check. This catches an unbindable address/port
+	// before it is persisted and forces the degraded fallback on the next
+	// restart (encrypted-config-store.md).
+	if input.Port != 0 {
+		live := r.liveConfig()
+		changed := live == nil ||
+			input.Port != live.Server.Port || input.ListenAddress != live.Server.ListenAddress
+		if changed {
+			if err := apptls.TestBind(input.ListenAddress, input.Port); err != nil {
+				addr := input.ListenAddress
+				if addr == "" {
+					addr = "0.0.0.0"
+				}
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("server: cannot bind %s:%d (%v) — choose a bindable address and port; the server cannot start on a port it cannot bind.",
+						addr, input.Port, err))
+				return
+			}
+		}
+	}
+
+	// --- Persist all listen/TLS/WebSocket/shutdown sub-keys then reload ---
 
 	sections, err := configstore.ConfigToSections(&config.Config{Server: input})
 	if err != nil {
@@ -166,7 +227,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	ctx := req.Context()
-	for _, key := range []string{configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown} {
+	for _, key := range []string{configstore.KeyServerListen, configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown} {
 		if err := r.configStore.Set(ctx, key, sections[key], false, "admin"); err != nil {
 			r.logf("ERROR", "admin/config/server: store %s: %v", key, err)
 			WriteInternalError(w, "Failed to store server config.")

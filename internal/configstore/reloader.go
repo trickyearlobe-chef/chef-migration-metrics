@@ -83,8 +83,19 @@ func (h *ConfigHolder) Reload(ctx context.Context) error {
 
 	if current != nil {
 		newCfg.Datastore.URL = current.Datastore.URL
-		newCfg.Server.ListenAddress = current.Server.ListenAddress
-		newCfg.Server.Port = current.Server.Port
+
+		// listen_address/port are DB-managed (server.listen section). When the
+		// DB has them, AssembleConfig already populated newCfg from the DB and
+		// it wins. Only when the section is absent do we carry over the current
+		// (bootstrap) values so a fresh deployment keeps its YAML listen target.
+		hasListen, hkErr := HasKey(ctx, h.store, KeyServerListen)
+		if hkErr != nil {
+			return fmt.Errorf("configstore: reload: check %s: %w", KeyServerListen, hkErr)
+		}
+		if !hasListen {
+			newCfg.Server.ListenAddress = current.Server.ListenAddress
+			newCfg.Server.Port = current.Server.Port
+		}
 	}
 
 	// Warnings are non-fatal — log them if a logger is available, but
