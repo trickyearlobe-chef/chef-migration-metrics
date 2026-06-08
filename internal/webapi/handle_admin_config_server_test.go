@@ -5,14 +5,64 @@ package webapi
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 )
+
+// writeTestKeyPair generates a self-signed ECDSA certificate and key in a temp
+// directory and returns their paths. Used to exercise static-TLS preflight
+// validation, which loads the pair the same way the listener does at startup.
+func writeTestKeyPair(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	dir := t.TempDir()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating certificate: %v", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshalling key: %v", err)
+	}
+
+	certPath = filepath.Join(dir, "server.crt")
+	keyPath = filepath.Join(dir, "server.key")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("writing cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatalf("writing key: %v", err)
+	}
+	return certPath, keyPath
+}
 
 const validServerBody = `{"tls":{"mode":"off"}}`
 
@@ -110,12 +160,42 @@ func TestAdminConfigServer_PUT_Success_TLSStatic(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"tls":{"mode":"static","cert_path":"/etc/certs/server.crt","key_path":"/etc/certs/server.key","min_version":"1.2"}}`
+	certPath, keyPath := writeTestKeyPair(t)
+	body := fmt.Sprintf(`{"tls":{"mode":"static","cert_path":%q,"key_path":%q,"min_version":"1.2"}}`, certPath, keyPath)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusOK)
+}
+
+func TestAdminConfigServer_PUT_422_StaticCertNotFound(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"tls":{"mode":"static","cert_path":"/no/such/server.crt","key_path":"/no/such/server.key"}}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+func TestAdminConfigServer_PUT_422_RedirectPortEqualsListenPort(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.Port = 8443
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	certPath, keyPath := writeTestKeyPair(t)
+	body := fmt.Sprintf(`{"tls":{"mode":"static","cert_path":%q,"key_path":%q,"http_redirect_port":8443}}`, certPath, keyPath)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
 func TestAdminConfigServer_PUT_Success_TLSAcme(t *testing.T) {

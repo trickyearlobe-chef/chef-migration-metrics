@@ -9,6 +9,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
+	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 )
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,14 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 				"server.tls.key_path is required when tls.mode is 'static'.")
 			return
 		}
+		// Preflight the certificate exactly as the listener does at startup
+		// (files readable, PEM parses, key matches cert). This prevents saving
+		// a TLS configuration that would brick the listener on the next restart.
+		if err := apptls.ValidateStaticPair(input.TLS.CertPath, input.TLS.KeyPath, input.TLS.CAPath); err != nil {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+			return
+		}
 	}
 
 	if input.TLS.Mode == "acme" {
@@ -115,10 +124,29 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
-	if input.TLS.HTTPRedirectPort != 0 && (input.TLS.HTTPRedirectPort < 1 || input.TLS.HTTPRedirectPort > 65535) {
-		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-			fmt.Sprintf("server.tls.http_redirect_port: %d is not a valid port number (1-65535).", input.TLS.HTTPRedirectPort))
-		return
+	if input.TLS.HTTPRedirectPort != 0 {
+		if input.TLS.HTTPRedirectPort < 1 || input.TLS.HTTPRedirectPort > 65535 {
+			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+				fmt.Sprintf("server.tls.http_redirect_port: %d is not a valid port number (1-65535).", input.TLS.HTTPRedirectPort))
+			return
+		}
+		// The redirect listener only runs when TLS is active, and it must not
+		// collide with the HTTPS listen port (both would bind the same port and
+		// one would fail at startup). Compare against the port that will be in
+		// effect: the submitted port if present, else the running listen port.
+		if input.TLS.Mode == "static" || input.TLS.Mode == "acme" {
+			effPort := input.Port
+			if effPort == 0 {
+				if lc := r.liveConfig(); lc != nil {
+					effPort = lc.Server.Port
+				}
+			}
+			if effPort != 0 && input.TLS.HTTPRedirectPort == effPort {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("server.tls.http_redirect_port (%d) must differ from the HTTPS listen port; both would bind the same port.", effPort))
+				return
+			}
+		}
 	}
 
 	// --- WebSocket validation (zero means "use default") ---
