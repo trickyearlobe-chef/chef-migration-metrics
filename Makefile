@@ -825,7 +825,7 @@ db-psql: ## Open a psql shell in the running database container
 # =============================================================================
 
 .PHONY: compose-up
-compose-up: ## Start the local Docker Compose stack (app + PostgreSQL)
+compose-up: ## Start the local Docker Compose stack (PostgreSQL only; the app runs on the host)
 	@echo "$(GREEN)Starting Docker Compose stack...$(RESET)"
 	docker compose -f $(COMPOSE_FILE) up -d --build
 
