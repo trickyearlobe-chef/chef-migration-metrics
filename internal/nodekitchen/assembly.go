@@ -47,7 +47,14 @@ type WorkingDir struct {
 // CreateWorkingDir creates a temporary working directory for a Node Kitchen run.
 func CreateWorkingDir(nodeName string) (*WorkingDir, error) {
 	ts := time.Now().Unix()
-	dirName := fmt.Sprintf("cmm-node-kitchen-%s-%d", nodeName, ts)
+	// nodeName is only a human-readable label in the temp dir name; reduce it
+	// to a single safe path component so it cannot influence the directory
+	// location (e.g. a "../" in the node name escaping os.TempDir()).
+	safeName := filepath.Base(nodeName)
+	if safeName == "." || safeName == ".." || safeName == string(filepath.Separator) {
+		safeName = "node"
+	}
+	dirName := fmt.Sprintf("cmm-node-kitchen-%s-%d", safeName, ts)
 	tmpDir := filepath.Join(os.TempDir(), dirName)
 
 	if err := os.MkdirAll(filepath.Join(tmpDir, "cookbooks"), 0o755); err != nil {
