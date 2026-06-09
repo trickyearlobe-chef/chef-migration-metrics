@@ -70,6 +70,18 @@ export interface ACMEConfig {
   agree_to_tos: boolean;
 }
 
+// Operator-safe metadata for the installed cert_source: db certificate.
+// Returned read-only by GET /admin/config/server as `tls_certificate_info`;
+// the private key is never included.
+export interface CertMetadata {
+  subject: string;
+  issuer: string;
+  dns_names?: string[];
+  ip_addresses?: string[];
+  not_before: string;
+  not_after: string;
+}
+
 export interface TLSConfig {
   mode: string;
   // Where the cert/key come from: 'file' (paths below) or 'db' (encrypted in
@@ -81,6 +93,11 @@ export interface TLSConfig {
   min_version: string;
   http_redirect_port: number;
   acme: ACMEConfig;
+  // Write-only PEM material for cert_source: db. Sent on save; never returned
+  // by GET (so they stay undefined after load and clear after a save). The
+  // private key is secret and never echoed back by any API.
+  certificate?: string;
+  private_key?: string;
 }
 
 export interface WebSocketConfig {
@@ -98,6 +115,9 @@ export interface ServerConfig {
   tls: TLSConfig;
   websocket: WebSocketConfig;
   graceful_shutdown_seconds: number;
+  // Read-only metadata for the installed cert_source: db certificate, attached
+  // by GET. Never sent on save.
+  tls_certificate_info?: CertMetadata;
 }
 
 export interface AuthProvider {

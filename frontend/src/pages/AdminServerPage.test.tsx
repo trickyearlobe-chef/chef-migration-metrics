@@ -195,4 +195,123 @@ describe("AdminServerPage", () => {
       expect(screen.getByText(/boom/i)).toBeInTheDocument(),
     );
   });
+
+  // --- cert_source: db (Chunk 4 — DB cert/key UI) ---
+
+  const staticFileConfig = {
+    ...mockServerConfig,
+    tls: { ...mockServerConfig.tls, mode: "static", cert_source: "file", cert_path: "/c", key_path: "/k" },
+  };
+  const staticDbConfig = {
+    ...mockServerConfig,
+    tls: { ...mockServerConfig.tls, mode: "static", cert_source: "db", cert_path: "", key_path: "" },
+  };
+
+  it("shows a Certificate Source selector in static mode", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticFileConfig as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByLabelText("Certificate source")).toHaveValue("file");
+  });
+
+  it("shows path fields for file source and PEM textareas for db source", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticFileConfig as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    // File source: paths shown, PEM textareas hidden.
+    expect(screen.getByText("Certificate Path")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Private key (PEM)")).not.toBeInTheDocument();
+
+    // Toggle to db: paths hidden, PEM textareas shown.
+    await user.selectOptions(screen.getByLabelText("Certificate source"), "db");
+    expect(screen.queryByText("Certificate Path")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Certificate (PEM)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Private key (PEM)")).toBeInTheDocument();
+  });
+
+  it("never pre-fills the private key textarea for db source", async () => {
+    // GET never returns key material; the textarea must start empty even when a
+    // certificate is already installed.
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...staticDbConfig,
+      tls_certificate_info: {
+        subject: "CN=example.com",
+        issuer: "CN=Example CA",
+        dns_names: ["example.com"],
+        not_before: "2026-01-01T00:00:00Z",
+        not_after: "2027-01-01T00:00:00Z",
+      },
+    } as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByLabelText("Certificate (PEM)")).toHaveValue("");
+    expect(screen.getByLabelText("Private key (PEM)")).toHaveValue("");
+  });
+
+  it("renders the installed certificate metadata panel for db source", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...staticDbConfig,
+      tls_certificate_info: {
+        subject: "CN=example.com",
+        issuer: "CN=Example CA",
+        dns_names: ["example.com", "www.example.com"],
+        not_before: "2026-01-01T00:00:00Z",
+        not_after: "2027-01-01T00:00:00Z",
+      },
+    } as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByText("CN=example.com")).toBeInTheDocument();
+    expect(screen.getByText("CN=Example CA")).toBeInTheDocument();
+    expect(screen.getByText(/www\.example\.com/)).toBeInTheDocument();
+  });
+
+  it("prompts to paste a certificate when none is installed for db source", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByText(/no certificate.*stored/i)).toBeInTheDocument();
+  });
+
+  it("sends pasted certificate and private key on save for db source", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    vi.mocked(api.saveServerConfig).mockResolvedValue({
+      value: staticDbConfig,
+      restartRequired: true,
+    } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.type(screen.getByLabelText("Certificate (PEM)"), "CERTPEM");
+    await user.type(screen.getByLabelText("Private key (PEM)"), "KEYPEM");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    const arg = vi.mocked(api.saveServerConfig).mock.lastCall![0];
+    expect(arg.tls.certificate).toBe("CERTPEM");
+    expect(arg.tls.private_key).toBe("KEYPEM");
+  });
+
+  it("clears the PEM textareas after a successful db save", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    // PUT response omits cert/key (write-only), as the real API does.
+    vi.mocked(api.saveServerConfig).mockResolvedValue({
+      value: staticDbConfig,
+      restartRequired: true,
+    } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.type(screen.getByLabelText("Private key (PEM)"), "KEYPEM");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByLabelText("Private key (PEM)")).toHaveValue(""),
+    );
+  });
 });

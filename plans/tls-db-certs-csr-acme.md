@@ -213,7 +213,25 @@ the DB. Blocks shipping Chunk 3 / mTLS-via-DB / ACME.
   with a CLI command + restart, no host file access to PEM material required.
   Depends on Chunk 3.
 
-## Chunk 4 — DB cert/key UI (Feature 1 frontend)
+## Chunk 4 — DB cert/key UI (Feature 1 frontend) (DONE)
+
+Done 2026-06-10. `types/config.ts` gained `CertMetadata` (subject/issuer/
+dns_names/ip_addresses/not_before/not_after), write-only `TLSConfig.certificate`
++ `private_key` (sent on save, never returned), and read-only
+`ServerConfig.tls_certificate_info`; re-exported `CertMetadata` from the api
+barrel. `AdminServerPage.tsx` static block now has a **Certificate source**
+selector (file | db): file keeps the cert/key path inputs; db shows the
+installed-cert metadata panel (subject/issuer/SANs/validity, expired flag),
+a paste-PEM certificate textarea, and a **write-only** private-key textarea
+(never pre-filled — GET returns no key — and cleared after save since the PUT
+response omits it). `handleSave` carries `tls_certificate_info` forward across
+the metadata-less PUT response so the panel persists until the next reload. The
+existing CA-path/mTLS field is shared by both sources. 8 new vitest cases (source
+toggle, file↔db field swap, never-pre-filled key, metadata panel, empty-state
+prompt, db save payload, post-save clear); full frontend suite 348 green; tsc +
+eslint clean.
+
+Original scope (for reference):
 
 - Scope: `frontend/src/pages/AdminServerPage.tsx`, `frontend/src/api/config.ts`.
 - `cert_source` selector; cert textarea (paste PEM); key textarea (write-only,

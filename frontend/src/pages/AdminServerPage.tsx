@@ -25,6 +25,13 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
+// Render an ISO timestamp from the cert-metadata API in the operator's locale,
+// falling back to the raw value if it does not parse.
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
 function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
@@ -112,8 +119,15 @@ export function AdminServerPage() {
     setSuccess(false);
     try {
       const { value: updated } = await saveServerConfig(config);
-      setConfig(updated ?? config);
-      setSaved(updated ?? config);
+      // The PUT response never echoes the write-only cert/key PEM or the
+      // cert_source: db metadata, so adopting it as-is both clears the PEM
+      // textareas (write-only) and would blank the metadata panel — carry the
+      // last-known metadata forward until the next load/restart refreshes it.
+      const next = updated
+        ? { ...updated, tls_certificate_info: updated.tls_certificate_info ?? config.tls_certificate_info }
+        : config;
+      setConfig(next);
+      setSaved(next);
       setSuccess(true);
       setRestartRequired(true);
     } catch (err: unknown) {
@@ -148,6 +162,11 @@ export function AdminServerPage() {
   if (!config) return null;
 
   const tlsMode = config.tls.mode;
+  const certSource = config.tls.cert_source || "file";
+  const certInfo = config.tls_certificate_info;
+  const certExpired = certInfo
+    ? new Date(certInfo.not_after).getTime() < Date.now()
+    : false;
   const wsEnabled = config.websocket.enabled ?? true;
 
   return (
@@ -237,26 +256,110 @@ export function AdminServerPage() {
 
         {tlsMode === "static" && (
           <>
-            <FieldRow label="Certificate Path">
-              <input
-                type="text"
-                value={config.tls.cert_path}
-                onChange={(e) => setTlsField("cert_path", e.target.value)}
-                placeholder="/etc/ssl/certs/server.crt"
-                className={INPUT_CLASS}
+            <FieldRow
+              label="Certificate Source"
+              hint="File: paths on disk (k8s/cert-manager mounts). Database: paste the PEM here — stored encrypted, managed entirely from this UI, no host access needed."
+            >
+              <select
+                aria-label="Certificate source"
+                value={certSource}
+                onChange={(e) => setTlsField("cert_source", e.target.value)}
+                className={SELECT_CLASS}
                 disabled={saving}
-              />
+              >
+                <option value="file">File (paths on disk)</option>
+                <option value="db">Database (paste PEM)</option>
+              </select>
             </FieldRow>
-            <FieldRow label="Key Path">
-              <input
-                type="text"
-                value={config.tls.key_path}
-                onChange={(e) => setTlsField("key_path", e.target.value)}
-                placeholder="/etc/ssl/private/server.key"
-                className={INPUT_CLASS}
-                disabled={saving}
-              />
-            </FieldRow>
+
+            {certSource !== "db" && (
+              <>
+                <FieldRow label="Certificate Path">
+                  <input
+                    type="text"
+                    value={config.tls.cert_path}
+                    onChange={(e) => setTlsField("cert_path", e.target.value)}
+                    placeholder="/etc/ssl/certs/server.crt"
+                    className={INPUT_CLASS}
+                    disabled={saving}
+                  />
+                </FieldRow>
+                <FieldRow label="Key Path">
+                  <input
+                    type="text"
+                    value={config.tls.key_path}
+                    onChange={(e) => setTlsField("key_path", e.target.value)}
+                    placeholder="/etc/ssl/private/server.key"
+                    className={INPUT_CLASS}
+                    disabled={saving}
+                  />
+                </FieldRow>
+              </>
+            )}
+
+            {certSource === "db" && (
+              <>
+                {certInfo ? (
+                  <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-700">
+                    <p className="mb-2 font-semibold text-gray-900">Installed certificate</p>
+                    <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1">
+                      <dt className="text-gray-500">Subject</dt>
+                      <dd className="break-all font-mono">{certInfo.subject}</dd>
+                      <dt className="text-gray-500">Issuer</dt>
+                      <dd className="break-all font-mono">{certInfo.issuer}</dd>
+                      {(certInfo.dns_names?.length || certInfo.ip_addresses?.length) ? (
+                        <>
+                          <dt className="text-gray-500">SANs</dt>
+                          <dd className="break-all font-mono">
+                            {[...(certInfo.dns_names ?? []), ...(certInfo.ip_addresses ?? [])].join(", ")}
+                          </dd>
+                        </>
+                      ) : null}
+                      <dt className="text-gray-500">Valid from</dt>
+                      <dd>{formatDate(certInfo.not_before)}</dd>
+                      <dt className="text-gray-500">Expires</dt>
+                      <dd className={certExpired ? "font-semibold text-red-600" : ""}>
+                        {formatDate(certInfo.not_after)}
+                        {certExpired && " (expired)"}
+                      </dd>
+                    </dl>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                    No certificate is stored yet. Paste a certificate and private key below, then Save.
+                  </div>
+                )}
+                <FieldRow
+                  label="Certificate (PEM)"
+                  hint="Leaf certificate plus any intermediates, in PEM format (leaf first)."
+                >
+                  <textarea
+                    aria-label="Certificate (PEM)"
+                    value={config.tls.certificate ?? ""}
+                    onChange={(e) => setTlsField("certificate", e.target.value)}
+                    placeholder="Paste the PEM certificate (leaf first, then any intermediates)"
+                    rows={6}
+                    className={`${INPUT_CLASS} font-mono`}
+                    disabled={saving}
+                  />
+                </FieldRow>
+                <FieldRow
+                  label="Private Key (PEM) — write-only"
+                  hint="Pasted only to install or replace the key. It is stored encrypted and never displayed; leave blank to keep the current key."
+                >
+                  <textarea
+                    aria-label="Private key (PEM)"
+                    value={config.tls.private_key ?? ""}
+                    onChange={(e) => setTlsField("private_key", e.target.value)}
+                    placeholder="Paste the PEM private key (write-only — stored encrypted, never shown)"
+                    rows={6}
+                    className={`${INPUT_CLASS} font-mono`}
+                    disabled={saving}
+                  />
+                </FieldRow>
+              </>
+            )}
+
             <FieldRow
               label="CA Path — enables mutual TLS (mTLS)"
               hint="Leave blank for standard HTTPS. This is the client-certificate CA, not the server chain (put intermediates in Certificate Path). Set it only to require client certificates."
