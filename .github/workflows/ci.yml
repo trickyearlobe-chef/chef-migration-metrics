@@ -163,12 +163,10 @@ jobs:
           ignore-unfixed: false
           exit-code: '1'
 
-      # MEDIUM gate — the agreed target, STAGED. continue-on-error keeps it
-      # report-only until the pending fixable mediums land (react-router@6.30.4,
-      # brace-expansion@5.0.6 — blocked on the registry). Remove continue-on-error
-      # to promote MEDIUM to blocking once those are merged.
-      - name: Trivy — npm production deps, MEDIUM (staged, non-blocking)
-        continue-on-error: true
+      # MEDIUM gate — the agreed target, now BLOCKING. The pending fixable
+      # mediums that kept this staged have landed (react-router@6.30.4,
+      # brace-expansion@5.0.6), so MEDIUM npm production vulns now fail the PR.
+      - name: Trivy — npm production deps, MEDIUM (blocking)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
