@@ -54,6 +54,17 @@ const (
 	KeyPerformance                = "performance"
 	KeyBackup                     = "backup"
 	KeyCredentialEncryptionKeyEnv = "credential_encryption_key_env"
+
+	// DB cert_source TLS material. These are standalone config-store entries,
+	// NOT config sections: they are written and read directly by the admin TLS
+	// save path and the static-mode listener wiring, and are deliberately
+	// excluded from AllConfigKeys/ConfigToSections so config assembly never
+	// tries to fold PEM material into a config struct. The certificate is
+	// stored non-secret (public); the private key is stored secret (encrypted,
+	// never returned by any API). See tls-static.md § 2.7.
+	KeyServerTLSCertificate       = "server.tls.certificate"
+	KeyServerTLSPrivateKey        = "server.tls.private_key"
+	KeyServerTLSPrivateKeyPending = "server.tls.private_key.pending"
 )
 
 // ServerListenSection is the JSON/YAML shape of the `server.listen` config

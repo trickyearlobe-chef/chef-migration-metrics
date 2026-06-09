@@ -4,13 +4,31 @@
 package webapi
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 )
+
+// dbCertKeySubmission extracts the write-only cert_source: db PEM material from
+// the admin save body. These live under `tls` in the request but are routed to
+// dedicated encrypted config-store keys (configstore.KeyServerTLSCertificate /
+// KeyServerTLSPrivateKey) — never into the server.tls config section — so PEM
+// material is kept out of the assembled config struct and GET responses.
+type dbCertKeySubmission struct {
+	TLS struct {
+		Certificate string `yaml:"certificate"`
+		PrivateKey  string `yaml:"private_key"`
+	} `yaml:"tls"`
+}
 
 // ---------------------------------------------------------------------------
 // GET/PUT /api/v1/admin/config/server
@@ -26,6 +44,10 @@ func (r *Router) handleAdminConfigServer(w http.ResponseWriter, req *http.Reques
 			WriteInternalError(w, "Failed to serialise server config.")
 			return
 		}
+		// For cert_source: db, surface the installed certificate's metadata
+		// (subject/SANs/expiry) so the UI can show what's active. The private
+		// key is never read or returned here.
+		data = r.attachDBCertInfo(req.Context(), cfg, data)
 		WriteJSON(w, http.StatusOK, data)
 	case http.MethodPut:
 		r.putAdminConfigServer(w, req)
@@ -42,10 +64,25 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	var input config.ServerConfig
-	if !decodeAdminConfigBody(w, req, &input) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		WriteBadRequest(w, "Failed to read request body.")
 		return
 	}
+
+	var input config.ServerConfig
+	if err := yaml.Unmarshal(body, &input); err != nil {
+		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+		return
+	}
+
+	// cert_source: db submits the cert/key PEM under `tls` in the same body;
+	// they are routed to dedicated encrypted store keys, never the server.tls
+	// section (which has no PEM fields).
+	var dbCerts dbCertKeySubmission
+	_ = yaml.Unmarshal(body, &dbCerts)
+	dbCertPEM := []byte(dbCerts.TLS.Certificate)
+	dbKeyPEM := []byte(dbCerts.TLS.PrivateKey)
 
 	// --- TLS validation ---
 
@@ -69,23 +106,62 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// dbCertProvided is true when a complete cert/key pair was submitted for
+	// the DB source; set during static validation and used at persist time.
+	dbCertProvided := false
+
 	if input.TLS.Mode == "static" {
-		if input.TLS.CertPath == "" {
+		switch input.TLS.CertSource {
+		case "", "file":
+			if input.TLS.CertPath == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					"server.tls.cert_path is required when tls.mode is 'static'.")
+				return
+			}
+			if input.TLS.KeyPath == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					"server.tls.key_path is required when tls.mode is 'static'.")
+				return
+			}
+			// Preflight the certificate exactly as the listener does at startup
+			// (files readable, PEM parses, key matches cert). This prevents saving
+			// a TLS configuration that would brick the listener on the next restart.
+			if err := apptls.ValidateStaticPair(input.TLS.CertPath, input.TLS.KeyPath, input.TLS.CAPath); err != nil {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+				return
+			}
+		case "db":
+			// The cert/key live in the encrypted config store, not on disk, so
+			// cert_path/key_path are not required. The pair is submitted in the
+			// request (or already stored from a prior save / CSR promotion).
+			haveCert := len(dbCertPEM) > 0
+			haveKey := len(dbKeyPEM) > 0
+			switch {
+			case haveCert && haveKey:
+				// Preflight the submitted pair before persisting, so a bad pair
+				// can never brick the listener on the next reload/restart.
+				if err := apptls.ValidateStaticPairBytes(dbCertPEM, dbKeyPEM, input.TLS.CAPath); err != nil {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+					return
+				}
+				dbCertProvided = true
+			case haveCert != haveKey:
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					"server.tls: certificate and private_key must be provided together for cert_source 'db'.")
+				return
+			default:
+				// Neither submitted — only valid if a pair is already stored.
+				if !r.dbCertPairStored(req.Context()) {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						"server.tls: cert_source 'db' requires a certificate and private_key (none submitted and none stored).")
+					return
+				}
+			}
+		default:
 			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				"server.tls.cert_path is required when tls.mode is 'static'.")
-			return
-		}
-		if input.TLS.KeyPath == "" {
-			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				"server.tls.key_path is required when tls.mode is 'static'.")
-			return
-		}
-		// Preflight the certificate exactly as the listener does at startup
-		// (files readable, PEM parses, key matches cert). This prevents saving
-		// a TLS configuration that would brick the listener on the next restart.
-		if err := apptls.ValidateStaticPair(input.TLS.CertPath, input.TLS.KeyPath, input.TLS.CAPath); err != nil {
-			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+				fmt.Sprintf("server.tls.cert_source: must be 'file' or 'db', got %q.", input.TLS.CertSource))
 			return
 		}
 	}
@@ -235,11 +311,39 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Persist a submitted cert_source: db pair to its dedicated encrypted keys:
+	// the certificate non-secret (public), the private key secret (never
+	// returned by any API). Already validated above.
+	if dbCertProvided {
+		certJSON, _ := json.Marshal(dbCerts.TLS.Certificate)
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSCertificate, certJSON, false, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store TLS certificate: %v", err)
+			WriteInternalError(w, "Failed to store TLS certificate.")
+			return
+		}
+		keyJSON, _ := json.Marshal(dbCerts.TLS.PrivateKey)
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSPrivateKey, keyJSON, true, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store TLS private key: %v", err)
+			WriteInternalError(w, "Failed to store TLS private key.")
+			return
+		}
+	}
+
 	if r.configHolder != nil {
 		if err := r.configHolder.Reload(ctx); err != nil {
 			r.logf("ERROR", "admin/config/server: reload: %v", err)
 			WriteInternalError(w, "Failed to reload config after update.")
 			return
+		}
+	}
+
+	// Swap the running static-TLS certificate in place so the listener serves
+	// the new pair without a restart (tls-static.md § 2.3). Best-effort: when
+	// no reloader is wired (file source, plain HTTP, or no DB listener yet) the
+	// pair is already persisted and the next restart applies it.
+	if dbCertProvided && r.tlsReload != nil {
+		if err := r.tlsReload.Reload(dbCertPEM, dbKeyPEM); err != nil && !errors.Is(err, ErrNoTLSReloader) {
+			r.logf("WARN", "admin/config/server: in-place TLS reload failed (%v); restart applies the new certificate", err)
 		}
 	}
 
@@ -250,4 +354,57 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 	WriteJSON(w, http.StatusOK, putConfigResponse{Value: data, RestartRequired: true})
+}
+
+// dbCertPairStored reports whether a cert_source: db certificate AND private
+// key are both already present in the config store. Used to allow re-saving a
+// db configuration without resubmitting the pair.
+func (r *Router) dbCertPairStored(ctx context.Context) bool {
+	if r.configStore == nil {
+		return false
+	}
+	if _, err := r.configStore.Get(ctx, configstore.KeyServerTLSCertificate); err != nil {
+		return false
+	}
+	if _, err := r.configStore.GetSecret(ctx, configstore.KeyServerTLSPrivateKey); err != nil {
+		return false
+	}
+	return true
+}
+
+// attachDBCertInfo augments a serialised server-config JSON object with a
+// `tls_certificate_info` field carrying the installed DB certificate's
+// operator-safe metadata (subject/SANs/expiry). It is a no-op unless the live
+// cert_source is `db` and a certificate is stored. The private key is never
+// read. On any error it returns data unchanged.
+func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data json.RawMessage) json.RawMessage {
+	if cfg == nil || cfg.Server.TLS.CertSource != "db" || r.configStore == nil {
+		return data
+	}
+	raw, err := r.configStore.Get(ctx, configstore.KeyServerTLSCertificate)
+	if err != nil {
+		return data
+	}
+	var pemStr string
+	if err := json.Unmarshal(raw, &pemStr); err != nil {
+		return data
+	}
+	meta, err := apptls.CertMetadataFromPEM([]byte(pemStr))
+	if err != nil {
+		return data
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		return data
+	}
+	obj["tls_certificate_info"] = metaJSON
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return data
+	}
+	return merged
 }

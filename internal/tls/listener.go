@@ -24,11 +24,24 @@ type ListenerConfig struct {
 	// Port is the primary HTTPS port.
 	Port int
 
+	// CertSource selects where the certificate/key come from: "file" (default,
+	// uses CertPath/KeyPath) or "db" (uses CertPEM/KeyPEM, fetched from the
+	// encrypted config store). See tls-static.md § 2.7.
+	CertSource string
+
 	// CertPath is the path to the PEM-encoded certificate file (chain).
+	// Used when CertSource is "file".
 	CertPath string
 
 	// KeyPath is the path to the PEM-encoded private key file.
+	// Used when CertSource is "file".
 	KeyPath string
+
+	// CertPEM / KeyPEM hold in-memory certificate and key PEM bytes. Used when
+	// CertSource is "db"; the resulting CertManager supports ReloadFromPEM for
+	// config-change-driven reload without a restart.
+	CertPEM []byte
+	KeyPEM  []byte
 
 	// CAPath is the optional path to a PEM-encoded CA bundle for mTLS.
 	CAPath string
@@ -116,7 +129,15 @@ func NewListener(handler http.Handler, cfg ListenerConfig, log LogFunc) (*Listen
 		cmOpts = append(cmOpts, WithCAPath(cfg.CAPath))
 	}
 
-	cm, err := NewCertManager(cfg.CertPath, cfg.KeyPath, cmOpts...)
+	var cm *CertManager
+	var err error
+	if cfg.CertSource == "db" {
+		// In-memory PEM from the encrypted config store. Supports
+		// config-change-driven ReloadFromPEM rather than file-watch.
+		cm, err = NewCertManagerFromPEM(cfg.CertPEM, cfg.KeyPEM, cmOpts...)
+	} else {
+		cm, err = NewCertManager(cfg.CertPath, cfg.KeyPath, cmOpts...)
+	}
 	if err != nil {
 		return nil, err
 	}

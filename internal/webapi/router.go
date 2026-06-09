@@ -117,6 +117,13 @@ type Router struct {
 	// config section endpoints. Nil when not wired up.
 	configHolder *configstore.ConfigHolder
 
+	// tlsReload triggers an in-place swap of the running static-TLS
+	// certificate when a new cert_source: db pair is saved, so the listener
+	// serves it without a restart (tls-static.md § 2.3). Nil on plain-HTTP
+	// deployments or when the running listener is not a DB source — the save
+	// still persists and a restart applies it. Set via WithTLSReload.
+	tlsReload *TLSReloadHolder
+
 	// hypervisor provides template discovery, VM inventory, and orphan
 	// cleanup. When nil, buildHypervisor() builds one on demand from live
 	// config. A static value (from WithHypervisor) takes precedence — this

@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -136,6 +137,11 @@ type serverApp struct {
 	// fell open to plain HTTP (tls.md § 2.4). Shared with the webapi router so
 	// the /api/v1/server/tls-status endpoint and UI banner can report it.
 	tlsStatus *webapi.TLSStatusHolder
+
+	// tlsReload lets the admin TLS save path swap the running cert_source: db
+	// certificate in place (no restart). Populated with the running listener's
+	// CertManager once the static listener is built; nil/empty otherwise.
+	tlsReload *webapi.TLSReloadHolder
 
 	// restartCh signals an admin-requested graceful restart (POST
 	// /api/v1/admin/restart). awaitShutdown selects on it, drains gracefully,
@@ -1124,6 +1130,12 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	app.tlsStatus = webapi.NewTLSStatusHolder()
 	routerOpts = append(routerOpts, webapi.WithTLSStatus(app.tlsStatus))
 
+	// Holder for the running listener's in-place cert reloader. Wired up front
+	// so the admin TLS save path can swap a cert_source: db certificate without
+	// a restart once the static listener (below) populates it.
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	routerOpts = append(routerOpts, webapi.WithTLSReload(app.tlsReload))
+
 	if recorder != nil {
 		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))
 	}
@@ -1402,9 +1414,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	case "static":
 		app.startup.Info("TLS mode: static (operator-managed certificate)")
 
-		tlsListener, tlsErr := apptls.NewListener(apiRouter, apptls.ListenerConfig{
+		lcfg := apptls.ListenerConfig{
 			ListenAddress:           app.cfg.Server.ListenAddress,
 			Port:                    app.cfg.Server.Port,
+			CertSource:              app.cfg.Server.TLS.CertSource,
 			CertPath:                app.cfg.Server.TLS.CertPath,
 			KeyPath:                 app.cfg.Server.TLS.KeyPath,
 			CAPath:                  app.cfg.Server.TLS.CAPath,
@@ -1412,7 +1425,22 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			HTTPRedirectPort:        app.cfg.Server.TLS.HTTPRedirectPort,
 			GracefulShutdownTimeout: shutdownTimeout,
 			TrustedProxy:            app.cfg.Server.TrustedProxy,
-		}, tlsLog)
+		}
+
+		if app.cfg.Server.TLS.CertSource == "db" {
+			app.startup.Info("TLS certificate source: db (encrypted config store)")
+			certPEM, keyPEM, loadErr := app.loadDBCertKey(context.Background())
+			if loadErr != nil {
+				// Fail open (tls-static.md § 2.4): a missing or unreadable DB
+				// certificate falls open to plain HTTP exactly like a missing
+				// file, so it can never lock the operator out of the UI.
+				return app.degradeToPlainHTTP(apiRouter, loadErr), nil
+			}
+			lcfg.CertPEM = certPEM
+			lcfg.KeyPEM = keyPEM
+		}
+
+		tlsListener, tlsErr := apptls.NewListener(apiRouter, lcfg, tlsLog)
 		if tlsErr != nil {
 			// Fail open (tls.md § 2.4): a bad certificate must never prevent
 			// reaching the UI to fix it. Record degraded state and serve plain
@@ -1426,7 +1454,13 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			app.startup.Info("mutual TLS (mTLS) enabled — client certificates required")
 		}
 
+		// File source: poll for on-disk changes (no-op for the db source).
+		// DB source: register the CertManager so the admin save path can swap
+		// the certificate in place on a config change (tls-static.md § 2.3).
 		tlsListener.CertManager().WatchForChanges(30 * time.Second)
+		if app.tlsReload != nil {
+			app.tlsReload.Set(tlsListener.CertManager())
+		}
 		res.errCh = tlsListener.Serve()
 		res.tlsListener = tlsListener
 
@@ -1439,6 +1473,37 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	}
 
 	return res, nil
+}
+
+// loadDBCertKey fetches the cert_source: db certificate and private key from
+// the encrypted config store. The certificate is non-secret; the private key
+// is secret. Both are stored as JSON-encoded PEM strings by the admin save
+// path. It returns an error if the store is unavailable or either entry is
+// missing/undecodable, which the caller treats as a fail-open condition.
+func (app *serverApp) loadDBCertKey(ctx context.Context) (certPEM, keyPEM []byte, err error) {
+	if app.cfgStore == nil {
+		return nil, nil, fmt.Errorf("cert_source is db but the config store is unavailable (set CMM_CREDENTIAL_ENCRYPTION_KEY)")
+	}
+
+	certRaw, err := app.cfgStore.Get(ctx, configstore.KeyServerTLSCertificate)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading TLS certificate from config store: %w", err)
+	}
+	var certStr string
+	if err := json.Unmarshal(certRaw, &certStr); err != nil {
+		return nil, nil, fmt.Errorf("decoding stored TLS certificate: %w", err)
+	}
+
+	keyRaw, err := app.cfgStore.GetSecret(ctx, configstore.KeyServerTLSPrivateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading TLS private key from config store: %w", err)
+	}
+	var keyStr string
+	if err := json.Unmarshal(keyRaw, &keyStr); err != nil {
+		return nil, nil, fmt.Errorf("decoding stored TLS private key: %w", err)
+	}
+
+	return []byte(certStr), []byte(keyStr), nil
 }
 
 // listenTarget is a resolved (address, port) the server may bind.
