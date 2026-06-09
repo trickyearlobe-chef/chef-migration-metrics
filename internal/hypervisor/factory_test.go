@@ -4,6 +4,7 @@
 package hypervisor
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -266,5 +267,58 @@ func TestNewFromConfig_CaseInsensitive(t *testing.T) {
 	}
 	if h == nil {
 		t.Fatal("expected non-nil for uppercase type")
+	}
+}
+
+// tlsInsecure reports the InsecureSkipVerify setting of a client's transport.
+func tlsInsecure(t *testing.T, hc *http.Client) bool {
+	t.Helper()
+	tr, ok := hc.Transport.(*http.Transport)
+	if !ok || tr.TLSClientConfig == nil {
+		return false
+	}
+	return tr.TLSClientConfig.InsecureSkipVerify
+}
+
+func TestHypervisorClients_TLSVerificationSecureByDefault(t *testing.T) {
+	if tlsInsecure(t, NewVCenterClient("https://vc", "u", "p", "").httpClient) {
+		t.Error("vCenter: TLS verification should be ON by default")
+	}
+	if tlsInsecure(t, NewProxmoxClient("https://pve", "n", "id", "s").httpClient) {
+		t.Error("Proxmox token client: TLS verification should be ON by default")
+	}
+	if tlsInsecure(t, NewProxmoxClientWithPassword("https://pve", "n", "u", "p").httpClient) {
+		t.Error("Proxmox password client: TLS verification should be ON by default")
+	}
+}
+
+func TestHypervisorClients_InsecureOptIn(t *testing.T) {
+	if !tlsInsecure(t, NewVCenterClient("https://vc", "u", "p", "", WithInsecureSkipTLSVerify(true)).httpClient) {
+		t.Error("vCenter: expected InsecureSkipVerify when opted in")
+	}
+	if !tlsInsecure(t, NewProxmoxClient("https://pve", "n", "id", "s", WithInsecureSkipTLSVerify(true)).httpClient) {
+		t.Error("Proxmox: expected InsecureSkipVerify when opted in")
+	}
+}
+
+func TestNewFromConfig_VCenterInsecureSetting(t *testing.T) {
+	secrets := map[string]string{"vcenter_password": "p"}
+	base := map[string]any{"vcenter_host": "vc.example.com", "vcenter_username": "u"}
+
+	h, err := NewFromConfig("vcenter", base, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tlsInsecure(t, h.(*VCenterClient).httpClient) {
+		t.Error("default config should verify TLS")
+	}
+
+	withInsecure := map[string]any{"vcenter_host": "vc.example.com", "vcenter_username": "u", "vcenter_insecure": true}
+	h2, err := NewFromConfig("vcenter", withInsecure, secrets)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !tlsInsecure(t, h2.(*VCenterClient).httpClient) {
+		t.Error("vcenter_insecure: true should disable TLS verification")
 	}
 }

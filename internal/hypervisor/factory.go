@@ -37,10 +37,12 @@ func newProxmoxFromConfig(settings map[string]any, secrets map[string]string) (H
 	}
 
 	// Prefer API token auth if configured; fall back to username/password.
+	insecure := settingBool(settings, "proxmox_insecure")
+
 	tokenID := settingStr(settings, "proxmox_token_id")
 	tokenSecret := secrets["proxmox_token_secret"]
 	if tokenID != "" && tokenSecret != "" {
-		return NewProxmoxClient(baseURL, node, tokenID, tokenSecret), nil
+		return NewProxmoxClient(baseURL, node, tokenID, tokenSecret, WithInsecureSkipTLSVerify(insecure)), nil
 	}
 
 	username := settingStr(settings, "proxmox_username")
@@ -51,7 +53,7 @@ func newProxmoxFromConfig(settings map[string]any, secrets map[string]string) (H
 	if password == "" {
 		return nil, fmt.Errorf("hypervisor: proxmox requires driver_secrets.proxmox_password")
 	}
-	return NewProxmoxClientWithPassword(baseURL, node, username, password), nil
+	return NewProxmoxClientWithPassword(baseURL, node, username, password, WithInsecureSkipTLSVerify(insecure)), nil
 }
 
 func newVCenterFromConfig(settings map[string]any, secrets map[string]string) (Hypervisor, error) {
@@ -72,7 +74,8 @@ func newVCenterFromConfig(settings map[string]any, secrets map[string]string) (H
 		baseURL = "https://" + host
 	}
 	datacenter := settingStr(settings, "datacenter")
-	return NewVCenterClient(baseURL, username, password, datacenter), nil
+	insecure := settingBool(settings, "vcenter_insecure")
+	return NewVCenterClient(baseURL, username, password, datacenter, WithInsecureSkipTLSVerify(insecure)), nil
 }
 
 // settingStr extracts a string value from a map[string]any.
@@ -83,4 +86,15 @@ func settingStr(m map[string]any, key string) string {
 	}
 	s, _ := v.(string)
 	return s
+}
+
+// settingBool extracts a bool value from a map[string]any, defaulting to false
+// when the key is absent or not a bool.
+func settingBool(m map[string]any, key string) bool {
+	v, ok := m[key]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
 }
