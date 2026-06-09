@@ -114,7 +114,25 @@ Original scope (for reference):
 - **Acceptance:** new fields parse/default/validate; existing config unaffected;
   `go test ./internal/config/...` green.
 
-## Chunk 2 — CertManager: in-memory PEM source (foundational)
+## Chunk 2 — CertManager: in-memory PEM source (foundational) (DONE)
+
+Done 2026-06-09. New `internal/tls/source.go` defines a `pemSource` interface
+with two impls: `fileSource` (paths on disk) and `bytesSource` (mutex-guarded
+in-memory PEM). `CertManager` now holds a `source` instead of cert/key paths.
+`NewCertManager(certPath, keyPath, …)` (file) is unchanged for callers; new
+`NewCertManagerFromPEM(certPEM, keyPEM, …)` builds the bytes source. Shared
+`newCertManager` constructor; `loadCertificate` now fetches PEM from the source
+and a pure `buildCertificate` helper does parse+validate+leaf-parse (used by
+both load and reload). New `ReloadFromPEM(cert, key)` validates before swapping
+and keeps the previous cert on failure (config-change reload path for
+`cert_source: db`); errors on a file source. `CertPath()/KeyPath()` return `""`
+for the bytes source. `WatchForChanges` and `checkKeyPermissions` are no-ops for
+the bytes source (file-only via type assertion). All existing TLS tests pass
+unchanged; new `certmanager_pem_test.go` covers both sources, reload, mismatch,
+expiry, file-source guard, and serve-cert parity. `go test -race`, `go vet`,
+`gofmt` clean; full repo builds.
+
+Original scope (for reference):
 
 - Scope: `internal/tls/certmanager.go`, `internal/tls/listener.go`.
 - Refactor `NewCertManager` to accept a PEM **byte source** (file path OR
