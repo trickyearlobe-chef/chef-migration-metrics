@@ -51,8 +51,8 @@ type proxmoxClusterResource struct {
 // NewProxmoxClient creates a Proxmox hypervisor client using API token auth.
 // The tokenID is in the format "user@realm!tokenname" and tokenSecret is the
 // token value.
-func NewProxmoxClient(baseURL, node, tokenID, tokenSecret string) *ProxmoxClient {
-	httpClient := newProxmoxHTTPClient()
+func NewProxmoxClient(baseURL, node, tokenID, tokenSecret string, opts ...ClientOption) *ProxmoxClient {
+	httpClient := newProxmoxHTTPClient(applyClientOptions(opts).insecureSkipTLSVerify)
 	c := &ProxmoxClient{
 		baseURL:     strings.TrimRight(baseURL, "/"),
 		node:        node,
@@ -68,8 +68,8 @@ func NewProxmoxClient(baseURL, node, tokenID, tokenSecret string) *ProxmoxClient
 
 // NewProxmoxClientWithPassword creates a Proxmox hypervisor client using
 // username/password ticket auth. The username is in "user@realm" format.
-func NewProxmoxClientWithPassword(baseURL, node, username, password string) *ProxmoxClient {
-	httpClient := newProxmoxHTTPClient()
+func NewProxmoxClientWithPassword(baseURL, node, username, password string, opts ...ClientOption) *ProxmoxClient {
+	httpClient := newProxmoxHTTPClient(applyClientOptions(opts).insecureSkipTLSVerify)
 	c := &ProxmoxClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		node:       node,
@@ -83,11 +83,11 @@ func NewProxmoxClientWithPassword(baseURL, node, username, password string) *Pro
 	return c
 }
 
-func newProxmoxHTTPClient() *http.Client {
+func newProxmoxHTTPClient(insecure bool) *http.Client {
 	return &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // POC — Proxmox often uses self-signed certs.
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}, //nolint:gosec // opt-in via driver_settings.proxmox_insecure for self-signed certs
 		},
 	}
 }

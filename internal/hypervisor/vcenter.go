@@ -52,14 +52,17 @@ const sessionTTL = 25 * time.Minute
 // sessionBuffer is the safety margin before expiry at which we re-auth.
 const sessionBuffer = 5 * time.Minute
 
-// NewVCenterClient creates a vCenter hypervisor client.
-func NewVCenterClient(baseURL, username, password, datacenter string) *VCenterClient {
+// NewVCenterClient creates a vCenter hypervisor client. TLS certificate
+// verification is enabled by default; pass WithInsecureSkipTLSVerify(true) for
+// vCenter endpoints using self-signed certificates.
+func NewVCenterClient(baseURL, username, password, datacenter string, opts ...ClientOption) *VCenterClient {
+	o := applyClientOptions(opts)
 	jar, _ := cookiejar.New(nil) // cookiejar.New never returns an error with nil options
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 		Jar:     jar,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // vCenter often uses self-signed certs.
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: o.insecureSkipTLSVerify}, //nolint:gosec // opt-in via driver_settings.vcenter_insecure for self-signed certs
 		},
 	}
 	return &VCenterClient{
