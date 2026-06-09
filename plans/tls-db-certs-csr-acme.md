@@ -63,9 +63,15 @@ Spawned agents write files only — caller handles git.
 
 ---
 
-## Chunk 0 — Spec updates (NEEDS SIGN-OFF)
+## Chunk 0 — Spec updates (DONE)
 
-Specs may not change without owner approval (CLAUDE.md). Get sign-off, then:
+Signed off and complete. `tls.md` split into a thin index + `tls-static.md` /
+`tls-acme.md` / `tls-csr.md`; `overview.md` routing + `configuration-schema-server.md`
+ACME/static tables and inbound links updated to match. Resolved open items:
+spec sign-off granted; `file`+`db` `cert_source` coexist (k8s/cert-manager file
+mounts exist); CSR default key algo `ecdsa-p256`.
+
+Original scope (for reference):
 
 - `specifications/tls.md` §2: add `cert_source`, DB-stored cert/key model,
   encrypted-at-rest, key never exposed, reload-on-config-change.
@@ -230,9 +236,9 @@ live in the DB reach users — it gates Chunk 4, mTLS-via-DB, and ACME. Chunk 7
 reuses Chunk 3 storage; 5/6 reuse Chunk 3 cert path. Do not start a chunk until
 its dependencies are merged.
 
-## Open items to confirm before Chunk 1
+## Open items to confirm before Chunk 1 (RESOLVED)
 
-- Spec sign-off (Chunk 0).
-- Deployment: any k8s/cert-manager file-mount users? (confirms `cert_source`
-  coexist is worth keeping — assumed yes).
-- CSR key-algo default (assumed ecdsa-p256, offer rsa-2048).
+- Spec sign-off (Chunk 0). ✓ granted.
+- Deployment: k8s/cert-manager file-mount users exist → keep `file`+`db`
+  `cert_source` coexist. ✓
+- CSR key-algo default: `ecdsa-p256` (offer rsa-2048/3072/4096, ecdsa-p384). ✓

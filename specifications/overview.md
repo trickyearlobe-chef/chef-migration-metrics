@@ -44,7 +44,10 @@
 | [system-health](system-health.md) | Host/system metrics collection and the admin system-stats page. |
 | [test-kitchen-config-ui](test-kitchen-config-ui.md) | UI for Test Kitchen configuration. |
 | [test-kitchen-drivers](test-kitchen-drivers.md) | Multi-driver Test Kitchen abstraction (dokken, vcenter, ec2, …): overlays, credentials, platform mapping. |
-| [tls](tls.md) | TLS listening modes: off (plain HTTP), static cert/key, and ACME (Let's Encrypt). |
+| [tls](tls.md) | TLS overview & index: listening modes, HTTP redirect, HSTS, degraded-status + repair-CLI recovery. |
+| [tls-acme](tls-acme.md) | ACME via x/crypto/acme: HTTP-01 + Route 53 DNS-01, DB-backed encrypted state, renewal. |
+| [tls-csr](tls-csr.md) | In-app CSR generation and signed-cert promotion. |
+| [tls-static](tls-static.md) | Static cert/key (file or encrypted DB source), mTLS, reload, fail-open, save-time preflight. |
 | [ui-polish-phase7](ui-polish-phase7.md) | UI polish work, phase 7. |
 | [version-battery-bars](version-battery-bars.md) | "Battery bar" visualisation of per-version upgrade progress. |
 | [visualisation](visualisation.md) | Dashboard and log-viewer visualisations. |
