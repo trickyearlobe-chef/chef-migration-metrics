@@ -88,7 +88,21 @@ Original scope (for reference):
   split rule). Update `specifications/overview.md`.
 - **Acceptance:** specs approved; pre-commit line-length hook passes.
 
-## Chunk 1 — Config schema + validation
+## Chunk 1 — Config schema + validation (DONE)
+
+Done 2026-06-09. `TLSConfig.CertSource` (`cert_source`, default `file`) + env
+override `..._TLS_CERT_SOURCE`; `static`+`db` skips cert/key path requirement
+(validated at save/preflight, not startup); `cert_source` value validated
+(`file`|`db`). dns-01 route53 requires `region`+`hosted_zone_id` in
+`dns_provider_config` (region also via `AWS_REGION`/`AWS_DEFAULT_REGION`),
+skipped when `AWS_ACCESS_KEY_ID` set (env/role escape). `ACMEConfig.StoragePath`
+marked deprecated/parse-only (ACME state is DB-backed per §3.5). Frontend
+`config.ts` gained `cert_source` + `dns_provider_config`. AWS creds (access/secret
+key) intentionally NOT in YAML — config-store secrets only (later chunks).
+Tech debt logged: load-time dns-01 validation can't see config-store region/zone.
+10 new config tests; full `internal/config` + AdminServerPage suites green.
+
+Original scope (for reference):
 
 - Scope: `internal/config/config.go` (TLSConfig `CertSource`; ACME storage mode;
   Route53 cred keys), `frontend/src/types/config.ts` (add `cert_source`,
