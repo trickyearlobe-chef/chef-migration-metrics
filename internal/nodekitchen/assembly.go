@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/pathsafe"
 )
 
 // CookbookDownloader downloads a cookbook from the Chef Server into a directory.
@@ -109,7 +110,15 @@ func AssembleCookbooks(
 			}
 			mu.Unlock()
 
-			destDir := filepath.Join(workDir, "cookbooks", name)
+			destDir, derr := pathsafe.SafeJoin(filepath.Join(workDir, "cookbooks"), name)
+			if derr != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("nodekitchen: unsafe cookbook name: %w", derr)
+				}
+				mu.Unlock()
+				return
+			}
 			err := assembleSingleCookbook(ctx, name, version, destDir, cfg, downloader, gitLocator)
 			if err != nil {
 				mu.Lock()
@@ -220,7 +229,10 @@ func WriteRoles(ctx context.Context, workDir string, roleNames []string, roleFet
 			return fmt.Errorf("nodekitchen: marshalling role %q: %w", name, err)
 		}
 
-		dest := filepath.Join(workDir, "roles", name+".json")
+		dest, derr := pathsafe.SafeJoin(filepath.Join(workDir, "roles"), name+".json")
+		if derr != nil {
+			return fmt.Errorf("nodekitchen: unsafe role name %q: %w", name, derr)
+		}
 		if err := os.WriteFile(dest, data, 0o644); err != nil {
 			return fmt.Errorf("nodekitchen: writing role file %q: %w", dest, err)
 		}
@@ -311,7 +323,10 @@ func (d *ChefServerDownloader) DownloadCookbook(ctx context.Context, name, versi
 			return fmt.Errorf("nodekitchen: downloading file %q for %s/%s: %w", ref.Path, name, version, err)
 		}
 
-		filePath := filepath.Join(destDir, ref.Path)
+		filePath, err := pathsafe.SafeJoin(destDir, ref.Path)
+		if err != nil {
+			return fmt.Errorf("nodekitchen: unsafe manifest path %q for %s/%s: %w", ref.Path, name, version, err)
+		}
 		if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
 			return fmt.Errorf("nodekitchen: creating dir for %q: %w", filePath, err)
 		}

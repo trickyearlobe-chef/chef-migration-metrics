@@ -258,6 +258,27 @@ func TestWriteRoles_MissingRole(t *testing.T) {
 	}
 }
 
+func TestWriteRoles_RejectsPathTraversal(t *testing.T) {
+	workDir := t.TempDir()
+	os.MkdirAll(filepath.Join(workDir, "roles"), 0o755)
+
+	const evil = "../../../tmp/evil"
+	fetcher := &mockRoleFetcher{
+		roles: map[string]*chefapi.RoleDetail{
+			evil: {Name: evil, RunList: []string{}},
+		},
+	}
+
+	err := WriteRoles(context.Background(), workDir, []string{evil}, fetcher)
+	if err == nil {
+		t.Fatal("expected error for traversal role name, got nil")
+	}
+	// Ensure nothing was written outside the roles dir.
+	if _, statErr := os.Stat(filepath.Join(workDir, "..", "..", "..", "tmp", "evil.json")); statErr == nil {
+		t.Fatal("traversal role name escaped the work directory")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // AssembleCookbooks — server mode
 // ---------------------------------------------------------------------------
