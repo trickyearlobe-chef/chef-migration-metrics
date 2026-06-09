@@ -127,6 +127,10 @@ server:
       challenge: "http-01"         # "http-01" | "tls-alpn-01" | "dns-01"
       dns_provider: ""             # Required when challenge is dns-01
       dns_provider_config: {}      # Provider-specific key/value pairs
+      register_hostname: false     # Publish an A record per domain via route53
+      hostname_ttl: 60             # A-record TTL in seconds
+      hostname_interface: ""       # Use this interface's IPv4 (else auto-detect)
+      hostname_ip: ""              # Use this literal IPv4 (highest precedence)
       storage_path: "/var/lib/chef-migration-metrics/acme"
       renew_before_days: 30        # Begin renewal this many days before expiry
       agree_to_tos: false          # Must be true to accept the CA's Terms of Service
@@ -189,6 +193,10 @@ For `cert_source: file`, certificates are reloaded on `SIGHUP` or when file chan
 | `tls.acme.challenge` | No | `http-01` | Challenge type: `http-01` or `dns-01`. |
 | `tls.acme.dns_provider` | When `dns-01` | `""` | DNS provider for DNS-01 challenges. Supported: `route53`. |
 | `tls.acme.dns_provider_config` | When `dns-01` | `{}` | Provider config. For `route53`: `region`, `hosted_zone_id`. AWS credentials resolve from encrypted config-store secrets (`tls.acme.route53.access_key_id`/`.secret_access_key`), then `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, then IAM instance role. |
+| `tls.acme.register_hostname` | No | `false` | When `dns_provider: route53`, publish/maintain an A record for each `domains` entry so the FQDN resolves to this host. Off by default (manual FQDN management). See [tls-acme.md § 3.13](tls-acme.md#313-hostname-self-registration-route-53-a-record). |
+| `tls.acme.hostname_ttl` | No | `60` | TTL (seconds) for self-registered A records. Low because the host IP is often DHCP-assigned. |
+| `tls.acme.hostname_interface` | No | `""` | Publish the global-unicast IPv4 of this named interface (e.g. `eth0`). Empty = auto-detect the default-route interface. |
+| `tls.acme.hostname_ip` | No | `""` | Publish this literal IPv4. Highest precedence; overrides `hostname_interface` and auto-detect. |
 | `tls.acme.renew_before_days` | No | `30` | Begin certificate renewal this many days before expiry. Must be between 1 and 89. |
 | `tls.acme.agree_to_tos` | Yes | `false` | Must be explicitly set to `true`. The application will not obtain certificates in ACME mode until the operator accepts the CA's Terms of Service. |
 | `tls.acme.trusted_roots` | No | `""` | Path to a PEM file of additional CA roots to trust when communicating with the ACME CA (useful for private ACME servers). |

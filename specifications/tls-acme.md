@@ -38,6 +38,10 @@ server:
       challenge: http-01         # http-01 | dns-01
       dns_provider: ""           # route53 (required when challenge: dns-01)
       dns_provider_config: {}    # Provider-specific key/value pairs (§ 3.4)
+      register_hostname: false   # Publish an A record for each domain (§ 3.13)
+      hostname_ttl: 60           # A-record TTL in seconds (§ 3.13)
+      hostname_interface: ""     # Use this interface's IPv4 (§ 3.13)
+      hostname_ip: ""            # Use this literal IPv4 (highest precedence, § 3.13)
       renew_before_days: 30
       agree_to_tos: false        # Must be true to accept CA's Terms of Service
     min_version: "1.2"
@@ -71,7 +75,9 @@ works for internal/private domains or wildcard certificates.
 **Route 53 client.** The DNS-01 solver uses the `aws-sdk-go-v2` Route 53 subset
 (`config`, `credentials`, `service/route53`, `smithy-go`). The solver UPSERTs the
 TXT record, then polls `GetChange` until the change set is `INSYNC` before telling
-the CA to validate. The TXT record is removed after validation.
+the CA to validate. The TXT record is removed after validation. The same
+`route53:ChangeResourceRecordSets` permission also covers optional hostname
+self-registration (§ 3.13) — no additional IAM is required.
 
 **AWS credential resolution order:**
 
@@ -210,7 +216,64 @@ server:
         hosted_zone_id: Z0123456789ABCDEFGHIJ
         # Credentials from encrypted config-store secrets, AWS_ACCESS_KEY_ID/
         # AWS_SECRET_ACCESS_KEY env vars, or an IAM instance role (§ 3.4).
+      register_hostname: true      # Also publish an A record per domain (§ 3.13)
       renew_before_days: 30
       agree_to_tos: true
     min_version: "1.2"
 ```
+
+### 3.13 Hostname Self-Registration (Route 53 A record)
+
+When `dns_provider: route53` is configured, the application can also publish and
+maintain a DNS **A record** for the server itself, so the FQDN clients use
+resolves to the host without the operator hand-editing DNS. It reuses the same
+Route 53 credentials, hosted zone, and `route53:ChangeResourceRecordSets`
+permission as the DNS-01 solver (§ 3.4) — no additional configuration or IAM.
+
+This is **opt-in** and **off by default** (`register_hostname: false`), so
+deployments whose FQDN is managed manually (external DNS, a load balancer, or
+another automation system) are unaffected.
+
+**Names.** One A record is UPSERTed for **each name in `acme.domains`**, so the
+published names always match the issued certificate's SANs. A wildcard domain
+(`*.example.com`) is skipped with a `WARN` — an A record cannot be published for
+a wildcard name.
+
+**IP address resolution** (first non-empty wins):
+
+1. `hostname_ip` — a literal IPv4 address, published verbatim.
+2. `hostname_interface` — the global-unicast IPv4 of the named interface
+   (e.g. `eth0`).
+3. *Auto-detect* (default) — the IPv4 of the interface that carries the host's
+   **default route**, i.e. the address the OS would source off-link traffic
+   from. Determined without sending packets.
+
+When `hostname_ip` or `hostname_interface` is set but unusable (not a valid
+IPv4 / no global-unicast IPv4 on that interface), registration is **skipped with
+an `ERROR`** — there is no silent fall-through to auto-detect, because the
+operator was explicit. Only the auto-detect path chooses an address on its own.
+
+**TTL.** `hostname_ttl` (default `60` seconds). Low by design: the host IP is
+often DHCP-assigned and may change.
+
+**Lifecycle.**
+
+- The A record(s) are UPSERTed at ACME startup, on each renewal cycle, and when
+  relevant configuration changes; the solver polls `GetChange` to `INSYNC`.
+- Re-asserting on every renewal cycle means a changed DHCP lease is corrected
+  automatically (the next cycle UPSERTs the new IP).
+- The record is **not deleted on shutdown** — the server is expected to restart.
+  Turning `register_hostname` off stops further updates but **leaves the existing
+  record** for the operator to remove (or repoint) manually.
+
+**Fail-soft, orthogonal to issuance.** DNS-01 validates via a TXT record, so
+A-record self-registration is independent of certificate issuance. A
+registration failure (no IPv4 detectable, an explicit IP/interface unusable, or
+a Route 53 error) logs an `ERROR` on the `tls` scope and is surfaced in TLS
+status, but **never** blocks issuance, renewal, or the fail-open path (§ 3.11),
+and never aborts startup.
+
+> **Security.** Self-registration publishes the host's IP in the configured
+> hosted zone. For internet-facing zones this exposes the address publicly (as
+> any A record does); internal deployments using a private hosted zone keep it
+> internal. Credentials remain encrypted config-store secrets (§ 3.4).
