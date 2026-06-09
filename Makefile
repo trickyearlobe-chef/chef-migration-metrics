@@ -445,6 +445,40 @@ vet: ## Run go vet
 	go vet ./...
 
 # =============================================================================
+# Security / Supply Chain
+# =============================================================================
+
+.PHONY: scan-npm
+scan-npm: ## Offline supply-chain scan of frontend npm dependencies
+	@./scripts/npm-supply-chain-scan.sh
+
+.PHONY: vuln-go
+vuln-go: ## Scan Go module + reachable code for known vulnerabilities (govulncheck)
+	@if command -v govulncheck >/dev/null 2>&1; then \
+		echo "$(GREEN)Running govulncheck...$(RESET)"; \
+		govulncheck ./...; \
+	else \
+		echo "$(YELLOW)govulncheck not found — install with:$(RESET)"; \
+		echo "  go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+		exit 1; \
+	fi
+
+.PHONY: scan-trivy
+scan-trivy: ## Filesystem scan (vuln + secret + misconfig) with Trivy
+	@if command -v trivy >/dev/null 2>&1; then \
+		echo "$(GREEN)Running trivy fs (HIGH,CRITICAL gate)...$(RESET)"; \
+		trivy fs --scanners vuln,secret,misconfig \
+			--severity HIGH,CRITICAL --exit-code 1 \
+			--skip-dirs frontend/node_modules --skip-dirs embedded --skip-dirs .samples \
+			. ; \
+	else \
+		echo "$(YELLOW)trivy not found — skipping (install: brew install trivy)$(RESET)"; \
+	fi
+
+.PHONY: scan
+scan: vuln-go scan-npm scan-trivy ## Run all supply-chain / vulnerability scans (Go + npm + Trivy)
+
+# =============================================================================
 # Packaging
 # =============================================================================
 

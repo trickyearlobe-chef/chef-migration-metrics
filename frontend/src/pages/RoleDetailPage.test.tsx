@@ -28,7 +28,6 @@ vi.mock("../hooks/useTargetChefVersion", () => ({
   }),
 }));
 
-// eslint-disable-next-line import/first
 import { RoleDetailPage } from "./RoleDetailPage";
 
 const mockDetail: RoleDetailResponse = {

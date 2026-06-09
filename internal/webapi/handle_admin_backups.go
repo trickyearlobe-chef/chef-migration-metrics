@@ -148,8 +148,11 @@ func (r *Router) handleBackupCreate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Run backup in background with a detached context (not tied to request lifecycle)
-	go r.backupService.RunCreate(context.Background(), &m)
+	// Run the backup in the background with a detached context (not tied to the
+	// request lifecycle). Hand the goroutine its own copy of the manifest so its
+	// status mutations don't race the response read below.
+	bm := m
+	go r.backupService.RunCreate(context.Background(), &bm)
 
 	WriteJSON(w, http.StatusAccepted, map[string]any{
 		"id":     m.ID,

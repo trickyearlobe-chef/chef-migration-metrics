@@ -30,7 +30,6 @@ vi.mock("../hooks/useTargetChefVersion", () => ({
 }));
 
 // RolesPage must be imported after the mocks are set up.
-// eslint-disable-next-line import/first
 import { RolesPage } from "./RolesPage";
 
 const mockResponse: RoleListResponse = {

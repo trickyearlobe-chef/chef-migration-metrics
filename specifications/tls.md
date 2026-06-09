@@ -115,6 +115,15 @@ out of the UI. Save-time preflight (§ 2.6) makes this path rare — it normally
 only triggers when certificate files change on disk underneath an already-running
 deployment, or when `server.tls` was written before preflight existed.
 
+**Startup validation is structural-only.** Configuration validation checks that
+`cert_path`/`key_path` are set when `mode: static`, but never that the files
+exist, are readable, or parse — that is the listener's concern (above). A missing
+or moved cert/key/CA file therefore never aborts startup; it falls open to plain
+HTTP. This is deliberate: it makes on-host file removal a reliable recovery path
+(§ 5.3). Save-time preflight (§ 2.6) still loads the certificate before
+persisting, so an unusable certificate can never be committed through the admin
+API.
+
 An **expired** certificate that otherwise loads is not a failure: the listener
 starts in static (HTTPS) mode and logs a `WARN` (operators may be mid-renewal).
 
@@ -279,6 +288,17 @@ The Server & TLS admin page surfaces the same state inline.
 3. Restart the service. On restart with a valid pair, static HTTPS resumes and
    the degraded state clears. There is no in-place recovery — the fallback plain
    listener holds the port until the process restarts.
+
+**Recovering from an mTLS lockout.** Setting `ca_path` enables
+`RequireAndVerifyClientCert`: a client without a certificate trusted by that
+bundle is rejected at the TLS handshake, before reaching the UI or any login
+path. A single `ca_path` value can therefore lock out an entire org, including
+admins. The listener itself builds successfully, so the § 2.4 fail-open does not
+trigger on its own. Recovery requires host access: move or rename the CA bundle
+(or the cert/key) referenced by `server.tls`, then restart. The certificate load
+now fails, the deployment falls open to plain HTTP (§ 2.4), and the admin UI is
+reachable over HTTP to correct or clear `ca_path`. Host filesystem access is the
+recovery boundary — there is no environment-variable or flag override.
 
 ## 6. Backward Compatibility
 

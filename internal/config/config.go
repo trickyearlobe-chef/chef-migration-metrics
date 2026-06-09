@@ -1652,23 +1652,30 @@ func (c *Config) validateServer(ve *ValidationError, w *Warnings) {
 	}
 }
 
+// validateTLSStatic performs STRUCTURAL validation only: it checks that the
+// required paths are set, but deliberately does NOT verify that the cert/key/ca
+// files exist, are readable, or parse. File presence/readability/PEM-validity is
+// the TLS listener's concern, which fails open to plain HTTP when a load fails
+// (tls.md § 2.4). Treating a missing file as a fatal validation error here would
+// abort startup (YAML load and DB assembly) before that fail-open path runs,
+// turning a single bad/moved file — including an mTLS ca_path — into a total
+// lockout with no on-box recovery. By keeping these checks out of validation,
+// moving the cert/key/ca files away on the host is the supported escape hatch:
+// the deployment falls back to plain HTTP so an operator can reach the UI.
+//
+// Save-time preflight (tls.md § 2.6) independently loads the certificate via
+// apptls.ValidateStaticPair before persisting a change, so an unusable cert can
+// still never be committed through the admin API.
 func (c *Config) validateTLSStatic(ve *ValidationError, w *Warnings) {
 	if c.Server.TLS.CertPath == "" {
 		ve.add("server.tls.cert_path is required when tls.mode is 'static'")
-	} else if _, err := os.Stat(c.Server.TLS.CertPath); err != nil {
-		ve.addf("server.tls.cert_path %q: %v", c.Server.TLS.CertPath, err)
 	}
 	if c.Server.TLS.KeyPath == "" {
 		ve.add("server.tls.key_path is required when tls.mode is 'static'")
-	} else if info, err := os.Stat(c.Server.TLS.KeyPath); err != nil {
-		ve.addf("server.tls.key_path %q: %v", c.Server.TLS.KeyPath, err)
-	} else if info.Mode().Perm()&0o077 != 0 {
+	} else if info, err := os.Stat(c.Server.TLS.KeyPath); err == nil && info.Mode().Perm()&0o077 != 0 {
+		// Permissions are a best-effort warning when the key is present; a
+		// missing key is not flagged here (the listener handles it).
 		w.addf("server.tls.key_path %q has permissions %o; recommended 0600", c.Server.TLS.KeyPath, info.Mode().Perm())
-	}
-	if c.Server.TLS.CAPath != "" {
-		if _, err := os.Stat(c.Server.TLS.CAPath); err != nil {
-			ve.addf("server.tls.ca_path %q: %v", c.Server.TLS.CAPath, err)
-		}
 	}
 }
 

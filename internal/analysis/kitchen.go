@@ -6,17 +6,12 @@ package analysis
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode"
-
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,51 +30,6 @@ type KitchenExecutor interface {
 	// converge or verify fails. An error is returned only for failures to
 	// start the process, context cancellation, or signal-based termination.
 	Run(ctx context.Context, dir string, extraEnv []string, args ...string) (stdout, stderr string, exitCode int, err error)
-}
-
-// defaultKitchenExecutor shells out to the real kitchen binary.
-type defaultKitchenExecutor struct {
-	path string
-}
-
-func (e *defaultKitchenExecutor) Run(ctx context.Context, dir string, extraEnv []string, args ...string) (string, string, int, error) {
-	cmd := makeCommand(ctx, e.path, args...)
-	cmd.Dir = dir
-
-	// Build a sanitised environment that prevents Bundler from picking up
-	// a Gemfile inside the cookbook directory. Without this, cookbooks that
-	// ship a Gemfile can cause `kitchen list` (and other kitchen commands)
-	// to activate Bundler, which may emit HTML error pages from private gem
-	// servers or fail to resolve dependencies — producing non-JSON output
-	// on stdout that breaks our JSON parser.
-	env := sanitiseKitchenEnv(os.Environ())
-	env = append(env, extraEnv...)
-	cmd.Env = env
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-
-	err := cmd.Run()
-	exitCode := 0
-	if err != nil {
-		// Try to extract exit code from the error.
-		var exitErr *exec.ExitError
-		if ok := errors.As(err, &exitErr); ok {
-			exitCode = exitErr.ExitCode()
-			err = nil // Process ran to completion, just non-zero exit.
-		}
-	}
-	return stdoutBuf.String(), stderrBuf.String(), exitCode, err
-}
-
-// buildImageIndex returns a map from image name to ImageEntry for fast lookup.
-func buildImageIndex(images []config.ImageEntry) map[string]config.ImageEntry {
-	idx := make(map[string]config.ImageEntry, len(images))
-	for _, img := range images {
-		idx[img.Name] = img
-	}
-	return idx
 }
 
 // ---------------------------------------------------------------------------
@@ -103,10 +53,6 @@ func transportPasswordEnvVar(kitchenName string) string {
 // platform's SSH key. The platform name is normalised.
 func transportKeyEnvVar(kitchenName string) string {
 	return "CMM_TK_KEY_" + normalizeEnvVarSuffix(kitchenName)
-}
-
-func transportKeyPathEnvVar(kitchenName string) string {
-	return "CMM_TK_KEY_PATH_" + normalizeEnvVarSuffix(kitchenName)
 }
 
 // normalizeEnvVarSuffix uppercases and replaces any character that is not
@@ -234,16 +180,6 @@ func countLeadingSpaces(s string) int {
 // YAML helpers (minimal — avoids importing a full YAML library)
 // ---------------------------------------------------------------------------
 
-// chefMajorVersion returns the major version number from a "MAJOR.MINOR.PATCH"
-// string. Returns 0 for unrecognised strings.
-func chefMajorVersion(v string) int {
-	if idx := strings.IndexByte(v, '.'); idx > 0 {
-		n, _ := strconv.Atoi(v[:idx])
-		return n
-	}
-	return 0
-}
-
 // yamlScalar formats a string as a YAML scalar value. If the value contains
 // characters that are special in YAML, it is double-quoted. Otherwise it is
 // written bare.
@@ -283,40 +219,6 @@ func writeAttributes(buf *bytes.Buffer, attrs map[string]interface{}, indent int
 			fmt.Fprintf(buf, "%s%s: %s\n", prefix, k, yamlScalar(fmt.Sprintf("%v", val)))
 		}
 	}
-}
-
-// writeDriverSetting writes a single driver setting key/value pair to buf.
-// Scalar values (string, int, float, bool) are written as "key: value".
-// Nested maps are written recursively using writeAttributes.
-func writeDriverSetting(buf *bytes.Buffer, key string, value any, indent int) {
-	prefix := strings.Repeat(" ", indent)
-	switch v := value.(type) {
-	case map[string]any:
-		fmt.Fprintf(buf, "%s%s:\n", prefix, key)
-		writeAttributes(buf, v, indent+2)
-	default:
-		fmt.Fprintf(buf, "%s%s: %s\n", prefix, key, yamlScalar(fmt.Sprintf("%v", v)))
-	}
-}
-
-// sortedKeys returns the keys of a map[string]any in sorted order.
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// sortedStringKeys returns the keys of a map[string]string in sorted order.
-func sortedStringKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // truncSHA returns the first 8 characters of a SHA string for log messages.

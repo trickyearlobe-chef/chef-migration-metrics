@@ -36,7 +36,12 @@ func (s *mockStore) ClaimNextKitchenRun(ctx context.Context) (*datastore.Kitchen
 			item.Status = datastore.QueueStatusRunning
 			now := time.Now()
 			item.StartedAt = &now
-			return item, nil
+			// Return a snapshot copy, mirroring a real DB `... RETURNING` that
+			// yields a fresh row. The Manager mutates the claimed item, so
+			// returning the shared pointer would race other workers' locked
+			// reads here.
+			cp := *item
+			return &cp, nil
 		}
 	}
 	return nil, nil
@@ -100,12 +105,17 @@ func (s *mockStore) GetKitchenQueueStats(ctx context.Context) (*datastore.Kitche
 	return &stats, nil
 }
 
+// getItem returns a snapshot COPY of the matching item, taken under the lock.
+// Callers (the test goroutine) read fields off the result concurrently with the
+// worker goroutines mutating the originals under the same lock, so returning the
+// shared pointer would race; a copy gives the caller a consistent snapshot.
 func (s *mockStore) getItem(id string) *datastore.KitchenQueueItem {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, item := range s.items {
 		if item.ID == id {
-			return item
+			cp := *item
+			return &cp
 		}
 	}
 	return nil

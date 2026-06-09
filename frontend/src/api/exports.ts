@@ -38,7 +38,7 @@ export async function createExport(
     return res.json() as Promise<ExportJobResponse>;
   }
 
-  let code = res.status;
+  const code = res.status;
   let message = res.statusText || `HTTP ${res.status}`;
   try {
     const errBody = await res.text();

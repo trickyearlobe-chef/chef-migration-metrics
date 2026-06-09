@@ -1098,7 +1098,10 @@ server:
 	expectParseError(t, yaml, "key_path is required")
 }
 
-func TestValidation_TLSStaticCertNotFound(t *testing.T) {
+// Missing cert/key files must NOT be a fatal validation error: file presence is
+// the listener's concern, which fails open to plain HTTP (tls.md § 2.4). This is
+// the on-box escape hatch — moving the files away recovers a bricked deployment.
+func TestValidation_TLSStaticCertNotFound_NotFatal(t *testing.T) {
 	yaml := `
 organisations:
   - name: test-org
@@ -1113,7 +1116,7 @@ server:
     cert_path: /nonexistent/cert.pem
     key_path: /nonexistent/key.pem
 `
-	expectParseError(t, yaml, "cert_path")
+	mustParse(t, yaml)
 }
 
 func TestValidation_TLSStaticKeyPermissions(t *testing.T) {
@@ -1177,7 +1180,11 @@ server:
 	mustParse(t, yaml)
 }
 
-func TestValidation_TLSStaticCAPathNotFound(t *testing.T) {
+// A missing mTLS CA bundle (ca_path) must NOT be a fatal validation error.
+// Setting ca_path enables RequireAndVerifyClientCert, which can lock out an
+// entire org. Moving the CA file away on the host must fail the deployment open
+// to plain HTTP at the listener (tls.md § 2.4), not abort startup at validation.
+func TestValidation_TLSStaticCAPathNotFound_NotFatal(t *testing.T) {
 	dir := t.TempDir()
 	certFile := filepath.Join(dir, "cert.pem")
 	keyFile := filepath.Join(dir, "key.pem")
@@ -1199,7 +1206,7 @@ server:
     key_path: ` + keyFile + `
     ca_path: /nonexistent/ca.pem
 `
-	expectParseError(t, yaml, "ca_path")
+	mustParse(t, yaml)
 }
 
 func TestValidation_TLSMinVersion_Invalid(t *testing.T) {

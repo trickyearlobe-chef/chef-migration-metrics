@@ -3,6 +3,17 @@
 version: "2"
 
 linters:
+  exclusions:
+    rules:
+      # QF* are staticcheck's optional "quickfix" style suggestions (e.g. prefer
+      # a tagged switch, merge an assignment into a declaration). They are
+      # stylistic, not correctness issues; rewriting established handler
+      # conditionals for them adds risk without functional benefit, so the QF
+      # category is excluded project-wide. Substantive staticcheck checks
+      # (SA*, S1*) remain enabled.
+      - linters:
+          - staticcheck
+        text: "QF[0-9]+"
   settings:
     errcheck:
       # Exclude fire-and-forget patterns where checking the return value
@@ -36,6 +47,7 @@ linters:
         - os.RemoveAll
         - os.Unsetenv
         - os.Mkdir
+        - os.MkdirAll
         - os.WriteFile
         - (*io.ReadCloser).Close
         - (io.ReadCloser).Close

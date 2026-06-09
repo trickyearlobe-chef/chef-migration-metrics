@@ -189,7 +189,9 @@ func TestSAMLGenerateKeypair_Regenerate(t *testing.T) {
 	var first struct {
 		FingerprintSHA256 string `json:"fingerprint_sha256"`
 	}
-	json.NewDecoder(w.Body).Decode(&first)
+	if err := json.NewDecoder(w.Body).Decode(&first); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 
 	// Second generation (regenerate).
 	w2 := httptest.NewRecorder()
@@ -202,7 +204,9 @@ func TestSAMLGenerateKeypair_Regenerate(t *testing.T) {
 	var second struct {
 		FingerprintSHA256 string `json:"fingerprint_sha256"`
 	}
-	json.NewDecoder(w2.Body).Decode(&second)
+	if err := json.NewDecoder(w2.Body).Decode(&second); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 
 	// Fingerprints should differ (different keys).
 	if first.FingerprintSHA256 == second.FingerprintSHA256 {
