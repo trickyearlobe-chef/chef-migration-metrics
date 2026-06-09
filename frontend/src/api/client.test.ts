@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { apiFetch, ApiError } from "./client";
+import { apiFetch } from "./client";
 
 function makeResponse(
   status: number,

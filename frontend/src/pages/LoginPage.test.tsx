@@ -12,7 +12,6 @@ vi.mock("../context/AuthContext", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// eslint-disable-next-line import/first
 import { LoginPage } from "./LoginPage";
 
 describe("LoginPage", () => {

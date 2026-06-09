@@ -152,7 +152,6 @@ export function GlobalFilterProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run only on mount
 
   return (

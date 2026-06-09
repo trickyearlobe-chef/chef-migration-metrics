@@ -13,7 +13,6 @@ vi.mock("../context/AuthContext", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// eslint-disable-next-line import/first
 import { OwnerAliasesPage } from "./OwnerAliasesPage";
 
 function Wrapper({ children }: { children: React.ReactNode }) {

@@ -126,7 +126,7 @@ export async function resetPerformanceStats(): Promise<void> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    let code = res.status;
+    const code = res.status;
     let message = res.statusText || `HTTP ${res.status}`;
     try {
       const body = await res.text();
@@ -147,7 +147,7 @@ export async function resetPerformanceDB(): Promise<void> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    let code = res.status;
+    const code = res.status;
     let message = res.statusText || `HTTP ${res.status}`;
     try {
       const body = await res.text();
@@ -164,7 +164,7 @@ export async function vacuumFull(): Promise<void> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    let code = res.status;
+    const code = res.status;
     let message = res.statusText || `HTTP ${res.status}`;
     try {
       const body = await res.text();
