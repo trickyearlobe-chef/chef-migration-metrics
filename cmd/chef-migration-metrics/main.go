@@ -1709,6 +1709,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 // ---------------------------------------------------------------------------
 
 func run() int {
+	// Repair subcommands are dispatched before flag parsing: `tls reset` /
+	// `tls clear-ca` are host-side lockout recovery (tls.md § 6.3) and do not
+	// share the server's flag set.
+	if len(os.Args) > 1 && os.Args[1] == "tls" {
+		return runTLSCommand(os.Args[2:])
+	}
+
 	flags := parseCLI()
 
 	if flags.showVersion {

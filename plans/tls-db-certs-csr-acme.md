@@ -164,9 +164,6 @@ mismatch, partial, none-stored, keep-existing, GET metadata, reload trigger);
 main `loadDBCertKey` round-trip/missing/nil-store. `go test -race`, `go vet`,
 `gofmt` (my files) clean.
 
-**NOTE:** Chunk 3a (recovery CLI) is NOT yet done — it gates Chunk 4 / mTLS-via-DB
-/ ACME and must land before DB `cert_source` reaches users. Do it next.
-
 Original scope (for reference):
 
 - Scope: `internal/webapi/handle_admin_config_server.go` (+ helper),
@@ -181,7 +178,23 @@ Original scope (for reference):
 - **Acceptance:** can save cert/key via API, listener serves it, key never
   returned, bad pair rejected. Depends on Chunks 1,2.
 
-## Chunk 3a — TLS recovery CLI + anti-lockout (lands WITH Chunk 3)
+## Chunk 3a — TLS recovery CLI + anti-lockout (DONE)
+
+Done 2026-06-10. New `tls` repair subcommands dispatched in `main.go` `run()`
+before flag parsing: `tls reset` (set `server.tls.mode: off`) and `tls clear-ca`
+(drop `server.tls.ca_path`), in `cmd/.../tlsrepair.go`. Both read-modify-write the
+`server.tls` section only (never create a shadowing section where none exists →
+`repairNoSection` reported), are idempotent (`repairNoChange` when already in the
+desired state), and preserve all other TLS fields. Store is built from env only
+(`CMM_DATABASE_URL`/`DATABASE_URL` + `CMM_CREDENTIAL_ENCRYPTION_KEY`) so it works
+when the YAML config is broken/absent; no break-glass override (recovery boundary
+= host access, per tls.md § 6.3). Added `configstore.DeserializeValue` (inverse of
+`SerializeValue`) for targeted single-section decode. Spec § 6.3 was already
+rewritten in Chunk 0. Tests: reset/clear-ca (changed/no-change/no-section,
+field-preservation) via the in-memory store; `SerializeValue`/`DeserializeValue`
+round-trip. `go test -race`, `go vet`, build clean; new files gofmt-clean.
+
+Original scope (for reference):
 
 Must exist the moment DB `cert_source` is usable — it is the replacement escape
 hatch for the host-file removal that no longer applies once TLS material is in

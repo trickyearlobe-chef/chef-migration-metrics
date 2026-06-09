@@ -317,6 +317,18 @@ func SerializeValue(v any) (json.RawMessage, error) {
 	return json.RawMessage(data), nil
 }
 
+// DeserializeValue unmarshals a stored config-store JSON value into v using the
+// struct's yaml tags (snake_case), the inverse of SerializeValue. JSON is a
+// subset of YAML so the YAML decoder reads the stored JSON value correctly. Use
+// this to decode a single section (e.g. server.tls) into its config sub-struct
+// without assembling the whole config.
+func DeserializeValue(raw json.RawMessage, v any) error {
+	if err := yaml.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("configstore: deserialize value: %w", err)
+	}
+	return nil
+}
+
 // yamlToJSON serialises a value to JSON by first marshalling to YAML (which
 // uses the struct's yaml tags for field names), then unmarshalling to a
 // generic interface, then marshalling to JSON. This ensures the JSON output
