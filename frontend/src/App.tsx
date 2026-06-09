@@ -113,8 +113,18 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 
 // ---------------------------------------------------------------------------
 // Setup mode guard — admins with empty config_store are sent to /admin/setup.
-// Skips on the setup page itself to avoid infinite redirect loops.
 // ---------------------------------------------------------------------------
+
+// Routes that stay reachable while setup is incomplete. The wizard itself is
+// here to avoid an infinite redirect loop; the credentials page is here
+// because the organisation step requires a Chef API key credential, and the
+// wizard directs the admin there to create one. Without this the guard would
+// bounce the credentials page back to the wizard and setup would deadlock.
+const SETUP_ALLOWED_PREFIXES = ["/admin/setup", "/admin/credentials"];
+
+export function isSetupAllowedPath(pathname: string): boolean {
+  return SETUP_ALLOWED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
 
 function SetupModeGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useAuth();
@@ -126,7 +136,7 @@ function SetupModeGuard({ children }: { children: React.ReactNode }) {
     isAdmin &&
     !checking &&
     setupRequired &&
-    !location.pathname.startsWith("/admin/setup")
+    !isSetupAllowedPath(location.pathname)
   ) {
     return <Navigate to="/admin/setup" replace />;
   }
