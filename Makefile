@@ -445,6 +445,28 @@ vet: ## Run go vet
 	go vet ./...
 
 # =============================================================================
+# Security / Supply Chain
+# =============================================================================
+
+.PHONY: scan-npm
+scan-npm: ## Offline supply-chain scan of frontend npm dependencies
+	@./scripts/npm-supply-chain-scan.sh
+
+.PHONY: vuln-go
+vuln-go: ## Scan Go module + reachable code for known vulnerabilities (govulncheck)
+	@if command -v govulncheck >/dev/null 2>&1; then \
+		echo "$(GREEN)Running govulncheck...$(RESET)"; \
+		govulncheck ./...; \
+	else \
+		echo "$(YELLOW)govulncheck not found — install with:$(RESET)"; \
+		echo "  go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+		exit 1; \
+	fi
+
+.PHONY: scan
+scan: vuln-go scan-npm ## Run all supply-chain / vulnerability scans (Go + npm)
+
+# =============================================================================
 # Packaging
 # =============================================================================
 
