@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
@@ -199,14 +200,23 @@ func (h *SAMLHandler) HandleSLO(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// isRelativePath checks if a URL path is relative (starts with /) and does
-// not contain a protocol/authority to prevent open redirect.
+// isRelativePath reports whether s is a safe same-origin redirect target: a
+// path that starts with a single "/" and carries no scheme or authority, so it
+// cannot be used for an open redirect.
 func isRelativePath(s string) bool {
 	if !strings.HasPrefix(s, "/") {
 		return false
 	}
-	// Reject protocol-relative URLs like "//evil.com".
-	if strings.HasPrefix(s, "//") {
+	// Reject authority bypasses where the second character starts a host.
+	// "//evil.com" is protocol-relative; "/\evil.com" (and "/\/...") are
+	// treated as protocol-relative by browsers because they normalise "\" to
+	// "/". A leading single "/" followed by either is not a relative path.
+	if len(s) > 1 && (s[1] == '/' || s[1] == '\\') {
+		return false
+	}
+	// Defence in depth: a relative path must parse with no scheme and no host.
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "" || u.Host != "" {
 		return false
 	}
 	return true
