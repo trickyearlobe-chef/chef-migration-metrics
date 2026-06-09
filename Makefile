@@ -463,8 +463,20 @@ vuln-go: ## Scan Go module + reachable code for known vulnerabilities (govulnche
 		exit 1; \
 	fi
 
+.PHONY: scan-trivy
+scan-trivy: ## Filesystem scan (vuln + secret + misconfig) with Trivy
+	@if command -v trivy >/dev/null 2>&1; then \
+		echo "$(GREEN)Running trivy fs (HIGH,CRITICAL gate)...$(RESET)"; \
+		trivy fs --scanners vuln,secret,misconfig \
+			--severity HIGH,CRITICAL --exit-code 1 \
+			--skip-dirs frontend/node_modules --skip-dirs embedded --skip-dirs .samples \
+			. ; \
+	else \
+		echo "$(YELLOW)trivy not found — skipping (install: brew install trivy)$(RESET)"; \
+	fi
+
 .PHONY: scan
-scan: vuln-go scan-npm ## Run all supply-chain / vulnerability scans (Go + npm)
+scan: vuln-go scan-npm scan-trivy ## Run all supply-chain / vulnerability scans (Go + npm + Trivy)
 
 # =============================================================================
 # Packaging
