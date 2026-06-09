@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -22,12 +21,6 @@ import (
 func newGitRepoTestRouter(store *mockStore) *Router {
 	cfg := testConfig()
 	cfg.TargetChefVersions = []string{"18.0.0"}
-	hub := NewEventHub()
-	go hub.Run()
-	return NewRouter(store, cfg, hub)
-}
-
-func newGitRepoTestRouterWithConfig(store *mockStore, cfg *config.Config) *Router {
 	hub := NewEventHub()
 	go hub.Run()
 	return NewRouter(store, cfg, hub)

@@ -36,13 +36,6 @@ func (f *fakeRefChecker) CheckCredentialReferences(_ context.Context, name strin
 	return f.refs[name], nil
 }
 
-// errorRefChecker always returns an error.
-type errorRefChecker struct{ err error }
-
-func (e *errorRefChecker) CheckCredentialReferences(context.Context, string) ([]secrets.CredentialReference, error) {
-	return nil, e.err
-}
-
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -506,7 +499,7 @@ func TestCredentialAdapter_List_Empty(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	}
 
-	if list != nil && len(list) != 0 {
+	if len(list) != 0 {
 		t.Errorf("expected empty list, got %d items", len(list))
 	}
 }

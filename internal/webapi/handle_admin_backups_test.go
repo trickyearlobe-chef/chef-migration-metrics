@@ -190,7 +190,9 @@ func TestHandleAdminBackupStatus_NoActiveJob(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if resp["active"] != false {
 		t.Errorf("active = %v, want false", resp["active"])
 	}
@@ -213,7 +215,9 @@ func TestMaintenanceMode_BlocksAPIRoutes(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if resp["error"] != "maintenance" {
 		t.Errorf("error = %v, want maintenance", resp["error"])
 	}

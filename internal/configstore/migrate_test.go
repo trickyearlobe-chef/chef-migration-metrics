@@ -18,15 +18,6 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// fakeLegacyDB — simulates the legacy runtime_settings table
-// ---------------------------------------------------------------------------
-
-type fakeLegacyDB struct {
-	runtimeSettings []legacyRuntimeSettingRow
-	queryErr        error // if set, all queries fail
-}
-
-// ---------------------------------------------------------------------------
 // Test: MigrateFromLegacy — skips when config_store already has entries
 // ---------------------------------------------------------------------------
 

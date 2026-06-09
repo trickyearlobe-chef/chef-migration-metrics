@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -584,58 +583,6 @@ func toLowerASCII(s string) string {
 		b[i] = c
 	}
 	return string(b)
-}
-
-// sortGitRepoResps sorts enriched git repo response items by the given field.
-func sortGitRepoResps(items []gitRepoResp, field, order string) {
-	statusRank := func(s string) int {
-		switch s {
-		case "failed":
-			return 0
-		case "partial":
-			return 1
-		case "incompatible":
-			return 0
-		case "compatible", "passed":
-			return 2
-		default: // untested, pending, etc.
-			return 3
-		}
-	}
-
-	sort.Slice(items, func(i, j int) bool {
-		var less bool
-		switch field {
-		case "compatibility":
-			ri, rj := statusRank(items[i].Compatibility), statusRank(items[j].Compatibility)
-			if ri != rj {
-				less = ri < rj
-			} else {
-				less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
-			}
-		case "tk_status":
-			ri, rj := statusRank(items[i].TKStatus), statusRank(items[j].TKStatus)
-			if ri != rj {
-				less = ri < rj
-			} else {
-				less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
-			}
-		case "last_fetched":
-			less = items[i].LastFetchedAt < items[j].LastFetchedAt
-		case "git_url":
-			less = strings.ToLower(items[i].GitRepoURL) < strings.ToLower(items[j].GitRepoURL)
-		case "clone_status":
-			less = items[i].CloneStatus < items[j].CloneStatus
-		case "has_test_suite":
-			less = !items[i].HasTestSuite && items[j].HasTestSuite
-		default: // "name"
-			less = strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
-		}
-		if strings.EqualFold(order, "desc") {
-			return !less
-		}
-		return less
-	})
 }
 
 // removeLocalGitClone removes the local git clone directory for a cookbook

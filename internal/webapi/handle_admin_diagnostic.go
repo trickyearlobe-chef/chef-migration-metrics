@@ -335,7 +335,12 @@ func (r *Router) handleDiagnosticBundle(w http.ResponseWriter, req *http.Request
 		_ = err
 	}
 
-	zw.Close()
+	if err := zw.Close(); err != nil {
+		// Close flushes the remaining buffered zip data; a failure here means
+		// the bundle the client received is truncated/corrupt. Headers are
+		// already sent, so log it rather than attempting an HTTP error.
+		r.logf("ERROR", "admin/diagnostic: finalise bundle: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

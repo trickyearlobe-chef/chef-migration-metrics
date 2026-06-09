@@ -25,11 +25,6 @@ type cookbookRow struct {
 	Compatibility    string // "compatible", "incompatible", "untested"
 }
 
-// key returns the composite natural key for this cookbook row.
-func (c cookbookRow) key() string {
-	return c.OrganisationName + "/" + c.Name + "/" + c.Version
-}
-
 // handleCookbooks handles GET /api/v1/cookbooks — lists all server cookbooks
 // across all organisations. Each row is a specific cookbook version in a
 // specific organisation. Git repos have their own dedicated list page.

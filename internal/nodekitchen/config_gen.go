@@ -327,10 +327,6 @@ func transportPasswordEnvVar(imageName string) string {
 	return "CMM_TK_TRANSPORT_" + normalizeEnvVarSuffix(imageName)
 }
 
-func transportKeyEnvVar(imageName string) string {
-	return "CMM_TK_KEY_" + normalizeEnvVarSuffix(imageName)
-}
-
 func transportKeyPathEnvVar(imageName string) string {
 	return "CMM_TK_KEY_PATH_" + normalizeEnvVarSuffix(imageName)
 }

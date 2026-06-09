@@ -179,8 +179,8 @@ func TestRateLimiter_DisabledAllowsImmediately(t *testing.T) {
 
 	starts := drive(t, rl, clk, 50)
 	for i, s := range starts {
-		if !s.Equal(clk.Now()) && i == len(starts)-1 {
-			// no-op; all should be at the same instant
+		if !s.Equal(clk.Now()) {
+			t.Errorf("start %d admitted at %v, want %v (disabled limiter must not pace)", i, s, clk.Now())
 		}
 	}
 	if !clk.Now().Equal(time.Unix(0, 0).UTC()) {
