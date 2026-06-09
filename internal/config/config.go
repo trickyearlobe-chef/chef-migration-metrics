@@ -670,6 +670,7 @@ func (ws *WebSocketConfig) IsEnabled() bool {
 type TLSConfig struct {
 	Mode             string     `yaml:"mode"`
 	Enabled          *bool      `yaml:"enabled,omitempty"` // deprecated, backward compat
+	CertSource       string     `yaml:"cert_source"`       // file (default) | db
 	CertPath         string     `yaml:"cert_path"`
 	KeyPath          string     `yaml:"key_path"`
 	CAPath           string     `yaml:"ca_path"`
@@ -686,10 +687,13 @@ type ACMEConfig struct {
 	Challenge         string            `yaml:"challenge"`
 	DNSProvider       string            `yaml:"dns_provider"`
 	DNSProviderConfig map[string]string `yaml:"dns_provider_config"`
-	StoragePath       string            `yaml:"storage_path"`
-	RenewBeforeDays   int               `yaml:"renew_before_days"`
-	AgreeToTOS        bool              `yaml:"agree_to_tos"`
-	TrustedRoots      string            `yaml:"trusted_roots"`
+	// StoragePath is deprecated and unused: ACME state (account key, issued
+	// cert/key, Route 53 creds) is stored encrypted in the config store, not on
+	// disk (tls-acme.md § 3.5). Retained only so existing YAML still parses.
+	StoragePath     string `yaml:"storage_path"`
+	RenewBeforeDays int    `yaml:"renew_before_days"`
+	AgreeToTOS      bool   `yaml:"agree_to_tos"`
+	TrustedRoots    string `yaml:"trusted_roots"`
 }
 
 // ---------------------------------------------------------------------------
@@ -725,10 +729,10 @@ type AuthConfig struct {
 
 // AuthProvider is a single authentication provider (local or SAML).
 type AuthProvider struct {
-	Type           string `yaml:"type"`
-	IDPMetadataURL string `yaml:"idp_metadata_url,omitempty"`
-	IDPMetadataPath        string `yaml:"idp_metadata_path,omitempty"`
-	SPEntityID             string `yaml:"sp_entity_id,omitempty"`
+	Type            string `yaml:"type"`
+	IDPMetadataURL  string `yaml:"idp_metadata_url,omitempty"`
+	IDPMetadataPath string `yaml:"idp_metadata_path,omitempty"`
+	SPEntityID      string `yaml:"sp_entity_id,omitempty"`
 
 	// SAML SP signing credentials (stored in encrypted credential store).
 	SPCertificateCredential string `yaml:"sp_certificate_credential,omitempty"`
@@ -745,10 +749,10 @@ type AuthProvider struct {
 	RoleMapping map[string]string `yaml:"role_mapping,omitempty"`
 
 	// SAML behaviour options.
-	AllowIDPInitiated        bool   `yaml:"allow_idp_initiated,omitempty"`
-	SignRequests             bool   `yaml:"sign_requests,omitempty"`
-	ClockSkewTolerance       string `yaml:"clock_skew_tolerance,omitempty"`
-	MetadataRefreshInterval  string `yaml:"metadata_refresh_interval,omitempty"`
+	AllowIDPInitiated       bool   `yaml:"allow_idp_initiated,omitempty"`
+	SignRequests            bool   `yaml:"sign_requests,omitempty"`
+	ClockSkewTolerance      string `yaml:"clock_skew_tolerance,omitempty"`
+	MetadataRefreshInterval string `yaml:"metadata_refresh_interval,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,6 +1025,9 @@ func (c *Config) setDefaults() {
 
 	// TLS defaults
 	c.resolveTLSMode()
+	if c.Server.TLS.CertSource == "" {
+		c.Server.TLS.CertSource = "file"
+	}
 	if c.Server.TLS.MinVersion == "" {
 		c.Server.TLS.MinVersion = "1.2"
 	}
@@ -1146,6 +1153,9 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("CHEF_MIGRATION_METRICS_SERVER_TLS_MODE"); v != "" {
 		c.Server.TLS.Mode = v
+	}
+	if v := os.Getenv("CHEF_MIGRATION_METRICS_SERVER_TLS_CERT_SOURCE"); v != "" {
+		c.Server.TLS.CertSource = v
 	}
 	if v := os.Getenv("CHEF_MIGRATION_METRICS_SERVER_TLS_CERT_PATH"); v != "" {
 		c.Server.TLS.CertPath = v
@@ -1666,16 +1676,29 @@ func (c *Config) validateServer(ve *ValidationError, w *Warnings) {
 // Save-time preflight (tls.md § 2.6) independently loads the certificate via
 // apptls.ValidateStaticPair before persisting a change, so an unusable cert can
 // still never be committed through the admin API.
+//
+// cert_source selects where the cert/key come from. For 'file' (default), the
+// paths are required (structural check above). For 'db' the cert/key live
+// encrypted in the config store and are validated at save/preflight, not at
+// startup (tls-static.md § 2.7) — a missing DB cert fails open to plain HTTP
+// exactly like a missing file, so the paths are not required.
 func (c *Config) validateTLSStatic(ve *ValidationError, w *Warnings) {
-	if c.Server.TLS.CertPath == "" {
-		ve.add("server.tls.cert_path is required when tls.mode is 'static'")
-	}
-	if c.Server.TLS.KeyPath == "" {
-		ve.add("server.tls.key_path is required when tls.mode is 'static'")
-	} else if info, err := os.Stat(c.Server.TLS.KeyPath); err == nil && info.Mode().Perm()&0o077 != 0 {
-		// Permissions are a best-effort warning when the key is present; a
-		// missing key is not flagged here (the listener handles it).
-		w.addf("server.tls.key_path %q has permissions %o; recommended 0600", c.Server.TLS.KeyPath, info.Mode().Perm())
+	switch c.Server.TLS.CertSource {
+	case "file":
+		if c.Server.TLS.CertPath == "" {
+			ve.add("server.tls.cert_path is required when tls.mode is 'static' and cert_source is 'file'")
+		}
+		if c.Server.TLS.KeyPath == "" {
+			ve.add("server.tls.key_path is required when tls.mode is 'static' and cert_source is 'file'")
+		} else if info, err := os.Stat(c.Server.TLS.KeyPath); err == nil && info.Mode().Perm()&0o077 != 0 {
+			// Permissions are a best-effort warning when the key is present; a
+			// missing key is not flagged here (the listener handles it).
+			w.addf("server.tls.key_path %q has permissions %o; recommended 0600", c.Server.TLS.KeyPath, info.Mode().Perm())
+		}
+	case "db":
+		// No structural path requirement; cert/key are validated at save time.
+	default:
+		ve.addf("server.tls.cert_source: must be 'file' or 'db', got %q", c.Server.TLS.CertSource)
 	}
 }
 
@@ -1700,6 +1723,8 @@ func (c *Config) validateTLSACME(ve *ValidationError) {
 	case "dns-01":
 		if c.Server.TLS.ACME.DNSProvider == "" {
 			ve.add("server.tls.acme.dns_provider is required when acme.challenge is 'dns-01'")
+		} else if c.Server.TLS.ACME.DNSProvider == "route53" {
+			c.validateRoute53DNS01(ve)
 		}
 	default:
 		ve.addf("server.tls.acme.challenge: must be 'http-01', 'tls-alpn-01', or 'dns-01', got %q", c.Server.TLS.ACME.Challenge)
@@ -1719,6 +1744,31 @@ func (c *Config) validateTLSACME(ve *ValidationError) {
 		if _, err := os.Stat(c.Server.TLS.ACME.TrustedRoots); err != nil {
 			ve.addf("server.tls.acme.trusted_roots %q: %v", c.Server.TLS.ACME.TrustedRoots, err)
 		}
+	}
+}
+
+// validateRoute53DNS01 checks the Route 53 DNS-01 solver has enough config to
+// resolve a region and hosted zone. region/hosted_zone_id normally come from
+// dns_provider_config (region may also come from AWS_REGION/AWS_DEFAULT_REGION).
+// When AWS credentials are supplied via the environment (AWS_ACCESS_KEY_ID) — the
+// "supplied via env/role" path of tls-acme.md § 3.10 — these structural checks
+// are skipped, since region/zone may then resolve from env/role at runtime.
+//
+// Known limitation: region/hosted_zone_id can also be stored in the encrypted
+// config store (server.tls.acme.route53.*), which this load-time validator
+// cannot see. An IAM-instance-role-only deployment with no env creds and no
+// dns_provider_config keys will therefore trip this check (tracked as tech debt).
+func (c *Config) validateRoute53DNS01(ve *ValidationError) {
+	if os.Getenv("AWS_ACCESS_KEY_ID") != "" {
+		return
+	}
+	cfg := c.Server.TLS.ACME.DNSProviderConfig
+	regionSet := cfg["region"] != "" || os.Getenv("AWS_REGION") != "" || os.Getenv("AWS_DEFAULT_REGION") != ""
+	if !regionSet {
+		ve.add("server.tls.acme.dns_provider_config.region is required for route53 dns-01 (or set AWS_REGION)")
+	}
+	if cfg["hosted_zone_id"] == "" {
+		ve.add("server.tls.acme.dns_provider_config.hosted_zone_id is required for route53 dns-01")
 	}
 }
 

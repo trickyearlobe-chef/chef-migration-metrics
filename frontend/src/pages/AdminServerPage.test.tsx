@@ -14,6 +14,7 @@ const mockServerConfig = {
   port: 8080,
   tls: {
     mode: "off",
+    cert_source: "file",
     cert_path: "",
     key_path: "",
     ca_path: "",
@@ -25,6 +26,7 @@ const mockServerConfig = {
       ca_url: "",
       challenge: "",
       dns_provider: "",
+      dns_provider_config: {},
       storage_path: "",
       renew_before_days: 0,
       agree_to_tos: false,

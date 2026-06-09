@@ -61,6 +61,10 @@ export interface ACMEConfig {
   ca_url: string;
   challenge: string;
   dns_provider: string;
+  // Provider-specific key/value pairs. For route53: region, hosted_zone_id.
+  dns_provider_config: Record<string, string>;
+  // Deprecated/unused: ACME state lives encrypted in the config store, not on
+  // disk. Retained for backward-compatible parsing.
   storage_path: string;
   renew_before_days: number;
   agree_to_tos: boolean;
@@ -68,6 +72,9 @@ export interface ACMEConfig {
 
 export interface TLSConfig {
   mode: string;
+  // Where the cert/key come from: 'file' (paths below) or 'db' (encrypted in
+  // the config store, managed via the admin UI).
+  cert_source: string;
   cert_path: string;
   key_path: string;
   ca_path: string;
