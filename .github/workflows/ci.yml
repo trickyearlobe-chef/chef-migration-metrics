@@ -30,10 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -49,7 +49,7 @@ jobs:
           golangci-lint run ./...
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version-file: frontend/package.json
           cache: npm
@@ -69,10 +69,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -86,7 +86,7 @@ jobs:
         run: go test -race -coverprofile=coverage.out ./...
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version-file: frontend/package.json
           cache: npm
@@ -99,17 +99,32 @@ jobs:
           npm test -- --coverage
 
   # ---------------------------------------------------------------------------
-  # Security
+  # Security Scan — tiered supply-chain policy
+  #
+  # Tier 1 (hard fail, blocks the PR): reachable Go vulns at any severity +
+  #   npm production-dependency HIGH/CRITICAL.
+  # Tier 2 (report only, surfaced in the Security tab, never blocks): full Trivy
+  #   incl. dev deps + LOW + secrets + misconfig, osv-scanner, behavioural scan.
+  # KEV/EPSS-aware prioritisation is handled by Dependabot (.github/dependabot.yml
+  #   + repo settings), not by these gates.
+  #
+  # This job scans the LOCKFILE and never runs `npm ci`, so a compromised
+  # dependency's install hook cannot execute on the runner. Third-party actions
+  # are pinned to immutable commit SHAs (Dependabot github-actions keeps them
+  # current).
   # ---------------------------------------------------------------------------
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the code-scanning / Security tab
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -119,20 +134,82 @@ jobs:
           mkdir -p frontend/dist
           echo '<!DOCTYPE html><html><head><title>placeholder</title></head><body></body></html>' > frontend/dist/index.html
 
-      - name: Run govulncheck
+      # --- Tier 1: hard fail ------------------------------------------------
+
+      # Go: reachable (call-graph) vulnerabilities at ANY severity. Reachability
+      # is the real risk signal, so this gate is strict and cheap.
+      - name: govulncheck (Go reachable — blocking)
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version-file: frontend/package.json
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          # No `cache: npm` / `npm ci` — we scan the lockfile, never install.
 
-      - name: Run npm audit
-        working-directory: frontend
+      # npm production deps: HIGH/CRITICAL always block. Dev deps are excluded by
+      # Trivy's default (they are not shipped).
+      - name: Trivy — npm production deps, HIGH/CRITICAL (blocking)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend/package-lock.json
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      # MEDIUM gate — the agreed target, STAGED. continue-on-error keeps it
+      # report-only until the pending fixable mediums land (react-router@6.30.4,
+      # brace-expansion@5.0.6 — blocked on the registry). Remove continue-on-error
+      # to promote MEDIUM to blocking once those are merged.
+      - name: Trivy — npm production deps, MEDIUM (staged, non-blocking)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend/package-lock.json
+          scanners: vuln
+          severity: MEDIUM
+          ignore-unfixed: false
+          exit-code: '1'
+
+      # --- Tier 2: report only (SARIF → Security tab, never blocks) ---------
+
+      - name: Trivy — full report incl dev deps, LOW, secrets, misconfig (SARIF)
+        continue-on-error: true
+        env:
+          TRIVY_INCLUDE_DEV_DEPS: 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: '0'
+          format: sarif
+          output: trivy-results.sarif
+          skip-dirs: frontend/node_modules,embedded,.samples
+
+      - name: Upload Trivy SARIF to code scanning
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      # osv-scanner includes dev deps by default and uses the OSV DB (no npm
+      # registry needed). Report-only; complements Trivy.
+      - name: osv-scanner (npm + Go lockfiles, report only)
+        continue-on-error: true
         run: |
-          npm ci
-          npm audit
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.3.8
+          osv-scanner --lockfile=frontend/package-lock.json --lockfile=go.mod
+
+      # Behavioural lockfile checks (non-registry sources, integrity, drift).
+      # node_modules is absent here, so the installed-tree hook scan self-skips.
+      - name: Behavioural supply-chain scan (lockfile)
+        continue-on-error: true
+        run: ./scripts/npm-supply-chain-scan.sh
