@@ -96,7 +96,9 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npm test -- --coverage
+          # Coverage needs @vitest/coverage-v8, which is not yet a dependency.
+          # Run without --coverage until it is added (see plans/active.md).
+          npm test
 
   # ---------------------------------------------------------------------------
   # Security Scan — tiered supply-chain policy
