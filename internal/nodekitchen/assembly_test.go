@@ -258,6 +258,20 @@ func TestWriteRoles_MissingRole(t *testing.T) {
 	}
 }
 
+func TestCreateWorkingDir_SanitisesNodeName(t *testing.T) {
+	wd, err := CreateWorkingDir("../../../tmp/evil")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer wd.Cleanup()
+
+	tmp, _ := filepath.Abs(os.TempDir())
+	abs, _ := filepath.Abs(wd.Path)
+	if !strings.HasPrefix(abs, tmp) {
+		t.Errorf("work dir %q escaped temp dir %q for a traversal node name", abs, tmp)
+	}
+}
+
 func TestWriteRoles_RejectsPathTraversal(t *testing.T) {
 	workDir := t.TempDir()
 	os.MkdirAll(filepath.Join(workDir, "roles"), 0o755)
