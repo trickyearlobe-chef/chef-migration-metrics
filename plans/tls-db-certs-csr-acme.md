@@ -263,6 +263,34 @@ the DB. Blocks shipping Chunk 3 / mTLS-via-DB / ACME.
 - **Acceptance:** dns-01 obtains a cert against staging via Route53.
   Depends on Chunks 7,8.
 
+## Chunk 9a — Route53 hostname self-registration (A record)
+
+Opt-in (`register_hostname`, default off) self-publishing of an A record per
+`acme.domains` entry so the server's FQDN resolves to the host, reusing the
+Chunk 9 Route53 client/UPSERT/`GetChange`. Spec: [tls-acme.md § 3.13](../specifications/tls-acme.md).
+
+- Scope: `internal/acme/route53.go` (or a sibling `hostname.go`), a small IP
+  resolver helper (new, stdlib `net` only), `internal/config` (ACMEConfig:
+  `RegisterHostname bool`, `HostnameTTL int`, `HostnameInterface string`,
+  `HostnameIP string`) + validation, `frontend/src/types/config.ts`.
+- IP resolution (first non-empty wins): `hostname_ip` → `hostname_interface`
+  (named iface global-unicast IPv4) → auto-detect (default-route interface IPv4,
+  no packets sent). Explicit-but-unusable = `ERROR` + skip, no fall-through.
+- Names = each `acme.domains`; wildcard domains skipped with `WARN`. A records
+  only. TTL `hostname_ttl` (default 60).
+- Lifecycle: UPSERT at ACME startup, each renewal cycle (re-asserts a changed
+  DHCP IP), and on relevant config change; poll `GetChange` to `INSYNC`. No
+  delete on shutdown; disabling stops updates but leaves the record.
+- Fail-soft: registration failure logs `ERROR` on `tls` scope + TLS status, but
+  never blocks issuance/renewal/fail-open or aborts startup (A-record is
+  orthogonal to the TXT-based DNS-01 challenge). No new deps/IAM (reuses
+  `route53:ChangeResourceRecordSets`).
+- TDD: IP resolver (literal/iface/auto, unusable cases); record-set build per
+  domain incl. wildcard skip; UPSERT+poll against the mocked Route53 seam;
+  re-assert on IP change. No real AWS/network.
+- **Acceptance:** with the toggle on, an A record per domain is UPSERTed to the
+  configured IP and reaches `INSYNC`; failures degrade soft. Depends on Chunk 9.
+
 ## Chunk 10 — ACME UI + AWS creds (Feature 3 frontend)
 
 - Scope: `AdminServerPage.tsx`, `types/config.ts`, `api/config.ts`, backend cred
@@ -270,9 +298,11 @@ the DB. Blocks shipping Chunk 3 / mTLS-via-DB / ACME.
 - Render the missing `dns_provider` + `dns_provider_config` (region, hosted
   zone) fields, AWS cred inputs (secret, write-only), dns-01 conditional block,
   ToS toggle, staging warning, ACME cert-status panel (issued/expiry/last
-  renewal).
-- **Acceptance:** configure + run ACME dns-01 entirely from the UI.
-  Depends on Chunk 9.
+  renewal). Hostname self-registration (Chunk 9a): `register_hostname` tickbox +
+  an "IP source: Auto / Interface / Manual IP" selector over `hostname_interface`
+  / `hostname_ip` (+ `hostname_ttl`), shown only for `dns_provider: route53`.
+- **Acceptance:** configure + run ACME dns-01 entirely from the UI, including
+  toggling hostname self-registration. Depends on Chunks 9, 9a.
 
 ## Chunk 11 — Ignore files, packaging, docs, debt
 
@@ -286,7 +316,11 @@ the DB. Blocks shipping Chunk 3 / mTLS-via-DB / ACME.
 ## Sequence / dependencies
 
 `0 → 1 → 2 → 3 → 3a → 4` (Feature 1 done) `→ 5 → 6` (Feature 2 done)
-`→ 7 → 8 → 9 → 10` (Feature 3 done) `→ 11`.
+`→ 7 → 8 → 9 → 9a → 10` (Feature 3 done) `→ 11`.
+
+Chunk 9a (Route53 hostname self-registration) depends on Chunk 9's Route53
+client/UPSERT/`GetChange` and feeds the Chunk 10 UI; it is independent of cert
+issuance (A-record vs the TXT challenge) so it can slip without blocking 8/9.
 
 Chunk 3a (recovery CLI) must merge with/before anything that lets TLS material
 live in the DB reach users — it gates Chunk 4, mTLS-via-DB, and ACME. Chunk 7
