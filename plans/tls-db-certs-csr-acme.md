@@ -142,7 +142,32 @@ Original scope (for reference):
 - TDD: table tests for both sources; reload + mismatch cases.
 - **Acceptance:** existing TLS tests pass unchanged; new bytes-source tests green.
 
-## Chunk 3 — DB cert/key storage + admin API (Feature 1 backend)
+## Chunk 3 — DB cert/key storage + admin API (Feature 1 backend) (DONE)
+
+Done 2026-06-09. New `apptls.ValidateStaticPairBytes` (in-memory pair preflight)
+and `apptls.CertMetadata`/`CertMetadataFromPEM` (operator-safe subject/SANs/expiry,
+key never touched). Config-store keys `server.tls.certificate` (secret:false),
+`server.tls.private_key` (secret:true), `…private_key.pending` added — standalone
+entries, excluded from AllConfigKeys/assembly (default case ignores them).
+`ListenerConfig` gained `CertSource`/`CertPEM`/`KeyPEM`; `NewListener` builds the
+CertManager from PEM when `cert_source: db`. Admin `PUT` now branches on
+`cert_source`: `file` keeps the path+`ValidateStaticPair` requirement; `db` skips
+paths, validates the submitted pair (`422` on mismatch/partial/none-stored),
+persists cert (non-secret) + key (secret), and triggers an in-place reload via a
+new `webapi.TLSReloadHolder`/`CertReloader` (`WithTLSReload`) — best-effort, falls
+back to restart (`RestartRequired: true` always). `GET` augments the response with
+`tls_certificate_info` for a db source; the key is never returned. `main.go`
+static branch loads DB PEM (`loadDBCertKey`), fails open to plain HTTP when
+missing/unreadable (§2.4), and registers the running CertManager into the reload
+holder. Tests: tls pair/metadata + listener-db; webapi handler (success, redaction,
+mismatch, partial, none-stored, keep-existing, GET metadata, reload trigger);
+main `loadDBCertKey` round-trip/missing/nil-store. `go test -race`, `go vet`,
+`gofmt` (my files) clean.
+
+**NOTE:** Chunk 3a (recovery CLI) is NOT yet done — it gates Chunk 4 / mTLS-via-DB
+/ ACME and must land before DB `cert_source` reaches users. Do it next.
+
+Original scope (for reference):
 
 - Scope: `internal/webapi/handle_admin_config_server.go` (+ helper),
   `internal/configstore`, `cmd/.../main.go` static-mode wiring.
