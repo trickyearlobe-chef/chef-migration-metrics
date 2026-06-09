@@ -4,6 +4,14 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
+## Security — CodeQL Path-injection / TLS Follow-ups
+
+Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dismissed).
+
+- [ ] **Deduplicate the path-traversal guard.** `internal/pathsafe.SafeJoin` was added for the nodekitchen fixes, but `internal/collector/fetcher.go` still has its own private copy of the identical logic (`hasParentTraversal`/`splitPathComponents`/`isSubPath`/`downloadAndWriteFile`). **Strategic fix:** refactor `collector/fetcher.go` to use `internal/pathsafe` so there is one vetted implementation.
+- [ ] **Add an explicit guard for backup IDs.** `backup/manifest.go` (`manifestPath`) and `backup/service.go` (dump path) build paths from the backup `id` taken from the URL. CodeQL alerts #34/#35/#36 were dismissed as "won't fix" because `net/http` ServeMux cleans `..`/`//` and the routes are admin-only — but there is no explicit in-code guard. **Fix:** validate `id` (e.g. `pathsafe`/`filepath.Base` reject) at the handler or path-builder for defence in depth.
+- [ ] **Document the hypervisor `insecure` driver settings.** The TLS fix added opt-in `driver_settings.vcenter_insecure` / `proxmox_insecure` (default false = verify). `specifications/test-kitchen-drivers-vcenter.md` (and the proxmox equivalent) should document the new setting and the secure-by-default behaviour change. Spec edits need owner sign-off (CLAUDE.md), so left for confirmation.
+
 ## Dependencies — Tailwind CSS v4 Migration Deferred
 
 - [ ] **Frontend held at Tailwind CSS v3 (3.4.19); v4 upgrade deferred.** Dependabot PR #45 (dev-tooling group) bumped `tailwindcss` 3→4 alongside several safe tool bumps. The safe bumps (eslint 10, typescript 6, globals 17, typescript-eslint, vite/postcss/autoprefixer/plugin-react) were applied to `main` on 2026-06-09, but tailwindcss was rolled back to the latest v3 because **v4 is a breaking migration**, not a drop-in bump: the PostCSS plugin moves to a separate `@tailwindcss/postcss` package (`postcss.config.js` must change), the `@tailwind base/components/utilities` directives in `src/index.css` become a single `@import "tailwindcss"`, configuration goes CSS-first (the JS `tailwind.config.js` theme/keyframes/content model changes, optionally kept via `@config`), `@tailwindcss/typography` needs a v4-compatible wiring, and v4 changes default styles/utilities so the upgrade carries **visual-regression risk that the vitest/jsdom suite cannot catch**. **Strategic fix:** do the v4 migration deliberately — migrate config + PostCSS + CSS entry, update the typography plugin, and visually QA the dashboard/pages before merging. Staying on v3.4.19 is fully supported and secure in the meantime. (Tracked from the supply-chain cleanup on 2026-06-09; TS 6 `baseUrl` deprecation was fixed at the same time by removing `baseUrl` and making the `@/*` path alias relative.)
