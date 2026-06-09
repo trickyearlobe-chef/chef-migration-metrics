@@ -52,6 +52,26 @@ func TestUnitParsesWithSystemdAnalyze(t *testing.T) {
 	}
 	out, err := exec.Command(bin, "verify", unitFile).CombinedOutput()
 	if err != nil {
-		t.Fatalf("systemd-analyze verify failed: %v\n%s", err, out)
+		// `systemd-analyze verify` also checks that ExecStart= references an
+		// existing executable. The binary is installed by the package at
+		// /usr/bin/chef-migration-metrics and is absent during a CI test run or
+		// source checkout, so a "not executable / No such file" complaint about
+		// it is an environment artifact, not a unit-file defect. Fail only on
+		// other problems (real parse or directive errors).
+		var problems []string
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if strings.Contains(line, "/usr/bin/chef-migration-metrics") &&
+				(strings.Contains(line, "not executable") || strings.Contains(line, "No such file")) {
+				continue
+			}
+			problems = append(problems, line)
+		}
+		if len(problems) > 0 {
+			t.Fatalf("systemd-analyze verify reported problems:\n%s", strings.Join(problems, "\n"))
+		}
 	}
 }
