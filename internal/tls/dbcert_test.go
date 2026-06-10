@@ -87,42 +87,7 @@ func TestValidateStaticPairBytes_BadCAFile(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// CertMetadataFromPEM — subject / SANs / expiry for the admin API
-// ---------------------------------------------------------------------------
-
-func TestCertMetadataFromPEM_ExtractsFields(t *testing.T) {
-	notBefore := time.Now().Add(-time.Hour).Truncate(time.Second)
-	notAfter := time.Now().Add(48 * time.Hour).Truncate(time.Second)
-	certPEM, _, _ := generateTestCertPEM(t, "leaf.example.com", notBefore, notAfter,
-		"leaf.example.com", "alt.example.com")
-
-	meta, err := CertMetadataFromPEM(certPEM)
-	if err != nil {
-		t.Fatalf("CertMetadataFromPEM = %v, want nil", err)
-	}
-	if meta.Subject != "leaf.example.com" {
-		t.Errorf("Subject = %q, want leaf.example.com", meta.Subject)
-	}
-	if len(meta.DNSNames) != 2 || meta.DNSNames[0] != "leaf.example.com" {
-		t.Errorf("DNSNames = %v, want [leaf.example.com alt.example.com]", meta.DNSNames)
-	}
-	if !meta.NotAfter.Equal(notAfter) {
-		t.Errorf("NotAfter = %s, want %s", meta.NotAfter, notAfter)
-	}
-	if !meta.NotBefore.Equal(notBefore) {
-		t.Errorf("NotBefore = %s, want %s", meta.NotBefore, notBefore)
-	}
-}
-
-func TestCertMetadataFromPEM_Unparseable(t *testing.T) {
-	if _, err := CertMetadataFromPEM([]byte("garbage")); err == nil {
-		t.Fatal("CertMetadataFromPEM(garbage) = nil, want error")
-	}
-}
-
-func TestCertMetadataFromPEM_Empty(t *testing.T) {
-	if _, err := CertMetadataFromPEM(nil); err == nil {
-		t.Fatal("CertMetadataFromPEM(nil) = nil, want error")
-	}
-}
+// CertMetadataFromPEM was removed in favour of ChainMetadataFromPEM (the full
+// per-cert chain surface — tls-static.md § 2.2). Its field-extraction, empty,
+// and unparseable cases are covered by the ChainMetadataFromPEM tests in
+// metadata_test.go.

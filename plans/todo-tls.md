@@ -7,10 +7,10 @@ General TLS feature refinements (non-lockout). Anti-lockout gaps and the
 
 Raised 2026-06-10. Two parts:
 
-- **Display the chain** wherever a cert is shown (static DB/file, CSR-promoted,
-  ACME-issued): per-cert CN, subject alt names, not-before / not-after, issuer —
-  so an operator can see the full leaf → intermediate → root chain and its expiry
-  at a glance.
+- **Display the chain** (DONE — branch `feature/tls-chain-display`, W1-A):
+  `ChainMetadataFromPEM` surfaces per-cert CN/SANs/issuer/validity + structural
+  `role` (leaf/intermediate/root) in `tls_certificate_info` (now an array) for
+  static-DB and ACME; UI renders a per-cert chain panel.
 - **Reorder on save (static upload only):** when an operator pastes/uploads a PEM
   bundle, sort the certs into the correct **leaf → intermediate(s) → CA** order
   before storing, rather than rejecting or trusting input order. Order by matching

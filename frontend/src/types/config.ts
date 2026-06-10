@@ -94,9 +94,10 @@ export interface AcmeStatus {
   hostname_error?: string;
 }
 
-// Operator-safe metadata for the installed cert_source: db certificate.
-// Returned read-only by GET /admin/config/server as `tls_certificate_info`;
-// the private key is never included.
+// Operator-safe metadata for one certificate in the installed bundle. Returned
+// read-only by GET /admin/config/server inside the `tls_certificate_info` chain;
+// the private key is never included. `role` is the structurally-derived chain
+// position: 'leaf', 'intermediate', or 'root' (tls-static.md § 2.2).
 export interface CertMetadata {
   subject: string;
   issuer: string;
@@ -104,6 +105,7 @@ export interface CertMetadata {
   ip_addresses?: string[];
   not_before: string;
   not_after: string;
+  role: "leaf" | "intermediate" | "root";
 }
 
 export interface TLSConfig {
@@ -143,9 +145,10 @@ export interface ServerConfig {
   // local listener serves plain HTTP (tls.mode off) and X-Forwarded-Proto is
   // trusted for HSTS/scheme detection (tls.md § 9.1). Default false.
   trusted_proxy: boolean;
-  // Read-only metadata for the installed certificate (cert_source: db, or the
-  // issued ACME cert when mode is 'acme'), attached by GET. Never sent on save.
-  tls_certificate_info?: CertMetadata;
+  // Read-only metadata for the installed certificate chain (cert_source: db, or
+  // the issued ACME cert when mode is 'acme'), leaf → intermediate(s) → root,
+  // attached by GET. Never sent on save.
+  tls_certificate_info?: CertMetadata[];
   // Read-only ACME operator status, attached by GET when mode is 'acme'
   // (tls-acme.md § 3.14). Never sent on save.
   acme_status?: AcmeStatus;

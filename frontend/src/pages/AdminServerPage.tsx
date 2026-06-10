@@ -6,6 +6,7 @@ import {
   waitForServerHealthy,
   generateCSR,
   type ServerConfig,
+  type CertMetadata,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 import { TLSDegradedBanner } from "../components/TLSDegradedBanner";
@@ -31,6 +32,57 @@ function SectionCard({ title, children }: { title: string; children: React.React
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+const CERT_ROLE_LABEL: Record<CertMetadata["role"], string> = {
+  leaf: "Leaf",
+  intermediate: "Intermediate",
+  root: "Root",
+};
+
+// Renders the operator-safe metadata for every certificate in an installed
+// bundle, leaf → intermediate(s) → root, one card per cert with its chain role
+// (tls-static.md § 2.2). Order reflects what the server returns; the private key
+// is never present.
+function CertChainPanel({ chain }: { chain: CertMetadata[] }) {
+  return (
+    <div className="space-y-2">
+      {chain.map((cert, i) => {
+        const sans = [...(cert.dns_names ?? []), ...(cert.ip_addresses ?? [])];
+        const expired = new Date(cert.not_after).getTime() < Date.now();
+        return (
+          <div
+            key={`${cert.subject}-${i}`}
+            className="rounded border border-gray-200 bg-white px-3 py-2"
+          >
+            <p className="mb-1 flex flex-wrap items-center gap-2 font-semibold text-gray-900">
+              <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600">
+                {CERT_ROLE_LABEL[cert.role]}
+              </span>
+              <span className="break-all font-mono font-normal">{cert.subject}</span>
+            </p>
+            <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-0.5">
+              <dt className="text-gray-500">Issuer</dt>
+              <dd className="break-all font-mono">{cert.issuer}</dd>
+              {sans.length ? (
+                <>
+                  <dt className="text-gray-500">SANs</dt>
+                  <dd className="break-all font-mono">{sans.join(", ")}</dd>
+                </>
+              ) : null}
+              <dt className="text-gray-500">Valid from</dt>
+              <dd>{formatDate(cert.not_before)}</dd>
+              <dt className="text-gray-500">Expires</dt>
+              <dd className={expired ? "font-semibold text-red-600" : ""}>
+                {formatDate(cert.not_after)}
+                {expired && " (expired)"}
+              </dd>
+            </dl>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // A tag/chip list editor: type a value, Enter or Add appends it; each chip has a
@@ -368,10 +420,7 @@ export function AdminServerPage() {
 
   const tlsMode = config.tls.mode;
   const certSource = config.tls.cert_source || "file";
-  const certInfo = config.tls_certificate_info;
-  const certExpired = certInfo
-    ? new Date(certInfo.not_after).getTime() < Date.now()
-    : false;
+  const certChain = config.tls_certificate_info ?? [];
   const wsEnabled = config.websocket.enabled ?? true;
   // The toggle is "on" only for the full behind-proxy posture: plain HTTP locally
   // AND X-Forwarded-Proto trusted.
@@ -384,8 +433,8 @@ export function AdminServerPage() {
   const ipSource =
     ipSourceOverride ?? (acme.hostname_ip ? "manual" : acme.hostname_interface ? "interface" : "auto");
   const acmeStatus = config.acme_status;
-  // In ACME mode the issued cert's metadata arrives in tls_certificate_info too.
-  const acmeCertInfo = tlsMode === "acme" ? certInfo : undefined;
+  // In ACME mode the issued cert chain arrives in tls_certificate_info too.
+  const acmeCertChain = tlsMode === "acme" ? certChain : [];
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -571,30 +620,12 @@ export function AdminServerPage() {
 
             {certSource === "db" && (
               <>
-                {certInfo ? (
+                {certChain.length > 0 ? (
                   <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-700">
-                    <p className="mb-2 font-semibold text-gray-900">Installed certificate</p>
-                    <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1">
-                      <dt className="text-gray-500">Subject</dt>
-                      <dd className="break-all font-mono">{certInfo.subject}</dd>
-                      <dt className="text-gray-500">Issuer</dt>
-                      <dd className="break-all font-mono">{certInfo.issuer}</dd>
-                      {(certInfo.dns_names?.length || certInfo.ip_addresses?.length) ? (
-                        <>
-                          <dt className="text-gray-500">SANs</dt>
-                          <dd className="break-all font-mono">
-                            {[...(certInfo.dns_names ?? []), ...(certInfo.ip_addresses ?? [])].join(", ")}
-                          </dd>
-                        </>
-                      ) : null}
-                      <dt className="text-gray-500">Valid from</dt>
-                      <dd>{formatDate(certInfo.not_before)}</dd>
-                      <dt className="text-gray-500">Expires</dt>
-                      <dd className={certExpired ? "font-semibold text-red-600" : ""}>
-                        {formatDate(certInfo.not_after)}
-                        {certExpired && " (expired)"}
-                      </dd>
-                    </dl>
+                    <p className="mb-2 font-semibold text-gray-900">
+                      Installed certificate chain
+                    </p>
+                    <CertChainPanel chain={certChain} />
                   </div>
                 ) : (
                   <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
@@ -1063,28 +1094,17 @@ export function AdminServerPage() {
             </label>
 
             {/* ACME status panel (tls-acme.md § 3.14) */}
-            {(acmeCertInfo || acmeStatus) && (
+            {(acmeCertChain.length > 0 || acmeStatus) && (
               <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-700">
                 <p className="mb-2 font-semibold text-gray-900">ACME status</p>
+                {acmeCertChain.length > 0 ? (
+                  <div className="mb-2">
+                    <CertChainPanel chain={acmeCertChain} />
+                  </div>
+                ) : (
+                  <p className="mb-2 text-gray-500">No certificate issued yet.</p>
+                )}
                 <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
-                  {acmeCertInfo ? (
-                    <>
-                      <dt className="text-gray-500">Subject</dt>
-                      <dd className="break-all font-mono">{acmeCertInfo.subject}</dd>
-                      <dt className="text-gray-500">Issued</dt>
-                      <dd>{formatDate(acmeCertInfo.not_before)}</dd>
-                      <dt className="text-gray-500">Expires</dt>
-                      <dd className={certExpired ? "font-semibold text-red-600" : ""}>
-                        {formatDate(acmeCertInfo.not_after)}
-                        {certExpired && " (expired)"}
-                      </dd>
-                    </>
-                  ) : (
-                    <>
-                      <dt className="text-gray-500">Certificate</dt>
-                      <dd>No certificate issued yet.</dd>
-                    </>
-                  )}
                   <dt className="text-gray-500">Last renewal</dt>
                   <dd>{acmeStatus?.last_renewal ? formatDate(acmeStatus.last_renewal) : "—"}</dd>
                   {acmeStatus?.last_error ? (
