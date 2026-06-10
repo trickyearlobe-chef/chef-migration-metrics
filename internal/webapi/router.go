@@ -656,6 +656,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools)
 	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen)
 	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer)
+	r.adminOnly("/api/v1/admin/config/server/generate-csr", r.handleAdminConfigServerGenerateCSR)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
 	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness)

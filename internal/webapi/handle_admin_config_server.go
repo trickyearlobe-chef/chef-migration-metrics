@@ -106,9 +106,13 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
-	// dbCertProvided is true when a complete cert/key pair was submitted for
-	// the DB source; set during static validation and used at persist time.
+	// dbCertProvided is true when a complete cert/key pair is ready to persist
+	// for the DB source (either submitted directly, or a cert matched against a
+	// pending CSR key); set during static validation and used at persist time.
+	// promotePending is true when the pair came from a CSR pending-key match and
+	// the pending key must be deleted after a successful promote.
 	dbCertProvided := false
+	promotePending := false
 
 	if input.TLS.Mode == "static" {
 		switch input.TLS.CertSource {
@@ -147,7 +151,26 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 					return
 				}
 				dbCertProvided = true
-			case haveCert != haveKey:
+			case haveCert && !haveKey:
+				// Match-and-promote (tls-csr.md § 4.5): an operator pasting a
+				// signed certificate with no key promotes the pending CSR key if
+				// the certificate's public key matches it. The active cert/key are
+				// only replaced on a successful match, preserving fail-open.
+				pendingKeyPEM, ok := r.pendingKeyPEM(req.Context())
+				if !ok {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						"server.tls: a certificate was supplied without a private key and no pending CSR key is stored — submit the matching private key, or generate a CSR first.")
+					return
+				}
+				if err := apptls.ValidateStaticPairBytes(dbCertPEM, pendingKeyPEM, input.TLS.CAPath); err != nil {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						fmt.Sprintf("server.tls: %v — the certificate does not match the pending CSR key; upload the certificate issued for the most recent CSR.", err))
+					return
+				}
+				dbKeyPEM = pendingKeyPEM
+				dbCertProvided = true
+				promotePending = true
+			case !haveCert && haveKey:
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
 					"server.tls: certificate and private_key must be provided together for cert_source 'db'.")
 				return
@@ -315,17 +338,24 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	// the certificate non-secret (public), the private key secret (never
 	// returned by any API). Already validated above.
 	if dbCertProvided {
-		certJSON, _ := json.Marshal(dbCerts.TLS.Certificate)
+		certJSON, _ := json.Marshal(string(dbCertPEM))
 		if err := r.configStore.Set(ctx, configstore.KeyServerTLSCertificate, certJSON, false, "admin"); err != nil {
 			r.logf("ERROR", "admin/config/server: store TLS certificate: %v", err)
 			WriteInternalError(w, "Failed to store TLS certificate.")
 			return
 		}
-		keyJSON, _ := json.Marshal(dbCerts.TLS.PrivateKey)
+		keyJSON, _ := json.Marshal(string(dbKeyPEM))
 		if err := r.configStore.Set(ctx, configstore.KeyServerTLSPrivateKey, keyJSON, true, "admin"); err != nil {
 			r.logf("ERROR", "admin/config/server: store TLS private key: %v", err)
 			WriteInternalError(w, "Failed to store TLS private key.")
 			return
+		}
+		// A promoted CSR key is now active — remove the pending copy (tls-csr.md
+		// § 4.5). Non-fatal: the key is still secret and a new CSR overwrites it.
+		if promotePending {
+			if err := r.configStore.Delete(ctx, configstore.KeyServerTLSPrivateKeyPending); err != nil {
+				r.logf("WARN", "admin/config/server: delete promoted pending key: %v", err)
+			}
 		}
 	}
 
@@ -370,6 +400,25 @@ func (r *Router) dbCertPairStored(ctx context.Context) bool {
 		return false
 	}
 	return true
+}
+
+// pendingKeyPEM returns the stored pending CSR private key PEM and true when one
+// is present. The pending key is a secret (server.tls.private_key.pending); it
+// is never returned by any API, only used internally to match-and-promote an
+// uploaded signed certificate (tls-csr.md § 4.5).
+func (r *Router) pendingKeyPEM(ctx context.Context) ([]byte, bool) {
+	if r.configStore == nil {
+		return nil, false
+	}
+	raw, err := r.configStore.GetSecret(ctx, configstore.KeyServerTLSPrivateKeyPending)
+	if err != nil {
+		return nil, false
+	}
+	var pem string
+	if err := json.Unmarshal(raw, &pem); err != nil || pem == "" {
+		return nil, false
+	}
+	return []byte(pem), true
 }
 
 // attachDBCertInfo augments a serialised server-config JSON object with a
