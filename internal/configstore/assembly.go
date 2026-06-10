@@ -65,6 +65,17 @@ const (
 	KeyServerTLSCertificate       = "server.tls.certificate"
 	KeyServerTLSPrivateKey        = "server.tls.private_key"
 	KeyServerTLSPrivateKeyPending = "server.tls.private_key.pending"
+
+	// ACME state material. Like the static cert keys above, these are
+	// standalone config-store entries written and read directly by the ACME
+	// engine (internal/acme), NOT config sections — they are excluded from
+	// AllConfigKeys/ConfigToSections so config assembly never folds key/cert
+	// material into a config struct. The account key and issued private key are
+	// secret (encrypted, never returned by any API); the issued cert is public.
+	// See tls-acme.md § 3.5.
+	KeyServerTLSACMEAccountKey = "server.tls.acme.account_key"
+	KeyServerTLSACMECert       = "server.tls.acme.cert"
+	KeyServerTLSACMEKey        = "server.tls.acme.key"
 )
 
 // ServerListenSection is the JSON/YAML shape of the `server.listen` config
@@ -274,7 +285,7 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 			ListenAddress: cfg.Server.ListenAddress,
 			Port:          cfg.Server.Port,
 		},
-		KeyServerTLS: cfg.Server.TLS,
+		KeyServerTLS:              cfg.Server.TLS,
 		KeyServerWebSocket:        cfg.Server.WebSocket,
 		KeyServerGracefulShutdown: cfg.Server.GracefulShutdownSeconds,
 		KeyFrontend:               cfg.Frontend,
