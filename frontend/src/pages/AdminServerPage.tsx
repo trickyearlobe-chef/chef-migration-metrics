@@ -4,6 +4,7 @@ import {
   saveServerConfig,
   restartServer,
   waitForServerHealthy,
+  generateCSR,
   type ServerConfig,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
@@ -32,6 +33,82 @@ function formatDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
+// A tag/chip list editor: type a value, Enter or Add appends it; each chip has a
+// remove button. Used for the CSR Subject Alternative Name lists (DNS and IP).
+function ChipEditor({
+  label,
+  placeholder,
+  items,
+  onAdd,
+  onRemove,
+  disabled,
+}: {
+  label: string;
+  placeholder: string;
+  items: string[];
+  onAdd: (value: string) => void;
+  onRemove: (index: number) => void;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  function add() {
+    const v = draft.trim();
+    if (!v) return;
+    onAdd(v);
+    setDraft("");
+  }
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-gray-700">{label}</label>
+      {items.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {items.map((it, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700"
+            >
+              {it}
+              <button
+                type="button"
+                aria-label={`Remove ${it}`}
+                onClick={() => onRemove(i)}
+                disabled={disabled}
+                className="ml-0.5 text-blue-400 hover:text-blue-600 disabled:opacity-40"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder={placeholder}
+          className={INPUT_CLASS}
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={disabled || !draft.trim()}
+          className="shrink-0 rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
@@ -54,6 +131,20 @@ export function AdminServerPage() {
   const [newDomain, setNewDomain] = useState("");
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
+
+  // CSR generation (tls-csr.md § 4). Subject + SANs + key algorithm; on success
+  // the server stores the private key as pending and returns the CSR PEM, which
+  // the operator submits to their CA. Only relevant for cert_source: db.
+  const [csrCommonName, setCsrCommonName] = useState("");
+  const [csrOrganization, setCsrOrganization] = useState("");
+  const [csrOrgUnit, setCsrOrgUnit] = useState("");
+  const [csrCountry, setCsrCountry] = useState("");
+  const [csrDnsSans, setCsrDnsSans] = useState<string[]>([]);
+  const [csrIpSans, setCsrIpSans] = useState<string[]>([]);
+  const [csrAlgo, setCsrAlgo] = useState("ecdsa-p256");
+  const [generatingCsr, setGeneratingCsr] = useState(false);
+  const [csrError, setCsrError] = useState<string | null>(null);
+  const [generatedCsr, setGeneratedCsr] = useState<string | null>(null);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -135,6 +226,43 @@ export function AdminServerPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  const csrHasIdentifier =
+    csrCommonName.trim() !== "" || csrDnsSans.length > 0 || csrIpSans.length > 0;
+
+  async function handleGenerateCsr() {
+    setGeneratingCsr(true);
+    setCsrError(null);
+    try {
+      const res = await generateCSR({
+        common_name: csrCommonName.trim(),
+        organization: csrOrganization.trim() || undefined,
+        organizational_unit: csrOrgUnit.trim() || undefined,
+        country: csrCountry.trim() || undefined,
+        dns_sans: csrDnsSans.length ? csrDnsSans : undefined,
+        ip_sans: csrIpSans.length ? csrIpSans : undefined,
+        key_algorithm: csrAlgo,
+      });
+      setGeneratedCsr(res.csr_pem);
+    } catch (err: unknown) {
+      setCsrError(err instanceof Error ? err.message : "Failed to generate CSR.");
+    } finally {
+      setGeneratingCsr(false);
+    }
+  }
+
+  function handleDownloadCsr() {
+    if (!generatedCsr) return;
+    const blob = new Blob([generatedCsr], { type: "application/x-pem-file" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "request.csr";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   async function handleRestart() {
@@ -357,6 +485,144 @@ export function AdminServerPage() {
                     disabled={saving}
                   />
                 </FieldRow>
+
+                {/* CSR generation (tls-csr.md § 4) — generate a key + CSR here,
+                    submit it to the CA, then install the signed cert via the
+                    Certificate (PEM) field above (match-and-promote). */}
+                <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50/60 p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      Generate a Certificate Signing Request (CSR)
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Generate a private key and CSR here, submit the CSR to your CA, then
+                      install the signed certificate using the Certificate (PEM) field above.
+                      The private key is stored encrypted and never leaves the server.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FieldRow label="Common Name" hint="Primary FQDN — also add it as a DNS SAN below.">
+                      <input
+                        type="text"
+                        aria-label="Common Name"
+                        value={csrCommonName}
+                        onChange={(e) => setCsrCommonName(e.target.value)}
+                        placeholder="example.com"
+                        className={INPUT_CLASS}
+                        disabled={generatingCsr}
+                      />
+                    </FieldRow>
+                    <FieldRow label="Organization">
+                      <input
+                        type="text"
+                        aria-label="Organization"
+                        value={csrOrganization}
+                        onChange={(e) => setCsrOrganization(e.target.value)}
+                        placeholder="Example Corp"
+                        className={INPUT_CLASS}
+                        disabled={generatingCsr}
+                      />
+                    </FieldRow>
+                    <FieldRow label="Organizational Unit">
+                      <input
+                        type="text"
+                        aria-label="Organizational Unit"
+                        value={csrOrgUnit}
+                        onChange={(e) => setCsrOrgUnit(e.target.value)}
+                        placeholder="IT"
+                        className={INPUT_CLASS}
+                        disabled={generatingCsr}
+                      />
+                    </FieldRow>
+                    <FieldRow label="Country" hint="2-letter ISO code (e.g. US, GB).">
+                      <input
+                        type="text"
+                        aria-label="Country"
+                        value={csrCountry}
+                        onChange={(e) => setCsrCountry(e.target.value)}
+                        placeholder="US"
+                        className={INPUT_CLASS}
+                        disabled={generatingCsr}
+                      />
+                    </FieldRow>
+                  </div>
+                  <ChipEditor
+                    label="DNS SANs"
+                    placeholder="dns.example.com"
+                    items={csrDnsSans}
+                    onAdd={(v) => setCsrDnsSans((prev) => [...prev, v])}
+                    onRemove={(i) => setCsrDnsSans((prev) => prev.filter((_, idx) => idx !== i))}
+                    disabled={generatingCsr}
+                  />
+                  <ChipEditor
+                    label="IP SANs"
+                    placeholder="10.0.0.1"
+                    items={csrIpSans}
+                    onAdd={(v) => setCsrIpSans((prev) => [...prev, v])}
+                    onRemove={(i) => setCsrIpSans((prev) => prev.filter((_, idx) => idx !== i))}
+                    disabled={generatingCsr}
+                  />
+                  <FieldRow label="Key algorithm">
+                    <select
+                      aria-label="Key algorithm"
+                      value={csrAlgo}
+                      onChange={(e) => setCsrAlgo(e.target.value)}
+                      className={SELECT_CLASS}
+                      disabled={generatingCsr}
+                    >
+                      <option value="ecdsa-p256">ECDSA P-256 (recommended)</option>
+                      <option value="ecdsa-p384">ECDSA P-384</option>
+                      <option value="rsa-2048">RSA 2048</option>
+                      <option value="rsa-3072">RSA 3072</option>
+                      <option value="rsa-4096">RSA 4096</option>
+                    </select>
+                  </FieldRow>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateCsr}
+                      disabled={generatingCsr || !csrHasIdentifier}
+                      title={!csrHasIdentifier ? "Set a Common Name or at least one SAN first." : undefined}
+                      className="inline-flex items-center gap-2 rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2 disabled:opacity-50"
+                    >
+                      {generatingCsr && <InlineSpinner />}
+                      {generatingCsr ? "Generating…" : "Generate CSR"}
+                    </button>
+                  </div>
+
+                  {csrError && <ErrorAlert message="Failed to generate CSR" detail={csrError} />}
+
+                  {generatedCsr && (
+                    <div className="space-y-2">
+                      <FieldRow
+                        label="Generated CSR (PEM)"
+                        hint="Submit this to your CA to obtain a signed certificate."
+                      >
+                        <textarea
+                          aria-label="Generated CSR (PEM)"
+                          readOnly
+                          value={generatedCsr}
+                          rows={6}
+                          className={`${INPUT_CLASS} font-mono`}
+                        />
+                      </FieldRow>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={handleDownloadCsr}
+                          className="inline-flex items-center gap-2 rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+                        >
+                          Download CSR
+                        </button>
+                      </div>
+                      <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                        Next: submit this CSR to your CA. When you receive the signed
+                        certificate, paste the signed certificate into the Certificate (PEM)
+                        field above and click Save — the pending key is promoted automatically.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </>
             )}
 

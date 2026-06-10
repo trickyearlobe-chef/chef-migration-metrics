@@ -314,4 +314,132 @@ describe("AdminServerPage", () => {
       expect(screen.getByLabelText("Private key (PEM)")).toHaveValue(""),
     );
   });
+
+  // --- CSR generation (Chunk 6 — CSR UI) ---
+
+  const CSR_PEM = "-----BEGIN CERTIFICATE REQUEST-----\nMIIB\n-----END CERTIFICATE REQUEST-----\n";
+
+  it("shows the CSR generation panel only for db source", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticFileConfig as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    // File source: no CSR panel.
+    expect(
+      screen.queryByRole("button", { name: /generate csr/i }),
+    ).not.toBeInTheDocument();
+
+    // Toggle to db: CSR panel appears.
+    await user.selectOptions(screen.getByLabelText("Certificate source"), "db");
+    expect(
+      screen.getByRole("button", { name: /generate csr/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("defaults the key algorithm to ecdsa-p256 and offers all algorithms", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    const algo = screen.getByLabelText("Key algorithm") as HTMLSelectElement;
+    expect(algo).toHaveValue("ecdsa-p256");
+    const values = Array.from(algo.options).map((o) => o.value);
+    expect(values).toEqual([
+      "ecdsa-p256",
+      "ecdsa-p384",
+      "rsa-2048",
+      "rsa-3072",
+      "rsa-4096",
+    ]);
+  });
+
+  it("disables Generate CSR until an identifier (CN or SAN) is present", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    expect(screen.getByRole("button", { name: /generate csr/i })).toBeDisabled();
+    await user.type(screen.getByLabelText("Common Name"), "example.com");
+    expect(screen.getByRole("button", { name: /generate csr/i })).toBeEnabled();
+  });
+
+  it("adds and removes DNS SANs", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    const sanInput = screen.getByPlaceholderText("dns.example.com");
+    await user.type(sanInput, "www.example.com{enter}");
+    expect(screen.getByText("www.example.com")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /remove www\.example\.com/i }));
+    expect(screen.queryByText("www.example.com")).not.toBeInTheDocument();
+  });
+
+  it("sends the subject, SANs and algorithm to generateCSR", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    vi.mocked(api.generateCSR).mockResolvedValue({
+      csr_pem: CSR_PEM,
+      key_algorithm: "rsa-2048",
+    } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.type(screen.getByLabelText("Common Name"), "example.com");
+    await user.type(screen.getByLabelText("Organization"), "Example Corp");
+    await user.type(screen.getByPlaceholderText("dns.example.com"), "www.example.com{enter}");
+    await user.type(screen.getByPlaceholderText("10.0.0.1"), "10.0.0.1{enter}");
+    await user.selectOptions(screen.getByLabelText("Key algorithm"), "rsa-2048");
+    await user.click(screen.getByRole("button", { name: /generate csr/i }));
+
+    await waitFor(() => expect(api.generateCSR).toHaveBeenCalled());
+    const arg = vi.mocked(api.generateCSR).mock.lastCall![0];
+    expect(arg.common_name).toBe("example.com");
+    expect(arg.organization).toBe("Example Corp");
+    expect(arg.dns_sans).toEqual(["www.example.com"]);
+    expect(arg.ip_sans).toEqual(["10.0.0.1"]);
+    expect(arg.key_algorithm).toBe("rsa-2048");
+  });
+
+  it("shows the returned CSR PEM and guidance after generation", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    vi.mocked(api.generateCSR).mockResolvedValue({
+      csr_pem: CSR_PEM,
+      key_algorithm: "ecdsa-p256",
+    } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.type(screen.getByLabelText("Common Name"), "example.com");
+    await user.click(screen.getByRole("button", { name: /generate csr/i }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Generated CSR (PEM)")).toHaveValue(CSR_PEM),
+    );
+    // Guidance to submit the CSR and paste the signed cert back above.
+    expect(screen.getByText(/paste the signed certificate/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /download csr/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an error when CSR generation fails", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticDbConfig as never);
+    vi.mocked(api.generateCSR).mockRejectedValue(new Error("bad subject"));
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.type(screen.getByLabelText("Common Name"), "example.com");
+    await user.click(screen.getByRole("button", { name: /generate csr/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/bad subject/i)).toBeInTheDocument(),
+    );
+  });
 });
