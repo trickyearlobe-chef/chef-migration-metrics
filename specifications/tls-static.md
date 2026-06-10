@@ -43,6 +43,32 @@ format, ordered from leaf to root:
 2. Intermediate CA certificate(s)
 3. Root CA certificate (optional — clients typically have this in their trust store)
 
+**Chain metadata (display).** The admin API returns operator-safe metadata for
+**every** certificate in the installed bundle, not just the leaf — so the UI can
+show the full leaf → intermediate(s) → root chain and its expiry at a glance. Each
+entry carries: subject CN, SANs (DNS + IP), issuer CN, not-before, not-after, and a
+**role** of `leaf`, `intermediate`, or `root`. The role is derived structurally —
+the leaf is the cert whose subject is not the issuer of any other cert in the
+bundle; a `root` is a self-signed cert (subject == issuer); the rest are
+`intermediate`. The private key is never read or returned (§ 2.7). This shape is
+the same wherever a cert is surfaced (static file/DB, CSR-promoted, ACME-issued).
+
+**Reorder on save (static upload only).** When an operator pastes/uploads a PEM
+bundle through the admin API for `cert_source: db` (§ 2.7), the server sorts the
+certificates into correct leaf → intermediate(s) → root order **before storing**,
+by matching each cert's issuer to the next cert's subject. It does not trust or
+reject the submitted order. This applies **only** to operator-supplied static
+uploads — CSR-promoted bundles ([tls-csr.md](tls-csr.md)) and `cert_source: file`
+material are app- or operator-managed in place and are not reordered.
+
+If the certificates do not form a single complete leaf → root chain (e.g. a missing
+intermediate, or unrelated certs), the server **reorders and links what it can,
+stores the bundle, and records a non-fatal warning** surfaced in the TLS status —
+it does **not** reject. This matches the fail-open posture of § 2.4: a chain that
+is merely incomplete (clients may already hold the missing intermediate) must never
+block a save. Only an **unparseable** PEM is rejected, by the existing save-time
+preflight (§ 2.6).
+
 ### 2.3 Certificate Reload
 
 The application must support **automatic certificate reload** without restart.
@@ -171,10 +197,11 @@ all other config-store secrets. The certificate (public) is stored non-secret;
 the private key is stored secret.
 
 **Key never exposed.** The private key is `secret: true` and is never returned
-through any API. The admin API returns only certificate **metadata** — subject,
-SANs, and expiry — so the UI can show what is installed without the key leaving
-the server. The DB cert/key are written only through the admin save path (§ 2.6)
-or CSR promotion (tls-csr.md), and cleared only via the repair CLI.
+through any API. The admin API returns only certificate **metadata** — per-cert
+subject, SANs, issuer, validity window, and chain role for the full installed chain
+(§ 2.2) — so the UI can show what is installed without the key leaving the server.
+The DB cert/key are written only through the admin save path (§ 2.6) or CSR
+promotion (tls-csr.md), and cleared only via the repair CLI.
 
 **Preflight + activation.** On save, the cert+key pair is validated together
 (§ 2.6); a mismatched or unparseable pair returns `422` and nothing is written.

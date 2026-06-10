@@ -43,13 +43,20 @@ When TLS is active (`mode: static` or `mode: acme`), an optional secondary liste
 
 The redirect listener serves **only** redirects — no API responses, no static assets, no health checks. This prevents accidental exposure of sensitive data over plain HTTP.
 
-`http_redirect_port` must differ from `server.port` (the HTTPS listen port). If they are equal, both listeners would attempt to bind the same port and one would fail at startup. This is rejected by validation — at startup and at save time (see [tls-static.md § 2.6](tls-static.md)).
+`http_redirect_port` must differ from `server.port` (the HTTPS listen port) — and, when automatic HTTPS on `443` is in effect (§ 1.5), from `443` as well. If any two listeners would bind the same port, one would fail at startup. This is rejected by validation — at startup and at save time (see [tls-static.md § 2.6](tls-static.md)).
 
 **Exception:** The ACME HTTP-01 challenge path (`/.well-known/acme-challenge/`) is served on the redirect listener when `mode: acme` and the HTTP-01 solver is in use (see [tls-acme.md § 3.3](tls-acme.md)).
 
 ### 1.3 Port Defaults
 
-The `server.port` default remains `8080` regardless of TLS mode. Operators who enable TLS and want the standard HTTPS port should explicitly set `server.port: 443`. This avoids surprising behaviour changes when toggling TLS on and off.
+The configured `server.port` default remains `8080` regardless of TLS mode — the
+*configured value* never changes when toggling TLS on and off. However, when TLS is
+active and healthy the application automatically also serves HTTPS on `443` and
+redirects the configured `server.port` to it (§ 1.5), so an operator who leaves
+`server.port: 8080` still reaches the standard HTTPS port without reconfiguring,
+and an existing `http://host:8080` bookmark still resolves (via redirect) rather
+than breaking. Operators may still set `server.port: 443` explicitly, in which case
+there is nothing to redirect.
 
 ### 1.4 Binding Privileged (Low) Ports
 
@@ -71,6 +78,40 @@ and the affected port, then falls back to the next listen candidate and runs in
 degraded mode (§ 6.3, and [tls-static.md § 2.4](tls-static.md)). Capability vs
 SELinux are distinct — both must be satisfied for a non-standard low port on
 enforcing RHEL.
+
+### 1.5 Automatic HTTPS on 443 (port lifeboat)
+
+When TLS is active (`mode: static` or `mode: acme`) **and** the TLS listener builds
+successfully (healthy — not the fail-open path of [tls-static.md § 2.4](tls-static.md)
+or [§ 6.3](#63-degraded-tls-status-and-recovery)), the application **automatically**:
+
+- binds the HTTPS listener on `443`, and
+- starts a secondary listener on the configured `server.port` that `301`-redirects
+  every request to the `443` HTTPS URL.
+
+So enabling TLS yields the standard HTTPS port with no extra configuration, while
+the previously-used `server.port` URL keeps working via redirect. This is the
+**conventional half** of the "port lifeboat" idea.
+
+- **`server.port` already `443`:** there is nothing to redirect — the app serves
+  HTTPS on `443` directly, no secondary listener.
+- **Privileged bind (§ 1.4):** `443` is a low port. If it cannot be bound (no
+  `CAP_NET_BIND_SERVICE`, or SELinux), the application does **not** crash — it logs
+  the § 1.4 remediation and **falls back to serving HTTPS directly on
+  `server.port`** with no `443` listener and no redirect.
+- **Degraded TLS:** when the listener cannot be built and the app falls open
+  (self-signed or last-resort plain, § 6.3), `443` is **not** bound — the fail-open
+  listener holds `server.port` exactly as today. `443` is bound only when TLS is
+  healthy at startup.
+- **Interaction with `http_redirect_port`:** when set, that HTTP→HTTPS redirect
+  targets the `443` URL. `http_redirect_port` must differ from **both**
+  `server.port` and `443` (validated at startup and save time, § 1.2).
+
+> **Out of scope (future):** *runtime* health-driven port movement — flipping
+> between `443` and `server.port` as TLS health changes at runtime, with a graceful
+> listener hot-swap and flap hysteresis — is **not** part of this behaviour. `443`
+> binding is decided once, at startup, from TLS health. See the deferred
+> "443 lifeboat — health-driven port move" item.
 
 ## 2. Static Certificate Mode
 
