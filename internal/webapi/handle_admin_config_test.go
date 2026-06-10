@@ -6,6 +6,7 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -119,14 +120,15 @@ func newTestConfigStore(t *testing.T) *configstore.Store {
 // newTestRouterForAdminConfig builds a Router with a config store and holder
 // wired in. Pass nil store to get 503 on PUT. Pass nil holder to skip
 // config reload after PUT (avoids validation failures on an incomplete store).
-func newTestRouterForAdminConfig(cfg *config.Config, store *configstore.Store, holder *configstore.ConfigHolder) *Router {
+func newTestRouterForAdminConfig(cfg *config.Config, store *configstore.Store, holder *configstore.ConfigHolder, extra ...RouterOption) *Router {
 	if cfg == nil {
 		cfg = testConfig()
 	}
 	ms := &mockStore{}
 	hub := NewEventHub()
 	go hub.Run()
-	return NewRouter(ms, cfg, hub, WithConfigStore(store, holder))
+	opts := append([]RouterOption{WithConfigStore(store, holder)}, extra...)
+	return NewRouter(ms, cfg, hub, opts...)
 }
 
 // decodeBody is a test helper that decodes a JSON response body into v.
@@ -1019,6 +1021,66 @@ func TestAdminConfigOrganisations_PUT_400_InvalidJSON(t *testing.T) {
 
 	assertStatus(t, w, http.StatusBadRequest)
 	assertErrorCode(t, w, ErrCodeBadRequest)
+}
+
+// A successful org PUT must invoke the organisations-changed hook so the
+// operational organisations table is reconciled and a collection triggered
+// without a restart (configuration-live-reload.md; web-api-organisations.md).
+func TestAdminConfigOrganisations_PUT_InvokesOrgChangedHook(t *testing.T) {
+	store := newTestConfigStore(t)
+	var calls int
+	r := newTestRouterForAdminConfig(nil, store, nil,
+		WithOrganisationsChanged(func(context.Context) error {
+			calls++
+			return nil
+		}))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(validOrgBody))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	if calls != 1 {
+		t.Errorf("organisations-changed hook called %d times, want 1", calls)
+	}
+}
+
+// If the organisations-changed hook fails (e.g. the org-table reconcile
+// errors), the PUT must surface 500 rather than silently leaving the running
+// app out of sync with the persisted config.
+func TestAdminConfigOrganisations_PUT_OrgChangedHookError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil,
+		WithOrganisationsChanged(func(context.Context) error {
+			return errors.New("reconcile failed")
+		}))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(validOrgBody))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+}
+
+// A non-org config PUT must NOT invoke the organisations-changed hook.
+func TestAdminConfigCollection_PUT_DoesNotInvokeOrgChangedHook(t *testing.T) {
+	store := newTestConfigStore(t)
+	var calls int
+	r := newTestRouterForAdminConfig(nil, store, nil,
+		WithOrganisationsChanged(func(context.Context) error {
+			calls++
+			return nil
+		}))
+
+	body := `{"schedule":"0 2 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/collection", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	if calls != 0 {
+		t.Errorf("organisations-changed hook called %d times for a collection PUT, want 0", calls)
+	}
 }
 
 func TestAdminConfigOrganisations_PUT_422_EmptyList(t *testing.T) {

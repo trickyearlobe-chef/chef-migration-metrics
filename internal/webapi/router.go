@@ -130,6 +130,13 @@ type Router struct {
 	// non-ACME deployments. Non-blocking. Set via WithACMETrigger.
 	acmeReRegister func()
 
+	// onOrganisationsChanged, when set, is called after a successful write to
+	// the organisations config section. It reconciles the operational
+	// `organisations` table from live config and triggers a collection, so a
+	// newly added org takes effect without a restart (configuration-live-reload.md;
+	// web-api-organisations.md). An error fails the PUT (500). Nil when not wired.
+	onOrganisationsChanged func(context.Context) error
+
 	// hypervisor provides template discovery, VM inventory, and orphan
 	// cleanup. When nil, buildHypervisor() builds one on demand from live
 	// config. A static value (from WithHypervisor) takes precedence — this
@@ -287,6 +294,14 @@ func WithConfigStore(store *configstore.Store, holder *configstore.ConfigHolder)
 		r.configStore = store
 		r.configHolder = holder
 	}
+}
+
+// WithOrganisationsChanged sets the callback invoked after a successful write
+// to the organisations config section. The caller reconciles the operational
+// `organisations` table from live config and triggers a collection, so a newly
+// added org is collected without a restart. A returned error fails the PUT.
+func WithOrganisationsChanged(fn func(context.Context) error) RouterOption {
+	return func(r *Router) { r.onOrganisationsChanged = fn }
 }
 
 // WithHypervisor sets a static hypervisor client. When set, this takes

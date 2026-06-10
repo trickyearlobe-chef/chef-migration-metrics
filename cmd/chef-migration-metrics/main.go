@@ -764,8 +764,15 @@ func (app *serverApp) checkKeyFilePermissions(secretsLog *logging.ScopedLogger) 
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) syncOrganisations(ctx context.Context) error {
-	orgParams := make([]datastore.UpsertOrganisationParams, 0, len(app.cfg.Organisations))
-	for _, org := range app.cfg.Organisations {
+	// Read from live config so this is correct both at boot and when re-run
+	// after an admin org-config change (the holder is reloaded on PUT). Falls
+	// back to the boot snapshot if the holder is not yet wired.
+	liveOrgs := app.cfg.Organisations
+	if app.configHolder != nil {
+		liveOrgs = app.configHolder.Get().Organisations
+	}
+	orgParams := make([]datastore.UpsertOrganisationParams, 0, len(liveOrgs))
+	for _, org := range liveOrgs {
 		orgParams = append(orgParams, datastore.UpsertOrganisationParams{
 			Name:          org.Name,
 			ChefServerURL: org.ChefServerURL,
@@ -1133,6 +1140,26 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 					triggerLog.Error(fmt.Sprintf("triggered collection run failed: %v", err))
 				}
 			}()
+			return nil
+		}),
+		// After an organisations config save, reconcile the operational org
+		// table from live config and trigger a collection — so a newly added
+		// org takes effect without a restart (configuration-live-reload.md).
+		webapi.WithOrganisationsChanged(func(ctx context.Context) error {
+			if err := app.syncOrganisations(ctx); err != nil {
+				return err
+			}
+			// Best-effort, non-blocking. Background context so it outlives the
+			// PUT request; skipped if a run is already in progress.
+			if sched != nil && coll != nil && !coll.IsRunning() {
+				go func() {
+					triggerLog := logger.WithScope(logging.ScopeCollectionRun)
+					triggerLog.Info("organisations changed — triggering collection")
+					if _, err := sched.TriggerNow(context.Background()); err != nil {
+						triggerLog.Error(fmt.Sprintf("post-org-change collection failed: %v", err))
+					}
+				}()
+			}
 			return nil
 		}),
 	}
