@@ -482,7 +482,7 @@ scheme detection honours `X-Forwarded-Proto` from the proxy).
 - **Acceptance:** operator runs one CLI command to put the app in plain-HTTP
   behind-proxy mode (mode off + trusted_proxy) and back. Depends on Chunk 3a.
 
-## Chunk 8d — UI: behind-proxy plain-HTTP toggle
+## Chunk 8d — UI: behind-proxy plain-HTTP toggle (DONE)
 
 User also wants the behind-proxy switch in the admin UI (not just the CLI),
 dynamic per project rules (takes effect without restart). Same semantics as 8c:
