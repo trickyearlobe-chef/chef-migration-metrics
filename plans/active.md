@@ -53,6 +53,15 @@ Evidence (local DB after wizard): `config_store` has `organisations` +
 - `web-api-organisations.md` / `configuration.md`: state that config-org changes
   reconcile the `organisations` table synchronously and trigger collection.
 
+### Also landed (org-form dedup) — DONE
+Removed the redundant Org Name input. `chef_server_url` stays the authoritative
+**full** org URL (stored verbatim — existing configs/data untouched); the backend
+derives `org_name` from its `/organizations/<org>` segment (explicit honoured;
+rejects only if omitted AND underivable). Friendly `name` (data-owning PK)
+unchanged. UI validates the URL shape pre-save (`lib/chefOrgUrl.ts`) with a
+full-org-URL placeholder + inline error. Spec updated. (An earlier base-URL
+reconstruction approach was reverted as unsafe for existing configs.)
+
 ## Notes
 - TLS refinement backlog (after this): 443-lifeboat port move
   ([todo-tls-antilockout.md](todo-tls-antilockout.md) §2) and cert-chain
