@@ -364,6 +364,77 @@ func TestRedirectHandler_PostMethod(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Tests: NewChallengeRedirectServer (ACME http-01)
+// ---------------------------------------------------------------------------
+
+// challengeStub is a trivial handler standing in for the ACME HTTP-01 solver's
+// Handler(): it answers any request under the challenge prefix with 200 + body.
+func challengeStub() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("challenge-body"))
+	})
+}
+
+func TestChallengeRedirectServer_ServesChallengePath(t *testing.T) {
+	srv := NewChallengeRedirectServer("0.0.0.0", 80, 8443, challengeStub())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/.well-known/acme-challenge/tok-1", nil)
+	req.Host = "example.com"
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+
+	// The challenge handler takes priority — no redirect.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (challenge served, not redirected)", rr.Code)
+	}
+	if rr.Body.String() != "challenge-body" {
+		t.Errorf("body = %q, want the challenge body", rr.Body.String())
+	}
+	if loc := rr.Header().Get("Location"); loc != "" {
+		t.Errorf("challenge path must not be redirected, got Location %q", loc)
+	}
+}
+
+func TestChallengeRedirectServer_RedirectsEverythingElse(t *testing.T) {
+	srv := NewChallengeRedirectServer("0.0.0.0", 80, 8443, challengeStub())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/dashboard?org=prod", nil)
+	req.Host = "example.com"
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMovedPermanently {
+		t.Fatalf("status = %d, want %d (redirect)", rr.Code, http.StatusMovedPermanently)
+	}
+	want := "https://example.com:8443/dashboard?org=prod"
+	if loc := rr.Header().Get("Location"); loc != want {
+		t.Errorf("Location = %q, want %q", loc, want)
+	}
+}
+
+func TestChallengeRedirectServer_RedirectsStandardHTTPSPort(t *testing.T) {
+	srv := NewChallengeRedirectServer("0.0.0.0", 80, 443, challengeStub())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Host = "example.com"
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+
+	want := "https://example.com/"
+	if loc := rr.Header().Get("Location"); loc != want {
+		t.Errorf("Location = %q, want %q (no port for 443)", loc, want)
+	}
+}
+
+func TestChallengeRedirectServer_Addr(t *testing.T) {
+	srv := NewChallengeRedirectServer("127.0.0.1", 80, 8443, challengeStub())
+	if srv.Addr != "127.0.0.1:80" {
+		t.Errorf("Addr = %q, want 127.0.0.1:80", srv.Addr)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Tests: ListenerConfig.setDefaults
 // ---------------------------------------------------------------------------
 

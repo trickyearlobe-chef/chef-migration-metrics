@@ -284,26 +284,65 @@ func (l *Listener) RedirectAddr() string {
 // accidental exposure of sensitive data over plain HTTP.
 func (l *Listener) redirectHandler() http.Handler {
 	httpsPort := l.cfg.Port
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Determine the target host for the redirect. Strip any existing
-		// port from the Host header and replace it with the HTTPS port.
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-
-		// Only append the port if it's non-standard for HTTPS.
-		target := "https://"
-		if httpsPort != 443 {
-			target += net.JoinHostPort(host, fmt.Sprintf("%d", httpsPort))
-		} else {
-			target += host
-		}
-		target += r.URL.RequestURI()
-
-		http.Redirect(w, r, target, http.StatusMovedPermanently)
+		redirectToHTTPS(w, r, httpsPort)
 	})
+}
+
+// redirectToHTTPS issues a 301 to the HTTPS equivalent of the request URL,
+// swapping the host's port for httpsPort (omitted when it is the standard 443).
+func redirectToHTTPS(w http.ResponseWriter, r *http.Request, httpsPort int) {
+	// Strip any existing port from the Host header and replace it with the
+	// HTTPS port.
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+
+	target := "https://"
+	if httpsPort != 443 {
+		target += net.JoinHostPort(host, fmt.Sprintf("%d", httpsPort))
+	} else {
+		target += host
+	}
+	target += r.URL.RequestURI()
+
+	http.Redirect(w, r, target, http.StatusMovedPermanently)
+}
+
+// acmeChallengePrefix is the well-known HTTP-01 challenge path. It mirrors
+// acme.ChallengePathPrefix; duplicated here so the tls package stays free of an
+// acme import (the challenge handler is injected as a plain http.Handler).
+const acmeChallengePrefix = "/.well-known/acme-challenge/"
+
+// NewChallengeRedirectServer builds the port-80 server used in ACME http-01
+// mode. It serves the injected challenge handler for requests under
+// /.well-known/acme-challenge/ and 301-redirects everything else to HTTPS on
+// httpsPort. The challenge path takes priority over the redirect (tls-acme.md
+// § 3.3), so the CA can validate domain control over plain HTTP while ordinary
+// traffic is still pushed to TLS.
+//
+// In http-01 mode this server owns the redirect port for the whole process
+// lifetime; the HTTPS Listener therefore runs with HTTPRedirectPort: 0 so it
+// does not also try to bind the same port.
+func NewChallengeRedirectServer(listenAddr string, redirectPort, httpsPort int, challenge http.Handler) *http.Server {
+	if listenAddr == "" {
+		listenAddr = "0.0.0.0"
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, acmeChallengePrefix) {
+			challenge.ServeHTTP(w, r)
+			return
+		}
+		redirectToHTTPS(w, r, httpsPort)
+	})
+	return &http.Server{
+		Addr:         fmt.Sprintf("%s:%d", listenAddr, redirectPort),
+		Handler:      handler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
 }
 
 // ---------------------------------------------------------------------------

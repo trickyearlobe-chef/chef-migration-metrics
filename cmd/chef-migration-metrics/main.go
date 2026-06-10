@@ -1074,6 +1074,14 @@ type serverResult struct {
 	errCh       <-chan error
 	tlsListener *apptls.Listener
 	plainSrv    *http.Server
+
+	// challengeSrv is the ACME http-01 challenge/redirect server bound to the
+	// redirect port (port 80) in mode: acme. Nil in all other modes.
+	challengeSrv *http.Server
+
+	// renewerCancel stops the background ACME renewal loop in mode: acme. Nil in
+	// all other modes.
+	renewerCancel context.CancelFunc
 }
 
 func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
@@ -1458,8 +1466,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		res.tlsListener = tlsListener
 
 	case "acme":
-		app.startup.Error("TLS mode 'acme' is not yet implemented")
-		return res, fmt.Errorf("TLS mode 'acme' is not yet implemented")
+		return app.setupACME(apiRouter, app.cfgStore, shutdownTimeout)
 
 	default:
 		res = app.servePlainHTTP(apiRouter)
@@ -1743,6 +1750,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 		}
 	}
 
+	// Stop the ACME renewal loop first (mode: acme) so no new issuance starts
+	// while we drain.
+	if srv.renewerCancel != nil {
+		app.startup.Info("stopping ACME renewal loop...")
+		srv.renewerCancel()
+	}
+
 	// Graceful shutdown — stop the scheduler first so no new collection
 	// runs start, then shut down the HTTP server.
 	app.startup.Info("stopping collection scheduler...")
@@ -1758,6 +1772,15 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
+
+	// Drain the ACME http-01 challenge/redirect server (mode: acme) alongside
+	// the HTTPS listener. A shutdown error here is logged but not fatal.
+	if srv.challengeSrv != nil {
+		app.startup.Info("shutting down ACME challenge/redirect server...")
+		if err := srv.challengeSrv.Shutdown(shutdownCtx); err != nil {
+			app.startup.Error(fmt.Sprintf("ACME challenge server shutdown: %v", err))
+		}
+	}
 
 	if srv.tlsListener != nil {
 		if err := srv.tlsListener.Shutdown(shutdownCtx); err != nil {

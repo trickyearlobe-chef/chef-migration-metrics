@@ -1,0 +1,278 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/acme"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
+	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
+)
+
+// fakeSecretStore is an in-memory acme.SecretStore for the cmd-level ACME tests
+// (no DB, no network).
+type fakeSecretStore struct {
+	data map[string]json.RawMessage
+}
+
+func newFakeSecretStore() *fakeSecretStore {
+	return &fakeSecretStore{data: map[string]json.RawMessage{}}
+}
+
+func (f *fakeSecretStore) Get(_ context.Context, key string) (json.RawMessage, error) {
+	v, ok := f.data[key]
+	if !ok {
+		return nil, configstore.ErrNotFound
+	}
+	return v, nil
+}
+
+func (f *fakeSecretStore) GetSecret(ctx context.Context, key string) (json.RawMessage, error) {
+	return f.Get(ctx, key)
+}
+
+func (f *fakeSecretStore) Set(_ context.Context, key string, value json.RawMessage, _ bool, _ string) error {
+	f.data[key] = value
+	return nil
+}
+
+func (f *fakeSecretStore) Delete(_ context.Context, key string) error {
+	delete(f.data, key)
+	return nil
+}
+
+// fakeObtainer is a CertObtainer that returns scripted material without any
+// network, standing in for the ACME Manager.
+type fakeObtainer struct {
+	cert, key []byte
+	err       error
+	calls     int
+}
+
+func (f *fakeObtainer) Obtain(_ context.Context) (certPEM, keyPEM []byte, err error) {
+	f.calls++
+	return f.cert, f.key, f.err
+}
+
+// newACMEApp builds a serverApp wired with the holders setupACME needs, plus an
+// http-01 ACME config pointing at free loopback ports.
+func newACMEApp(t *testing.T) *serverApp {
+	t.Helper()
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.tlsReload.SetOnReload(app.tlsStatus.SetHealthy)
+
+	app.cfg.Server.TLS.Mode = "acme"
+	app.cfg.Server.TLS.HTTPRedirectPort = freePort(t)
+	return app
+}
+
+// promotingIssuer promotes a freshly obtained certificate into the running
+// self-signed listener, clearing the degraded state.
+func TestPromotingIssuer_PromotesInPlaceClearsDegraded(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.tlsReload.SetOnReload(app.tlsStatus.SetHealthy)
+
+	res := app.degradeToSelfSigned(http.NewServeMux(), nil, errors.New("acme bootstrap"))
+	defer shutdown(t, res)
+	if !app.tlsStatus.IsDegraded() {
+		t.Fatal("expected degraded before promotion")
+	}
+
+	realCert, realKey, err := apptls.GenerateSelfSigned([]string{"metrics.example.com"})
+	if err != nil {
+		t.Fatalf("generate promotion cert: %v", err)
+	}
+	issuer := &promotingIssuer{
+		inner:  &fakeObtainer{cert: realCert, key: realKey},
+		reload: app.tlsReload,
+		log:    app.tlsLog,
+	}
+	if _, _, err := issuer.Obtain(context.Background()); err != nil {
+		t.Fatalf("Obtain: %v", err)
+	}
+	if app.tlsStatus.IsDegraded() {
+		t.Error("expected degraded cleared after in-place promotion")
+	}
+	if !app.hstsEnabledFn()() {
+		t.Error("HSTS gate must reopen once a real cert is promoted")
+	}
+}
+
+// A failed Obtain (e.g. ToS not accepted) must propagate the error and leave the
+// listener degraded — no promotion happens.
+func TestPromotingIssuer_ObtainErrorStaysDegraded(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.tlsReload.SetOnReload(app.tlsStatus.SetHealthy)
+
+	res := app.degradeToSelfSigned(http.NewServeMux(), nil, errors.New("acme bootstrap"))
+	defer shutdown(t, res)
+
+	issuer := &promotingIssuer{
+		inner:  &fakeObtainer{err: acme.ErrTOSNotAccepted},
+		reload: app.tlsReload,
+		log:    app.tlsLog,
+	}
+	if _, _, err := issuer.Obtain(context.Background()); !errors.Is(err, acme.ErrTOSNotAccepted) {
+		t.Fatalf("want ErrTOSNotAccepted, got %v", err)
+	}
+	if !app.tlsStatus.IsDegraded() {
+		t.Error("expected listener to stay degraded when issuance fails")
+	}
+}
+
+// http-01 with no stored cert comes up self-signed (degraded) over HTTPS, starts
+// the challenge/redirect server and the renewer, and never returns a fatal
+// error. agree_to_tos is false so the renewer's first Obtain short-circuits with
+// no network call.
+func TestSetupACME_HTTP01ComesUpSelfSignedDegraded(t *testing.T) {
+	app := newACMEApp(t)
+	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}
+	app.cfg.Server.TLS.ACME.Challenge = "http-01"
+	app.cfg.Server.TLS.ACME.CAURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
+	app.cfg.Server.TLS.ACME.AgreeToTOS = false // keeps the renewer offline
+
+	res, err := app.setupACME(http.NewServeMux(), newFakeSecretStore(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("setupACME returned a fatal error (must fail open): %v", err)
+	}
+	defer shutdownACME(t, res)
+
+	if res.tlsListener == nil {
+		t.Fatal("expected an HTTPS listener in acme mode")
+	}
+	if res.challengeSrv == nil {
+		t.Error("expected an http-01 challenge/redirect server")
+	}
+	if res.renewerCancel == nil {
+		t.Error("expected a renewer cancel func")
+	}
+	if !app.tlsStatus.IsDegraded() {
+		t.Error("expected degraded (self-signed) when no cert is stored yet")
+	}
+	if app.tlsStatus.Status().Kind != webapi.DegradedKindSelfSigned {
+		t.Errorf("kind = %q, want self-signed", app.tlsStatus.Status().Kind)
+	}
+
+	// Really serving HTTPS with a self-signed cert.
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed by design
+	}}
+	resp := getWithRetry(t, client, "https://"+res.tlsListener.Addr()+"/")
+	resp.Body.Close()
+}
+
+// A stored issued certificate is served immediately (healthy, not degraded).
+func TestSetupACME_StoredCertServedHealthy(t *testing.T) {
+	app := newACMEApp(t)
+	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}
+	app.cfg.Server.TLS.ACME.Challenge = "http-01"
+	app.cfg.Server.TLS.ACME.AgreeToTOS = false
+
+	store := newFakeSecretStore()
+	// Seed a valid issued cert/key (a self-signed pair is structurally valid).
+	storage := acme.NewStorage(store)
+	cert, key, err := apptls.GenerateSelfSigned([]string{"metrics.example.com"})
+	if err != nil {
+		t.Fatalf("seed cert: %v", err)
+	}
+	if err := storage.SetCertificate(context.Background(), cert, key); err != nil {
+		t.Fatalf("seed SetCertificate: %v", err)
+	}
+
+	res, err := app.setupACME(http.NewServeMux(), store, 5*time.Second)
+	if err != nil {
+		t.Fatalf("setupACME: %v", err)
+	}
+	defer shutdownACME(t, res)
+
+	if app.tlsStatus.IsDegraded() {
+		t.Error("expected healthy (not degraded) when a stored cert is present")
+	}
+}
+
+// http-01 without http_redirect_port cannot work: it degrades to self-signed and
+// does not start a challenge server or renewer.
+func TestSetupACME_HTTP01NoRedirectPortDegrades(t *testing.T) {
+	app := newACMEApp(t)
+	app.cfg.Server.TLS.HTTPRedirectPort = 0
+	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}
+	app.cfg.Server.TLS.ACME.Challenge = "http-01"
+
+	res, err := app.setupACME(http.NewServeMux(), newFakeSecretStore(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("setupACME must fail open: %v", err)
+	}
+	defer shutdownACME(t, res)
+
+	if res.challengeSrv != nil {
+		t.Error("no challenge server should start without a redirect port")
+	}
+	if res.renewerCancel != nil {
+		t.Error("no renewer should start when http-01 cannot work")
+	}
+	if !app.tlsStatus.IsDegraded() {
+		t.Error("expected degraded self-signed when http-01 has no redirect port")
+	}
+}
+
+// dns-01 is not yet implemented: it degrades to self-signed rather than exiting.
+func TestSetupACME_DNS01Degrades(t *testing.T) {
+	app := newACMEApp(t)
+	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}
+	app.cfg.Server.TLS.ACME.Challenge = "dns-01"
+
+	res, err := app.setupACME(http.NewServeMux(), newFakeSecretStore(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("setupACME must fail open for dns-01: %v", err)
+	}
+	defer shutdownACME(t, res)
+
+	if res.challengeSrv != nil {
+		t.Error("dns-01 must not start an http challenge server")
+	}
+	if !app.tlsStatus.IsDegraded() {
+		t.Error("expected degraded self-signed for unimplemented dns-01")
+	}
+}
+
+func TestIsACMEStaging(t *testing.T) {
+	cases := map[string]bool{
+		"https://acme-staging-v02.api.letsencrypt.org/directory": true,
+		"https://acme-v02.api.letsencrypt.org/directory":         false,
+		"": false,
+	}
+	for url, want := range cases {
+		if got := isACMEStaging(url); got != want {
+			t.Errorf("isACMEStaging(%q) = %v, want %v", url, got, want)
+		}
+	}
+}
+
+// shutdownACME drains an acme-mode serverResult (renewer + challenge server +
+// HTTPS listener).
+func shutdownACME(t *testing.T, res serverResult) {
+	t.Helper()
+	if res.renewerCancel != nil {
+		res.renewerCancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if res.challengeSrv != nil {
+		_ = res.challengeSrv.Shutdown(ctx)
+	}
+	if res.tlsListener != nil {
+		_ = res.tlsListener.Shutdown(ctx)
+	}
+}
