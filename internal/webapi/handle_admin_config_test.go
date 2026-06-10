@@ -1023,6 +1023,62 @@ func TestAdminConfigOrganisations_PUT_400_InvalidJSON(t *testing.T) {
 	assertErrorCode(t, w, ErrCodeBadRequest)
 }
 
+// org_name is no longer entered in the UI; the backend derives it from the
+// full org URL's "/organizations/<org>" segment when omitted. chef_server_url
+// is stored verbatim (the URL is authoritative).
+func TestAdminConfigOrganisations_PUT_DerivesOrgNameFromURL(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com/organizations/myorg","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodePutValue(t, w, &got)
+	if got[0]["org_name"] != "myorg" {
+		t.Errorf("org_name = %v, want %q (derived from URL)", got[0]["org_name"], "myorg")
+	}
+	if got[0]["chef_server_url"] != "https://chef.example.com/organizations/myorg" {
+		t.Errorf("chef_server_url = %v, want full URL stored verbatim", got[0]["chef_server_url"])
+	}
+}
+
+// An explicit org_name is honoured (not overwritten by derivation).
+func TestAdminConfigOrganisations_PUT_ExplicitOrgNameKept(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com/organizations/myorg","org_name":"explicit","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodePutValue(t, w, &got)
+	if got[0]["org_name"] != "explicit" {
+		t.Errorf("org_name = %v, want %q (explicit value kept)", got[0]["org_name"], "explicit")
+	}
+}
+
+// If org_name is omitted and the URL has no "/organizations/<org>" segment,
+// the backend cannot derive it and rejects the save (the UI prevents this).
+func TestAdminConfigOrganisations_PUT_422_OrgNameNotDerivable(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
 // A successful org PUT must invoke the organisations-changed hook so the
 // operational organisations table is reconciled and a collection triggered
 // without a restart (configuration-live-reload.md; web-api-organisations.md).

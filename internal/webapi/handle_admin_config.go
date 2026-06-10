@@ -306,10 +306,19 @@ func (r *Router) putAdminConfigOrganisations(w http.ResponseWriter, req *http.Re
 				fmt.Sprintf("%s: chef_server_url is required", prefix))
 			return
 		}
+		// org_name is not entered in the UI — it is derived from the full org
+		// URL's "/organizations/<org>" segment (it labels the User-Agent; the
+		// URL is authoritative). An explicit value is honoured. If absent and
+		// underivable, reject — the org table requires a non-empty org name.
 		if org.OrgName == "" {
-			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				fmt.Sprintf("%s: org_name is required", prefix))
-			return
+			derived := deriveOrgNameFromURL(org.ChefServerURL)
+			if derived == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: could not derive org name from chef_server_url %q — expected a full org URL like https://chef.example.com/organizations/<org>", prefix, org.ChefServerURL))
+				return
+			}
+			input[i].OrgName = derived
+			org.OrgName = derived
 		}
 		if org.ClientName == "" {
 			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
@@ -340,6 +349,22 @@ func (r *Router) putAdminConfigOrganisations(w http.ResponseWriter, req *http.Re
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
+
+// deriveOrgNameFromURL extracts the Chef organisation name from a full org
+// URL's "/organizations/<org>" path segment, e.g.
+// "https://chef.example.com/organizations/myorg" → "myorg". Returns "" when
+// the segment is absent. Used to populate the User-Agent label without asking
+// the operator to repeat the org name they already typed in the URL.
+func deriveOrgNameFromURL(u string) string {
+	_, rest, found := strings.Cut(u, "/organizations/")
+	if !found {
+		return ""
+	}
+	if j := strings.IndexAny(rest, "/?#"); j >= 0 {
+		rest = rest[:j]
+	}
+	return rest
+}
 
 // decodeAdminConfigBody reads the request body and unmarshals it via the YAML
 // decoder (which honours yaml struct tags and accepts JSON as valid YAML).

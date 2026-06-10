@@ -10,6 +10,7 @@ import {
   type Organisation,
 } from "../api";
 import { ErrorAlert, InlineSpinner } from "../components/Feedback";
+import { chefOrgURLError } from "../lib/chefOrgUrl";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -113,10 +114,10 @@ export function AdminSetupWizardPage() {
     }
   }
 
+  const orgUrlError = org.chef_server_url.trim() !== "" ? chefOrgURLError(org.chef_server_url) : null;
   const orgValid =
     org.name.trim() !== "" &&
-    org.chef_server_url.trim() !== "" &&
-    org.org_name.trim() !== "" &&
+    chefOrgURLError(org.chef_server_url) === null &&
     org.client_name.trim() !== "" &&
     (org.client_key_credential.trim() !== "" || org.client_key_path.trim() !== "");
 
@@ -235,12 +236,13 @@ export function AdminSetupWizardPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Chef Server URL <span className="text-red-500">*</span></label>
                   <input type="url" value={org.chef_server_url} onChange={(e) => handleOrgChange("chef_server_url", e.target.value)}
-                    placeholder="https://chef.example.com" className={INPUT_CLASS} disabled={saving} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Org Name <span className="text-red-500">*</span></label>
-                  <input type="text" value={org.org_name} onChange={(e) => handleOrgChange("org_name", e.target.value)}
-                    placeholder="my-org" className={INPUT_CLASS} disabled={saving} />
+                    placeholder="https://chef.example.com/organizations/myorg" className={INPUT_CLASS}
+                    aria-invalid={orgUrlError !== null} disabled={saving} />
+                  {orgUrlError ? (
+                    <p className="mt-1 text-xs text-red-600">{orgUrlError}</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-500">Full organisation URL — the org name is taken from the <code>/organizations/&lt;org&gt;</code> path.</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Client Name <span className="text-red-500">*</span></label>
