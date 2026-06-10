@@ -4,7 +4,7 @@ Branch: `feature/tls-db-certs-csr-acme`. Full plan + per-chunk detail:
 [plans/tls-db-certs-csr-acme.md](tls-db-certs-csr-acme.md).
 
 Sequence: `0 → 1 → 2 → 3 → 3a → 4 → 5 → 6 → 7 → 8a → 8b → 9 → 9a → 10 → 11`
-(8c — deliberate plain-HTTP CLI — depends only on 3a, lands any time).
+(8c done; 8d — admin-UI behind-proxy toggle — depends on 8c).
 
 ## Done
 
@@ -30,19 +30,28 @@ HTTPS (stored cert else 8a self-signed degraded), background Renewer +
 listener runs `HTTPRedirectPort:0`; staging WARN; `http-01`+`http_redirect_port:0`
 and `dns-01` (Chunk 9) fail open to self-signed; `serverResult`/`awaitShutdown`
 drain challenge server + renewer cancel. TDD, no network. Specs already accurate.
+Chunk 8c — deliberate plain-HTTP CLI: new `cmd/.../tlsmode.go` adds
+`tls mode <off|static|acme>` to the 3a dispatch (generalises `tls reset`, now a
+thin alias); `--trusted-proxy[=true|false]` on `mode off` also sets
+`server.trusted_proxy`. Required wiring: `server.trusted_proxy` is now a
+config-store section (`KeyServerTrustedProxy` in `assembly.go` —
+AllConfigKeys/assembleFields/ConfigToSections) so the CLI/UI value is read at
+startup + reload (it was YAML-only and lost on migration before). Same env-only
+store + section-preserving idempotency as 3a. Spec `tls.md § 9.1` (+ `tls-static.md`
+pointer). TDD, no network.
 
 ## Next chunk
 
-**Chunk 8c — CLI: deliberate plain-HTTP (behind TLS-terminating proxy).** Add
-`tls mode <off|static|acme>` to the Chunk 3a repair-CLI dispatch
-(`cmd/.../tlsrepair.go`/sibling), generalising `tls reset` (stays as the recovery
-alias for `mode off`). A `--trusted-proxy[=true|false]` flag on `tls mode off`
-also sets `server.trusted_proxy` so HSTS honours `X-Forwarded-Proto` from the
-proxy. Same env-only store + section-preserving read-modify-write + idempotency
-as 3a. Spec: note behind-proxy deployment in `tls-static.md`/`tls.md`. TDD.
-Depends on Chunk 3a (done) — independent of 8b.
-
-Then **8d** (matching admin-UI toggle, depends on 8c). See detail plan.
+**Chunk 8d — UI: behind-proxy plain-HTTP toggle.** Admin-UI switch mirroring 8c:
+a "Terminate TLS at a proxy (plain HTTP)" toggle that sets `server.tls.mode: off`
++ `server.trusted_proxy: true` (dynamic, no restart), with a lockout-guard
+confirm/warning explaining HSTS is then driven by `X-Forwarded-Proto`. Scope:
+`frontend/src/pages/AdminServerPage.tsx`, `api/config.ts`/`types/config.ts`
+(surface `trusted_proxy`), and the backend server-config save path (must now also
+persist `server.trusted_proxy` — 8c added the config-store key + assembly; check
+the admin PUT handler in `handle_admin_config_server.go` writes it). TDD (vitest:
+toggle sets mode off + trusted_proxy in the payload; warning shown). Depends on
+Chunk 8c (done). See detail plan Chunk 8d.
 
 ## Notes
 

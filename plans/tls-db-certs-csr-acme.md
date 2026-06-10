@@ -440,7 +440,25 @@ Original scope (for reference):
 - **Acceptance:** `mode: acme` + http-01 obtains a cert against staging; before
   issuance the UI is reachable over self-signed HTTPS. Depends on Chunks 7,8a.
 
-## Chunk 8c — CLI: deliberate plain-HTTP (behind TLS-terminating proxy)
+## Chunk 8c — CLI: deliberate plain-HTTP (behind TLS-terminating proxy) (DONE)
+
+Done 2026-06-10. New `cmd/.../tlsmode.go`: `tls mode <off|static|acme>` added to
+the 3a dispatch (`tlsrepair.go` `runTLSCommand`), with `parseTLSModeArgs`
+(mode + optional `--trusted-proxy[=true|false]`, any order, bare flag ⇒ true),
+`tlsSetMode` (section-preserving, no-section-safe, idempotent — `tlsResetMode` is
+now a thin alias), `tlsSetTrustedProxy` (scalar `server.trusted_proxy`; false
+when absent ⇒ no orphan key), and `runTLSMode` (combined operator output, gates
+the trusted-proxy write on the server.tls section existing). **Required wiring:**
+`server.trusted_proxy` was YAML-only and silently dropped on migration — added
+`KeyServerTrustedProxy` to `configstore/assembly.go`
+(AllConfigKeys + assembleFields + ConfigToSections) so the CLI/UI value is read
+at startup and on reload. Same env-only store + idempotency + no break-glass as
+3a. Spec: `tls.md § 9.1` (behind-proxy deployment) + `tls-static.md` pointer.
+TDD (no network): assembly round-trip/known-key; mode set-each/no-section/alias,
+trusted-proxy true⇄false/idempotent/false-when-absent, `parseTLSModeArgs` table.
+`go test -race`, vet, gofmt, build clean. UI toggle is Chunk 8d.
+
+Original scope (for reference):
 
 User request: a CLI to **force plain HTTP on purpose** so the app can sit behind
 a load balancer / reverse proxy that terminates TLS. Distinct from fail-open
