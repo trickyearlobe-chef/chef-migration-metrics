@@ -94,13 +94,19 @@ added (status surface). One Chunk 9a tech-debt item resolved (hostname error in
 status); the other narrowed (immediate trigger landed; live config-rebuild on
 change still open — [todo-tech-debt.md](todo-tech-debt.md)). TDD throughout.
 
-## Next chunk
+Chunk 11 — Ignore files, packaging, docs, debt (**final chunk**). Verified
+`.gitignore`/`.dockerignore` current (`/acme/`, `.lego/`, `.certmagic/` already
+root-anchored + commented as DB-backed guards; branch added only source files).
+`nfpm.yaml` needs no change — ACME state is DB-backed, no acme volume; only the
+generic `/var/lib/chef-migration-metrics/` runtime dir. Pruned the completed
+13-item TLS section in `todo-configuration.md` (corrected stale "CertMagic" /
+`storage_path` guidance). Tech-debt already records the open ACME items
+(Chunk 9a/10 snapshot-rebuild, load-time dns-01 validation). Also corrected the
+deprecated `acme.storage_path` references across 8 spec files to match the
+shipped DB-backed design (`tls-acme.md` § 3.5) — field is retained in code only
+so old YAML parses; it is ignored.
 
-**Chunk 11 — Ignore files, packaging, docs, debt.** Scope: `.gitignore` /
-`.dockerignore` (no acme storage dir now it's DB; any new artifacts), packaging
-units (drop acme volume reqs if any), `plans/todo-*.md`, `plans/todo-tech-debt.md`.
-**Acceptance:** ignore files current; todos updated; debt recorded. See detail
-plan Chunk 11. Final chunk of this branch.
+All chunks (0–11) complete. Branch ready to present for merge.
 
 ## Notes
 
