@@ -48,6 +48,14 @@ Returns all configured Chef Infra Server organisations.
 
 > **Security note:** The API never returns the private key value, file path, or any portion of the key material. Only the credential source and name are disclosed.
 
+> **Config/table synchronisation:** `config`-sourced organisations live in the
+> `config_store` `organisations` section (the write model) and are reconciled into
+> the operational `organisations` table (the read model the collector enumerates).
+> This reconciliation runs on **every** change to the org config section — not only
+> at startup — and then triggers a collection, so a newly added org is collected
+> without a restart. Reconciliation upserts each configured org and removes
+> `source='config'` rows no longer present; `source='api'` rows are never touched.
+
 ### Create Organisation
 
 #### `POST /api/v1/organisations`

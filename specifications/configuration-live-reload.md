@@ -7,6 +7,10 @@
 - Collection schedule
 - Git base URLs
 - Kitchen settings
+- Organisations — the `organisations` config section is reconciled into the
+  operational `organisations` table on save (so the collector, which reads that
+  table, sees the change immediately) and a collection is triggered; adding the
+  first organisation clears setup mode without a restart
 - Any other admin-configurable value
 
 Components that consume config-store values must either:

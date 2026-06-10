@@ -153,7 +153,7 @@ Migration `0011_config_store`:
 7. Validate the assembled config (same validation rules as today)
 8. Start the HTTP server and background collector
 
-If `config_store` is empty and no full YAML exists, the app starts in "setup mode" — it serves only the admin UI with a setup wizard. The collector does not run until at least one organisation is configured.
+If `config_store` is empty and no full YAML exists, the app starts in "setup mode" — it serves only the admin UI with a setup wizard. The collector does not run until at least one organisation is configured. Configuring the first organisation takes effect **immediately, without a restart**: the org write reconciles the operational `organisations` table and triggers a collection, so setup mode clears and the collector begins (see [configuration-live-reload.md](configuration-live-reload.md) and [web-api-organisations.md](web-api-organisations.md)).
 
 ## API Endpoints
 
