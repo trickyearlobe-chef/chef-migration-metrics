@@ -326,7 +326,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	ctx := req.Context()
-	for _, key := range []string{configstore.KeyServerListen, configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown} {
+	for _, key := range []string{configstore.KeyServerListen, configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown, configstore.KeyServerTrustedProxy} {
 		if err := r.configStore.Set(ctx, key, sections[key], false, "admin"); err != nil {
 			r.logf("ERROR", "admin/config/server: store %s: %v", key, err)
 			WriteInternalError(w, "Failed to store server config.")

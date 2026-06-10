@@ -436,6 +436,34 @@ func TestAdminConfigServer_PUT_PersistsListen(t *testing.T) {
 	}
 }
 
+// The behind-proxy plain-HTTP deployment (tls.md § 9.1) sets server.trusted_proxy
+// alongside tls.mode off. The handler must persist the dedicated trusted_proxy
+// section, not just the TLS/listen/websocket ones, or the UI value is lost on
+// reload/restart.
+func TestAdminConfigServer_PUT_PersistsTrustedProxy(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"tls":{"mode":"off"},"trusted_proxy":true}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+
+	stored, err := store.Get(context.Background(), configstore.KeyServerTrustedProxy)
+	if err != nil {
+		t.Fatalf("store.Get %s: %v", configstore.KeyServerTrustedProxy, err)
+	}
+	var tp bool
+	if err := json.Unmarshal(stored, &tp); err != nil {
+		t.Fatalf("unmarshal trusted_proxy: %v", err)
+	}
+	if !tp {
+		t.Errorf("trusted_proxy = %v, want true", tp)
+	}
+}
+
 // A port outside the valid range is rejected.
 func TestAdminConfigServer_PUT_422_BadPort(t *testing.T) {
 	store := newTestConfigStore(t)
