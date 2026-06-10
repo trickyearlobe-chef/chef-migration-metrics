@@ -25,6 +25,10 @@ import (
 type putConfigResponse struct {
 	Value           json.RawMessage `json:"value"`
 	RestartRequired bool            `json:"restart_required"`
+	// Warnings carries non-fatal advisories about a save that was accepted and
+	// stored anyway (e.g. an incomplete TLS certificate chain — tls-static.md
+	// § 2.2). Omitted when empty.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // adminConfigCronRe matches a basic 5-field cron expression.

@@ -139,6 +139,9 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	// the pending key must be deleted after a successful promote.
 	dbCertProvided := false
 	promotePending := false
+	// dbCertWarning carries a non-fatal chain-reorder warning (incomplete or
+	// non-linking bundle) surfaced to the operator in the save response.
+	dbCertWarning := ""
 
 	if input.TLS.Mode == "static" {
 		switch input.TLS.CertSource {
@@ -169,6 +172,15 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 			haveKey := len(dbKeyPEM) > 0
 			switch {
 			case haveCert && haveKey:
+				// Reorder the operator-supplied bundle into leaf → intermediate(s)
+				// → root before preflight and storage (tls-static.md § 2.2). The
+				// preflight below matches the key against cert[0], so the leaf must
+				// lead; an incomplete chain is stored with a non-fatal warning, never
+				// rejected. Only CSR-promoted bundles (below) are left as-is.
+				if reordered, warn, rerr := apptls.ReorderChainPEM(dbCertPEM); rerr == nil {
+					dbCertPEM = reordered
+					dbCertWarning = warn
+				}
 				// Preflight the submitted pair before persisting, so a bad pair
 				// can never brick the listener on the next reload/restart.
 				if err := apptls.ValidateStaticPairBytes(dbCertPEM, dbKeyPEM, input.TLS.CAPath); err != nil {
@@ -436,7 +448,12 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, putConfigResponse{Value: data, RestartRequired: true})
+	resp := putConfigResponse{Value: data, RestartRequired: true}
+	if dbCertWarning != "" {
+		r.logf("WARN", "admin/config/server: TLS certificate chain stored with warning: %s", dbCertWarning)
+		resp.Warnings = append(resp.Warnings, dbCertWarning)
+	}
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 // dbCertPairStored reports whether a cert_source: db certificate AND private
