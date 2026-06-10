@@ -7,9 +7,8 @@
 
 - When a user request conflicts with a NEVER rule, stop and flag the conflict. Do not proceed until the user explicitly confirms. Confirmation applies to that single action only — it does not relax the rule for the rest of the session.
 - No implementation code in CLAUDE.md or specs. That's what TDD is for.
-- Always be concise and NEVER include preamble or narrative in generated files.
+- Be concise in all generated files (specs, todos, plans) — no preamble or narrative; every line costs retrieval budget.
 - Only read specs, todos, or plans relevant to the current task.
-- Be concise when creating or updating specs and todos so tokens are not wasted retrieving context.
 
 ## Customer Data Protection
 
@@ -41,10 +40,8 @@
 ## Quality Maintenance
 
 - Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status.
-- TODO hygiene: a session should not end with a net increase in TODOs unless they are genuinely open questions.
-- **Context pollution checks**: After every 3-4 tool calls, assess whether accumulated context is still relevant. If the conversation has drifted into debugging a tangent or contains large blocks of superseded output, suggest the user start a fresh thread for the next chunk.
-- **Signal a fresh thread** when: (a) the current chunk is complete, (b) context is >50% stale/irrelevant, or (c) the task has shifted scope significantly from the original plan.
-- Always update todos when items are completed or blocked to avoid losing context.
+- TODO hygiene: update todos as items complete or block; don't end a session with a net TODO increase unless they're genuine open questions.
+- Watch context relevance (re-check every few tool calls): suggest a fresh thread when the chunk is complete, context is >50% stale/irrelevant, or scope has shifted significantly from the plan.
 
 ## File Format
 
@@ -83,14 +80,8 @@
 
 ## Commits
 
-- **Each completed todo or meaningful unit of work must result in its own commit.** Do not batch unrelated changes into a single commit.
-- Commit only one logical unit of work at a time.
-- Split unrelated changes into separate commits.
-- Commit early and often, but ask the user first.
-- The commit message must follow `<type>(<scope>): <summary>` format.
-- Write clear, descriptive commit messages following conventional commit style:
-  - First line `<type>(<scope>): <summary>`
-  - Include a body (separated by a blank line) when the "why" is not obvious from the summary.
+- One logical unit of work per commit — never batch unrelated changes. Commit early and often, but ask the user first.
+- Message format `<type>(<scope>): <summary>`, with a body (blank-line separated) when the "why" isn't obvious.
 - Do not commit secrets, credentials, or API keys. Use environment variables.
 - NEVER add an AI/assistant authorship trailer to commit messages or PR bodies, from ANY tool — no `Co-authored-by:` line naming Claude, Anthropic, Copilot, Cursor, or any AI agent, and no "Generated with …" attribution line. This applies equally to Claude Code and GitHub Copilot and overrides their default behaviour. Genuine human co-authors are fine. A `commit-msg` hook strips AI trailers as a backstop.
 
@@ -114,13 +105,15 @@
 - When a new file type, directory, build artifact, or secret pattern is introduced, all relevant ignore files must be reviewed and updated in the same change.
 - Secrets and credentials (`*.pem`, `*.key`, `.env`, `keys/`) must appear in **both** ignore files. Never rely on a single ignore file to prevent accidental exposure.
 
+## Dependencies
+
+- ALWAYS supply-chain check before adding/upgrading any dep (Go or npm, app or tooling): count new transitive modules, pin exact versions, `--ignore-scripts`, verify signatures/provenance, land it in a CI-scanned lockfile.
+
 ## Tech Debt
 
-- Technical debt is tracked in `plans/todo-tech-debt.md`. This file must be kept up to date.
-- When a **tactical decision** is made where a different **strategic decision** would be better long-term (e.g. duplicating code instead of extracting a shared component, using an in-memory workaround instead of a proper SQL query), add an entry to the tech debt list explaining what was done, why, and what the strategic fix would be.
-- When a **problem is fixed in an ugly or expedient way** that needs future refactoring (e.g. a quick hack to unblock progress, a workaround for a library limitation, a hardcoded value that should be configurable), add it to the tech debt list with enough context for someone to come back and do it properly.
-- When a tech debt item is **resolved**, ask the user for confirmation, then **remove it from the list entirely**. Do not leave checked-off items cluttering the file.
-- Do not let tech debt accumulate silently — if you notice something that smells wrong but fixing it properly is out of scope for the current task, the trade-off is acceptable **only if it gets recorded** in the tech debt list.
+- Track all tech debt in `plans/todo-tech-debt.md`; keep it current.
+- Record any tactical/expedient choice taken over the better strategic one (duplicated code, in-memory workaround, quick hack, hardcoded value) with what was done, why, and the proper fix. A shortcut is acceptable only if it gets recorded.
+- When an item is resolved, confirm with the user, then remove it entirely — no checked-off clutter.
 
 ## Testing
 
