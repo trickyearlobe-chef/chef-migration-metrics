@@ -20,3 +20,30 @@ silently does nothing when config is DB-managed. Per the TLS plan decision this 
 **no longer load-bearing** — the repair CLI is the escape hatch, not this env var.
 Leave as a documented limitation in `tls.md` § 2.5 unless a future need arises to
 apply env overrides after assembly.
+
+## 2. "443 lifeboat" — health-driven port move (future TLS refinement)
+
+Idea (raised 2026-06-10, ACME confirmed working: self-signed first → real cert
+promoted in place). When TLS is healthy, serve HTTPS on 443 and redirect the
+original port (e.g. 8080) → 443; when TLS is broken/reset, keep serving on the
+original port so the operator always has a known lifeboat URL. **443 is the happy
+path, the original port is the lifeboat.**
+
+Reuses: the HTTP→HTTPS redirect primitive (`NewChallengeRedirectServer`,
+`http_redirect_port`) and the fail-open status `kind`/degraded signal.
+
+Open design tensions to resolve in the spec before building:
+- **Privilege:** binding 443 needs `CAP_NET_BIND_SERVICE`/root; many deployments
+  are unprivileged. Must degrade via the existing bind-failure fallback, not
+  assume 443 is bindable.
+- **Hot rebind:** `server.port` is restart-required today. Health-driven port
+  moves need a graceful listener swap (new engineering, not just a redirect).
+- **Flapping/predictability:** a port that hops 443↔8080 on transient TLS blips
+  is its own lockout/confusion vector — needs hysteresis + a loud status surface.
+- **Overlap with same-port fail-open:** today broken TLS stays on the *same* port
+  with a self-signed cert. Decide whether port-movement replaces or complements
+  that (doing both silently is confusing).
+
+Conventional half (enable TLS → 443 + redirect old port) is low-risk; the
+automatic health-driven port-flip is the spicy half. New TLS follow-on, own spec
+(touches `tls.md`); does not block the shipped same-port fail-open.
