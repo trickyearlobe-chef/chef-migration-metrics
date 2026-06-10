@@ -336,17 +336,126 @@ Original scope (for reference):
 - **Acceptance:** issue + persist + schedule-renew against a test CA, all in DB.
   Depends on Chunk 3 (storage patterns).
 
-## Chunk 8 — ACME HTTP-01 + mode wiring
+## Chunk 8a — Self-signed degraded fail-open (foundation, both modes) (DONE)
+
+Done 2026-06-10. New `internal/tls/selfsigned.go`: `GenerateSelfSigned(hosts)`
+builds an ephemeral ECDSA-P256 self-signed cert/key (DNS+IP SANs split from
+hosts; defaults to localhost/loopback when none), used as the degraded fail-open
+listener. `internal/tls/listener.go`: `ListenerConfig.HSTSEnabled func() bool`
+live-gate threaded into `HSTSMiddleware(next, trustedProxy, enabled)` (nil ⇒
+always on) so HSTS is suppressed while serving the untrusted self-signed cert and
+resumes on in-place promotion. `internal/webapi/handle_server_tls_status.go`:
+`TLSStatus.Kind` (`self-signed`|`plain`) + `SetDegradedKind`/`SetHealthy`/
+`IsDegraded`; `tls_reload.go` gained `SetOnReload` (fires after a successful
+in-place reload). `cmd/.../main.go`: `degradeToSelfSigned` (serves self-signed
+HTTPS, registers the CertManager for promotion, falls back to plain HTTP only if
+gen/build fails) replaces plain-HTTP fail-open on the static `cert_source:db`
+path; `hstsEnabledFn` wired; `SetOnReload(tlsStatus.SetHealthy)` clears degraded
+on promotion. Frontend: `TLSStatus.kind` type + kind-aware `TLSDegradedBanner`
+copy (untrusted self-signed vs INSECURE plain HTTP). Specs `tls-static.md § 2.4`,
+`tls.md § 6.3`, `tls-acme.md § 3.11` rewritten to the self-signed degraded model.
+TDD: self-signed gen (loadable/self-signed/SAN-split/defaults/validity/ephemeral),
+HSTS suppress+resume, status kind/healthy round-trip, `degradeToSelfSigned`
+end-to-end HTTPS serve + no-HSTS + promotion-clears-degraded, banner kinds.
+`go test -race ./...`, vet, gofmt, build clean; frontend tsc/eslint clean,
+357 vitest green.
+
+Original scope (for reference):
+
+Design change (user-approved): the fail-open path no longer drops to plain HTTP
+as its primary behaviour. When no usable CA cert is available it serves an
+**ephemeral self-signed cert** so the admin/recovery UI stays **encrypted**
+(browser click-through) instead of cleartext. This fires exactly on first-run /
+ACME-not-yet-working, where a plaintext login is worst. Plain HTTP is kept only
+as a **last resort** if self-signed generation or the TLS bind itself fails.
+Applies to **both** static `cert_source:db` and `acme` (8b) fail-open.
+
+- Scope: new `internal/tls/selfsigned.go` (generate ephemeral ECDSA-P256
+  self-signed cert+key for the configured domains / a sane fallback name);
+  `internal/tls/listener.go` (HSTS **live-gate** so HSTS is suppressed while
+  degraded and resumes on in-place promotion to a real cert);
+  `internal/webapi/handle_server_tls_status.go` (degraded "kind" =
+  self-signed|plain; `SetHealthy`/clear for promotion; `IsDegraded` accessor);
+  `cmd/.../main.go` (static `cert_source:db` fail-open → self-signed, plain-HTTP
+  last resort; new `degradeToSelfSigned` helper alongside `degradeToPlainHTTP`).
+- HSTS: never send `Strict-Transport-Security` over a self-signed cert (it would
+  pin and block the click-through on the next visit → self-inflicted lockout).
+  Gate via `ListenerConfig.HSTSEnabled func() bool` (nil ⇒ on, preserves tests).
+- Spec: update `tls-static.md § 2.4` and `tls.md § 6.3` (degraded model =
+  self-signed primary, plain-HTTP last resort, HSTS-off-while-degraded; recovery
+  still the Chunk 3a CLI).
+- TDD: self-signed cert generation (names/SANs/validity/parse); HSTS suppressed
+  while degraded + restored on promote; static db fail-open serves self-signed,
+  plain-HTTP only when self-signed unavailable.
+- **Acceptance:** a missing/invalid static DB cert serves a self-signed cert over
+  HTTPS (degraded, no HSTS), not plain HTTP; plain HTTP only as last resort.
+  Depends on Chunks 2,3.
+
+## Chunk 8b — ACME HTTP-01 + mode wiring
 
 - Scope: `cmd/.../main.go` (replace the `acme` "not implemented" error),
-  `internal/tls/listener.go` / `internal/acme`.
-- Serve `/.well-known/acme-challenge/` on the redirect listener (challenge >
-  redirect priority); ToS gate; staging-URL WARN; HSTS. **Fail open to plain
-  HTTP when no cert can be obtained** (per the §2.4/§5.3 extension) so an ACME
-  misconfig never locks out the UI; recoverable via the Chunk 3a CLI.
-- TDD: http-01 challenge served; mode-selection; ToS-false refusal.
-- **Acceptance:** `mode: acme` + http-01 obtains a cert against staging.
-  Depends on Chunk 7.
+  `internal/tls/listener.go` (challenge-aware redirect server),
+  new `internal/acme/http01.go`.
+- New `HTTP01Solver` (Solver seam): mutex map `token→keyAuth`; `Handler()` serves
+  `/.well-known/acme-challenge/<token>`. Install it on the **redirect listener**
+  (challenge > redirect priority, § 3.3) via a `NewChallengeRedirectServer`
+  constructor; the HTTPS `Listener` runs with `HTTPRedirectPort: 0` (port 80
+  owned by the challenge/redirect server for the whole process lifetime).
+- main.go `acme` case: build `acme.Storage`/`HTTP01Solver`/`Manager`/`Renewer`;
+  translate `config.ACMEConfig`→`acme.Config`; staging-URL WARN; `http-01` with
+  `http_redirect_port: 0` → ERROR. **Always come up on HTTPS**: serve the stored
+  real cert if present, else the 8a **self-signed** cert (degraded); run the
+  Renewer in the background, which obtains and `ReloadFromPEM`-**promotes**
+  self-signed → real with no restart (clears degraded). ToS-false / order-fails
+  stay self-signed-degraded (§ 3.11). Plain-HTTP last resort via 8a.
+- Shutdown: extend `serverResult` with the challenge server + a renewer cancel
+  func so `awaitShutdown` drains them.
+- Spec: `tls-acme.md § 3.11` updated to the 8a self-signed degraded model.
+- TDD: http-01 challenge served; mode-selection picks acme; ToS-false → degraded
+  (not exit); in-place promote swaps the live cert. Fakes only, no network.
+- **Acceptance:** `mode: acme` + http-01 obtains a cert against staging; before
+  issuance the UI is reachable over self-signed HTTPS. Depends on Chunks 7,8a.
+
+## Chunk 8c — CLI: deliberate plain-HTTP (behind TLS-terminating proxy)
+
+User request: a CLI to **force plain HTTP on purpose** so the app can sit behind
+a load balancer / reverse proxy that terminates TLS. Distinct from fail-open
+(8a) — that's an error state; this is an intended deployment. `mode: off`
+already yields plain HTTP and `tls reset` already sets it, but `tls reset` is
+recovery-framed and does not also set `trusted_proxy` (needed so the HSTS /
+scheme detection honours `X-Forwarded-Proto` from the proxy).
+
+- Scope: `cmd/.../tlsrepair.go` (or a sibling `tlsmode.go`), extending the
+  Chunk 3a repair-CLI dispatch.
+- Add `tls mode <off|static|acme>` (sets `server.tls.mode`), generalising
+  `tls reset` (which stays as the recovery alias for `mode off`). For the proxy
+  case, a `--trusted-proxy[=true|false]` flag on `tls mode off` also sets
+  `server.trusted_proxy` so HSTS is emitted for proxied HTTPS requests.
+- Same env-only store + section-preserving read-modify-write + idempotency as
+  3a; clear operator output. No git, no remotes.
+- Spec: note the behind-proxy deployment in `tls-static.md`/`tls.md` (plain HTTP
+  + `trusted_proxy` + proxy terminates TLS).
+- TDD: `tls mode` sets each mode; `--trusted-proxy` toggles the flag;
+  idempotent; preserves other fields.
+- **Acceptance:** operator runs one CLI command to put the app in plain-HTTP
+  behind-proxy mode (mode off + trusted_proxy) and back. Depends on Chunk 3a.
+
+## Chunk 8d — UI: behind-proxy plain-HTTP toggle
+
+User also wants the behind-proxy switch in the admin UI (not just the CLI),
+dynamic per project rules (takes effect without restart). Same semantics as 8c:
+set `server.tls.mode: off` + `server.trusted_proxy: true`.
+
+- Scope: `frontend/src/pages/AdminServerPage.tsx`, `frontend/src/api/config.ts` /
+  `types/config.ts` (surface `trusted_proxy` if not already), backend config save
+  path if a field is missing.
+- A "Terminate TLS at a proxy (plain HTTP)" toggle that, when enabled, sets
+  mode off + trusted_proxy; explains HSTS is then driven by `X-Forwarded-Proto`.
+  Guard against accidental lockout (confirm step / clear warning).
+- TDD: component test (toggle sets mode off + trusted_proxy in the save payload;
+  warning shown).
+- **Acceptance:** operator switches to/from behind-proxy plain-HTTP from the UI.
+  Depends on Chunk 8c (shared semantics) + existing admin config save.
 
 ## Chunk 9 — Route53 DNS-01 solver (Feature 3 DNS)
 
@@ -412,7 +521,8 @@ Chunk 9 Route53 client/UPSERT/`GetChange`. Spec: [tls-acme.md § 3.13](../specif
 ## Sequence / dependencies
 
 `0 → 1 → 2 → 3 → 3a → 4` (Feature 1 done) `→ 5 → 6` (Feature 2 done)
-`→ 7 → 8 → 9 → 9a → 10` (Feature 3 done) `→ 11`.
+`→ 7 → 8a → 8b → 9 → 9a → 10` (Feature 3 done) `→ 11`. Chunk 8c (deliberate
+plain-HTTP CLI) depends only on 3a and can land any time.
 
 Chunk 9a (Route53 hostname self-registration) depends on Chunk 9's Route53
 client/UPSERT/`GetChange` and feeds the Chunk 10 UI; it is independent of cert

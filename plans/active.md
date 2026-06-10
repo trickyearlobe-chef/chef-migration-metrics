@@ -3,7 +3,8 @@
 Branch: `feature/tls-db-certs-csr-acme`. Full plan + per-chunk detail:
 [plans/tls-db-certs-csr-acme.md](tls-db-certs-csr-acme.md).
 
-Sequence: `0 → 1 → 2 → 3 → 3a → 4 → 5 → 6 → 7 → 8 → 9 → 9a → 10 → 11`.
+Sequence: `0 → 1 → 2 → 3 → 3a → 4 → 5 → 6 → 7 → 8a → 8b → 9 → 9a → 10 → 11`
+(8c — deliberate plain-HTTP CLI — depends only on 3a, lands any time).
 
 ## Done
 
@@ -15,16 +16,28 @@ the CSR UI (`generateCSR()` + AdminServerPage CSR panel — **Feature 2 complete
 Chunk 7 — ACME core engine: new `internal/acme/` (DB storage layer, account +
 order flow via `x/crypto/acme` behind a `Solver` seam, renewal scheduler with
 1h→24h backoff + expiry-warning events). 3a unblocks everything below.
+Chunk 8a — self-signed degraded fail-open foundation: fail-open now serves an
+ephemeral self-signed cert over HTTPS (HSTS suppressed) instead of cleartext,
+plain HTTP last-resort only; HSTS live-gate; status `kind` + in-place promotion
+clears degraded; static `cert_source:db` retrofitted; banner kind-aware. Specs
+§2.4/§6.3/§3.11 updated. 8a unblocks 8b's fail-open.
 
 ## Next chunk
 
-**Chunk 8 — ACME HTTP-01 + mode wiring.** Scope: `cmd/.../main.go` (replace the
-`acme` "not implemented" error), `internal/tls/listener.go` / `internal/acme`.
-Serve `/.well-known/acme-challenge/` on the redirect listener (challenge >
-redirect priority) via an HTTP-01 `Solver`; ToS gate; staging-URL WARN; HSTS.
-Fail open to plain HTTP when no cert can be obtained (§ 2.4/3.11) — recoverable
-via the Chunk 3a CLI. TDD: http-01 challenge served; mode-selection; ToS-false
-refusal. Depends on Chunk 7 (done).
+**Chunk 8b — ACME HTTP-01 + mode wiring.** Replace the `acme` "not implemented"
+error in `main.go`. New `internal/acme/http01.go` `HTTP01Solver` (Solver seam +
+`Handler()` for `/.well-known/acme-challenge/<token>`), installed on the redirect
+listener (challenge > redirect priority, § 3.3) via a `NewChallengeRedirectServer`
+constructor; HTTPS `Listener` runs with `HTTPRedirectPort: 0` (port 80 owned by
+the challenge/redirect server). Build `acme.Storage`/`Manager`/`Renewer`; always
+come up on HTTPS — stored real cert if present, else the **8a self-signed** cert;
+the Renewer obtains + `ReloadFromPEM`-promotes self-signed → real in place
+(clears degraded via `SetOnReload`). Staging WARN; `http-01` + `http_redirect_port:0`
+→ ERROR. Shutdown wiring for the challenge server + renewer cancel. TDD (fakes,
+no network). Depends on Chunks 7, 8a (done).
+
+Then **8c** (`tls mode off --trusted-proxy` CLI, deliberate behind-proxy plain
+HTTP, depends on 3a) and **8d** (matching admin-UI toggle). See detail plan.
 
 ## Notes
 
