@@ -66,8 +66,10 @@ for file in "${STAGED_FILES[@]}"; do
     block "$file" "file path matches a known secrets directory (keys/)"
   fi
 
-  # acme/ directory
-  if [[ "$file" == acme/* || "$file" == */acme/* ]]; then
+  # acme/ runtime storage dir (root-anchored). ACME state is DB-backed
+  # (tls-acme.md § 3.5), so only a stray root-level acme/ dir would hold key
+  # material; the internal/acme/ source package must NOT be blocked.
+  if [[ "$file" == acme/* ]]; then
     block "$file" "file path matches a known secrets directory (acme/)"
   fi
 done

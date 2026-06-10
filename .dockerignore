@@ -46,8 +46,10 @@ deploy/elk/.env
 *.p12
 *.pfx
 
-# ACME certificate storage (account keys, issued certs, metadata)
-acme/
+# ACME certificate storage (account keys, issued certs, metadata).
+# Root-anchored: ACME state is DB-backed, so this only guards a stray runtime
+# dir and must NOT match the internal/acme/ source package.
+/acme/
 .lego/
 .certmagic/
 
