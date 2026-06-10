@@ -294,7 +294,38 @@ Original scope (for reference):
   guidance to paste the signed cert into the Feature-1 cert field.
 - **Acceptance:** full CSR round-trip in the UI. Depends on Chunks 4,5.
 
-## Chunk 7 — ACME core engine (Feature 3 core)
+## Chunk 7 — ACME core engine (Feature 3 core) (DONE)
+
+Done 2026-06-10. New `internal/acme/` package owns the ACME orchestration:
+- `storage.go` — DB-backed state layer over a `SecretStore` seam (satisfied by
+  `*configstore.Store`): account-key (PKCS#8 PEM, secret), issued cert (public)
+  + key (secret), stored as JSON-encoded PEM matching the static path. A missing
+  half-pair reads as `ErrNotStored` (fail-open). New config-store keys
+  `server.tls.acme.account_key` / `.cert` / `.key` added to `assembly.go` as
+  standalone entries (excluded from assembly, like the static cert keys).
+- `solver.go` — `Solver` interface + `Challenge` seam (HTTP-01/DNS-01 solvers
+  land in Chunks 8/9); `LogFunc` callback (no logging-pkg import).
+- `client.go` — `acmeClient` interface (subset of `x/crypto/acme.Client`,
+  satisfied structurally; `*acme.Client` is the real impl) + `Config` (engine's
+  view of `server.tls.acme`) + `realClientFactory`.
+- `manager.go` — `NewManager` + `Obtain`: ensure/register account (persist key
+  only on success; already-registered tolerated), authorize each domain via the
+  solver (compute HTTP01/DNS01 response, present → accept → wait → cleanup),
+  finalize with a fresh ECDSA-P256 cert key + CSR over the domains, persist
+  cert/key. `agree_to_tos: false` → `ErrTOSNotAccepted` (fail-open, § 3.7/3.11).
+- `renew.go` — `Renewer`: `checkOnce` (issue if none, renew when within
+  `renew_before_days`, WARN + `certificate_expiry_warning` event within 7 days
+  without renewal) + `Run` loop with exponential backoff (1h→24h cap). Pure
+  decision fns `renewalDue`/`expiryWarning`/`nextBackoff`.
+
+TDD with fake `acmeClient`/`Solver`/`CertObtainer` + in-memory `SecretStore`
+(no network): storage round-trip + half-pair; full HTTP-01/DNS-01 order flow,
+new-vs-existing account, ToS refusal, no-matching-challenge, cleanup-on-failure;
+backoff/due/warn tables + checkOnce issue/healthy/renew/warn paths.
+`go test -race`, `go vet ./...`, gofmt, build clean. Mode wiring + the real
+challenge solvers are Chunks 8/9.
+
+Original scope (for reference):
 
 - Scope: new `internal/acme/` — account registration (persist account key in
   DB), order flow via `x/crypto/acme`, cert/key persistence to config_store,

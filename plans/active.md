@@ -12,17 +12,19 @@ cert/key storage + admin API, the `tls reset`/`tls clear-ca` repair CLI (recover
 escape hatch), the DB cert/key UI (**Feature 1 complete**), the CSR generation
 backend (`internal/tls/csr.go` + generate-csr endpoint + match-and-promote), and
 the CSR UI (`generateCSR()` + AdminServerPage CSR panel — **Feature 2 complete**).
-3a unblocks everything below.
+Chunk 7 — ACME core engine: new `internal/acme/` (DB storage layer, account +
+order flow via `x/crypto/acme` behind a `Solver` seam, renewal scheduler with
+1h→24h backoff + expiry-warning events). 3a unblocks everything below.
 
 ## Next chunk
 
-**Chunk 7 — ACME core engine (Feature 3 core).** Scope: new `internal/acme/` —
-account registration (persist account key in DB), order flow via
-`golang.org/x/crypto/acme`, cert/key persistence to `config_store`, renewal
-scheduler (pre-expiry, exponential backoff 1h→24h cap), expiry-warning events,
-DB-backed storage layer. TDD: orchestration against a mock ACME directory (Pebble
-optional), renewal timing, storage round-trip — no network in unit tests. Reuses
-Chunk 3 storage patterns. Depends on Chunk 3 (done).
+**Chunk 8 — ACME HTTP-01 + mode wiring.** Scope: `cmd/.../main.go` (replace the
+`acme` "not implemented" error), `internal/tls/listener.go` / `internal/acme`.
+Serve `/.well-known/acme-challenge/` on the redirect listener (challenge >
+redirect priority) via an HTTP-01 `Solver`; ToS gate; staging-URL WARN; HSTS.
+Fail open to plain HTTP when no cert can be obtained (§ 2.4/3.11) — recoverable
+via the Chunk 3a CLI. TDD: http-01 challenge served; mode-selection; ToS-false
+refusal. Depends on Chunk 7 (done).
 
 ## Notes
 
