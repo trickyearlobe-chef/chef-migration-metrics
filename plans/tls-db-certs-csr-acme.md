@@ -510,7 +510,35 @@ set `server.tls.mode: off` + `server.trusted_proxy: true`.
 - **Acceptance:** dns-01 obtains a cert against staging via Route53.
   Depends on Chunks 7,8.
 
-## Chunk 9a — Route53 hostname self-registration (A record)
+## Chunk 9a — Route53 hostname self-registration (A record) (DONE)
+
+Done 2026-06-10. New `internal/acme/hostname.go` `HostnameRegistrar`: built off
+the Chunk 9 solver via `(*Route53Solver).NewHostnameRegistrar(ttl, ip, iface,
+log)` so it shares the same Route 53 client, hosted zone, and poll settings; the
+INSYNC poller was extracted from `Route53Solver.waitInSync` into a shared
+`pollChangeInSync`. `Register(ctx, domains)` resolves one IPv4 (literal
+`hostname_ip` → named `hostname_interface` global-unicast IPv4 → default-route
+auto-detect via a packet-less UDP dial to TEST-NET-1; explicit-but-unusable =
+ERROR + skip, no fall-through) and UPSERTs an A record per domain (`<domain>.`,
+type A, `hostname_ttl`), polling each to INSYNC. Wildcard domains skipped with
+WARN; fail-soft — per-domain Route 53 errors and resolution failures are logged
+on the `tls` scope and returned but never block the caller. ACMEConfig gained
+`RegisterHostname`/`HostnameTTL` (default 60)/`HostnameInterface`/`HostnameIP`
+with validation (register_hostname requires `dns_provider: route53`; `hostname_ip`
+IPv4-only; `hostname_ttl` 1–86400) + `frontend/src/types/config.ts`. Renewer
+`WithHostnameRegistrar` option re-asserts at the top of every `Run` cycle (so at
+startup and each renewal — a changed DHCP lease self-corrects next cycle);
+`setupACME` dns-01/route53 case wires it when `register_hostname` is set, passing
+the option through `renewerOpts`. Two follow-ups deferred to Chunk 10 and logged
+in `todo-tech-debt.md`: immediate re-register on config change (ACME config is
+snapshot-at-startup), and surfacing the last hostname-registration error in TLS
+status. TDD (no real AWS/network): IP resolver (literal/iface/auto + unusable),
+A-record build per domain incl. wildcard skip, UPSERT+poll, fail-soft continue,
+re-assert on IP change, solver-shared-client, renewer hook fires each cycle, and
+config field/validation tests. `go test -race`, vet, gofmt, build clean; frontend
+tsc/eslint clean, AdminServerPage vitest green.
+
+Original scope (for reference):
 
 Opt-in (`register_hostname`, default off) self-publishing of an A record per
 `acme.domains` entry so the server's FQDN resolves to the host, reusing the

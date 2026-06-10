@@ -59,19 +59,37 @@ required for static), no network at construction. New config-store keys
 solver (fails open to self-signed on error / non-route53 provider); port-80
 challenge server guarded nil for dns-01. go.mod +aws-sdk-go-v2 subset (noted in
 [todo-ci.md](todo-ci.md) § 4). TDD, no real AWS. Specs already accurate.
+Chunk 9a — Route53 hostname self-registration: new `internal/acme/hostname.go`
+`HostnameRegistrar` (reuses the Chunk 9 Route 53 client/zone via a new
+`(*Route53Solver).NewHostnameRegistrar`; shared `pollChangeInSync` extracted
+from the solver's `waitInSync`). UPSERTs an A record per `acme.domains` entry to
+a resolved IPv4 (resolver: literal `hostname_ip` → named `hostname_interface`
+global-unicast IPv4 → default-route auto-detect via a packet-less UDP dial;
+explicit-but-unusable = ERROR + skip, no fall-through). Wildcards skipped with
+WARN; fail-soft (logs ERROR, never blocks issuance/renewal/fail-open). New
+ACMEConfig fields (`RegisterHostname`/`HostnameTTL` default 60/`HostnameInterface`/
+`HostnameIP`) + validation (register_hostname requires route53; IPv4-only
+`hostname_ip`; ttl 1–86400) + `types/config.ts`. Renewer `WithHostnameRegistrar`
+option re-asserts at the top of each cycle (startup + every renewal → corrects a
+changed DHCP IP); `setupACME` dns-01/route53 wires it when `register_hostname`.
+Two deferred items in [todo-tech-debt.md](todo-tech-debt.md): immediate
+re-register on config change, and surfacing hostname errors in TLS status (both
+land with the Chunk 10 UI). TDD, no real AWS/network. Spec `tls-acme.md § 3.13`
+already accurate.
 
 ## Next chunk
 
-**Chunk 9a — Route53 hostname self-registration (A record).** Opt-in
-(`register_hostname`, default off) self-publishing of an A record per
-`acme.domains` entry, reusing the Chunk 9 Route 53 client/UPSERT/`GetChange`.
-New ACMEConfig fields (`RegisterHostname`, `HostnameTTL`, `HostnameInterface`,
-`HostnameIP`) + validation + `types/config.ts`; an IP resolver helper (stdlib
-`net`: literal → named iface → default-route auto-detect, explicit-but-unusable
-= ERROR + skip). Wildcard domains skipped with WARN; UPSERT at startup + each
-renewal + on config change; fail-soft (never blocks issuance/fail-open). TDD, no
-real AWS/network. Spec `tls-acme.md § 3.13`. Depends on Chunk 9. See detail plan
-Chunk 9a.
+**Chunk 10 — ACME UI + AWS creds (Feature 3 frontend).** Render the missing
+`dns_provider` + `dns_provider_config` (region, hosted zone) fields, AWS cred
+inputs (secret, write-only), dns-01 conditional block, ToS toggle, staging
+warning, ACME cert-status panel (issued/expiry/last renewal). Hostname
+self-registration (Chunk 9a): `register_hostname` tickbox + an "IP source: Auto /
+Interface / Manual IP" selector over `hostname_interface` / `hostname_ip` (+
+`hostname_ttl`), shown only for `dns_provider: route53`. Also pick up the two
+Chunk 9a tech-debt items (surface hostname registration error in the status
+panel; consider an immediate config-change re-register path). Scope:
+`AdminServerPage.tsx`, `types/config.ts`, `api/config.ts`, backend cred storage.
+Depends on Chunks 9, 9a. See detail plan Chunk 10.
 
 ## Notes
 
