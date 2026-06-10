@@ -143,6 +143,11 @@ type serverApp struct {
 	// CertManager once the static listener is built; nil/empty otherwise.
 	tlsReload *webapi.TLSReloadHolder
 
+	// acmeTrigger forwards an admin ACME config save to the running renewer so
+	// hostname registration / issuance re-run immediately (tls-acme.md § 3.14).
+	// Bound to the renewer once setupACME builds it; a no-op before then.
+	acmeTrigger *acmeTriggerHolder
+
 	// restartCh signals an admin-requested graceful restart (POST
 	// /api/v1/admin/restart). awaitShutdown selects on it, drains gracefully,
 	// and returns a non-zero restart exit code so the supervisor
@@ -1147,6 +1152,12 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	// (an admin save, or ACME issuance) must clear the degraded banner and resume
 	// HSTS without a restart (tls.md § 6.3).
 	app.tlsReload.SetOnReload(app.tlsStatus.SetHealthy)
+
+	// Holder for the ACME renewer's immediate re-assert trigger. Wired up front
+	// like tlsReload; setupACME binds it to the renewer once built (tls-acme.md
+	// § 3.14). A no-op in non-ACME modes or before binding.
+	app.acmeTrigger = &acmeTriggerHolder{}
+	routerOpts = append(routerOpts, webapi.WithACMETrigger(app.acmeTrigger.Trigger))
 
 	if recorder != nil {
 		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))

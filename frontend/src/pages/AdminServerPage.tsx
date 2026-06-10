@@ -131,6 +131,10 @@ export function AdminServerPage() {
   const [newDomain, setNewDomain] = useState("");
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
+  // ACME hostname IP source (tls-acme.md § 3.13). Null means "derive from which
+  // of hostname_ip / hostname_interface is set"; an explicit choice lets the
+  // operator pick "auto" (clears both) even before typing a value.
+  const [ipSourceOverride, setIpSourceOverride] = useState<"auto" | "interface" | "manual" | null>(null);
 
   // CSR generation (tls-csr.md § 4). Subject + SANs + key algorithm; on success
   // the server stores the private key as pending and returns the CSR PEM, which
@@ -187,6 +191,57 @@ export function AdminServerPage() {
     setSuccess(false);
   }
 
+  // dns_provider_config is a free-form string map; region/hosted_zone_id for
+  // route53 live here (non-secret, part of the server.tls section).
+  function setDnsCfg(key: string, value: string) {
+    setConfig((prev) =>
+      prev
+        ? {
+            ...prev,
+            tls: {
+              ...prev.tls,
+              acme: {
+                ...prev.tls.acme,
+                dns_provider_config: { ...prev.tls.acme.dns_provider_config, [key]: value },
+              },
+            },
+          }
+        : prev,
+    );
+    setSuccess(false);
+  }
+
+  // Route 53 credentials are write-only: held under acme.route53 and sent on
+  // save, routed server-side to encrypted secret keys (tls-acme.md § 3.4).
+  function setRoute53Cred(key: "access_key_id" | "secret_access_key", value: string) {
+    setConfig((prev) =>
+      prev
+        ? {
+            ...prev,
+            tls: {
+              ...prev.tls,
+              acme: { ...prev.tls.acme, route53: { ...prev.tls.acme.route53, [key]: value } },
+            },
+          }
+        : prev,
+    );
+    setSuccess(false);
+  }
+
+  // Switching IP source records the choice and clears the now-irrelevant
+  // field(s) so only the selected source is ever sent (precedence: ip > iface).
+  function setIpSource(source: "auto" | "interface" | "manual") {
+    setIpSourceOverride(source);
+    if (source === "auto") {
+      setAcmeField("hostname_ip", "");
+      setAcmeField("hostname_interface", "");
+    } else if (source === "interface") {
+      setAcmeField("hostname_ip", "");
+    } else {
+      setAcmeField("hostname_interface", "");
+    }
+  }
+
   function setWsField<K extends keyof ServerConfig["websocket"]>(field: K, value: ServerConfig["websocket"][K]) {
     setConfig((prev) => prev ? { ...prev, websocket: { ...prev.websocket, [field]: value } } : prev);
     setSuccess(false);
@@ -231,7 +286,13 @@ export function AdminServerPage() {
       // textareas (write-only) and would blank the metadata panel — carry the
       // last-known metadata forward until the next load/restart refreshes it.
       const next = updated
-        ? { ...updated, tls_certificate_info: updated.tls_certificate_info ?? config.tls_certificate_info }
+        ? {
+            ...updated,
+            tls_certificate_info: updated.tls_certificate_info ?? config.tls_certificate_info,
+            // acme_status is GET-only (the PUT echo omits it) — carry the
+            // last-known status forward until the next load refreshes it.
+            acme_status: updated.acme_status ?? config.acme_status,
+          }
         : config;
       setConfig(next);
       setSaved(next);
@@ -315,6 +376,16 @@ export function AdminServerPage() {
   // The toggle is "on" only for the full behind-proxy posture: plain HTTP locally
   // AND X-Forwarded-Proto trusted.
   const behindProxy = tlsMode === "off" && config.trusted_proxy;
+
+  // ACME-derived view state (tls-acme.md § 3.4/§ 3.13/§ 3.14).
+  const acme = config.tls.acme;
+  const isStagingCA = acme.ca_url.toLowerCase().includes("staging");
+  const isRoute53Dns01 = acme.challenge === "dns-01" && acme.dns_provider === "route53";
+  const ipSource =
+    ipSourceOverride ?? (acme.hostname_ip ? "manual" : acme.hostname_interface ? "interface" : "auto");
+  const acmeStatus = config.acme_status;
+  // In ACME mode the issued cert's metadata arrives in tls_certificate_info too.
+  const acmeCertInfo = tlsMode === "acme" ? certInfo : undefined;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -785,6 +856,24 @@ export function AdminServerPage() {
                 disabled={saving}
               />
             </FieldRow>
+            <FieldRow label="CA Directory URL" hint="Leave blank for the Let's Encrypt production directory">
+              <input
+                type="url"
+                aria-label="ACME CA URL"
+                value={config.tls.acme.ca_url}
+                onChange={(e) => setAcmeField("ca_url", e.target.value)}
+                placeholder="https://acme-v02.api.letsencrypt.org/directory"
+                className={INPUT_CLASS}
+                disabled={saving}
+              />
+            </FieldRow>
+            {isStagingCA && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                This looks like a <strong>staging</strong> CA directory. Issued certificates
+                are untrusted by browsers — use it for testing only, then switch to the
+                production URL.
+              </div>
+            )}
             <FieldRow label="ACME Challenge">
               <select
                 value={config.tls.acme.challenge}
@@ -797,16 +886,154 @@ export function AdminServerPage() {
                 <option value="dns-01">DNS-01</option>
               </select>
             </FieldRow>
-            <FieldRow label="Storage Path" hint="Directory for ACME certificate storage">
-              <input
-                type="text"
-                value={config.tls.acme.storage_path}
-                onChange={(e) => setAcmeField("storage_path", e.target.value)}
-                placeholder="/var/lib/acme"
-                className={INPUT_CLASS}
-                disabled={saving}
-              />
-            </FieldRow>
+
+            {config.tls.acme.challenge === "dns-01" && (
+              <div className="space-y-4 rounded-md border border-gray-200 bg-gray-50 p-3">
+                <FieldRow label="DNS Provider">
+                  <select
+                    aria-label="DNS provider"
+                    value={config.tls.acme.dns_provider}
+                    onChange={(e) => setAcmeField("dns_provider", e.target.value)}
+                    className={SELECT_CLASS}
+                    disabled={saving}
+                  >
+                    <option value="">Select a provider…</option>
+                    <option value="route53">AWS Route 53</option>
+                  </select>
+                </FieldRow>
+
+                {isRoute53Dns01 && (
+                  <>
+                    <FieldRow label="Region">
+                      <input
+                        type="text"
+                        aria-label="Route 53 region"
+                        value={config.tls.acme.dns_provider_config.region ?? ""}
+                        onChange={(e) => setDnsCfg("region", e.target.value)}
+                        placeholder="us-east-1"
+                        className={INPUT_CLASS}
+                        disabled={saving}
+                      />
+                    </FieldRow>
+                    <FieldRow label="Hosted Zone ID">
+                      <input
+                        type="text"
+                        aria-label="Route 53 hosted zone ID"
+                        value={config.tls.acme.dns_provider_config.hosted_zone_id ?? ""}
+                        onChange={(e) => setDnsCfg("hosted_zone_id", e.target.value)}
+                        placeholder="Z0123456789ABCDEFGHIJ"
+                        className={INPUT_CLASS}
+                        disabled={saving}
+                      />
+                    </FieldRow>
+                    <FieldRow
+                      label="AWS Access Key ID"
+                      hint="Leave blank to use an instance role or AWS_* environment variables"
+                    >
+                      <input
+                        type="text"
+                        aria-label="AWS access key ID"
+                        autoComplete="off"
+                        value={config.tls.acme.route53?.access_key_id ?? ""}
+                        onChange={(e) => setRoute53Cred("access_key_id", e.target.value)}
+                        placeholder="(unchanged)"
+                        className={INPUT_CLASS}
+                        disabled={saving}
+                      />
+                    </FieldRow>
+                    <FieldRow label="AWS Secret Access Key" hint="Write-only — never displayed after saving">
+                      <input
+                        type="password"
+                        aria-label="AWS secret access key"
+                        autoComplete="new-password"
+                        value={config.tls.acme.route53?.secret_access_key ?? ""}
+                        onChange={(e) => setRoute53Cred("secret_access_key", e.target.value)}
+                        placeholder="(unchanged)"
+                        className={INPUT_CLASS}
+                        disabled={saving}
+                      />
+                    </FieldRow>
+
+                    {/* Hostname self-registration (tls-acme.md § 3.13) */}
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <div
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 ${config.tls.acme.register_hostname ? "bg-blue-600" : "bg-gray-200"}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${config.tls.acme.register_hostname ? "translate-x-4" : "translate-x-0"}`}
+                        />
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={config.tls.acme.register_hostname}
+                          onChange={(e) => setAcmeField("register_hostname", e.target.checked)}
+                          disabled={saving}
+                        />
+                      </div>
+                      <span className="text-sm text-gray-700">
+                        Register hostname — publish an A record per domain pointing at this host
+                      </span>
+                    </label>
+
+                    {config.tls.acme.register_hostname && (
+                      <div className="space-y-4 border-l-2 border-gray-200 pl-3">
+                        <FieldRow label="IP Source">
+                          <select
+                            aria-label="IP source"
+                            value={ipSource}
+                            onChange={(e) => setIpSource(e.target.value as "auto" | "interface" | "manual")}
+                            className={SELECT_CLASS}
+                            disabled={saving}
+                          >
+                            <option value="auto">Auto-detect (default route)</option>
+                            <option value="interface">Network interface</option>
+                            <option value="manual">Manual IP</option>
+                          </select>
+                        </FieldRow>
+                        {ipSource === "interface" && (
+                          <FieldRow label="Network Interface">
+                            <input
+                              type="text"
+                              aria-label="Hostname network interface"
+                              value={config.tls.acme.hostname_interface}
+                              onChange={(e) => setAcmeField("hostname_interface", e.target.value)}
+                              placeholder="eth0"
+                              className={INPUT_CLASS}
+                              disabled={saving}
+                            />
+                          </FieldRow>
+                        )}
+                        {ipSource === "manual" && (
+                          <FieldRow label="IP Address">
+                            <input
+                              type="text"
+                              aria-label="Hostname IP address"
+                              value={config.tls.acme.hostname_ip}
+                              onChange={(e) => setAcmeField("hostname_ip", e.target.value)}
+                              placeholder="203.0.113.5"
+                              className={INPUT_CLASS}
+                              disabled={saving}
+                            />
+                          </FieldRow>
+                        )}
+                        <FieldRow label="Record TTL (seconds)" hint="Default 60 — low because the host IP may change">
+                          <input
+                            type="number"
+                            min={1}
+                            aria-label="Hostname record TTL (seconds)"
+                            value={config.tls.acme.hostname_ttl}
+                            onChange={(e) => setAcmeField("hostname_ttl", Number(e.target.value))}
+                            className={INPUT_CLASS}
+                            disabled={saving}
+                          />
+                        </FieldRow>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             <FieldRow label="Renew Before (days)" hint="Days before expiry to renew (0 = default: 30)">
               <input
                 type="number"
@@ -834,6 +1061,47 @@ export function AdminServerPage() {
               </div>
               <span className="text-sm text-gray-700">I agree to the Terms of Service</span>
             </label>
+
+            {/* ACME status panel (tls-acme.md § 3.14) */}
+            {(acmeCertInfo || acmeStatus) && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-700">
+                <p className="mb-2 font-semibold text-gray-900">ACME status</p>
+                <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
+                  {acmeCertInfo ? (
+                    <>
+                      <dt className="text-gray-500">Subject</dt>
+                      <dd className="break-all font-mono">{acmeCertInfo.subject}</dd>
+                      <dt className="text-gray-500">Issued</dt>
+                      <dd>{formatDate(acmeCertInfo.not_before)}</dd>
+                      <dt className="text-gray-500">Expires</dt>
+                      <dd className={certExpired ? "font-semibold text-red-600" : ""}>
+                        {formatDate(acmeCertInfo.not_after)}
+                        {certExpired && " (expired)"}
+                      </dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="text-gray-500">Certificate</dt>
+                      <dd>No certificate issued yet.</dd>
+                    </>
+                  )}
+                  <dt className="text-gray-500">Last renewal</dt>
+                  <dd>{acmeStatus?.last_renewal ? formatDate(acmeStatus.last_renewal) : "—"}</dd>
+                  {acmeStatus?.last_error ? (
+                    <>
+                      <dt className="text-gray-500">Last error</dt>
+                      <dd className="break-all text-red-600">{acmeStatus.last_error}</dd>
+                    </>
+                  ) : null}
+                  {acmeStatus?.hostname_error ? (
+                    <>
+                      <dt className="text-gray-500">Hostname registration</dt>
+                      <dd className="break-all text-red-600">{acmeStatus.hostname_error}</dd>
+                    </>
+                  ) : null}
+                </dl>
+              </div>
+            )}
           </>
         )}
       </SectionCard>

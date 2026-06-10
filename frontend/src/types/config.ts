@@ -75,6 +75,23 @@ export interface ACMEConfig {
   hostname_ttl: number;
   hostname_interface: string;
   hostname_ip: string;
+  // Write-only Route 53 DNS-01 credentials. Sent under tls.acme.route53 on save
+  // and routed server-side to encrypted secret keys; never returned by GET (so
+  // they stay undefined after load). region/hosted_zone_id are non-secret and
+  // travel in dns_provider_config. See tls-acme.md § 3.4/§ 3.5.
+  route53?: {
+    access_key_id?: string;
+    secret_access_key?: string;
+  };
+}
+
+// Operator-facing ACME health, returned read-only by GET /admin/config/server
+// as `acme_status` when tls.mode is 'acme' (tls-acme.md § 3.14). All times are
+// RFC 3339 strings; a field is empty/absent when not yet applicable.
+export interface AcmeStatus {
+  last_renewal?: string;
+  last_error?: string;
+  hostname_error?: string;
 }
 
 // Operator-safe metadata for the installed cert_source: db certificate.
@@ -126,9 +143,12 @@ export interface ServerConfig {
   // local listener serves plain HTTP (tls.mode off) and X-Forwarded-Proto is
   // trusted for HSTS/scheme detection (tls.md § 9.1). Default false.
   trusted_proxy: boolean;
-  // Read-only metadata for the installed cert_source: db certificate, attached
-  // by GET. Never sent on save.
+  // Read-only metadata for the installed certificate (cert_source: db, or the
+  // issued ACME cert when mode is 'acme'), attached by GET. Never sent on save.
   tls_certificate_info?: CertMetadata;
+  // Read-only ACME operator status, attached by GET when mode is 'acme'
+  // (tls-acme.md § 3.14). Never sent on save.
+  acme_status?: AcmeStatus;
 }
 
 export interface AuthProvider {

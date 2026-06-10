@@ -531,4 +531,162 @@ describe("AdminServerPage", () => {
       expect(screen.getByText(/bad subject/i)).toBeInTheDocument(),
     );
   });
+
+  // --- ACME UI (Chunk 10 — Feature 3 frontend) ---
+
+  const acmeBase = {
+    ...mockServerConfig,
+    tls: {
+      ...mockServerConfig.tls,
+      mode: "acme",
+      acme: {
+        ...mockServerConfig.tls.acme,
+        domains: ["app.example.com"],
+        email: "admin@example.com",
+        ca_url: "https://acme-v02.api.letsencrypt.org/directory",
+        challenge: "dns-01",
+        dns_provider: "route53",
+        dns_provider_config: { region: "us-east-1", hosted_zone_id: "Z123" },
+        agree_to_tos: true,
+      },
+    },
+  };
+  const withAcme = (overrides: Record<string, unknown>) => ({
+    ...acmeBase,
+    tls: { ...acmeBase.tls, acme: { ...acmeBase.tls.acme, ...overrides } },
+  });
+
+  it("warns when the ACME CA URL is a staging endpoint", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(
+      withAcme({ ca_url: "https://acme-staging-v02.api.letsencrypt.org/directory" }) as never,
+    );
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByText(/staging/i)).toBeInTheDocument();
+  });
+
+  it("does not warn for a production CA URL", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(acmeBase as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.queryByText(/staging/i)).not.toBeInTheDocument();
+  });
+
+  it("shows Route 53 region, hosted zone and AWS cred inputs for dns-01 route53", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(acmeBase as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByLabelText("Route 53 region")).toHaveValue("us-east-1");
+    expect(screen.getByLabelText("Route 53 hosted zone ID")).toHaveValue("Z123");
+    expect(screen.getByLabelText("AWS access key ID")).toBeInTheDocument();
+    expect(screen.getByLabelText("AWS secret access key")).toBeInTheDocument();
+  });
+
+  it("hides DNS-01 provider fields for http-01", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(withAcme({ challenge: "http-01" }) as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.queryByLabelText("Route 53 region")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("AWS secret access key")).not.toBeInTheDocument();
+  });
+
+  it("renders the AWS secret access key as a write-only password input", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(acmeBase as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    const secret = screen.getByLabelText("AWS secret access key") as HTMLInputElement;
+    expect(secret).toHaveValue("");
+    expect(secret.type).toBe("password");
+  });
+
+  it("sends Route 53 region/zone and creds in the save payload", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(acmeBase as never);
+    vi.mocked(api.saveServerConfig).mockResolvedValue({ value: acmeBase, restartRequired: true } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.type(screen.getByLabelText("AWS access key ID"), "AKIAEXAMPLE");
+    await user.type(screen.getByLabelText("AWS secret access key"), "shh");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    const arg = vi.mocked(api.saveServerConfig).mock.lastCall![0];
+    expect(arg.tls.acme.dns_provider_config.region).toBe("us-east-1");
+    expect(arg.tls.acme.dns_provider_config.hosted_zone_id).toBe("Z123");
+    expect(arg.tls.acme.route53?.access_key_id).toBe("AKIAEXAMPLE");
+    expect(arg.tls.acme.route53?.secret_access_key).toBe("shh");
+  });
+
+  it("shows the register-hostname toggle only for route53 dns-01", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(acmeBase as never);
+    const { unmount } = render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByRole("checkbox", { name: /register hostname/i })).toBeInTheDocument();
+    unmount();
+
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(withAcme({ challenge: "http-01" }) as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.queryByRole("checkbox", { name: /register hostname/i })).not.toBeInTheDocument();
+  });
+
+  it("IP source selector reveals interface or manual IP inputs", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(withAcme({ register_hostname: true }) as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    const sel = screen.getByLabelText("IP source");
+    expect(sel).toHaveValue("auto");
+    expect(screen.queryByLabelText("Hostname IP address")).not.toBeInTheDocument();
+
+    await user.selectOptions(sel, "manual");
+    expect(screen.getByLabelText("Hostname IP address")).toBeInTheDocument();
+
+    await user.selectOptions(sel, "interface");
+    expect(screen.getByLabelText("Hostname network interface")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Hostname IP address")).not.toBeInTheDocument();
+  });
+
+  it("sends hostname self-registration fields on save", async () => {
+    const cfg = withAcme({ register_hostname: true });
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(cfg as never);
+    vi.mocked(api.saveServerConfig).mockResolvedValue({ value: cfg, restartRequired: true } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.selectOptions(screen.getByLabelText("IP source"), "manual");
+    await user.type(screen.getByLabelText("Hostname IP address"), "203.0.113.5");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    const arg = vi.mocked(api.saveServerConfig).mock.lastCall![0];
+    expect(arg.tls.acme.register_hostname).toBe(true);
+    expect(arg.tls.acme.hostname_ip).toBe("203.0.113.5");
+  });
+
+  it("renders the ACME status panel with cert metadata and hostname error", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...acmeBase,
+      tls_certificate_info: {
+        subject: "CN=app.example.com",
+        issuer: "CN=Let's Encrypt",
+        dns_names: ["app.example.com"],
+        not_before: "2026-06-01T00:00:00Z",
+        not_after: "2026-08-30T00:00:00Z",
+      },
+      acme_status: {
+        last_renewal: "2026-06-01T00:00:00Z",
+        last_error: "",
+        hostname_error: "no IPv4 detectable",
+      },
+    } as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getByText("CN=app.example.com")).toBeInTheDocument();
+    expect(screen.getByText(/last renewal/i)).toBeInTheDocument();
+    expect(screen.getByText(/no IPv4 detectable/)).toBeInTheDocument();
+  });
 });

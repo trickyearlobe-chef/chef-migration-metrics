@@ -276,3 +276,17 @@ func shutdownACME(t *testing.T, res serverResult) {
 		_ = res.tlsListener.Shutdown(ctx)
 	}
 }
+
+func TestACMETriggerHolder_ForwardsAndNoOpBeforeBind(t *testing.T) {
+	h := &acmeTriggerHolder{}
+	// Before binding, Trigger must be a safe no-op.
+	h.Trigger()
+
+	calls := 0
+	h.Set(func() { calls++ })
+	h.Trigger()
+	h.Trigger()
+	if calls != 2 {
+		t.Errorf("bound trigger called %d times, want 2", calls)
+	}
+}

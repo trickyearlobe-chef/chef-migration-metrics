@@ -90,6 +90,13 @@ const (
 	KeyServerTLSACMERoute53SecretAccessKey = "server.tls.acme.route53.secret_access_key"
 	KeyServerTLSACMERoute53Region          = "server.tls.acme.route53.region"
 	KeyServerTLSACMERoute53HostedZoneID    = "server.tls.acme.route53.hosted_zone_id"
+
+	// ACME operator status (tls-acme.md § 3.14). A standalone, non-secret,
+	// non-key entry written only by the renewer (last renewal time, last
+	// renewal error, last hostname-registration error) and read by the admin
+	// config GET to populate the Server & TLS status panel. Excluded from
+	// AllConfigKeys/ConfigToSections like the other acme.* state keys.
+	KeyServerTLSACMEStatus = "server.tls.acme.status"
 )
 
 // ServerListenSection is the JSON/YAML shape of the `server.listen` config

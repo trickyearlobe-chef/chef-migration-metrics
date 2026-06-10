@@ -30,6 +30,24 @@ type dbCertKeySubmission struct {
 	} `yaml:"tls"`
 }
 
+// acmeRoute53CredSubmission extracts the write-only Route 53 DNS-01 credentials
+// from the admin save body (tls.acme.route53). Like the cert/key PEM material,
+// these are routed to dedicated encrypted config-store secret keys
+// (configstore.KeyServerTLSACMERoute53AccessKeyID / SecretAccessKey) — never
+// into the server.tls config section — so credentials stay out of the assembled
+// config struct and GET responses (tls-acme.md § 3.4 / § 3.5). region and
+// hosted_zone_id are non-secret and travel in dns_provider_config as normal.
+type acmeRoute53CredSubmission struct {
+	TLS struct {
+		ACME struct {
+			Route53 struct {
+				AccessKeyID     string `yaml:"access_key_id"`
+				SecretAccessKey string `yaml:"secret_access_key"`
+			} `yaml:"route53"`
+		} `yaml:"acme"`
+	} `yaml:"tls"`
+}
+
 // ---------------------------------------------------------------------------
 // GET/PUT /api/v1/admin/config/server
 // ---------------------------------------------------------------------------
@@ -48,6 +66,9 @@ func (r *Router) handleAdminConfigServer(w http.ResponseWriter, req *http.Reques
 		// (subject/SANs/expiry) so the UI can show what's active. The private
 		// key is never read or returned here.
 		data = r.attachDBCertInfo(req.Context(), cfg, data)
+		// In ACME mode, surface the issued certificate's metadata and the
+		// operator status panel data (tls-acme.md § 3.14).
+		data = r.attachACMEInfo(req.Context(), cfg, data)
 		WriteJSON(w, http.StatusOK, data)
 	case http.MethodPut:
 		r.putAdminConfigServer(w, req)
@@ -83,6 +104,11 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	_ = yaml.Unmarshal(body, &dbCerts)
 	dbCertPEM := []byte(dbCerts.TLS.Certificate)
 	dbKeyPEM := []byte(dbCerts.TLS.PrivateKey)
+
+	// Route 53 DNS-01 credentials are submitted under tls.acme.route53 and routed
+	// to dedicated encrypted secret keys, never the server.tls section.
+	var r53Creds acmeRoute53CredSubmission
+	_ = yaml.Unmarshal(body, &r53Creds)
 
 	// --- TLS validation ---
 
@@ -359,6 +385,26 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Persist submitted Route 53 DNS-01 credentials as encrypted secrets
+	// (tls-acme.md § 3.4/§ 3.5). Write-only: an empty field leaves the stored
+	// secret untouched so a save that omits credentials does not wipe them.
+	if v := r53Creds.TLS.ACME.Route53.AccessKeyID; v != "" {
+		j, _ := json.Marshal(v)
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSACMERoute53AccessKeyID, j, true, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store route53 access_key_id: %v", err)
+			WriteInternalError(w, "Failed to store Route 53 credentials.")
+			return
+		}
+	}
+	if v := r53Creds.TLS.ACME.Route53.SecretAccessKey; v != "" {
+		j, _ := json.Marshal(v)
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSACMERoute53SecretAccessKey, j, true, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store route53 secret_access_key: %v", err)
+			WriteInternalError(w, "Failed to store Route 53 credentials.")
+			return
+		}
+	}
+
 	if r.configHolder != nil {
 		if err := r.configHolder.Reload(ctx); err != nil {
 			r.logf("ERROR", "admin/config/server: reload: %v", err)
@@ -375,6 +421,13 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		if err := r.tlsReload.Reload(dbCertPEM, dbKeyPEM); err != nil && !errors.Is(err, ErrNoTLSReloader) {
 			r.logf("WARN", "admin/config/server: in-place TLS reload failed (%v); restart applies the new certificate", err)
 		}
+	}
+
+	// An ACME save re-asserts hostname registration and re-checks issuance
+	// immediately rather than waiting out the renewal interval (tls-acme.md
+	// § 3.14). Non-blocking; no-op when no renewer is wired.
+	if input.TLS.Mode == "acme" && r.acmeReRegister != nil {
+		r.acmeReRegister()
 	}
 
 	data, err := configstore.SerializeValue(input)
@@ -451,6 +504,50 @@ func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data 
 		return data
 	}
 	obj["tls_certificate_info"] = metaJSON
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return data
+	}
+	return merged
+}
+
+// attachACMEInfo augments a serialised server-config JSON object, when the live
+// mode is `acme`, with `tls_certificate_info` (the issued certificate's
+// operator-safe metadata, read from server.tls.acme.cert) and `acme_status`
+// (last renewal / last error / hostname error, read from server.tls.acme.status)
+// to drive the Server & TLS ACME status panel (tls-acme.md § 3.14). The private
+// key is never read. On any per-field error that field is omitted; data is
+// otherwise returned unchanged.
+func (r *Router) attachACMEInfo(ctx context.Context, cfg *config.Config, data json.RawMessage) json.RawMessage {
+	if cfg == nil || cfg.Server.TLS.Mode != "acme" || r.configStore == nil {
+		return data
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+
+	// Issued certificate metadata (mirrors attachDBCertInfo but from the ACME
+	// cert key). Absent until the first issuance — then simply omitted.
+	if raw, err := r.configStore.Get(ctx, configstore.KeyServerTLSACMECert); err == nil {
+		var pemStr string
+		if json.Unmarshal(raw, &pemStr) == nil {
+			if meta, merr := apptls.CertMetadataFromPEM([]byte(pemStr)); merr == nil {
+				if metaJSON, jerr := json.Marshal(meta); jerr == nil {
+					obj["tls_certificate_info"] = metaJSON
+				}
+			}
+		}
+	}
+
+	// Operator status object. A never-written entry yields an empty object so the
+	// panel always has a value to render.
+	status := json.RawMessage(`{}`)
+	if raw, err := r.configStore.Get(ctx, configstore.KeyServerTLSACMEStatus); err == nil && len(raw) > 0 {
+		status = raw
+	}
+	obj["acme_status"] = status
+
 	merged, err := json.Marshal(obj)
 	if err != nil {
 		return data

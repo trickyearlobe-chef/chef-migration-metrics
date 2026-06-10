@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/acme"
@@ -98,10 +99,11 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 		if acfg.RegisterHostname {
 			reg := r53.NewHostnameRegistrar(acfg.HostnameTTL, acfg.HostnameIP, acfg.HostnameInterface, app.tlsLog)
 			domains := acfg.Domains
-			renewerOpts = append(renewerOpts, acme.WithHostnameRegistrar(func(ctx context.Context) {
-				// The registrar logs its own ERROR on the tls scope; ignore the
-				// result here so registration can never gate renewal.
-				_ = reg.Register(ctx, domains)
+			renewerOpts = append(renewerOpts, acme.WithHostnameRegistrar(func(ctx context.Context) error {
+				// The registrar logs its own ERROR on the tls scope; the returned
+				// error is recorded in operator status (§ 3.14) by the renewer but
+				// never gates renewal.
+				return reg.Register(ctx, domains)
 			}))
 			app.startup.Info(fmt.Sprintf(
 				"ACME hostname self-registration enabled (A record per domain, ttl %ds)", acfg.HostnameTTL))
@@ -171,6 +173,11 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 	manager := acme.NewManager(storage, solver, engineCfg, acme.WithLogger(app.tlsLog))
 	issuer := &promotingIssuer{inner: manager, reload: app.tlsReload, log: app.tlsLog}
 	renewer := acme.NewRenewer(storage, issuer, engineCfg, app.tlsLog, renewerOpts...)
+	// Bind the admin re-register trigger to this renewer so an ACME config save
+	// re-asserts hostname registration / issuance immediately (tls-acme.md § 3.14).
+	if app.acmeTrigger != nil {
+		app.acmeTrigger.Set(renewer.Trigger)
+	}
 	renewCtx, renewCancel := context.WithCancel(context.Background())
 	go renewer.Run(renewCtx)
 	app.startup.Info(fmt.Sprintf(
@@ -234,4 +241,31 @@ func (p *promotingIssuer) Obtain(ctx context.Context) (certPEM, keyPEM []byte, e
 // (tls-acme.md § 3.8).
 func isACMEStaging(caURL string) bool {
 	return strings.Contains(strings.ToLower(caURL), "staging")
+}
+
+// acmeTriggerHolder forwards an admin "re-assert now" request (POST/PUT of ACME
+// config) to the running Renewer's Trigger. It is wired into the router before
+// setupACME builds the renewer — the same chicken-and-egg the tlsReload holder
+// solves — and bound once the renewer exists. Calls before binding, or in
+// non-ACME modes, are no-ops (tls-acme.md § 3.14). Safe for concurrent use.
+type acmeTriggerHolder struct {
+	mu sync.Mutex
+	fn func()
+}
+
+// Set binds the holder to the renewer's Trigger (or any non-blocking func).
+func (h *acmeTriggerHolder) Set(fn func()) {
+	h.mu.Lock()
+	h.fn = fn
+	h.mu.Unlock()
+}
+
+// Trigger forwards to the bound function, or is a no-op if none is bound yet.
+func (h *acmeTriggerHolder) Trigger() {
+	h.mu.Lock()
+	fn := h.fn
+	h.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }

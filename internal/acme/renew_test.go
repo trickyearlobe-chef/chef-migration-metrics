@@ -181,11 +181,12 @@ func TestRunInvokesHostnameRegistrar(t *testing.T) {
 	r := NewRenewer(st, iss, Config{Domains: []string{"a.example.com"}, RenewBeforeDays: 30}, nil,
 		WithClock(func() time.Time { return now }),
 		WithCheckInterval(time.Millisecond),
-		WithHostnameRegistrar(func(context.Context) {
+		WithHostnameRegistrar(func(context.Context) error {
 			select {
 			case called <- struct{}{}:
 			default:
 			}
+			return nil
 		}),
 	)
 
@@ -197,6 +198,138 @@ func TestRunInvokesHostnameRegistrar(t *testing.T) {
 	case <-called:
 	case <-time.After(2 * time.Second):
 		t.Fatal("hostname registrar was not invoked by the Run loop")
+	}
+}
+
+// checkOnce records the operator status (§ 3.14) on every path: a successful
+// (re)issue stamps LastRenewal and clears LastError.
+func TestCheckOnceRecordsLastRenewalOnSuccess(t *testing.T) {
+	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	st := NewStorage(newFakeStore())
+	iss := &fakeIssuer{}
+	r := renewerFor(st, iss, now, nil)
+
+	if _, err := r.checkOnce(context.Background()); err != nil {
+		t.Fatalf("checkOnce: %v", err)
+	}
+	status, _ := st.Status(context.Background())
+	if status.LastRenewal != now.Format(time.RFC3339) {
+		t.Errorf("LastRenewal = %q, want %q", status.LastRenewal, now.Format(time.RFC3339))
+	}
+	if status.LastError != "" {
+		t.Errorf("LastError = %q, want empty after success", status.LastError)
+	}
+}
+
+// A failed issuance records LastError and leaves LastRenewal untouched.
+func TestCheckOnceRecordsLastErrorOnFailure(t *testing.T) {
+	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	st := NewStorage(newFakeStore())
+	iss := &fakeIssuer{err: errors.New("CA unreachable")}
+	r := renewerFor(st, iss, now, nil)
+
+	if _, err := r.checkOnce(context.Background()); err == nil {
+		t.Fatal("checkOnce should have returned the issuance error")
+	}
+	status, _ := st.Status(context.Background())
+	if status.LastError != "CA unreachable" {
+		t.Errorf("LastError = %q, want %q", status.LastError, "CA unreachable")
+	}
+	if status.LastRenewal != "" {
+		t.Errorf("LastRenewal = %q, want empty (never succeeded)", status.LastRenewal)
+	}
+}
+
+// A healthy, not-due certificate clears any stale LastError but preserves the
+// recorded LastRenewal.
+func TestCheckOnceHealthyClearsLastError(t *testing.T) {
+	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	st := NewStorage(newFakeStore())
+	seedCert(t, st, now.Add(60*24*time.Hour))
+	if err := st.UpdateStatus(context.Background(), func(s *Status) {
+		s.LastError = "stale"
+		s.LastRenewal = "2026-01-01T00:00:00Z"
+	}); err != nil {
+		t.Fatalf("seed status: %v", err)
+	}
+	r := renewerFor(st, &fakeIssuer{}, now, nil)
+
+	if _, err := r.checkOnce(context.Background()); err != nil {
+		t.Fatalf("checkOnce: %v", err)
+	}
+	status, _ := st.Status(context.Background())
+	if status.LastError != "" {
+		t.Errorf("LastError = %q, want cleared", status.LastError)
+	}
+	if status.LastRenewal != "2026-01-01T00:00:00Z" {
+		t.Errorf("LastRenewal = %q, want preserved", status.LastRenewal)
+	}
+}
+
+// registerHostname records the registrar outcome in HostnameError: the error on
+// failure, cleared on success, without disturbing the renewal fields.
+func TestRegisterHostnameRecordsStatus(t *testing.T) {
+	st := NewStorage(newFakeStore())
+	ctx := context.Background()
+	if err := st.UpdateStatus(ctx, func(s *Status) { s.LastRenewal = "keep" }); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	failing := NewRenewer(st, &fakeIssuer{}, Config{}, nil,
+		WithHostnameRegistrar(func(context.Context) error { return errors.New("no IPv4 detectable") }))
+	failing.registerHostname(ctx)
+	status, _ := st.Status(ctx)
+	if status.HostnameError != "no IPv4 detectable" {
+		t.Errorf("HostnameError = %q, want the registrar error", status.HostnameError)
+	}
+	if status.LastRenewal != "keep" {
+		t.Errorf("registerHostname clobbered LastRenewal: %q", status.LastRenewal)
+	}
+
+	ok := NewRenewer(st, &fakeIssuer{}, Config{}, nil,
+		WithHostnameRegistrar(func(context.Context) error { return nil }))
+	ok.registerHostname(ctx)
+	status, _ = st.Status(ctx)
+	if status.HostnameError != "" {
+		t.Errorf("HostnameError = %q, want cleared on success", status.HostnameError)
+	}
+}
+
+// Trigger wakes the Run loop immediately rather than waiting out checkInterval,
+// so saving ACME config re-asserts hostname registration without delay (§ 3.14).
+func TestTriggerWakesRunLoop(t *testing.T) {
+	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	st := NewStorage(newFakeStore())
+	seedCert(t, st, now.Add(60*24*time.Hour)) // healthy: checkOnce is a no-op
+
+	cycles := make(chan struct{}, 8)
+	r := NewRenewer(st, &fakeIssuer{}, Config{Domains: []string{"a.example.com"}, RenewBeforeDays: 30}, nil,
+		WithClock(func() time.Time { return now }),
+		WithCheckInterval(time.Hour), // long: only a Trigger should produce a 2nd cycle quickly
+		WithHostnameRegistrar(func(context.Context) error {
+			select {
+			case cycles <- struct{}{}:
+			default:
+			}
+			return nil
+		}),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	// First cycle at startup.
+	select {
+	case <-cycles:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no startup cycle")
+	}
+	// A Trigger must produce a second cycle well before checkInterval elapses.
+	r.Trigger()
+	select {
+	case <-cycles:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Trigger did not wake the Run loop")
 	}
 }
 

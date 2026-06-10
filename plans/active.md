@@ -77,19 +77,30 @@ re-register on config change, and surfacing hostname errors in TLS status (both
 land with the Chunk 10 UI). TDD, no real AWS/network. Spec `tls-acme.md § 3.13`
 already accurate.
 
+Chunk 10 — ACME UI + AWS creds (**Feature 3 complete**). Backend: new
+`server.tls.acme.status` key + `acme.Status`/`Storage.UpdateStatus`; the Renewer
+records last_renewal/last_error each cycle and hostname_error from the registrar
+(hostnameFn now returns error), and gains `Trigger()` to wake immediately; PUT
+`/admin/config/server` extracts write-only `tls.acme.route53.{access_key_id,
+secret_access_key}` to encrypted secrets and fires the re-assert trigger on ACME
+saves (webapi `WithACMETrigger`, bound to the renewer via `acmeTriggerHolder` in
+main); GET attaches `tls_certificate_info` (from acme cert) + `acme_status` in
+acme mode. Frontend: CA-URL field + staging warning, dns-01 conditional block
+(provider/region/hosted-zone + write-only AWS cred inputs), `register_hostname`
+toggle + IP-source selector (Auto/Interface/Manual over `hostname_interface`/
+`hostname_ip` + `hostname_ttl`), ACME status panel (issued/expiry/last-renewal/
+errors); `storage_path` field removed (deprecated). Spec `tls-acme.md § 3.14`
+added (status surface). One Chunk 9a tech-debt item resolved (hostname error in
+status); the other narrowed (immediate trigger landed; live config-rebuild on
+change still open — [todo-tech-debt.md](todo-tech-debt.md)). TDD throughout.
+
 ## Next chunk
 
-**Chunk 10 — ACME UI + AWS creds (Feature 3 frontend).** Render the missing
-`dns_provider` + `dns_provider_config` (region, hosted zone) fields, AWS cred
-inputs (secret, write-only), dns-01 conditional block, ToS toggle, staging
-warning, ACME cert-status panel (issued/expiry/last renewal). Hostname
-self-registration (Chunk 9a): `register_hostname` tickbox + an "IP source: Auto /
-Interface / Manual IP" selector over `hostname_interface` / `hostname_ip` (+
-`hostname_ttl`), shown only for `dns_provider: route53`. Also pick up the two
-Chunk 9a tech-debt items (surface hostname registration error in the status
-panel; consider an immediate config-change re-register path). Scope:
-`AdminServerPage.tsx`, `types/config.ts`, `api/config.ts`, backend cred storage.
-Depends on Chunks 9, 9a. See detail plan Chunk 10.
+**Chunk 11 — Ignore files, packaging, docs, debt.** Scope: `.gitignore` /
+`.dockerignore` (no acme storage dir now it's DB; any new artifacts), packaging
+units (drop acme volume reqs if any), `plans/todo-*.md`, `plans/todo-tech-debt.md`.
+**Acceptance:** ignore files current; todos updated; debt recorded. See detail
+plan Chunk 11. Final chunk of this branch.
 
 ## Notes
 

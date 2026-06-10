@@ -26,6 +26,7 @@ export type {
   ConfigOrganisation as Organisation,
   ServerConfig,
   CertMetadata,
+  AcmeStatus,
   AuthConfig,
   AuthProvider,
 } from "../types/config";
