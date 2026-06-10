@@ -21,15 +21,16 @@ Evidence (local DB after wizard): `config_store` has `organisations` +
 
 ## Chunks
 
-### Chunk A — reconcile org table + trigger collection on config change (#3, likely #1)
-- Scope: `internal/webapi` (PUT `/admin/config/organisations`), main→webapi wiring
-  to expose a reconcile+collect hook; collector immediate trigger.
-- After a successful org PUT (store + `configHolder.Reload`): run
-  `SyncOrganisationsFromConfig(liveConfig.Organisations)` in a tx, then trigger a
-  non-blocking collection. Preserve `source='api'` rows (reconciler already does).
-- TDD: handler test — PUT org → row appears in table + collection triggered.
-- Acceptance: first org added via API → `ListOrganisations` returns it, collector
-  runs, **no restart**.
+### Chunk A — reconcile org table + trigger collection on config change (#3) — DONE
+- `webapi.WithOrganisationsChanged` callback + a post-reload hook on
+  `storeAdminConfigSection` (org PUT only). Main wires it to `syncOrganisations`
+  (now reads the reloaded `ConfigHolder`, not the boot snapshot) + a non-blocking
+  `sched.TriggerNow`. Reconciler already preserves `source='api'` rows.
+- TDD: hook invoked on org PUT, 500 on hook error, not invoked for non-org PUTs.
+  Full Go suite green. Commit `15128dc`.
+- Note: this fixes #3 (collector picks up the org without restart). Whether it
+  also clears #1 (setup prompt) is Chunk B's repro — the GET already reads live
+  config, so #1 may be a reload-failure or cache path still to pin.
 
 ### Chunk B — setup mode clears without restart (#1)
 - Repro first: after PUT org, assert GET `/admin/config/organisations` returns it
