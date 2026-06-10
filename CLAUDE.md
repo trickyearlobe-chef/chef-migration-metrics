@@ -39,7 +39,7 @@
 
 ## Quality Maintenance
 
-- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status.
+- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main`) and for each either merge, queue, or note why it is parked — branches must not accumulate silently.
 - TODO hygiene: update todos as items complete or block; don't end a session with a net TODO increase unless they're genuine open questions.
 - Watch context relevance (re-check every few tool calls): suggest a fresh thread when the chunk is complete, context is >50% stale/irrelevant, or scope has shifted significantly from the plan.
 
