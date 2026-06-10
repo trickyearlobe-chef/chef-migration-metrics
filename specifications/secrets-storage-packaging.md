@@ -20,7 +20,6 @@ When credentials are stored as files on disk (Chef API PEM keys, TLS private key
 | Chef API key (container) | `/etc/chef-migration-metrics/keys/<org-name>.pem` | Mounted from Kubernetes Secret or Docker secret |
 | TLS private key | `/etc/chef-migration-metrics/tls/tls.key` | For `server.tls.mode: static` |
 | TLS certificate | `/etc/chef-migration-metrics/tls/tls.crt` | For `server.tls.mode: static` |
-| ACME storage | `/var/lib/chef-migration-metrics/acme/` | Auto-managed ACME account keys and certificates |
 | Environment file (RPM) | `/etc/sysconfig/chef-migration-metrics` | `0640`, contains env var overrides including secrets |
 | Environment file (DEB) | `/etc/default/chef-migration-metrics` | `0640`, contains env var overrides including secrets |
 

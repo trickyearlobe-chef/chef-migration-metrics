@@ -29,7 +29,6 @@ On startup, the application must validate the configuration and fail fast with a
   - `server.tls.mode` is `acme` but `acme.domains` is empty
   - `server.tls.mode` is `acme` but `acme.email` is empty
   - `server.tls.mode` is `acme` but `acme.agree_to_tos` is not `true`
-  - `acme.storage_path` does not exist or is not writable
   - `acme.challenge` is not one of `http-01`, `tls-alpn-01`, or `dns-01`
   - `acme.challenge` is `dns-01` but `acme.dns_provider` is empty
   - `acme.challenge` is `dns-01` but required `dns_provider_config` keys for the selected provider are missing

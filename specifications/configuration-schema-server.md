@@ -131,7 +131,8 @@ server:
       hostname_ttl: 60             # A-record TTL in seconds
       hostname_interface: ""       # Use this interface's IPv4 (else auto-detect)
       hostname_ip: ""              # Use this literal IPv4 (highest precedence)
-      storage_path: "/var/lib/chef-migration-metrics/acme"
+      # storage_path: deprecated and ignored — ACME state is DB-backed (no disk
+      # storage; see tls-acme.md § 3.5). Retained only so old YAML still parses.
       renew_before_days: 30        # Begin renewal this many days before expiry
       agree_to_tos: false          # Must be true to accept the CA's Terms of Service
       trusted_roots: ""            # Optional: PEM file of additional CA roots to trust
