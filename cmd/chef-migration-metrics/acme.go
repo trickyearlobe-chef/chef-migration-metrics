@@ -54,8 +54,9 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 	}
 
 	// Build the challenge solver and, for http-01, the port-80 challenge/redirect
-	// server. Only http-01 is wired in this chunk; dns-01 (Route 53) arrives in a
-	// later change. An unsupported/unwireable challenge fails open to self-signed.
+	// server. http-01 publishes the proof over HTTP; dns-01 publishes a TXT record
+	// via the Route 53 solver (no port-80 listener). An unsupported or unwireable
+	// challenge fails open to self-signed.
 	var solver acme.Solver
 	var challengeSrv *http.Server
 	switch acfg.Challenge {
@@ -74,9 +75,19 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 			httpSolver.Handler(),
 		)
 	case "dns-01":
-		app.startup.Error("ACME challenge dns-01 is not yet implemented (Route 53 solver lands in a later change) — no certificate can be obtained")
-		return app.degradeToSelfSigned(handler, acfg.Domains,
-			errors.New("acme dns-01 not yet implemented")), nil
+		if acfg.DNSProvider != "route53" {
+			app.startup.Error(fmt.Sprintf(
+				"ACME challenge dns-01 supports only dns_provider: route53 (got %q) — no certificate can be obtained", acfg.DNSProvider))
+			return app.degradeToSelfSigned(handler, acfg.Domains,
+				fmt.Errorf("unsupported acme dns_provider %q", acfg.DNSProvider)), nil
+		}
+		r53, derr := acme.NewRoute53Solver(ctx, store, acfg.DNSProviderConfig, app.tlsLog)
+		if derr != nil {
+			app.startup.Error(fmt.Sprintf(
+				"ACME dns-01 Route 53 solver unavailable: %v — no certificate can be obtained", derr))
+			return app.degradeToSelfSigned(handler, acfg.Domains, derr), nil
+		}
+		solver = r53
 	default:
 		app.startup.Error(fmt.Sprintf("ACME challenge %q is not supported", acfg.Challenge))
 		return app.degradeToSelfSigned(handler, acfg.Domains,
@@ -151,15 +162,18 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 	// Start the challenge/redirect server on the redirect port (port 80). A bind
 	// failure (port 80 typically needs elevated privileges) is logged but NOT
 	// fatal: the HTTPS UI stays reachable and the renewer keeps the server in the
-	// degraded self-signed state until issuance can succeed.
-	go func() {
-		app.startup.Info(fmt.Sprintf("ACME http-01 challenge/redirect server listening on %s", challengeSrv.Addr))
-		if err := challengeSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			app.startup.Error(fmt.Sprintf(
-				"ACME http-01 challenge/redirect server failed on %s: %v — certificate issuance cannot complete until this is resolved",
-				challengeSrv.Addr, err))
-		}
-	}()
+	// degraded self-signed state until issuance can succeed. dns-01 validates via
+	// a TXT record and has no port-80 listener (challengeSrv is nil).
+	if challengeSrv != nil {
+		go func() {
+			app.startup.Info(fmt.Sprintf("ACME http-01 challenge/redirect server listening on %s", challengeSrv.Addr))
+			if err := challengeSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				app.startup.Error(fmt.Sprintf(
+					"ACME http-01 challenge/redirect server failed on %s: %v — certificate issuance cannot complete until this is resolved",
+					challengeSrv.Addr, err))
+			}
+		}()
+	}
 
 	return serverResult{
 		errCh:         listener.Serve(),

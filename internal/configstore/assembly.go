@@ -77,6 +77,19 @@ const (
 	KeyServerTLSACMEAccountKey = "server.tls.acme.account_key"
 	KeyServerTLSACMECert       = "server.tls.acme.cert"
 	KeyServerTLSACMEKey        = "server.tls.acme.key"
+
+	// Route 53 DNS-01 solver settings. Like the ACME state keys above, these are
+	// standalone config-store entries read directly by the Route 53 solver
+	// (internal/acme), NOT config sections, so they are excluded from
+	// AllConfigKeys/ConfigToSections. The access key ID and secret access key are
+	// secret (encrypted, never returned by any API); region and hosted zone ID
+	// are public. They are the highest-priority source in the AWS credential and
+	// region/zone resolution order (env vars and the IAM instance role follow).
+	// See tls-acme.md § 3.4 / § 3.5.
+	KeyServerTLSACMERoute53AccessKeyID     = "server.tls.acme.route53.access_key_id"
+	KeyServerTLSACMERoute53SecretAccessKey = "server.tls.acme.route53.secret_access_key"
+	KeyServerTLSACMERoute53Region          = "server.tls.acme.route53.region"
+	KeyServerTLSACMERoute53HostedZoneID    = "server.tls.acme.route53.hosted_zone_id"
 )
 
 // ServerListenSection is the JSON/YAML shape of the `server.listen` config
