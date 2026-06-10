@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
 )
 
@@ -46,12 +48,14 @@ func newTestApp(t *testing.T) *serverApp {
 
 func shutdown(t *testing.T, res serverResult) {
 	t.Helper()
-	if res.plainSrv == nil {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_ = res.plainSrv.Shutdown(ctx)
+	if res.plainSrv != nil {
+		_ = res.plainSrv.Shutdown(ctx)
+	}
+	if res.tlsListener != nil {
+		_ = res.tlsListener.Shutdown(ctx)
+	}
 }
 
 // An admin-requested restart (signalled on restartCh) must drain gracefully
@@ -97,6 +101,93 @@ func TestDegradeToPlainHTTP_SetsDegradedAndServes(t *testing.T) {
 	if !strings.HasPrefix(status.Reason, "TLS listener setup failed:") {
 		t.Errorf("reason = %q, want the operator-facing prefix", status.Reason)
 	}
+}
+
+// A static-TLS setup failure now falls open to a self-signed HTTPS listener
+// (encrypted recovery UI), not cleartext: the degraded status carries the
+// self-signed kind, the listener actually serves HTTPS, and HSTS is suppressed.
+func TestDegradeToSelfSigned_ServesHTTPSDegraded(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+
+	res := app.degradeToSelfSigned(http.NewServeMux(), nil, errors.New("cert load failed: no such file"))
+	defer shutdown(t, res)
+
+	if res.tlsListener == nil {
+		t.Fatal("expected a self-signed TLS listener, got nil")
+	}
+	status := app.tlsStatus.Status()
+	if !status.Degraded {
+		t.Fatal("expected degraded TLS status after self-signed fallback")
+	}
+	if status.Kind != webapi.DegradedKindSelfSigned {
+		t.Errorf("kind = %q, want %q", status.Kind, webapi.DegradedKindSelfSigned)
+	}
+	if !strings.Contains(status.Reason, "cert load failed") {
+		t.Errorf("reason = %q, want it to include the cause", status.Reason)
+	}
+	// HSTS must be suppressed while degraded (self-signed cert).
+	if app.hstsEnabledFn()() {
+		t.Error("HSTS gate must be closed while serving a self-signed cert")
+	}
+
+	// The listener really serves HTTPS with a self-signed cert.
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed by design
+	}}
+	url := "https://" + res.tlsListener.Addr() + "/"
+	resp := getWithRetry(t, client, url)
+	defer resp.Body.Close()
+	if resp.Header.Get("Strict-Transport-Security") != "" {
+		t.Error("HSTS header must not be sent over the self-signed degraded listener")
+	}
+}
+
+// Promoting a real certificate in place over the degraded self-signed listener
+// clears the degraded state and re-opens the HSTS gate without a restart.
+func TestDegradeToSelfSigned_PromotionClearsDegraded(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.tlsReload.SetOnReload(app.tlsStatus.SetHealthy)
+
+	res := app.degradeToSelfSigned(http.NewServeMux(), nil, errors.New("bad cert"))
+	defer shutdown(t, res)
+
+	if !app.tlsStatus.IsDegraded() {
+		t.Fatal("expected degraded before promotion")
+	}
+
+	// A valid pair saved/issued reloads in place and clears degraded.
+	realCert, realKey, err := apptls.GenerateSelfSigned([]string{"metrics.example.com"})
+	if err != nil {
+		t.Fatalf("generate promotion cert: %v", err)
+	}
+	if err := app.tlsReload.Reload(realCert, realKey); err != nil {
+		t.Fatalf("promotion reload: %v", err)
+	}
+	if app.tlsStatus.IsDegraded() {
+		t.Error("expected degraded cleared after in-place promotion")
+	}
+	if !app.hstsEnabledFn()() {
+		t.Error("HSTS gate must reopen once a real cert is promoted")
+	}
+}
+
+// getWithRetry dials a freshly-started listener, retrying briefly while the
+// background Serve goroutine binds the port.
+func getWithRetry(t *testing.T, client *http.Client, url string) *http.Response {
+	t.Helper()
+	var lastErr error
+	for range 50 {
+		resp, err := client.Get(url)
+		if err == nil {
+			return resp
+		}
+		lastErr = err
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("GET %s never succeeded: %v", url, lastErr)
+	return nil
 }
 
 // The plain-HTTP path (mode: off) must not mark the server degraded.

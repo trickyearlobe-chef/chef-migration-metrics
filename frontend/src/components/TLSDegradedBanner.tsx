@@ -6,11 +6,11 @@ import { fetchTLSStatus } from "../api";
 import type { TLSStatus } from "../types";
 
 /**
- * Prominent global banner shown when the server fell back to plain HTTP because
- * the configured static TLS certificate failed to load at startup (tls.md
- * § 2.4). Polls GET /api/v1/server/tls-status — a public, DB-independent
- * endpoint — so the warning renders on every page. Renders nothing when TLS is
- * healthy or the poll fails.
+ * Prominent global banner shown when the server fell back to a degraded TLS
+ * listener at startup — an untrusted self-signed certificate, or plain HTTP as a
+ * last resort (tls.md § 6.3). Polls GET /api/v1/server/tls-status — a public,
+ * DB-independent endpoint — so the warning renders on every page. Renders nothing
+ * when TLS is healthy or the poll fails.
  */
 export function TLSDegradedBanner({ intervalMs = 30_000 }: { intervalMs?: number }) {
   const [status, setStatus] = useState<TLSStatus | null>(null);
@@ -36,6 +36,13 @@ export function TLSDegradedBanner({ intervalMs = 30_000 }: { intervalMs?: number
 
   if (!status?.degraded) return null;
 
+  // Plain HTTP (cleartext) is the last-resort fallback and is the more dangerous
+  // state; self-signed keeps traffic encrypted but untrusted.
+  const headline =
+    status.kind === "plain"
+      ? "TLS degraded — running INSECURE over plain HTTP."
+      : "TLS degraded — serving an untrusted self-signed certificate.";
+
   return (
     <div
       role="alert"
@@ -56,9 +63,7 @@ export function TLSDegradedBanner({ intervalMs = 30_000 }: { intervalMs?: number
         />
       </svg>
       <div className="min-w-0">
-        <span className="font-semibold">
-          TLS failed — running INSECURE over plain HTTP.
-        </span>{" "}
+        <span className="font-semibold">{headline}</span>{" "}
         <span>Fix the certificate and restart.</span>
         {status.reason && (
           <span className="mt-0.5 block break-words font-mono text-xs text-red-100">

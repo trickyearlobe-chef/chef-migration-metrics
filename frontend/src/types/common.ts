@@ -29,11 +29,15 @@ export interface VersionResponse {
   version: string;
 }
 
-// TLSStatus mirrors GET /api/v1/server/tls-status. When static TLS fails at
-// startup the server falls open to plain HTTP (tls.md § 2.4) and reports
-// degraded=true so the UI can warn that traffic is INSECURE.
+// TLSStatus mirrors GET /api/v1/server/tls-status. When the TLS listener cannot
+// be built at startup the server falls open to a degraded listener — a
+// self-signed HTTPS cert, or plain HTTP as a last resort (tls.md § 6.3) — and
+// reports degraded=true so the UI can warn that the certificate is untrusted.
 export interface TLSStatus {
   degraded: boolean;
+  // kind is the degraded-listener kind: "self-signed" (untrusted HTTPS) or
+  // "plain" (last-resort cleartext). Absent when healthy.
+  kind?: "self-signed" | "plain";
   reason?: string;
 }
 

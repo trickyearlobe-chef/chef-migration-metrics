@@ -171,12 +171,19 @@ in the DB — the application MUST NOT exit. As with static fail-open
 - It logs an `ERROR` on the `tls` scope (never including key material).
 - It records the **degraded** state on the status endpoint
   ([tls.md § 6.3](tls.md#63-degraded-tls-status-and-recovery)).
-- It serves the admin UI over **plain HTTP** so the configuration can be fixed.
+- It serves the admin UI over HTTPS using an **ephemeral self-signed certificate**
+  (HSTS suppressed), so the configuration can be fixed over an encrypted channel;
+  it falls back to **plain HTTP** only as a last resort if the self-signed
+  listener itself cannot be brought up.
 
-If a valid cert already exists in the DB (§ 3.5), the listener serves it while
-renewal is retried with backoff (§ 3.6); only a total absence of a usable cert
-falls open. Recovery from a stuck ACME configuration is the repair CLI
-(`tls reset`) — see [tls.md § 6.3](tls.md#63-degraded-tls-status-and-recovery).
+The server therefore **always comes up on HTTPS**: the stored issued cert if one
+exists in the DB (§ 3.5), otherwise the self-signed degraded cert. The renewal
+scheduler keeps running (§ 3.6) and, once issuance succeeds, swaps the real cert
+in **without a restart** (clearing the degraded state and resuming HSTS). If a
+valid cert already exists in the DB it is served immediately while renewal is
+retried with backoff; only a total absence of a usable cert is degraded. Recovery
+from a stuck ACME configuration is the repair CLI (`tls reset`) — see
+[tls.md § 6.3](tls.md#63-degraded-tls-status-and-recovery).
 
 ### 3.12 Configuration Reference
 

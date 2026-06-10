@@ -123,24 +123,28 @@ TLS-related events use the `tls` log scope. Key events:
 
 ### 6.3 Degraded TLS Status and Recovery
 
-When startup falls open to plain HTTP — static cert unloadable
+When startup falls open — static cert unloadable
 ([tls-static.md § 2.4](tls-static.md)) or ACME cannot obtain a cert
-([tls-acme.md § 3.11](tls-acme.md)) — the degraded state is published on a public,
+([tls-acme.md § 3.11](tls-acme.md)) — the application serves an **ephemeral
+self-signed certificate** over HTTPS (or, only if that itself fails, plain HTTP)
+so the recovery UI stays reachable. The degraded state is published on a public,
 DB-independent endpoint so the UI can warn on every page, including before login:
 
 ```
 GET /api/v1/server/tls-status   →   200 OK
-{ "degraded": true, "reason": "TLS listener setup failed: <cause>" }
+{ "degraded": true, "kind": "self-signed", "reason": "TLS listener setup failed: <cause>" }
 ```
 
-When TLS is healthy (or `mode` is `off`), the endpoint returns
-`{ "degraded": false }`. The endpoint requires no authentication and never
+`kind` is `self-signed` (degraded HTTPS with an untrusted cert) or `plain`
+(last-resort cleartext). When TLS is healthy (or `mode` is `off`), the endpoint
+returns `{ "degraded": false }`. The endpoint requires no authentication and never
 queries the database, so the banner renders even when other subsystems are down.
 The `reason` never contains private key material.
 
 The frontend shows a prominent global banner whenever `degraded` is true:
-**"TLS failed — running INSECURE. Fix the certificate and restart: <reason>"**.
-The Server & TLS admin page surfaces the same state inline.
+**"TLS degraded — serving an untrusted self-signed certificate (or plain HTTP).
+Fix the certificate and restart: <reason>"**. The Server & TLS admin page surfaces
+the same state inline.
 
 **Recovery boundary: host access.** Once TLS material lives in the DB
 (`cert_source: db`, ACME state, or `ca_path`), the old "move the cert/key/CA file
@@ -160,21 +164,24 @@ Repair CLI subcommands (host-side):
 **Recovery scenarios:**
 
 1. **Bad/missing static cert** (file or DB): the listener fails to build and falls
-   open to plain HTTP automatically ([tls-static.md § 2.4](tls-static.md)). Fix
-   the cert via the UI (save-time preflight rejects an unusable pair) and restart,
-   or run `tls reset` to force plain HTTP.
+   open automatically to a **self-signed** HTTPS listener
+   ([tls-static.md § 2.4](tls-static.md)). Fix the cert via the UI (save-time
+   preflight rejects an unusable pair) and restart, or run `tls reset` to force
+   plain HTTP.
 2. **mTLS lockout** (a `ca_path` that rejects all clients at the handshake, before
    any login): the listener builds successfully so fail-open does **not** trigger.
    Run `tls clear-ca` on the host, then restart — the UI is reachable to correct
    or re-set `ca_path`.
 3. **ACME cannot issue** (ToS, DNS creds, CA unreachable, no cert yet): falls open
-   to plain HTTP ([tls-acme.md § 3.11](tls-acme.md)); fix the ACME config via the
-   UI, or `tls reset` to force plain HTTP.
+   to a **self-signed** HTTPS listener ([tls-acme.md § 3.11](tls-acme.md)); fix
+   the ACME config via the UI, or `tls reset` to force plain HTTP. If a valid ACME
+   cert is later issued, the renewer swaps it in **without a restart**.
 
-There is no in-place runtime recovery for a held port — the fallback plain
-listener holds it until the process restarts. The degraded state clears on
-restart with working TLS (or, for the DB static source, when a valid pair is saved
-and the listener reloads).
+There is no in-place runtime recovery for a held port — the degraded (self-signed
+or last-resort plain) listener holds it until the process restarts. The degraded
+state clears on restart with working TLS, or — for the DB static source and ACME —
+when a valid certificate is saved/issued and the listener reloads in place, at
+which point HSTS resumes.
 
 ## 7. Backward Compatibility
 

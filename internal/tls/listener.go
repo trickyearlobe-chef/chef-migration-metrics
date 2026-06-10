@@ -71,6 +71,14 @@ type ListenerConfig struct {
 	// TrustedProxy controls whether X-Forwarded-Proto is trusted for
 	// HSTS detection. Must match the server.trusted_proxy config flag.
 	TrustedProxy bool
+
+	// HSTSEnabled, when non-nil, is consulted live on every response to decide
+	// whether to emit the Strict-Transport-Security header. It exists so a
+	// degraded self-signed fallback listener can suppress HSTS (tls-static.md
+	// § 2.4) — pinning HSTS over an untrusted cert would block the browser
+	// click-through and lock the operator out — and resume it the moment a real
+	// cert is promoted in place. Nil means HSTS is always emitted on TLS.
+	HSTSEnabled func() bool
 }
 
 // setDefaults fills in zero-valued fields with sensible defaults.
@@ -148,7 +156,7 @@ func NewListener(handler http.Handler, cfg ListenerConfig, log LogFunc) (*Listen
 
 	httpsSrv := &http.Server{
 		Addr:         addr,
-		Handler:      HSTSMiddleware(handler, cfg.TrustedProxy),
+		Handler:      HSTSMiddleware(handler, cfg.TrustedProxy, cfg.HSTSEnabled),
 		TLSConfig:    tlsCfg,
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
@@ -313,11 +321,17 @@ func (l *Listener) redirectHandler() http.Handler {
 //
 // trustedProxy controls whether X-Forwarded-Proto is considered when detecting
 // TLS. Set to true only when the app is behind a trusted reverse proxy.
-func HSTSMiddleware(next http.Handler, trustedProxy bool) http.Handler {
+//
+// enabled, when non-nil, is consulted live per request: if it returns false the
+// HSTS header is suppressed even on a secure connection. This lets a degraded
+// self-signed fallback listener avoid pinning HSTS over an untrusted cert
+// (tls-static.md § 2.4), resuming it automatically once a real cert is promoted.
+// A nil enabled means HSTS is always emitted on secure connections.
+func HSTSMiddleware(next http.Handler, trustedProxy bool, enabled func() bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secure := r.TLS != nil ||
 			(trustedProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
-		if secure {
+		if secure && (enabled == nil || enabled()) {
 			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)

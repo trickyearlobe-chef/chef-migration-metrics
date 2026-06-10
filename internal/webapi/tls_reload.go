@@ -30,6 +30,7 @@ type CertReloader interface {
 type TLSReloadHolder struct {
 	mu       sync.RWMutex
 	reloader CertReloader
+	onReload func()
 }
 
 // NewTLSReloadHolder returns an empty holder. Reload returns ErrNoTLSReloader
@@ -46,17 +47,35 @@ func (h *TLSReloadHolder) Set(r CertReloader) {
 	h.reloader = r
 }
 
+// SetOnReload registers a callback invoked after every successful in-place
+// reload. main.go wires it to clear the degraded TLS status, so promoting a real
+// certificate over a degraded self-signed listener (an admin save, or ACME
+// issuance) resumes the healthy banner and HSTS without a restart (tls.md § 6.3).
+func (h *TLSReloadHolder) SetOnReload(fn func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.onReload = fn
+}
+
 // Reload swaps the live certificate for the given PEM material. It returns
 // ErrNoTLSReloader when no reloader is wired in, or the reloader's own error
-// when the swap fails (the previous certificate keeps serving in that case).
+// when the swap fails (the previous certificate keeps serving in that case). On a
+// successful swap it invokes the onReload callback (if set).
 func (h *TLSReloadHolder) Reload(certPEM, keyPEM []byte) error {
 	h.mu.RLock()
 	r := h.reloader
+	onReload := h.onReload
 	h.mu.RUnlock()
 	if r == nil {
 		return ErrNoTLSReloader
 	}
-	return r.ReloadFromPEM(certPEM, keyPEM)
+	if err := r.ReloadFromPEM(certPEM, keyPEM); err != nil {
+		return err
+	}
+	if onReload != nil {
+		onReload()
+	}
+	return nil
 }
 
 // WithTLSReload wires in the holder used to swap the running static-TLS

@@ -81,13 +81,21 @@ MUST NOT exit. Instead it:
   private key material).
 - Records a **degraded** state (`{degraded: true, reason}`) exposed on the status
   endpoint ([tls.md § 6.3](tls.md#63-degraded-tls-status-and-recovery)).
-- Starts a **plain HTTP** listener on the configured
-  `server.listen_address:server.port` so the admin UI stays reachable to fix the
-  problem.
+- Serves an **ephemeral self-signed certificate** over **HTTPS** on the
+  configured `server.listen_address:server.port`, so the admin/recovery UI stays
+  reachable over an **encrypted** channel (the operator's browser shows an
+  untrusted-certificate warning and proceeds). The self-signed cert covers the
+  configured hostnames where known. **HSTS is not sent while the self-signed cert
+  is in use** — a pinned `Strict-Transport-Security` over an untrusted cert would
+  block the browser click-through on the next visit and lock the operator out.
+- Falls back to a **plain HTTP** listener on the same address **only as a last
+  resort**, if generating or binding the self-signed listener itself fails, so the
+  UI is never wholly unreachable.
 
 This fail-open behaviour guarantees a bad certificate can never lock an operator
-out of the UI. Save-time preflight (§ 2.6) makes this path rare — it normally
-only triggers when certificate files change on disk underneath an already-running
+out of the UI, while keeping the recovery channel encrypted rather than
+cleartext. Save-time preflight (§ 2.6) makes this path rare — it normally only
+triggers when certificate files change on disk underneath an already-running
 deployment, when DB material is altered out-of-band, or when `server.tls` was
 written before preflight existed.
 
@@ -104,10 +112,11 @@ committed through the admin API.
 An **expired** certificate that otherwise loads is not a failure: the listener
 starts in static (HTTPS) mode and logs a `WARN` (operators may be mid-renewal).
 
-There is no runtime auto-recovery — the plain listener is already bound to the
-port. The degraded state clears on the next restart with a working certificate,
-or — for the DB source — when a valid pair is saved and the listener reloads
-(§ 2.3). Recovery for an mTLS lockout or a bad DB cert is the repair CLI; see
+There is no runtime auto-recovery — the degraded (self-signed, or last-resort
+plain) listener is already bound to the port. The degraded state clears on the
+next restart with a working certificate, or — for the DB source — when a valid
+pair is saved and the listener reloads in place (§ 2.3), at which point HSTS
+resumes. Recovery for an mTLS lockout or a bad DB cert is the repair CLI; see
 [tls.md § 6.3](tls.md#63-degraded-tls-status-and-recovery).
 
 ### 2.5 Environment Variable Overrides
