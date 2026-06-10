@@ -45,6 +45,7 @@ const (
 	KeyServerTLS                  = "server.tls"
 	KeyServerWebSocket            = "server.websocket"
 	KeyServerGracefulShutdown     = "server.graceful_shutdown_seconds"
+	KeyServerTrustedProxy         = "server.trusted_proxy"
 	KeyFrontend                   = "frontend"
 	KeyLogging                    = "logging"
 	KeyAuth                       = "auth"
@@ -105,6 +106,7 @@ func AllConfigKeys() []string {
 		KeyServerTLS,
 		KeyServerWebSocket,
 		KeyServerGracefulShutdown,
+		KeyServerTrustedProxy,
 		KeyFrontend,
 		KeyLogging,
 		KeyAuth,
@@ -220,6 +222,8 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 		return yamlUnmarshalInto(&cfg.Server.WebSocket, raw, key)
 	case KeyServerGracefulShutdown:
 		return yamlUnmarshalInto(&cfg.Server.GracefulShutdownSeconds, raw, key)
+	case KeyServerTrustedProxy:
+		return yamlUnmarshalInto(&cfg.Server.TrustedProxy, raw, key)
 	case KeyFrontend:
 		return yamlUnmarshalInto(&cfg.Frontend, raw, key)
 	case KeyLogging:
@@ -288,6 +292,7 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 		KeyServerTLS:              cfg.Server.TLS,
 		KeyServerWebSocket:        cfg.Server.WebSocket,
 		KeyServerGracefulShutdown: cfg.Server.GracefulShutdownSeconds,
+		KeyServerTrustedProxy:     cfg.Server.TrustedProxy,
 		KeyFrontend:               cfg.Frontend,
 		KeyLogging:                cfg.Logging,
 		KeyAuth:                   cfg.Auth,
