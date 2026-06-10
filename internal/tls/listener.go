@@ -24,11 +24,24 @@ type ListenerConfig struct {
 	// Port is the primary HTTPS port.
 	Port int
 
+	// CertSource selects where the certificate/key come from: "file" (default,
+	// uses CertPath/KeyPath) or "db" (uses CertPEM/KeyPEM, fetched from the
+	// encrypted config store). See tls-static.md § 2.7.
+	CertSource string
+
 	// CertPath is the path to the PEM-encoded certificate file (chain).
+	// Used when CertSource is "file".
 	CertPath string
 
 	// KeyPath is the path to the PEM-encoded private key file.
+	// Used when CertSource is "file".
 	KeyPath string
+
+	// CertPEM / KeyPEM hold in-memory certificate and key PEM bytes. Used when
+	// CertSource is "db"; the resulting CertManager supports ReloadFromPEM for
+	// config-change-driven reload without a restart.
+	CertPEM []byte
+	KeyPEM  []byte
 
 	// CAPath is the optional path to a PEM-encoded CA bundle for mTLS.
 	CAPath string
@@ -58,6 +71,14 @@ type ListenerConfig struct {
 	// TrustedProxy controls whether X-Forwarded-Proto is trusted for
 	// HSTS detection. Must match the server.trusted_proxy config flag.
 	TrustedProxy bool
+
+	// HSTSEnabled, when non-nil, is consulted live on every response to decide
+	// whether to emit the Strict-Transport-Security header. It exists so a
+	// degraded self-signed fallback listener can suppress HSTS (tls-static.md
+	// § 2.4) — pinning HSTS over an untrusted cert would block the browser
+	// click-through and lock the operator out — and resume it the moment a real
+	// cert is promoted in place. Nil means HSTS is always emitted on TLS.
+	HSTSEnabled func() bool
 }
 
 // setDefaults fills in zero-valued fields with sensible defaults.
@@ -116,7 +137,15 @@ func NewListener(handler http.Handler, cfg ListenerConfig, log LogFunc) (*Listen
 		cmOpts = append(cmOpts, WithCAPath(cfg.CAPath))
 	}
 
-	cm, err := NewCertManager(cfg.CertPath, cfg.KeyPath, cmOpts...)
+	var cm *CertManager
+	var err error
+	if cfg.CertSource == "db" {
+		// In-memory PEM from the encrypted config store. Supports
+		// config-change-driven ReloadFromPEM rather than file-watch.
+		cm, err = NewCertManagerFromPEM(cfg.CertPEM, cfg.KeyPEM, cmOpts...)
+	} else {
+		cm, err = NewCertManager(cfg.CertPath, cfg.KeyPath, cmOpts...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +156,7 @@ func NewListener(handler http.Handler, cfg ListenerConfig, log LogFunc) (*Listen
 
 	httpsSrv := &http.Server{
 		Addr:         addr,
-		Handler:      HSTSMiddleware(handler, cfg.TrustedProxy),
+		Handler:      HSTSMiddleware(handler, cfg.TrustedProxy, cfg.HSTSEnabled),
 		TLSConfig:    tlsCfg,
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
@@ -255,26 +284,65 @@ func (l *Listener) RedirectAddr() string {
 // accidental exposure of sensitive data over plain HTTP.
 func (l *Listener) redirectHandler() http.Handler {
 	httpsPort := l.cfg.Port
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Determine the target host for the redirect. Strip any existing
-		// port from the Host header and replace it with the HTTPS port.
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-
-		// Only append the port if it's non-standard for HTTPS.
-		target := "https://"
-		if httpsPort != 443 {
-			target += net.JoinHostPort(host, fmt.Sprintf("%d", httpsPort))
-		} else {
-			target += host
-		}
-		target += r.URL.RequestURI()
-
-		http.Redirect(w, r, target, http.StatusMovedPermanently)
+		redirectToHTTPS(w, r, httpsPort)
 	})
+}
+
+// redirectToHTTPS issues a 301 to the HTTPS equivalent of the request URL,
+// swapping the host's port for httpsPort (omitted when it is the standard 443).
+func redirectToHTTPS(w http.ResponseWriter, r *http.Request, httpsPort int) {
+	// Strip any existing port from the Host header and replace it with the
+	// HTTPS port.
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+
+	target := "https://"
+	if httpsPort != 443 {
+		target += net.JoinHostPort(host, fmt.Sprintf("%d", httpsPort))
+	} else {
+		target += host
+	}
+	target += r.URL.RequestURI()
+
+	http.Redirect(w, r, target, http.StatusMovedPermanently)
+}
+
+// acmeChallengePrefix is the well-known HTTP-01 challenge path. It mirrors
+// acme.ChallengePathPrefix; duplicated here so the tls package stays free of an
+// acme import (the challenge handler is injected as a plain http.Handler).
+const acmeChallengePrefix = "/.well-known/acme-challenge/"
+
+// NewChallengeRedirectServer builds the port-80 server used in ACME http-01
+// mode. It serves the injected challenge handler for requests under
+// /.well-known/acme-challenge/ and 301-redirects everything else to HTTPS on
+// httpsPort. The challenge path takes priority over the redirect (tls-acme.md
+// § 3.3), so the CA can validate domain control over plain HTTP while ordinary
+// traffic is still pushed to TLS.
+//
+// In http-01 mode this server owns the redirect port for the whole process
+// lifetime; the HTTPS Listener therefore runs with HTTPRedirectPort: 0 so it
+// does not also try to bind the same port.
+func NewChallengeRedirectServer(listenAddr string, redirectPort, httpsPort int, challenge http.Handler) *http.Server {
+	if listenAddr == "" {
+		listenAddr = "0.0.0.0"
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, acmeChallengePrefix) {
+			challenge.ServeHTTP(w, r)
+			return
+		}
+		redirectToHTTPS(w, r, httpsPort)
+	})
+	return &http.Server{
+		Addr:         fmt.Sprintf("%s:%d", listenAddr, redirectPort),
+		Handler:      handler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -292,11 +360,17 @@ func (l *Listener) redirectHandler() http.Handler {
 //
 // trustedProxy controls whether X-Forwarded-Proto is considered when detecting
 // TLS. Set to true only when the app is behind a trusted reverse proxy.
-func HSTSMiddleware(next http.Handler, trustedProxy bool) http.Handler {
+//
+// enabled, when non-nil, is consulted live per request: if it returns false the
+// HSTS header is suppressed even on a secure connection. This lets a degraded
+// self-signed fallback listener avoid pinning HSTS over an untrusted cert
+// (tls-static.md § 2.4), resuming it automatically once a real cert is promoted.
+// A nil enabled means HSTS is always emitted on secure connections.
+func HSTSMiddleware(next http.Handler, trustedProxy bool, enabled func() bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secure := r.TLS != nil ||
 			(trustedProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
-		if secure {
+		if secure && (enabled == nil || enabled()) {
 			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)

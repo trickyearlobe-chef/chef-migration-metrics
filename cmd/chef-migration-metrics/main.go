@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -38,8 +39,8 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
@@ -125,17 +126,27 @@ type serverApp struct {
 	stopExportCleanup func()
 
 	// Kitchen queue manager (bounded concurrency for TK runs).
-	kitchenQueue            *kitchenqueue.Manager
+	kitchenQueue *kitchenqueue.Manager
 
 	// Backup scheduler (for stopping during restore).
-	backupSched   *backup.Scheduler
-	schemaVersion int
+	backupSched             *backup.Scheduler
+	schemaVersion           int
 	stopKitchenQueueCleanup func()
 
 	// tlsStatus records whether static TLS failed at startup and the server
 	// fell open to plain HTTP (tls.md § 2.4). Shared with the webapi router so
 	// the /api/v1/server/tls-status endpoint and UI banner can report it.
 	tlsStatus *webapi.TLSStatusHolder
+
+	// tlsReload lets the admin TLS save path swap the running cert_source: db
+	// certificate in place (no restart). Populated with the running listener's
+	// CertManager once the static listener is built; nil/empty otherwise.
+	tlsReload *webapi.TLSReloadHolder
+
+	// acmeTrigger forwards an admin ACME config save to the running renewer so
+	// hostname registration / issuance re-run immediately (tls-acme.md § 3.14).
+	// Bound to the renewer once setupACME builds it; a no-op before then.
+	acmeTrigger *acmeTriggerHolder
 
 	// restartCh signals an admin-requested graceful restart (POST
 	// /api/v1/admin/restart). awaitShutdown selects on it, drains gracefully,
@@ -539,23 +550,23 @@ func (app *serverApp) setupSAML(ctx context.Context) {
 	}
 
 	spCfg := samlsp.Config{
-		IDPMetadataURL:          samlCfg.IDPMetadataURL,
-		IDPMetadataPath:         samlCfg.IDPMetadataPath,
-		SPEntityID:              samlCfg.SPEntityID,
-		ACSURL:                  baseURL + "/api/v1/auth/saml/acs",
-		SLOURL:                  baseURL + "/api/v1/auth/saml/slo",
-		MetadataURL:             baseURL + "/api/v1/auth/saml/metadata",
-		Certificate:             certCred.Plaintext,
-		PrivateKey:              keyCred.Plaintext,
-		UsernameAttr:            samlCfg.UsernameAttr,
-		EmailAttr:               samlCfg.EmailAttr,
-		DisplayNameAttr:         samlCfg.DisplayNameAttr,
-		GroupsAttr:              samlCfg.GroupsAttr,
-		RoleAttr:                samlCfg.RoleAttr,
-		RoleMapping:             samlCfg.RoleMapping,
-		AllowIDPInitiated:       samlCfg.AllowIDPInitiated,
-		SignRequests:            samlCfg.SignRequests,
-		Logger:                  logFn,
+		IDPMetadataURL:    samlCfg.IDPMetadataURL,
+		IDPMetadataPath:   samlCfg.IDPMetadataPath,
+		SPEntityID:        samlCfg.SPEntityID,
+		ACSURL:            baseURL + "/api/v1/auth/saml/acs",
+		SLOURL:            baseURL + "/api/v1/auth/saml/slo",
+		MetadataURL:       baseURL + "/api/v1/auth/saml/metadata",
+		Certificate:       certCred.Plaintext,
+		PrivateKey:        keyCred.Plaintext,
+		UsernameAttr:      samlCfg.UsernameAttr,
+		EmailAttr:         samlCfg.EmailAttr,
+		DisplayNameAttr:   samlCfg.DisplayNameAttr,
+		GroupsAttr:        samlCfg.GroupsAttr,
+		RoleAttr:          samlCfg.RoleAttr,
+		RoleMapping:       samlCfg.RoleMapping,
+		AllowIDPInitiated: samlCfg.AllowIDPInitiated,
+		SignRequests:      samlCfg.SignRequests,
+		Logger:            logFn,
 	}
 
 	logFn("INFO", fmt.Sprintf("SAML config: groups_attr=%q role_attr=%q role_mapping=%v",
@@ -1068,6 +1079,14 @@ type serverResult struct {
 	errCh       <-chan error
 	tlsListener *apptls.Listener
 	plainSrv    *http.Server
+
+	// challengeSrv is the ACME http-01 challenge/redirect server bound to the
+	// redirect port (port 80) in mode: acme. Nil in all other modes.
+	challengeSrv *http.Server
+
+	// renewerCancel stops the background ACME renewal loop in mode: acme. Nil in
+	// all other modes.
+	renewerCancel context.CancelFunc
 }
 
 func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
@@ -1123,6 +1142,22 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	// status endpoint + UI banner report INSECURE without restarting.
 	app.tlsStatus = webapi.NewTLSStatusHolder()
 	routerOpts = append(routerOpts, webapi.WithTLSStatus(app.tlsStatus))
+
+	// Holder for the running listener's in-place cert reloader. Wired up front
+	// so the admin TLS save path can swap a cert_source: db certificate without
+	// a restart once the static listener (below) populates it.
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	routerOpts = append(routerOpts, webapi.WithTLSReload(app.tlsReload))
+	// Promoting a real certificate in place over a degraded self-signed listener
+	// (an admin save, or ACME issuance) must clear the degraded banner and resume
+	// HSTS without a restart (tls.md § 6.3).
+	app.tlsReload.SetOnReload(app.tlsStatus.SetHealthy)
+
+	// Holder for the ACME renewer's immediate re-assert trigger. Wired up front
+	// like tlsReload; setupACME binds it to the renewer once built (tls-acme.md
+	// § 3.14). A no-op in non-ACME modes or before binding.
+	app.acmeTrigger = &acmeTriggerHolder{}
+	routerOpts = append(routerOpts, webapi.WithACMETrigger(app.acmeTrigger.Trigger))
 
 	if recorder != nil {
 		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))
@@ -1200,9 +1235,9 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 					SSLVerify:     &sslVerify,
 				})
 			},
-			Executor:       &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
-			CredResolver:   &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
-			Logger:         nkLogger,
+			Executor:     &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
+			CredResolver: &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
+			Logger:       nkLogger,
 			TKConfigFn: func() config.TestKitchenConfig {
 				return app.configHolder.Get().AnalysisTools.TestKitchen
 			},
@@ -1382,19 +1417,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		shutdownTimeout = 15 * time.Second
 	}
 
-	tlsLog := func(level, msg string) {
-		scoped := logger.WithScope(logging.ScopeTLS)
-		switch level {
-		case "DEBUG":
-			scoped.Debug(msg)
-		case "WARN":
-			scoped.Warn(msg)
-		case "ERROR":
-			scoped.Error(msg)
-		default:
-			scoped.Info(msg)
-		}
-	}
+	tlsLog := app.tlsLog
 
 	var res serverResult
 
@@ -1402,9 +1425,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	case "static":
 		app.startup.Info("TLS mode: static (operator-managed certificate)")
 
-		tlsListener, tlsErr := apptls.NewListener(apiRouter, apptls.ListenerConfig{
+		lcfg := apptls.ListenerConfig{
 			ListenAddress:           app.cfg.Server.ListenAddress,
 			Port:                    app.cfg.Server.Port,
+			CertSource:              app.cfg.Server.TLS.CertSource,
 			CertPath:                app.cfg.Server.TLS.CertPath,
 			KeyPath:                 app.cfg.Server.TLS.KeyPath,
 			CAPath:                  app.cfg.Server.TLS.CAPath,
@@ -1412,12 +1436,28 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			HTTPRedirectPort:        app.cfg.Server.TLS.HTTPRedirectPort,
 			GracefulShutdownTimeout: shutdownTimeout,
 			TrustedProxy:            app.cfg.Server.TrustedProxy,
-		}, tlsLog)
+			HSTSEnabled:             app.hstsEnabledFn(),
+		}
+
+		if app.cfg.Server.TLS.CertSource == "db" {
+			app.startup.Info("TLS certificate source: db (encrypted config store)")
+			certPEM, keyPEM, loadErr := app.loadDBCertKey(context.Background())
+			if loadErr != nil {
+				// Fail open (tls-static.md § 2.4): a missing or unreadable DB
+				// certificate falls open to a self-signed HTTPS listener exactly
+				// like a missing file, so it can never lock the operator out.
+				return app.degradeToSelfSigned(apiRouter, nil, loadErr), nil
+			}
+			lcfg.CertPEM = certPEM
+			lcfg.KeyPEM = keyPEM
+		}
+
+		tlsListener, tlsErr := apptls.NewListener(apiRouter, lcfg, tlsLog)
 		if tlsErr != nil {
-			// Fail open (tls.md § 2.4): a bad certificate must never prevent
-			// reaching the UI to fix it. Record degraded state and serve plain
-			// HTTP instead of exiting.
-			return app.degradeToPlainHTTP(apiRouter, tlsErr), nil
+			// Fail open (tls-static.md § 2.4): a bad certificate must never
+			// prevent reaching the UI to fix it. Record degraded state and serve
+			// a self-signed cert (encrypted) instead of exiting.
+			return app.degradeToSelfSigned(apiRouter, nil, tlsErr), nil
 		}
 
 		app.startup.Info(fmt.Sprintf("TLS certificate: %s", tlsListener.CertSummary()))
@@ -1426,19 +1466,55 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			app.startup.Info("mutual TLS (mTLS) enabled — client certificates required")
 		}
 
+		// File source: poll for on-disk changes (no-op for the db source).
+		// DB source: register the CertManager so the admin save path can swap
+		// the certificate in place on a config change (tls-static.md § 2.3).
 		tlsListener.CertManager().WatchForChanges(30 * time.Second)
+		if app.tlsReload != nil {
+			app.tlsReload.Set(tlsListener.CertManager())
+		}
 		res.errCh = tlsListener.Serve()
 		res.tlsListener = tlsListener
 
 	case "acme":
-		app.startup.Error("TLS mode 'acme' is not yet implemented")
-		return res, fmt.Errorf("TLS mode 'acme' is not yet implemented")
+		return app.setupACME(apiRouter, app.cfgStore, shutdownTimeout)
 
 	default:
 		res = app.servePlainHTTP(apiRouter)
 	}
 
 	return res, nil
+}
+
+// loadDBCertKey fetches the cert_source: db certificate and private key from
+// the encrypted config store. The certificate is non-secret; the private key
+// is secret. Both are stored as JSON-encoded PEM strings by the admin save
+// path. It returns an error if the store is unavailable or either entry is
+// missing/undecodable, which the caller treats as a fail-open condition.
+func (app *serverApp) loadDBCertKey(ctx context.Context) (certPEM, keyPEM []byte, err error) {
+	if app.cfgStore == nil {
+		return nil, nil, fmt.Errorf("cert_source is db but the config store is unavailable (set CMM_CREDENTIAL_ENCRYPTION_KEY)")
+	}
+
+	certRaw, err := app.cfgStore.Get(ctx, configstore.KeyServerTLSCertificate)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading TLS certificate from config store: %w", err)
+	}
+	var certStr string
+	if err := json.Unmarshal(certRaw, &certStr); err != nil {
+		return nil, nil, fmt.Errorf("decoding stored TLS certificate: %w", err)
+	}
+
+	keyRaw, err := app.cfgStore.GetSecret(ctx, configstore.KeyServerTLSPrivateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading TLS private key from config store: %w", err)
+	}
+	var keyStr string
+	if err := json.Unmarshal(keyRaw, &keyStr); err != nil {
+		return nil, nil, fmt.Errorf("decoding stored TLS private key: %w", err)
+	}
+
+	return []byte(certStr), []byte(keyStr), nil
 }
 
 // listenTarget is a resolved (address, port) the server may bind.
@@ -1541,10 +1617,93 @@ func (app *serverApp) serveOnListener(handler http.Handler, ln net.Listener) ser
 	return serverResult{errCh: plainErrCh, plainSrv: plainSrv}
 }
 
+// tlsLog adapts the application logger to the internal/tls + internal/acme
+// LogFunc seam, scoping messages to the tls log scope.
+func (app *serverApp) tlsLog(level, msg string) {
+	scoped := app.logger.WithScope(logging.ScopeTLS)
+	switch level {
+	case "DEBUG":
+		scoped.Debug(msg)
+	case "WARN":
+		scoped.Warn(msg)
+	case "ERROR":
+		scoped.Error(msg)
+	default:
+		scoped.Info(msg)
+	}
+}
+
+// hstsEnabledFn returns the live predicate a listener consults before emitting
+// HSTS: enabled whenever TLS is healthy, suppressed while the listener is in a
+// degraded self-signed fallback (tls-static.md § 2.4). It resumes automatically
+// once a real certificate is promoted in place (which clears the degraded state).
+func (app *serverApp) hstsEnabledFn() func() bool {
+	return func() bool {
+		return app.tlsStatus == nil || !app.tlsStatus.IsDegraded()
+	}
+}
+
+// degradeToSelfSigned records the degraded TLS state and serves an ephemeral
+// self-signed certificate over HTTPS, keeping the recovery UI on an encrypted
+// channel rather than cleartext (tls-static.md § 2.4, tls-acme.md § 3.11). HSTS is
+// suppressed while the self-signed cert is in use. The self-signed CertManager is
+// registered for in-place reload so a later valid certificate (an admin save or
+// ACME issuance) promotes it without a restart. If the self-signed listener
+// cannot be generated or built, it falls back to plain HTTP as a last resort.
+//
+// hosts are the names placed in the self-signed cert SANs (nil ⇒ localhost).
+func (app *serverApp) degradeToSelfSigned(handler http.Handler, hosts []string, cause error) serverResult {
+	reason := fmt.Sprintf("TLS listener setup failed: %v", cause)
+
+	certPEM, keyPEM, genErr := apptls.GenerateSelfSigned(hosts)
+	if genErr != nil {
+		app.startup.Error(fmt.Sprintf("self-signed fallback generation failed: %v — falling back to plain HTTP", genErr))
+		return app.degradeToPlainHTTP(handler, cause)
+	}
+
+	shutdownTimeout := time.Duration(app.cfg.Server.GracefulShutdownSeconds) * time.Second
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = 15 * time.Second
+	}
+
+	// No CAPath here: a degraded listener must never require client certs, or an
+	// mTLS misconfig would re-lock the very UI we are trying to keep reachable.
+	lcfg := apptls.ListenerConfig{
+		ListenAddress:           app.cfg.Server.ListenAddress,
+		Port:                    app.cfg.Server.Port,
+		CertSource:              "db",
+		CertPEM:                 certPEM,
+		KeyPEM:                  keyPEM,
+		MinVersion:              app.cfg.Server.TLS.MinVersion,
+		GracefulShutdownTimeout: shutdownTimeout,
+		TrustedProxy:            app.cfg.Server.TrustedProxy,
+		HSTSEnabled:             app.hstsEnabledFn(),
+	}
+
+	selfListener, err := apptls.NewListener(handler, lcfg, app.tlsLog)
+	if err != nil {
+		app.startup.Error(fmt.Sprintf("self-signed fallback listener failed: %v — falling back to plain HTTP", err))
+		return app.degradeToPlainHTTP(handler, cause)
+	}
+
+	app.startup.Error(reason +
+		" — serving an untrusted self-signed certificate over HTTPS (degraded); fix the certificate and restart")
+	if app.tlsStatus != nil {
+		app.tlsStatus.SetDegradedKind(webapi.DegradedKindSelfSigned, reason)
+	}
+	if app.tlsReload != nil {
+		// Let an admin save / ACME issuance promote a real cert in place.
+		app.tlsReload.Set(selfListener.CertManager())
+	}
+
+	return serverResult{errCh: selfListener.Serve(), tlsListener: selfListener}
+}
+
 // degradeToPlainHTTP records the degraded TLS state and starts a plain HTTP
-// listener as a fallback (tls.md § 2.4). The operator-facing reason never
-// includes private key material — it is the listener-setup error, which reports
-// file paths and parse failures only.
+// listener as a last-resort fallback (tls.md § 6.3), used only when even the
+// self-signed degraded listener cannot be brought up. The operator-facing reason
+// never includes private key material — it is the listener-setup error, which
+// reports file paths and parse failures only.
 func (app *serverApp) degradeToPlainHTTP(handler http.Handler, cause error) serverResult {
 	reason := fmt.Sprintf("TLS listener setup failed: %v", cause)
 	app.startup.Error(reason +
@@ -1602,6 +1761,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 		}
 	}
 
+	// Stop the ACME renewal loop first (mode: acme) so no new issuance starts
+	// while we drain.
+	if srv.renewerCancel != nil {
+		app.startup.Info("stopping ACME renewal loop...")
+		srv.renewerCancel()
+	}
+
 	// Graceful shutdown — stop the scheduler first so no new collection
 	// runs start, then shut down the HTTP server.
 	app.startup.Info("stopping collection scheduler...")
@@ -1617,6 +1783,15 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
+
+	// Drain the ACME http-01 challenge/redirect server (mode: acme) alongside
+	// the HTTPS listener. A shutdown error here is logged but not fatal.
+	if srv.challengeSrv != nil {
+		app.startup.Info("shutting down ACME challenge/redirect server...")
+		if err := srv.challengeSrv.Shutdown(shutdownCtx); err != nil {
+			app.startup.Error(fmt.Sprintf("ACME challenge server shutdown: %v", err))
+		}
+	}
 
 	if srv.tlsListener != nil {
 		if err := srv.tlsListener.Shutdown(shutdownCtx); err != nil {
@@ -1644,6 +1819,13 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 // ---------------------------------------------------------------------------
 
 func run() int {
+	// Repair subcommands are dispatched before flag parsing: `tls reset` /
+	// `tls clear-ca` are host-side lockout recovery (tls.md § 6.3) and do not
+	// share the server's flag set.
+	if len(os.Args) > 1 && os.Args[1] == "tls" {
+		return runTLSCommand(os.Args[2:])
+	}
+
 	flags := parseCLI()
 
 	if flags.showVersion {

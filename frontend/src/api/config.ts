@@ -25,6 +25,8 @@ export type {
   ConfigOrganisation,
   ConfigOrganisation as Organisation,
   ServerConfig,
+  CertMetadata,
+  AcmeStatus,
   AuthConfig,
   AuthProvider,
 } from "../types/config";
@@ -33,6 +35,25 @@ import { apiFetch, buildUrl } from "./client";
 export interface PutConfigResponse<T> {
   value: T;
   restartRequired: boolean;
+}
+
+// Request body for the CSR generation endpoint (tls-csr.md § 4.3). All fields
+// except an identifier (common_name or a SAN) are optional.
+export interface GenerateCSRRequest {
+  common_name: string;
+  organization?: string;
+  organizational_unit?: string;
+  country?: string;
+  dns_sans?: string[];
+  ip_sans?: string[];
+  key_algorithm?: string;
+}
+
+// Response from the CSR generation endpoint. The CSR PEM is downloadable; the
+// private key is stored as pending server-side and never returned (tls-csr.md § 4.2).
+export interface GenerateCSRResponse {
+  csr_pem: string;
+  key_algorithm: string;
 }
 
 function apiMutateConfig<T>(
@@ -176,6 +197,23 @@ export function saveAuthConfig(
   value: AuthConfig,
 ): Promise<PutConfigResponse<AuthConfig>> {
   return apiMutateConfig<AuthConfig>(buildUrl("/admin/config/auth"), value);
+}
+
+// Generate a keypair + CSR for cert_source: db static issuance. The server
+// stores the new private key as pending and returns only the CSR PEM; the
+// operator submits it to their CA and pastes the signed cert back through the
+// server-config save path, which match-and-promotes the pending key (tls-csr.md § 4).
+export function generateCSR(
+  req: GenerateCSRRequest,
+): Promise<GenerateCSRResponse> {
+  return apiFetch<GenerateCSRResponse>(
+    buildUrl("/admin/config/server/generate-csr"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    },
+  );
 }
 
 // apiMutateConfig is exported so domain modules that use the same config

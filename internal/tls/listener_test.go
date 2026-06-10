@@ -27,7 +27,7 @@ func TestHSTSMiddleware_AddsHeaderOnTLS(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner, false) // trustedProxy=false; TLS is direct
+	handler := HSTSMiddleware(inner, false, nil) // trustedProxy=false; TLS is direct
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	// Simulate TLS by setting the TLS field.
@@ -53,7 +53,7 @@ func TestHSTSMiddleware_AddsHeaderOnXForwardedProto_WhenTrusted(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner, true) // trustedProxy=true
+	handler := HSTSMiddleware(inner, true, nil) // trustedProxy=true
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
@@ -72,7 +72,7 @@ func TestHSTSMiddleware_IgnoresXForwardedProto_WhenNotTrusted(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner, false) // trustedProxy=false
+	handler := HSTSMiddleware(inner, false, nil) // trustedProxy=false
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
@@ -91,7 +91,7 @@ func TestHSTSMiddleware_NoHeaderOnPlainHTTP(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner, false)
+	handler := HSTSMiddleware(inner, false, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	// No TLS, no X-Forwarded-Proto.
@@ -112,7 +112,7 @@ func TestHSTSMiddleware_PassesThroughToHandler(t *testing.T) {
 		fmt.Fprint(w, "body content")
 	})
 
-	handler := HSTSMiddleware(inner, false)
+	handler := HSTSMiddleware(inner, false, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.TLS = &tls.ConnectionState{}
@@ -136,7 +136,7 @@ func TestHSTSMiddleware_XForwardedProtoCaseInsensitive(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner, true) // trustedProxy=true
+	handler := HSTSMiddleware(inner, true, nil) // trustedProxy=true
 
 	for _, proto := range []string{"HTTPS", "Https", "https", "hTtPs"} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -157,7 +157,7 @@ func TestHSTSMiddleware_NoHeaderOnHTTPXForwardedProto(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := HSTSMiddleware(inner, true)
+	handler := HSTSMiddleware(inner, true, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-Proto", "http")
@@ -168,6 +168,39 @@ func TestHSTSMiddleware_NoHeaderOnHTTPXForwardedProto(t *testing.T) {
 	hsts := rr.Header().Get("Strict-Transport-Security")
 	if hsts != "" {
 		t.Errorf("expected no HSTS header for X-Forwarded-Proto=http, got %q", hsts)
+	}
+}
+
+func TestHSTSMiddleware_SuppressedWhenDisabled(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Degraded self-signed mode: the live gate returns false, so HSTS must NOT
+	// be sent even though the connection is TLS — pinning it over an untrusted
+	// cert would lock the operator out (tls-static.md § 2.4).
+	enabled := false
+	handler := HSTSMiddleware(inner, false, func() bool { return enabled })
+
+	reqTLS := func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.TLS = &tls.ConnectionState{}
+		return r
+	}
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, reqTLS())
+	if got := rr.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("expected HSTS suppressed while degraded, got %q", got)
+	}
+
+	// Promotion to a real cert flips the gate live — HSTS resumes with no
+	// reconstruction of the middleware.
+	enabled = true
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, reqTLS())
+	if got := rr2.Header().Get("Strict-Transport-Security"); got == "" {
+		t.Fatal("expected HSTS to resume once the gate returns true")
 	}
 }
 
@@ -327,6 +360,77 @@ func TestRedirectHandler_PostMethod(t *testing.T) {
 	// serves ONLY redirects.
 	if rr.Code != http.StatusMovedPermanently {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusMovedPermanently)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests: NewChallengeRedirectServer (ACME http-01)
+// ---------------------------------------------------------------------------
+
+// challengeStub is a trivial handler standing in for the ACME HTTP-01 solver's
+// Handler(): it answers any request under the challenge prefix with 200 + body.
+func challengeStub() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("challenge-body"))
+	})
+}
+
+func TestChallengeRedirectServer_ServesChallengePath(t *testing.T) {
+	srv := NewChallengeRedirectServer("0.0.0.0", 80, 8443, challengeStub())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/.well-known/acme-challenge/tok-1", nil)
+	req.Host = "example.com"
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+
+	// The challenge handler takes priority — no redirect.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (challenge served, not redirected)", rr.Code)
+	}
+	if rr.Body.String() != "challenge-body" {
+		t.Errorf("body = %q, want the challenge body", rr.Body.String())
+	}
+	if loc := rr.Header().Get("Location"); loc != "" {
+		t.Errorf("challenge path must not be redirected, got Location %q", loc)
+	}
+}
+
+func TestChallengeRedirectServer_RedirectsEverythingElse(t *testing.T) {
+	srv := NewChallengeRedirectServer("0.0.0.0", 80, 8443, challengeStub())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/dashboard?org=prod", nil)
+	req.Host = "example.com"
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMovedPermanently {
+		t.Fatalf("status = %d, want %d (redirect)", rr.Code, http.StatusMovedPermanently)
+	}
+	want := "https://example.com:8443/dashboard?org=prod"
+	if loc := rr.Header().Get("Location"); loc != want {
+		t.Errorf("Location = %q, want %q", loc, want)
+	}
+}
+
+func TestChallengeRedirectServer_RedirectsStandardHTTPSPort(t *testing.T) {
+	srv := NewChallengeRedirectServer("0.0.0.0", 80, 443, challengeStub())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Host = "example.com"
+	rr := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rr, req)
+
+	want := "https://example.com/"
+	if loc := rr.Header().Get("Location"); loc != want {
+		t.Errorf("Location = %q, want %q (no port for 443)", loc, want)
+	}
+}
+
+func TestChallengeRedirectServer_Addr(t *testing.T) {
+	srv := NewChallengeRedirectServer("127.0.0.1", 80, 8443, challengeStub())
+	if srv.Addr != "127.0.0.1:80" {
+		t.Errorf("Addr = %q, want 127.0.0.1:80", srv.Addr)
 	}
 }
 

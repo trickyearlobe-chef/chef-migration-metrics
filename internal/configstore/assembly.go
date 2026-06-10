@@ -45,6 +45,7 @@ const (
 	KeyServerTLS                  = "server.tls"
 	KeyServerWebSocket            = "server.websocket"
 	KeyServerGracefulShutdown     = "server.graceful_shutdown_seconds"
+	KeyServerTrustedProxy         = "server.trusted_proxy"
 	KeyFrontend                   = "frontend"
 	KeyLogging                    = "logging"
 	KeyAuth                       = "auth"
@@ -54,6 +55,48 @@ const (
 	KeyPerformance                = "performance"
 	KeyBackup                     = "backup"
 	KeyCredentialEncryptionKeyEnv = "credential_encryption_key_env"
+
+	// DB cert_source TLS material. These are standalone config-store entries,
+	// NOT config sections: they are written and read directly by the admin TLS
+	// save path and the static-mode listener wiring, and are deliberately
+	// excluded from AllConfigKeys/ConfigToSections so config assembly never
+	// tries to fold PEM material into a config struct. The certificate is
+	// stored non-secret (public); the private key is stored secret (encrypted,
+	// never returned by any API). See tls-static.md § 2.7.
+	KeyServerTLSCertificate       = "server.tls.certificate"
+	KeyServerTLSPrivateKey        = "server.tls.private_key"
+	KeyServerTLSPrivateKeyPending = "server.tls.private_key.pending"
+
+	// ACME state material. Like the static cert keys above, these are
+	// standalone config-store entries written and read directly by the ACME
+	// engine (internal/acme), NOT config sections — they are excluded from
+	// AllConfigKeys/ConfigToSections so config assembly never folds key/cert
+	// material into a config struct. The account key and issued private key are
+	// secret (encrypted, never returned by any API); the issued cert is public.
+	// See tls-acme.md § 3.5.
+	KeyServerTLSACMEAccountKey = "server.tls.acme.account_key"
+	KeyServerTLSACMECert       = "server.tls.acme.cert"
+	KeyServerTLSACMEKey        = "server.tls.acme.key"
+
+	// Route 53 DNS-01 solver settings. Like the ACME state keys above, these are
+	// standalone config-store entries read directly by the Route 53 solver
+	// (internal/acme), NOT config sections, so they are excluded from
+	// AllConfigKeys/ConfigToSections. The access key ID and secret access key are
+	// secret (encrypted, never returned by any API); region and hosted zone ID
+	// are public. They are the highest-priority source in the AWS credential and
+	// region/zone resolution order (env vars and the IAM instance role follow).
+	// See tls-acme.md § 3.4 / § 3.5.
+	KeyServerTLSACMERoute53AccessKeyID     = "server.tls.acme.route53.access_key_id"
+	KeyServerTLSACMERoute53SecretAccessKey = "server.tls.acme.route53.secret_access_key"
+	KeyServerTLSACMERoute53Region          = "server.tls.acme.route53.region"
+	KeyServerTLSACMERoute53HostedZoneID    = "server.tls.acme.route53.hosted_zone_id"
+
+	// ACME operator status (tls-acme.md § 3.14). A standalone, non-secret,
+	// non-key entry written only by the renewer (last renewal time, last
+	// renewal error, last hostname-registration error) and read by the admin
+	// config GET to populate the Server & TLS status panel. Excluded from
+	// AllConfigKeys/ConfigToSections like the other acme.* state keys.
+	KeyServerTLSACMEStatus = "server.tls.acme.status"
 )
 
 // ServerListenSection is the JSON/YAML shape of the `server.listen` config
@@ -83,6 +126,7 @@ func AllConfigKeys() []string {
 		KeyServerTLS,
 		KeyServerWebSocket,
 		KeyServerGracefulShutdown,
+		KeyServerTrustedProxy,
 		KeyFrontend,
 		KeyLogging,
 		KeyAuth,
@@ -198,6 +242,8 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 		return yamlUnmarshalInto(&cfg.Server.WebSocket, raw, key)
 	case KeyServerGracefulShutdown:
 		return yamlUnmarshalInto(&cfg.Server.GracefulShutdownSeconds, raw, key)
+	case KeyServerTrustedProxy:
+		return yamlUnmarshalInto(&cfg.Server.TrustedProxy, raw, key)
 	case KeyFrontend:
 		return yamlUnmarshalInto(&cfg.Frontend, raw, key)
 	case KeyLogging:
@@ -263,9 +309,10 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 			ListenAddress: cfg.Server.ListenAddress,
 			Port:          cfg.Server.Port,
 		},
-		KeyServerTLS: cfg.Server.TLS,
+		KeyServerTLS:              cfg.Server.TLS,
 		KeyServerWebSocket:        cfg.Server.WebSocket,
 		KeyServerGracefulShutdown: cfg.Server.GracefulShutdownSeconds,
+		KeyServerTrustedProxy:     cfg.Server.TrustedProxy,
 		KeyFrontend:               cfg.Frontend,
 		KeyLogging:                cfg.Logging,
 		KeyAuth:                   cfg.Auth,
@@ -304,6 +351,18 @@ func SerializeValue(v any) (json.RawMessage, error) {
 		return nil, err
 	}
 	return json.RawMessage(data), nil
+}
+
+// DeserializeValue unmarshals a stored config-store JSON value into v using the
+// struct's yaml tags (snake_case), the inverse of SerializeValue. JSON is a
+// subset of YAML so the YAML decoder reads the stored JSON value correctly. Use
+// this to decode a single section (e.g. server.tls) into its config sub-struct
+// without assembling the whole config.
+func DeserializeValue(raw json.RawMessage, v any) error {
+	if err := yaml.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("configstore: deserialize value: %w", err)
+	}
+	return nil
 }
 
 // yamlToJSON serialises a value to JSON by first marshalling to YAML (which

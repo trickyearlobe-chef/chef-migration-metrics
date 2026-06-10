@@ -61,19 +61,67 @@ export interface ACMEConfig {
   ca_url: string;
   challenge: string;
   dns_provider: string;
+  // Provider-specific key/value pairs. For route53: region, hosted_zone_id.
+  dns_provider_config: Record<string, string>;
+  // Deprecated/unused: ACME state lives encrypted in the config store, not on
+  // disk. Retained for backward-compatible parsing.
   storage_path: string;
   renew_before_days: number;
   agree_to_tos: boolean;
+  // Hostname self-registration (tls-acme.md § 3.13): publish an A record per
+  // domain pointing at the host. Opt-in, only meaningful with dns_provider:
+  // route53. IP source precedence: hostname_ip > hostname_interface > auto.
+  register_hostname: boolean;
+  hostname_ttl: number;
+  hostname_interface: string;
+  hostname_ip: string;
+  // Write-only Route 53 DNS-01 credentials. Sent under tls.acme.route53 on save
+  // and routed server-side to encrypted secret keys; never returned by GET (so
+  // they stay undefined after load). region/hosted_zone_id are non-secret and
+  // travel in dns_provider_config. See tls-acme.md § 3.4/§ 3.5.
+  route53?: {
+    access_key_id?: string;
+    secret_access_key?: string;
+  };
+}
+
+// Operator-facing ACME health, returned read-only by GET /admin/config/server
+// as `acme_status` when tls.mode is 'acme' (tls-acme.md § 3.14). All times are
+// RFC 3339 strings; a field is empty/absent when not yet applicable.
+export interface AcmeStatus {
+  last_renewal?: string;
+  last_error?: string;
+  hostname_error?: string;
+}
+
+// Operator-safe metadata for the installed cert_source: db certificate.
+// Returned read-only by GET /admin/config/server as `tls_certificate_info`;
+// the private key is never included.
+export interface CertMetadata {
+  subject: string;
+  issuer: string;
+  dns_names?: string[];
+  ip_addresses?: string[];
+  not_before: string;
+  not_after: string;
 }
 
 export interface TLSConfig {
   mode: string;
+  // Where the cert/key come from: 'file' (paths below) or 'db' (encrypted in
+  // the config store, managed via the admin UI).
+  cert_source: string;
   cert_path: string;
   key_path: string;
   ca_path: string;
   min_version: string;
   http_redirect_port: number;
   acme: ACMEConfig;
+  // Write-only PEM material for cert_source: db. Sent on save; never returned
+  // by GET (so they stay undefined after load and clear after a save). The
+  // private key is secret and never echoed back by any API.
+  certificate?: string;
+  private_key?: string;
 }
 
 export interface WebSocketConfig {
@@ -91,6 +139,16 @@ export interface ServerConfig {
   tls: TLSConfig;
   websocket: WebSocketConfig;
   graceful_shutdown_seconds: number;
+  // True when a trusted reverse proxy terminates TLS in front of the app: the
+  // local listener serves plain HTTP (tls.mode off) and X-Forwarded-Proto is
+  // trusted for HSTS/scheme detection (tls.md § 9.1). Default false.
+  trusted_proxy: boolean;
+  // Read-only metadata for the installed certificate (cert_source: db, or the
+  // issued ACME cert when mode is 'acme'), attached by GET. Never sent on save.
+  tls_certificate_info?: CertMetadata;
+  // Read-only ACME operator status, attached by GET when mode is 'acme'
+  // (tls-acme.md § 3.14). Never sent on save.
+  acme_status?: AcmeStatus;
 }
 
 export interface AuthProvider {

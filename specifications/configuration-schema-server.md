@@ -127,7 +127,12 @@ server:
       challenge: "http-01"         # "http-01" | "tls-alpn-01" | "dns-01"
       dns_provider: ""             # Required when challenge is dns-01
       dns_provider_config: {}      # Provider-specific key/value pairs
-      storage_path: "/var/lib/chef-migration-metrics/acme"
+      register_hostname: false     # Publish an A record per domain via route53
+      hostname_ttl: 60             # A-record TTL in seconds
+      hostname_interface: ""       # Use this interface's IPv4 (else auto-detect)
+      hostname_ip: ""              # Use this literal IPv4 (highest precedence)
+      # storage_path: deprecated and ignored — ACME state is DB-backed (no disk
+      # storage; see tls-acme.md § 3.5). Retained only so old YAML still parses.
       renew_before_days: 30        # Begin renewal this many days before expiry
       agree_to_tos: false          # Must be true to accept the CA's Terms of Service
       trusted_roots: ""            # Optional: PEM file of additional CA roots to trust
@@ -172,28 +177,32 @@ server:
 
 | Setting | Required | Default | Notes |
 |---------|----------|---------|-------|
-| `tls.cert_path` | Yes | — | Path to PEM-encoded TLS certificate file. May include intermediate certificates (full chain). Must be readable by the application process. |
-| `tls.key_path` | Yes | — | Path to PEM-encoded private key file. Must be readable by the application process. Never commit to source control. |
+| `tls.cert_source` | No | `file` | Where the cert/key come from: `file` (paths below) or `db` (cert/key stored encrypted in the config store, managed via the admin UI). |
+| `tls.cert_path` | When `cert_source: file` | — | Path to PEM-encoded TLS certificate file. May include intermediate certificates (full chain). Must be readable by the application process. |
+| `tls.key_path` | When `cert_source: file` | — | Path to PEM-encoded private key file. Must be readable by the application process. Never commit to source control. |
 | `tls.ca_path` | No | `""` | Path to a PEM-encoded CA bundle. When set, enables mutual TLS (mTLS) — the server requires and validates client certificates against this CA. |
 
-Certificates are automatically reloaded on `SIGHUP` or when file changes are detected via filesystem watching. See [TLS specification § 2.3](tls.md#23-certificate-reload).
+For `cert_source: file`, certificates are reloaded on `SIGHUP` or when file changes are detected via filesystem watching. For `cert_source: db`, the cert/key live encrypted in the config store and reload on config change. See [TLS specification § 2.3](tls-static.md#23-certificate-reload).
 
 #### ACME Settings (mode: acme)
 
 | Setting | Required | Default | Notes |
 |---------|----------|---------|-------|
-| `tls.acme.domains` | Yes | `[]` | Domain names for the certificate. Must be resolvable and (for HTTP-01/TLS-ALPN-01) reachable from the internet. |
+| `tls.acme.domains` | Yes | `[]` | Domain names for the certificate. Must be resolvable and (for HTTP-01) reachable from the internet. |
 | `tls.acme.email` | Yes | `""` | Contact email registered with the ACME CA. Used for expiry notifications from the CA. |
 | `tls.acme.ca_url` | No | Let's Encrypt production | ACME directory URL. Use `https://acme-staging-v02.api.letsencrypt.org/directory` for testing. |
-| `tls.acme.challenge` | No | `http-01` | Challenge type: `http-01`, `tls-alpn-01`, or `dns-01`. |
-| `tls.acme.dns_provider` | When `dns-01` | `""` | DNS provider for DNS-01 challenges: `route53`, `cloudflare`, `gcloud`, `azure`, `rfc2136`. |
-| `tls.acme.dns_provider_config` | When `dns-01` | `{}` | Provider-specific configuration. Credentials should use `_env`-suffixed keys referencing environment variables. |
-| `tls.acme.storage_path` | No | `/var/lib/chef-migration-metrics/acme` | Persistent directory for ACME account keys, certificates, and metadata. Must survive restarts. |
+| `tls.acme.challenge` | No | `http-01` | Challenge type: `http-01` or `dns-01`. |
+| `tls.acme.dns_provider` | When `dns-01` | `""` | DNS provider for DNS-01 challenges. Supported: `route53`. |
+| `tls.acme.dns_provider_config` | When `dns-01` | `{}` | Provider config. For `route53`: `region`, `hosted_zone_id`. AWS credentials resolve from encrypted config-store secrets (`tls.acme.route53.access_key_id`/`.secret_access_key`), then `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, then IAM instance role. |
+| `tls.acme.register_hostname` | No | `false` | When `dns_provider: route53`, publish/maintain an A record for each `domains` entry so the FQDN resolves to this host. Off by default (manual FQDN management). See [tls-acme.md § 3.13](tls-acme.md#313-hostname-self-registration-route-53-a-record). |
+| `tls.acme.hostname_ttl` | No | `60` | TTL (seconds) for self-registered A records. Low because the host IP is often DHCP-assigned. |
+| `tls.acme.hostname_interface` | No | `""` | Publish the global-unicast IPv4 of this named interface (e.g. `eth0`). Empty = auto-detect the default-route interface. |
+| `tls.acme.hostname_ip` | No | `""` | Publish this literal IPv4. Highest precedence; overrides `hostname_interface` and auto-detect. |
 | `tls.acme.renew_before_days` | No | `30` | Begin certificate renewal this many days before expiry. Must be between 1 and 89. |
-| `tls.acme.agree_to_tos` | Yes | `false` | Must be explicitly set to `true`. The application refuses to start in ACME mode until the operator accepts the CA's Terms of Service. |
+| `tls.acme.agree_to_tos` | Yes | `false` | Must be explicitly set to `true`. The application will not obtain certificates in ACME mode until the operator accepts the CA's Terms of Service. |
 | `tls.acme.trusted_roots` | No | `""` | Path to a PEM file of additional CA roots to trust when communicating with the ACME CA (useful for private ACME servers). |
 
-See [TLS specification § 3](tls.md#3-acme-automatic-certificate-management) for full details on challenge types, DNS provider configuration, certificate storage, renewal, multi-replica coordination, and rate limits.
+ACME account key, issued cert/key, and Route 53 credentials are stored encrypted in the config store (not on disk — there is no `storage_path`). See [TLS specification § 3](tls-acme.md#3-acme-automatic-certificate-management) for full details on challenge types, DNS provider configuration, DB-backed storage, renewal, fail-open, and rate limits.
 
 #### Backward Compatibility
 

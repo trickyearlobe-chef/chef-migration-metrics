@@ -3144,3 +3144,343 @@ func TestTestKitchenConfig_EffectiveOrphanSweepAge(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TLS cert_source (Chunk 1: cert/key in DB)
+// ---------------------------------------------------------------------------
+
+func TestDefaults_TLSCertSource(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if cfg.Server.TLS.CertSource != "file" {
+		t.Errorf("expected tls.cert_source 'file', got %q", cfg.Server.TLS.CertSource)
+	}
+}
+
+func TestEnvOverride_TLSCertSource(t *testing.T) {
+	t.Setenv("CHEF_MIGRATION_METRICS_SERVER_TLS_CERT_SOURCE", "db")
+	cfg := mustParse(t, minimalValidYAML())
+	if cfg.Server.TLS.CertSource != "db" {
+		t.Errorf("cert_source env override not applied: %q", cfg.Server.TLS.CertSource)
+	}
+}
+
+func TestValidation_TLSCertSourceInvalid(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: static
+    cert_source: banana
+`
+	expectParseError(t, yaml, "cert_source")
+}
+
+// cert_source: db does NOT require cert_path/key_path — the cert/key live
+// encrypted in the config store, validated at save/preflight not startup
+// (tls-static.md § 2.4/§ 2.7).
+func TestValidation_TLSStaticDBSourceNoPathsOK(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: static
+    cert_source: db
+`
+	mustParse(t, yaml)
+}
+
+// Explicit cert_source: file still requires the paths (back-compat default).
+func TestValidation_TLSStaticFileSourceMissingCertPath(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: static
+    cert_source: file
+`
+	expectParseError(t, yaml, "cert_path is required")
+}
+
+// ---------------------------------------------------------------------------
+// ACME dns-01 Route 53 region / hosted_zone_id (Chunk 1)
+// ---------------------------------------------------------------------------
+
+func clearAWSEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+}
+
+func TestValidation_ACMEDNS01Route53MissingRegion(t *testing.T) {
+	clearAWSEnv(t)
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: dns-01
+      dns_provider: route53
+      dns_provider_config:
+        hosted_zone_id: Z0123456789ABCDEFGHIJ
+`
+	expectParseError(t, yaml, "region")
+}
+
+func TestValidation_ACMEDNS01Route53MissingHostedZone(t *testing.T) {
+	clearAWSEnv(t)
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: dns-01
+      dns_provider: route53
+      dns_provider_config:
+        region: us-east-1
+`
+	expectParseError(t, yaml, "hosted_zone_id")
+}
+
+func TestValidation_ACMEDNS01Route53Valid(t *testing.T) {
+	clearAWSEnv(t)
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: dns-01
+      dns_provider: route53
+      dns_provider_config:
+        region: us-east-1
+        hosted_zone_id: Z0123456789ABCDEFGHIJ
+`
+	mustParse(t, yaml)
+}
+
+// Region from env satisfies the region requirement.
+func TestValidation_ACMEDNS01Route53RegionFromEnv(t *testing.T) {
+	clearAWSEnv(t)
+	t.Setenv("AWS_REGION", "eu-west-1")
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: dns-01
+      dns_provider: route53
+      dns_provider_config:
+        hosted_zone_id: Z0123456789ABCDEFGHIJ
+`
+	mustParse(t, yaml)
+}
+
+// Env credentials (AWS_ACCESS_KEY_ID) are the "supplied via env/role" escape:
+// when present, region/hosted_zone need not be in dns_provider_config
+// (tls-acme.md § 3.10).
+func TestValidation_ACMEDNS01Route53EnvCredsSkip(t *testing.T) {
+	clearAWSEnv(t)
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: dns-01
+      dns_provider: route53
+`
+	mustParse(t, yaml)
+}
+
+// ---------------------------------------------------------------------------
+// ACME hostname self-registration (Chunk 9a, tls-acme.md § 3.13)
+// ---------------------------------------------------------------------------
+
+func acmeHostnameYAML(t *testing.T, extra string) string {
+	t.Helper()
+	return `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: dns-01
+      dns_provider: route53
+      dns_provider_config:
+        region: us-east-1
+        hosted_zone_id: Z0123456789ABCDEFGHIJ
+` + extra
+}
+
+func TestACMEHostnameTTLDefaults60(t *testing.T) {
+	clearAWSEnv(t)
+	cfg := mustParse(t, acmeHostnameYAML(t, "      register_hostname: true\n"))
+	if cfg.Server.TLS.ACME.HostnameTTL != 60 {
+		t.Errorf("hostname_ttl default = %d, want 60", cfg.Server.TLS.ACME.HostnameTTL)
+	}
+}
+
+func TestACMEHostnameValid(t *testing.T) {
+	clearAWSEnv(t)
+	cfg := mustParse(t, acmeHostnameYAML(t,
+		"      register_hostname: true\n      hostname_ttl: 120\n      hostname_ip: 10.0.0.5\n"))
+	if !cfg.Server.TLS.ACME.RegisterHostname {
+		t.Error("register_hostname should be true")
+	}
+	if cfg.Server.TLS.ACME.HostnameIP != "10.0.0.5" {
+		t.Errorf("hostname_ip = %q, want 10.0.0.5", cfg.Server.TLS.ACME.HostnameIP)
+	}
+}
+
+func TestACMEHostnameRequiresRoute53(t *testing.T) {
+	clearAWSEnv(t)
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: http-01
+      register_hostname: true
+    http_redirect_port: 80
+`
+	expectParseError(t, yaml, "register_hostname requires dns_provider: route53")
+}
+
+func TestACMEHostnameInvalidIP(t *testing.T) {
+	clearAWSEnv(t)
+	expectParseError(t, acmeHostnameYAML(t,
+		"      register_hostname: true\n      hostname_ip: not-an-ip\n"), "hostname_ip")
+}
+
+func TestACMEHostnameIPv6Rejected(t *testing.T) {
+	clearAWSEnv(t)
+	expectParseError(t, acmeHostnameYAML(t,
+		"      register_hostname: true\n      hostname_ip: \"2001:db8::1\"\n"), "hostname_ip")
+}
+
+func TestACMEHostnameTTLOutOfRange(t *testing.T) {
+	clearAWSEnv(t)
+	expectParseError(t, acmeHostnameYAML(t,
+		"      register_hostname: true\n      hostname_ttl: 999999\n"), "hostname_ttl")
+}
+
+// register_hostname off leaves the fields unvalidated (no route53 requirement).
+func TestACMEHostnameDisabledSkipsValidation(t *testing.T) {
+	clearAWSEnv(t)
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  tls:
+    mode: acme
+    acme:
+      domains:
+        - example.com
+      email: test@example.com
+      agree_to_tos: true
+      challenge: http-01
+      register_hostname: false
+      hostname_ip: not-an-ip
+    http_redirect_port: 80
+`
+	mustParse(t, yaml)
+}

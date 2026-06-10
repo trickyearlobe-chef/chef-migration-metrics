@@ -18,16 +18,9 @@ Settings intentionally file-only (no UI needed):
 
 ### TLS and Certificate Management
 
-- [ ] Implement ACME client integration (CertMagic recommended)
-- [ ] Implement ACME HTTP-01 challenge handler on the redirect listener
-- [ ] Implement ACME DNS-01 challenge support with Route 53 provider
-- [ ] Implement ACME certificate storage to `acme.storage_path` with correct permissions (0700/0600)
-- [ ] Implement automatic certificate renewal before expiry (`renew_before_days`)
-- [ ] Implement exponential backoff on ACME renewal failure (1h → 24h cap)
-- [ ] Log ACME certificate obtained/renewed at `INFO`, renewal failure at `ERROR`
-- [ ] Log `WARN` when certificate is within 7 days of expiry and renewal has not succeeded
-- [ ] Implement `agree_to_tos` gate — refuse to start in ACME mode unless `true`
-- [ ] Log `WARN` when ACME staging CA URL is detected
-- [ ] Implement backward compatibility: treat `tls.enabled: true` as `mode: static` with deprecation warning
-- [ ] Validate all ACME settings on startup (domains, email, agree_to_tos, storage_path, challenge, dns_provider)
-- [ ] Validate `http_redirect_port` is set when `challenge: http-01`
+Done — TLS-in-DB / CSR / ACME branch (`feature/tls-db-certs-csr-acme`, Chunks 7–10).
+ACME runs on `x/crypto/acme` directly (CertMagic/lego deliberately rejected,
+`tls-acme.md` § 3.1); all state is DB-backed (no `storage_path`). HTTP-01 +
+Route 53 DNS-01 solvers, renewal with 1h→24h backoff + 7-day expiry WARN,
+`agree_to_tos` gate, staging-CA WARN, `tls.enabled`→`mode` deprecation, and
+startup validation all shipped. See `plans/tls-db-certs-csr-acme.md`.

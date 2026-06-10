@@ -122,6 +122,32 @@ func TestHandleServerTLSStatus_PublicNoDB(t *testing.T) {
 	}
 }
 
+func TestTLSStatusHolder_KindAndHealthyRoundTrip(t *testing.T) {
+	holder := NewTLSStatusHolder()
+
+	// Default SetDegraded is the last-resort plain kind.
+	holder.SetDegraded("boom")
+	if got := holder.Status().Kind; got != DegradedKindPlain {
+		t.Errorf("SetDegraded kind = %q, want %q", got, DegradedKindPlain)
+	}
+
+	// Self-signed degraded carries its kind for the banner.
+	holder.SetDegradedKind(DegradedKindSelfSigned, "bad cert")
+	st := holder.Status()
+	if !st.Degraded || st.Kind != DegradedKindSelfSigned || st.Reason != "bad cert" {
+		t.Errorf("SetDegradedKind = %+v, want self-signed/bad cert/degraded", st)
+	}
+	if !holder.IsDegraded() {
+		t.Error("IsDegraded should be true while degraded")
+	}
+
+	// Promotion to a real cert clears everything.
+	holder.SetHealthy()
+	if holder.IsDegraded() || holder.Status().Kind != "" || holder.Status().Reason != "" {
+		t.Errorf("after SetHealthy: %+v, want zero", holder.Status())
+	}
+}
+
 // The holder must be safe for concurrent reads (banner poll) and the one-shot
 // write from the startup goroutine.
 func TestTLSStatusHolder_Concurrent(t *testing.T) {

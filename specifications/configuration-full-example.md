@@ -81,7 +81,6 @@ server:
     #   email: admin@example.com
     #   ca_url: https://acme-v02.api.letsencrypt.org/directory
     #   challenge: http-01
-    #   storage_path: /var/lib/chef-migration-metrics/acme
     #   renew_before_days: 30
     #   agree_to_tos: true
   graceful_shutdown_seconds: 30

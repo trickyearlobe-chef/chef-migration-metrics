@@ -4,13 +4,49 @@
 package webapi
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 )
+
+// dbCertKeySubmission extracts the write-only cert_source: db PEM material from
+// the admin save body. These live under `tls` in the request but are routed to
+// dedicated encrypted config-store keys (configstore.KeyServerTLSCertificate /
+// KeyServerTLSPrivateKey) — never into the server.tls config section — so PEM
+// material is kept out of the assembled config struct and GET responses.
+type dbCertKeySubmission struct {
+	TLS struct {
+		Certificate string `yaml:"certificate"`
+		PrivateKey  string `yaml:"private_key"`
+	} `yaml:"tls"`
+}
+
+// acmeRoute53CredSubmission extracts the write-only Route 53 DNS-01 credentials
+// from the admin save body (tls.acme.route53). Like the cert/key PEM material,
+// these are routed to dedicated encrypted config-store secret keys
+// (configstore.KeyServerTLSACMERoute53AccessKeyID / SecretAccessKey) — never
+// into the server.tls config section — so credentials stay out of the assembled
+// config struct and GET responses (tls-acme.md § 3.4 / § 3.5). region and
+// hosted_zone_id are non-secret and travel in dns_provider_config as normal.
+type acmeRoute53CredSubmission struct {
+	TLS struct {
+		ACME struct {
+			Route53 struct {
+				AccessKeyID     string `yaml:"access_key_id"`
+				SecretAccessKey string `yaml:"secret_access_key"`
+			} `yaml:"route53"`
+		} `yaml:"acme"`
+	} `yaml:"tls"`
+}
 
 // ---------------------------------------------------------------------------
 // GET/PUT /api/v1/admin/config/server
@@ -26,6 +62,13 @@ func (r *Router) handleAdminConfigServer(w http.ResponseWriter, req *http.Reques
 			WriteInternalError(w, "Failed to serialise server config.")
 			return
 		}
+		// For cert_source: db, surface the installed certificate's metadata
+		// (subject/SANs/expiry) so the UI can show what's active. The private
+		// key is never read or returned here.
+		data = r.attachDBCertInfo(req.Context(), cfg, data)
+		// In ACME mode, surface the issued certificate's metadata and the
+		// operator status panel data (tls-acme.md § 3.14).
+		data = r.attachACMEInfo(req.Context(), cfg, data)
 		WriteJSON(w, http.StatusOK, data)
 	case http.MethodPut:
 		r.putAdminConfigServer(w, req)
@@ -42,10 +85,30 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	var input config.ServerConfig
-	if !decodeAdminConfigBody(w, req, &input) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		WriteBadRequest(w, "Failed to read request body.")
 		return
 	}
+
+	var input config.ServerConfig
+	if err := yaml.Unmarshal(body, &input); err != nil {
+		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+		return
+	}
+
+	// cert_source: db submits the cert/key PEM under `tls` in the same body;
+	// they are routed to dedicated encrypted store keys, never the server.tls
+	// section (which has no PEM fields).
+	var dbCerts dbCertKeySubmission
+	_ = yaml.Unmarshal(body, &dbCerts)
+	dbCertPEM := []byte(dbCerts.TLS.Certificate)
+	dbKeyPEM := []byte(dbCerts.TLS.PrivateKey)
+
+	// Route 53 DNS-01 credentials are submitted under tls.acme.route53 and routed
+	// to dedicated encrypted secret keys, never the server.tls section.
+	var r53Creds acmeRoute53CredSubmission
+	_ = yaml.Unmarshal(body, &r53Creds)
 
 	// --- TLS validation ---
 
@@ -69,23 +132,85 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// dbCertProvided is true when a complete cert/key pair is ready to persist
+	// for the DB source (either submitted directly, or a cert matched against a
+	// pending CSR key); set during static validation and used at persist time.
+	// promotePending is true when the pair came from a CSR pending-key match and
+	// the pending key must be deleted after a successful promote.
+	dbCertProvided := false
+	promotePending := false
+
 	if input.TLS.Mode == "static" {
-		if input.TLS.CertPath == "" {
+		switch input.TLS.CertSource {
+		case "", "file":
+			if input.TLS.CertPath == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					"server.tls.cert_path is required when tls.mode is 'static'.")
+				return
+			}
+			if input.TLS.KeyPath == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					"server.tls.key_path is required when tls.mode is 'static'.")
+				return
+			}
+			// Preflight the certificate exactly as the listener does at startup
+			// (files readable, PEM parses, key matches cert). This prevents saving
+			// a TLS configuration that would brick the listener on the next restart.
+			if err := apptls.ValidateStaticPair(input.TLS.CertPath, input.TLS.KeyPath, input.TLS.CAPath); err != nil {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+				return
+			}
+		case "db":
+			// The cert/key live in the encrypted config store, not on disk, so
+			// cert_path/key_path are not required. The pair is submitted in the
+			// request (or already stored from a prior save / CSR promotion).
+			haveCert := len(dbCertPEM) > 0
+			haveKey := len(dbKeyPEM) > 0
+			switch {
+			case haveCert && haveKey:
+				// Preflight the submitted pair before persisting, so a bad pair
+				// can never brick the listener on the next reload/restart.
+				if err := apptls.ValidateStaticPairBytes(dbCertPEM, dbKeyPEM, input.TLS.CAPath); err != nil {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+					return
+				}
+				dbCertProvided = true
+			case haveCert && !haveKey:
+				// Match-and-promote (tls-csr.md § 4.5): an operator pasting a
+				// signed certificate with no key promotes the pending CSR key if
+				// the certificate's public key matches it. The active cert/key are
+				// only replaced on a successful match, preserving fail-open.
+				pendingKeyPEM, ok := r.pendingKeyPEM(req.Context())
+				if !ok {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						"server.tls: a certificate was supplied without a private key and no pending CSR key is stored — submit the matching private key, or generate a CSR first.")
+					return
+				}
+				if err := apptls.ValidateStaticPairBytes(dbCertPEM, pendingKeyPEM, input.TLS.CAPath); err != nil {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						fmt.Sprintf("server.tls: %v — the certificate does not match the pending CSR key; upload the certificate issued for the most recent CSR.", err))
+					return
+				}
+				dbKeyPEM = pendingKeyPEM
+				dbCertProvided = true
+				promotePending = true
+			case !haveCert && haveKey:
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					"server.tls: certificate and private_key must be provided together for cert_source 'db'.")
+				return
+			default:
+				// Neither submitted — only valid if a pair is already stored.
+				if !r.dbCertPairStored(req.Context()) {
+					WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+						"server.tls: cert_source 'db' requires a certificate and private_key (none submitted and none stored).")
+					return
+				}
+			}
+		default:
 			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				"server.tls.cert_path is required when tls.mode is 'static'.")
-			return
-		}
-		if input.TLS.KeyPath == "" {
-			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				"server.tls.key_path is required when tls.mode is 'static'.")
-			return
-		}
-		// Preflight the certificate exactly as the listener does at startup
-		// (files readable, PEM parses, key matches cert). This prevents saving
-		// a TLS configuration that would brick the listener on the next restart.
-		if err := apptls.ValidateStaticPair(input.TLS.CertPath, input.TLS.KeyPath, input.TLS.CAPath); err != nil {
-			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				fmt.Sprintf("server.tls: %v — fix the certificate before saving; the server cannot start TLS with an unusable certificate.", err))
+				fmt.Sprintf("server.tls.cert_source: must be 'file' or 'db', got %q.", input.TLS.CertSource))
 			return
 		}
 	}
@@ -227,10 +352,55 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	ctx := req.Context()
-	for _, key := range []string{configstore.KeyServerListen, configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown} {
+	for _, key := range []string{configstore.KeyServerListen, configstore.KeyServerTLS, configstore.KeyServerWebSocket, configstore.KeyServerGracefulShutdown, configstore.KeyServerTrustedProxy} {
 		if err := r.configStore.Set(ctx, key, sections[key], false, "admin"); err != nil {
 			r.logf("ERROR", "admin/config/server: store %s: %v", key, err)
 			WriteInternalError(w, "Failed to store server config.")
+			return
+		}
+	}
+
+	// Persist a submitted cert_source: db pair to its dedicated encrypted keys:
+	// the certificate non-secret (public), the private key secret (never
+	// returned by any API). Already validated above.
+	if dbCertProvided {
+		certJSON, _ := json.Marshal(string(dbCertPEM))
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSCertificate, certJSON, false, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store TLS certificate: %v", err)
+			WriteInternalError(w, "Failed to store TLS certificate.")
+			return
+		}
+		keyJSON, _ := json.Marshal(string(dbKeyPEM))
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSPrivateKey, keyJSON, true, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store TLS private key: %v", err)
+			WriteInternalError(w, "Failed to store TLS private key.")
+			return
+		}
+		// A promoted CSR key is now active — remove the pending copy (tls-csr.md
+		// § 4.5). Non-fatal: the key is still secret and a new CSR overwrites it.
+		if promotePending {
+			if err := r.configStore.Delete(ctx, configstore.KeyServerTLSPrivateKeyPending); err != nil {
+				r.logf("WARN", "admin/config/server: delete promoted pending key: %v", err)
+			}
+		}
+	}
+
+	// Persist submitted Route 53 DNS-01 credentials as encrypted secrets
+	// (tls-acme.md § 3.4/§ 3.5). Write-only: an empty field leaves the stored
+	// secret untouched so a save that omits credentials does not wipe them.
+	if v := r53Creds.TLS.ACME.Route53.AccessKeyID; v != "" {
+		j, _ := json.Marshal(v)
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSACMERoute53AccessKeyID, j, true, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store route53 access_key_id: %v", err)
+			WriteInternalError(w, "Failed to store Route 53 credentials.")
+			return
+		}
+	}
+	if v := r53Creds.TLS.ACME.Route53.SecretAccessKey; v != "" {
+		j, _ := json.Marshal(v)
+		if err := r.configStore.Set(ctx, configstore.KeyServerTLSACMERoute53SecretAccessKey, j, true, "admin"); err != nil {
+			r.logf("ERROR", "admin/config/server: store route53 secret_access_key: %v", err)
+			WriteInternalError(w, "Failed to store Route 53 credentials.")
 			return
 		}
 	}
@@ -243,6 +413,23 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Swap the running static-TLS certificate in place so the listener serves
+	// the new pair without a restart (tls-static.md § 2.3). Best-effort: when
+	// no reloader is wired (file source, plain HTTP, or no DB listener yet) the
+	// pair is already persisted and the next restart applies it.
+	if dbCertProvided && r.tlsReload != nil {
+		if err := r.tlsReload.Reload(dbCertPEM, dbKeyPEM); err != nil && !errors.Is(err, ErrNoTLSReloader) {
+			r.logf("WARN", "admin/config/server: in-place TLS reload failed (%v); restart applies the new certificate", err)
+		}
+	}
+
+	// An ACME save re-asserts hostname registration and re-checks issuance
+	// immediately rather than waiting out the renewal interval (tls-acme.md
+	// § 3.14). Non-blocking; no-op when no renewer is wired.
+	if input.TLS.Mode == "acme" && r.acmeReRegister != nil {
+		r.acmeReRegister()
+	}
+
 	data, err := configstore.SerializeValue(input)
 	if err != nil {
 		r.logf("ERROR", "admin/config/server: serialise response: %v", err)
@@ -250,4 +437,120 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 	WriteJSON(w, http.StatusOK, putConfigResponse{Value: data, RestartRequired: true})
+}
+
+// dbCertPairStored reports whether a cert_source: db certificate AND private
+// key are both already present in the config store. Used to allow re-saving a
+// db configuration without resubmitting the pair.
+func (r *Router) dbCertPairStored(ctx context.Context) bool {
+	if r.configStore == nil {
+		return false
+	}
+	if _, err := r.configStore.Get(ctx, configstore.KeyServerTLSCertificate); err != nil {
+		return false
+	}
+	if _, err := r.configStore.GetSecret(ctx, configstore.KeyServerTLSPrivateKey); err != nil {
+		return false
+	}
+	return true
+}
+
+// pendingKeyPEM returns the stored pending CSR private key PEM and true when one
+// is present. The pending key is a secret (server.tls.private_key.pending); it
+// is never returned by any API, only used internally to match-and-promote an
+// uploaded signed certificate (tls-csr.md § 4.5).
+func (r *Router) pendingKeyPEM(ctx context.Context) ([]byte, bool) {
+	if r.configStore == nil {
+		return nil, false
+	}
+	raw, err := r.configStore.GetSecret(ctx, configstore.KeyServerTLSPrivateKeyPending)
+	if err != nil {
+		return nil, false
+	}
+	var pem string
+	if err := json.Unmarshal(raw, &pem); err != nil || pem == "" {
+		return nil, false
+	}
+	return []byte(pem), true
+}
+
+// attachDBCertInfo augments a serialised server-config JSON object with a
+// `tls_certificate_info` field carrying the installed DB certificate's
+// operator-safe metadata (subject/SANs/expiry). It is a no-op unless the live
+// cert_source is `db` and a certificate is stored. The private key is never
+// read. On any error it returns data unchanged.
+func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data json.RawMessage) json.RawMessage {
+	if cfg == nil || cfg.Server.TLS.CertSource != "db" || r.configStore == nil {
+		return data
+	}
+	raw, err := r.configStore.Get(ctx, configstore.KeyServerTLSCertificate)
+	if err != nil {
+		return data
+	}
+	var pemStr string
+	if err := json.Unmarshal(raw, &pemStr); err != nil {
+		return data
+	}
+	meta, err := apptls.CertMetadataFromPEM([]byte(pemStr))
+	if err != nil {
+		return data
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		return data
+	}
+	obj["tls_certificate_info"] = metaJSON
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return data
+	}
+	return merged
+}
+
+// attachACMEInfo augments a serialised server-config JSON object, when the live
+// mode is `acme`, with `tls_certificate_info` (the issued certificate's
+// operator-safe metadata, read from server.tls.acme.cert) and `acme_status`
+// (last renewal / last error / hostname error, read from server.tls.acme.status)
+// to drive the Server & TLS ACME status panel (tls-acme.md § 3.14). The private
+// key is never read. On any per-field error that field is omitted; data is
+// otherwise returned unchanged.
+func (r *Router) attachACMEInfo(ctx context.Context, cfg *config.Config, data json.RawMessage) json.RawMessage {
+	if cfg == nil || cfg.Server.TLS.Mode != "acme" || r.configStore == nil {
+		return data
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data
+	}
+
+	// Issued certificate metadata (mirrors attachDBCertInfo but from the ACME
+	// cert key). Absent until the first issuance — then simply omitted.
+	if raw, err := r.configStore.Get(ctx, configstore.KeyServerTLSACMECert); err == nil {
+		var pemStr string
+		if json.Unmarshal(raw, &pemStr) == nil {
+			if meta, merr := apptls.CertMetadataFromPEM([]byte(pemStr)); merr == nil {
+				if metaJSON, jerr := json.Marshal(meta); jerr == nil {
+					obj["tls_certificate_info"] = metaJSON
+				}
+			}
+		}
+	}
+
+	// Operator status object. A never-written entry yields an empty object so the
+	// panel always has a value to render.
+	status := json.RawMessage(`{}`)
+	if raw, err := r.configStore.Get(ctx, configstore.KeyServerTLSACMEStatus); err == nil && len(raw) > 0 {
+		status = raw
+	}
+	obj["acme_status"] = status
+
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return data
+	}
+	return merged
 }

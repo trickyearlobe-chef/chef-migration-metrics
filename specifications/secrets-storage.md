@@ -19,7 +19,7 @@ This specification is the authoritative reference for secrets management. The fo
 | [`web-api/Specification.md`](web-api.md) | § Credential Management (Admin Endpoints) |
 | [`chef-api/Specification.md`](chef-api.md) | § Credentials Security |
 | [`packaging/Specification.md`](packaging.md) | § Docker Compose Configuration, § Environment File |
-| [`tls/Specification.md`](tls.md) | § Static certificate key files, § ACME storage |
+| [`tls/Specification.md`](tls.md) | § Static certificate key files, § DB-backed ACME storage |
 | [`auth/Specification.md`](auth.md) | § Local account password hashing |
 
 ---
@@ -99,6 +99,6 @@ Moved to [secrets-storage-validation-api.md](secrets-storage-validation-api.md).
 | [`web-api/Specification.md`](web-api.md) | Admin credential CRUD + test endpoints |
 | [`chef-api/Specification.md`](chef-api.md) | Chef API signing using resolved credentials |
 | [`packaging/Specification.md`](packaging.md) | RPM/DEB env files, Docker Compose configuration |
-| [`tls/Specification.md`](tls.md) | TLS key file handling, ACME storage |
+| [`tls/Specification.md`](tls.md) | TLS key file handling, DB-backed ACME storage |
 | [`auth/Specification.md`](auth.md) | Local account password hashing |
 | [`logging/Specification.md`](logging.md) | `secrets` log scope definition |

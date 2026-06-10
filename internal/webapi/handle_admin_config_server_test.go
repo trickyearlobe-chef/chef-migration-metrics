@@ -375,6 +375,197 @@ func TestAdminConfigServer_PUT_422_PongNotGreaterThanPing(t *testing.T) {
 	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
+// acmeCertPEM generates a self-signed certificate PEM with the given CN and
+// expiry, for seeding the ACME issued-cert config-store entry.
+func acmeCertPEM(t *testing.T, cn string, notAfter time.Time) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("gen key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: cn},
+		DNSNames:     []string{cn},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     notAfter,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+// In ACME mode the GET response surfaces the issued certificate's metadata and
+// the operator status object (tls-acme.md § 3.14).
+func TestAdminConfigServer_GET_ACMEStatusAndCertInfo(t *testing.T) {
+	store := newTestConfigStore(t)
+	ctx := context.Background()
+	certPEM := acmeCertPEM(t, "app.example.com", time.Now().Add(60*24*time.Hour))
+	certJSON, _ := json.Marshal(string(certPEM))
+	if err := store.Set(ctx, configstore.KeyServerTLSACMECert, certJSON, false, "test"); err != nil {
+		t.Fatalf("seed cert: %v", err)
+	}
+	statusJSON := []byte(`{"last_renewal":"2026-06-01T00:00:00Z","hostname_error":"no IPv4 detectable"}`)
+	if err := store.Set(ctx, configstore.KeyServerTLSACMEStatus, statusJSON, false, "test"); err != nil {
+		t.Fatalf("seed status: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Server.TLS = config.TLSConfig{Mode: "acme"}
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/server", nil)
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	var got map[string]any
+	decodeBody(t, w, &got)
+
+	info, ok := got["tls_certificate_info"].(map[string]any)
+	if !ok {
+		t.Fatalf("tls_certificate_info missing for acme mode: %v", got["tls_certificate_info"])
+	}
+	if info["subject"] == nil || !strings.Contains(fmt.Sprint(info["subject"]), "app.example.com") {
+		t.Errorf("subject = %v, want it to contain app.example.com", info["subject"])
+	}
+	status, ok := got["acme_status"].(map[string]any)
+	if !ok {
+		t.Fatalf("acme_status missing: %v", got["acme_status"])
+	}
+	if status["last_renewal"] != "2026-06-01T00:00:00Z" {
+		t.Errorf("acme_status.last_renewal = %v", status["last_renewal"])
+	}
+	if status["hostname_error"] != "no IPv4 detectable" {
+		t.Errorf("acme_status.hostname_error = %v", status["hostname_error"])
+	}
+}
+
+// Non-ACME modes must not carry an acme_status object.
+func TestAdminConfigServer_GET_NoACMEStatusWhenOff(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	r := newTestRouterForAdminConfig(cfg, newTestConfigStore(t), nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/server", nil)
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	var got map[string]any
+	decodeBody(t, w, &got)
+	if _, present := got["acme_status"]; present {
+		t.Error("acme_status should be absent when mode is not acme")
+	}
+}
+
+// getStoredSecretString reads a secret config-store entry and decodes the
+// JSON-encoded string value (the shape route53 creds are stored in).
+func getStoredSecretString(t *testing.T, store *configstore.Store, key string) (string, error) {
+	t.Helper()
+	raw, err := store.GetSecret(context.Background(), key)
+	if err != nil {
+		return "", err
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatalf("decode secret %s: %v", key, err)
+	}
+	return s, nil
+}
+
+const acmeDNS01CredBody = `{"tls":{"mode":"acme","min_version":"1.3","acme":{"domains":["app.example.com"],"email":"admin@example.com","agree_to_tos":true,"challenge":"dns-01","dns_provider":"route53","dns_provider_config":{"region":"us-east-1","hosted_zone_id":"Z123ABC"},"route53":{"access_key_id":"AKIAEXAMPLE","secret_access_key":"s3cr3t-key-value"}}}}`
+
+// Route 53 DNS-01 credentials submitted under tls.acme.route53 are persisted as
+// encrypted secrets (tls-acme.md § 3.4/§ 3.5), not into the server.tls config
+// section.
+func TestAdminConfigServer_PUT_PersistsRoute53Creds(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(acmeDNS01CredBody))
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	id, err := getStoredSecretString(t, store, configstore.KeyServerTLSACMERoute53AccessKeyID)
+	if err != nil || id != "AKIAEXAMPLE" {
+		t.Errorf("access_key_id = %q, err %v; want %q stored as secret", id, err, "AKIAEXAMPLE")
+	}
+	secret, err := getStoredSecretString(t, store, configstore.KeyServerTLSACMERoute53SecretAccessKey)
+	if err != nil || secret != "s3cr3t-key-value" {
+		t.Errorf("secret_access_key = %q, err %v; want %q stored as secret", secret, err, "s3cr3t-key-value")
+	}
+}
+
+// The secret credential must never appear in the PUT response (write-only).
+func TestAdminConfigServer_PUT_Route53CredsNotEchoed(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(acmeDNS01CredBody))
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	if strings.Contains(w.Body.String(), "s3cr3t-key-value") || strings.Contains(w.Body.String(), "AKIAEXAMPLE") {
+		t.Errorf("PUT response echoed route53 credentials:\n%s", w.Body.String())
+	}
+}
+
+// An ACME save that omits credentials must preserve previously stored creds
+// (write-only: empty submission does not wipe them).
+func TestAdminConfigServer_PUT_EmptyRoute53CredsPreserved(t *testing.T) {
+	store := newTestConfigStore(t)
+	ctx := context.Background()
+	seed, _ := json.Marshal("existing-secret")
+	if err := store.Set(ctx, configstore.KeyServerTLSACMERoute53SecretAccessKey, seed, true, "admin"); err != nil {
+		t.Fatalf("seed secret: %v", err)
+	}
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"tls":{"mode":"acme","acme":{"domains":["app.example.com"],"email":"admin@example.com","agree_to_tos":true,"challenge":"dns-01","dns_provider":"route53"}}}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	got, err := getStoredSecretString(t, store, configstore.KeyServerTLSACMERoute53SecretAccessKey)
+	if err != nil || got != "existing-secret" {
+		t.Errorf("secret_access_key = %q, err %v; want preserved %q", got, err, "existing-secret")
+	}
+}
+
+// An ACME config save fires the re-register trigger so the renewer re-asserts
+// hostname registration immediately (tls-acme.md § 3.14); a non-ACME save does
+// not.
+func TestAdminConfigServer_PUT_ACMEFiresReRegister(t *testing.T) {
+	store := newTestConfigStore(t)
+	hub := NewEventHub()
+	go hub.Run()
+	fired := 0
+	r := NewRouter(&mockStore{}, testConfig(), hub,
+		WithConfigStore(store, nil),
+		WithACMETrigger(func() { fired++ }))
+
+	acmeBody := `{"tls":{"mode":"acme","acme":{"domains":["app.example.com"],"email":"admin@example.com","agree_to_tos":true,"challenge":"dns-01","dns_provider":"route53"}}}`
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(acmeBody)))
+	assertStatus(t, w, http.StatusOK)
+	if fired != 1 {
+		t.Errorf("ACME save fired re-register %d times, want 1", fired)
+	}
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(validServerBody)))
+	assertStatus(t, w, http.StatusOK)
+	if fired != 1 {
+		t.Errorf("non-ACME save should not fire re-register; fired total = %d", fired)
+	}
+}
+
 // freeTestPort returns a currently-free loopback TCP port.
 func freeTestPort(t *testing.T) int {
 	t.Helper()
@@ -433,6 +624,34 @@ func TestAdminConfigServer_PUT_PersistsListen(t *testing.T) {
 	}
 	if section.ListenAddress != "127.0.0.1" || section.Port != port {
 		t.Errorf("stored server.listen = %+v, want {127.0.0.1 %d}", section, port)
+	}
+}
+
+// The behind-proxy plain-HTTP deployment (tls.md § 9.1) sets server.trusted_proxy
+// alongside tls.mode off. The handler must persist the dedicated trusted_proxy
+// section, not just the TLS/listen/websocket ones, or the UI value is lost on
+// reload/restart.
+func TestAdminConfigServer_PUT_PersistsTrustedProxy(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"tls":{"mode":"off"},"trusted_proxy":true}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+
+	stored, err := store.Get(context.Background(), configstore.KeyServerTrustedProxy)
+	if err != nil {
+		t.Fatalf("store.Get %s: %v", configstore.KeyServerTrustedProxy, err)
+	}
+	var tp bool
+	if err := json.Unmarshal(stored, &tp); err != nil {
+		t.Fatalf("unmarshal trusted_proxy: %v", err)
+	}
+	if !tp {
+		t.Errorf("trusted_proxy = %v, want true", tp)
 	}
 }
 

@@ -8,13 +8,27 @@ import (
 	"sync"
 )
 
+// Degraded-listener kinds reported by TLSStatus.Kind (tls.md § 6.3).
+const (
+	// DegradedKindSelfSigned is the primary fail-open: HTTPS with an ephemeral
+	// untrusted self-signed certificate, so the recovery UI stays encrypted.
+	DegradedKindSelfSigned = "self-signed"
+	// DegradedKindPlain is the last-resort fail-open: cleartext HTTP, used only
+	// when even the self-signed listener cannot be brought up.
+	DegradedKindPlain = "plain"
+)
+
 // TLSStatus is the public, DB-independent view of the TLS listener health,
-// served by GET /api/v1/server/tls-status. When the static TLS listener fails
-// at startup the server falls open to plain HTTP (see tls.md § 2.4) and reports
+// served by GET /api/v1/server/tls-status. When the TLS listener cannot be built
+// at startup the server falls open to a degraded listener (a self-signed HTTPS
+// cert, or plain HTTP as a last resort — see tls.md § 6.3) and reports
 // Degraded=true here so the UI can warn on every page, including before login.
 type TLSStatus struct {
-	Degraded bool   `json:"degraded"`
-	Reason   string `json:"reason,omitempty"`
+	Degraded bool `json:"degraded"`
+	// Kind is the degraded-listener kind ("self-signed" | "plain"), empty when
+	// healthy.
+	Kind   string `json:"kind,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // TLSStatusHolder is a concurrency-safe holder for the degraded TLS state. The
@@ -29,12 +43,37 @@ func NewTLSStatusHolder() *TLSStatusHolder {
 	return &TLSStatusHolder{}
 }
 
-// SetDegraded records that the server fell back to plain HTTP, with an
-// operator-facing reason. The reason must never contain private key material.
+// SetDegraded records that the server fell back to the last-resort plain HTTP
+// listener, with an operator-facing reason. The reason must never contain private
+// key material.
 func (h *TLSStatusHolder) SetDegraded(reason string) {
+	h.SetDegradedKind(DegradedKindPlain, reason)
+}
+
+// SetDegradedKind records the degraded state with an explicit kind
+// (DegradedKindSelfSigned or DegradedKindPlain). The reason must never contain
+// private key material.
+func (h *TLSStatusHolder) SetDegradedKind(kind, reason string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.status = TLSStatus{Degraded: true, Reason: reason}
+	h.status = TLSStatus{Degraded: true, Kind: kind, Reason: reason}
+}
+
+// SetHealthy clears the degraded state. It is used when a real certificate is
+// promoted in place over a degraded self-signed listener (e.g. ACME issuance
+// succeeds), so the banner and the HSTS gate recover without a restart.
+func (h *TLSStatusHolder) SetHealthy() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.status = TLSStatus{}
+}
+
+// IsDegraded reports whether the listener is currently in a degraded fallback.
+// The HSTS gate consults it live so HSTS is suppressed while degraded.
+func (h *TLSStatusHolder) IsDegraded() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.status.Degraded
 }
 
 // Status returns a copy of the current TLS status.

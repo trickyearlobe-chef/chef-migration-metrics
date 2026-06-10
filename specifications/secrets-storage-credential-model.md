@@ -12,7 +12,7 @@ The application manages the following categories of secrets:
 | Database connection string | Env var only | `DATABASE_URL`. Never stored in the database (circular dependency). |
 | Credential encryption master key | Env var only | `CMM_CREDENTIAL_ENCRYPTION_KEY`. Must not reside in the same storage system as the encrypted credentials. |
 | TLS private key (for `static` mode) | File path, Kubernetes Secret | Mounted at `/etc/chef-migration-metrics/tls/tls.key`. Not stored in the credentials table. |
-| ACME account key | File path (auto-managed) | Stored in `acme.storage_path`. Managed by the ACME client library, not by the application's credential system. |
+| ACME account key | Database (encrypted) | Stored in the config store, not on disk (no `storage_path`; see `tls-acme.md` § 3.5). Managed by the ACME subsystem, not the credentials table. |
 | Local user passwords | Database (bcrypt hash) | Stored in the `users` table as bcrypt hashes, not in the `credentials` table. Not reversible. |
 | Generic secrets | Database | Catch-all type for operator-defined secrets that don't fit other categories. |
 

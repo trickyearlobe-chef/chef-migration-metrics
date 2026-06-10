@@ -6,7 +6,10 @@
 // and HSTS middleware for the Chef Migration Metrics server.
 //
 // This package implements the "static" TLS mode described in the TLS
-// specification. ACME automatic certificate management is not yet implemented.
+// specification. The certificate/key may come from files on disk (the
+// default) or from in-memory PEM bytes (used by the DB cert_source, where
+// material is fetched from the encrypted config store). ACME automatic
+// certificate management is not yet implemented.
 package tls
 
 import (
@@ -35,9 +38,11 @@ type LogFunc func(level, msg string)
 //
 // CertManager is safe for concurrent use.
 type CertManager struct {
-	certPath string
-	keyPath  string
-	caPath   string
+	// source provides the certificate and key PEM bytes — either a file
+	// pair on disk (fileSource) or in-memory bytes (bytesSource).
+	source pemSource
+
+	caPath string
 
 	mu   sync.RWMutex
 	cert *tls.Certificate
@@ -74,8 +79,9 @@ func WithLogger(fn LogFunc) CertManagerOption {
 	}
 }
 
-// NewCertManager creates a new CertManager and performs initial certificate
-// loading and validation. It returns an error if:
+// NewCertManager creates a new CertManager backed by certificate and key
+// files on disk, performing initial loading and validation. It returns an
+// error if:
 //   - certPath or keyPath is empty
 //   - the certificate or key file cannot be read
 //   - the certificate and key do not form a valid pair
@@ -90,10 +96,30 @@ func NewCertManager(certPath, keyPath string, opts ...CertManagerOption) (*CertM
 	if keyPath == "" {
 		return nil, errors.New("tls: key_path is required")
 	}
+	return newCertManager(&fileSource{certPath: certPath, keyPath: keyPath}, opts...)
+}
 
+// NewCertManagerFromPEM creates a new CertManager backed by in-memory
+// certificate and key PEM bytes (e.g. fetched from the encrypted config
+// store for cert_source: db). It performs the same initial loading and
+// validation as NewCertManager.
+//
+// The in-memory source supports ReloadFromPEM for config-change-driven
+// reloads. Filesystem watching (WatchForChanges) is a no-op for this source
+// because there are no files to poll; key-file permission checks are skipped.
+func NewCertManagerFromPEM(certPEM, keyPEM []byte, opts ...CertManagerOption) (*CertManager, error) {
+	src := &bytesSource{}
+	src.set(certPEM, keyPEM)
+	return newCertManager(src, opts...)
+}
+
+// newCertManager is the shared constructor for both the file and in-memory
+// PEM sources. It loads and validates the initial certificate, warns (but
+// does not fail) on expiry, checks key-file permissions where applicable,
+// and loads the optional client CA bundle for mTLS.
+func newCertManager(source pemSource, opts ...CertManagerOption) (*CertManager, error) {
 	cm := &CertManager{
-		certPath:  certPath,
-		keyPath:   keyPath,
+		source:    source,
 		watchDone: make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -108,7 +134,7 @@ func NewCertManager(certPath, keyPath string, opts ...CertManagerOption) (*CertM
 	// Check expiry — warn but don't fail.
 	cm.checkExpiry()
 
-	// Check key file permissions — warn if too open.
+	// Check key file permissions — warn if too open (file source only).
 	cm.checkKeyPermissions()
 
 	// Load client CA bundle for mTLS if configured.
@@ -121,15 +147,16 @@ func NewCertManager(certPath, keyPath string, opts ...CertManagerOption) (*CertM
 		cm.logf("INFO", "mTLS enabled — loaded client CA bundle from %s", cm.caPath)
 	}
 
-	cm.logf("INFO", "TLS certificate loaded from %s (key: %s)", cm.certPath, cm.keyPath)
+	cm.logf("INFO", "TLS certificate loaded (source: %s)", cm.source.description())
 	return cm, nil
 }
 
-// Reload re-reads the certificate and key files from disk. If the new files
-// are valid, the certificate is swapped atomically for subsequent TLS
-// handshakes. Existing connections are not affected.
+// Reload re-reads the certificate and key from the current source (files on
+// disk, or in-memory bytes). If the new material is valid, the certificate is
+// swapped atomically for subsequent TLS handshakes. Existing connections are
+// not affected.
 //
-// If the reload fails (unparseable files, mismatched key, etc.), the
+// If the reload fails (unparseable material, mismatched key, etc.), the
 // previous valid certificate continues to be served and an error is returned.
 func (cm *CertManager) Reload() error {
 	if err := cm.loadCertificate(); err != nil {
@@ -137,7 +164,41 @@ func (cm *CertManager) Reload() error {
 		return fmt.Errorf("tls: certificate reload failed: %w", err)
 	}
 	cm.checkExpiry()
-	cm.logf("INFO", "TLS certificate reloaded from %s", cm.certPath)
+	cm.logf("INFO", "TLS certificate reloaded (source: %s)", cm.source.description())
+	return nil
+}
+
+// ReloadFromPEM swaps the in-memory certificate and key for new PEM bytes.
+// It is the config-change-driven reload path for cert_source: db — when a new
+// cert/key pair is saved through the admin API, the listener calls this to
+// begin serving the new certificate for subsequent handshakes.
+//
+// The new pair is validated before anything is swapped. If it is invalid
+// (unparseable, mismatched), the previous valid certificate continues to be
+// served, an ERROR is logged, and an error is returned. ReloadFromPEM is only
+// supported for managers created with NewCertManagerFromPEM; calling it on a
+// file-backed manager returns an error.
+func (cm *CertManager) ReloadFromPEM(certPEM, keyPEM []byte) error {
+	src, ok := cm.source.(*bytesSource)
+	if !ok {
+		return errors.New("tls: ReloadFromPEM requires an in-memory PEM source")
+	}
+
+	// Validate the new pair before mutating any state, so a bad reload
+	// leaves the previously served certificate untouched.
+	cert, err := buildCertificate(certPEM, keyPEM)
+	if err != nil {
+		cm.logf("ERROR", "certificate reload failed (continuing with previous certificate): %v", err)
+		return fmt.Errorf("tls: certificate reload failed: %w", err)
+	}
+
+	src.set(certPEM, keyPEM)
+	cm.mu.Lock()
+	cm.cert = cert
+	cm.mu.Unlock()
+
+	cm.checkExpiry()
+	cm.logf("INFO", "TLS certificate reloaded (source: %s)", cm.source.description())
 	return nil
 }
 
@@ -173,14 +234,22 @@ func (cm *CertManager) TLSConfig(minVersion string) *tls.Config {
 	return tlsCfg
 }
 
-// CertPath returns the configured certificate file path.
+// CertPath returns the configured certificate file path, or an empty string
+// for an in-memory PEM source.
 func (cm *CertManager) CertPath() string {
-	return cm.certPath
+	if fs, ok := cm.source.(*fileSource); ok {
+		return fs.certPath
+	}
+	return ""
 }
 
-// KeyPath returns the configured key file path.
+// KeyPath returns the configured key file path, or an empty string for an
+// in-memory PEM source.
 func (cm *CertManager) KeyPath() string {
-	return cm.keyPath
+	if fs, ok := cm.source.(*fileSource); ok {
+		return fs.keyPath
+	}
+	return ""
 }
 
 // CurrentCert returns a copy of the currently loaded certificate. This is
@@ -215,29 +284,44 @@ func (cm *CertManager) Close() error {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// loadCertificate reads the cert and key files, parses them, validates the
-// pair, and stores the result atomically.
+// loadCertificate fetches the cert and key PEM from the source, parses and
+// validates the pair, and stores the result atomically.
 func (cm *CertManager) loadCertificate() error {
-	cert, err := tls.LoadX509KeyPair(cm.certPath, cm.keyPath)
+	certPEM, keyPEM, err := cm.source.loadPEM()
 	if err != nil {
-		return fmt.Errorf("loading key pair (%s, %s): %w", cm.certPath, cm.keyPath, err)
+		return err
 	}
 
-	// Parse the leaf certificate so we can inspect it (expiry, subject,
-	// etc.) without re-parsing later.
+	cert, err := buildCertificate(certPEM, keyPEM)
+	if err != nil {
+		return fmt.Errorf("loading key pair from %s: %w", cm.source.description(), err)
+	}
+
+	cm.mu.Lock()
+	cm.cert = cert
+	cm.mu.Unlock()
+
+	return nil
+}
+
+// buildCertificate parses and validates a cert/key PEM pair and parses the
+// leaf certificate so it can be inspected (expiry, subject, etc.) without
+// re-parsing later. It does not mutate any CertManager state.
+func buildCertificate(certPEM, keyPEM []byte) (*tls.Certificate, error) {
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
+
 	if cert.Leaf == nil && len(cert.Certificate) > 0 {
 		leaf, parseErr := x509.ParseCertificate(cert.Certificate[0])
 		if parseErr != nil {
-			return fmt.Errorf("parsing leaf certificate: %w", parseErr)
+			return nil, fmt.Errorf("parsing leaf certificate: %w", parseErr)
 		}
 		cert.Leaf = leaf
 	}
 
-	cm.mu.Lock()
-	cm.cert = &cert
-	cm.mu.Unlock()
-
-	return nil
+	return &cert, nil
 }
 
 // getCertificate is the callback for tls.Config.GetCertificate. It returns
@@ -275,9 +359,14 @@ func (cm *CertManager) checkExpiry() {
 }
 
 // checkKeyPermissions logs a warning if the key file has permissions more
-// permissive than 0600.
+// permissive than 0600. It only applies to the file source — an in-memory
+// PEM source has no file to inspect.
 func (cm *CertManager) checkKeyPermissions() {
-	info, err := os.Stat(cm.keyPath)
+	fs, ok := cm.source.(*fileSource)
+	if !ok {
+		return
+	}
+	info, err := os.Stat(fs.keyPath)
 	if err != nil {
 		// Stat failure is not fatal here — the key was already loaded
 		// successfully, so the file definitely existed a moment ago.
@@ -285,7 +374,7 @@ func (cm *CertManager) checkKeyPermissions() {
 	}
 	perm := info.Mode().Perm()
 	if perm&0o077 != 0 {
-		cm.logf("WARN", "TLS key file %s has permissions %04o — recommended 0600", cm.keyPath, perm)
+		cm.logf("WARN", "TLS key file %s has permissions %04o — recommended 0600", fs.keyPath, perm)
 	}
 }
 
@@ -357,29 +446,38 @@ func defaultCipherSuites() []uint16 {
 // rather than inotify/fsnotify to avoid an external dependency. The poll
 // interval is configurable.
 //
+// It is a no-op for an in-memory PEM source — that source has no files to
+// poll and is reloaded explicitly via ReloadFromPEM on a config change.
+//
 // Call Close() to stop the watcher.
 func (cm *CertManager) WatchForChanges(pollInterval time.Duration) {
+	fs, ok := cm.source.(*fileSource)
+	if !ok {
+		cm.logf("DEBUG", "certificate file watcher not started — source is not file-backed")
+		return
+	}
+
 	if pollInterval <= 0 {
 		pollInterval = 30 * time.Second
 	}
 
 	cm.logf("INFO", "starting certificate file watcher (poll_interval=%s, cert=%s, key=%s)",
-		pollInterval, cm.certPath, cm.keyPath)
+		pollInterval, fs.certPath, fs.keyPath)
 
-	go cm.watchLoop(pollInterval)
+	go cm.watchLoop(fs, pollInterval)
 }
 
 // watchLoop is the main polling loop for filesystem-based certificate
 // reload. It tracks the modification time and resolved symlink target of
 // each file to detect both in-place edits and Kubernetes Secret rotations
 // (which swap the symlink target).
-func (cm *CertManager) watchLoop(interval time.Duration) {
+func (cm *CertManager) watchLoop(fs *fileSource, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	// Snapshot the initial state.
-	certMod, certTarget := fileState(cm.certPath)
-	keyMod, keyTarget := fileState(cm.keyPath)
+	certMod, certTarget := fileState(fs.certPath)
+	keyMod, keyTarget := fileState(fs.keyPath)
 
 	for {
 		select {
@@ -387,8 +485,8 @@ func (cm *CertManager) watchLoop(interval time.Duration) {
 			cm.logf("INFO", "certificate file watcher stopped")
 			return
 		case <-ticker.C:
-			newCertMod, newCertTarget := fileState(cm.certPath)
-			newKeyMod, newKeyTarget := fileState(cm.keyPath)
+			newCertMod, newCertTarget := fileState(fs.certPath)
+			newKeyMod, newKeyTarget := fileState(fs.keyPath)
 
 			changed := false
 			if !newCertMod.Equal(certMod) || newCertTarget != certTarget {

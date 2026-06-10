@@ -117,6 +117,19 @@ type Router struct {
 	// config section endpoints. Nil when not wired up.
 	configHolder *configstore.ConfigHolder
 
+	// tlsReload triggers an in-place swap of the running static-TLS
+	// certificate when a new cert_source: db pair is saved, so the listener
+	// serves it without a restart (tls-static.md § 2.3). Nil on plain-HTTP
+	// deployments or when the running listener is not a DB source — the save
+	// still persists and a restart applies it. Set via WithTLSReload.
+	tlsReload *TLSReloadHolder
+
+	// acmeReRegister, when set, is called after an ACME config save to wake the
+	// renewer so hostname registration and an issuance check re-run immediately
+	// rather than waiting out the renewal interval (tls-acme.md § 3.14). Nil in
+	// non-ACME deployments. Non-blocking. Set via WithACMETrigger.
+	acmeReRegister func()
+
 	// hypervisor provides template discovery, VM inventory, and orphan
 	// cleanup. When nil, buildHypervisor() builds one on demand from live
 	// config. A static value (from WithHypervisor) takes precedence — this
@@ -337,6 +350,16 @@ func WithExitFunc(fn func(int)) RouterOption {
 // the restart endpoint returns 503.
 func WithRestartTrigger(fn func()) RouterOption {
 	return func(r *Router) { r.restartFunc = fn }
+}
+
+// WithACMETrigger wires the function called after a successful ACME config save
+// to wake the renewal loop immediately, so hostname registration and an
+// issuance check re-run without waiting out the renewal interval (tls-acme.md
+// § 3.14). Typically the running Renewer's Trigger method. Must be non-blocking;
+// nil disables the immediate re-assert (the next scheduled cycle still picks up
+// the change).
+func WithACMETrigger(fn func()) RouterOption {
+	return func(r *Router) { r.acmeReRegister = fn }
 }
 
 // NewRouter creates a new Router with all routes registered. The EventHub
@@ -649,6 +672,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools)
 	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen)
 	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer)
+	r.adminOnly("/api/v1/admin/config/server/generate-csr", r.handleAdminConfigServerGenerateCSR)
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
 	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness)
