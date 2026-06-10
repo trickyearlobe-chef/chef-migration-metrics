@@ -391,7 +391,31 @@ Applies to **both** static `cert_source:db` and `acme` (8b) fail-open.
   HTTPS (degraded, no HSTS), not plain HTTP; plain HTTP only as last resort.
   Depends on Chunks 2,3.
 
-## Chunk 8b — ACME HTTP-01 + mode wiring
+## Chunk 8b — ACME HTTP-01 + mode wiring (DONE)
+
+Done 2026-06-10. New `internal/acme/http01.go`: `HTTP01Solver` (Solver seam,
+mutex `token→keyAuth` map, `Handler()` serving `/.well-known/acme-challenge/`,
+404 for unknown token / non-challenge path). `internal/tls/listener.go`:
+`NewChallengeRedirectServer(listenAddr, redirectPort, httpsPort, challenge)` —
+port-80 server that serves the challenge handler first then 301s everything else
+to HTTPS (shared `redirectToHTTPS` helper extracted from `redirectHandler`).
+`cmd/.../acme.go`: `setupACME` replaces the not-implemented error — staging WARN,
+builds `acme.Storage`/`HTTP01Solver`/`Manager`/`Renewer`, **always comes up on
+HTTPS** (stored issued cert if present else 8a self-signed degraded), HTTPS
+listener runs `HTTPRedirectPort:0` (port 80 owned by the challenge server),
+background renewer wrapped in `promotingIssuer` (`ReloadFromPEM`-promotes obtained
+cert in place, `SetOnReload` clears degraded + resumes HSTS); `http-01` +
+`http_redirect_port:0`, `dns-01` (Chunk 9), and unknown challenge all fail open to
+self-signed (never exit); challenge-server bind failure logged, non-fatal.
+`serverResult` gained `challengeSrv`+`renewerCancel`; `awaitShutdown` cancels the
+renewer and drains the challenge server. TDD (fakes, no network — ToS-false keeps
+the renewer offline): solver serve/404/cleanup/multi-token, challenge>redirect
+priority + redirect-port logic, `promotingIssuer` promote-clears-degraded /
+error-stays-degraded, `setupACME` self-signed-degraded / stored-cert-healthy /
+no-redirect-port / dns-01 fail-open, staging detection. `go test -race`, vet,
+gofmt, build clean. Specs `§3.3`/`§3.11` already accurate (8a) — no change.
+
+Original scope (for reference):
 
 - Scope: `cmd/.../main.go` (replace the `acme` "not implemented" error),
   `internal/tls/listener.go` (challenge-aware redirect server),

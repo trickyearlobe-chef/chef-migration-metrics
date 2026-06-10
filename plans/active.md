@@ -21,23 +21,28 @@ ephemeral self-signed cert over HTTPS (HSTS suppressed) instead of cleartext,
 plain HTTP last-resort only; HSTS live-gate; status `kind` + in-place promotion
 clears degraded; static `cert_source:db` retrofitted; banner kind-aware. Specs
 §2.4/§6.3/§3.11 updated. 8a unblocks 8b's fail-open.
+Chunk 8b — ACME HTTP-01 + mode wiring: new `internal/acme/http01.go`
+`HTTP01Solver` (Solver seam + `Handler()`); `internal/tls`
+`NewChallengeRedirectServer` (challenge > redirect priority, § 3.3) on port 80;
+`main.go` `setupACME` replaces the not-implemented error — always comes up on
+HTTPS (stored cert else 8a self-signed degraded), background Renewer +
+`promotingIssuer` `ReloadFromPEM`-promotes in place clearing degraded; HTTPS
+listener runs `HTTPRedirectPort:0`; staging WARN; `http-01`+`http_redirect_port:0`
+and `dns-01` (Chunk 9) fail open to self-signed; `serverResult`/`awaitShutdown`
+drain challenge server + renewer cancel. TDD, no network. Specs already accurate.
 
 ## Next chunk
 
-**Chunk 8b — ACME HTTP-01 + mode wiring.** Replace the `acme` "not implemented"
-error in `main.go`. New `internal/acme/http01.go` `HTTP01Solver` (Solver seam +
-`Handler()` for `/.well-known/acme-challenge/<token>`), installed on the redirect
-listener (challenge > redirect priority, § 3.3) via a `NewChallengeRedirectServer`
-constructor; HTTPS `Listener` runs with `HTTPRedirectPort: 0` (port 80 owned by
-the challenge/redirect server). Build `acme.Storage`/`Manager`/`Renewer`; always
-come up on HTTPS — stored real cert if present, else the **8a self-signed** cert;
-the Renewer obtains + `ReloadFromPEM`-promotes self-signed → real in place
-(clears degraded via `SetOnReload`). Staging WARN; `http-01` + `http_redirect_port:0`
-→ ERROR. Shutdown wiring for the challenge server + renewer cancel. TDD (fakes,
-no network). Depends on Chunks 7, 8a (done).
+**Chunk 8c — CLI: deliberate plain-HTTP (behind TLS-terminating proxy).** Add
+`tls mode <off|static|acme>` to the Chunk 3a repair-CLI dispatch
+(`cmd/.../tlsrepair.go`/sibling), generalising `tls reset` (stays as the recovery
+alias for `mode off`). A `--trusted-proxy[=true|false]` flag on `tls mode off`
+also sets `server.trusted_proxy` so HSTS honours `X-Forwarded-Proto` from the
+proxy. Same env-only store + section-preserving read-modify-write + idempotency
+as 3a. Spec: note behind-proxy deployment in `tls-static.md`/`tls.md`. TDD.
+Depends on Chunk 3a (done) — independent of 8b.
 
-Then **8c** (`tls mode off --trusted-proxy` CLI, deliberate behind-proxy plain
-HTTP, depends on 3a) and **8d** (matching admin-UI toggle). See detail plan.
+Then **8d** (matching admin-UI toggle, depends on 8c). See detail plan.
 
 ## Notes
 
