@@ -24,13 +24,13 @@ the proposed delta for confirmation before writing.
     full leaf→intermediate(s)→root with per-cert role.
 - Output: spec delta (chain metadata shape + reorder contract). No code.
 
-### W1-A — chain display (dep: W1-S)
-- Scope: `internal/tls/metadata.go` (extend `CertMetadata`, today leaf-only, to a
-  full chain), status surface `tls_certificate_info`, UI status panel.
-- Surface per-cert CN / SANs / not-before / not-after / issuer for leaf →
-  intermediate(s) → root, everywhere a cert is shown (static DB/file, CSR-promoted,
-  ACME-issued).
-- TDD: multi-cert bundle → ordered per-cert metadata; single-cert unchanged.
+### W1-A — chain display (dep: W1-S) — DONE
+- Branch `feature/tls-chain-display`. `CertMetadata` gains `role`; new
+  `ChainMetadataFromPEM` parses every cert, derives role structurally (root =
+  self-signed; leaf = subject issues no other; else intermediate), skips non-cert
+  blocks. `tls_certificate_info` is now a chain **array** (static-DB + ACME);
+  removed the orphaned `CertMetadataFromPEM`. UI: `CertChainPanel` renders one
+  card per cert with role label. Go + 386 FE tests green.
 
 ### W1-B — reorder-on-save (dep: W1-S)
 - Scope: static-upload save path (per W1-S decision), `internal/tls/`.

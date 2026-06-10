@@ -424,9 +424,16 @@ func TestAdminConfigServer_GET_ACMEStatusAndCertInfo(t *testing.T) {
 	var got map[string]any
 	decodeBody(t, w, &got)
 
-	info, ok := got["tls_certificate_info"].(map[string]any)
+	chain, ok := got["tls_certificate_info"].([]any)
 	if !ok {
 		t.Fatalf("tls_certificate_info missing for acme mode: %v", got["tls_certificate_info"])
+	}
+	if len(chain) == 0 {
+		t.Fatalf("tls_certificate_info empty for acme mode")
+	}
+	info, ok := chain[0].(map[string]any)
+	if !ok {
+		t.Fatalf("chain[0] wrong type: %v", chain[0])
 	}
 	if info["subject"] == nil || !strings.Contains(fmt.Sprint(info["subject"]), "app.example.com") {
 		t.Errorf("subject = %v, want it to contain app.example.com", info["subject"])

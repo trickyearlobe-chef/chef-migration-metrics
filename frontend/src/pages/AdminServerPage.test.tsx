@@ -241,13 +241,16 @@ describe("AdminServerPage", () => {
     // certificate is already installed.
     vi.mocked(api.fetchServerConfig).mockResolvedValue({
       ...staticDbConfig,
-      tls_certificate_info: {
-        subject: "CN=example.com",
-        issuer: "CN=Example CA",
-        dns_names: ["example.com"],
-        not_before: "2026-01-01T00:00:00Z",
-        not_after: "2027-01-01T00:00:00Z",
-      },
+      tls_certificate_info: [
+        {
+          subject: "CN=example.com",
+          issuer: "CN=Example CA",
+          dns_names: ["example.com"],
+          not_before: "2026-01-01T00:00:00Z",
+          not_after: "2027-01-01T00:00:00Z",
+          role: "leaf",
+        },
+      ],
     } as never);
     render(<AdminServerPage />);
     await waitFor(() => screen.getByText("Server & TLS"));
@@ -255,22 +258,35 @@ describe("AdminServerPage", () => {
     expect(screen.getByLabelText("Private key (PEM)")).toHaveValue("");
   });
 
-  it("renders the installed certificate metadata panel for db source", async () => {
+  it("renders the installed certificate chain panel for db source", async () => {
     vi.mocked(api.fetchServerConfig).mockResolvedValue({
       ...staticDbConfig,
-      tls_certificate_info: {
-        subject: "CN=example.com",
-        issuer: "CN=Example CA",
-        dns_names: ["example.com", "www.example.com"],
-        not_before: "2026-01-01T00:00:00Z",
-        not_after: "2027-01-01T00:00:00Z",
-      },
+      tls_certificate_info: [
+        {
+          subject: "CN=example.com",
+          issuer: "CN=Example CA",
+          dns_names: ["example.com", "www.example.com"],
+          not_before: "2026-01-01T00:00:00Z",
+          not_after: "2027-01-01T00:00:00Z",
+          role: "leaf",
+        },
+        {
+          subject: "CN=Example CA",
+          issuer: "CN=Example Root",
+          not_before: "2025-01-01T00:00:00Z",
+          not_after: "2030-01-01T00:00:00Z",
+          role: "intermediate",
+        },
+      ],
     } as never);
     render(<AdminServerPage />);
     await waitFor(() => screen.getByText("Server & TLS"));
     expect(screen.getByText("CN=example.com")).toBeInTheDocument();
-    expect(screen.getByText("CN=Example CA")).toBeInTheDocument();
     expect(screen.getByText(/www\.example\.com/)).toBeInTheDocument();
+    // Both certs in the chain are surfaced with their role labels.
+    expect(screen.getByText("Leaf")).toBeInTheDocument();
+    expect(screen.getByText("Intermediate")).toBeInTheDocument();
+    expect(screen.getByText("CN=Example Root")).toBeInTheDocument();
   });
 
   it("prompts to paste a certificate when none is installed for db source", async () => {
@@ -670,13 +686,16 @@ describe("AdminServerPage", () => {
   it("renders the ACME status panel with cert metadata and hostname error", async () => {
     vi.mocked(api.fetchServerConfig).mockResolvedValue({
       ...acmeBase,
-      tls_certificate_info: {
-        subject: "CN=app.example.com",
-        issuer: "CN=Let's Encrypt",
-        dns_names: ["app.example.com"],
-        not_before: "2026-06-01T00:00:00Z",
-        not_after: "2026-08-30T00:00:00Z",
-      },
+      tls_certificate_info: [
+        {
+          subject: "CN=app.example.com",
+          issuer: "CN=Let's Encrypt",
+          dns_names: ["app.example.com"],
+          not_before: "2026-06-01T00:00:00Z",
+          not_after: "2026-08-30T00:00:00Z",
+          role: "leaf",
+        },
+      ],
       acme_status: {
         last_renewal: "2026-06-01T00:00:00Z",
         last_error: "",

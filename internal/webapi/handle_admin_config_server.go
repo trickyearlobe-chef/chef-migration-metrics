@@ -475,9 +475,10 @@ func (r *Router) pendingKeyPEM(ctx context.Context) ([]byte, bool) {
 }
 
 // attachDBCertInfo augments a serialised server-config JSON object with a
-// `tls_certificate_info` field carrying the installed DB certificate's
-// operator-safe metadata (subject/SANs/expiry). It is a no-op unless the live
-// cert_source is `db` and a certificate is stored. The private key is never
+// `tls_certificate_info` field carrying the installed DB certificate chain's
+// operator-safe metadata (per-cert subject/SANs/issuer/expiry/role for
+// leaf → intermediate(s) → root — tls-static.md § 2.2). It is a no-op unless the
+// live cert_source is `db` and a certificate is stored. The private key is never
 // read. On any error it returns data unchanged.
 func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data json.RawMessage) json.RawMessage {
 	if cfg == nil || cfg.Server.TLS.CertSource != "db" || r.configStore == nil {
@@ -491,7 +492,7 @@ func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data 
 	if err := json.Unmarshal(raw, &pemStr); err != nil {
 		return data
 	}
-	meta, err := apptls.CertMetadataFromPEM([]byte(pemStr))
+	chain, err := apptls.ChainMetadataFromPEM([]byte(pemStr))
 	if err != nil {
 		return data
 	}
@@ -499,7 +500,7 @@ func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data 
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return data
 	}
-	metaJSON, err := json.Marshal(meta)
+	metaJSON, err := json.Marshal(chain)
 	if err != nil {
 		return data
 	}
@@ -527,13 +528,13 @@ func (r *Router) attachACMEInfo(ctx context.Context, cfg *config.Config, data js
 		return data
 	}
 
-	// Issued certificate metadata (mirrors attachDBCertInfo but from the ACME
-	// cert key). Absent until the first issuance — then simply omitted.
+	// Issued certificate chain metadata (mirrors attachDBCertInfo but from the
+	// ACME cert key). Absent until the first issuance — then simply omitted.
 	if raw, err := r.configStore.Get(ctx, configstore.KeyServerTLSACMECert); err == nil {
 		var pemStr string
 		if json.Unmarshal(raw, &pemStr) == nil {
-			if meta, merr := apptls.CertMetadataFromPEM([]byte(pemStr)); merr == nil {
-				if metaJSON, jerr := json.Marshal(meta); jerr == nil {
+			if chain, merr := apptls.ChainMetadataFromPEM([]byte(pemStr)); merr == nil {
+				if metaJSON, jerr := json.Marshal(chain); jerr == nil {
 					obj["tls_certificate_info"] = metaJSON
 				}
 			}

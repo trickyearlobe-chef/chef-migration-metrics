@@ -210,12 +210,23 @@ func TestAdminConfigServer_GET_DBCertSource_ReturnsMetadataNotKey(t *testing.T) 
 
 	var got map[string]any
 	decodeBody(t, w, &got)
-	info, ok := got["tls_certificate_info"].(map[string]any)
+	chain, ok := got["tls_certificate_info"].([]any)
 	if !ok {
 		t.Fatalf("tls_certificate_info missing or wrong type: %v", got["tls_certificate_info"])
 	}
+	if len(chain) != 1 {
+		t.Fatalf("chain length = %d, want 1", len(chain))
+	}
+	info, ok := chain[0].(map[string]any)
+	if !ok {
+		t.Fatalf("chain[0] wrong type: %v", chain[0])
+	}
 	if info["subject"] != "leaf.example.com" {
 		t.Errorf("subject = %v, want leaf.example.com", info["subject"])
+	}
+	// A lone self-signed cert classifies as root (subject == issuer).
+	if info["role"] != "root" {
+		t.Errorf("role = %v, want root", info["role"])
 	}
 }
 
