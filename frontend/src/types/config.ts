@@ -115,6 +115,10 @@ export interface ServerConfig {
   tls: TLSConfig;
   websocket: WebSocketConfig;
   graceful_shutdown_seconds: number;
+  // True when a trusted reverse proxy terminates TLS in front of the app: the
+  // local listener serves plain HTTP (tls.mode off) and X-Forwarded-Proto is
+  // trusted for HSTS/scheme detection (tls.md § 9.1). Default false.
+  trusted_proxy: boolean;
   // Read-only metadata for the installed cert_source: db certificate, attached
   // by GET. Never sent on save.
   tls_certificate_info?: CertMetadata;

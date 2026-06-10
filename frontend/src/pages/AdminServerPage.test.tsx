@@ -41,6 +41,7 @@ const mockServerConfig = {
     pong_timeout_seconds: 0,
   },
   graceful_shutdown_seconds: 30,
+  trusted_proxy: false,
 };
 
 describe("AdminServerPage", () => {
@@ -426,6 +427,90 @@ describe("AdminServerPage", () => {
     expect(
       screen.getByRole("button", { name: /download csr/i }),
     ).toBeInTheDocument();
+  });
+
+  // --- Behind-proxy plain-HTTP toggle (Chunk 8d — tls.md § 9.1) ---
+
+  it("shows the behind-proxy plain-HTTP toggle", async () => {
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(
+      screen.getByRole("checkbox", { name: /terminate tls at a proxy/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("reflects mode off + trusted_proxy as the toggle being on", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...mockServerConfig,
+      trusted_proxy: true,
+    } as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(
+      screen.getByRole("checkbox", { name: /terminate tls at a proxy/i }),
+    ).toBeChecked();
+  });
+
+  it("enabling behind-proxy sets mode off and trusted_proxy in the save payload", async () => {
+    // Start from a static config so the toggle has to flip mode to off too.
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(staticFileConfig as never);
+    vi.mocked(api.saveServerConfig).mockResolvedValue({
+      value: { ...staticFileConfig, tls: { ...staticFileConfig.tls, mode: "off" }, trusted_proxy: true },
+      restartRequired: true,
+    } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /terminate tls at a proxy/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    const arg = vi.mocked(api.saveServerConfig).mock.lastCall![0];
+    expect(arg.tls.mode).toBe("off");
+    expect(arg.trusted_proxy).toBe(true);
+  });
+
+  it("disabling behind-proxy clears trusted_proxy in the save payload", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...mockServerConfig,
+      trusted_proxy: true,
+    } as never);
+    vi.mocked(api.saveServerConfig).mockResolvedValue({
+      value: { ...mockServerConfig, trusted_proxy: false },
+      restartRequired: true,
+    } as never);
+    const user = userEvent.setup();
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /terminate tls at a proxy/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveServerConfig).toHaveBeenCalled());
+    const arg = vi.mocked(api.saveServerConfig).mock.lastCall![0];
+    expect(arg.trusted_proxy).toBe(false);
+  });
+
+  it("warns about X-Forwarded-Proto trust only when behind-proxy is enabled", async () => {
+    vi.mocked(api.fetchServerConfig).mockResolvedValue(mockServerConfig as never);
+    const { unmount } = render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.queryByText(/spoof/i)).not.toBeInTheDocument();
+    unmount();
+
+    vi.mocked(api.fetchServerConfig).mockResolvedValue({
+      ...mockServerConfig,
+      trusted_proxy: true,
+    } as never);
+    render(<AdminServerPage />);
+    await waitFor(() => screen.getByText("Server & TLS"));
+    expect(screen.getAllByText(/X-Forwarded-Proto/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/spoof/i)).toBeInTheDocument();
   });
 
   it("shows an error when CSR generation fails", async () => {

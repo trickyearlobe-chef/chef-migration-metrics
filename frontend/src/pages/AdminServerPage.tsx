@@ -192,6 +192,22 @@ export function AdminServerPage() {
     setSuccess(false);
   }
 
+  // Behind-proxy plain-HTTP deployment (tls.md § 9.1). Enabling forces tls.mode
+  // off (local listener serves plain HTTP) and trusts X-Forwarded-Proto for HSTS
+  // / scheme detection; disabling only clears trusted_proxy and leaves the mode.
+  function setBehindProxy(enabled: boolean) {
+    setConfig((prev) =>
+      prev
+        ? {
+            ...prev,
+            trusted_proxy: enabled,
+            tls: enabled ? { ...prev.tls, mode: "off" } : prev.tls,
+          }
+        : prev,
+    );
+    setSuccess(false);
+  }
+
   function handleAddDomain() {
     const d = newDomain.trim();
     if (!d) return;
@@ -296,6 +312,9 @@ export function AdminServerPage() {
     ? new Date(certInfo.not_after).getTime() < Date.now()
     : false;
   const wsEnabled = config.websocket.enabled ?? true;
+  // The toggle is "on" only for the full behind-proxy posture: plain HTTP locally
+  // AND X-Forwarded-Proto trusted.
+  const behindProxy = tlsMode === "off" && config.trusted_proxy;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -354,6 +373,60 @@ export function AdminServerPage() {
             <option value="acme">ACME (Let&apos;s Encrypt)</option>
           </select>
         </FieldRow>
+
+        {/* Behind-proxy plain-HTTP deployment (tls.md § 9.1). A reverse proxy
+            terminates TLS; the app serves plain HTTP and trusts
+            X-Forwarded-Proto. Enabling forces mode off. */}
+        <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
+          <label className="flex cursor-pointer items-start gap-3">
+            <div
+              className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 ${behindProxy ? "bg-blue-600" : "bg-gray-200"}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${behindProxy ? "translate-x-4" : "translate-x-0"}`}
+              />
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={behindProxy}
+                onChange={(e) => setBehindProxy(e.target.checked)}
+                disabled={saving}
+              />
+            </div>
+            <span className="text-sm text-gray-700">
+              Terminate TLS at a proxy (plain HTTP)
+              <span className="mt-0.5 block text-xs font-normal text-gray-500">
+                A reverse proxy or load balancer presents the certificate; this app
+                serves plain HTTP behind it. Sets TLS mode to Off and trusts the
+                proxy&apos;s headers.
+              </span>
+            </span>
+          </label>
+
+          {behindProxy && (
+            <div
+              role="alert"
+              className="mt-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            >
+              <svg className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path
+                  fillRule="evenodd"
+                  d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span>
+                The app now trusts the <code className="font-mono">X-Forwarded-Proto</code>{" "}
+                header from your proxy to decide whether the original request used
+                HTTPS, so HSTS and secure cookies behave correctly for proxied
+                requests. <strong>Only enable this behind a trusted reverse proxy.</strong>{" "}
+                If the app is directly reachable, a client can spoof{" "}
+                <code className="font-mono">X-Forwarded-Proto</code> and defeat the
+                HTTPS-only protections.
+              </span>
+            </div>
+          )}
+        </div>
 
         {tlsMode !== "off" && (
           <>
