@@ -272,7 +272,22 @@ Original scope (for reference):
 - **Acceptance:** generate CSR, sign externally, paste cert, listener serves it.
   Depends on Chunk 3.
 
-## Chunk 6 — CSR UI (Feature 2 frontend)
+## Chunk 6 — CSR UI (Feature 2 frontend) (DONE)
+
+Done 2026-06-10. `api/config.ts` gained `GenerateCSRRequest`/`GenerateCSRResponse`
+types + a `generateCSR()` POST to `…/server/generate-csr`. `AdminServerPage.tsx`
+shows a CSR panel inside the `cert_source: db` block only: subject fields
+(CN/O/OU/C), a reusable `ChipEditor` for DNS + IP SANs, a key-algorithm dropdown
+(ecdsa-p256 default + p384/rsa-2048/3072/4096). Generate is disabled until an
+identifier (CN or a SAN) is present; on success the returned CSR PEM is shown in a
+read-only textarea with a Download CSR button (blob) and guidance to paste the
+signed cert into the Certificate (PEM) field above (match-and-promote). Generate
+errors surface inline; the private key is never shown (stored pending server-side).
+8 new vitest cases (db-only panel, algo default+options, identifier gate, SAN
+add/remove, payload, CSR display+guidance, error). Full frontend suite 355 green;
+tsc + eslint clean.
+
+Original scope (for reference):
 
 - Scope: `AdminServerPage.tsx`, `api/config.ts`.
 - Subject fields, SAN list editor, algo dropdown, Generate → show/download CSR;
