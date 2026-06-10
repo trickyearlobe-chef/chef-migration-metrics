@@ -7,19 +7,19 @@ Sequence: `0 → 1 → 2 → 3 → 3a → 4 → 5 → 6 → 7 → 8 → 9 → 9a
 
 ## Done
 
-Chunks 0, 1, 2, 3, 3a, 4 — spec split, config schema/validation, CertManager PEM
-source, DB cert/key storage + admin API, the `tls reset`/`tls clear-ca` repair
-CLI (recovery escape hatch), and the DB cert/key UI (Feature 1 frontend
-complete). 3a unblocks everything below.
+Chunks 0, 1, 2, 3, 3a, 4, 5 — spec split, config schema/validation, CertManager
+PEM source, DB cert/key storage + admin API, the `tls reset`/`tls clear-ca`
+repair CLI (recovery escape hatch), the DB cert/key UI (Feature 1 complete), and
+the CSR generation backend (`internal/tls/csr.go` + generate-csr endpoint +
+match-and-promote — Feature 2 backend). 3a unblocks everything below.
 
 ## Next chunk
 
-**Chunk 5 — CSR generation backend (Feature 2 backend).** Scope: new
-`internal/tls/csr.go`, `POST /api/v1/admin/config/server/generate-csr`,
-configstore lifecycle. Generate key → store as `private_key.pending` (secret);
-build CSR → return PEM. Signed-cert upload (Chunk 3 path) matches against the
-pending key; on match promote pending → active, else `422`. TDD: CSR
-content/promotion/mismatch. Depends on Chunk 3 (done).
+**Chunk 6 — CSR UI (Feature 2 frontend).** Scope: `AdminServerPage.tsx`,
+`api/config.ts`. Subject fields, SAN list editor, algo dropdown, Generate →
+show/download the returned CSR PEM; guidance to paste the signed cert back into
+the Feature-1 cert field (the PUT db path auto-promotes the pending key). TDD:
+component tests. Depends on Chunks 4, 5 (both done).
 
 ## Notes
 

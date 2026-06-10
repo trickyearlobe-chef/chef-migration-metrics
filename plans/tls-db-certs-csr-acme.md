@@ -240,7 +240,26 @@ Original scope (for reference):
 - **Acceptance:** operator configures DB cert/key end-to-end in the UI.
   Depends on Chunk 3.
 
-## Chunk 5 — CSR generation backend (Feature 2 backend)
+## Chunk 5 — CSR generation backend (Feature 2 backend) (DONE)
+
+Done 2026-06-10. New `internal/tls/csr.go`: `GenerateCSR(CSRRequest)` generates a
+key (ecdsa-p256 default, ecdsa-p384/rsa-2048/3072/4096) and a PKCS#10 CSR over the
+subject (CN/O/OU/C) + DNS/IP SANs; key returned PKCS#8 PEM ("PRIVATE KEY").
+Validates identifier-present (CN or a SAN), key algo, IP-SAN parse — operator-safe
+errors, never key material. New `POST /api/v1/admin/config/server/generate-csr`
+(`handle_admin_config_server_csr.go`, admin-only): generates, stores the key at
+`server.tls.private_key.pending` (secret, overwriting any prior), returns CSR PEM
++ echoed algo; key never returned. PUT db branch extended for match-and-promote
+(§ 4.5): a cert pasted with no key matches against the pending key via
+`ValidateStaticPairBytes` — on match it promotes (writes active cert+key, deletes
+pending), `422` on mismatch/no-pending; the active pair is only replaced on a
+clean match so fail-open holds. `pendingKeyPEM` helper reads the secret; persist
+now marshals the unified `dbCertPEM`/`dbKeyPEM`. Tests: CSR content/algos/identifier/
+IP/algo-reject; handler success/redaction/503/422s/method; full round-trip
+generate→sign→promote, promote-mismatch, promote-no-pending. `go test -race`, vet,
+gofmt, build clean.
+
+Original scope (for reference):
 
 - Scope: new `internal/tls/csr.go`, new handler
   `POST /api/v1/admin/config/server/generate-csr`, configstore lifecycle.
