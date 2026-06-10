@@ -111,6 +111,7 @@ volume, and unifies storage with the static DB cert path
 | `server.tls.acme.route53.secret_access_key` | `true` | Route 53 secret key (DNS-01). |
 | `server.tls.acme.route53.region` | `false` | Route 53 region. |
 | `server.tls.acme.route53.hosted_zone_id` | `false` | Route 53 hosted zone ID. |
+| `server.tls.acme.status` | `false` | Operator status (§ 3.14): last renewal time, last renewal error, last hostname-registration error. Non-secret, non-key. |
 
 Secret values use the same encryption stack as all other config-store secrets
 (AES-256-GCM, HKDF, per-row nonce, AAD; master key
@@ -276,11 +277,35 @@ often DHCP-assigned and may change.
 **Fail-soft, orthogonal to issuance.** DNS-01 validates via a TXT record, so
 A-record self-registration is independent of certificate issuance. A
 registration failure (no IPv4 detectable, an explicit IP/interface unusable, or
-a Route 53 error) logs an `ERROR` on the `tls` scope and is surfaced in TLS
-status, but **never** blocks issuance, renewal, or the fail-open path (§ 3.11),
-and never aborts startup.
+a Route 53 error) logs an `ERROR` on the `tls` scope and is surfaced in the
+operator status panel (§ 3.14), but **never** blocks issuance, renewal, or the
+fail-open path (§ 3.11), and never aborts startup.
 
 > **Security.** Self-registration publishes the host's IP in the configured
 > hosted zone. For internet-facing zones this exposes the address publicly (as
 > any A record does); internal deployments using a private hosted zone keep it
 > internal. Credentials remain encrypted config-store secrets (§ 3.4).
+
+### 3.14 Operator Status Surface
+
+The admin Server & TLS page shows ACME health. The data is served by the authed
+`GET /api/v1/admin/config/server` response (not the public, DB-free
+`tls-status` banner endpoint of [tls.md § 6.3](tls.md), which stays limited to
+`degraded`/`kind`/`reason` so it renders pre-login):
+
+- `tls_certificate_info` — the issued certificate's operator-safe metadata
+  (subject, SANs, `not_before`, `not_after`), read from `server.tls.acme.cert`
+  when `mode: acme`. Same shape as the static `cert_source: db` case. The private
+  key is never read.
+- `acme_status` — `{ last_renewal, last_error, hostname_error }`, read from
+  `server.tls.acme.status`:
+  - `last_renewal` — RFC 3339 time of the last successful issue/renewal (empty
+    if none yet).
+  - `last_error` — the most recent renewal/issuance error (empty after a success).
+  - `hostname_error` — the most recent self-registration error (§ 3.13), empty
+    after a success or when `register_hostname` is off.
+
+The renewer owns all writes to `server.tls.acme.status`: it records
+`last_renewal`/`last_error` each renewal cycle and `hostname_error` from the
+self-registration outcome. Saving ACME config through the admin API re-asserts
+hostname registration immediately rather than waiting for the next cycle.
