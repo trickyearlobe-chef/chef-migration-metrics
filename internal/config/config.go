@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -694,6 +695,13 @@ type ACMEConfig struct {
 	RenewBeforeDays int    `yaml:"renew_before_days"`
 	AgreeToTOS      bool   `yaml:"agree_to_tos"`
 	TrustedRoots    string `yaml:"trusted_roots"`
+	// Hostname self-registration (tls-acme.md § 3.13): when RegisterHostname is
+	// true and dns_provider is route53, the app publishes an A record per
+	// acme.domains entry pointing at the host. Opt-in, off by default.
+	RegisterHostname  bool   `yaml:"register_hostname"`
+	HostnameTTL       int    `yaml:"hostname_ttl"`
+	HostnameInterface string `yaml:"hostname_interface"`
+	HostnameIP        string `yaml:"hostname_ip"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,6 +1050,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.Server.TLS.ACME.RenewBeforeDays == 0 {
 		c.Server.TLS.ACME.RenewBeforeDays = 30
+	}
+	if c.Server.TLS.ACME.HostnameTTL == 0 {
+		c.Server.TLS.ACME.HostnameTTL = 60
 	}
 
 	// Performance defaults — Enabled uses *bool so nil defaults to true
@@ -1743,6 +1754,30 @@ func (c *Config) validateTLSACME(ve *ValidationError) {
 	if c.Server.TLS.ACME.TrustedRoots != "" {
 		if _, err := os.Stat(c.Server.TLS.ACME.TrustedRoots); err != nil {
 			ve.addf("server.tls.acme.trusted_roots %q: %v", c.Server.TLS.ACME.TrustedRoots, err)
+		}
+	}
+
+	c.validateACMEHostname(ve)
+}
+
+// validateACMEHostname validates the hostname self-registration fields
+// (tls-acme.md § 3.13). Self-registration reuses the Route 53 client, so it is
+// only meaningful with dns_provider: route53. A literal hostname_ip is checked
+// for IPv4 validity here (a typo is caught at save time); an unusable interface
+// is detected at runtime and skipped with an ERROR (fail-soft, § 3.13).
+func (c *Config) validateACMEHostname(ve *ValidationError) {
+	if !c.Server.TLS.ACME.RegisterHostname {
+		return
+	}
+	if c.Server.TLS.ACME.DNSProvider != "route53" {
+		ve.add("server.tls.acme.register_hostname requires dns_provider: route53")
+	}
+	if c.Server.TLS.ACME.HostnameTTL < 1 || c.Server.TLS.ACME.HostnameTTL > 86400 {
+		ve.addf("server.tls.acme.hostname_ttl: must be between 1 and 86400, got %d", c.Server.TLS.ACME.HostnameTTL)
+	}
+	if ip := c.Server.TLS.ACME.HostnameIP; ip != "" {
+		if parsed := net.ParseIP(ip); parsed == nil || parsed.To4() == nil {
+			ve.addf("server.tls.acme.hostname_ip %q: must be a valid IPv4 address", ip)
 		}
 	}
 }

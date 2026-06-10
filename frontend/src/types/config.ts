@@ -68,6 +68,13 @@ export interface ACMEConfig {
   storage_path: string;
   renew_before_days: number;
   agree_to_tos: boolean;
+  // Hostname self-registration (tls-acme.md § 3.13): publish an A record per
+  // domain pointing at the host. Opt-in, only meaningful with dns_provider:
+  // route53. IP source precedence: hostname_ip > hostname_interface > auto.
+  register_hostname: boolean;
+  hostname_ttl: number;
+  hostname_interface: string;
+  hostname_ip: string;
 }
 
 // Operator-safe metadata for the installed cert_source: db certificate.

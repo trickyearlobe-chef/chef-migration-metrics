@@ -51,6 +51,7 @@ type Renewer struct {
 	warn          WarnFunc
 	now           func() time.Time
 	checkInterval time.Duration
+	hostnameFn    func(context.Context)
 }
 
 // RenewerOption configures a Renewer.
@@ -69,6 +70,15 @@ func WithExpiryWarning(fn WarnFunc) RenewerOption {
 // WithCheckInterval overrides the steady-state poll interval (mainly for tests).
 func WithCheckInterval(d time.Duration) RenewerOption {
 	return func(r *Renewer) { r.checkInterval = d }
+}
+
+// WithHostnameRegistrar sets a callback invoked at the start of every renewal
+// cycle (and so once at startup) to re-assert the host's A record(s)
+// (tls-acme.md § 3.13). It is fail-soft and orthogonal to certificate issuance:
+// its outcome never affects renewal scheduling or backoff. Re-asserting each
+// cycle corrects a changed DHCP IP automatically.
+func WithHostnameRegistrar(fn func(context.Context)) RenewerOption {
+	return func(r *Renewer) { r.hostnameFn = fn }
 }
 
 // NewRenewer builds a Renewer around the storage, issuer, and config.
@@ -93,6 +103,12 @@ func NewRenewer(storage *Storage, issuer CertObtainer, cfg Config, log LogFunc, 
 func (r *Renewer) Run(ctx context.Context) {
 	backoff := time.Duration(0)
 	for {
+		// Re-assert the host A record(s) before each renewal check. Fail-soft:
+		// the registrar logs its own errors and the outcome never gates renewal
+		// (tls-acme.md § 3.13).
+		if r.hostnameFn != nil {
+			r.hostnameFn(ctx)
+		}
 		_, err := r.checkOnce(ctx)
 		sleep := r.checkInterval
 		if err != nil {

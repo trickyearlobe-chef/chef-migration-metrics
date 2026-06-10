@@ -169,6 +169,37 @@ func TestCheckOnceFailureWithinWarnWindowWarns(t *testing.T) {
 	}
 }
 
+// The hostname registrar callback fires at the start of each Run cycle (so at
+// least once at startup), independently of certificate health.
+func TestRunInvokesHostnameRegistrar(t *testing.T) {
+	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	st := NewStorage(newFakeStore())
+	seedCert(t, st, now.Add(60*24*time.Hour)) // healthy: checkOnce is a no-op
+	iss := &fakeIssuer{}
+
+	called := make(chan struct{}, 4)
+	r := NewRenewer(st, iss, Config{Domains: []string{"a.example.com"}, RenewBeforeDays: 30}, nil,
+		WithClock(func() time.Time { return now }),
+		WithCheckInterval(time.Millisecond),
+		WithHostnameRegistrar(func(context.Context) {
+			select {
+			case called <- struct{}{}:
+			default:
+			}
+		}),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("hostname registrar was not invoked by the Run loop")
+	}
+}
+
 func TestCheckOnceFailureOutsideWarnWindowNoWarn(t *testing.T) {
 	now := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
 	st := NewStorage(newFakeStore())

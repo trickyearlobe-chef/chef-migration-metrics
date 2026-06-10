@@ -59,6 +59,7 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 	// challenge fails open to self-signed.
 	var solver acme.Solver
 	var challengeSrv *http.Server
+	var renewerOpts []acme.RenewerOption
 	switch acfg.Challenge {
 	case "http-01":
 		if app.cfg.Server.TLS.HTTPRedirectPort == 0 {
@@ -88,6 +89,23 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 			return app.degradeToSelfSigned(handler, acfg.Domains, derr), nil
 		}
 		solver = r53
+
+		// Optional hostname self-registration: publish an A record per domain so
+		// the FQDN resolves to this host, reusing the Route 53 client/zone/creds
+		// (tls-acme.md § 3.13). It runs at the start of every renewal cycle (and
+		// so once at startup) and is fail-soft — orthogonal to certificate
+		// issuance, never blocks renewal or fail-open.
+		if acfg.RegisterHostname {
+			reg := r53.NewHostnameRegistrar(acfg.HostnameTTL, acfg.HostnameIP, acfg.HostnameInterface, app.tlsLog)
+			domains := acfg.Domains
+			renewerOpts = append(renewerOpts, acme.WithHostnameRegistrar(func(ctx context.Context) {
+				// The registrar logs its own ERROR on the tls scope; ignore the
+				// result here so registration can never gate renewal.
+				_ = reg.Register(ctx, domains)
+			}))
+			app.startup.Info(fmt.Sprintf(
+				"ACME hostname self-registration enabled (A record per domain, ttl %ds)", acfg.HostnameTTL))
+		}
 	default:
 		app.startup.Error(fmt.Sprintf("ACME challenge %q is not supported", acfg.Challenge))
 		return app.degradeToSelfSigned(handler, acfg.Domains,
@@ -152,7 +170,7 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 	// manager so a successful Obtain swaps the live certificate in place.
 	manager := acme.NewManager(storage, solver, engineCfg, acme.WithLogger(app.tlsLog))
 	issuer := &promotingIssuer{inner: manager, reload: app.tlsReload, log: app.tlsLog}
-	renewer := acme.NewRenewer(storage, issuer, engineCfg, app.tlsLog)
+	renewer := acme.NewRenewer(storage, issuer, engineCfg, app.tlsLog, renewerOpts...)
 	renewCtx, renewCancel := context.WithCancel(context.Background())
 	go renewer.Run(renewCtx)
 	app.startup.Info(fmt.Sprintf(

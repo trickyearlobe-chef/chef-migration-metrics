@@ -30,6 +30,10 @@ const mockServerConfig = {
       storage_path: "",
       renew_before_days: 0,
       agree_to_tos: false,
+      register_hostname: false,
+      hostname_ttl: 60,
+      hostname_interface: "",
+      hostname_ip: "",
     },
   },
   websocket: {

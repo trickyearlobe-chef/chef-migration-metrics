@@ -181,22 +181,29 @@ func (s *Route53Solver) changeInput(action types.ChangeAction, ch Challenge) *ro
 // waitInSync polls GetChange until the change set is INSYNC or pollTimeout
 // elapses. A nil change info (nothing to track) is treated as already settled.
 func (s *Route53Solver) waitInSync(ctx context.Context, info *types.ChangeInfo) error {
+	return pollChangeInSync(ctx, s.api, info, s.pollInterval, s.pollTimeout)
+}
+
+// pollChangeInSync polls api.GetChange until the change set reaches INSYNC or
+// timeout elapses. A nil change info (nothing to track) is treated as already
+// settled. Shared by the DNS-01 TXT solver and the hostname A-record registrar.
+func pollChangeInSync(ctx context.Context, api route53API, info *types.ChangeInfo, interval, timeout time.Duration) error {
 	if info == nil || info.Id == nil {
 		return nil
 	}
 	id := info.Id
 	status := info.Status
 
-	ctx, cancel := context.WithTimeout(ctx, s.pollTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
 		if status == types.ChangeStatusInsync {
 			return nil
 		}
-		if err := sleepCtx(ctx, s.pollInterval); err != nil {
+		if err := sleepCtx(ctx, interval); err != nil {
 			return fmt.Errorf("acme route53: change %s did not reach INSYNC: %w", aws.ToString(id), err)
 		}
-		out, err := s.api.GetChange(ctx, &route53.GetChangeInput{Id: id})
+		out, err := api.GetChange(ctx, &route53.GetChangeInput{Id: id})
 		if err != nil {
 			return fmt.Errorf("acme route53: poll GetChange for %s: %w", aws.ToString(id), err)
 		}
