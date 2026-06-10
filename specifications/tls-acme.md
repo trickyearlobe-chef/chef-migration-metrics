@@ -293,10 +293,11 @@ The admin Server & TLS page shows ACME health. The data is served by the authed
 `tls-status` banner endpoint of [tls.md § 6.3](tls.md), which stays limited to
 `degraded`/`kind`/`reason` so it renders pre-login):
 
-- `tls_certificate_info` — the issued certificate's operator-safe metadata
-  (subject, SANs, `not_before`, `not_after`), read from `server.tls.acme.cert`
-  when `mode: acme`. Same shape as the static `cert_source: db` case. The private
-  key is never read.
+- `tls_certificate_info` — operator-safe metadata for the issued **chain**
+  (per-cert subject, SANs, issuer, `not_before`, `not_after`, and chain role —
+  see [tls-static.md § 2.2](tls-static.md)), read from `server.tls.acme.cert` when
+  `mode: acme`. Same shape as the static `cert_source: db` case. The private key is
+  never read.
 - `acme_status` — `{ last_renewal, last_error, hostname_error }`, read from
   `server.tls.acme.status`:
   - `last_renewal` — RFC 3339 time of the last successful issue/renewal (empty
