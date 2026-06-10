@@ -50,13 +50,17 @@ Evidence (local DB after wizard): `config_store` has `organisations` +
 - Spec: `encrypted-config-store.md` §156 already states setup mode clears
   immediately without restart (landed in Chunk A); now true end-to-end.
 
-### Chunk C — wizard credential inline flow (#2)
-- Scope: `frontend` `AdminSetupWizardPage.tsx` (frontend only).
-- Replace `window.open("/admin/credentials","_blank")` with inline credential
-  creation in the wizard's credentials step (reuse the credentials create form),
-  then auto-advance to the org step with the new credential preselected.
-- TDD: vitest — create cred inline → advances → org step shows the credential.
-- Acceptance: single flow, no new tab, no manual return.
+### Chunk C — wizard credential inline flow (#2) — DONE
+- Replaced `window.open("/admin/credentials","_blank")` with an inline create
+  form in the credentials step (name + type select + `ValueField`, reused from
+  `pages/credentials`). On "Create & Continue" the wizard calls `createCredential`,
+  preselects the new credential on the org step, and advances. A "Skip" button
+  still allows the file-path route. No new tab, no manual return.
+- TDD: vitest — inline create → advances → org step preselects the new credential;
+  skip path → no create, file-path input offered. Updated the Chunk B test to use
+  "Skip" (the old "Continue" button is gone). Full frontend suite (386) green.
+- No spec delta: the wizard's credential-step mechanics aren't specified
+  (`encrypted-config-store.md` §156 only describes setup-mode clearing, unchanged).
 
 ## Spec deltas (CONFIRM before editing — do not modify specs without asking)
 - `encrypted-config-store.md` §156: state that configuring an org takes effect

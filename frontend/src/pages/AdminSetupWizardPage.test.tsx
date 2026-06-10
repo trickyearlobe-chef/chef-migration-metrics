@@ -66,7 +66,8 @@ describe("AdminSetupWizardPage — completion clears setup mode without a restar
     renderWizard();
 
     await user.click(screen.getByRole("button", { name: /get started/i }));
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    // Skip inline credential creation — this test exercises the existing-credential path.
+    await user.click(screen.getByRole("button", { name: /skip/i }));
 
     // Organisation step: wait for the credential dropdown to load.
     await waitFor(() => screen.getByRole("combobox"));
@@ -90,5 +91,91 @@ describe("AdminSetupWizardPage — completion clears setup mode without a restar
     await user.click(screen.getByRole("button", { name: /go to dashboard/i }));
 
     expect(assign).toHaveBeenCalledWith("/");
+  });
+});
+
+describe("AdminSetupWizardPage — inline credential creation (issue #2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.saveConfigOrganisations).mockResolvedValue(undefined as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Regression for issue #2: the credentials step used to open /admin/credentials
+  // in a new tab, forcing the user to leave the wizard, create a credential, and
+  // manually return. The credential is now created inline; on success the wizard
+  // advances to the org step with the new credential preselected.
+  it("creates a credential inline and preselects it on the org step", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.createCredential).mockResolvedValue({
+      name: "chef-prod-key",
+      credential_type: "chef_client_key",
+    } as never);
+    // After creation, the org step refetches credentials — return the new one.
+    vi.mocked(api.fetchCredentials).mockResolvedValue({
+      data: [
+        {
+          name: "chef-prod-key",
+          credential_type: "chef_client_key",
+          created_by: "admin",
+          created_at: "",
+          updated_at: "",
+        },
+      ],
+      pagination: { page: 1, per_page: 50, total: 1, total_pages: 1 },
+    } as never);
+
+    renderWizard();
+
+    await user.click(screen.getByRole("button", { name: /get started/i }));
+
+    // Credentials step: inline form, no "open in new tab" affordance.
+    expect(
+      screen.queryByRole("button", { name: /open credentials/i }),
+    ).not.toBeInTheDocument();
+
+    await user.type(
+      screen.getByPlaceholderText(/chef-prod-key|credential name/i),
+      "chef-prod-key",
+    );
+    // Benign placeholder value — a real PEM literal would trip the secret scanner.
+    await user.type(
+      screen.getByPlaceholderText(/BEGIN RSA PRIVATE KEY/i),
+      "fake-key-material",
+    );
+
+    await user.click(screen.getByRole("button", { name: /create & continue/i }));
+
+    expect(api.createCredential).toHaveBeenCalledWith({
+      name: "chef-prod-key",
+      credential_type: "chef_client_key",
+      value: "fake-key-material",
+    });
+
+    // Advanced to the org step, with the new credential preselected.
+    await waitFor(() => screen.getByText(/add your first organisation/i));
+    const combobox = await screen.findByRole("combobox");
+    expect((combobox as HTMLSelectElement).value).toBe("chef-prod-key");
+  });
+
+  it("can skip credential creation and use a file path instead", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchCredentials).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 50, total: 0, total_pages: 0 },
+    } as never);
+
+    renderWizard();
+
+    await user.click(screen.getByRole("button", { name: /get started/i }));
+    await user.click(screen.getByRole("button", { name: /skip/i }));
+
+    await waitFor(() => screen.getByText(/add your first organisation/i));
+    expect(api.createCredential).not.toHaveBeenCalled();
+    // No credentials → org step offers the file-path input.
+    expect(screen.getByPlaceholderText(/client\.pem/i)).toBeInTheDocument();
   });
 });

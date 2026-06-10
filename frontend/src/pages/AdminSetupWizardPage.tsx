@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  createCredential,
   fetchCredentials,
   fetchConfigOrganisations,
   saveConfigOrganisations,
@@ -10,6 +11,8 @@ import {
 } from "../api";
 import { ErrorAlert, InlineSpinner } from "../components/Feedback";
 import { chefOrgURLError } from "../lib/chefOrgUrl";
+import { CREDENTIAL_TYPES } from "./credentials/constants";
+import { ValueField } from "./credentials/ValueField";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -82,6 +85,13 @@ export function AdminSetupWizardPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Inline credential creation (credentials step).
+  const [credName, setCredName] = useState("");
+  const [credType, setCredType] = useState<string>(CREDENTIAL_TYPES[0].value);
+  const [credValue, setCredValue] = useState("");
+  const [credSaving, setCredSaving] = useState(false);
+  const [credError, setCredError] = useState<string | null>(null);
+
   const loadCredentials = useCallback(() => {
     fetchCredentials()
       .then((res) => setCredentials(res.data.map((c) => c.name)))
@@ -111,6 +121,27 @@ export function AdminSetupWizardPage() {
       setSaving(false);
     }
   }
+
+  async function handleCreateCredential() {
+    setCredSaving(true);
+    setCredError(null);
+    try {
+      await createCredential({
+        name: credName,
+        credential_type: credType,
+        value: credValue,
+      });
+      // Preselect the new credential on the org step, then advance.
+      handleOrgChange("client_key_credential", credName);
+      setStep("organisation");
+    } catch (err: unknown) {
+      setCredError(err instanceof Error ? err.message : "Failed to create credential.");
+    } finally {
+      setCredSaving(false);
+    }
+  }
+
+  const credValid = credName.trim() !== "" && credValue.trim() !== "";
 
   const orgUrlError = org.chef_server_url.trim() !== "" ? chefOrgURLError(org.chef_server_url) : null;
   const orgValid =
@@ -172,17 +203,65 @@ export function AdminSetupWizardPage() {
               <h2 className="text-lg font-semibold text-gray-900">Store a Chef API Key</h2>
               <p className="text-sm text-gray-600">
                 Your Chef API client key (.pem file) needs to be stored as a credential before it can
-                be referenced by an organisation.
+                be referenced by an organisation. Create one here.
               </p>
-              <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-                Go to <strong>Admin → Credentials</strong> and create a credential of type{" "}
-                <code className="rounded bg-amber-100 px-1">chef_client_key</code>, then return here
-                and continue.
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Credential Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={credName}
+                    onChange={(e) => {
+                      setCredName(e.target.value);
+                      setCredError(null);
+                    }}
+                    placeholder="e.g. chef-prod-key"
+                    className={INPUT_CLASS}
+                    disabled={credSaving}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">A name to reference this credential by.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Type</label>
+                  <select
+                    value={credType}
+                    onChange={(e) => setCredType(e.target.value)}
+                    className={SELECT_CLASS}
+                    disabled={credSaving}
+                  >
+                    {CREDENTIAL_TYPES.map((ct) => (
+                      <option key={ct.value} value={ct.value}>
+                        {ct.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Value <span className="text-red-500">*</span>
+                  </label>
+                  <ValueField
+                    credentialType={credType}
+                    value={credValue}
+                    onChange={(v) => {
+                      setCredValue(v);
+                      setCredError(null);
+                    }}
+                    disabled={credSaving}
+                  />
+                </div>
               </div>
+
+              {credError && <ErrorAlert message="Failed to create credential" detail={credError} />}
+
               <p className="text-xs text-gray-500">
-                Alternatively, if you prefer to reference a key file on disk, you can skip this step
-                and use a file path in the next step.
+                Prefer to reference a key file on disk? Skip this step and enter a file path in the
+                next step.
               </p>
+
               <div className="flex items-center justify-between">
                 <button
                   type="button"
@@ -194,23 +273,25 @@ export function AdminSetupWizardPage() {
                 <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => window.open("/admin/credentials", "_blank")}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => setStep("organisation")}
+                    disabled={credSaving}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
-                    Open Credentials
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                    </svg>
+                    Skip
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStep("organisation")}
-                    className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+                    onClick={handleCreateCredential}
+                    disabled={credSaving || !credValid}
+                    className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
                   >
-                    Continue
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-                    </svg>
+                    {credSaving && <InlineSpinner />}
+                    {credSaving ? "Creating…" : "Create & Continue"}
+                    {!credSaving && (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
