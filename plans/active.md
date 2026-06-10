@@ -47,15 +47,31 @@ a proxy (plain HTTP)" switch (`setBehindProxy`) sets `tls.mode: off` +
 (`handle_admin_config_server.go`) now also persists `KeyServerTrustedProxy` — it
 was assembled by 8c but the PUT key-list dropped it, so a UI value was lost on
 reload. TDD (vitest toggle/payload/warning; Go PUT-persists-trusted_proxy).
+Chunk 9 — Route53 DNS-01 solver: new `internal/acme/route53.go` `Route53Solver`
+(Solver seam over a `route53API` interface — `*route53.Client` in prod, fake in
+tests). Present UPSERTs the `_acme-challenge.<domain>` TXT (value double-quoted),
+polls `GetChange` to `INSYNC`; CleanUp DELETEs best-effort (no INSYNC wait).
+`NewRoute53Solver` resolves region/zone (dns_provider_config → config-store) and
+creds (config-store secrets → AWS env/IAM-role default chain, both halves
+required for static), no network at construction. New config-store keys
+`server.tls.acme.route53.{access_key_id,secret_access_key,region,hosted_zone_id}`
+(standalone, excluded from AllConfigKeys). `setupACME` dns-01 case builds the
+solver (fails open to self-signed on error / non-route53 provider); port-80
+challenge server guarded nil for dns-01. go.mod +aws-sdk-go-v2 subset (noted in
+[todo-ci.md](todo-ci.md) § 4). TDD, no real AWS. Specs already accurate.
 
 ## Next chunk
 
-**Chunk 9 — Route53 DNS-01 solver (Feature 3 DNS).** New `internal/acme/route53.go`
-+ `go.mod` (aws-sdk-go-v2 subset). UPSERT/DELETE TXT `_acme-challenge.<domain>`,
-poll `GetChange` to `INSYNC`. Creds via env / IAM role / encrypted config secrets
-(resolution order); region + hosted-zone resolution. Note `go.mod` additions for
-the CI lockfile-scan plan; record any debt. TDD against a mocked Route53 API
-(interface seam, no real AWS). Depends on Chunks 7, 8. See detail plan Chunk 9.
+**Chunk 9a — Route53 hostname self-registration (A record).** Opt-in
+(`register_hostname`, default off) self-publishing of an A record per
+`acme.domains` entry, reusing the Chunk 9 Route 53 client/UPSERT/`GetChange`.
+New ACMEConfig fields (`RegisterHostname`, `HostnameTTL`, `HostnameInterface`,
+`HostnameIP`) + validation + `types/config.ts`; an IP resolver helper (stdlib
+`net`: literal → named iface → default-route auto-detect, explicit-but-unusable
+= ERROR + skip). Wildcard domains skipped with WARN; UPSERT at startup + each
+renewal + on config change; fail-soft (never blocks issuance/fail-open). TDD, no
+real AWS/network. Spec `tls-acme.md § 3.13`. Depends on Chunk 9. See detail plan
+Chunk 9a.
 
 ## Notes
 

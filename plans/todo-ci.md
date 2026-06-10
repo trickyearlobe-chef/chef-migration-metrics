@@ -18,3 +18,15 @@ First push is the real test (cannot run GitHub Actions locally). Confirm:
 ## 3. (Optional) Pin nfpm for full tool pinning
 `nfpm@latest` in `release.yml` is the last unpinned tool version. Pin it to a
 specific version for complete tool pinning.
+
+## 4. New Go modules from the Route 53 DNS-01 solver (Chunk 9)
+The dns-01 solver (`internal/acme/route53.go`) added the `aws-sdk-go-v2` subset.
+This enlarges the Go lockfile-scan surface — direct: `aws-sdk-go-v2`,
+`aws-sdk-go-v2/config`, `aws-sdk-go-v2/credentials`,
+`aws-sdk-go-v2/service/route53`; plus ~10 indirect modules pulled by `config`'s
+default credential chain (`feature/ec2/imds`, `service/sso`, `service/ssooidc`,
+`service/sts`, `service/signin`, `internal/*`, `smithy-go`). Expected and
+accepted per `tls-acme.md` § 3.1 (the SDK subset is deliberately preferred over
+`lego`, which pulls every DNS-provider SDK). Action: confirm the osv-scanner /
+Trivy Go gate covers these and triage any advisories; no module here should be a
+surprise on the first scan.
