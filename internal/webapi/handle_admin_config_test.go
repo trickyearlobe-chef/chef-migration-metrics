@@ -1139,6 +1139,40 @@ func TestAdminConfigCollection_PUT_DoesNotInvokeOrgChangedHook(t *testing.T) {
 	}
 }
 
+// Repro for issue #1 (setup mode does not clear without restart): with a live
+// ConfigHolder backed by the same store, a successful org PUT must trigger an
+// in-request reload such that a subsequent GET reflects the saved org (the
+// frontend's useSetupRequired derives setupRequired = orgs.length === 0 from
+// this GET). A reload failure here would 500 the PUT and leave live config —
+// hence the GET and setup mode — stale until restart.
+func TestAdminConfigOrganisations_PUT_then_GET_ReflectsSavedOrg(t *testing.T) {
+	store := newTestConfigStore(t)
+	holder := configstore.NewConfigHolder(testConfig(), store)
+	r := newTestRouterForAdminConfig(nil, store, holder)
+
+	// Save an org (full org URL; org_name derived).
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com/organizations/myorg","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	// GET reads live config via the holder; it must now report the org.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/organisations", nil)
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	var got []map[string]any
+	decodeBody(t, w, &got)
+	if len(got) != 1 {
+		t.Fatalf("GET after PUT returned %d orgs, want 1 (setup mode would not clear)", len(got))
+	}
+	if got[0]["name"] != "friendly" {
+		t.Errorf("name = %v, want %q", got[0]["name"], "friendly")
+	}
+}
+
 func TestAdminConfigOrganisations_PUT_422_EmptyList(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)

@@ -32,12 +32,23 @@ Evidence (local DB after wizard): `config_store` has `organisations` +
   also clears #1 (setup prompt) is Chunk B's repro — the GET already reads live
   config, so #1 may be a reload-failure or cache path still to pin.
 
-### Chunk B — setup mode clears without restart (#1)
-- Repro first: after PUT org, assert GET `/admin/config/organisations` returns it
-  and `setupRequired=false`. Pin whether `configHolder.Reload` spuriously fails
-  (e.g. credential-reference validation during in-request reload).
-- Fix the failing path so live config reflects the saved org immediately.
-- Acceptance: save org in wizard → refresh dashboard → no setup redirect, no restart.
+### Chunk B — setup mode clears without restart (#1) — DONE
+- Repro pinned the cause: **not** a backend reload failure. Added Go round-trip
+  test (`PUT_then_GET_ReflectsSavedOrg`, holder backed by same store) — proves
+  the in-request `configHolder.Reload` succeeds and the GET reflects the org. So
+  the backend already clears setup mode (Chunk A's reload-on-PUT did it).
+- Real cause was frontend: `SetupModeGuard`'s `useSetupRequired` runs once on
+  mount and stays mounted across SPA navigation, so its `setupRequired` stays
+  stale (`true`). The wizard's "Go to Dashboard" did a soft `navigate("/")` →
+  the stale guard bounced the user straight back to `/admin/setup`. Only a full
+  browser refresh remounted the guard and cleared it.
+- Fix: "Go to Dashboard" now does a full load (`window.location.assign("/")`),
+  re-initialising the guard + `OrgProvider` + filters against the now-populated
+  config — no restart. Removed unused `useNavigate`.
+- TDD: vitest drives the wizard to completion → asserts full load to "/".
+  Full frontend suite (384) + Go webapi suite green.
+- Spec: `encrypted-config-store.md` §156 already states setup mode clears
+  immediately without restart (landed in Chunk A); now true end-to-end.
 
 ### Chunk C — wizard credential inline flow (#2)
 - Scope: `frontend` `AdminSetupWizardPage.tsx` (frontend only).

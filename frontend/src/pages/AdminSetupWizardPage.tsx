@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   fetchCredentials,
   fetchConfigOrganisations,
@@ -69,7 +68,6 @@ function StepIndicator({ current }: { current: Step }) {
 }
 
 export function AdminSetupWizardPage() {
-  const navigate = useNavigate();
   const [step, setStep] = useState<Step>("welcome");
   const [credentials, setCredentials] = useState<string[]>([]);
   const [org, setOrg] = useState<Organisation>({
@@ -320,7 +318,7 @@ export function AdminSetupWizardPage() {
               </p>
               <button
                 type="button"
-                onClick={() => navigate("/")}
+                onClick={() => window.location.assign("/")}
                 className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
               >
                 Go to Dashboard
