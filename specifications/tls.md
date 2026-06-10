@@ -240,6 +240,40 @@ server:
 Static and ACME configuration references live in
 [tls-static.md § 2.8](tls-static.md) and [tls-acme.md § 3.12](tls-acme.md).
 
+### 9.1 Behind a TLS-Terminating Proxy
+
+`mode: off` is also the **intended** deployment when a load balancer or reverse
+proxy terminates TLS in front of the application (distinct from the fail-open
+degraded state in § 6.3, which is an error condition). The app serves plain HTTP
+on the private network between the proxy and itself; the proxy presents the
+public certificate.
+
+In this topology set `server.trusted_proxy: true`. The application then trusts
+the `X-Forwarded-Proto` header to determine whether the original request arrived
+over TLS, so HSTS is emitted (and secure-cookie / scheme detection behaves
+correctly) for proxied HTTPS requests even though the local listener is plain
+HTTP. Leave it `false` (the default) whenever the app is directly reachable, or a
+client could spoof `X-Forwarded-Proto`.
+
+```yaml
+server:
+  port: 8080
+  trusted_proxy: true
+  tls:
+    mode: off
+```
+
+The repair CLI sets both in one step (the value lives encrypted in the config
+store; `trusted_proxy` is read at startup and on config reload):
+
+```
+chef-migration-metrics tls mode off --trusted-proxy
+```
+
+`tls mode <off|static|acme>` is the deliberate-deployment form of the
+recovery-framed `tls reset`; `--trusted-proxy[=true|false]` toggles
+`server.trusted_proxy`. Restart to apply. See § 6.3 for the recovery commands.
+
 ## Related
 
 - [tls-static.md](tls-static.md) — static cert/key (file & DB), mTLS, preflight.

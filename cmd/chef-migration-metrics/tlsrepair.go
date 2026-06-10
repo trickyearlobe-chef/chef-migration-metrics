@@ -53,6 +53,8 @@ func runTLSCommand(args []string) int {
 			"removed server.tls.ca_path — restart the server to apply (mTLS disabled; TLS stays on)",
 			"no server.tls.ca_path is set — nothing to do",
 			"no server.tls configuration found in the database — nothing to clear")
+	case "mode":
+		return runTLSMode(args[1:])
 	case "help", "-h", "--help":
 		printTLSUsage()
 		return 0
@@ -72,8 +74,14 @@ CMM_CREDENTIAL_ENCRYPTION_KEY in the environment.
 Subcommands:
   reset      Set server.tls.mode to 'off' so the server starts in plain HTTP.
              Recovers any mode (bad DB cert, mTLS lock, stuck ACME).
+             Recovery-framed alias for 'mode off'.
   clear-ca   Remove server.tls.ca_path to recover an mTLS lockout while
              keeping TLS enabled.
+  mode <off|static|acme> [--trusted-proxy[=true|false]]
+             Set server.tls.mode for a deliberate deployment change. With
+             'mode off --trusted-proxy', also sets server.trusted_proxy so the
+             app runs plain HTTP behind a TLS-terminating proxy and honours
+             X-Forwarded-Proto for HSTS / scheme detection.
 
 Restart the server after running a repair command for it to take effect.
 `)
@@ -176,24 +184,10 @@ func saveTLSSection(ctx context.Context, store *configstore.Store, tls config.TL
 }
 
 // tlsResetMode sets server.tls.mode to "off" so the server starts in plain HTTP
-// on the next restart, preserving all other TLS fields. It never creates a
-// section where none exists (that would shadow a YAML-managed config).
+// on the next restart, preserving all other TLS fields. It is the recovery-framed
+// alias for `tls mode off` (see tlsSetMode).
 func tlsResetMode(ctx context.Context, store *configstore.Store, updatedBy string) (tlsRepairResult, error) {
-	tls, ok, err := loadTLSSection(ctx, store)
-	if err != nil {
-		return repairNoChange, err
-	}
-	if !ok {
-		return repairNoSection, nil
-	}
-	if tls.Mode == "off" {
-		return repairNoChange, nil
-	}
-	tls.Mode = "off"
-	if err := saveTLSSection(ctx, store, tls, updatedBy); err != nil {
-		return repairNoChange, err
-	}
-	return repairChanged, nil
+	return tlsSetMode(ctx, store, "off", updatedBy)
 }
 
 // tlsClearCA removes server.tls.ca_path to recover an mTLS lockout while leaving

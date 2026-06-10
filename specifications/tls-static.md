@@ -202,6 +202,11 @@ server:
     http_redirect_port: 80
 ```
 
+To terminate TLS at a load balancer / reverse proxy instead of in the app, do
+**not** use static mode — use `mode: off` with `server.trusted_proxy: true` (the
+app serves plain HTTP behind the proxy and honours `X-Forwarded-Proto`). See
+[tls.md § 9.1](tls.md) and the `tls mode off --trusted-proxy` repair command.
+
 **Static, DB source** (cert/key live encrypted in the config store; set via the
 admin UI, not in this file):
 
