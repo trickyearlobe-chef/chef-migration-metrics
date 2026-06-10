@@ -8,24 +8,22 @@ A list of one or more Chef Infra Server organisations to collect data from. Each
 organisations:
   # Option A: File-based key (traditional)
   - name: myorg-production
-    chef_server_url: https://chef.example.com
-    org_name: myorg-production
+    chef_server_url: https://chef.example.com/organizations/myorg
     client_name: chef-migration-metrics
     client_key_path: /etc/chef-migration-metrics/keys/myorg-production.pem
 
   # Option B: Database-stored key (recommended for multi-org / container deployments)
   - name: myorg-staging
-    chef_server_url: https://chef.example.com
-    org_name: myorg-staging
+    chef_server_url: https://chef.example.com/organizations/myorg-staging
     client_name: chef-migration-metrics
     client_key_credential: myorg-staging-key
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes | A unique friendly name for this organisation used in logs and the UI |
-| `chef_server_url` | Yes | The base URL of the Chef Infra Server |
-| `org_name` | Yes | The Chef organisation name as registered on the server |
+| `name` | Yes | A unique friendly name for this organisation, used in logs and the UI and as the primary key that owns the collected data. Need not match the Chef org name. |
+| `chef_server_url` | Yes | The **full** organisation URL, including the `/organizations/<org>` path (e.g. `https://chef.example.com/organizations/myorg`). Used directly as the Chef API base. The UI validates this shape before saving. |
+| `org_name` | Derived | The Chef organisation name. **Derived** from the `/organizations/<org>` segment of `chef_server_url` when omitted (an explicit value is honoured); used for the client User-Agent label. Not entered in the UI. |
 | `client_name` | Yes | The name of the API client to authenticate as |
 | `client_key_path` | Conditional | Absolute path to the RSA private key file for the API client. Required unless `client_key_credential` is set. |
 | `client_key_credential` | Conditional | Name of a credential in the `credentials` database table containing the RSA private key. Takes precedence over `client_key_path` if both are set. The credential must have `credential_type: chef_client_key`. |

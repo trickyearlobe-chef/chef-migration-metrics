@@ -6,6 +6,7 @@ import {
   type Organisation,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
+import { chefOrgURLError } from "../lib/chefOrgUrl";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -28,6 +29,9 @@ function OrgCard({
   onRemove: (index: number) => void;
 }) {
   const sslValue = org.ssl_verify ?? true;
+  // Only surface the format error once something has been typed, so empty new
+  // rows don't show a red error before the operator starts.
+  const urlError = org.chef_server_url.trim() !== "" ? chefOrgURLError(org.chef_server_url) : null;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -65,21 +69,18 @@ function OrgCard({
             type="url"
             value={org.chef_server_url}
             onChange={(e) => onChange(index, "chef_server_url", e.target.value)}
-            placeholder="https://chef.example.com"
+            placeholder="https://chef.example.com/organizations/myorg"
             className={INPUT_CLASS}
+            aria-invalid={urlError !== null}
             disabled={saving}
           />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Org Name</label>
-          <input
-            type="text"
-            value={org.org_name}
-            onChange={(e) => onChange(index, "org_name", e.target.value)}
-            placeholder="myorg"
-            className={INPUT_CLASS}
-            disabled={saving}
-          />
+          {urlError ? (
+            <p className="mt-1 text-xs text-red-600">{urlError}</p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-500">
+              Full organisation URL — the org name is taken from the <code>/organizations/&lt;org&gt;</code> path.
+            </p>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-700">Client Name</label>
@@ -164,6 +165,9 @@ export function AdminOrganisationsPage() {
   useEffect(() => load(), [load]);
 
   const isDirty = JSON.stringify(orgs) !== JSON.stringify(saved);
+  // Block save until every org has a valid full org URL (the UI validates the
+  // shape before the backend ever sees it).
+  const allOrgsValid = orgs.every((o) => chefOrgURLError(o.chef_server_url) === null);
 
   function handleOrgChange(index: number, field: keyof Organisation, value: string | boolean | null) {
     setOrgs((prev) => prev.map((o, i) => i === index ? { ...o, [field]: value } : o));
@@ -257,7 +261,7 @@ export function AdminOrganisationsPage() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving || !isDirty}
+          disabled={saving || !isDirty || !allOrgsValid}
           className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
           {saving && <InlineSpinner />}

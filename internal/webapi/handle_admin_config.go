@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -305,10 +306,19 @@ func (r *Router) putAdminConfigOrganisations(w http.ResponseWriter, req *http.Re
 				fmt.Sprintf("%s: chef_server_url is required", prefix))
 			return
 		}
+		// org_name is not entered in the UI — it is derived from the full org
+		// URL's "/organizations/<org>" segment (it labels the User-Agent; the
+		// URL is authoritative). An explicit value is honoured. If absent and
+		// underivable, reject — the org table requires a non-empty org name.
 		if org.OrgName == "" {
-			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-				fmt.Sprintf("%s: org_name is required", prefix))
-			return
+			derived := deriveOrgNameFromURL(org.ChefServerURL)
+			if derived == "" {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: could not derive org name from chef_server_url %q — expected a full org URL like https://chef.example.com/organizations/<org>", prefix, org.ChefServerURL))
+				return
+			}
+			input[i].OrgName = derived
+			org.OrgName = derived
 		}
 		if org.ClientName == "" {
 			WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
@@ -329,12 +339,32 @@ func (r *Router) putAdminConfigOrganisations(w http.ResponseWriter, req *http.Re
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Organisations: input}, configstore.KeyOrganisations, false)
+	var postReload []func(context.Context) error
+	if r.onOrganisationsChanged != nil {
+		postReload = append(postReload, r.onOrganisationsChanged)
+	}
+	r.storeAdminConfigSection(w, req, &config.Config{Organisations: input}, configstore.KeyOrganisations, false, postReload...)
 }
 
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
+
+// deriveOrgNameFromURL extracts the Chef organisation name from a full org
+// URL's "/organizations/<org>" path segment, e.g.
+// "https://chef.example.com/organizations/myorg" → "myorg". Returns "" when
+// the segment is absent. Used to populate the User-Agent label without asking
+// the operator to repeat the org name they already typed in the URL.
+func deriveOrgNameFromURL(u string) string {
+	_, rest, found := strings.Cut(u, "/organizations/")
+	if !found {
+		return ""
+	}
+	if j := strings.IndexAny(rest, "/?#"); j >= 0 {
+		rest = rest[:j]
+	}
+	return rest
+}
 
 // decodeAdminConfigBody reads the request body and unmarshals it via the YAML
 // decoder (which honours yaml struct tags and accepts JSON as valid YAML).
@@ -355,7 +385,12 @@ func decodeAdminConfigBody(w http.ResponseWriter, req *http.Request, target any)
 // storeAdminConfigSection serialises the named key from partial via
 // ConfigToSections, writes it to the config store, optionally triggers a
 // ConfigHolder reload, and responds with the stored JSON on success.
-func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Request, partial *config.Config, key string, restartRequired bool) {
+// postReload hooks run after the section is stored and the live config has
+// reloaded, before the success response is written. A hook error fails the
+// request with 500 (the section is already persisted, but the running app
+// could not be brought into sync — surfacing the error is better than a silent
+// drift). Used by the organisations PUT to reconcile the operational org table.
+func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Request, partial *config.Config, key string, restartRequired bool, postReload ...func(context.Context) error) {
 	sections, err := configstore.ConfigToSections(partial)
 	if err != nil {
 		r.logf("ERROR", "admin/config/%s: serialise: %v", key, err)
@@ -374,6 +409,14 @@ func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Reques
 		if err := r.configHolder.Reload(req.Context()); err != nil {
 			r.logf("ERROR", "admin/config/%s: reload: %v", key, err)
 			WriteInternalError(w, "Failed to reload config after update.")
+			return
+		}
+	}
+
+	for _, hook := range postReload {
+		if err := hook(req.Context()); err != nil {
+			r.logf("ERROR", "admin/config/%s: post-update hook: %v", key, err)
+			WriteInternalError(w, "Failed to apply config change.")
 			return
 		}
 	}

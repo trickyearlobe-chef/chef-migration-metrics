@@ -6,6 +6,7 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -119,14 +120,15 @@ func newTestConfigStore(t *testing.T) *configstore.Store {
 // newTestRouterForAdminConfig builds a Router with a config store and holder
 // wired in. Pass nil store to get 503 on PUT. Pass nil holder to skip
 // config reload after PUT (avoids validation failures on an incomplete store).
-func newTestRouterForAdminConfig(cfg *config.Config, store *configstore.Store, holder *configstore.ConfigHolder) *Router {
+func newTestRouterForAdminConfig(cfg *config.Config, store *configstore.Store, holder *configstore.ConfigHolder, extra ...RouterOption) *Router {
 	if cfg == nil {
 		cfg = testConfig()
 	}
 	ms := &mockStore{}
 	hub := NewEventHub()
 	go hub.Run()
-	return NewRouter(ms, cfg, hub, WithConfigStore(store, holder))
+	opts := append([]RouterOption{WithConfigStore(store, holder)}, extra...)
+	return NewRouter(ms, cfg, hub, opts...)
 }
 
 // decodeBody is a test helper that decodes a JSON response body into v.
@@ -1019,6 +1021,156 @@ func TestAdminConfigOrganisations_PUT_400_InvalidJSON(t *testing.T) {
 
 	assertStatus(t, w, http.StatusBadRequest)
 	assertErrorCode(t, w, ErrCodeBadRequest)
+}
+
+// org_name is no longer entered in the UI; the backend derives it from the
+// full org URL's "/organizations/<org>" segment when omitted. chef_server_url
+// is stored verbatim (the URL is authoritative).
+func TestAdminConfigOrganisations_PUT_DerivesOrgNameFromURL(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com/organizations/myorg","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodePutValue(t, w, &got)
+	if got[0]["org_name"] != "myorg" {
+		t.Errorf("org_name = %v, want %q (derived from URL)", got[0]["org_name"], "myorg")
+	}
+	if got[0]["chef_server_url"] != "https://chef.example.com/organizations/myorg" {
+		t.Errorf("chef_server_url = %v, want full URL stored verbatim", got[0]["chef_server_url"])
+	}
+}
+
+// An explicit org_name is honoured (not overwritten by derivation).
+func TestAdminConfigOrganisations_PUT_ExplicitOrgNameKept(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com/organizations/myorg","org_name":"explicit","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var got []map[string]any
+	decodePutValue(t, w, &got)
+	if got[0]["org_name"] != "explicit" {
+		t.Errorf("org_name = %v, want %q (explicit value kept)", got[0]["org_name"], "explicit")
+	}
+}
+
+// If org_name is omitted and the URL has no "/organizations/<org>" segment,
+// the backend cannot derive it and rejects the save (the UI prevents this).
+func TestAdminConfigOrganisations_PUT_422_OrgNameNotDerivable(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+// A successful org PUT must invoke the organisations-changed hook so the
+// operational organisations table is reconciled and a collection triggered
+// without a restart (configuration-live-reload.md; web-api-organisations.md).
+func TestAdminConfigOrganisations_PUT_InvokesOrgChangedHook(t *testing.T) {
+	store := newTestConfigStore(t)
+	var calls int
+	r := newTestRouterForAdminConfig(nil, store, nil,
+		WithOrganisationsChanged(func(context.Context) error {
+			calls++
+			return nil
+		}))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(validOrgBody))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	if calls != 1 {
+		t.Errorf("organisations-changed hook called %d times, want 1", calls)
+	}
+}
+
+// If the organisations-changed hook fails (e.g. the org-table reconcile
+// errors), the PUT must surface 500 rather than silently leaving the running
+// app out of sync with the persisted config.
+func TestAdminConfigOrganisations_PUT_OrgChangedHookError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil,
+		WithOrganisationsChanged(func(context.Context) error {
+			return errors.New("reconcile failed")
+		}))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(validOrgBody))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+}
+
+// A non-org config PUT must NOT invoke the organisations-changed hook.
+func TestAdminConfigCollection_PUT_DoesNotInvokeOrgChangedHook(t *testing.T) {
+	store := newTestConfigStore(t)
+	var calls int
+	r := newTestRouterForAdminConfig(nil, store, nil,
+		WithOrganisationsChanged(func(context.Context) error {
+			calls++
+			return nil
+		}))
+
+	body := `{"schedule":"0 2 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/collection", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	if calls != 0 {
+		t.Errorf("organisations-changed hook called %d times for a collection PUT, want 0", calls)
+	}
+}
+
+// Repro for issue #1 (setup mode does not clear without restart): with a live
+// ConfigHolder backed by the same store, a successful org PUT must trigger an
+// in-request reload such that a subsequent GET reflects the saved org (the
+// frontend's useSetupRequired derives setupRequired = orgs.length === 0 from
+// this GET). A reload failure here would 500 the PUT and leave live config —
+// hence the GET and setup mode — stale until restart.
+func TestAdminConfigOrganisations_PUT_then_GET_ReflectsSavedOrg(t *testing.T) {
+	store := newTestConfigStore(t)
+	holder := configstore.NewConfigHolder(testConfig(), store)
+	r := newTestRouterForAdminConfig(nil, store, holder)
+
+	// Save an org (full org URL; org_name derived).
+	body := `[{"name":"friendly","chef_server_url":"https://chef.example.com/organizations/myorg","client_name":"client","client_key_credential":"my-key"}]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/organisations", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	// GET reads live config via the holder; it must now report the org.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/organisations", nil)
+	r.ServeHTTP(w, req)
+	assertStatus(t, w, http.StatusOK)
+
+	var got []map[string]any
+	decodeBody(t, w, &got)
+	if len(got) != 1 {
+		t.Fatalf("GET after PUT returned %d orgs, want 1 (setup mode would not clear)", len(got))
+	}
+	if got[0]["name"] != "friendly" {
+		t.Errorf("name = %v, want %q", got[0]["name"], "friendly")
+	}
 }
 
 func TestAdminConfigOrganisations_PUT_422_EmptyList(t *testing.T) {
