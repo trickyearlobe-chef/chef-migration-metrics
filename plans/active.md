@@ -41,9 +41,24 @@ main.go wires it via `ParseSeverity` + `logger.SetLevel`. Logging section now
 reports subsystem/false when wired, process/true otherwise (no-setter contract
 tests unchanged). Full logging (incl. `-race`) + webapi suites + `go vet` green.
 
+## Chunk D — `collection.schedule` reschedule applier [subsystem] ✅ DONE
+
+First scheduler-reschedule applier; established the `Reschedule` + signal-the-loop
+pattern the backup reschedule applier reuses. `Scheduler.Reschedule(CronParser)`
+swaps `s.schedule` under `s.mu` and signals a buffered `reschedule chan struct{}`;
+the loop reads `s.schedule` under lock each iteration and a new `<-s.reschedule`
+select case stops the pending timer and recomputes `Next` from the new schedule.
+webapi `collectionScheduleApplier` (subsystem) registered only when
+`WithCollectionRescheduler` is wired — a `func(string) error` callback, so webapi
+still doesn't import `collector`. main.go wires it via `ParseSchedule` +
+`sched.Reschedule` (sched non-nil by Phase 16; scheduler starts Phase 14). Collection
+section reports subsystem/false when wired, applied/false otherwise (thresholds always
+apply live). Two scheduler tests (live swap + before-Start) `-race` green; two webapi
+tests (subsystem reload + applier-error 500). Full collector + webapi suites + vet green.
+
 ### Next chunk candidates (later sessions)
-- **New appliers (subsystem):** collection.schedule reschedule; backup
-  reschedule/start/stop; concurrency.{cookstyle_scan,readiness_evaluation,cookbook_download} resize.
+- **New appliers (subsystem):** backup reschedule/start/stop;
+  concurrency.{cookstyle_scan,readiness_evaluation,cookbook_download} resize.
 - **Exports cleanup-ticker re-point** (`main.go:1059`) — the subsystem half of the
   exports section (read swaps already done here).
 

@@ -75,6 +75,16 @@ type Router struct {
 	// WithLogLevelSetter.
 	logLevelSetter func(level string) error
 
+	// collectionRescheduler re-applies the collection.schedule cron to the
+	// running collection scheduler (the collection.schedule subsystem applier).
+	// The value is the validated cron string; the callback parses and reschedules
+	// in place. nil when no scheduler is wired — the schedule half of the
+	// collection section then has no applier (its live-read thresholds still
+	// apply, but a schedule change silently needs a restart). Kept as a string
+	// callback so webapi need not import the collector package. Set via
+	// WithCollectionRescheduler.
+	collectionRescheduler func(schedule string) error
+
 	// --- Authentication components (set via WithAuth) ---
 
 	// localAuth handles local username/password authentication with
@@ -255,6 +265,17 @@ func WithLogger(fn func(level, msg string)) RouterOption {
 func WithLogLevelSetter(fn func(level string) error) RouterOption {
 	return func(r *Router) {
 		r.logLevelSetter = fn
+	}
+}
+
+// WithCollectionRescheduler wires the live reschedule apply point for the
+// collection.schedule config field. fn receives the validated cron string and
+// reschedules the running collection scheduler in place; when set, a collection
+// PUT applies a schedule change without a restart (subsystem). Without it a
+// schedule change is persisted but only takes effect on the next restart.
+func WithCollectionRescheduler(fn func(schedule string) error) RouterOption {
+	return func(r *Router) {
+		r.collectionRescheduler = fn
 	}
 }
 

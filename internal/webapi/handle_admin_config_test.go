@@ -738,6 +738,57 @@ func TestAdminConfigLogging_GET_NilStore(t *testing.T) {
 	assertStatus(t, w, http.StatusOK)
 }
 
+// With a collection rescheduler wired, the collection section applies a
+// schedule change in place (subsystem) and reports restart_required:false — the
+// cron is no longer immutable at runtime. The thresholds still read live.
+func TestAdminConfigCollection_PUT_WithRescheduler_SubsystemReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	var gotSchedule string
+	calls := 0
+	resched := func(schedule string) error {
+		gotSchedule = schedule
+		calls++
+		return nil
+	}
+	r := newTestRouterForAdminConfig(nil, store, nil, WithCollectionRescheduler(resched))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/collection",
+		strings.NewReader(`{"schedule":"0 3 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("collection PUT with a rescheduler should not require restart")
+	}
+	if resp.Reload != ReloadSubsystem.String() {
+		t.Errorf("collection reload = %q, want %q", resp.Reload, ReloadSubsystem.String())
+	}
+	if calls != 1 {
+		t.Errorf("rescheduler called %d times, want 1", calls)
+	}
+	if gotSchedule != "0 3 * * *" {
+		t.Errorf("rescheduler schedule = %q, want %q", gotSchedule, "0 3 * * *")
+	}
+}
+
+// A rescheduler error (the schedule could not be applied) surfaces as a 500 —
+// better than silently claiming the new schedule is live when it is not.
+func TestAdminConfigCollection_PUT_ReschedulerError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	resched := func(string) error { return errors.New("reschedule failed") }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithCollectionRescheduler(resched))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/collection",
+		strings.NewReader(`{"schedule":"0 3 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+}
+
 // ---------------------------------------------------------------------------
 // PUT /api/v1/admin/config/logging
 // ---------------------------------------------------------------------------

@@ -87,7 +87,14 @@ func (r *Router) putAdminConfigCollection(w http.ResponseWriter, req *http.Reque
 	}
 
 	// Collection thresholds are read live per request (handle_nodes.go) — applied.
-	r.storeAdminConfigSection(w, req, &config.Config{Collection: input}, configstore.KeyCollection, appliedApplier)
+	// collection.schedule needs the scheduler to reschedule in place (subsystem);
+	// when a rescheduler is wired the new cron applies live, otherwise only the
+	// schedule half silently needs a restart (the thresholds still apply live).
+	appliers := []Applier{appliedApplier}
+	if r.collectionRescheduler != nil {
+		appliers = append(appliers, r.collectionScheduleApplier(input.Schedule))
+	}
+	r.storeAdminConfigSection(w, req, &config.Config{Collection: input}, configstore.KeyCollection, appliers...)
 }
 
 // ---------------------------------------------------------------------------

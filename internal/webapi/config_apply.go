@@ -102,6 +102,20 @@ func (r *Router) logLevelApplier(level string) Applier {
 	}
 }
 
+// collectionScheduleApplier reschedules the running collection scheduler to the
+// validated cron string via the wired rescheduler and reports ReloadSubsystem.
+// Only registered when a rescheduler is wired; without one the schedule half of
+// the collection section has no applier and the change only takes effect on
+// restart. The cron string is already validated by the handler (5-field cron).
+func (r *Router) collectionScheduleApplier(schedule string) Applier {
+	return func(context.Context) (ApplyResult, error) {
+		if err := r.collectionRescheduler(schedule); err != nil {
+			return ApplyResult{}, err
+		}
+		return ApplyResult{Reload: ReloadSubsystem}, nil
+	}
+}
+
 // worstGranularity returns the most severe granularity among results. With no
 // results it returns ReloadProcess: a section that registered no applier is
 // assumed to need a restart (pessimistic — at worst over-prompts, never

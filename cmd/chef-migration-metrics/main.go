@@ -1142,6 +1142,14 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			logger.SetLevel(sev)
 			return nil
 		}),
+		webapi.WithCollectionRescheduler(func(schedule string) error {
+			parsed, err := collector.ParseSchedule(schedule)
+			if err != nil {
+				return err
+			}
+			sched.Reschedule(parsed)
+			return nil
+		}),
 		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
 		webapi.WithCollectionTrigger(func(ctx context.Context) error {
 			if coll.IsRunning() {
