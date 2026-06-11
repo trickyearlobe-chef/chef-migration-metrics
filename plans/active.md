@@ -65,12 +65,18 @@ the proposed delta for confirmation before writing.
 - OUT of scope: runtime health-driven port-flip + hot listener rebind (stays
   todo-tls-antilockout.md §2). Output: spec delta. No code.
 
-### W2-A — impl (dep: W2-S)
-- Scope: `internal/tls/listener.go` (reuse `ChallengeRedirectServer` /
-  `http_redirect_port`), `internal/config/config.go`, server wiring.
-- Implement 443 + redirect-old-port on healthy TLS; bind-failure fallback when 443
-  unavailable. No graceful hot-rebind (restart-required boundary unchanged).
-- TDD: healthy TLS → 443 listener + old-port redirect; 443 bind failure → fallback.
+### W2-A — impl (dep: W2-S) — DONE
+- Branch `feature/tls-443-lifeboat` (includes the W2-S ACME refinement spec commit).
+- `ResolveAutoHTTPS` (pure) decides HTTPS+redirect ports; `Listener` gained
+  `RedirectPorts` (multi-redirect) + `SetHTTPSListener` (pre-bound 443 so a bind
+  failure falls back synchronously). Server wiring: `tlsHealthy` gates auto-443;
+  `planAutoHTTPS` pre-binds 443 (injectable `auto443Listen` seam) and returns
+  effective port + redirects. Static + ACME both wired — ACME builds the http-01
+  challenge/redirect server after the port decision so it targets 443; degraded
+  ACME holds server.port (no runtime move). Config + save-time validation reject
+  `http_redirect_port` == 443 (and == server.port at startup). Full suite + vet +
+  gofmt green.
+- Spec covered both static and acme per refined §1.5 (see W2-S note).
 
 ## Dependencies
 - W1-S → {W1-A, W1-B}. W2-S → W2-A. W1 and W2 fully independent; specs can run

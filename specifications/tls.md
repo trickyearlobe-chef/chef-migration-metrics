@@ -107,6 +107,27 @@ the previously-used `server.port` URL keeps working via redirect. This is the
   targets the `443` URL. `http_redirect_port` must differ from **both**
   `server.port` and `443` (validated at startup and save time, § 1.2).
 
+**ACME mode.** Automatic HTTPS on `443` applies to `mode: acme` on the same
+"healthy at startup" condition, with one wrinkle: in `http-01` the port-80
+challenge/redirect listener ([tls-acme.md § 3.3](tls-acme.md)) *is* the redirect
+listener.
+
+- **Healthy (a real issued certificate is loaded at startup):** HTTPS binds
+  `443`. In `http-01`, the port-80 listener serves the challenge path as always
+  but `301`-redirects ordinary traffic to the `443` URL (not `server.port`). As
+  in static mode, a secondary listener on `server.port` also redirects to `443`
+  (skipped when `server.port` is already `443`). `dns-01` has no port-80 listener
+  — only the `server.port` → `443` redirect.
+- **Degraded bootstrap (no certificate yet → ephemeral self-signed):** this is
+  the fail-open path, so `443` is **not** bound — HTTPS (self-signed) holds
+  `server.port` and the port-80 listener redirects to `server.port`, exactly as
+  today. When the renewer later obtains and promotes a real certificate **in
+  place**, the listener does **not** move to `443` at runtime (no runtime
+  port-flip — see *Out of scope* below); `443` is reconsidered only on the next
+  restart, which now starts healthy.
+- **`443` bind failure / `server.port` already `443`:** identical to static mode
+  above.
+
 > **Out of scope (future):** *runtime* health-driven port movement — flipping
 > between `443` and `server.port` as TLS health changes at runtime, with a graceful
 > listener hot-swap and flap hysteresis — is **not** part of this behaviour. `443`

@@ -200,6 +200,22 @@ func TestAdminConfigServer_PUT_422_RedirectPortEqualsListenPort(t *testing.T) {
 	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
+func TestAdminConfigServer_PUT_422_RedirectPortEquals443(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.Port = 8080
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	certPath, keyPath := writeTestKeyPair(t)
+	body := fmt.Sprintf(`{"tls":{"mode":"static","cert_path":%q,"key_path":%q,"http_redirect_port":443}}`, certPath, keyPath)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
 func TestAdminConfigServer_PUT_Success_TLSAcme(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)

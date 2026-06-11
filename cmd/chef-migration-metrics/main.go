@@ -154,6 +154,12 @@ type serverApp struct {
 	// (systemd Restart=on-failure) starts a fresh process that re-reads config.
 	// See configuration-live-reload.md § Apply & Restart.
 	restartCh chan struct{}
+
+	// auto443Listen binds the standard HTTPS lifeboat port (443) for automatic
+	// HTTPS (tls.md § 1.5). It is a field so tests can simulate "443
+	// available/unavailable" deterministically without needing privilege. Nil ⇒
+	// a real bind on 443.
+	auto443Listen func(listenAddr string) (net.Listener, error)
 }
 
 // exitCodeRestart is the process exit code used for an admin-requested restart.
@@ -1479,12 +1485,27 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			lcfg.KeyPEM = keyPEM
 		}
 
+		// Automatic HTTPS on 443 (tls.md § 1.5): only when TLS is healthy at
+		// startup. The configured port is redirected to 443; on a 443 bind failure
+		// we fall back to serving HTTPS on the configured port with no redirect.
+		var https443Ln net.Listener
+		if app.tlsHealthy(lcfg) {
+			lcfg.Port, lcfg.RedirectPorts, https443Ln = app.planAutoHTTPS(app.cfg.Server.TLS.HTTPRedirectPort)
+			lcfg.HTTPRedirectPort = 0 // folded into RedirectPorts by planAutoHTTPS
+		}
+
 		tlsListener, tlsErr := apptls.NewListener(apiRouter, lcfg, tlsLog)
 		if tlsErr != nil {
 			// Fail open (tls-static.md § 2.4): a bad certificate must never
 			// prevent reaching the UI to fix it. Record degraded state and serve
 			// a self-signed cert (encrypted) instead of exiting.
+			if https443Ln != nil {
+				_ = https443Ln.Close()
+			}
 			return app.degradeToSelfSigned(apiRouter, nil, tlsErr), nil
+		}
+		if https443Ln != nil {
+			tlsListener.SetHTTPSListener(https443Ln)
 		}
 
 		app.startup.Info(fmt.Sprintf("TLS certificate: %s", tlsListener.CertSummary()))
@@ -1542,6 +1563,66 @@ func (app *serverApp) loadDBCertKey(ctx context.Context) (certPEM, keyPEM []byte
 	}
 
 	return []byte(certStr), []byte(keyStr), nil
+}
+
+// tlsHealthy reports whether the static-mode certificate material loads cleanly
+// — the same check the listener performs at startup (tls-static.md § 2.4/§ 2.6).
+// Automatic HTTPS on 443 (tls.md § 1.5) is gated on this: 443 is bound only when
+// TLS is healthy, never on the fail-open self-signed path.
+func (app *serverApp) tlsHealthy(lcfg apptls.ListenerConfig) bool {
+	if lcfg.CertSource == "db" {
+		return apptls.ValidateStaticPairBytes(lcfg.CertPEM, lcfg.KeyPEM, lcfg.CAPath) == nil
+	}
+	return apptls.ValidateStaticPair(lcfg.CertPath, lcfg.KeyPath, lcfg.CAPath) == nil
+}
+
+// planAutoHTTPS resolves the automatic-443 listening layout for a healthy TLS
+// listener (tls.md § 1.5) and pre-binds 443 when it applies, so a 443 bind
+// failure falls back to the configured port synchronously rather than surfacing
+// asynchronously after the listener has started. It returns the effective HTTPS
+// port, the redirect ports that 301 to it, and the pre-bound 443 listener (nil
+// unless 443 was bound here — including when server.port is already 443, where
+// the listener binds it itself).
+//
+// httpRedirectPort is the explicit server.tls.http_redirect_port that the HTTPS
+// Listener should also run as a redirect; pass 0 in ACME mode, where the port-80
+// challenge server owns that redirect instead.
+func (app *serverApp) planAutoHTTPS(httpRedirectPort int) (httpsPort int, redirectPorts []int, ln443 net.Listener) {
+	addr := app.cfg.Server.ListenAddress
+	if addr == "" {
+		addr = "0.0.0.0"
+	}
+	plan := apptls.ResolveAutoHTTPS(app.cfg.Server.Port, httpRedirectPort, func() bool {
+		l, err := app.listen443(addr)
+		if err != nil {
+			fallbackPort := app.cfg.Server.Port
+			if fallbackPort == 0 {
+				fallbackPort = 8080
+			}
+			app.startup.Error(fmt.Sprintf(
+				"automatic HTTPS on 443 unavailable: %v — serving HTTPS on the configured port %d with no 443 redirect",
+				err, fallbackPort))
+			if rem := apptls.BindPermissionRemediation(addr, 443, err); rem != "" {
+				app.startup.Error(rem)
+			}
+			return false
+		}
+		ln443 = l
+		return true
+	})
+	if plan.BoundTo443 {
+		app.startup.Info(fmt.Sprintf(
+			"automatic HTTPS on 443 enabled (redirecting %v → 443)", plan.RedirectPorts))
+	}
+	return plan.HTTPSPort, plan.RedirectPorts, ln443
+}
+
+// listen443 binds the lifeboat 443 port, honouring the auto443Listen test seam.
+func (app *serverApp) listen443(listenAddr string) (net.Listener, error) {
+	if app.auto443Listen != nil {
+		return app.auto443Listen(listenAddr)
+	}
+	return net.Listen("tcp", net.JoinHostPort(listenAddr, "443"))
 }
 
 // listenTarget is a resolved (address, port) the server may bind.

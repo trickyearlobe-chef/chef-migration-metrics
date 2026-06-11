@@ -57,7 +57,9 @@ store**, not on disk — there is no `storage_path` (§ 3.5).
 `http://<domain>/.well-known/acme-challenge/<token>`. Requires the application (or
 its redirect listener) to be reachable on port 80 from the internet. When
 `http_redirect_port` is set, the challenge handler is installed on the redirect
-listener (challenge path takes priority over redirect). When `http_redirect_port`
+listener (challenge path takes priority over redirect); the redirect target is the
+effective HTTPS port — `443` when automatic HTTPS on 443 is in effect
+([tls.md § 1.5](tls.md)), otherwise `server.port`. When `http_redirect_port`
 is not set and `challenge: http-01`, log `ERROR` at startup advising the operator
 to set `http_redirect_port: 80`.
 
