@@ -48,17 +48,20 @@ claim and the behaviour drift. That drift IS the bug class.
 
 **Invert it: the subsystem owns the call; the flag is computed from the result.**
 
-- [ ] Evolve `postReload` into an applier the subsystem registers per section:
-  `type Applier func(ctx) (ApplyResult, error)` returning `ApplyResult{ Reload Granularity }`.
-- [ ] `storeAdminConfigSection`: persist → reload holder → run appliers →
-  `restartRequired := result.Reload == ReloadProcess`. Never pass the bool in.
-- [ ] **Default for a section with no applier = `process`** (pessimistic). Today's
-  default `false` *lies*; a pessimistic default at worst over-prompts a restart —
-  honest, never silently wrong. Adding a live applier flips the flag to `false`
-  automatically, so it can never drift again.
-- [ ] Appliers report `listener`/`subsystem` where applicable, so the API surfaces
-  the real granularity (e.g. a `port` change rebinds the listener and reports
-  `listener`, not `process`). The web layer becomes a dumb relay.
+DONE (`refactor/config-live-reload`, Chunk B): the machinery below shipped in
+`internal/webapi/config_apply.go` + `storeAdminConfigSection` rewrite. Remaining
+work is registering the real *subsystem* appliers in Bucket 2 (each flips its
+section from the pessimistic `process` default back to `false`).
+
+- [x] Evolve `postReload` into an applier the subsystem registers per section:
+  `type Applier func(ctx) (ApplyResult, error)` returning `ApplyResult{ Reload ReloadGranularity }`.
+- [x] `storeAdminConfigSection`: persist → reload holder → run appliers →
+  `restartRequired := worstGranularity(results) == ReloadProcess`. Bool no longer passed.
+- [x] **Default for a section with no applier = `process`** (pessimistic). Adding a
+  live applier flips the flag to `false` automatically, so it can never drift again.
+- [x] Granularity surfaced on the response (`putConfigResponse.Reload`, additive).
+  `listener` value exists for the future listener-rebind appliers (server/tls still
+  on their own hardcoded-`true` path until then). The web layer is now a relay.
 
 Do the trivial `r.cfg`→`r.liveConfig()` handler swaps (the `applied`-granularity
 items below) first — they're independent and unblock honest `false` immediately.

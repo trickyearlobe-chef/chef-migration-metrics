@@ -10,10 +10,27 @@ Done: all 9 handler files swapped; zero non-test `r.cfg.` reads remain in handle
 (node staleness tier via list endpoint; performance `window_seconds`) — red before,
 green after. `go vet` + full webapi suite green.
 
+## Chunk B — invert `restart_required` (derive, don't declare) ✅ DONE
+
+`postReload` → `Applier`; `restart_required` derived from the worst applier
+granularity; sections with no applier default pessimistically to `process`. New
+`config_apply.go` (`ReloadGranularity` applied<subsystem<listener<process,
+`ApplyResult`, `Applier`, `appliedApplier`, `subsystemApplier`,
+`applyKitchenWorkerCount`, `worstGranularity`). `storeAdminConfigSection` rewritten
+to take `appliers ...Applier`; `putConfigResponse.Reload` (additive, omitempty)
+surfaces the real granularity. Call sites assigned by today's TRUE liveness:
+- **applied/false:** collection, target_chef_versions, git_base_urls, readiness.
+- **subsystem/false:** organisations (applied + reconcile hook), analysis_tools
+  (kitchen pool resize — also closed the full-section PUT's resize gap).
+- **process/true, pending subsystem applier:** logging, backup, concurrency,
+  exports, auth (auth was already true).
+- **untouched:** server/tls (own path, hardcoded true).
+
+New `config_apply_test.go` (granularity ordering + derivation) + handler flip
+tests. Full module suite + `go vet` green. Only the collection flag-asserting test
+was contract-affected; it stays false.
+
 ### Next chunk candidates (later sessions)
-- **Structural fix:** invert `restart_required` — `postReload`→`Applier(ctx) (ApplyResult, error)`,
-  pessimistic `process` default, web layer becomes a relay. Breaks contract tests
-  pinning values (e.g. `handle_admin_config_test.go:255`) — update deliberately.
 - **New appliers (subsystem):** logging SetLevel; collection.schedule reschedule;
   backup reschedule/start/stop; concurrency.{cookstyle_scan,readiness_evaluation,cookbook_download} resize.
 - **Exports cleanup-ticker re-point** (`main.go:1059`) — the subsystem half of the
