@@ -13,9 +13,8 @@
 | Configured disk space thresholds (`install_size_mb`, `min_remaining_free_percent`, install paths) | Configuration |
 | Configured stale node threshold | Configuration |
 | Cop-to-documentation mapping (embedded) | Application binary |
-| CookStyle binary | Embedded Ruby environment (`/opt/chef-migration-metrics/embedded/bin/cookstyle`) |
-| Test Kitchen binary | Embedded Ruby environment (`/opt/chef-migration-metrics/embedded/bin/kitchen`) |
-| Ruby interpreter | Embedded Ruby environment (`/opt/chef-migration-metrics/embedded/bin/ruby`) |
+| CookStyle binary | Chef Workstation on host, resolved from `PATH` |
+| Test Kitchen binary | Chef Workstation on host, resolved from `PATH` |
 
 ## Data Outputs
 

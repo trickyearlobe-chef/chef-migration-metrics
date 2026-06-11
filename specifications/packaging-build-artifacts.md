@@ -21,14 +21,13 @@ A `Makefile` (or equivalent task runner) must provide targets for:
 | `build` | Compile the Go binary for the host platform |
 | `build-all` | Cross-compile for all supported OS/arch combinations |
 | `build-frontend` | Build the React SPA and place output in the embed directory |
-| `build-embedded` | Build the embedded Ruby environment (CookStyle, Test Kitchen) for the host platform |
-| `build-embedded-amd64` | Build the embedded Ruby environment for `linux/amd64` |
-| `build-embedded-arm64` | Build the embedded Ruby environment for `linux/arm64` |
 | `test` | Run all Go unit tests |
 | `lint` | Run `golangci-lint` and `cookstyle --format json` |
-| `package-rpm` | Build the RPM package (includes embedded Ruby environment) |
-| `package-deb` | Build the DEB package (includes embedded Ruby environment) |
+| `package-rpm` | Build the RPM package |
+| `package-deb` | Build the DEB package |
 | `package-all` | Build RPM and DEB packages |
+
+Cookbook compatibility testing requires **Chef Workstation** on the host; `cookstyle` and `kitchen` are resolved from `PATH`. There is no embedded Ruby environment — Ruby, CookStyle, and Test Kitchen are **not** bundled.
 
 ### 1.2 Version Injection
 

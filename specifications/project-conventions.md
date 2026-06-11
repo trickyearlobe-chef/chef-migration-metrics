@@ -99,5 +99,5 @@ Project-specific technical conventions for the Chef Migration Metrics dashboard.
 - **Database columns**: `snake_case` (`chef_version`, `policy_name`, `is_stale`, `created_at`).
 - **Migration files**: `NNNN_short_description.up.sql` / `NNNN_short_description.down.sql` (e.g. `0001_create_node_snapshots.up.sql`).
 - **API endpoints**: kebab-case paths under `/api/v1/` (e.g. `/api/v1/dependency-graph`, `/api/v1/cookbook-compatibility`).
-- **Configuration keys**: `snake_case` in YAML (e.g. `stale_node_threshold_days`, `embedded_bin_dir`).
+- **Configuration keys**: `snake_case` in YAML (e.g. `stale_node_threshold_days`, `cookstyle_timeout_minutes`).
 - **Environment variable overrides**: `SCREAMING_SNAKE_CASE` with `CM_` prefix (e.g. `CM_DATABASE_URL`, `CM_SMTP_PASSWORD`).

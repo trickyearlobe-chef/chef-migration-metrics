@@ -26,7 +26,7 @@ RPM packages are built using [nFPM](https://nfpm.goreleaser.com/), a Go-based pa
 | `git` | Requires | Cookbook repository clone and pull operations |
 | `shadow-utils` | Requires | Provides `useradd` / `groupadd` for the service account |
 
-Test Kitchen, CookStyle, and their Ruby runtime are **embedded** in the package under `/opt/chef-migration-metrics/embedded/`. This self-contained Ruby environment eliminates external dependencies on Chef Workstation or system Ruby. See section 2.4 for the filesystem layout.
+CookStyle, Test Kitchen, and their Ruby runtime are **not** bundled. Cookbook compatibility testing requires **Chef Workstation** installed on the host; the application resolves `cookstyle` and `kitchen` from `PATH`. See section 2.4 for the filesystem layout.
 
 ### 2.4 Filesystem Layout
 
@@ -37,16 +37,11 @@ Test Kitchen, CookStyle, and their Ruby runtime are **embedded** in the package 
 /var/lib/chef-migration-metrics/                         # Working directory for git clones and cookbook downloads
 /var/log/chef-migration-metrics/                         # Optional file-based log output (stdout preferred)
 /usr/lib/systemd/system/chef-migration-metrics.service   # systemd unit file
-/opt/chef-migration-metrics/embedded/                    # Self-contained Ruby environment
-/opt/chef-migration-metrics/embedded/bin/ruby            # Embedded Ruby interpreter
-/opt/chef-migration-metrics/embedded/bin/cookstyle       # Embedded CookStyle binary
-/opt/chef-migration-metrics/embedded/bin/kitchen         # Embedded Test Kitchen binary
-/opt/chef-migration-metrics/embedded/lib/                # Ruby standard library and installed gems
 ```
 
 Configuration files are marked `%config(noreplace)` so that upgrades do not overwrite user-customised files.
 
-The embedded Ruby tree is fully self-contained and does not interfere with any system Ruby installation. The application resolves `cookstyle` and `kitchen` from `/opt/chef-migration-metrics/embedded/bin/` by default (see [Configuration Specification](configuration.md) for the `embedded_bin_dir` setting), falling back to `PATH` lookup if the embedded directory does not exist.
+The package ships only the Go binary, config file, systemd unit, and env-file — no Ruby tree. The application resolves `cookstyle` and `kitchen` from `PATH`, which requires **Chef Workstation** to be installed on the host.
 
 ### 2.5 systemd Unit File
 
@@ -156,7 +151,7 @@ DEB packages are also built using nFPM. The same `nfpm.yaml` file supports both 
 | `git` | Depends | Cookbook repository clone and pull operations |
 | `adduser` | Pre-Depends | Service account creation |
 
-Test Kitchen, CookStyle, and their Ruby runtime are **embedded** in the package under `/opt/chef-migration-metrics/embedded/`, identical to the RPM layout (section 2.4).
+As with the RPM package, CookStyle, Test Kitchen, and their Ruby runtime are **not** bundled — cookbook compatibility testing requires **Chef Workstation** on the host, with `cookstyle` and `kitchen` resolved from `PATH`.
 
 ### 3.4 Filesystem Layout
 

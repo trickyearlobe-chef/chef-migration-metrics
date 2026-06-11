@@ -53,7 +53,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 			ReadinessEvaluation:    20,
 		},
 		AnalysisTools: config.AnalysisToolsConfig{
-			EmbeddedBinDir:          "/opt/chef-migration-metrics/embedded/bin",
 			CookstyleEnabled:        &trueVal,
 			CookstyleTimeoutMinutes: 10,
 			TestKitchen: config.TestKitchenConfig{
@@ -211,9 +210,6 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 		}
 		if at["cookstyle_enabled"] != true {
 			t.Errorf("cookstyle_enabled: expected true, got %v", at["cookstyle_enabled"])
-		}
-		if at["embedded_bin_dir"] != "/opt/chef-migration-metrics/embedded/bin" {
-			t.Errorf("embedded_bin_dir: unexpected value %v", at["embedded_bin_dir"])
 		}
 	})
 

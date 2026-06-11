@@ -8,7 +8,7 @@ New column:
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
-| `driver` | TEXT | Yes | `NULL` | Driver used for the test run. NULL for pre-existing rows (implies `dokken`). |
+| `driver` | TEXT | Yes | `NULL` | Driver used for the test run. NULL for legacy pre-existing rows (driver unrecorded; no implied default). |
 | `platform_name` | TEXT | Yes | `NULL` | Kitchen platform name for this result (enables per-platform result tracking). |
 
 The existing unique constraint `(git_repo_id, target_chef_version, commit_sha)` is unchanged. A cookbook is tested with whichever driver is currently configured. When the driver changes, the next HEAD change triggers a retest.

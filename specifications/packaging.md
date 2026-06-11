@@ -10,7 +10,7 @@
 This spec covers how the application is packaged and deployed across all supported formats. Key points:
 
 - **Packaging formats:** RPM, DEB, and distribution archives — all built from the same Go binary + embedded frontend assets.
-- **Embedded Ruby:** All packages ship a self-contained Ruby runtime under `/opt/chef-migration-metrics/embedded/` with CookStyle, Test Kitchen, and kitchen-dokken pre-installed. No external Ruby or Chef Workstation required.
+- **External tools:** CookStyle and Test Kitchen are **not** bundled — they are provided by [Chef Workstation](https://docs.chef.io/workstation/) on the host and resolved from `PATH`. Packages ship only the Go binary, config, systemd unit, and env-file.
 - **Systemd integration:** RPM/DEB packages include a systemd unit file, pre/post install scripts, and environment file.
 - **Docker Compose:** Local dev stack with app + PostgreSQL (`deploy/docker-compose/`).
 - **ELK testing stack:** Elasticsearch + Logstash + Kibana for testing NDJSON export (`deploy/elk/`).
@@ -24,7 +24,7 @@ Chef Migration Metrics is distributed as native Linux packages (RPM and DEB) and
 
 All packaging artifacts are built from the same Go binary and embedded frontend assets. The packaging layer adds platform-specific integration (systemd, file layout, default configuration) around the single compiled binary.
 
-All packaging formats **embed** CookStyle, Test Kitchen, and a self-contained Ruby runtime so that cookbook compatibility testing works out of the box with no external dependencies on Chef Workstation or system Ruby. The embedded tools are installed under `/opt/chef-migration-metrics/embedded/` and are isolated from any other Ruby installation on the host.
+Cookbook compatibility testing (CookStyle, Test Kitchen) requires **Chef Workstation** on the host — these tools are **not** bundled (an embedded Ruby runtime was tried but dropped as too unreliable to build). The application resolves `cookstyle` and `kitchen` from `PATH`; when they are absent, compatibility analysis is skipped and the rest of the product still works.
 
 ---
 

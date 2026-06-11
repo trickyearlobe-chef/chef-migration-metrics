@@ -107,7 +107,7 @@ Config keys use dot notation matching the YAML structure:
 | `git_base_urls` | `["https://github.com/my-org"]` | false |
 | `collection` | `{"schedule":"0 * * * *", ...}` | false |
 | `concurrency` | `{"organisation_collection":5, ...}` | false |
-| `analysis_tools` | `{"embedded_bin_dir":"...", ...}` | false |
+| `analysis_tools` | `{"cookstyle_timeout_minutes":10, ...}` | false |
 | `readiness` | `{"min_free_disk_mb":2048}` | false |
 | `server.listen` | `{"listen_address":"0.0.0.0","port":8080}` | false |
 | `server.tls` | `{"mode":"off", ...}` | false |

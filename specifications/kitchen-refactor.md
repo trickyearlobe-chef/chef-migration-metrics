@@ -297,7 +297,7 @@ If a cookbook already has a `.kitchen.local.yml`:
 
 ### Chef Version Override
 
-For non-dokken drivers where the base template is a clean OS (no Chef baked in):
+For hypervisor drivers where the base template is a clean OS (no Chef baked in):
 
 ```
 provisioner:
@@ -419,7 +419,7 @@ The existing `git_repo_test_kitchen_results` table is retained for backward comp
 
 ### From Current Execution Model
 
-The existing `KitchenScanner.TestGitRepos()` continues to work for dokken-based testing. The new batch-controlled execution is a separate code path. The old path is deprecated once the new system is validated at scale.
+The existing `KitchenScanner.TestGitRepos()` single-mode bulk scanner continues to work as the legacy path. The new batch-controlled execution is a separate code path. The old path is deprecated once the new system is validated at scale.
 
 ## Related Specifications
 

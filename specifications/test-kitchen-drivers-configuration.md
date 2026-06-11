@@ -10,7 +10,8 @@ analysis_tools:
     enabled: true
     timeout_minutes: 30
 
-    # Driver selection — matches a built-in profile or "custom"
+    # Driver selection — required, no default. Supported: vcenter, proxmox.
+    # (vra, ec2, vagrant are planned UI placeholders, not yet wired.)
     driver: proxmox
 
     # Top-level driver connection settings (plaintext)
@@ -23,8 +24,8 @@ analysis_tools:
     driver_secrets:
       proxmox_token_secret: proxmox-kitchen-token
 
-    # For "custom" profile only — which key to use for the image field
-    # Built-in profiles set this automatically.
+    # Image field key in the overlay. Built-in profiles set this
+    # automatically (e.g. template_id for proxmox, template for vcenter).
     image_field_name: template
 
     # Fallback Chef package credential for public chef.io downloads.
@@ -74,7 +75,7 @@ analysis_tools:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Operator-defined label. Must be unique within the config. Used as the reference value in `platform_map[].image`. |
-| `id` | Yes (non-dokken) | Driver-specific image identifier. The built-in profile determines which YAML key it maps to in the overlay (e.g. `template_id` for proxmox, `template` for vcenter, `ami` for ec2). |
+| `id` | Yes | Driver-specific image identifier, required for all drivers. The built-in profile determines which YAML key it maps to in the overlay (e.g. `template_id` for proxmox, `template` for vcenter). |
 | `driver_settings` | No | Per-image driver setting overrides, merged on top of top-level driver_settings. |
 | `transport` | No | Transport credentials: `username`, `password_credential`, `ssh_key_credential`. |
 | `chef_download_urls` | No | Map of `version → URL`. When set for the target version, the overlay uses `download_url` instead of `product_version`. Platforms without an entry fall back to the top-level `chef_license_key_credential`. |
@@ -84,19 +85,19 @@ analysis_tools:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `kitchen_name` | Yes | Platform name as it appears in the cookbook's `.kitchen.yml`. |
-| `image` | Yes (non-dokken) | Name of an entry in the `images` list. |
+| `image` | Yes | Name of an entry in the `images` list. |
 
 ### Defaults
 
 | Setting | Default |
 |---------|---------|
-| `driver` | `dokken` |
+| `driver` | none (required) |
 | `timeout_minutes` | `30` |
 | `driver_settings` | empty map |
 | `driver_secrets` | empty map |
 | `images` | empty list |
 | `platform_map` | empty list |
-| `image_field_name` | set by built-in profile; required for `custom` |
+| `image_field_name` | set by built-in profile |
 | `chef_license_key_credential` | empty (optional; fallback for versions without a `chef_download_urls` entry) |
 
 ### Driver Change Example: Proxmox → vCenter

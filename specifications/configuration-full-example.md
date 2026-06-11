@@ -118,7 +118,6 @@ exports:
   retention_hours: 24
 
 analysis_tools:
-  embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
   cookstyle_timeout_minutes: 10
   test_kitchen:
     enabled: true
@@ -126,7 +125,7 @@ analysis_tools:
     max_concurrent_vms: 2            # global concurrency ceiling (no per-batch limit)
     start_rate_window_minutes: 90    # VM start-rate limiter window = DHCP lease time (0 = off)
     start_rate_max_per_window: 25    # max starts per window = usable DHCP pool size
-    driver: dokken
+    driver: vcenter
     images:
       - name: alma9
         id: tmpl-alma9-kitchen

@@ -39,7 +39,6 @@ VERSION_PATCH := $(word 3,$(subst ., ,$(VERSION)))
 BINARY_NAME   := chef-migration-metrics
 MODULE        := $(shell head -1 go.mod 2>/dev/null | awk '{print $$2}')
 BUILD_DIR     := build
-EMBEDDED_DIR  := $(BUILD_DIR)/embedded
 FRONTEND_DIR  := frontend
 
 LDFLAGS := -X main.version=$(VERSION_FULL) \
@@ -49,10 +48,6 @@ LDFLAGS := -X main.version=$(VERSION_FULL) \
 # Host platform detection
 HOST_OS   := $(shell go env GOOS 2>/dev/null || echo linux)
 HOST_ARCH := $(shell go env GOARCH 2>/dev/null || echo amd64)
-
-# Ruby build image for embedded environment
-RUBY_BUILD_IMAGE := ruby:3.1-bookworm
-EMBEDDED_PREFIX  := /opt/chef-migration-metrics/embedded
 
 # nFPM
 NFPM := $(shell command -v nfpm 2>/dev/null)
@@ -178,91 +173,6 @@ build-frontend: ## Build the React SPA frontend (creates placeholder dist/ if np
 		echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Chef Migration Metrics</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f9fafb;color:#374151}.p{text-align:center;max-width:480px;padding:2rem}h1{font-size:1.25rem;margin-bottom:.5rem}p{color:#6b7280;font-size:.875rem;line-height:1.5}code{background:#f3f4f6;padding:.15em .4em;border-radius:4px;font-size:.8125rem}</style></head><body><div class="p"><h1>Frontend Not Built</h1><p>Build the React SPA: <code>cd frontend &amp;&amp; npm ci &amp;&amp; npm run build</code></p><p>API available at <a href="/api/v1/health">/api/v1/health</a></p></div></body></html>' \
 		> "$(FRONTEND_DIR)/dist/index.html"; \
 	fi
-
-# ---------------------------------------------------------------------------
-# Embedded Ruby Environment
-# ---------------------------------------------------------------------------
-
-.PHONY: build-embedded
-build-embedded: ## Build embedded Ruby environment for the host architecture
-	@$(MAKE) _build-embedded EMBED_PLATFORM=linux/$(HOST_ARCH)
-
-.PHONY: build-embedded-amd64
-build-embedded-amd64: ## Build embedded Ruby environment for linux/amd64
-	@$(MAKE) _build-embedded EMBED_PLATFORM=linux/amd64
-
-.PHONY: build-embedded-arm64
-build-embedded-arm64: ## Build embedded Ruby environment for linux/arm64
-	@$(MAKE) _build-embedded EMBED_PLATFORM=linux/arm64
-
-.PHONY: _build-embedded
-_build-embedded:
-	@echo "$(GREEN)Building embedded Ruby environment ($(EMBED_PLATFORM))...$(RESET)"
-	@# Clean previous output — files may be root-owned from Docker and/or
-	@# read-only (Ruby stdlib ships minitest etc. with 0444 permissions).
-	@docker run --rm -v "$(CURDIR)/$(EMBEDDED_DIR):/output" $(RUBY_BUILD_IMAGE) bash -c 'chmod -R u+w /output 2>/dev/null; rm -rf /output/*' 2>/dev/null || true
-	@mkdir -p $(EMBEDDED_DIR)
-	docker run --rm --platform $(EMBED_PLATFORM) \
-		-v "$(CURDIR)/$(EMBEDDED_DIR):/output" \
-		$(RUBY_BUILD_IMAGE) bash -c ' \
-			set -euo pipefail && \
-			export GEM_HOME=$(EMBEDDED_PREFIX)/lib/ruby/gems/3.1.0 && \
-			export GEM_PATH=$$GEM_HOME && \
-			mkdir -p $$GEM_HOME && \
-			apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/* && \
-			echo "--- Phase 1: Pin gems to prevent version drift ---" && \
-			gem install --no-document \
-				ffi:1.16.3 \
-				zeitwerk:2.6.18 \
-				dry-core:1.1.0 \
-				dry-inflector:1.2.0 \
-				dry-types:1.8.3 && \
-			echo "--- Phase 2: Core tools ---" && \
-			gem install --no-document \
-				cookstyle:7.32.8 \
-				test-kitchen:3.9.1 && \
-			echo "--- Phase 3: InSpec (--force for rwinrm conflict) ---" && \
-			gem install --no-document --force \
-				inspec-bin:5.24.7 && \
-			echo "--- Phase 4: kitchen-inspec verifier ---" && \
-			gem install --no-document \
-				kitchen-inspec:3.1.0 && \
-			echo "--- Phase 5: Kitchen drivers ---" && \
-			gem install --no-document \
-				kitchen-vagrant:2.2.0 \
-				kitchen-ec2:3.22.1 \
-				kitchen-azurerm:1.13.6 \
-				kitchen-google:2.6.1 \
-				kitchen-hyperv:0.10.3 \
-				kitchen-vcenter:2.12.2 \
-				kitchen-vra:3.3.3 \
-				kitchen-openstack:6.2.1 \
-				kitchen-digitalocean:0.16.1 && \
-			echo "--- Phase 6: kitchen-dokken from Stromweld fork ---" && \
-			gem install --no-document specific_install && \
-			gem specific_install -l https://github.com/Stromweld/kitchen-dokken.git -b main && \
-			echo "--- Phase 7: Busser (legacy verifier) ---" && \
-			gem install --no-document --force \
-				busser:0.8.0 \
-				busser-serverspec:0.6.3 \
-				busser-bats:0.5.0 && \
-			echo "--- Phase 8: Enforce ffi pin (clean up version drift) ---" && \
-			ruby -e "Gem::Specification.select { |s| s.name == %q(ffi) && s.version.to_s != %q(1.16.3) }.each { |s| puts \"Removing ffi #{s.version}\"; system(\"gem uninstall ffi --version #{s.version} --force --executables\") }" && \
-			echo "ffi versions remaining: $$(gem list ffi --exact)" && \
-			mkdir -p $(EMBEDDED_PREFIX)/bin && \
-			cp $$(which ruby) $(EMBEDDED_PREFIX)/bin/ruby && \
-			for cmd in cookstyle kitchen inspec; do \
-				printf "#!/opt/chef-migration-metrics/embedded/bin/ruby\n" > $(EMBEDDED_PREFIX)/bin/$$cmd && \
-				cat $$(gem environment gemdir)/bin/$$cmd >> $(EMBEDDED_PREFIX)/bin/$$cmd && \
-				chmod 0755 $(EMBEDDED_PREFIX)/bin/$$cmd; \
-			done && \
-			mkdir -p $(EMBEDDED_PREFIX)/lib && \
-			cp -a /usr/local/lib/libruby* $(EMBEDDED_PREFIX)/lib/ 2>/dev/null || true && \
-			cp -a /usr/local/lib/ruby $(EMBEDDED_PREFIX)/lib/ruby/ 2>/dev/null || true && \
-			chmod -R u+w $(EMBEDDED_PREFIX) && \
-			cp -a $(EMBEDDED_PREFIX)/* /output/ \
-		'
-	@echo "$(GREEN)Embedded environment: $(EMBEDDED_DIR)/$(RESET)"
 
 # =============================================================================
 # Test
@@ -469,7 +379,7 @@ scan-trivy: ## Filesystem scan (vuln + secret + misconfig) with Trivy
 		echo "$(GREEN)Running trivy fs (HIGH,CRITICAL gate)...$(RESET)"; \
 		trivy fs --scanners vuln,secret,misconfig \
 			--severity HIGH,CRITICAL --exit-code 1 \
-			--skip-dirs frontend/node_modules --skip-dirs embedded --skip-dirs .samples \
+			--skip-dirs frontend/node_modules --skip-dirs .samples \
 			. ; \
 	else \
 		echo "$(YELLOW)trivy not found — skipping (install: brew install trivy)$(RESET)"; \
@@ -491,13 +401,13 @@ _check-nfpm:
 	fi
 
 .PHONY: package-rpm
-package-rpm: _check-nfpm build build-embedded ## Build RPM package
+package-rpm: _check-nfpm build ## Build RPM package
 	@echo "$(GREEN)Building RPM package...$(RESET)"
 	VERSION=$(VERSION) ARCH=$(HOST_ARCH) nfpm package --packager rpm --target $(BUILD_DIR)/
 	@echo "$(GREEN)RPM: $(BUILD_DIR)/*.rpm$(RESET)"
 
 .PHONY: package-deb
-package-deb: _check-nfpm build build-embedded ## Build DEB package
+package-deb: _check-nfpm build ## Build DEB package
 	@echo "$(GREEN)Building DEB package...$(RESET)"
 	VERSION=$(VERSION) ARCH=$(HOST_ARCH) nfpm package --packager deb --target $(BUILD_DIR)/
 	@echo "$(GREEN)DEB: $(BUILD_DIR)/*.deb$(RESET)"

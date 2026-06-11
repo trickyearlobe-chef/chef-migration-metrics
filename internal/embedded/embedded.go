@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package embedded resolves the paths to external tools (cookstyle, kitchen,
-// git, docker) used by the analysis and data collection components. It checks
-// the configured embedded bin directory first, then falls back to PATH lookup.
+// git) used by the analysis and data collection components by looking them up
+// on PATH. cookstyle and kitchen are provided by Chef Workstation — they are
+// not bundled with the application.
 //
 // Startup validation functions verify that each tool is installed and
 // executable, returning version information and any errors encountered.
@@ -12,7 +13,6 @@ package embedded
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -59,12 +59,8 @@ type ToolInfo struct {
 	Error string
 }
 
-// Resolver locates external tools and validates their availability.
+// Resolver locates external tools on PATH and validates their availability.
 type Resolver struct {
-	// embeddedBinDir is checked first for each tool. May be empty, in
-	// which case only PATH is consulted.
-	embeddedBinDir string
-
 	// executor runs external commands. Defaults to defaultExecutor.
 	executor CommandExecutor
 
@@ -86,10 +82,9 @@ func WithValidationTimeout(d time.Duration) Option {
 	return func(r *Resolver) { r.validationTimeout = d }
 }
 
-// NewResolver creates a Resolver that checks embeddedBinDir first, then PATH.
-func NewResolver(embeddedBinDir string, opts ...Option) *Resolver {
+// NewResolver creates a Resolver that resolves tools from PATH.
+func NewResolver(opts ...Option) *Resolver {
 	r := &Resolver{
-		embeddedBinDir:    embeddedBinDir,
 		executor:          defaultExecutor{},
 		validationTimeout: 30 * time.Second,
 	}
@@ -103,24 +98,12 @@ func NewResolver(embeddedBinDir string, opts ...Option) *Resolver {
 // Path resolution
 // ---------------------------------------------------------------------------
 
-// ResolvePath returns the absolute path to the named binary. It first checks
-// embeddedBinDir/<name>, then falls back to exec.LookPath (PATH lookup).
-// Returns ("", error) if the binary cannot be found anywhere.
+// ResolvePath returns the absolute path to the named binary via PATH lookup
+// (exec.LookPath). Returns ("", error) if the binary cannot be found.
 func (r *Resolver) ResolvePath(name string) (string, error) {
-	// Try embedded directory first.
-	if r.embeddedBinDir != "" {
-		candidate := r.embeddedBinDir + "/" + name
-		// Use LookPath semantics: the candidate must be an absolute path
-		// containing a slash, which it always will be.
-		if path, err := exec.LookPath(candidate); err == nil {
-			return path, nil
-		}
-	}
-
-	// Fall back to PATH lookup.
 	path, err := exec.LookPath(name)
 	if err != nil {
-		return "", fmt.Errorf("embedded: %q not found in %q or PATH", name, r.embeddedBinDir)
+		return "", fmt.Errorf("embedded: %q not found in PATH", name)
 	}
 	return path, nil
 }
@@ -187,7 +170,6 @@ func (r *Resolver) ValidateKitchen(ctx context.Context) ToolInfo {
 func (r *Resolver) ValidateGit(ctx context.Context) ToolInfo {
 	info := ToolInfo{Name: "git"}
 
-	// git is never expected in the embedded directory — always use PATH.
 	path, err := exec.LookPath("git")
 	if err != nil {
 		info.Error = fmt.Sprintf("git not found in PATH: %v", err)
@@ -211,43 +193,6 @@ func (r *Resolver) ValidateGit(ctx context.Context) ToolInfo {
 	return info
 }
 
-// dockerInfoResponse is the minimal subset of `docker info --format json`
-// that we parse for startup validation.
-type dockerInfoResponse struct {
-	ServerVersion string `json:"ServerVersion"`
-}
-
-// ValidateDocker checks that the Docker daemon is available and responsive.
-func (r *Resolver) ValidateDocker(ctx context.Context) ToolInfo {
-	info := ToolInfo{Name: "docker"}
-
-	path, err := exec.LookPath("docker")
-	if err != nil {
-		info.Error = fmt.Sprintf("docker not found in PATH: %v", err)
-		return info
-	}
-	info.Path = path
-
-	vCtx, cancel := context.WithTimeout(ctx, r.validationTimeout)
-	defer cancel()
-
-	stdout, stderr, err := r.executor.Execute(vCtx, path, "info", "--format", "json")
-	if err != nil {
-		info.Error = fmt.Sprintf("docker info failed: %v; stderr: %s", err, strings.TrimSpace(stderr))
-		return info
-	}
-
-	var di dockerInfoResponse
-	if jsonErr := json.Unmarshal([]byte(stdout), &di); jsonErr != nil {
-		info.Error = fmt.Sprintf("docker info returned invalid JSON: %v", jsonErr)
-		return info
-	}
-
-	info.Version = di.ServerVersion
-	info.Available = true
-	return info
-}
-
 // ---------------------------------------------------------------------------
 // Bulk validation
 // ---------------------------------------------------------------------------
@@ -262,8 +207,8 @@ type ValidationResult struct {
 	CookstyleEnabled bool
 
 	// KitchenEnabled is true if the kitchen binary is available.
-	// Docker is no longer required — VM-based drivers (vcenter, proxmox,
-	// ec2, vagrant) manage their own infrastructure.
+	// Docker is not required — VM-based drivers (vcenter, proxmox) manage
+	// their own infrastructure.
 	KitchenEnabled bool
 }
 

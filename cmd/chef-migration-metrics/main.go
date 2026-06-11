@@ -853,7 +853,7 @@ func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) setupCollector(ctx context.Context) error {
-	toolResolver := embedded.NewResolver(app.cfg.AnalysisTools.EmbeddedBinDir)
+	toolResolver := embedded.NewResolver()
 	toolResult := toolResolver.ValidateAll(ctx)
 
 	if toolResult.Git.Available {

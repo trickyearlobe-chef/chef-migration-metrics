@@ -30,7 +30,7 @@
 | [logging](logging.md) | Structured JSON logging persisted to PostgreSQL and viewable in the web log viewer. |
 | [node-list-enhancements](node-list-enhancements.md) | Enhancements to the node list view (columns, filters). |
 | [ownership](ownership.md) | Ownership model: owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows. |
-| [packaging](packaging.md) | RPM/DEB/Docker packaging, including the embedded Ruby/Test Kitchen environment. |
+| [packaging](packaging.md) | RPM/DEB/Docker packaging. CookStyle/Test Kitchen are not bundled — they come from Chef Workstation on the host (resolved from `PATH`). |
 | [parallel-deployment-tracking](parallel-deployment-tracking.md) | Tracking parallel, per-version deployment progress across the fleet. |
 | [performance-diagnostics](performance-diagnostics.md) | Performance diagnostics and profiling. |
 | [platform-display-grouping](platform-display-grouping.md) | Grouping platforms for display in the UI. |
@@ -43,7 +43,7 @@
 | [staleness-tiers](staleness-tiers.md) | Node staleness tiers and thresholds. |
 | [system-health](system-health.md) | Host/system metrics collection and the admin system-stats page. |
 | [test-kitchen-config-ui](test-kitchen-config-ui.md) | UI for Test Kitchen configuration. |
-| [test-kitchen-drivers](test-kitchen-drivers.md) | Multi-driver Test Kitchen abstraction (dokken, vcenter, ec2, …): overlays, credentials, platform mapping. |
+| [test-kitchen-drivers](test-kitchen-drivers.md) | Multi-driver Test Kitchen abstraction (vcenter, proxmox supported; vra, ec2, vagrant planned): overlays, credentials, platform mapping. |
 | [tls](tls.md) | TLS overview & index: listening modes, HTTP redirect, HSTS, degraded-status + repair-CLI recovery. |
 | [tls-acme](tls-acme.md) | ACME via x/crypto/acme: HTTP-01 + Route 53 DNS-01, DB-backed encrypted state, renewal. |
 | [tls-csr](tls-csr.md) | In-app CSR generation and signed-cert promotion. |

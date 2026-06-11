@@ -6,11 +6,11 @@ CookStyle is invoked as an external process against cookbooks downloaded from th
 
 > **JSON output policy:** CookStyle supports `--format json` which produces machine-parseable RuboCop JSON output. All CookStyle invocations (initial scan and auto-correct preview) **must** use `--format json`. Never parse CookStyle's human-readable text output.
 
-**Embedded Tools**
+**External Tools**
 
-CookStyle and its Ruby runtime are **embedded** in all packaging formats under `/opt/chef-migration-metrics/embedded/`. The application resolves the `cookstyle` binary from this embedded directory by default (configurable via the `embedded_bin_dir` setting — see [Configuration Specification](configuration.md)).
+CookStyle is **provided by Chef Workstation** installed on the host. It is **not** bundled with the application — there is no embedded Ruby runtime. The application resolves the `cookstyle` binary from `PATH`.
 
-No additional installation or configuration is required. CookStyle has no external runtime dependencies beyond the embedded Ruby environment.
+Chef Workstation must be installed on the host for CookStyle scanning to be available.
 
 **Invocation sequence per organisation + cookbook name + version**
 

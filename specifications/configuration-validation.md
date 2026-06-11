@@ -41,7 +41,6 @@ On startup, the application must validate the configuration and fail fast with a
 - `stale_node_threshold_days` or `stale_cookbook_threshold_days` is less than 1
 - `analysis_tools.cookstyle_timeout_minutes` is less than 1
 - `analysis_tools.test_kitchen_timeout_minutes` is less than 1
-- `analysis_tools.embedded_bin_dir` is set to a non-empty value but the directory does not exist (log `WARN` — not fatal, as the application falls back to `PATH` lookup)
 - `elasticsearch.output_directory` does not exist or is not writable when `elasticsearch.enabled` is `true`
 - `elasticsearch.retention_hours` is less than 1
 - `ownership.auto_rules[].name` must be unique across all rules
