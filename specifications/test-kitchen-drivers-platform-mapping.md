@@ -17,18 +17,17 @@ The platform map translates between them.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `kitchen_name` | Yes | Platform name as it appears in the cookbook's `.kitchen.yml` |
-| `image` | Yes (non-dokken) | Driver-specific image identifier. Injected into the overlay under the profile's image field name. |
+| `image` | Yes | Driver-specific image identifier. Injected into the overlay under the profile's image field name. |
 | `driver_settings` | No | Per-platform driver settings (datacenter, cluster, resource pool, subnet, security group, etc.). Merged on top of top-level driver settings. |
 | `transport` | No | Transport override: `username`, `password_credential` (credential name), `ssh_key_credential` (credential name for PEM key). |
 
-The `image` field is intentionally a single opaque string. The built-in profile determines which driver key it maps to (`template` for vcenter, `ami` for ec2, `image_urn` for azurerm, etc.). For the `custom` profile, `image_field_name` is set in the driver config.
+The `image` field is intentionally a single opaque string. The built-in profile determines which driver key it maps to (`template` for vcenter, `template_id` for proxmox, `ami` for ec2, etc.).
 
 ### Lookup Behaviour
 
 1. For each platform in the cookbook's `.kitchen.yml`, look up `kitchen_name` in the map.
 2. If found: include the platform in the overlay with `image` and any `driver_settings` / `transport` from the entry, merged with top-level defaults.
 3. If not found: exclude the platform. Log at `WARN`: `platform "<name>" has no mapping, skipping`.
-4. For `dokken` with an empty platform map: all platforms pass through unchanged (backward compatible).
 
 ### Driver Migration via Platform Map
 

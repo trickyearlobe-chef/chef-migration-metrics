@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-Generalises Test Kitchen compatibility testing from a Docker-only (`kitchen-dokken`) model to a pluggable driver architecture. Test Kitchen runs on the CMM host and provisions the test targets — containers for dokken, real VMs for vCenter/EC2/vRA/etc. The application controls what Test Kitchen does by generating a `.kitchen.local.yml` overlay that overrides the driver, remaps platform names to available images (VM templates, AMIs, etc.) via a configurable lookup table, and injects credentials from the encrypted secret store. Cookbook repos keep their existing `.kitchen.yml` untouched. Adding a new driver (vCenter today, vRA tomorrow, EC2 next quarter) is a configuration change, not a code change.
+A pluggable driver architecture for Test Kitchen compatibility testing (originally generalised from a Docker-only `kitchen-dokken` model). Test Kitchen runs on the CMM host and provisions real VMs for the test targets. The application controls what Test Kitchen does by generating a `.kitchen.local.yml` overlay that overrides the driver, remaps platform names to available images (VM templates, AMIs, etc.) via a configurable lookup table, and injects credentials from the encrypted secret store. Cookbook repos keep their existing `.kitchen.yml` untouched. There is no default driver — the operator must choose one. Supported drivers: **vcenter** (production) and **proxmox** (proof-of-concept). Planned (UI placeholders, not yet wired to a hypervisor backend): vra, ec2, vagrant. Adding a planned driver is a configuration + backend-wiring change.
 
 ## Overview
 
@@ -52,5 +52,5 @@ Moved to [test-kitchen-drivers-vcenter.md](test-kitchen-drivers-vcenter.md).
 | configuration.md | Config schema (§ Analysis Tools). The `test_kitchen` sub-section is extended. |
 | secrets-storage.md | Credential encryption, resolution precedence, `generic` credential type. |
 | datastore.md | `credentials` table, `git_repo_test_kitchen_results` table, new `cookbook_platform_coverage` table. |
-| packaging.md | Embedded kitchen drivers shipped in all packaging formats (§4.5). |
+| packaging.md | `kitchen` and driver gems are provided by Chef Workstation on the CMM host (not bundled; no embedded Ruby tree). |
 | data-collection.md | Node attribute collection: `platform`, `platform_version`, `platform_family` (§1.4). |

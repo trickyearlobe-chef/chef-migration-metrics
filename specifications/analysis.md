@@ -4,7 +4,7 @@
 
 ## TL;DR
 
-This spec covers five areas: **(1) Cookbook usage analysis** — which cookbooks/versions are in use, by which nodes, roles, and policies. **(2) Cookbook compatibility testing** — Test Kitchen (git-sourced cookbooks) and CookStyle linting (server-sourced cookbooks) against target Chef Client versions, with version-specific cop profiles. **(3) Remediation guidance** — auto-correct previews (diff generation), migration doc links per deprecation cop, and cookbook complexity scoring (weighted score + blast radius). **(4) Node upgrade readiness** — per-node pass/fail per target version based on cookbook compatibility and disk space, with stale-node handling. **(5) Embedded tool resolution** — CookStyle/Test Kitchen/Ruby looked up in `analysis_tools.embedded_bin_dir` first, then `PATH`. All work is parallelised via bounded worker pools (see configuration spec).
+This spec covers five areas: **(1) Cookbook usage analysis** — which cookbooks/versions are in use, by which nodes, roles, and policies. **(2) Cookbook compatibility testing** — Test Kitchen (git-sourced cookbooks) and CookStyle linting (server-sourced cookbooks) against target Chef Client versions, with version-specific cop profiles. **(3) Remediation guidance** — auto-correct previews (diff generation), migration doc links per deprecation cop, and cookbook complexity scoring (weighted score + blast radius). **(4) Node upgrade readiness** — per-node pass/fail per target version based on cookbook compatibility and disk space, with stale-node handling. **(5) External tool resolution** — CookStyle/Test Kitchen are provided by Chef Workstation on the host and resolved from `PATH`; they are not bundled. All work is parallelised via bounded worker pools (see configuration spec).
 
 ---
 
@@ -49,7 +49,7 @@ Moved to [analysis-data-io.md](analysis-data-io.md).
 - [`visualisation.md`](visualisation.md) — dashboard and log viewer
 - [`chef-api.md`](chef-api.md) — Chef Infra Server API reference
 - [`datastore.md`](datastore.md) — database schema
-- [`configuration.md`](configuration.md) — configuration schema (includes `embedded_bin_dir` setting)
+- [`configuration.md`](configuration.md) — configuration schema
 - [`logging.md`](logging.md) — logging subsystem
-- [`packaging.md`](packaging.md) — embedded Ruby environment build and layout
+- [`packaging.md`](packaging.md) — packaging and host prerequisites (cookstyle/kitchen from Chef Workstation on `PATH`)
 - [`test-kitchen-drivers.md`](test-kitchen-drivers.md) — Test Kitchen driver abstraction (multi-driver overlay, credential injection, platform mapping, coverage analysis)

@@ -130,10 +130,9 @@ Response `422 Unprocessable Entity`: validation errors.
 ```
 
 Validation checks:
-- If driver is not `dokken`, `platform_map` must be non-empty
+- `driver` must be set (no default) and `platform_map` must be non-empty
 - Each platform map entry must have `kitchen_name` and `image`
 - No duplicate `kitchen_name` values in platform map
-- If driver is `custom`, `image_field_name` must be set
 - All `driver_secrets` values must reference existing credentials (warn, don't block)
 - All `password_credential` and `ssh_key_credential` values must reference existing credentials (warn, don't block)
 
@@ -185,10 +184,9 @@ Flow per collection run:
 The page has three sections stacked vertically:
 
 **1. Driver Configuration**
-- Driver dropdown: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, `custom`
+- Driver dropdown: `proxmox`, `vcenter`, `vra`, `ec2`, `vagrant` (no default — operator must choose). `vcenter` is production-supported and `proxmox` is a PoC; `vra`, `ec2`, `vagrant` are placeholders not yet wired to a backend.
 - Timeout minutes: number input
 - Enabled: toggle switch
-- Image field name: text input (shown only when driver is `custom`)
 
 **2. Driver Settings & Secrets**
 - Two-column key-value editor for `driver_settings` (add/remove rows)
@@ -219,8 +217,8 @@ The page has three sections stacked vertically:
 
 - Kitchen name and image are required on each platform map row
 - No duplicate kitchen names
-- Image field name required when driver is `custom`
-- At least one platform map entry when driver is not `dokken`
+- A driver must be selected
+- At least one platform map entry (required for all drivers)
 
 ### Server-Side (on PUT)
 

@@ -118,18 +118,17 @@ concurrency:
 
 ### Analysis Tools
 
-Controls the location and behaviour of the embedded CookStyle and Test Kitchen tools used for cookbook compatibility testing.
+Controls the behaviour of the CookStyle and Test Kitchen tools used for cookbook compatibility testing.
 
-All packaging formats (RPM, DEB) ship with a self-contained Ruby environment under `/opt/chef-migration-metrics/embedded/` that includes CookStyle, Test Kitchen, the `kitchen-dokken` driver, and their gem dependencies. This eliminates external dependencies on Chef Workstation or system Ruby. See the [Packaging Specification](packaging.md) for the embedded environment build and layout.
+CookStyle, Test Kitchen, and their Ruby runtime are **not** bundled. Cookbook compatibility testing requires **Chef Workstation** installed on the host; the application resolves `cookstyle` and `kitchen` from `PATH`. See the [Packaging Specification](packaging.md) for package contents.
 
 ```yaml
 analysis_tools:
-  embedded_bin_dir: /opt/chef-migration-metrics/embedded/bin
   cookstyle_timeout_minutes: 10
   test_kitchen:
     enabled: true
     timeout_minutes: 30
-    driver: dokken
+    driver: vcenter
     driver_settings: {}
     driver_secrets: {}
     image_field_name: ""
@@ -139,14 +138,13 @@ analysis_tools:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `embedded_bin_dir` | `/opt/chef-migration-metrics/embedded/bin` | Directory containing the embedded `cookstyle`, `kitchen`, and `ruby` binaries. At startup, the application looks for these tools here first. If the directory does not exist or the binaries are not found, the application falls back to `PATH` lookup. This fallback supports development environments and source builds where the embedded tree may not be present. |
 | `cookstyle_timeout_minutes` | `10` | Maximum wall-clock time for a single CookStyle scan before the process is killed and the result recorded as failed. |
-| `test_kitchen.enabled` | `true` | Master toggle for Test Kitchen testing. When set to `false`, Test Kitchen is disabled regardless of whether the `kitchen` and `docker` binaries are available. When `true` (the default), Test Kitchen is enabled automatically if both binaries are detected at startup. Set this to `false` to turn off Test Kitchen without removing Docker or Kitchen from the system. |
+| `test_kitchen.enabled` | `true` | Master toggle for Test Kitchen testing. When set to `false`, Test Kitchen is disabled regardless of whether the `kitchen` binary is available on `PATH`. When `true` (the default), Test Kitchen is enabled automatically if `kitchen` is detected at startup. Set this to `false` to turn off Test Kitchen without removing Chef Workstation from the host. |
 | `test_kitchen.timeout_minutes` | `30` | Maximum wall-clock time for a single Test Kitchen converge or verify step. Replaces `test_kitchen_timeout_minutes`. |
 | `test_kitchen.max_concurrent_vms` | `2` | Global ceiling on concurrent Test Kitchen VMs across all runs and batches — the single concurrency knob (there is no per-batch limit). Live-tunable from the Test Kitchen admin page; `0` falls back to the default. |
 | `test_kitchen.start_rate_window_minutes` | `0` (off) | VM start-rate limiter window, set to the DHCP lease time (e.g. `60`, `90`). Bounds *cumulative* lease consumption over a window, which peak concurrency alone does not. Active only together with `start_rate_max_per_window`. See [bulk-kitchen-scanning.md](bulk-kitchen-scanning.md). |
 | `test_kitchen.start_rate_max_per_window` | `0` (off) | Maximum VM starts allowed per window, set to the usable DHCP pool size (e.g. `25`, `64`). Starts are evenly paced. Both rate fields are live (no restart); the limiter is disabled unless both are > 0. |
-| `test_kitchen.driver` | `dokken` | Test Kitchen driver profile. Built-in profiles: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, `custom`. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md). |
+| `test_kitchen.driver` | none (required) | Test Kitchen driver profile — the operator must choose one; there is no default. Built-in profiles: `vcenter` (production), `proxmox` (proof-of-concept) are wired to a hypervisor backend; `vra`, `ec2`, `vagrant` are UI-dropdown placeholders / overlay stubs that are not yet implemented. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md). |
 | `test_kitchen.driver_settings` | `{}` | Driver connection settings as key-value pairs (plaintext). Keys are driver-specific (e.g. `vcenter_host`, `region`). |
 | `test_kitchen.driver_secrets` | `{}` | Driver secret settings. Keys are driver setting names, values are credential names from the `credentials` table. |
 | `test_kitchen.image_field_name` | set by profile | Driver-specific field name for the image identifier in the platform map. Required only for the `custom` profile. |
@@ -158,21 +156,15 @@ analysis_tools:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `name` | string | required | Unique label used as the reference value in `platform_map[].image`. |
-| `id` | string | required (non-dokken) | Driver-specific image identifier (template name, AMI ID, etc.). |
+| `id` | string | required | Driver-specific image identifier (template name, AMI ID, etc.). |
 | `install_method` | string | `"download"` | How Chef is installed on instances using this image. `"download"` installs from the network; `"baked_in"` means Chef is pre-installed in the image. |
 | `chef_client_path` | string | `""` | Path to the chef-client binary when `install_method` is `"baked_in"` (e.g. `/opt/chef/bin/chef-client`). Required for `baked_in`; ignored for `download`. |
 | `driver_settings` | map | `{}` | Per-image driver setting overrides, merged on top of top-level `driver_settings`. |
 | `transport` | object | nil | Transport credentials: `username`, `password_credential`, `ssh_key_credential`. |
 | `chef_download_urls` | map | `{}` | Map of `version → URL`. When set for the target version, the overlay uses `download_url` instead of `product_version`. |
 
-> **Path resolution order:** For `cookstyle` and `kitchen`, the application resolves binaries in this order:
-> 1. `<embedded_bin_dir>/cookstyle` (or `kitchen`)
-> 2. Standard `PATH` lookup
->
-> This means a standard RPM/DEB/container installation uses the embedded tools automatically, while a developer running from source with `cookstyle` and `kitchen` installed via Chef Workstation or `gem install` will use their system copies.
+> **Path resolution:** `cookstyle` and `kitchen` are resolved from `PATH`, which requires **Chef Workstation** to be installed on the host. They are not bundled with the application.
 
 For driver-specific configuration examples (vCenter, vRA, EC2), see [Test Kitchen Driver Abstraction](test-kitchen-drivers.md) § Configuration Schema.
 
-> **Docker requirement:** The two analysis tools have independent Docker requirements. **CookStyle** never needs Docker — it runs as a host process performing static analysis. **Test Kitchen** only needs Docker when `test_kitchen.driver` is `dokken` (the default); non-dokken drivers (vcenter, ec2, vra, etc.) provision real VMs via their own APIs and have no Docker dependency. If Docker is unavailable: dokken-based Test Kitchen is disabled, but CookStyle scanning and non-dokken Test Kitchen testing still function.
-
-> **Disabling Test Kitchen:** To disable Test Kitchen without uninstalling Docker or Kitchen, set `analysis_tools.test_kitchen.enabled: false`. This is useful in environments where Docker is present for other purposes but Test Kitchen runs are not wanted (e.g. resource-constrained hosts, CI pipelines that only need CookStyle results, or during initial evaluation). When disabled, the startup log emits an informational message confirming the override.
+> **Disabling Test Kitchen:** To disable Test Kitchen without uninstalling Chef Workstation, set `analysis_tools.test_kitchen.enabled: false`. This is useful in environments where Test Kitchen runs are not wanted (e.g. resource-constrained hosts, CI pipelines that only need CookStyle results, or during initial evaluation). When disabled, the startup log emits an informational message confirming the override.

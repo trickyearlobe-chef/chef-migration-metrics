@@ -45,12 +45,6 @@ contents:
     file_info:
       mode: 0750
 
-  # Embedded Ruby environment with CookStyle and Test Kitchen
-  - src: ./build/embedded/
-    dst: /opt/chef-migration-metrics/embedded/
-    file_info:
-      mode: 0755
-
   - src: ./deploy/pkg/chef-migration-metrics.service
     dst: /usr/lib/systemd/system/chef-migration-metrics.service
     file_info:
@@ -86,22 +80,4 @@ deb:
     - adduser
 ```
 
-### 6.1 Building the Embedded Ruby Environment
-
-The embedded Ruby environment is built during the `make build-embedded` step (or as part of `make package-all`) into `./build/embedded/`. The build process:
-
-1. Uses a Docker container (`ruby:3.1-bookworm`) to install gems into an isolated prefix, ensuring a consistent build regardless of the host system. Ruby 3.1 is used to match Chef Workstation 25.13.7.
-2. Pins `ffi:1.16.3` first, then installs `cookstyle:7.32.8`, `test-kitchen:3.9.1`, `inspec-bin:5.24.7`, `kitchen-inspec:3.1.0`, all kitchen drivers (vagrant, ec2, azurerm, google, hyperv, vcenter, vra, openstack, digitalocean), and `kitchen-dokken` from the Stromweld fork — all version-pinned to match Chef Workstation 25.13.7.
-3. Creates binstubs (`cookstyle`, `kitchen`, `inspec`) with shebangs pointing to `/opt/chef-migration-metrics/embedded/bin/ruby`.
-4. Copies the Ruby interpreter and shared libraries into the prefix.
-5. Exports the entire tree to `./build/embedded/` on the host for nFPM to package.
-
-This produces a platform-specific artifact — the `ARCH` and `GOOS` of the Ruby build must match the target package architecture.
-
-**Makefile targets:**
-
-| Target | Description |
-|--------|-------------|
-| `build-embedded` | Build the embedded Ruby environment for the host platform |
-| `build-embedded-amd64` | Build for `linux/amd64` |
-| `build-embedded-arm64` | Build for `linux/arm64` |
+The packages ship only the Go binary, config file, systemd unit, and env-file. No Ruby tree is bundled. Cookbook compatibility testing requires **Chef Workstation** installed on the host; the application resolves `cookstyle` and `kitchen` from `PATH`.
