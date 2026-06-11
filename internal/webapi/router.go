@@ -756,6 +756,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
+	r.adminOnly("/api/v1/admin/saml/endpoints", r.handleSAMLEndpoints)
 	r.adminOnly("/api/v1/admin/platform-mapping/status", r.handlePlatformMappingStatus)
 
 	// Kitchen analysis endpoints (viewer — any authenticated user)

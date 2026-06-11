@@ -10,12 +10,23 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth/jit"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth/samlsp"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
+
+// SAMLEndpoints holds the absolute SP endpoint URLs an administrator must give
+// the IdP. They are computed by the backend from the same base URL the SP
+// metadata advertises (not the browser origin), so they match exactly.
+type SAMLEndpoints struct {
+	ACSURL      string `json:"acs_url"`
+	SLOURL      string `json:"slo_url"`
+	MetadataURL string `json:"metadata_url"`
+	EntityID    string `json:"entity_id"`
+}
 
 // SAMLHandler holds the SAML-related HTTP handlers and their dependencies.
 type SAMLHandler struct {
@@ -25,6 +36,25 @@ type SAMLHandler struct {
 	userStore   SAMLUserStore
 	logger      func(level, msg string)
 	trustedProxy bool
+
+	// endpoints are the SP URLs surfaced to operators (set by SetEndpoints at
+	// wiring time and re-set on a live provider rebuild). Guarded by endpointsMu.
+	endpointsMu sync.RWMutex
+	endpoints   SAMLEndpoints
+}
+
+// SetEndpoints records the SP endpoint URLs surfaced via the admin endpoints API.
+func (h *SAMLHandler) SetEndpoints(e SAMLEndpoints) {
+	h.endpointsMu.Lock()
+	h.endpoints = e
+	h.endpointsMu.Unlock()
+}
+
+// Endpoints returns the currently advertised SP endpoint URLs.
+func (h *SAMLHandler) Endpoints() SAMLEndpoints {
+	h.endpointsMu.RLock()
+	defer h.endpointsMu.RUnlock()
+	return h.endpoints
 }
 
 // SAMLUserStore defines the user store methods needed by the SAML handler.

@@ -24,6 +24,26 @@ export function fetchSAMLCertificate(): Promise<SAMLCertificateResponse | null> 
   );
 }
 
+// SAMLEndpoints holds the SP endpoint URLs an administrator must give the IdP.
+// They are computed by the backend from the same base URL the SP metadata
+// advertises, so a hand-configured IdP (Google, Okta) gets the exact ACS/reply
+// URL rather than a guessed path.
+export interface SAMLEndpoints {
+  acs_url: string;
+  slo_url: string;
+  metadata_url: string;
+  entity_id: string;
+}
+
+// fetchSAMLEndpoints returns the backend-computed SP endpoint URLs, or null when
+// SAML is not configured (the endpoint returns 501 — no SP to describe).
+export function fetchSAMLEndpoints(): Promise<SAMLEndpoints | null> {
+  return apiFetch<SAMLEndpoints>(buildUrl("/admin/saml/endpoints")).catch((err: unknown) => {
+    if (err instanceof ApiError && err.status === 501) return null;
+    throw err;
+  });
+}
+
 // samlMetadataUrl returns the absolute, externally-reachable URL of the SP
 // metadata endpoint. IdPs that support metadata-by-URL (ADFS, Shibboleth,
 // Keycloak, PingFederate, …) can be pointed at this to auto-refresh; others

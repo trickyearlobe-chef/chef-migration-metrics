@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchAuthConfig,
   fetchSAMLCertificate,
+  fetchSAMLEndpoints,
   fetchSAMLMetadata,
   samlMetadataUrl,
   generateSAMLKeypair,
@@ -9,6 +10,7 @@ import {
   type AuthConfig,
   type AuthProvider,
   type SAMLCertificateResponse,
+  type SAMLEndpoints,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 
@@ -355,16 +357,21 @@ export function AdminAuthPage() {
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [metadataUrlCopied, setMetadataUrlCopied] = useState(false);
 
+  // SP endpoint URLs (backend-computed) + which field was last copied.
+  const [samlEndpoints, setSamlEndpoints] = useState<SAMLEndpoints | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
   const load = useCallback(() => {
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
-    Promise.all([fetchAuthConfig(), fetchSAMLCertificate()])
-      .then(([data, cert]) => {
+    Promise.all([fetchAuthConfig(), fetchSAMLCertificate(), fetchSAMLEndpoints()])
+      .then(([data, cert, endpoints]) => {
         if (cancelled) return;
         setConfig(data);
         setSaved(data);
         setSpCert(cert);
+        setSamlEndpoints(endpoints);
       })
       .catch((err: unknown) => {
         if (!cancelled)
@@ -482,6 +489,13 @@ export function AdminAuthPage() {
     navigator.clipboard.writeText(samlMetadataUrl()).then(() => {
       setMetadataUrlCopied(true);
       setTimeout(() => setMetadataUrlCopied(false), 2000);
+    });
+  }
+
+  function handleCopyField(key: string, value: string) {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedField(key);
+      setTimeout(() => setCopiedField((k) => (k === key ? null : k)), 2000);
     });
   }
 
@@ -659,6 +673,55 @@ export function AdminAuthPage() {
                 </button>
               </div>
             </FieldRow>
+
+            {samlEndpoints && (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-500">
+                  IdPs configured by hand (Google, Okta) need these pasted in directly.
+                  The <span className="font-medium">callback (ACS) URL</span> is where the
+                  IdP must POST its SAML response — these are the live values, not a guess.
+                </p>
+                {[
+                  {
+                    key: "acs",
+                    label: "Callback (ACS) URL",
+                    hint: "The IdP's reply / assertion-consumer URL — POST target for the SAML response.",
+                    value: samlEndpoints.acs_url,
+                  },
+                  {
+                    key: "slo",
+                    label: "Single Logout (SLO) URL",
+                    hint: "Where the IdP sends LogoutRequests.",
+                    value: samlEndpoints.slo_url,
+                  },
+                  {
+                    key: "entity",
+                    label: "SP Entity ID",
+                    hint: "This service provider's entity ID (audience).",
+                    value: samlEndpoints.entity_id,
+                  },
+                ].map((f) => (
+                  <FieldRow key={f.key} label={f.label} hint={f.hint}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={f.value}
+                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                        className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleCopyField(f.key, f.value)}
+                        className="shrink-0 rounded-md border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50"
+                      >
+                        {copiedField === f.key ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                  </FieldRow>
+                ))}
+              </div>
+            )}
 
             {metadataError && (
               <ErrorAlert message="Failed to export SP metadata" detail={metadataError} />

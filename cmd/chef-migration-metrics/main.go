@@ -598,6 +598,14 @@ func (app *serverApp) setupSAML(ctx context.Context) {
 		app.cfg.Server.TrustedProxy,
 		logFn,
 	)
+	// Surface the SP endpoint URLs for the admin UI, computed from the same
+	// values fed to the provider so they match the advertised SP metadata.
+	app.samlHandler.SetEndpoints(webapi.SAMLEndpoints{
+		ACSURL:      spCfg.ACSURL,
+		SLOURL:      spCfg.SLOURL,
+		MetadataURL: spCfg.MetadataURL,
+		EntityID:    spCfg.SPEntityID,
+	})
 
 	app.startup.Info(fmt.Sprintf("SAML SSO configured: entity_id=%s", samlCfg.SPEntityID))
 }

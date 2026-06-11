@@ -213,3 +213,68 @@ func TestSAMLGenerateKeypair_Regenerate(t *testing.T) {
 		t.Error("regeneration should produce a different fingerprint")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/admin/saml/endpoints
+// ---------------------------------------------------------------------------
+
+func TestSAMLEndpoints_ReturnsURLs(t *testing.T) {
+	h := &SAMLHandler{logger: func(string, string) {}}
+	h.SetEndpoints(SAMLEndpoints{
+		ACSURL:      "https://cmm.example.com/api/v1/auth/saml/acs",
+		SLOURL:      "https://cmm.example.com/api/v1/auth/saml/slo",
+		MetadataURL: "https://cmm.example.com/api/v1/auth/saml/metadata",
+		EntityID:    "https://cmm.example.com",
+	})
+	r := newTestRouterForAdminConfig(nil, nil, nil, WithSAML(h))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/saml/endpoints", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		ACSURL      string `json:"acs_url"`
+		SLOURL      string `json:"slo_url"`
+		MetadataURL string `json:"metadata_url"`
+		EntityID    string `json:"entity_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ACSURL != "https://cmm.example.com/api/v1/auth/saml/acs" {
+		t.Errorf("acs_url = %q", resp.ACSURL)
+	}
+	if resp.SLOURL == "" || resp.MetadataURL == "" || resp.EntityID == "" {
+		t.Errorf("slo/metadata/entity should be populated: %+v", resp)
+	}
+}
+
+func TestSAMLEndpoints_NotConfigured_501(t *testing.T) {
+	// No WithSAML wired: the section is not configured.
+	r := newTestRouterForAdminConfig(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/saml/endpoints", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("status = %d, want 501 when SAML not configured", w.Code)
+	}
+}
+
+func TestSAMLEndpoints_MethodNotAllowed(t *testing.T) {
+	h := &SAMLHandler{logger: func(string, string) {}}
+	h.SetEndpoints(SAMLEndpoints{ACSURL: "https://cmm.example.com/api/v1/auth/saml/acs"})
+	r := newTestRouterForAdminConfig(nil, nil, nil, WithSAML(h))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/saml/endpoints", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", w.Code)
+	}
+}
