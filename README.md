@@ -103,17 +103,16 @@ Chef Migration Metrics is a Go application with an embedded React frontend. Cook
 
 ### Optional (for Cookbook Compatibility Testing)
 
-- **Chef Workstation** — provides CookStyle, Test Kitchen, and InSpec
-- **Docker** (required by the Test Kitchen `kitchen-dokken` driver for container-based cookbook testing)
+- **Chef Workstation** — provides `cookstyle` and `kitchen` (and InSpec). These tools are **not bundled**; install Chef Workstation on the host to enable cookbook compatibility analysis.
+- A configured Test Kitchen **driver** for whatever you test against (vCenter, EC2, vRA, Vagrant, or Proxmox) — see [Test Kitchen Driver Configuration](#test-kitchen-driver-configuration).
 
-The application looks for `cookstyle` and `kitchen` binaries in a configurable directory first (see `analysis_tools.embedded_bin_dir` in the configuration), then falls back to searching `PATH`. If neither is found, cookbook analysis is skipped gracefully — data collection and the dashboard still work.
+The application resolves `cookstyle` and `kitchen` from `PATH`. If they are not found, cookbook analysis is skipped gracefully — data collection and the dashboard still work.
 
 ### Building from Source
 
 - **Go** 1.25 or later
 - **Node.js** 20 or later and **npm** (for building the React frontend)
 - **nFPM** (for building RPM and DEB packages)
-- **Docker** (for building the embedded Ruby environment)
 
 ## Installation
 
@@ -275,19 +274,9 @@ The application runs database migrations automatically on startup — no manual 
 
 ### Test Kitchen Driver Configuration
 
-The Test Kitchen driver is configured under `analysis_tools.test_kitchen` in the YAML config file. The default driver is `dokken` (Docker-based, zero-config). Non-dokken drivers require additional settings.
+The Test Kitchen driver is configured under `analysis_tools.test_kitchen` in the YAML config file. There is **no default driver** — choose one of `vcenter`, `ec2`, `vra`, `vagrant`, or `proxmox` and provide its settings. Each driver provisions real test targets via its own API, so it needs connection `driver_settings`, any `driver_secrets`, and a `platform_map`.
 
-**Minimal config (dokken):**
-
-```yaml
-analysis_tools:
-  test_kitchen:
-    enabled: true
-    driver: dokken
-    timeout_minutes: 30
-```
-
-**Non-dokken config (e.g. vCenter, EC2, vRA):**
+**Example (vCenter — EC2, vRA, Vagrant, and Proxmox follow the same shape):**
 
 ```yaml
 analysis_tools:
@@ -312,7 +301,7 @@ analysis_tools:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `driver` | `dokken` | Built-in profiles: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, `proxmox`, or `custom` |
+| `driver` | none (required) | Built-in profiles: `vcenter`, `vra`, `ec2`, `vagrant`, `proxmox`. Any other name is treated as a generic/custom driver (set `image_field_name`). |
 | `timeout_minutes` | `30` | Maximum time per Test Kitchen run |
 | `driver_settings` | empty | Plaintext driver connection settings |
 | `driver_secrets` | empty | Credential names resolved at runtime from the credential store |
