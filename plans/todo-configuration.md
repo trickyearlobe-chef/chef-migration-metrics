@@ -1,5 +1,26 @@
 # Configuration — ToDo
 
+### Compatibility Guardrails (read before implementing)
+
+The fixes below MUST NOT break existing deployments. Hard rules:
+
+1. **No config-item renames or removals.** YAML keys, config-store `Key*` constants,
+   struct `yaml`/`json` tags, and env-var names stay byte-identical. Existing config
+   files and DB-stored sections must keep parsing. Changes are read/apply plumbing,
+   additive UI for existing fields, and additive DB columns only.
+2. **Preserve exact values when centralising defaults.** Dedup-to-a-const must keep the
+   identical value. Landmines: the `CMM_CREDENTIAL_ENCRYPTION_KEY` env-var *name string*
+   (wrong value ⇒ stored secrets won't decrypt); default literals (`exports` dir, port
+   `8080`, readiness `3072`/`6144` sentinels). Any *actual* default-value change is a
+   separate, explicitly-flagged decision — never a side effect of refactoring.
+3. **Keep legacy aliases.** `tls.enabled`→`mode`, legacy `test_kitchen_timeout_minutes`,
+   `readiness.min_free_disk_mb` back-compat shims stay. Do not delete in a cleanup pass.
+4. **`restart_required` value flips are the one intended contract change.** The applier
+   inversion + pessimistic default makes some sections report `true` where they returned
+   `false`. This is correct (honest reporting), but it changes the "Apply & Restart" UX
+   and breaks contract tests pinning specific values (e.g. `handle_admin_config_test.go:255`).
+   Update those assertions deliberately, not reflexively.
+
 ### Restart / Reload Audit (2026-06-11)
 
 Policy (`configuration-live-reload.md`): everything live-reloads except a small
