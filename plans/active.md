@@ -30,9 +30,20 @@ New `config_apply_test.go` (granularity ordering + derivation) + handler flip
 tests. Full module suite + `go vet` green. Only the collection flag-asserting test
 was contract-affected; it stays false.
 
+## Chunk C — `logging.level` SetLevel applier [subsystem] ✅ DONE
+
+First real subsystem applier; established the live-setter + Router-wiring pattern
+the later appliers (scheduler reschedule, pool resize) reuse. `Logger.level` →
+`atomic.Int32` + `SetLevel` (`Level()`/`log()` read atomically; race-clean).
+webapi `logLevelApplier` (subsystem) registered only when `WithLogLevelSetter` is
+wired — a `func(string) error` callback, so webapi still doesn't import `logging`.
+main.go wires it via `ParseSeverity` + `logger.SetLevel`. Logging section now
+reports subsystem/false when wired, process/true otherwise (no-setter contract
+tests unchanged). Full logging (incl. `-race`) + webapi suites + `go vet` green.
+
 ### Next chunk candidates (later sessions)
-- **New appliers (subsystem):** logging SetLevel; collection.schedule reschedule;
-  backup reschedule/start/stop; concurrency.{cookstyle_scan,readiness_evaluation,cookbook_download} resize.
+- **New appliers (subsystem):** collection.schedule reschedule; backup
+  reschedule/start/stop; concurrency.{cookstyle_scan,readiness_evaluation,cookbook_download} resize.
 - **Exports cleanup-ticker re-point** (`main.go:1059`) — the subsystem half of the
   exports section (read swaps already done here).
 

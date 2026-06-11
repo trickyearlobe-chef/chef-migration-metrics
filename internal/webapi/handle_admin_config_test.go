@@ -757,10 +757,11 @@ func TestAdminConfigLogging_PUT_Success(t *testing.T) {
 	if got["level"] != "DEBUG" {
 		t.Errorf("level = %v, want DEBUG", got["level"])
 	}
-	// logging.level has no live applier yet (level is immutable at runtime), so
-	// it falls to the pessimistic process default — honest restart_required:true.
+	// No log-level setter wired here, so the logging section registers no applier
+	// and falls to the pessimistic process default — honest restart_required:true.
+	// (With a setter it reports subsystem/false — see the WithSetter test.)
 	if !restartRequired {
-		t.Error("logging PUT should require restart until a SetLevel applier exists")
+		t.Error("logging PUT without a setter should require restart (process default)")
 	}
 }
 
@@ -790,7 +791,7 @@ func TestAdminConfigReload_GranularityReported(t *testing.T) {
 		t.Errorf("collection reload = %q, want %q", col.Reload, ReloadApplied.String())
 	}
 
-	// logging has no applier yet -> process -> true, reload "process".
+	// logging has no setter wired here -> no applier -> process -> true.
 	log := put("/api/v1/admin/config/logging", `{"level":"DEBUG","retention_days":14}`)
 	if !log.RestartRequired {
 		t.Error("logging PUT should require restart (process)")
@@ -798,6 +799,57 @@ func TestAdminConfigReload_GranularityReported(t *testing.T) {
 	if log.Reload != ReloadProcess.String() {
 		t.Errorf("logging reload = %q, want %q", log.Reload, ReloadProcess.String())
 	}
+}
+
+// With a log-level setter wired, the logging section applies the new level in
+// place (subsystem) and reports restart_required:false — the level is no longer
+// immutable at runtime.
+func TestAdminConfigLogging_PUT_WithSetter_SubsystemReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	var gotLevel string
+	calls := 0
+	setter := func(level string) error {
+		gotLevel = level
+		calls++
+		return nil
+	}
+	r := newTestRouterForAdminConfig(nil, store, nil, WithLogLevelSetter(setter))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/logging",
+		strings.NewReader(`{"level":"DEBUG","retention_days":14}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("logging PUT with a setter should not require restart")
+	}
+	if resp.Reload != ReloadSubsystem.String() {
+		t.Errorf("logging reload = %q, want %q", resp.Reload, ReloadSubsystem.String())
+	}
+	if calls != 1 {
+		t.Errorf("setter called %d times, want 1", calls)
+	}
+	if gotLevel != "DEBUG" {
+		t.Errorf("setter level = %q, want DEBUG", gotLevel)
+	}
+}
+
+// An applier error (the level could not be applied) surfaces as a 500 — better
+// than silently claiming a change is live when the subsystem rejected it.
+func TestAdminConfigLogging_PUT_SetterError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	setter := func(string) error { return errors.New("set level failed") }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithLogLevelSetter(setter))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/logging",
+		strings.NewReader(`{"level":"DEBUG","retention_days":14}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
 }
 
 func TestAdminConfigLogging_PUT_CaseInsensitiveLevel(t *testing.T) {

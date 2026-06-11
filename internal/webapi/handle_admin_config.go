@@ -263,9 +263,14 @@ func (r *Router) putAdminConfigLogging(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	// No applier yet: the logger level is immutable at runtime (no SetLevel).
-	// Pessimistic process until a SetLevel applier lands (todo-configuration.md Bucket 2).
-	r.storeAdminConfigSection(w, req, &config.Config{Logging: input}, configstore.KeyLogging)
+	// When a log-level setter is wired the level applies in place (subsystem);
+	// otherwise no applier is registered and the section keeps the pessimistic
+	// process default — honest restart_required.
+	var appliers []Applier
+	if r.logLevelSetter != nil {
+		appliers = append(appliers, r.logLevelApplier(input.Level))
+	}
+	r.storeAdminConfigSection(w, req, &config.Config{Logging: input}, configstore.KeyLogging, appliers...)
 }
 
 // ---------------------------------------------------------------------------

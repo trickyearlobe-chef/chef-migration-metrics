@@ -691,6 +691,40 @@ func TestLogger_Level(t *testing.T) {
 	}
 }
 
+// TestLogger_SetLevel_ChangesThresholdLive proves the minimum severity can be
+// re-applied at runtime (config live-reload, logging.level applier): a DEBUG
+// entry suppressed at INFO is emitted after lowering the level to DEBUG, and a
+// later raise back to WARN suppresses INFO again — no new Logger instance.
+func TestLogger_SetLevel_ChangesThresholdLive(t *testing.T) {
+	l, mw := newTestLogger(INFO)
+
+	if err := l.Debug(ScopeStartup, "suppressed"); err != nil {
+		t.Fatalf("Debug() returned error: %v", err)
+	}
+	if mw.Len() != 0 {
+		t.Fatalf("DEBUG at INFO level should be suppressed, got %d entries", mw.Len())
+	}
+
+	l.SetLevel(DEBUG)
+	if l.Level() != DEBUG {
+		t.Fatalf("Level() = %v after SetLevel(DEBUG), want DEBUG", l.Level())
+	}
+	if err := l.Debug(ScopeStartup, "now emitted"); err != nil {
+		t.Fatalf("Debug() returned error: %v", err)
+	}
+	if mw.Len() != 1 {
+		t.Fatalf("DEBUG at DEBUG level should emit, got %d entries", mw.Len())
+	}
+
+	l.SetLevel(WARN)
+	if err := l.Info(ScopeStartup, "suppressed again"); err != nil {
+		t.Fatalf("Info() returned error: %v", err)
+	}
+	if mw.Len() != 1 {
+		t.Errorf("INFO at WARN level should be suppressed, got %d entries", mw.Len())
+	}
+}
+
 func TestLogger_Info(t *testing.T) {
 	l, mw := newTestLogger(INFO)
 

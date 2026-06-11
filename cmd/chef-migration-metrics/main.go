@@ -1134,6 +1134,14 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 				logger.WithScope(logging.ScopeWebAPI).Info(msg)
 			}
 		}),
+		webapi.WithLogLevelSetter(func(level string) error {
+			sev, err := logging.ParseSeverity(level)
+			if err != nil {
+				return err
+			}
+			logger.SetLevel(sev)
+			return nil
+		}),
 		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
 		webapi.WithCollectionTrigger(func(ctx context.Context) error {
 			if coll.IsRunning() {

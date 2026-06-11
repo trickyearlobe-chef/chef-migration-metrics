@@ -41,6 +41,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -459,7 +460,10 @@ type Options struct {
 // Logger is the central structured logging type. It fans out each entry to
 // all attached writers. It is safe for concurrent use.
 type Logger struct {
-	level   Severity
+	// level is the minimum severity, stored atomically so it can be re-applied
+	// at runtime via SetLevel (config live-reload) without locking every log
+	// call. Holds a Severity (int) widened to int32.
+	level   atomic.Int32
 	writers []Writer
 	clock   func() time.Time
 }
@@ -476,23 +480,31 @@ func New(opts Options) *Logger {
 		clock = time.Now
 	}
 
-	return &Logger{
-		level:   opts.Level,
+	l := &Logger{
 		writers: writers,
 		clock:   clock,
 	}
+	l.level.Store(int32(opts.Level))
+	return l
 }
 
-// Level returns the minimum severity level of the logger.
+// Level returns the current minimum severity level of the logger.
 func (l *Logger) Level() Severity {
-	return l.level
+	return Severity(l.level.Load())
+}
+
+// SetLevel re-applies the minimum severity level at runtime. Entries below the
+// new level are suppressed from the next log call onward. Safe for concurrent
+// use; this is the subsystem apply point for the logging.level config setting.
+func (l *Logger) SetLevel(level Severity) {
+	l.level.Store(int32(level))
 }
 
 // log creates an entry and fans it out to all writers. Errors from
 // individual writers are collected but do not prevent other writers from
 // receiving the entry.
 func (l *Logger) log(severity Severity, scope Scope, msg string, opts ...Option) error {
-	if severity < l.level {
+	if severity < l.Level() {
 		return nil
 	}
 

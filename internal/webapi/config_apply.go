@@ -88,6 +88,20 @@ func (r *Router) applyKitchenWorkerCount(context.Context) (ApplyResult, error) {
 	return ApplyResult{Reload: ReloadSubsystem}, nil
 }
 
+// logLevelApplier re-applies the validated log level to the running logger via
+// the wired setter and reports ReloadSubsystem. Only registered when a setter
+// is wired; without one the logging section has no applier and stays at the
+// pessimistic process default. The level string is already validated by the
+// handler (DEBUG/INFO/WARN/ERROR).
+func (r *Router) logLevelApplier(level string) Applier {
+	return func(context.Context) (ApplyResult, error) {
+		if err := r.logLevelSetter(level); err != nil {
+			return ApplyResult{}, err
+		}
+		return ApplyResult{Reload: ReloadSubsystem}, nil
+	}
+}
+
 // worstGranularity returns the most severe granularity among results. With no
 // results it returns ReloadProcess: a section that registered no applier is
 // assumed to need a restart (pessimistic — at worst over-prompts, never

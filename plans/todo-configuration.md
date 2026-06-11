@@ -87,7 +87,7 @@ API returns `restart_required:false` but a boot-captured consumer no-ops the sav
 Each fix = register the applier named below (granularity in brackets); the flag
 then derives correctly with no literal to maintain.
 
-- [ ] `logging.level` — logger `level` is immutable (`logging.go:462,480`); no `SetLevel`. **Applier [subsystem]:** live level (e.g. `slog.LevelVar`/setter).
+- [x] `logging.level` — DONE (`refactor/config-live-reload`, Chunk C). `Logger.level` now an `atomic.Int32` with `SetLevel`; webapi `logLevelApplier` (subsystem) wired via `WithLogLevelSetter` (string callback — webapi still doesn't import `logging`). Section reports subsystem/false when the setter is wired, process/true otherwise.
 - [ ] `collection.schedule` — cron parsed once; scheduler has no reschedule (`collector/scheduler.go`). **Applier [subsystem]:** add `Reschedule`.
 - [ ] `collection.stale_node_warning_hours` / `stale_node_critical_days` — read from static `r.cfg` (`handle_nodes.go:52,53,144,215`). **Fix [applied]:** `r.cfg`→`r.liveConfig()`.
 - [ ] `backup.schedule`, `backup.enabled` — `cronExpr` fixed in `NewScheduler` (`backup/scheduler.go:25`); no applier. **Applier [subsystem]:** reschedule/start/stop.

@@ -66,6 +66,15 @@ type Router struct {
 	// caller provides a logging function at construction time.
 	logger func(level, msg string)
 
+	// logLevelSetter re-applies the minimum log level on the running logger
+	// (the logging.level subsystem applier). The value is the validated level
+	// string (DEBUG/INFO/WARN/ERROR); the callback parses and applies it. nil
+	// when no logger is wired — the logging section then has no applier and
+	// stays at the pessimistic process default. Kept as a string callback so
+	// webapi need not import the logging package (see logger above). Set via
+	// WithLogLevelSetter.
+	logLevelSetter func(level string) error
+
 	// --- Authentication components (set via WithAuth) ---
 
 	// localAuth handles local username/password authentication with
@@ -235,6 +244,17 @@ func WithSchemaVersion(v int) RouterOption {
 func WithLogger(fn func(level, msg string)) RouterOption {
 	return func(r *Router) {
 		r.logger = fn
+	}
+}
+
+// WithLogLevelSetter wires the live log-level apply point for the logging.level
+// config section. fn receives the validated level string and applies it to the
+// running logger; when set, a logging PUT re-applies the level in place
+// (subsystem) instead of requiring a restart. Without it the section keeps the
+// pessimistic process default.
+func WithLogLevelSetter(fn func(level string) error) RouterOption {
+	return func(r *Router) {
+		r.logLevelSetter = fn
 	}
 }
 
