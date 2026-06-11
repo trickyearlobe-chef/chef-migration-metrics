@@ -271,6 +271,13 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 					fmt.Sprintf("server.tls.http_redirect_port (%d) must differ from the HTTPS listen port; both would bind the same port.", effPort))
 				return
 			}
+			// Automatic HTTPS binds 443 when TLS is active (tls.md § 1.5), so the
+			// redirect listener must not collide with 443 either.
+			if input.TLS.HTTPRedirectPort == 443 {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					"server.tls.http_redirect_port must differ from 443; automatic HTTPS binds 443 when TLS is active.")
+				return
+			}
 		}
 	}
 

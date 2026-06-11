@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -60,6 +61,7 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 	// challenge fails open to self-signed.
 	var solver acme.Solver
 	var challengeSrv *http.Server
+	var challengeHandler http.Handler
 	var renewerOpts []acme.RenewerOption
 	switch acfg.Challenge {
 	case "http-01":
@@ -70,12 +72,10 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 		}
 		httpSolver := acme.NewHTTP01Solver(app.tlsLog)
 		solver = httpSolver
-		challengeSrv = apptls.NewChallengeRedirectServer(
-			app.cfg.Server.ListenAddress,
-			app.cfg.Server.TLS.HTTPRedirectPort,
-			app.cfg.Server.Port,
-			httpSolver.Handler(),
-		)
+		// The challenge/redirect server is built once the effective HTTPS port is
+		// known (after the auto-443 decision below), so its redirect targets 443
+		// when automatic HTTPS on 443 is in effect (tls.md § 1.5).
+		challengeHandler = httpSolver.Handler()
 	case "dns-01":
 		if acfg.DNSProvider != "route53" {
 			app.startup.Error(fmt.Sprintf(
@@ -130,23 +130,59 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 		}
 	}
 
+	// Automatic HTTPS on 443 (tls.md § 1.5) applies only when a real certificate
+	// is loaded (healthy). The degraded self-signed bootstrap holds server.port,
+	// and is not moved to 443 at runtime if issuance later succeeds in place. In
+	// http-01 the port-80 challenge server is the redirect listener; pass 0 so
+	// the HTTPS listener does not also bind that port — only the server.port → 443
+	// redirect (when healthy and 443 is bound) is added here.
+	effHTTPSPort := app.cfg.Server.Port
+	if effHTTPSPort == 0 {
+		effHTTPSPort = 8080
+	}
+	var redirectPorts []int
+	var https443Ln net.Listener
+	if !degraded {
+		effHTTPSPort, redirectPorts, https443Ln = app.planAutoHTTPS(0)
+	}
+
+	// Build the http-01 challenge/redirect server now the effective HTTPS port is
+	// known: ordinary traffic 301s to that port (443 when auto-443 is in effect,
+	// else server.port); the challenge path keeps priority (tls-acme.md § 3.3).
+	if challengeHandler != nil {
+		challengeSrv = apptls.NewChallengeRedirectServer(
+			app.cfg.Server.ListenAddress,
+			app.cfg.Server.TLS.HTTPRedirectPort,
+			effHTTPSPort,
+			challengeHandler,
+		)
+	}
+
 	lcfg := apptls.ListenerConfig{
 		ListenAddress: app.cfg.Server.ListenAddress,
-		Port:          app.cfg.Server.Port,
+		Port:          effHTTPSPort,
 		CertSource:    "db",
 		CertPEM:       certPEM,
 		KeyPEM:        keyPEM,
 		MinVersion:    app.cfg.Server.TLS.MinVersion,
 		// Port 80 is owned by the challenge/redirect server for the whole process
-		// lifetime, so the HTTPS listener must not also try to bind a redirect.
+		// lifetime, so the HTTPS listener must not also bind it; the only redirect
+		// it runs is the auto server.port → 443 one (§ 1.5).
 		HTTPRedirectPort:        0,
+		RedirectPorts:           redirectPorts,
 		GracefulShutdownTimeout: shutdownTimeout,
 		TrustedProxy:            app.cfg.Server.TrustedProxy,
 		HSTSEnabled:             app.hstsEnabledFn(),
 	}
 	listener, lerr := apptls.NewListener(handler, lcfg, app.tlsLog)
 	if lerr != nil {
+		if https443Ln != nil {
+			_ = https443Ln.Close()
+		}
 		return app.degradeToSelfSigned(handler, acfg.Domains, lerr), nil
+	}
+	if https443Ln != nil {
+		listener.SetHTTPSListener(https443Ln)
 	}
 
 	if degraded {

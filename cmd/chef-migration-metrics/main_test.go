@@ -43,6 +43,12 @@ func newTestApp(t *testing.T) *serverApp {
 	app.cfg.Server.Port = freePort(t)
 	app.setupBootstrapLogger()
 	app.tlsStatus = webapi.NewTLSStatusHolder()
+	// Default the automatic-443 bind (tls.md § 1.5) to "unavailable" so tests run
+	// deterministically without attempting a privileged port bind; tests that
+	// exercise the 443 path override this with a free-port listener.
+	app.auto443Listen = func(string) (net.Listener, error) {
+		return nil, errors.New("443 unavailable in test")
+	}
 	return app
 }
 

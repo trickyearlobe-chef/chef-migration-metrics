@@ -1250,6 +1250,50 @@ server:
 	expectParseError(t, yaml, "http_redirect_port")
 }
 
+// http_redirect_port must differ from 443: automatic HTTPS binds 443 when TLS is
+// active (tls.md § 1.5), so a redirect listener on 443 would collide.
+func TestValidation_TLSHTTPRedirectPortCollidesWith443(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  port: 8080
+  tls:
+    mode: static
+    cert_path: /tmp/c.pem
+    key_path: /tmp/k.pem
+    http_redirect_port: 443
+`
+	expectParseError(t, yaml, "443")
+}
+
+// http_redirect_port must differ from server.port (the HTTPS / redirect-to-443
+// listen port) — both would bind the same port.
+func TestValidation_TLSHTTPRedirectPortCollidesWithServerPort(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+server:
+  port: 8443
+  tls:
+    mode: static
+    cert_path: /tmp/c.pem
+    key_path: /tmp/k.pem
+    http_redirect_port: 8443
+`
+	expectParseError(t, yaml, "server.port")
+}
+
 // ---------------------------------------------------------------------------
 // ACME validation
 // ---------------------------------------------------------------------------

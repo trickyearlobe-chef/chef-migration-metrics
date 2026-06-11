@@ -1670,6 +1670,22 @@ func (c *Config) validateServer(ve *ValidationError, w *Warnings) {
 		if c.Server.TLS.HTTPRedirectPort < 1 || c.Server.TLS.HTTPRedirectPort > 65535 {
 			ve.addf("server.tls.http_redirect_port: %d is not a valid port number (1-65535)", c.Server.TLS.HTTPRedirectPort)
 		}
+		// The redirect listener only runs when TLS is active, and it must not
+		// collide with the HTTPS listen port or with 443 — when TLS is active,
+		// automatic HTTPS binds 443 (tls.md § 1.5), and server.port either hosts
+		// HTTPS or its own redirect-to-443. Any duplicate bind fails at startup.
+		if c.Server.TLS.Mode == "static" || c.Server.TLS.Mode == "acme" {
+			serverPort := c.Server.Port
+			if serverPort == 0 {
+				serverPort = 8080
+			}
+			if c.Server.TLS.HTTPRedirectPort == serverPort {
+				ve.addf("server.tls.http_redirect_port (%d) must differ from server.port; both would bind the same port", serverPort)
+			}
+			if c.Server.TLS.HTTPRedirectPort == 443 {
+				ve.add("server.tls.http_redirect_port must differ from 443; automatic HTTPS binds 443 when TLS is active")
+			}
+		}
 	}
 }
 

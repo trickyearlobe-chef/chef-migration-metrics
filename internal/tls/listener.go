@@ -53,6 +53,14 @@ type ListenerConfig struct {
 	// that redirects all requests to HTTPS. Set to 0 to disable.
 	HTTPRedirectPort int
 
+	// RedirectPorts is an additional set of ports that each run a secondary HTTP
+	// listener 301-redirecting to HTTPS on Port. It generalises HTTPRedirectPort
+	// for automatic HTTPS on 443 (tls.md § 1.5), where both the previous
+	// server.port and an explicit http_redirect_port redirect to 443. Ports that
+	// are zero, duplicated, or equal to Port are ignored. HTTPRedirectPort is
+	// folded in, so callers may set either or both.
+	RedirectPorts []int
+
 	// GracefulShutdownTimeout is the maximum time to wait for in-flight
 	// requests to complete during shutdown.
 	GracefulShutdownTimeout time.Duration
@@ -110,11 +118,12 @@ func (lc *ListenerConfig) setDefaults() {
 // server. It owns the CertManager and exposes methods to start and
 // gracefully stop both servers.
 type Listener struct {
-	cfg         ListenerConfig
-	certManager *CertManager
-	httpsSrv    *http.Server
-	redirectSrv *http.Server
-	log         LogFunc
+	cfg          ListenerConfig
+	certManager  *CertManager
+	httpsSrv     *http.Server
+	httpsLn      net.Listener
+	redirectSrvs []*http.Server
+	log          LogFunc
 }
 
 // NewListener creates a Listener for TLS static mode. The handler is the
@@ -173,19 +182,34 @@ func NewListener(handler http.Handler, cfg ListenerConfig, log LogFunc) (*Listen
 		log:         log,
 	}
 
-	// Set up the optional HTTP-to-HTTPS redirect listener.
-	if cfg.HTTPRedirectPort > 0 {
-		redirectAddr := fmt.Sprintf("%s:%d", cfg.ListenAddress, cfg.HTTPRedirectPort)
-		l.redirectSrv = &http.Server{
-			Addr:         redirectAddr,
+	// Set up the optional HTTP-to-HTTPS redirect listeners. HTTPRedirectPort is
+	// folded into RedirectPorts; ports that are zero, duplicated, or equal to the
+	// HTTPS port are skipped (a redirect to the port it listens on would loop).
+	seen := make(map[int]bool)
+	for _, p := range append([]int{cfg.HTTPRedirectPort}, cfg.RedirectPorts...) {
+		if p <= 0 || p == cfg.Port || seen[p] {
+			continue
+		}
+		seen[p] = true
+		l.redirectSrvs = append(l.redirectSrvs, &http.Server{
+			Addr:         fmt.Sprintf("%s:%d", cfg.ListenAddress, p),
 			Handler:      l.redirectHandler(),
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  30 * time.Second,
-		}
+		})
 	}
 
 	return l, nil
+}
+
+// SetHTTPSListener supplies a pre-bound TCP listener for the HTTPS server. It
+// lets the caller decide the 443-vs-fallback bind (tls.md § 1.5) and hand the
+// successfully-bound listener in, so a 443 bind failure is handled before Serve
+// rather than surfacing asynchronously. When unset, Serve binds the configured
+// address itself.
+func (l *Listener) SetHTTPSListener(ln net.Listener) {
+	l.httpsLn = ln
 }
 
 // CertManager returns the underlying CertManager so callers can trigger
@@ -203,25 +227,34 @@ func (l *Listener) CertManager() *CertManager {
 // Callers should also call CertManager().WatchForChanges() if automatic
 // filesystem-based certificate reload is desired.
 func (l *Listener) Serve() <-chan error {
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 1+len(l.redirectSrvs))
 
 	go func() {
+		// ListenAndServeTLS / ServeTLS with empty cert/key paths because the
+		// tls.Config.GetCertificate callback handles certificate selection — we
+		// don't need the server to load files itself. When a pre-bound listener
+		// was supplied (the 443 path, § 1.5), serve on it; otherwise bind the
+		// configured address.
+		if l.httpsLn != nil {
+			l.log("INFO", fmt.Sprintf("HTTPS server listening on %s", l.httpsLn.Addr()))
+			if err := l.httpsSrv.ServeTLS(l.httpsLn, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- fmt.Errorf("HTTPS server: %w", err)
+			}
+			return
+		}
 		l.log("INFO", fmt.Sprintf("HTTPS server listening on %s", l.httpsSrv.Addr))
-		// ListenAndServeTLS with empty cert/key paths because the
-		// tls.Config.GetCertificate callback handles certificate
-		// selection — we don't need the server to load files itself.
 		if err := l.httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("HTTPS server: %w", err)
 		}
 	}()
 
-	if l.redirectSrv != nil {
-		go func() {
-			l.log("INFO", fmt.Sprintf("HTTP-to-HTTPS redirect listener on %s", l.redirectSrv.Addr))
-			if err := l.redirectSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				errCh <- fmt.Errorf("HTTP redirect server: %w", err)
+	for _, srv := range l.redirectSrvs {
+		go func(srv *http.Server) {
+			l.log("INFO", fmt.Sprintf("HTTP-to-HTTPS redirect listener on %s", srv.Addr))
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- fmt.Errorf("HTTP redirect server %s: %w", srv.Addr, err)
 			}
-		}()
+		}(srv)
 	}
 
 	return errCh
@@ -233,12 +266,12 @@ func (l *Listener) Serve() <-chan error {
 func (l *Listener) Shutdown(ctx context.Context) error {
 	var errs []error
 
-	// Stop the redirect server first — it's less important and stopping
-	// it first avoids sending clients to an HTTPS port that's shutting down.
-	if l.redirectSrv != nil {
-		l.log("INFO", "shutting down HTTP redirect listener...")
-		if err := l.redirectSrv.Shutdown(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("redirect server shutdown: %w", err))
+	// Stop the redirect servers first — they're less important and stopping
+	// them first avoids sending clients to an HTTPS port that's shutting down.
+	for _, srv := range l.redirectSrvs {
+		l.log("INFO", fmt.Sprintf("shutting down HTTP redirect listener %s...", srv.Addr))
+		if err := srv.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("redirect server %s shutdown: %w", srv.Addr, err))
 		}
 	}
 
@@ -263,13 +296,24 @@ func (l *Listener) Addr() string {
 	return l.httpsSrv.Addr
 }
 
-// RedirectAddr returns the HTTP redirect server's listen address, or an
-// empty string if the redirect listener is not configured.
+// RedirectAddr returns the first HTTP redirect server's listen address, or an
+// empty string if no redirect listener is configured. Use RedirectAddrs for the
+// full set when automatic HTTPS on 443 runs more than one (tls.md § 1.5).
 func (l *Listener) RedirectAddr() string {
-	if l.redirectSrv == nil {
+	if len(l.redirectSrvs) == 0 {
 		return ""
 	}
-	return l.redirectSrv.Addr
+	return l.redirectSrvs[0].Addr
+}
+
+// RedirectAddrs returns the listen addresses of every HTTP-to-HTTPS redirect
+// listener, in configuration order.
+func (l *Listener) RedirectAddrs() []string {
+	addrs := make([]string, 0, len(l.redirectSrvs))
+	for _, srv := range l.redirectSrvs {
+		addrs = append(addrs, srv.Addr)
+	}
+	return addrs
 }
 
 // ---------------------------------------------------------------------------
