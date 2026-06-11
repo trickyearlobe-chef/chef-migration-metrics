@@ -191,7 +191,7 @@ jobs:
           exit-code: '0'
           format: sarif
           output: trivy-results.sarif
-          skip-dirs: frontend/node_modules,embedded,.samples
+          skip-dirs: frontend/node_modules,.samples
 
       - name: Upload Trivy SARIF to code scanning
         continue-on-error: true
