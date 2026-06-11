@@ -1267,7 +1267,7 @@ func (c *Config) Validate() (*Warnings, error) {
 	ve := &ValidationError{}
 	w := &Warnings{}
 
-	c.validateOrganisations(ve)
+	c.validateOrganisations(ve, w)
 	c.validateTargetVersions(ve)
 	c.validateCollection(ve, w)
 	c.validateConcurrency(ve)
@@ -1287,9 +1287,15 @@ func (c *Config) Validate() (*Warnings, error) {
 
 // --- per-section validators ---
 
-func (c *Config) validateOrganisations(ve *ValidationError) {
+func (c *Config) validateOrganisations(ve *ValidationError, w *Warnings) {
 	if len(c.Organisations) == 0 {
-		ve.add("at least one organisation must be configured")
+		// Zero organisations is a valid setup state, not a fatal error: a fresh
+		// or DB-managed deployment boots into the setup wizard with none and the
+		// operator adds the first via the UI. Making this fatal would abort
+		// startup once config_store holds any other section (e.g. TLS/ACME) but
+		// no org yet. The admin org-save path still rejects an empty list
+		// (handle_admin_config.go), and the collector simply has nothing to do.
+		w.add("no organisations configured — add at least one via the UI to begin collecting data")
 		return
 	}
 	seen := make(map[string]bool)

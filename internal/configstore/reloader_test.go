@@ -277,8 +277,10 @@ func TestConfigHolder_Reload_ValidationFailurePreservesConfig(t *testing.T) {
 	store := mustNewStore(t, db)
 	ctx := context.Background()
 
-	// Seed the store with invalid data (empty organisations triggers validation error).
-	if err := store.Set(ctx, KeyOrganisations, json.RawMessage(`[]`), false, "test"); err != nil {
+	// Seed the store with invalid data. An organisation with no name is a fatal
+	// validation error (empty organisations is now a non-fatal setup warning, so
+	// it can no longer stand in for "invalid config" here).
+	if err := store.Set(ctx, KeyOrganisations, json.RawMessage(`[{"name":""}]`), false, "test"); err != nil {
 		t.Fatalf("Set organisations: %v", err)
 	}
 
@@ -289,7 +291,7 @@ func TestConfigHolder_Reload_ValidationFailurePreservesConfig(t *testing.T) {
 
 	err := holder.Reload(ctx)
 	if err == nil {
-		t.Fatal("expected validation error from empty organisations")
+		t.Fatal("expected validation error from an organisation with no name")
 	}
 
 	// The original config should be preserved.

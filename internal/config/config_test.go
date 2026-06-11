@@ -647,12 +647,32 @@ func TestEnvOverride_ElasticsearchOutputDirectory(t *testing.T) {
 // Organisation validation
 // ---------------------------------------------------------------------------
 
-func TestValidation_NoOrganisations(t *testing.T) {
+// Zero organisations is a setup state, not a fatal error: the deployment must
+// still load (into the setup wizard) so the operator can add the first org via
+// the UI. It surfaces as a warning, never a parse error.
+func TestValidation_NoOrganisations_IsWarningNotError(t *testing.T) {
 	yaml := `
 target_chef_versions:
   - "18.5.0"
 `
-	expectParseError(t, yaml, "at least one organisation must be configured")
+	cfg, warnings, err := Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("zero organisations must not be a fatal error, got: %v", err)
+	}
+	if cfg == nil || len(cfg.Organisations) != 0 {
+		t.Fatalf("expected a parsed config with zero organisations")
+	}
+	found := false
+	if warnings != nil {
+		for _, m := range warnings.Messages {
+			if strings.Contains(m, "organisation") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected a no-organisations setup warning, got %v", warnings)
+	}
 }
 
 func TestValidation_OrgMissingName(t *testing.T) {
