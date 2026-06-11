@@ -58,7 +58,6 @@ func diagnosticConcurrency(cfg config.Config) map[string]any {
 func diagnosticAnalysisTools(cfg config.Config) map[string]any {
 	tk := cfg.AnalysisTools.TestKitchen
 	return map[string]any{
-		"embedded_bin_dir":          cfg.AnalysisTools.EmbeddedBinDir,
 		"cookstyle_enabled":         cfg.AnalysisTools.IsCookstyleEnabled(),
 		"cookstyle_timeout_minutes": cfg.AnalysisTools.CookstyleTimeoutMinutes,
 		"test_kitchen": map[string]any{
@@ -78,11 +77,11 @@ func diagnosticAnalysisTools(cfg config.Config) map[string]any {
 
 func diagnosticReadiness(cfg config.Config) map[string]any {
 	return map[string]any{
-		"install_path_linux":          cfg.Readiness.InstallPathLinux,
-		"install_path_windows":        cfg.Readiness.InstallPathWindows,
-		"install_size_mb_linux":       cfg.Readiness.InstallSizeMBLinux,
-		"install_size_mb_windows":     cfg.Readiness.InstallSizeMBWindows,
-		"min_remaining_free_percent":  cfg.Readiness.MinRemainingFreePercent,
+		"install_path_linux":         cfg.Readiness.InstallPathLinux,
+		"install_path_windows":       cfg.Readiness.InstallPathWindows,
+		"install_size_mb_linux":      cfg.Readiness.InstallSizeMBLinux,
+		"install_size_mb_windows":    cfg.Readiness.InstallSizeMBWindows,
+		"min_remaining_free_percent": cfg.Readiness.MinRemainingFreePercent,
 	}
 }
 

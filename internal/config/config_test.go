@@ -193,9 +193,6 @@ func TestDefaults_Concurrency(t *testing.T) {
 
 func TestDefaults_AnalysisTools(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
-	if cfg.AnalysisTools.EmbeddedBinDir != "/opt/chef-migration-metrics/embedded/bin" {
-		t.Errorf("unexpected embedded_bin_dir: %q", cfg.AnalysisTools.EmbeddedBinDir)
-	}
 	if cfg.AnalysisTools.CookstyleTimeoutMinutes != 10 {
 		t.Errorf("expected cookstyle_timeout_minutes 10, got %d", cfg.AnalysisTools.CookstyleTimeoutMinutes)
 	}
@@ -610,14 +607,6 @@ func TestEnvOverride_ACMEAgreeToTOS_CaseInsensitive(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if !cfg.Server.TLS.ACME.AgreeToTOS {
 		t.Error("acme agree_to_tos env override should be case-insensitive")
-	}
-}
-
-func TestEnvOverride_AnalysisToolsEmbeddedBinDir(t *testing.T) {
-	t.Setenv("CHEF_MIGRATION_METRICS_ANALYSIS_TOOLS_EMBEDDED_BIN_DIR", "/custom/bin")
-	cfg := mustParse(t, minimalValidYAML())
-	if cfg.AnalysisTools.EmbeddedBinDir != "/custom/bin" {
-		t.Errorf("embedded_bin_dir env override not applied: %q", cfg.AnalysisTools.EmbeddedBinDir)
 	}
 }
 
@@ -2196,58 +2185,6 @@ analysis_tools:
 	}
 }
 
-func TestValidation_AnalysisToolsEmbeddedBinDirWarning(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-analysis_tools:
-  embedded_bin_dir: /nonexistent/embedded/bin
-`
-	_, warnings, err := Parse([]byte(yaml))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	found := false
-	for _, msg := range warnings.Messages {
-		if strings.Contains(msg, "embedded_bin_dir") && strings.Contains(msg, "falling back") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("expected warning about nonexistent embedded_bin_dir")
-	}
-}
-
-func TestValidation_AnalysisToolsEmbeddedBinDirExists(t *testing.T) {
-	dir := t.TempDir()
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-analysis_tools:
-  embedded_bin_dir: ` + dir + `
-`
-	_, warnings, err := Parse([]byte(yaml))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	for _, msg := range warnings.Messages {
-		if strings.Contains(msg, "embedded_bin_dir") {
-			t.Errorf("unexpected warning about embedded_bin_dir: %s", msg)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // ValidationError formatting
 // ---------------------------------------------------------------------------
@@ -2353,7 +2290,6 @@ concurrency:
   readiness_evaluation: 10
 
 analysis_tools:
-  embedded_bin_dir: ` + dir + `
   cookstyle_timeout_minutes: 5
   test_kitchen:
     timeout_minutes: 15

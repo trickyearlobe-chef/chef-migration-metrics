@@ -148,10 +148,10 @@ type ConcurrencyConfig struct {
 // Analysis tools (embedded CookStyle / Test Kitchen)
 // ---------------------------------------------------------------------------
 
-// AnalysisToolsConfig controls the embedded analysis tool locations and
-// timeouts.
+// AnalysisToolsConfig controls the analysis tool timeouts and toggles. The
+// cookstyle/kitchen binaries are resolved from PATH (provided by Chef
+// Workstation); they are not bundled.
 type AnalysisToolsConfig struct {
-	EmbeddedBinDir            string            `yaml:"embedded_bin_dir"`
 	CookstyleEnabled          *bool             `yaml:"cookstyle_enabled"`
 	CookstyleTimeoutMinutes   int               `yaml:"cookstyle_timeout_minutes"`
 	TestKitchenTimeoutMinutes int               `yaml:"test_kitchen_timeout_minutes"`
@@ -910,9 +910,6 @@ func (c *Config) setDefaults() {
 	}
 
 	// Analysis tools
-	if c.AnalysisTools.EmbeddedBinDir == "" {
-		c.AnalysisTools.EmbeddedBinDir = "/opt/chef-migration-metrics/embedded/bin"
-	}
 	if c.AnalysisTools.CookstyleTimeoutMinutes == 0 {
 		c.AnalysisTools.CookstyleTimeoutMinutes = 10
 	}
@@ -1203,9 +1200,6 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("CHEF_MIGRATION_METRICS_SERVER_TLS_ACME_AGREE_TO_TOS"); v != "" {
 		c.Server.TLS.ACME.AgreeToTOS = strings.EqualFold(v, "true")
 	}
-	if v := os.Getenv("CHEF_MIGRATION_METRICS_ANALYSIS_TOOLS_EMBEDDED_BIN_DIR"); v != "" {
-		c.AnalysisTools.EmbeddedBinDir = v
-	}
 	if v := os.Getenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_ENABLED"); v != "" {
 		c.Elasticsearch.Enabled = strings.EqualFold(v, "true")
 	}
@@ -1442,12 +1436,6 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 
 	if c.AnalysisTools.TestKitchenTimeoutMinutes < 0 {
 		ve.add("analysis_tools.test_kitchen_timeout_minutes must be >= 0")
-	}
-
-	if c.AnalysisTools.EmbeddedBinDir != "" {
-		if info, err := os.Stat(c.AnalysisTools.EmbeddedBinDir); err != nil || !info.IsDir() {
-			w.addf("analysis_tools.embedded_bin_dir %q does not exist or is not a directory; falling back to PATH lookup", c.AnalysisTools.EmbeddedBinDir)
-		}
 	}
 
 	// Validate Test Kitchen driver configuration.

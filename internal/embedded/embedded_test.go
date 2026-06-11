@@ -5,7 +5,6 @@ package embedded
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -57,7 +56,7 @@ func (f *fakeExecutor) Execute(_ context.Context, name string, args ...string) (
 		return r.Stdout, r.Stderr, r.Err
 	}
 
-	// Try matching by basename for embedded paths like /opt/.../cookstyle.
+	// Try matching by basename for resolved PATH paths like /usr/bin/cookstyle.
 	for key, r := range f.results {
 		if len(key) > 0 && key[0] != '/' && nameMatches(name, key) {
 			return r.Stdout, r.Stderr, r.Err
@@ -82,9 +81,8 @@ func nameMatches(fullPath, name string) bool {
 // ResolvePath tests
 // ---------------------------------------------------------------------------
 
-func TestResolvePath_FallsBackToPATH(t *testing.T) {
-	// With an empty embedded dir, ResolvePath should fall back to PATH.
-	r := NewResolver("")
+func TestResolvePath_FoundOnPATH(t *testing.T) {
+	r := NewResolver()
 
 	// "go" should always be on PATH in a Go test environment.
 	path, err := r.ResolvePath("go")
@@ -97,7 +95,7 @@ func TestResolvePath_FallsBackToPATH(t *testing.T) {
 }
 
 func TestResolvePath_NonexistentTool(t *testing.T) {
-	r := NewResolver("")
+	r := NewResolver()
 
 	_, err := r.ResolvePath("nonexistent-tool-xyz-12345")
 	if err == nil {
@@ -108,83 +106,39 @@ func TestResolvePath_NonexistentTool(t *testing.T) {
 	}
 }
 
-func TestResolvePath_NonexistentEmbeddedDir(t *testing.T) {
-	// When the embedded dir doesn't exist, it should fall back to PATH.
-	r := NewResolver("/nonexistent/embedded/bin/dir")
-
-	// "go" should still be found on PATH.
-	path, err := r.ResolvePath("go")
-	if err != nil {
-		t.Fatalf("expected fallback to PATH, got error: %v", err)
-	}
-	if path == "" {
-		t.Fatal("expected non-empty path from PATH fallback")
-	}
-}
-
-func TestResolvePath_BothMissing(t *testing.T) {
-	r := NewResolver("/nonexistent/embedded/bin/dir")
-
-	_, err := r.ResolvePath("nonexistent-tool-xyz-12345")
-	if err == nil {
-		t.Fatal("expected error when tool is missing from both embedded dir and PATH")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // ValidateCookstyle tests
 // ---------------------------------------------------------------------------
 
-func TestValidateCookstyle_Available(t *testing.T) {
+func TestValidateCookstyle_PopulatesName(t *testing.T) {
 	fe := newFakeExecutor()
 	fe.set("cookstyle", "1.64.8\n", "", nil)
 
-	// We use an empty embedded dir so ResolvePath falls back to PATH.
-	// But since cookstyle isn't on PATH in CI, we also override the
-	// executor. We need a real binary name that IS on PATH for the
-	// ResolvePath call to succeed. Instead, we test the internal logic
-	// by calling the method when cookstyle is on PATH (it may not be).
-	// To avoid flaky tests, we test the full flow with a wrapper approach.
+	// cookstyle is unlikely to be on PATH in CI; the test exercises the code
+	// path either way (available → version/path set; unavailable → error set).
+	r := NewResolver(WithExecutor(fe))
+	info := r.ValidateCookstyle(context.Background())
 
-	// Use a real tool name that exists for path resolution, then check
-	// the executor is called correctly. We'll test with "go" which is
-	// always available.
-	t.Run("full_flow_with_fake", func(t *testing.T) {
-		// Create a resolver that will find "go" as a stand-in
-		r := NewResolver("", WithExecutor(fe))
-
-		// We can't easily fake ResolvePath without a real binary, so
-		// let's test the logic when the tool IS found on PATH.
-		// We'll just verify the output parsing is correct by testing
-		// with a tool that exists.
-		info := r.ValidateCookstyle(context.Background())
-
-		// If cookstyle isn't on PATH, we expect an error.
-		// The test is valuable either way — it exercises the code path.
-		if info.Name != "cookstyle" {
-			t.Errorf("expected Name = cookstyle, got %q", info.Name)
+	if info.Name != "cookstyle" {
+		t.Errorf("expected Name = cookstyle, got %q", info.Name)
+	}
+	if info.Available {
+		if info.Version == "" {
+			t.Error("expected non-empty version when available")
 		}
-
-		if info.Available {
-			if info.Version == "" {
-				t.Error("expected non-empty version when available")
-			}
-			if info.Path == "" {
-				t.Error("expected non-empty path when available")
-			}
-		} else {
-			if info.Error == "" {
-				t.Error("expected non-empty error when not available")
-			}
+		if info.Path == "" {
+			t.Error("expected non-empty path when available")
 		}
-	})
+	} else if info.Error == "" {
+		t.Error("expected non-empty error when not available")
+	}
 }
 
 func TestValidateCookstyle_NotOnPATH(t *testing.T) {
 	fe := newFakeExecutor()
 	// Don't configure any result — the tool isn't found.
 
-	r := NewResolver("/nonexistent/embedded", WithExecutor(fe))
+	r := NewResolver(WithExecutor(fe))
 	info := r.ValidateCookstyle(context.Background())
 
 	if info.Available {
@@ -205,7 +159,7 @@ func TestValidateCookstyle_NotOnPATH(t *testing.T) {
 func TestValidateKitchen_NotOnPATH(t *testing.T) {
 	fe := newFakeExecutor()
 
-	r := NewResolver("/nonexistent/embedded", WithExecutor(fe))
+	r := NewResolver(WithExecutor(fe))
 	info := r.ValidateKitchen(context.Background())
 
 	if info.Available {
@@ -223,22 +177,18 @@ func TestValidateKitchen_NotOnPATH(t *testing.T) {
 // ValidateGit tests
 // ---------------------------------------------------------------------------
 
-func TestValidateGit_Available(t *testing.T) {
+func TestValidateGit_PopulatesName(t *testing.T) {
 	fe := newFakeExecutor()
-
-	// git is looked up via exec.LookPath directly, not via ResolvePath,
-	// so we need it to actually be on PATH. In a Go test environment it
-	// should be. The fake executor will intercept the version call.
+	// git is looked up via exec.LookPath directly; the fake intercepts the
+	// version call by basename.
 	fe.set("git", "git version 2.45.0\n", "", nil)
 
-	// Can't easily fake exec.LookPath, but git should be on PATH.
-	r := NewResolver("", WithExecutor(fe))
+	r := NewResolver(WithExecutor(fe))
 	info := r.ValidateGit(context.Background())
 
 	if info.Name != "git" {
 		t.Errorf("expected Name = git, got %q", info.Name)
 	}
-
 	if info.Available {
 		if info.Version == "" {
 			t.Error("expected non-empty version when available")
@@ -246,10 +196,6 @@ func TestValidateGit_Available(t *testing.T) {
 		if info.Path == "" {
 			t.Error("expected non-empty path when available")
 		}
-		// Since we use a fake executor, the version should be parsed.
-		// However the executor is keyed by binary name — the actual path
-		// resolved by exec.LookPath might differ. The fake matches by
-		// basename, so "git" should match.
 	}
 }
 
@@ -263,53 +209,13 @@ func TestValidateGit_ParsesVersion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ValidateDocker tests
-// ---------------------------------------------------------------------------
-
-func TestValidateDocker_NotOnPATH(t *testing.T) {
-	// Docker may or may not be on PATH. If not, we verify the error path.
-	fe := newFakeExecutor()
-
-	r := NewResolver("", WithExecutor(fe))
-	info := r.ValidateDocker(context.Background())
-
-	if info.Name != "docker" {
-		t.Errorf("expected Name = docker, got %q", info.Name)
-	}
-
-	// Either available (Docker is installed) or not — both are valid.
-	// We just verify the struct is populated correctly.
-	if info.Available {
-		if info.Path == "" {
-			t.Error("expected non-empty path when available")
-		}
-	}
-}
-
-func TestValidateDocker_InvalidJSON(t *testing.T) {
-	// Simulate docker returning invalid JSON.
-	fe := newFakeExecutor()
-	fe.set("docker", "not json at all", "", nil)
-
-	r := NewResolver("", WithExecutor(fe))
-	info := r.ValidateDocker(context.Background())
-
-	// Docker may not be on PATH. If it isn't, the error will be about
-	// not finding docker, not about invalid JSON. Both are acceptable.
-	if info.Available {
-		t.Error("expected docker to be unavailable with invalid JSON output")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // ValidateAll tests
 // ---------------------------------------------------------------------------
 
 func TestValidateAll_AllUnavailable(t *testing.T) {
 	fe := newFakeExecutor()
 
-	// Use a nonexistent embedded dir so nothing is found.
-	r := NewResolver("/nonexistent/embedded/bin", WithExecutor(fe))
+	r := NewResolver(WithExecutor(fe))
 	result := r.ValidateAll(context.Background())
 
 	if result.CookstyleEnabled {
@@ -319,16 +225,14 @@ func TestValidateAll_AllUnavailable(t *testing.T) {
 		t.Error("expected KitchenEnabled = false")
 	}
 	// Git may or may not be available depending on the test environment.
-	// We don't assert on it here.
 }
 
 func TestValidateAll_PopulatesAllFields(t *testing.T) {
 	fe := newFakeExecutor()
 
-	r := NewResolver("", WithExecutor(fe))
+	r := NewResolver(WithExecutor(fe))
 	result := r.ValidateAll(context.Background())
 
-	// Verify tool infos have the correct name.
 	if result.Cookstyle.Name != "cookstyle" {
 		t.Errorf("Cookstyle.Name = %q, want cookstyle", result.Cookstyle.Name)
 	}
@@ -343,7 +247,7 @@ func TestValidateAll_PopulatesAllFields(t *testing.T) {
 func TestValidateAll_KitchenEnabledRequiresKitchen(t *testing.T) {
 	fe := newFakeExecutor()
 
-	r := NewResolver("", WithExecutor(fe))
+	r := NewResolver(WithExecutor(fe))
 	result := r.ValidateAll(context.Background())
 
 	if result.KitchenEnabled && !result.Kitchen.Available {
@@ -356,7 +260,7 @@ func TestValidateAll_KitchenEnabledRequiresKitchen(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWithValidationTimeout(t *testing.T) {
-	r := NewResolver("", WithValidationTimeout(5*time.Second))
+	r := NewResolver(WithValidationTimeout(5 * time.Second))
 	if r.validationTimeout != 5*time.Second {
 		t.Errorf("expected timeout = 5s, got %v", r.validationTimeout)
 	}
@@ -364,18 +268,15 @@ func TestWithValidationTimeout(t *testing.T) {
 
 func TestWithExecutor(t *testing.T) {
 	fe := newFakeExecutor()
-	r := NewResolver("", WithExecutor(fe))
+	r := NewResolver(WithExecutor(fe))
 	if r.executor == nil {
 		t.Fatal("expected non-nil executor")
 	}
 }
 
 func TestNewResolver_Defaults(t *testing.T) {
-	r := NewResolver("/opt/embedded/bin")
+	r := NewResolver()
 
-	if r.embeddedBinDir != "/opt/embedded/bin" {
-		t.Errorf("embeddedBinDir = %q, want /opt/embedded/bin", r.embeddedBinDir)
-	}
 	if r.validationTimeout != 30*time.Second {
 		t.Errorf("validationTimeout = %v, want 30s", r.validationTimeout)
 	}
@@ -410,7 +311,7 @@ func TestNameMatches(t *testing.T) {
 	}{
 		{"git", "git", true},
 		{"/usr/bin/git", "git", true},
-		{"/opt/embedded/bin/cookstyle", "cookstyle", true},
+		{"/usr/local/bin/cookstyle", "cookstyle", true},
 		{"/usr/bin/git", "docker", false},
 		{"", "git", false},
 		{"git", "", false},
@@ -424,31 +325,5 @@ func TestNameMatches(t *testing.T) {
 				t.Errorf("nameMatches(%q, %q) = %v, want %v", tt.fullPath, tt.name, got, tt.want)
 			}
 		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// dockerInfoResponse JSON parsing test
-// ---------------------------------------------------------------------------
-
-func TestDockerInfoResponseParsing(t *testing.T) {
-	raw := `{"ServerVersion":"24.0.7","ID":"abc123"}`
-	var di dockerInfoResponse
-	if err := json.Unmarshal([]byte(raw), &di); err != nil {
-		t.Fatalf("unexpected unmarshal error: %v", err)
-	}
-	if di.ServerVersion != "24.0.7" {
-		t.Errorf("ServerVersion = %q, want 24.0.7", di.ServerVersion)
-	}
-}
-
-func TestDockerInfoResponseParsing_EmptyVersion(t *testing.T) {
-	raw := `{}`
-	var di dockerInfoResponse
-	if err := json.Unmarshal([]byte(raw), &di); err != nil {
-		t.Fatalf("unexpected unmarshal error: %v", err)
-	}
-	if di.ServerVersion != "" {
-		t.Errorf("ServerVersion = %q, want empty", di.ServerVersion)
 	}
 }
