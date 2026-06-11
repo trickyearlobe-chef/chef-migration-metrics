@@ -862,6 +862,35 @@ func TestAdminConfigBackup_PUT_ReconcilerError_500(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// PUT /api/v1/admin/config/exports
+// ---------------------------------------------------------------------------
+
+// The exports section is read live per request (handler reads) and its export
+// writers create the output dir on demand; the cleanup ticker deletes by stored
+// per-job FilePath, not a dir. So there is nothing to re-apply on a save — the
+// section registers appliedApplier and reports applied/false, not the pessimistic
+// process default.
+func TestAdminConfigExports_PUT_AppliedReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/exports",
+		strings.NewReader(`{"async_threshold":1000,"max_rows":50000,"retention_hours":24,"output_directory":"/tmp/exports"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("exports PUT should not require restart (read live + on-demand dir)")
+	}
+	if resp.Reload != ReloadApplied.String() {
+		t.Errorf("exports reload = %q, want %q", resp.Reload, ReloadApplied.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
 // PUT /api/v1/admin/config/logging
 // ---------------------------------------------------------------------------
 

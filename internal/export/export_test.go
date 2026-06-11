@@ -956,7 +956,7 @@ func TestCleanupExpiredExports_DeletesFileAndMarksExpired(t *testing.T) {
 		}},
 	}
 
-	result, err := CleanupExpiredExports(context.Background(), store, dir)
+	result, err := CleanupExpiredExports(context.Background(), store)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -986,7 +986,7 @@ func TestCleanupExpiredExports_MissingFileStillMarksExpired(t *testing.T) {
 		}},
 	}
 
-	result, err := CleanupExpiredExports(context.Background(), store, "/tmp")
+	result, err := CleanupExpiredExports(context.Background(), store)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1000,7 +1000,7 @@ func TestCleanupExpiredExports_MissingFileStillMarksExpired(t *testing.T) {
 
 func TestCleanupExpiredExports_NoExpiredJobs(t *testing.T) {
 	store := &fakeCleanupStore{expired: nil}
-	result, err := CleanupExpiredExports(context.Background(), store, "/tmp")
+	result, err := CleanupExpiredExports(context.Background(), store)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

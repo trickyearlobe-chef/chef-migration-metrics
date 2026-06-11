@@ -52,7 +52,11 @@ type CleanupResult struct {
 // Non-fatal errors (e.g. file already deleted, single job update failure)
 // are collected in CleanupResult.Errors rather than aborting the entire pass.
 // A fatal error (e.g. cannot query the database at all) is returned directly.
-func CleanupExpiredExports(ctx context.Context, db CleanupStore, outputDir string) (*CleanupResult, error) {
+//
+// Deletion is keyed off each job's stored FilePath (an absolute path captured at
+// job creation), so no output directory is needed here — a live change to
+// exports.output_directory does not affect cleanup of already-created jobs.
+func CleanupExpiredExports(ctx context.Context, db CleanupStore) (*CleanupResult, error) {
 	result := &CleanupResult{}
 
 	expired, err := db.ListExpiredExportJobs(ctx, time.Now().UTC())
@@ -113,7 +117,6 @@ func cleanupSingleJob(ctx context.Context, db CleanupStore, job datastore.Export
 // silently. The level parameter is one of "DEBUG", "INFO", "WARN", "ERROR".
 func StartCleanupTicker(
 	db CleanupStore,
-	outputDir string,
 	interval time.Duration,
 	logFn func(level, msg string),
 ) (stop func()) {
@@ -138,7 +141,7 @@ func StartCleanupTicker(
 				return
 			case <-ticker.C:
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-				result, err := CleanupExpiredExports(ctx, db, outputDir)
+				result, err := CleanupExpiredExports(ctx, db)
 				cancel()
 
 				if err != nil {

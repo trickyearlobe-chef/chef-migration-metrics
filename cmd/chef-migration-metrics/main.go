@@ -1083,7 +1083,7 @@ func (app *serverApp) setupExports() error {
 			scoped.Info(msg)
 		}
 	}
-	app.stopExportCleanup = export.StartCleanupTicker(app.db, exportOutputDir, 1*time.Hour, exportCleanupLog)
+	app.stopExportCleanup = export.StartCleanupTicker(app.db, 1*time.Hour, exportCleanupLog)
 	app.startup.Info("export cleanup ticker started (interval: 1h)")
 	return nil
 }

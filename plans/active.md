@@ -75,11 +75,45 @@ Two backup `-race` tests (live swap + nil-ignored); three webapi tests (process
 default, subsystem reload, reconciler-error 500). Full backup (incl. `-race`) +
 webapi + cmd suites + `go vet` green.
 
-### Next chunk candidates (later sessions)
-- **New appliers (subsystem):** concurrency.{cookstyle_scan,readiness_evaluation,
-  cookbook_download} resize.
-- **Exports cleanup-ticker re-point** (`main.go:1059`) — the subsystem half of the
-  exports section (read swaps already done here).
+## Chunk F — exports `appliedApplier` + dead-param cleanup [applied] ✅ DONE
+
+**Trace correction (supersedes the todo's "re-point cleanup ticker" premise):**
+`CleanupExpiredExports` deletes each file by its stored per-job `FilePath`
+(absolute, computed from the live `outputDir` at job creation, `handle_exports.go:215`),
+NOT by joining a dir. The `outputDir` param threaded through `CleanupExpiredExports`
+and `StartCleanupTicker` is read nowhere — vestigial. The ticker was never stale
+w.r.t. `output_directory`. After Chunk A's read swaps the exports section is already
+fully live (handlers read `RetentionHours`/`OutputDirectory` live; export writers
+`MkdirAll` on demand). Only defect left: it still *reports* `process/true` (no-applier
+default) when it's `applied/false`.
+
+### Scope
+- `internal/webapi/handle_admin_config_exports.go` — replace the "no applier yet"
+  comment + bare `storeAdminConfigSection(...)` with `appliedApplier`.
+- `internal/export/cleanup.go` — drop the unused `outputDir` param from
+  `CleanupExpiredExports` and `StartCleanupTicker`.
+- `cmd/chef-migration-metrics/main.go:1086` — drop the `exportOutputDir` arg from the
+  ticker call (boot `MkdirAll`+log of the default dir at :1063–1071 stays).
+- `internal/export/export_test.go` — drop the dir arg from the 3 `CleanupExpiredExports` calls.
+
+### Steps (TDD)
+1. Add `TestAdminConfigExports_PUT_AppliedReload` (handle_admin_config_test.go): PUT a
+   valid exports body, assert 200, `restart_required:false`, `Reload == applied`.
+   Red before (process/true), green after.
+2. Register `appliedApplier`; update the 3 export test calls + signatures.
+3. `go test ./internal/webapi/... ./internal/export/...` + `go vet` green.
+
+### Acceptance
+- Exports section reports `applied`/false. New test red→green.
+- No `outputDir` param on the two cleanup funcs; full module suite + vet green.
+
+## Chunk G — concurrency resize appliers [subsystem]
+
+`concurrency.{cookstyle_scan, readiness_evaluation, cookbook_download}` are baked into
+the scanner/evaluator/node-kitchen-factory at boot (`setupCollector`, `main.go:880–931`,
+factory ~`:1278`); the collector's run-start refresh does NOT reach them. Live-resize
+each, mirroring kitchen `SetWorkerCount`. NOT in scope: `organisation_collection` /
+`node_page_fetching` (already live per-run via `c.cfg = c.configFn()`). Own session.
 
 ---
 

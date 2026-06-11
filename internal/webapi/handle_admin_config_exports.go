@@ -55,8 +55,9 @@ func (r *Router) putAdminConfigExports(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	// No applier yet: handler reads are live, but the cleanup ticker captured the
-	// output dir at boot (main.go). Pessimistic process until the cleanup-ticker
-	// applier lands (todo-configuration.md Bucket 2).
-	r.storeAdminConfigSection(w, req, &config.Config{Exports: input}, configstore.KeyExports)
+	// Read live per request: handlers read RetentionHours/OutputDirectory live, the
+	// export writers MkdirAll the output dir on demand, and the cleanup ticker deletes
+	// by stored per-job FilePath (not a dir). Nothing to re-apply on save, so the
+	// section reports applied/false (see Chunk F trace correction in active.md).
+	r.storeAdminConfigSection(w, req, &config.Config{Exports: input}, configstore.KeyExports, appliedApplier)
 }
