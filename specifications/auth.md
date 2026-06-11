@@ -39,6 +39,12 @@ The application acts as a SAML 2.0 Service Provider (SP). An external Identity P
 | `/saml/acs` | POST | Assertion Consumer Service — process IdP response |
 | `/saml/slo` | POST | Inbound Single Logout — process IdP LogoutRequest |
 
+`/saml/acs` is the single Assertion Consumer Service for **both** SP-initiated and
+IdP-initiated SSO: the IdP POSTs the SAML Response there in either case (HTTP-POST
+binding). IdP-initiated (unsolicited, no `InResponseTo`) is accepted only when
+`allow_idp_initiated` is enabled; otherwise the response reaches the ACS but fails
+validation.
+
 ### SP Metadata Export (UI)
 
 The admin SAML configuration page provides an **Export SP Metadata (XML)** button
@@ -56,6 +62,16 @@ IdPs that fetch metadata by URL and refresh it automatically (e.g. ADFS,
 Shibboleth, Keycloak, PingFederate); IdPs without URL support (e.g. Google, Okta)
 take the downloaded file. `/saml/metadata` is a public endpoint (no session
 required) so the IdP can poll it directly — it exposes no private key material.
+
+Alongside the metadata URL the page surfaces the absolute **ACS (callback) URL**,
+**SLO URL**, and **SP entity ID**, each with a copy action. These are computed by
+the backend from the same base URL the SP metadata advertises (not guessed from the
+browser origin), so they match exactly what the IdP must be told. They exist for
+IdPs configured by hand rather than by metadata import (e.g. Google, Okta), where
+the administrator pastes the ACS/reply URL directly — without a surfaced value the
+correct path (`/saml/acs`, not the `/saml` prefix) is not discoverable. The values
+are served by an admin-only endpoint and are available only once a SAML provider is
+configured and initialised.
 
 ### SP-Initiated SSO Flow
 
@@ -309,5 +325,13 @@ auth:
 auth page (per SAML provider). When `sign_requests` is enabled, outgoing
 AuthnRequests are signed with the SP key (RSA-SHA256) and the SP metadata
 advertises `AuthnRequestsSigned="true"`; the IdP validates the signature against
-the SP signing certificate published in that metadata. Both settings are
-restart-required (the provider is constructed at startup).
+the SP signing certificate published in that metadata.
+
+The SAML provider is rebuilt in place when the auth configuration is saved
+(subsystem reload, per `configuration-live-reload.md`): `sign_requests`,
+`allow_idp_initiated`, `sp_entity_id`, the IdP metadata source, and the
+attribute/role mappings all take effect without a restart. On save the auth
+section's applier reconstructs the provider from the reloaded config (re-resolving
+SP credentials and re-fetching IdP metadata) and swaps it into the running SAML
+handler; a rebuild failure surfaces as an error on the save (the previous provider
+keeps serving) rather than being silently dropped.
