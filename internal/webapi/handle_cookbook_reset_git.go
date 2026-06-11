@@ -89,8 +89,8 @@ func (r *Router) handleCookbookResetGit(w http.ResponseWriter, req *http.Request
 	// cannot escape the GitCookbookDir via path traversal (e.g. "../").
 	localCloneRemoved := false
 	cleanName := filepath.Base(cookbookName)
-	if cleanName != "." && cleanName != ".." && r.cfg.Storage.GitCookbookDir != "" {
-		repoDir := filepath.Join(r.cfg.Storage.GitCookbookDir, cleanName)
+	if cleanName != "." && cleanName != ".." && r.liveConfig().Storage.GitCookbookDir != "" {
+		repoDir := filepath.Join(r.liveConfig().Storage.GitCookbookDir, cleanName)
 		if _, statErr := os.Stat(repoDir); statErr == nil {
 			if rmErr := os.RemoveAll(repoDir); rmErr != nil {
 				r.logf("WARN", "failed to remove local git clone for %s at %s: %v",

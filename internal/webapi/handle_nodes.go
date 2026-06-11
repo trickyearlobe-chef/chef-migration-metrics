@@ -49,8 +49,8 @@ type nodeResp struct {
 func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadinessSummaryEntry, platformDisplayName *string) nodeResp {
 	now := time.Now()
 	thresholds := staleness.Thresholds{
-		WarningHours: r.cfg.Collection.StaleNodeWarningHours,
-		CriticalDays: r.cfg.Collection.StaleNodeCriticalDays,
+		WarningHours: r.liveConfig().Collection.StaleNodeWarningHours,
+		CriticalDays: r.liveConfig().Collection.StaleNodeCriticalDays,
 	}
 
 	var ohaiTime time.Time
@@ -141,7 +141,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	pg := ParsePagination(req)
 
 	// Build SQL filter from query parameters.
-	f := nodeSnapshotFilterFromRequest(req, orgIDs, r.cfg.Collection.StaleNodeWarningHours, r.cfg.Collection.StaleNodeCriticalDays)
+	f := nodeSnapshotFilterFromRequest(req, orgIDs, r.liveConfig().Collection.StaleNodeWarningHours, r.liveConfig().Collection.StaleNodeCriticalDays)
 	f.Limit = pg.Limit()
 	f.Offset = pg.Offset()
 
@@ -212,7 +212,7 @@ func (r *Router) handleNodesWithOwnerFilter(
 	for _, org := range orgs {
 		orgIDs = append(orgIDs, org.Name)
 	}
-	f := nodeSnapshotFilterFromRequest(req, orgIDs, r.cfg.Collection.StaleNodeWarningHours, r.cfg.Collection.StaleNodeCriticalDays)
+	f := nodeSnapshotFilterFromRequest(req, orgIDs, r.liveConfig().Collection.StaleNodeWarningHours, r.liveConfig().Collection.StaleNodeCriticalDays)
 	// No limit/offset — we need all matching nodes for ownership filtering.
 
 	allNodes, _, err2 := r.db.ListNodeSnapshotsFiltered(ctx, f)

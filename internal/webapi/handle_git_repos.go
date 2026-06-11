@@ -589,7 +589,7 @@ func toLowerASCII(s string) string {
 // name, returning true if it was successfully removed. This is shared
 // between the git repo reset and cookbook reset-git handlers.
 func removeLocalGitClone(r *Router, cookbookName string) bool {
-	if r.cfg.Storage.GitCookbookDir == "" {
+	if r.liveConfig().Storage.GitCookbookDir == "" {
 		return false
 	}
 
@@ -601,7 +601,7 @@ func removeLocalGitClone(r *Router, cookbookName string) bool {
 		return false
 	}
 
-	repoDir := filepath.Join(r.cfg.Storage.GitCookbookDir, clean)
+	repoDir := filepath.Join(r.liveConfig().Storage.GitCookbookDir, clean)
 	if _, statErr := os.Stat(repoDir); statErr != nil {
 		return false // Directory doesn't exist.
 	}

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 )
@@ -40,6 +41,42 @@ func newPerfRouter(store *mockStore, pc *testPerfConfig) *Router {
 	hub := NewEventHub()
 	go hub.Run()
 	return NewRouter(store, cfg, hub, WithPerformance(rec))
+}
+
+// TestHandlePerformance_GET_WindowSeconds_UsesLiveConfig proves the reported
+// window_seconds is read from the live ConfigHolder, not the static boot config.
+func TestHandlePerformance_GET_WindowSeconds_UsesLiveConfig(t *testing.T) {
+	cfg := testConfig()
+	cfg.Performance.Enabled = boolPtr(true)
+	cfg.Performance.WindowSeconds = 300
+
+	// Live config reports a different window than the boot config.
+	liveCfg := testConfig()
+	liveCfg.Performance.Enabled = boolPtr(true)
+	liveCfg.Performance.WindowSeconds = 999
+	holder := configstore.NewConfigHolder(liveCfg, nil)
+
+	rec := perf.NewRecorder(300*time.Second, 200, 1000)
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(&mockStore{}, cfg, hub, WithPerformance(rec), WithConfigStore(nil, holder))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/performance", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body struct {
+		WindowSeconds int `json:"window_seconds"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.WindowSeconds != 999 {
+		t.Errorf("window_seconds = %d, want 999 (live config not used)", body.WindowSeconds)
+	}
 }
 
 func newPerfRouterDisabled(store *mockStore) *Router {

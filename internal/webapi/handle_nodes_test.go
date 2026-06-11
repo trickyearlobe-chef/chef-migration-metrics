@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -305,6 +306,63 @@ func TestHandleNodeDetail_HappyPath(t *testing.T) {
 	}
 	if body.OrganisationName != "prod" {
 		t.Errorf("organisation_name = %q, want %q", body.OrganisationName, "prod")
+	}
+}
+
+// TestHandleNodes_StalenessTier_UsesLiveConfig proves the node staleness
+// thresholds (used by buildNodeResp on the list endpoint) are read from the live
+// ConfigHolder, not the static boot config. Collection is declared
+// live-reloadable, so a runtime change to the stale-node thresholds must affect
+// the computed tier without a restart.
+func TestHandleNodes_StalenessTier_UsesLiveConfig(t *testing.T) {
+	ohai := float64(time.Now().Add(-48 * time.Hour).Unix())
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListNodeSnapshotsFilteredFn: func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error) {
+			return []datastore.NodeSnapshot{
+				{OrganisationName: "prod", NodeName: "web1", OhaiTime: ohai},
+			}, 1, nil
+		},
+	}
+
+	// Boot config classifies a 48h-old node as fresh (warning at 30 days).
+	bootCfg := testConfig()
+	bootCfg.Collection.StaleNodeWarningHours = 720
+	bootCfg.Collection.StaleNodeCriticalDays = 365
+
+	// Live config tightens the warning threshold to 24h → the same node is now
+	// "warning". If the handler reads the live config, the tier reflects this.
+	liveCfg := testConfig()
+	liveCfg.Collection.StaleNodeWarningHours = 24
+	liveCfg.Collection.StaleNodeCriticalDays = 365
+	holder := configstore.NewConfigHolder(liveCfg, nil)
+
+	hub := NewEventHub()
+	go hub.Run()
+	r := NewRouter(store, bootCfg, hub, WithConfigStore(nil, holder))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			StalenessTier string `json:"staleness_tier"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("data len = %d, want 1; body = %s", len(body.Data), w.Body.String())
+	}
+	if body.Data[0].StalenessTier != "warning" {
+		t.Errorf("staleness_tier = %q, want %q (live config not used)", body.Data[0].StalenessTier, "warning")
 	}
 }
 
