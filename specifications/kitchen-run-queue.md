@@ -12,7 +12,7 @@ Four dispatch paths exist today:
 - **Batch run** — `POST /kitchen/batches/:id/run` (multi-repo, filter-based)
 - **Node kitchen run** — `POST /kitchen/node-run` (single node, fire-and-forget goroutine)
 
-None share a concurrency limiter. The `Concurrency.TestKitchenRun` config exists but is not consumed. Each VM uses ~4 CPU + 4GB RAM on Proxmox.
+Before this queue, the three entry points shared no concurrency limiter. Each VM uses ~4 CPU + 4GB RAM on Proxmox, so uncoordinated runs could overcommit the hypervisor — the queue exists to impose a single global limit.
 
 ## Design
 
@@ -70,7 +70,7 @@ Workers dequeue by `priority DESC, enqueued_at ASC`. This prevents large batches
 ### Worker Pool
 
 - Located in `internal/kitchenqueue` package
-- Pool size = `Concurrency.TestKitchenRun` (read at startup, configurable via admin API)
+- Pool size = `analysis_tools.test_kitchen.max_concurrent_vms` (default `2`), adjusted live via the admin API (`SetWorkerCount`, no restart)
 - Workers poll DB for next `queued` item using `SELECT ... FOR UPDATE SKIP LOCKED` (prevents races between workers)
 - Worker transitions item `queued → running`, executes, then transitions to `completed`/`failed`
 - On completion, upserts result into `git_kitchen_results` (as today) and broadcasts WS event
@@ -90,7 +90,7 @@ Each worker:
 
 `POST /kitchen/batches/:id/run` transitions batch to `preparing`, resolves repos, enqueues all items with `batch_id` set and priority 5, then transitions to `running`. Batch completion is detected when all items with its `batch_id` reach terminal state.
 
-Per-batch `max_concurrent_vms` is enforced as: at most N items from this batch may be `running` simultaneously. Workers skip batch items that would exceed the batch cap (move to next in queue).
+There is no per-batch concurrency cap: all queued items — batch or ad-hoc — share the single global worker pool, so a batch's load is bounded by `max_concurrent_vms` and the start-rate limiter like any other run.
 
 ### Cancellation
 
@@ -186,16 +186,22 @@ Accessible from admin nav. Shows all queue items across all repos:
 - Frontend connects SSE when user expands the output viewer, disconnects on collapse
 - If the connection drops or the item is already completed, falls back to fetching stored output
 
-### AdminConcurrencyPage
+### Admin Test Kitchen page
 
-- `test_kitchen_run` value actually controls the worker pool size
-- Default synchronized between frontend and backend (4)
+- Test Kitchen run concurrency is controlled on the **Test Kitchen** admin page,
+  not the Concurrency page (which covers only the six collection/analysis worker
+  pools). `analysis_tools.test_kitchen.max_concurrent_vms` sizes the queue worker
+  pool live (`SetWorkerCount`); the start-rate limiter fields tune lease pacing.
 
 ## Config
 
-- `Concurrency.TestKitchenRun` — global worker count (default 4)
-- Per-batch `max_concurrent_vms` — retained as a per-batch cap within the global pool
-- `max_concurrent_vms` in TK config — removed (redundant with global setting)
+- `analysis_tools.test_kitchen.max_concurrent_vms` — global queue worker count
+  (default `2`). The single concurrency knob.
+- VM start-rate limiter — `start_rate_window_minutes` / `start_rate_max_per_window`
+  (both live; disabled unless both > 0). Bounds cumulative DHCP-lease consumption.
+- Per-batch `max_concurrent_vms` — **removed** from the data model and UI; load is
+  a property of the global queue, not the batch (see [bulk-kitchen-scanning.md](bulk-kitchen-scanning.md)).
+- There is no `concurrency.test_kitchen_run` setting.
 
 ## Migration Path
 

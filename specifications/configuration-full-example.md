@@ -43,7 +43,6 @@ concurrency:
   git_pull: 10
   cookbook_download: 4
   cookstyle_scan: 8
-  test_kitchen_run: 4
   readiness_evaluation: 20
 
 readiness:
@@ -124,6 +123,9 @@ analysis_tools:
   test_kitchen:
     enabled: true
     timeout_minutes: 30
+    max_concurrent_vms: 2            # global concurrency ceiling (no per-batch limit)
+    start_rate_window_minutes: 90    # VM start-rate limiter window = DHCP lease time (0 = off)
+    start_rate_max_per_window: 25    # max starts per window = usable DHCP pool size
     driver: dokken
     images:
       - name: alma9
