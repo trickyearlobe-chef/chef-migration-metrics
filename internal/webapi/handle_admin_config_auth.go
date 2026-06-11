@@ -82,5 +82,7 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Auth: input}, configstore.KeyAuth, true)
+	// No applier yet: the auth chain is built at boot. Pessimistic process until
+	// an auth-rebuild applier lands (todo-configuration.md Bucket 1).
+	r.storeAdminConfigSection(w, req, &config.Config{Auth: input}, configstore.KeyAuth)
 }

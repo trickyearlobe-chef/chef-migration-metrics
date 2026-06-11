@@ -61,5 +61,6 @@ func (r *Router) putAdminConfigReadiness(w http.ResponseWriter, req *http.Reques
 		input.InstallPathWindows = `C:\hab`
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Readiness: input}, configstore.KeyReadiness, false)
+	// Readiness thresholds are pulled per collector run and read live — applied.
+	r.storeAdminConfigSection(w, req, &config.Config{Readiness: input}, configstore.KeyReadiness, appliedApplier)
 }

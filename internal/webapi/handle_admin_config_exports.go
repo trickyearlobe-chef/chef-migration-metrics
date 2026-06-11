@@ -55,5 +55,8 @@ func (r *Router) putAdminConfigExports(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Exports: input}, configstore.KeyExports, false)
+	// No applier yet: handler reads are live, but the cleanup ticker captured the
+	// output dir at boot (main.go). Pessimistic process until the cleanup-ticker
+	// applier lands (todo-configuration.md Bucket 2).
+	r.storeAdminConfigSection(w, req, &config.Config{Exports: input}, configstore.KeyExports)
 }

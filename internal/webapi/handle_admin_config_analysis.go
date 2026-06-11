@@ -65,7 +65,9 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{AnalysisTools: input}, configstore.KeyAnalysisTools, false)
+	// Timeouts are pulled per collector run (applied); the kitchen worker pool is
+	// resized in place to the new MaxConcurrentVMs (subsystem) — both live, false.
+	r.storeAdminConfigSection(w, req, &config.Config{AnalysisTools: input}, configstore.KeyAnalysisTools, r.applyKitchenWorkerCount)
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +142,8 @@ func (r *Router) putAdminConfigTestKitchen(w http.ResponseWriter, req *http.Requ
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, putConfigResponse{Value: tkJSON, RestartRequired: false})
+	// Worker pool resized in place above (subsystem) — no restart required.
+	WriteJSON(w, http.StatusOK, putConfigResponse{Value: tkJSON, RestartRequired: false, Reload: ReloadSubsystem.String()})
 }
 
 func (r *Router) deleteAdminConfigTestKitchen(w http.ResponseWriter, req *http.Request) {
@@ -180,7 +183,8 @@ func (r *Router) deleteAdminConfigTestKitchen(w http.ResponseWriter, req *http.R
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, putConfigResponse{Value: tkJSON, RestartRequired: false})
+	// Worker pool resized in place above (subsystem) — no restart required.
+	WriteJSON(w, http.StatusOK, putConfigResponse{Value: tkJSON, RestartRequired: false, Reload: ReloadSubsystem.String()})
 }
 
 // ---------------------------------------------------------------------------

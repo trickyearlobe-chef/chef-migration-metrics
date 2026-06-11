@@ -753,9 +753,50 @@ func TestAdminConfigLogging_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodePutValue(t, w, &got)
+	restartRequired := decodePutValue(t, w, &got)
 	if got["level"] != "DEBUG" {
 		t.Errorf("level = %v, want DEBUG", got["level"])
+	}
+	// logging.level has no live applier yet (level is immutable at runtime), so
+	// it falls to the pessimistic process default — honest restart_required:true.
+	if !restartRequired {
+		t.Error("logging PUT should require restart until a SetLevel applier exists")
+	}
+}
+
+// A section with a live applier reports the real granularity and does not require
+// a restart; a section with none defaults pessimistically to process.
+func TestAdminConfigReload_GranularityReported(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	put := func(path, body string) putConfigResponse {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
+		r.ServeHTTP(w, req)
+		assertStatus(t, w, http.StatusOK)
+		var resp putConfigResponse
+		decodeBody(t, w, &resp)
+		return resp
+	}
+
+	// collection is read live per request (applied) -> false, reload "applied".
+	col := put("/api/v1/admin/config/collection",
+		`{"schedule":"0 2 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`)
+	if col.RestartRequired {
+		t.Error("collection PUT should not require restart (applied)")
+	}
+	if col.Reload != ReloadApplied.String() {
+		t.Errorf("collection reload = %q, want %q", col.Reload, ReloadApplied.String())
+	}
+
+	// logging has no applier yet -> process -> true, reload "process".
+	log := put("/api/v1/admin/config/logging", `{"level":"DEBUG","retention_days":14}`)
+	if !log.RestartRequired {
+		t.Error("logging PUT should require restart (process)")
+	}
+	if log.Reload != ReloadProcess.String() {
+		t.Errorf("logging reload = %q, want %q", log.Reload, ReloadProcess.String())
 	}
 }
 

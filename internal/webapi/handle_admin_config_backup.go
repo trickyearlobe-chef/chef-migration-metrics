@@ -54,5 +54,7 @@ func (r *Router) putAdminConfigBackup(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Backup: input}, configstore.KeyBackup, false)
+	// No applier yet: the backup cron is fixed in NewScheduler at boot. Pessimistic
+	// process until a reschedule/start/stop applier lands (todo-configuration.md Bucket 2).
+	r.storeAdminConfigSection(w, req, &config.Config{Backup: input}, configstore.KeyBackup)
 }
