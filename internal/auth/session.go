@@ -76,6 +76,10 @@ type SessionManager struct {
 	store    SessionStore
 	lifetime time.Duration
 	logger   func(level, msg string)
+	// lifetimeFn, when set, returns the live session lifetime read at session
+	// creation, so a session_expiry config change applies without a restart.
+	// Falls back to the baked lifetime when nil or non-positive.
+	lifetimeFn func() time.Duration
 }
 
 // SessionManagerOption is a functional option for NewSessionManager.
@@ -86,6 +90,26 @@ func WithSessionLogger(fn func(level, msg string)) SessionManagerOption {
 	return func(m *SessionManager) {
 		m.logger = fn
 	}
+}
+
+// WithSessionLifetimeFunc sets a live provider for the session lifetime. When
+// set, CreateSession reads the lifetime on each call rather than using the value
+// baked at construction, so session_expiry takes effect without a restart.
+func WithSessionLifetimeFunc(fn func() time.Duration) SessionManagerOption {
+	return func(m *SessionManager) {
+		m.lifetimeFn = fn
+	}
+}
+
+// effectiveLifetime returns the live lifetime when a provider is wired (and
+// positive), otherwise the value baked at construction.
+func (m *SessionManager) effectiveLifetime() time.Duration {
+	if m.lifetimeFn != nil {
+		if d := m.lifetimeFn(); d > 0 {
+			return d
+		}
+	}
+	return m.lifetime
 }
 
 // NewSessionManager creates a new SessionManager.
@@ -106,15 +130,16 @@ func NewSessionManager(store SessionStore, lifetime time.Duration, opts ...Sessi
 	return m
 }
 
-// Lifetime returns the configured session lifetime.
+// Lifetime returns the session lifetime currently in effect (live when a
+// provider is wired).
 func (m *SessionManager) Lifetime() time.Duration {
-	return m.lifetime
+	return m.effectiveLifetime()
 }
 
 // CreateSession creates a new session for the given user and returns it. The
 // session expiry is set to now + lifetime.
 func (m *SessionManager) CreateSession(ctx context.Context, username, authProvider, role string) (datastore.Session, error) {
-	expiresAt := time.Now().Add(m.lifetime)
+	expiresAt := time.Now().Add(m.effectiveLifetime())
 
 	sess, err := m.store.InsertSession(ctx, datastore.InsertSessionParams{
 		Username:     username,

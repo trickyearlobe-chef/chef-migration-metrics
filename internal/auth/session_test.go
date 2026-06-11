@@ -747,3 +747,25 @@ func TestParseDurationZero(t *testing.T) {
 		t.Errorf("ParseDuration(\"0s\", 3h) = %s, want 3h (zero should fall back to default)", got)
 	}
 }
+
+func TestSessionManager_LiveLifetime(t *testing.T) {
+	// No provider: baked lifetime.
+	m := NewSessionManager(nil, 2*time.Hour)
+	if got := m.Lifetime(); got != 2*time.Hour {
+		t.Errorf("baked lifetime = %v, want 2h", got)
+	}
+
+	// Live provider overrides on each read.
+	live := 2 * time.Hour
+	m2 := NewSessionManager(nil, 2*time.Hour, WithSessionLifetimeFunc(func() time.Duration { return live }))
+	live = 30 * time.Minute
+	if got := m2.Lifetime(); got != 30*time.Minute {
+		t.Errorf("live lifetime = %v, want 30m", got)
+	}
+
+	// Non-positive live value falls back to the baked lifetime.
+	live = 0
+	if got := m2.Lifetime(); got != 2*time.Hour {
+		t.Errorf("live lifetime with 0 = %v, want fallback 2h", got)
+	}
+}

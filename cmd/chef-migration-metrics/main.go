@@ -452,11 +452,20 @@ func (app *serverApp) setupAuth(ctx context.Context) error {
 
 	app.sessionMgr = auth.NewSessionManager(app.db, sessionLifetime,
 		auth.WithSessionLogger(authLogFn),
+		// Live session_expiry: read from the holder at session creation so a
+		// config change applies without a restart.
+		auth.WithSessionLifetimeFunc(func() time.Duration {
+			return auth.ParseDuration(app.configHolder.Get().Auth.SessionExpiry, 8*time.Hour)
+		}),
 	)
 
 	app.localAuth = auth.NewLocalAuthenticator(app.db, app.cfg.Auth.LockoutAttempts,
 		auth.WithLocalAuthLogger(authLogFn),
 		auth.WithTrustedProxy(app.cfg.Server.TrustedProxy),
+		// Live lockout_attempts: read from the holder on each login attempt.
+		auth.WithLockoutAttemptsFunc(func() int {
+			return app.configHolder.Get().Auth.LockoutAttempts
+		}),
 	)
 
 	app.authMiddleware = auth.NewMiddleware(app.sessionMgr,

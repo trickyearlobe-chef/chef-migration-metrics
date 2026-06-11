@@ -327,11 +327,20 @@ AuthnRequests are signed with the SP key (RSA-SHA256) and the SP metadata
 advertises `AuthnRequestsSigned="true"`; the IdP validates the signature against
 the SP signing certificate published in that metadata.
 
-The SAML provider is rebuilt in place when the auth configuration is saved
-(subsystem reload, per `configuration-live-reload.md`): `sign_requests`,
-`allow_idp_initiated`, `sp_entity_id`, the IdP metadata source, and the
-attribute/role mappings all take effect without a restart. On save the auth
-section's applier reconstructs the provider from the reloaded config (re-resolving
-SP credentials and re-fetching IdP metadata) and swaps it into the running SAML
-handler; a rebuild failure surfaces as an error on the save (the previous provider
-keeps serving) rather than being silently dropped.
+The entire auth section live-reloads (per `configuration-live-reload.md`); no auth
+change requires a restart:
+
+- **SAML provider (subsystem):** on save the auth section's applier reconstructs the
+  provider from the reloaded config (re-resolving SP credentials and re-fetching IdP
+  metadata) and swaps it into the running SAML handler under a lock. `sign_requests`,
+  `allow_idp_initiated`, `sp_entity_id`, the IdP metadata source, and the
+  attribute/role mappings all take effect immediately. A rebuild failure surfaces as
+  an error on the save (the previous provider keeps serving) rather than being
+  silently dropped.
+- **Session expiry / lockout / min password length (applied):** `session_expiry`,
+  `lockout_attempts`, and `min_password_length` are read live at the point of use
+  (session creation, login attempt, password validation) rather than captured at
+  startup, so a change applies to the next session/login without a restart.
+
+Because every part of the section re-applies live, the section reports
+`restart_required: false`.
