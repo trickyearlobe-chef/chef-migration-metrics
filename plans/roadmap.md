@@ -44,9 +44,11 @@ correctness value. **Todos:** `todo-bulk-kitchen-scanning.md`, `todo-secrets-sto
   `handleNotImplemented` → HTTP 501 (`router.go:755`). Build the status payload,
   including the `credential_storage` section (encryption_key_configured,
   total_credentials, credential_types, orphaned_credentials).
-- **Add the 7th concurrency worker `test_kitchen_run`.** Missing from **both** the
-  `ConcurrencyConfig` struct (`config.go`) and the frontend Concurrency page
-  (6/7 shown). Spec default 4.
+- ~~Add the 7th concurrency worker `test_kitchen_run`~~ — **not a code gap.** TK
+  load is already bounded globally (`analysis_tools.test_kitchen.max_concurrent_vms`
+  + start-rate limiter); `concurrency.test_kitchen_run` was a phantom from the old
+  per-pool design. Resolved as a spec-only reconciliation
+  (`specification/tk-concurrency-reconcile`).
 
 ---
 

@@ -8,7 +8,7 @@ Connect the existing batch management UI/API to the scheduler/executor so that "
 
 ### What exists
 
-- **Batch data model** — `kitchen_batches` table with lifecycle (`draft → running → completed/cancelled`), filters (cookbook names, platforms, previous status, exclusions), limits (`max_count`, `max_concurrent_vms`), and dry-run flag.
+- **Batch data model** — `kitchen_batches` table with lifecycle (`draft → running → completed/cancelled`), filters (cookbook names, platforms, previous status, exclusions), a `max_count` limit, and a dry-run flag. Concurrency is global, not per-batch (§ below) — there is no per-batch `max_concurrent_vms`.
 - **Batch API** — full CRUD, run, cancel endpoints. Run handler validates state and computes estimate but does not invoke the scheduler.
 - **Scheduler** — `RunAll(ctx, plan, config, tkConfig, progressCallback)` runs instances in parallel with semaphore-based concurrency. `RunOne` for single-instance. Both persist results via `UpsertGitKitchenResult`.
 - **Executor** — `RunInstance` copies repo to temp dir, generates `.kitchen.local.yml` overlay, resolves credentials, runs the kitchen phases `converge → verify → destroy` (not `kitchen test`, whose instance-less initial destroy trips a remote `pre_destroy` hook — see `test-kitchen-drivers-overlay-generation.md`), captures output. `destroy` always runs for teardown.

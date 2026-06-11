@@ -196,7 +196,7 @@ Control what runs in bulk Git Kitchen scans. Prevents all-or-nothing execution. 
 | `name` | TEXT | User-friendly name (e.g. "RHEL 7 first pass") |
 | `filters` | JSONB NOT NULL | Selection criteria (see below) |
 | `max_count` | INTEGER | Cap on number of cookbooks to include |
-| `max_concurrent_vms` | INTEGER | VM concurrency limit for this batch |
+| ~~`max_concurrent_vms`~~ | — | **Removed** (migration 0036). Concurrency is global, not per-batch — see [kitchen-run-queue.md](kitchen-run-queue.md). |
 | `dry_run` | BOOLEAN DEFAULT false | Preview only, don't execute |
 | `status` | TEXT | `draft`, `previewing`, `running`, `completed`, `cancelled` |
 | `created_by` | TEXT | |
@@ -374,7 +374,7 @@ Under `analysis_tools.test_kitchen`:
 | `hypervisor_type` | string | `""` | `vcenter`, `proxmox`, or empty (auto-detect from driver) |
 | `vm_ttl_hours` | integer | 4 | Maximum VM lifetime before flagging as orphan |
 | `vm_name_prefix` | string | `cmm` | Prefix for VM naming convention |
-| `max_concurrent_vms` | integer | 10 | Global ceiling on concurrent VMs across all batches |
+| `max_concurrent_vms` | integer | 2 | Global ceiling on concurrent VMs (the single concurrency knob; no per-batch limit). Paired with the `start_rate_*` VM start-rate limiter. |
 
 Under `analysis_tools.test_kitchen.node_kitchens`:
 

@@ -34,7 +34,7 @@ Rather than running CookStyle with its full default rule set, the analysis compo
 
 #### Concurrency
 
-- Test Kitchen runs are independent per cookbook + target Chef Client version combination. Each run must be dispatched as a goroutine, bounded by the `concurrency.test_kitchen_run` worker pool setting (see [Configuration Specification](configuration.md)).
+- Test Kitchen runs are independent per cookbook + target Chef Client version combination. Each run is dispatched onto the global Test Kitchen run queue, bounded by `analysis_tools.test_kitchen.max_concurrent_vms` (peak concurrency) and the VM start-rate limiter (`start_rate_window_minutes` / `start_rate_max_per_window`) — not a `concurrency` worker pool. See [bulk-kitchen-scanning.md](bulk-kitchen-scanning.md).
 - CookStyle scans are independent per cookbook version. Scans must run in parallel using goroutines, bounded by the `concurrency.cookstyle_scan` worker pool setting (see [Configuration Specification](configuration.md)).
 - Each goroutine must capture stdout/stderr from the external process and return it alongside the pass/fail result to the coordinator. Errors must not be silently discarded.
 

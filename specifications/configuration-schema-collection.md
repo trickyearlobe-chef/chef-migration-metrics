@@ -96,7 +96,6 @@ concurrency:
   git_pull: 10                 # Number of cookbook git repositories to pull in parallel
   cookbook_download: 4          # Number of concurrent cookbook downloads from the Chef Server API
   cookstyle_scan: 8            # Number of concurrent CookStyle scans
-  test_kitchen_run: 4          # Number of concurrent Test Kitchen runs (CPU/disk intensive — keep lower)
   readiness_evaluation: 20     # Number of nodes to evaluate for upgrade readiness in parallel
 ```
 
@@ -107,8 +106,13 @@ concurrency:
 | `git_pull` | `10` | Network-bound. Can be set higher on fast networks. |
 | `cookbook_download` | `4` | Network-bound (Chef Server API). Each download fetches a manifest then individual files. Can be increased for large fleets with many pending cookbooks. |
 | `cookstyle_scan` | `8` | CPU-bound but lightweight. Can typically match available CPU cores. |
-| `test_kitchen_run` | `4` | CPU and disk intensive — set conservatively to avoid resource exhaustion. |
 | `readiness_evaluation` | `20` | Pure computation against in-memory/datastore data — can be set high. |
+
+> **Test Kitchen concurrency is not a `concurrency` worker.** Test Kitchen run
+> throughput is bounded globally under `analysis_tools.test_kitchen` by
+> `max_concurrent_vms` (peak concurrency) and the VM start-rate limiter
+> (`start_rate_window_minutes` / `start_rate_max_per_window`), described below.
+> There is no `concurrency.test_kitchen_run` setting and no per-batch limit.
 
 ---
 
@@ -139,6 +143,9 @@ analysis_tools:
 | `cookstyle_timeout_minutes` | `10` | Maximum wall-clock time for a single CookStyle scan before the process is killed and the result recorded as failed. |
 | `test_kitchen.enabled` | `true` | Master toggle for Test Kitchen testing. When set to `false`, Test Kitchen is disabled regardless of whether the `kitchen` and `docker` binaries are available. When `true` (the default), Test Kitchen is enabled automatically if both binaries are detected at startup. Set this to `false` to turn off Test Kitchen without removing Docker or Kitchen from the system. |
 | `test_kitchen.timeout_minutes` | `30` | Maximum wall-clock time for a single Test Kitchen converge or verify step. Replaces `test_kitchen_timeout_minutes`. |
+| `test_kitchen.max_concurrent_vms` | `2` | Global ceiling on concurrent Test Kitchen VMs across all runs and batches — the single concurrency knob (there is no per-batch limit). Live-tunable from the Test Kitchen admin page; `0` falls back to the default. |
+| `test_kitchen.start_rate_window_minutes` | `0` (off) | VM start-rate limiter window, set to the DHCP lease time (e.g. `60`, `90`). Bounds *cumulative* lease consumption over a window, which peak concurrency alone does not. Active only together with `start_rate_max_per_window`. See [bulk-kitchen-scanning.md](bulk-kitchen-scanning.md). |
+| `test_kitchen.start_rate_max_per_window` | `0` (off) | Maximum VM starts allowed per window, set to the usable DHCP pool size (e.g. `25`, `64`). Starts are evenly paced. Both rate fields are live (no restart); the limiter is disabled unless both are > 0. |
 | `test_kitchen.driver` | `dokken` | Test Kitchen driver profile. Built-in profiles: `dokken`, `vcenter`, `vra`, `ec2`, `azurerm`, `google`, `vagrant`, `openstack`, `custom`. See [Test Kitchen Driver Abstraction](test-kitchen-drivers.md). |
 | `test_kitchen.driver_settings` | `{}` | Driver connection settings as key-value pairs (plaintext). Keys are driver-specific (e.g. `vcenter_host`, `region`). |
 | `test_kitchen.driver_secrets` | `{}` | Driver secret settings. Keys are driver setting names, values are credential names from the `credentials` table. |
