@@ -107,13 +107,26 @@ default) when it's `applied/false`.
 - Exports section reports `applied`/false. New test red→green.
 - No `outputDir` param on the two cleanup funcs; full module suite + vet green.
 
-## Chunk G — concurrency resize appliers [subsystem]
+## Chunk G — concurrency live-read appliers [applied] ✅ DONE
 
-`concurrency.{cookstyle_scan, readiness_evaluation, cookbook_download}` are baked into
-the scanner/evaluator/node-kitchen-factory at boot (`setupCollector`, `main.go:880–931`,
-factory ~`:1278`); the collector's run-start refresh does NOT reach them. Live-resize
-each, mirroring kitchen `SetWorkerCount`. NOT in scope: `organisation_collection` /
-`node_page_fetching` (already live per-run via `c.cfg = c.configFn()`). Own session.
+**Trace correction (supersedes the todo's "[subsystem] resize, mirror SetWorkerCount"
+premise):** the cookstyle scanner and readiness evaluator build a *fresh* semaphore
+(`make(chan struct{}, concurrency)`) at the start of each batch — there is no
+persistent pool to resize (unlike the kitchen queue). The bug was purely that
+`concurrency` was snapshotted at construction, so the collector's run-start `c.cfg`
+refresh never reached it. Fix = read the value live at batch start (the same
+pull-per-run model the collector already uses for org_collection/node_page/git_pull),
+which is **applied** granularity, not subsystem.
+
+Done: `WithCookstyleConcurrencyFunc` + `effectiveConcurrency()` (cookstyle.go);
+`WithReadinessConcurrencyFunc` + `effectiveConcurrency()` (readiness.go);
+`RunnerFactory.Concurrency int` → `ConcurrencyFn func() int` resolved per-Run
+(nodekitchen/factory.go — node-kitchen factory was the lone baked `cookbook_download`
+consumer; the collector's own `cookbook_download`/`git_pull` reads were already live).
+main.go wires all three from `app.configHolder.Get().Concurrency.*`. webapi concurrency
+section registers `appliedApplier` → applied/false (was the pessimistic process/true).
+Unit tests per component (live override + <1 fallback) + webapi applied-reload flip
+test. Full module suite + vet green.
 
 ---
 

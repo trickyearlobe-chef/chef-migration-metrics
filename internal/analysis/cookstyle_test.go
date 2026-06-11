@@ -1540,3 +1540,35 @@ func assertContains(t *testing.T, slice []string, want string) {
 	}
 	t.Errorf("expected %v to contain %q", slice, want)
 }
+
+// ---------------------------------------------------------------------------
+// Live concurrency provider
+// ---------------------------------------------------------------------------
+
+func TestCookstyleScanner_EffectiveConcurrency_LiveOverride(t *testing.T) {
+	s := NewCookstyleScanner(nil, nil, "/bin/true", 2, 10)
+
+	// No provider: baked construction value.
+	if got := s.effectiveConcurrency(); got != 2 {
+		t.Errorf("baked concurrency = %d, want 2", got)
+	}
+
+	// Live provider overrides the baked value on each read.
+	live := 2
+	s2 := NewCookstyleScanner(nil, nil, "/bin/true", 2, 10,
+		WithCookstyleConcurrencyFunc(func() int { return live }))
+	if got := s2.effectiveConcurrency(); got != 2 {
+		t.Errorf("live concurrency = %d, want 2", got)
+	}
+	live = 7
+	if got := s2.effectiveConcurrency(); got != 7 {
+		t.Errorf("live concurrency after change = %d, want 7", got)
+	}
+
+	// A provider returning < 1 falls back to the baked value (never zero-sizes
+	// the semaphore).
+	live = 0
+	if got := s2.effectiveConcurrency(); got != 2 {
+		t.Errorf("live concurrency with 0 = %d, want fallback 2", got)
+	}
+}

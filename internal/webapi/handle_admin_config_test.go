@@ -633,6 +633,30 @@ func TestAdminConfigConcurrency_PUT_Success(t *testing.T) {
 	}
 }
 
+// All six concurrency fields are read live at the next collection/run (the
+// collector pulls from its run-start cfg refresh; the cookstyle scanner,
+// readiness evaluator, and node-kitchen factory read their pool size live), so
+// the section reports applied/false, not the pessimistic process default.
+func TestAdminConfigConcurrency_PUT_AppliedReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":20}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/concurrency", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("concurrency PUT should not require restart (read live at next run)")
+	}
+	if resp.Reload != ReloadApplied.String() {
+		t.Errorf("concurrency reload = %q, want %q", resp.Reload, ReloadApplied.String())
+	}
+}
+
 func TestAdminConfigConcurrency_PUT_503_NilStore(t *testing.T) {
 	r := newTestRouterForAdminConfig(nil, nil, nil)
 

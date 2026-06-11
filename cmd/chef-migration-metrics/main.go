@@ -886,6 +886,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			app.db, app.logger, toolResult.Cookstyle.Path,
 			app.cfg.Concurrency.CookstyleScan,
 			app.cfg.AnalysisTools.CookstyleTimeoutMinutes,
+			analysis.WithCookstyleConcurrencyFunc(func() int {
+				return app.configHolder.Get().Concurrency.CookstyleScan
+			}),
 		)
 		collOpts = append(collOpts, collector.WithCookstyleScanner(csScanner))
 		app.startup.Info("CookStyle scanner enabled")
@@ -930,6 +933,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 				InstallSizeMBWindows:    cfg.Readiness.InstallSizeMBWindows,
 				MinRemainingFreePercent: cfg.Readiness.MinRemainingFreePercent,
 			}
+		}),
+		analysis.WithReadinessConcurrencyFunc(func() int {
+			return app.configHolder.Get().Concurrency.ReadinessEvaluation
 		}),
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
@@ -1295,7 +1301,9 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 				return app.configHolder.Get().AnalysisTools.TestKitchen
 			},
 			GitCookbookDir: app.cfg.Storage.GitCookbookDir,
-			Concurrency:    app.cfg.Concurrency.CookbookDownload,
+			ConcurrencyFn: func() int {
+				return app.configHolder.Get().Concurrency.CookbookDownload
+			},
 		}
 		routerOpts = append(routerOpts, webapi.WithNodeKitchenRunner(factory))
 		app.startup.Info("Node Kitchen runner factory enabled")

@@ -212,6 +212,10 @@ type CookstyleScanner struct {
 	concurrency   int
 	timeout       time.Duration
 	cookstylePath string
+	// concurrencyFn, when set, returns the live max-parallel-scans value, read
+	// at the start of each batch so a config change takes effect on the next
+	// collection run without a restart. Falls back to the baked concurrency.
+	concurrencyFn func() int
 }
 
 // CookstyleScannerOption configures a CookstyleScanner.
@@ -220,6 +224,25 @@ type CookstyleScannerOption func(*CookstyleScanner)
 // WithCookstyleExecutor overrides the command executor (for testing).
 func WithCookstyleExecutor(e CookstyleExecutor) CookstyleScannerOption {
 	return func(s *CookstyleScanner) { s.executor = e }
+}
+
+// WithCookstyleConcurrencyFunc sets a live provider for the scan concurrency.
+// When set, the scanner reads the worker-pool size on each batch rather than
+// using the value baked at construction, so concurrency.cookstyle_scan applies
+// at the next run without a restart.
+func WithCookstyleConcurrencyFunc(fn func() int) CookstyleScannerOption {
+	return func(s *CookstyleScanner) { s.concurrencyFn = fn }
+}
+
+// effectiveConcurrency returns the live concurrency when a provider is wired
+// (clamped to >= 1), otherwise the value baked at construction.
+func (s *CookstyleScanner) effectiveConcurrency() int {
+	if s.concurrencyFn != nil {
+		if n := s.concurrencyFn(); n >= 1 {
+			return n
+		}
+	}
+	return s.concurrency
 }
 
 // NewCookstyleScanner creates a scanner.
@@ -331,10 +354,11 @@ func (s *CookstyleScanner) ScanGitRepos(
 		return result
 	}
 
+	concurrency := s.effectiveConcurrency()
 	log.Info(fmt.Sprintf("starting CookStyle scans (git repos): %d work items, concurrency %d",
-		len(items), s.concurrency))
+		len(items), concurrency))
 
-	sem := make(chan struct{}, s.concurrency)
+	sem := make(chan struct{}, concurrency)
 	resultsCh := make(chan CookstyleScanResult, len(items))
 
 	var wg sync.WaitGroup

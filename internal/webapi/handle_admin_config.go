@@ -226,10 +226,12 @@ func (r *Router) putAdminConfigConcurrency(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
-	// No applier yet: cookstyle_scan / readiness_evaluation / cookbook_download are
-	// baked into analysis components at boot. Pessimistic process until a resize
-	// applier lands (todo-configuration.md Bucket 2).
-	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency)
+	// All six concurrency fields are read live at the next collection/run: the
+	// collector pulls org_collection/node_page/git_pull/cookbook_download from its
+	// run-start cfg refresh, and the cookstyle scanner, readiness evaluator, and
+	// node-kitchen factory now read their pool size live (Chunk G). The semaphores
+	// are rebuilt per batch, so there is no persistent pool to resize — applied.
+	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency, appliedApplier)
 }
 
 // ---------------------------------------------------------------------------
