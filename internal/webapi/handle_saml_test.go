@@ -94,3 +94,43 @@ func TestIsRelativePath(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleLogin_NilProvider_NotImplemented(t *testing.T) {
+	// Handler wired but no provider (SAML not configured) → 501, not a panic.
+	h := &SAMLHandler{logger: func(string, string) {}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/saml/login", nil)
+	h.HandleLogin(rec, req)
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("expected 501 with nil provider, got %d", rec.Code)
+	}
+}
+
+func TestHandleACS_NilProvider_NotImplemented(t *testing.T) {
+	h := &SAMLHandler{logger: func(string, string) {}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/saml/acs", nil)
+	h.HandleACS(rec, req)
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("expected 501 with nil provider, got %d", rec.Code)
+	}
+}
+
+// SetProvider must be safe to call concurrently with request handlers reading
+// the provider (run with -race).
+func TestSAMLHandler_ConcurrentProviderSwap(t *testing.T) {
+	h := &SAMLHandler{logger: func(string, string) {}}
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 1000; i++ {
+			h.SetProvider(nil)
+			h.SetEndpoints(SAMLEndpoints{ACSURL: "https://x/acs"})
+		}
+		close(done)
+	}()
+	for i := 0; i < 1000; i++ {
+		_ = h.prov()
+		_ = h.Endpoints()
+	}
+	<-done
+}

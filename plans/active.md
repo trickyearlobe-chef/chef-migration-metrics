@@ -34,7 +34,18 @@ backend-computed ACS/SLO/metadata URLs + SP entity ID with copy actions.
 - ACS (callback), SLO, metadata URLs + entity ID surfaced with copy; values are
   backend-computed and match the SP metadata. New tests red→green; suites green.
 
-## Chunk SAML-2 — live-reload the SAML provider (auth subsystem applier)
+## Chunk SAML-2 — live-reload the SAML provider (auth subsystem applier) ✅ DONE
+
+Done in two commits: (1) `session_expiry`/`lockout_attempts` live reads
+(`WithSessionLifetimeFunc`/`WithLockoutAttemptsFunc`); (2) SAML provider rebuild —
+`SAMLHandler` guards provider+endpoints under one mutex with `SetProvider`/`prov()`,
+request handlers 501 on nil provider, `WithSAMLReconciler` + `samlApplier` (subsystem),
+auth PUT registers `appliedApplier` + the SAML applier, `main.go` `buildSAMLProvider`
+refactor always creates the handler and wires the reconciler (rebuild from holder +
+swap, incl. enable/disable). Auth section now applied/false (no SAML) or subsystem/false
+(SAML wired). Full suite + `-race` + 387 frontend tests green.
+
+### (original plan below)
 
 `setupSAML` builds the provider once at boot; `auth` PUT has no applier → pessimistic
 process/true → `sp_entity_id` etc. need a restart. Rebuild the provider in place on

@@ -118,6 +118,15 @@ type Router struct {
 	// samlHandler holds the SAML SSO/SLO HTTP handlers.
 	// Nil when SAML is not configured.
 	samlHandler *SAMLHandler
+
+	// samlReconciler rebuilds the SAML provider from the freshly-stored auth
+	// config and swaps it into the running samlHandler (the SAML half of the
+	// auth subsystem applier). It reads the reloaded live config itself, so it
+	// takes no arguments. nil when no SAML handler is wired — the auth section
+	// then has no subsystem applier and reports applied (session/lockout are
+	// still live reads). Kept as a plain callback so webapi need not import the
+	// samlsp/credential construction. Set via WithSAMLReconciler.
+	samlReconciler func() error
 	// is requested. Nil when not wired up — rescan handlers fall back to
 	// the "will run on next collection cycle" behaviour.
 	triggerCollection CollectionTriggerFunc
@@ -401,6 +410,14 @@ func WithKitchenQueue(m *kitchenqueue.Manager) RouterOption {
 // routes are replaced with real handlers for metadata, login, ACS, and SLO.
 func WithSAML(h *SAMLHandler) RouterOption {
 	return func(r *Router) { r.samlHandler = h }
+}
+
+// WithSAMLReconciler wires the live apply point for the SAML half of the auth
+// config section: on save it rebuilds the provider from the reloaded config and
+// swaps it into the running handler. Without it the auth section has no
+// subsystem applier (session/lockout still reload as applied reads).
+func WithSAMLReconciler(fn func() error) RouterOption {
+	return func(r *Router) { r.samlReconciler = fn }
 }
 
 // WithBackupService sets the backup service used by admin backup endpoints.

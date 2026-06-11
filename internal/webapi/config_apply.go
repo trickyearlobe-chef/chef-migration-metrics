@@ -132,6 +132,21 @@ func (r *Router) backupApplier() Applier {
 	}
 }
 
+// samlApplier rebuilds the SAML provider from the freshly-stored auth config via
+// the wired reconciler and reports ReloadSubsystem. Only registered when a
+// reconciler is wired; without one the auth section's SAML half has no applier
+// (the rest of the section — session/lockout/min-password — still reloads as
+// applied reads). The reconciler reads the reloaded live config itself, so it
+// takes no arguments.
+func (r *Router) samlApplier() Applier {
+	return func(context.Context) (ApplyResult, error) {
+		if err := r.samlReconciler(); err != nil {
+			return ApplyResult{}, err
+		}
+		return ApplyResult{Reload: ReloadSubsystem}, nil
+	}
+}
+
 // worstGranularity returns the most severe granularity among results. With no
 // results it returns ReloadProcess: a section that registered no applier is
 // assumed to need a restart (pessimistic — at worst over-prompts, never

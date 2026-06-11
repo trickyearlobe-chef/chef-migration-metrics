@@ -190,7 +190,14 @@ func (r *Router) handleSAMLEndpoints(w http.ResponseWriter, req *http.Request) {
 			"SAML is not configured.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, r.samlHandler.Endpoints())
+	endpoints := r.samlHandler.Endpoints()
+	if endpoints.ACSURL == "" {
+		// Handler wired but no provider initialised (SAML not configured yet).
+		WriteError(w, http.StatusNotImplemented, "not_implemented",
+			"SAML is not configured.")
+		return
+	}
+	WriteJSON(w, http.StatusOK, endpoints)
 }
 
 // upsertCredential creates or updates a credential in the store.

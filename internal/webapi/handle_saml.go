@@ -30,30 +30,46 @@ type SAMLEndpoints struct {
 
 // SAMLHandler holds the SAML-related HTTP handlers and their dependencies.
 type SAMLHandler struct {
-	provider    *samlsp.Provider
 	provisioner *jit.Provisioner
 	sessions    *auth.SessionManager
 	userStore   SAMLUserStore
 	logger      func(level, msg string)
 	trustedProxy bool
 
-	// endpoints are the SP URLs surfaced to operators (set by SetEndpoints at
-	// wiring time and re-set on a live provider rebuild). Guarded by endpointsMu.
-	endpointsMu sync.RWMutex
-	endpoints   SAMLEndpoints
+	// mu guards provider and endpoints, which are swapped together on a live
+	// auth-config reload. provider is read on every SAML request; it is nil when
+	// SAML is not configured (the request handlers then return 501).
+	mu        sync.RWMutex
+	provider  *samlsp.Provider
+	endpoints SAMLEndpoints
+}
+
+// SetProvider swaps the live SAML provider (nil to disable SAML). Safe for
+// concurrent use with in-flight requests.
+func (h *SAMLHandler) SetProvider(p *samlsp.Provider) {
+	h.mu.Lock()
+	h.provider = p
+	h.mu.Unlock()
+}
+
+// prov returns the current provider (may be nil when SAML is not configured).
+func (h *SAMLHandler) prov() *samlsp.Provider {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.provider
 }
 
 // SetEndpoints records the SP endpoint URLs surfaced via the admin endpoints API.
 func (h *SAMLHandler) SetEndpoints(e SAMLEndpoints) {
-	h.endpointsMu.Lock()
+	h.mu.Lock()
 	h.endpoints = e
-	h.endpointsMu.Unlock()
+	h.mu.Unlock()
 }
 
 // Endpoints returns the currently advertised SP endpoint URLs.
 func (h *SAMLHandler) Endpoints() SAMLEndpoints {
-	h.endpointsMu.RLock()
-	defer h.endpointsMu.RUnlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return h.endpoints
 }
 
@@ -92,8 +108,13 @@ func (h *SAMLHandler) HandleMetadata(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "GET only")
 		return
 	}
+	provider := h.prov()
+	if provider == nil {
+		WriteError(w, http.StatusNotImplemented, "not_implemented", "SAML is not configured.")
+		return
+	}
 
-	metaBytes, err := h.provider.Metadata()
+	metaBytes, err := provider.Metadata()
 	if err != nil {
 		h.logger("ERROR", fmt.Sprintf("SAML metadata generation failed: %v", err))
 		WriteError(w, http.StatusInternalServerError, ErrCodeInternalError,
@@ -116,8 +137,9 @@ func (h *SAMLHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// RelayState is the URL to redirect to after SSO completes.
-	// Only allow relative paths to prevent open redirect.
+	// RelayState is the URL to redirect to after SSO completes. Validate it
+	// (open-redirect protection) before touching the provider so a malicious
+	// returnTo is rejected regardless of SAML being configured.
 	relayState := r.URL.Query().Get("returnTo")
 	if relayState != "" && !isRelativePath(relayState) {
 		WriteBadRequest(w, "returnTo must be a relative path (starting with '/').")
@@ -127,7 +149,13 @@ func (h *SAMLHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		relayState = "/"
 	}
 
-	redirectURL, err := h.provider.MakeAuthnRequest(relayState)
+	provider := h.prov()
+	if provider == nil {
+		WriteError(w, http.StatusNotImplemented, "not_implemented", "SAML is not configured.")
+		return
+	}
+
+	redirectURL, err := provider.MakeAuthnRequest(relayState)
 	if err != nil {
 		h.logger("ERROR", fmt.Sprintf("SAML AuthnRequest creation failed: %v", err))
 		WriteError(w, http.StatusInternalServerError, ErrCodeInternalError,
@@ -144,9 +172,14 @@ func (h *SAMLHandler) HandleACS(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "POST only")
 		return
 	}
+	provider := h.prov()
+	if provider == nil {
+		WriteError(w, http.StatusNotImplemented, "not_implemented", "SAML is not configured.")
+		return
+	}
 
 	// Parse and validate the SAML response.
-	userInfo, err := h.provider.ParseACSResponse(r)
+	userInfo, err := provider.ParseACSResponse(r)
 	if err != nil {
 		h.logger("ERROR", fmt.Sprintf("SAML ACS validation failed: %v", err))
 		WriteError(w, http.StatusForbidden, ErrCodeForbidden,
@@ -198,9 +231,14 @@ func (h *SAMLHandler) HandleSLO(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "POST only")
 		return
 	}
+	provider := h.prov()
+	if provider == nil {
+		WriteError(w, http.StatusNotImplemented, "not_implemented", "SAML is not configured.")
+		return
+	}
 
 	// Parse and validate the LogoutRequest.
-	samlSubject, err := h.provider.ParseSLORequest(r)
+	samlSubject, err := provider.ParseSLORequest(r)
 	if err != nil {
 		h.logger("ERROR", fmt.Sprintf("SAML SLO request validation failed: %v", err))
 		WriteError(w, http.StatusBadRequest, ErrCodeBadRequest,
