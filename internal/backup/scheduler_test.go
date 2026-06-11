@@ -151,3 +151,77 @@ func TestScheduler_SkipsWhenActive(t *testing.T) {
 		t.Error("scheduler should have skipped at least once while backup was active")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Reschedule — live schedule swap (mirrors collector scheduler, Chunk D)
+// ---------------------------------------------------------------------------
+
+// chanParser is a CronParser double that signals on every Next() call, so a
+// test can observe which schedule the loop is currently driving from. It
+// returns a fixed far-future time so the real timer never fires during the
+// test — we only exercise scheduling, not backup execution.
+type chanParser struct {
+	queried chan struct{}
+	next    time.Time
+}
+
+func (p *chanParser) Next(time.Time) time.Time {
+	select {
+	case p.queried <- struct{}{}:
+	default:
+	}
+	return p.next
+}
+
+// Reschedule swaps the active schedule live and wakes the loop so the new
+// schedule drives the next tick — no scheduler restart. Proven by observing the
+// loop query the new parser after the swap.
+func TestScheduler_Reschedule_PicksUpNewSchedule(t *testing.T) {
+	exec := &mockExecutor{}
+	svc := newTestService(t, exec)
+
+	future := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	parserA := &chanParser{queried: make(chan struct{}, 8), next: future}
+	parserB := &chanParser{queried: make(chan struct{}, 8), next: future}
+
+	sched, err := NewScheduler(svc, "0 2 * * *", nil)
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+	// Drive from parserA with the clock well before the fixed next time, so the
+	// timer (a couple of hours out) never fires during the test.
+	sched.schedule = parserA
+	sched.clock = func() time.Time { return time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC) }
+
+	sched.Start(context.Background())
+	defer sched.Stop()
+
+	// The loop queries the initial schedule.
+	select {
+	case <-parserA.queried:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial schedule was never queried")
+	}
+
+	// Swap the schedule live.
+	sched.Reschedule(parserB)
+
+	// The loop must wake and recompute from the new schedule.
+	select {
+	case <-parserB.queried:
+	case <-time.After(2 * time.Second):
+		t.Fatal("rescheduled schedule never queried — loop did not pick up the new schedule")
+	}
+}
+
+// A nil schedule passed to Reschedule is ignored (no panic, no swap).
+func TestScheduler_Reschedule_NilIgnored(t *testing.T) {
+	exec := &mockExecutor{}
+	svc := newTestService(t, exec)
+
+	sched, err := NewScheduler(svc, "0 2 * * *", nil)
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+	sched.Reschedule(nil) // before Start — must not panic
+}

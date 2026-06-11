@@ -85,6 +85,16 @@ type Router struct {
 	// WithCollectionRescheduler.
 	collectionRescheduler func(schedule string) error
 
+	// backupReconciler reconciles the running backup scheduler to the stored
+	// backup config (the backup.{enabled,schedule} subsystem applier): start it
+	// when newly enabled, stop it when disabled, reschedule it in place on a
+	// schedule change. It reads the reloaded live config itself, so it takes no
+	// arguments and the schedule default is not duplicated here. nil when no
+	// backup scheduler is wired — the backup section then has no applier and
+	// stays at the pessimistic process default. Kept as a plain callback so
+	// webapi need not import the backup package. Set via WithBackupReconciler.
+	backupReconciler func() error
+
 	// --- Authentication components (set via WithAuth) ---
 
 	// localAuth handles local username/password authentication with
@@ -276,6 +286,17 @@ func WithLogLevelSetter(fn func(level string) error) RouterOption {
 func WithCollectionRescheduler(fn func(schedule string) error) RouterOption {
 	return func(r *Router) {
 		r.collectionRescheduler = fn
+	}
+}
+
+// WithBackupReconciler wires the live apply point for the backup config section.
+// fn reconciles the running backup scheduler to the reloaded live config —
+// starting it when newly enabled, stopping it when disabled, rescheduling it in
+// place on a schedule change. When set, a backup PUT applies without a restart
+// (subsystem). Without it the section keeps the pessimistic process default.
+func WithBackupReconciler(fn func() error) RouterOption {
+	return func(r *Router) {
+		r.backupReconciler = fn
 	}
 }
 

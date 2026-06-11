@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -128,7 +129,10 @@ type serverApp struct {
 	// Kitchen queue manager (bounded concurrency for TK runs).
 	kitchenQueue *kitchenqueue.Manager
 
-	// Backup scheduler (for stopping during restore).
+	// Backup scheduler (for stopping during restore). backupMu guards
+	// backupSched: the config-PUT reconciler and the restore hook both mutate
+	// it from separate request goroutines.
+	backupMu                sync.Mutex
 	backupSched             *backup.Scheduler
 	schemaVersion           int
 	stopKitchenQueueCleanup func()
@@ -1400,10 +1404,13 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 							app.startup.Info("restore: stopping kitchen queue workers")
 							app.kitchenQueue.Stop(15 * time.Second)
 						}
+						app.backupMu.Lock()
 						if app.backupSched != nil {
 							app.startup.Info("restore: stopping backup scheduler")
 							app.backupSched.Stop()
+							app.backupSched = nil
 						}
+						app.backupMu.Unlock()
 						if app.stopExportCleanup != nil {
 							app.startup.Info("restore: stopping export cleanup")
 							app.stopExportCleanup()
@@ -1412,16 +1419,19 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 					}))
 					app.startup.Info(fmt.Sprintf("backup service ready (dir=%s, max_generations=%d)", backupDir, maxGen))
 
+					backupLog := func(level, msg string) {
+						switch level {
+						case "error":
+							backupLogger.Error(msg)
+						default:
+							backupLogger.Info(msg)
+						}
+					}
+
+					// Boot-time start when enabled. Live enable/disable/reschedule
+					// is handled by the reconciler wired below.
 					if app.cfg.Backup.Enabled {
 						cronExpr := app.cfg.BackupSchedule()
-						backupLog := func(level, msg string) {
-							switch level {
-							case "error":
-								backupLogger.Error(msg)
-							default:
-								backupLogger.Info(msg)
-							}
-						}
 						sched, schedErr := backup.NewScheduler(svc, cronExpr, backupLog)
 						if schedErr != nil {
 							app.startup.Error(fmt.Sprintf("backup: invalid schedule: %v", schedErr))
@@ -1431,6 +1441,43 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 							app.startup.Info(fmt.Sprintf("backup scheduler started (schedule=%q)", cronExpr))
 						}
 					}
+
+					// Reconcile the running backup scheduler to the live config on
+					// each backup PUT (the backup.{enabled,schedule} subsystem
+					// applier): start when newly enabled, stop when disabled,
+					// reschedule in place on a schedule change. Reads the reloaded
+					// holder, so the schedule default lives only in BackupSchedule().
+					routerOpts = append(routerOpts, webapi.WithBackupReconciler(func() error {
+						cfg := app.configHolder.Get()
+						enabled := cfg.Backup.Enabled
+						cronExpr := cfg.BackupSchedule()
+
+						app.backupMu.Lock()
+						defer app.backupMu.Unlock()
+
+						switch {
+						case enabled && app.backupSched == nil:
+							sched, err := backup.NewScheduler(svc, cronExpr, backupLog)
+							if err != nil {
+								return fmt.Errorf("backup: invalid schedule: %w", err)
+							}
+							sched.Start(context.Background())
+							app.backupSched = sched
+							app.startup.Info(fmt.Sprintf("backup scheduler started (schedule=%q)", cronExpr))
+						case enabled && app.backupSched != nil:
+							parsed, err := collector.ParseSchedule(cronExpr)
+							if err != nil {
+								return fmt.Errorf("backup: invalid schedule: %w", err)
+							}
+							app.backupSched.Reschedule(parsed)
+							app.startup.Info(fmt.Sprintf("backup scheduler rescheduled (schedule=%q)", cronExpr))
+						case !enabled && app.backupSched != nil:
+							app.backupSched.Stop()
+							app.backupSched = nil
+							app.startup.Info("backup scheduler stopped (backup disabled)")
+						}
+						return nil
+					}))
 				}
 			}
 		}

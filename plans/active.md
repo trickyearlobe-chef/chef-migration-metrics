@@ -56,9 +56,28 @@ section reports subsystem/false when wired, applied/false otherwise (thresholds 
 apply live). Two scheduler tests (live swap + before-Start) `-race` green; two webapi
 tests (subsystem reload + applier-error 500). Full collector + webapi suites + vet green.
 
+## Chunk E — backup reschedule/start/stop applier [subsystem] ✅ DONE
+
+Reused Chunk D's `Reschedule` + signal-the-loop pattern, plus an `enabled`
+start/stop lifecycle the collector didn't need (backup scheduler is nil when
+disabled at boot). `backup.Scheduler` gained `mu sync.Mutex` + buffered
+`reschedule chan` + `Reschedule(collector.CronParser)`; the loop reads
+`s.schedule` under mu each iteration and a new `<-s.reschedule` select case stops
+the timer and recomputes. webapi `backupApplier` (subsystem) registered only when
+`WithBackupReconciler` is wired — a parameterless `func() error` (not a
+value-passing callback): the reconciler reads the reloaded holder and resolves the
+`BackupSchedule()` default itself, so no "0 2 * * *" literal is duplicated in
+webapi/main. main.go wires it inside the backup block; the closure reconciles
+`app.backupSched` (start when enabled+nil, reschedule when enabled+running, stop+nil
+when disabled), guarded by a new `app.backupMu` (also now guards the restore hook's
+access). Backup section reports subsystem/false when wired, process/true otherwise.
+Two backup `-race` tests (live swap + nil-ignored); three webapi tests (process
+default, subsystem reload, reconciler-error 500). Full backup (incl. `-race`) +
+webapi + cmd suites + `go vet` green.
+
 ### Next chunk candidates (later sessions)
-- **New appliers (subsystem):** backup reschedule/start/stop;
-  concurrency.{cookstyle_scan,readiness_evaluation,cookbook_download} resize.
+- **New appliers (subsystem):** concurrency.{cookstyle_scan,readiness_evaluation,
+  cookbook_download} resize.
 - **Exports cleanup-ticker re-point** (`main.go:1059`) — the subsystem half of the
   exports section (read swaps already done here).
 

@@ -790,6 +790,78 @@ func TestAdminConfigCollection_PUT_ReschedulerError_500(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// PUT /api/v1/admin/config/backup
+// ---------------------------------------------------------------------------
+
+// Without a backup reconciler wired, the backup section registers no applier and
+// falls to the pessimistic process default — honest restart_required:true.
+func TestAdminConfigBackup_PUT_NoReconciler_ProcessDefault(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/backup",
+		strings.NewReader(`{"enabled":true,"max_generations":7,"schedule":"0 3 * * *"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if !resp.RestartRequired {
+		t.Error("backup PUT without a reconciler should require restart (process default)")
+	}
+	if resp.Reload != ReloadProcess.String() {
+		t.Errorf("backup reload = %q, want %q", resp.Reload, ReloadProcess.String())
+	}
+}
+
+// With a backup reconciler wired, the section reconciles the running scheduler in
+// place (subsystem) and reports restart_required:false — enable/disable/reschedule
+// no longer need a process restart.
+func TestAdminConfigBackup_PUT_WithReconciler_SubsystemReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	calls := 0
+	reconcile := func() error {
+		calls++
+		return nil
+	}
+	r := newTestRouterForAdminConfig(nil, store, nil, WithBackupReconciler(reconcile))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/backup",
+		strings.NewReader(`{"enabled":true,"max_generations":7,"schedule":"0 3 * * *"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("backup PUT with a reconciler should not require restart")
+	}
+	if resp.Reload != ReloadSubsystem.String() {
+		t.Errorf("backup reload = %q, want %q", resp.Reload, ReloadSubsystem.String())
+	}
+	if calls != 1 {
+		t.Errorf("reconciler called %d times, want 1", calls)
+	}
+}
+
+// A reconciler error (the scheduler could not be brought into sync) surfaces as a
+// 500 — better than silently claiming the change is live when it is not.
+func TestAdminConfigBackup_PUT_ReconcilerError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	reconcile := func() error { return errors.New("reconcile failed") }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithBackupReconciler(reconcile))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/backup",
+		strings.NewReader(`{"enabled":true,"max_generations":7,"schedule":"0 3 * * *"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+}
+
+// ---------------------------------------------------------------------------
 // PUT /api/v1/admin/config/logging
 // ---------------------------------------------------------------------------
 

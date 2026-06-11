@@ -116,6 +116,22 @@ func (r *Router) collectionScheduleApplier(schedule string) Applier {
 	}
 }
 
+// backupApplier reconciles the running backup scheduler to the freshly-stored
+// backup config via the wired reconciler and reports ReloadSubsystem. Only
+// registered when a reconciler is wired; without one the backup section has no
+// applier and stays at the pessimistic process default. The reconciler reads the
+// reloaded live config to decide start/stop/reschedule (so webapi stays
+// decoupled from the backup subsystem and the schedule default lives in one
+// place), hence it takes no arguments.
+func (r *Router) backupApplier() Applier {
+	return func(context.Context) (ApplyResult, error) {
+		if err := r.backupReconciler(); err != nil {
+			return ApplyResult{}, err
+		}
+		return ApplyResult{Reload: ReloadSubsystem}, nil
+	}
+}
+
 // worstGranularity returns the most severe granularity among results. With no
 // results it returns ReloadProcess: a section that registered no applier is
 // assumed to need a restart (pessimistic — at worst over-prompts, never
