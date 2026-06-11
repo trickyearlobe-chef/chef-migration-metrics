@@ -43,8 +43,11 @@ Each chunk = its own branch, doc-only ones low-risk. Code/build chunks TDD.
   PATH; no embedded Ruby/tools shipped."
 
 ## C5 — Driver/dokken specs (doc, large — ~18 files)
-- Remove dokken as default/built-in/selectable; built-in profile list →
-  vcenter/vra/ec2/vagrant/proxmox; "no default — operator must choose".
+- Remove dokken as default/built-in/selectable; "no default — operator chooses".
+- Represent drivers with **maturity tags** (decided 2026-06-11), matching reality
+  (factory.go wires only vcenter+proxmox): `vcenter` supported (production),
+  `proxmox` supported (PoC), `vra`/`ec2`/`vagrant` planned (UI placeholder, not
+  yet wired). Do NOT present vra/ec2/vagrant as ready.
 - Keep dokken ONLY where it's about *detecting customer cookbook* driver usage
   (kitchen-analyser `driver_name`), not our own runner.
 - Files incl: test-kitchen-config-ui.md, test-kitchen-drivers*.md,

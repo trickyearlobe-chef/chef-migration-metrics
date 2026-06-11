@@ -104,7 +104,7 @@ Chef Migration Metrics is a Go application with an embedded React frontend. Cook
 ### Optional (for Cookbook Compatibility Testing)
 
 - **Chef Workstation** — provides `cookstyle` and `kitchen` (and InSpec). These tools are **not bundled**; install Chef Workstation on the host to enable cookbook compatibility analysis.
-- A configured Test Kitchen **driver** for whatever you test against (vCenter, EC2, vRA, Vagrant, or Proxmox) — see [Test Kitchen Driver Configuration](#test-kitchen-driver-configuration).
+- A configured Test Kitchen **driver**. **vCenter** is the supported production driver; **Proxmox** is available as a proof-of-concept. EC2, vRA, and Vagrant are planned (selectable in the UI but not yet wired). See [Test Kitchen Driver Configuration](#test-kitchen-driver-configuration).
 
 The application resolves `cookstyle` and `kitchen` from `PATH`. If they are not found, cookbook analysis is skipped gracefully — data collection and the dashboard still work.
 
@@ -274,7 +274,15 @@ The application runs database migrations automatically on startup — no manual 
 
 ### Test Kitchen Driver Configuration
 
-The Test Kitchen driver is configured under `analysis_tools.test_kitchen` in the YAML config file. There is **no default driver** — choose one of `vcenter`, `ec2`, `vra`, `vagrant`, or `proxmox` and provide its settings. Each driver provisions real test targets via its own API, so it needs connection `driver_settings`, any `driver_secrets`, and a `platform_map`.
+The Test Kitchen driver is configured under `analysis_tools.test_kitchen` in the YAML config file. There is **no default driver** — you must choose one. Driver support:
+
+| Driver | Status |
+|--------|--------|
+| `vcenter` | Supported (production) |
+| `proxmox` | Supported (proof-of-concept — minimal) |
+| `vra`, `ec2`, `vagrant` | Planned — selectable in the UI but not yet wired to a hypervisor backend |
+
+Each driver provisions real test targets via its own API, so it needs connection `driver_settings`, any `driver_secrets`, and a `platform_map`.
 
 **Example (vCenter — EC2, vRA, Vagrant, and Proxmox follow the same shape):**
 
@@ -301,7 +309,7 @@ analysis_tools:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `driver` | none (required) | Built-in profiles: `vcenter`, `vra`, `ec2`, `vagrant`, `proxmox`. Any other name is treated as a generic/custom driver (set `image_field_name`). |
+| `driver` | none (required) | Supported: `vcenter` (production), `proxmox` (PoC). Planned (UI placeholder, not yet wired): `vra`, `ec2`, `vagrant`. Any other name is a generic/custom driver (set `image_field_name`). |
 | `timeout_minutes` | `30` | Maximum time per Test Kitchen run |
 | `driver_settings` | empty | Plaintext driver connection settings |
 | `driver_secrets` | empty | Credential names resolved at runtime from the credential store |
