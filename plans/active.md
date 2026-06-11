@@ -32,12 +32,16 @@ the proposed delta for confirmation before writing.
   removed the orphaned `CertMetadataFromPEM`. UI: `CertChainPanel` renders one
   card per cert with role label. Go + 386 FE tests green.
 
-### W1-B — reorder-on-save (dep: W1-S)
-- Scope: static-upload save path (per W1-S decision), `internal/tls/`.
-- Sort pasted/uploaded PEM bundle into leaf → intermediate(s) → CA by matching each
-  cert's issuer to the next cert's subject (leaf = subject not an issuer of any
-  other in the bundle). Reject/warn per W1-S.
-- TDD: out-of-order bundle reordered; broken/incomplete bundle handled per spec.
+### W1-B — reorder-on-save (dep: W1-S) — DONE
+- Branch `feature/tls-chain-reorder`. New `ReorderChainPEM` (`internal/tls/`)
+  sorts an operator-supplied `cert_source: db` bundle into leaf → intermediate(s)
+  → root by issuer→subject linking, non-self-signed leaf first (so it survives as
+  cert[0] for the key-match preflight that runs after reorder). Wired into the
+  admin save path's `haveCert && haveKey` branch *before* `ValidateStaticPairBytes`.
+  Incomplete/non-linking bundles stored with a non-fatal `warnings` entry in the
+  PUT response (never rejected); CSR-promote and file source left as-is. Go green.
+- Follow-up (todo-tls §1): warning is transient (response only) — persistent GET
+  status + FE display unbuilt.
 
 ## Workstream 2 — 443 lifeboat (conventional half only)
 
