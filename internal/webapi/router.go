@@ -41,10 +41,10 @@ type CollectionTriggerFunc func(ctx context.Context) error
 // It assembles the ServeMux with all API routes, the WebSocket endpoint,
 // health/version endpoints, and the frontend static asset fallback.
 type Router struct {
-	mux     *http.ServeMux
-	hub     *EventHub
-	db      DataStore
-	cfg     *config.Config
+	mux           *http.ServeMux
+	hub           *EventHub
+	db            DataStore
+	cfg           *config.Config
 	version       string
 	schemaVersion int
 
@@ -65,6 +65,35 @@ type Router struct {
 	// import the logging package to avoid circular dependencies — the
 	// caller provides a logging function at construction time.
 	logger func(level, msg string)
+
+	// logLevelSetter re-applies the minimum log level on the running logger
+	// (the logging.level subsystem applier). The value is the validated level
+	// string (DEBUG/INFO/WARN/ERROR); the callback parses and applies it. nil
+	// when no logger is wired — the logging section then has no applier and
+	// stays at the pessimistic process default. Kept as a string callback so
+	// webapi need not import the logging package (see logger above). Set via
+	// WithLogLevelSetter.
+	logLevelSetter func(level string) error
+
+	// collectionRescheduler re-applies the collection.schedule cron to the
+	// running collection scheduler (the collection.schedule subsystem applier).
+	// The value is the validated cron string; the callback parses and reschedules
+	// in place. nil when no scheduler is wired — the schedule half of the
+	// collection section then has no applier (its live-read thresholds still
+	// apply, but a schedule change silently needs a restart). Kept as a string
+	// callback so webapi need not import the collector package. Set via
+	// WithCollectionRescheduler.
+	collectionRescheduler func(schedule string) error
+
+	// backupReconciler reconciles the running backup scheduler to the stored
+	// backup config (the backup.{enabled,schedule} subsystem applier): start it
+	// when newly enabled, stop it when disabled, reschedule it in place on a
+	// schedule change. It reads the reloaded live config itself, so it takes no
+	// arguments and the schedule default is not duplicated here. nil when no
+	// backup scheduler is wired — the backup section then has no applier and
+	// stays at the pessimistic process default. Kept as a plain callback so
+	// webapi need not import the backup package. Set via WithBackupReconciler.
+	backupReconciler func() error
 
 	// --- Authentication components (set via WithAuth) ---
 
@@ -123,6 +152,14 @@ type Router struct {
 	// deployments or when the running listener is not a DB source — the save
 	// still persists and a restart applies it. Set via WithTLSReload.
 	tlsReload *TLSReloadHolder
+
+	// listenerRebind rebinds the running HTTP/TLS listener in place when a
+	// changed server.listen_address/port is saved, so the change applies without
+	// a restart (configuration-live-reload.md listener-rebind H2). Nil/unset on
+	// deployments where no rebinder is wired (tests, active auto-443, ACME, or a
+	// degraded fallback) — the save then reports restart_required. Set via
+	// WithListenerRebinder.
+	listenerRebind *ListenerRebindHolder
 
 	// acmeReRegister, when set, is called after an ACME config save to wake the
 	// renewer so hostname registration and an issuance check re-run immediately
@@ -235,6 +272,39 @@ func WithSchemaVersion(v int) RouterOption {
 func WithLogger(fn func(level, msg string)) RouterOption {
 	return func(r *Router) {
 		r.logger = fn
+	}
+}
+
+// WithLogLevelSetter wires the live log-level apply point for the logging.level
+// config section. fn receives the validated level string and applies it to the
+// running logger; when set, a logging PUT re-applies the level in place
+// (subsystem) instead of requiring a restart. Without it the section keeps the
+// pessimistic process default.
+func WithLogLevelSetter(fn func(level string) error) RouterOption {
+	return func(r *Router) {
+		r.logLevelSetter = fn
+	}
+}
+
+// WithCollectionRescheduler wires the live reschedule apply point for the
+// collection.schedule config field. fn receives the validated cron string and
+// reschedules the running collection scheduler in place; when set, a collection
+// PUT applies a schedule change without a restart (subsystem). Without it a
+// schedule change is persisted but only takes effect on the next restart.
+func WithCollectionRescheduler(fn func(schedule string) error) RouterOption {
+	return func(r *Router) {
+		r.collectionRescheduler = fn
+	}
+}
+
+// WithBackupReconciler wires the live apply point for the backup config section.
+// fn reconciles the running backup scheduler to the reloaded live config —
+// starting it when newly enabled, stopping it when disabled, rescheduling it in
+// place on a schedule change. When set, a backup PUT applies without a restart
+// (subsystem). Without it the section keeps the pessimistic process default.
+func WithBackupReconciler(fn func() error) RouterOption {
+	return func(r *Router) {
+		r.backupReconciler = fn
 	}
 }
 
@@ -800,12 +870,17 @@ func (r *Router) registerRoutes() {
 
 // webSocketOpts builds the WebSocketHandler options from the loaded config.
 func (r *Router) webSocketOpts() []WebSocketHandlerOption {
-	wsCfg := r.cfg.Server.WebSocket
+	// Pull timeouts live so a server.websocket.* save applies to connections
+	// opened afterwards without a restart (configuration-live-reload.md:
+	// subsystem). secondsToDuration maps an unset (0) field to the default.
 	opts := []WebSocketHandlerOption{
-		WithWebSocketConfig(WebSocketConfig{
-			WriteTimeout: secondsToDuration(wsCfg.WriteTimeoutSeconds),
-			PingInterval: secondsToDuration(wsCfg.PingIntervalSeconds),
-			PongTimeout:  secondsToDuration(wsCfg.PongTimeoutSeconds),
+		WithWebSocketConfigFunc(func() WebSocketConfig {
+			ws := r.liveConfig().Server.WebSocket
+			return WebSocketConfig{
+				WriteTimeout: secondsToDuration(ws.WriteTimeoutSeconds),
+				PingInterval: secondsToDuration(ws.PingIntervalSeconds),
+				PongTimeout:  secondsToDuration(ws.PongTimeoutSeconds),
+			}
 		}),
 	}
 	if r.logger != nil {

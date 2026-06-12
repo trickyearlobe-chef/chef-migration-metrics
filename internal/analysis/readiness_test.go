@@ -1474,7 +1474,7 @@ func TestCheckCookbookCompatibility_CSPass_TKExcluded(t *testing.T) {
 	ds.addCookbookID("apt", "7.4.0", "org-1")
 	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 	ds.addGitRepoWithTK("apt", "sha-abc", true, true) // KitchenExcluded = true
-	ds.addGitTKStatus("apt", "18.0", "failed")         // TK failed, but excluded
+	ds.addGitTKStatus("apt", "18.0", "failed")        // TK failed, but excluded
 
 	cache := ds.buildFakeCache()
 	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
@@ -2926,4 +2926,32 @@ func containsInner(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// ---------------------------------------------------------------------------
+// Live concurrency provider
+// ---------------------------------------------------------------------------
+
+func TestReadinessEvaluator_EffectiveConcurrency_LiveOverride(t *testing.T) {
+	e := NewReadinessEvaluator(nil, nil, 3, 2048)
+
+	// No provider: baked construction value.
+	if got := e.effectiveConcurrency(); got != 3 {
+		t.Errorf("baked concurrency = %d, want 3", got)
+	}
+
+	// Live provider overrides the baked value on each read.
+	live := 3
+	e2 := NewReadinessEvaluator(nil, nil, 3, 2048,
+		WithReadinessConcurrencyFunc(func() int { return live }))
+	live = 9
+	if got := e2.effectiveConcurrency(); got != 9 {
+		t.Errorf("live concurrency = %d, want 9", got)
+	}
+
+	// A provider returning < 1 falls back to the baked value.
+	live = 0
+	if got := e2.effectiveConcurrency(); got != 3 {
+		t.Errorf("live concurrency with 0 = %d, want fallback 3", got)
+	}
 }

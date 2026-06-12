@@ -100,12 +100,12 @@ func (r *Router) handleExports(w http.ResponseWriter, req *http.Request) {
 	// Estimate row count using CountNodeReadiness or a simple heuristic.
 	estimatedRows := r.estimateExportRows(req, body)
 
-	asyncThreshold := r.cfg.Exports.AsyncThreshold
+	asyncThreshold := r.liveConfig().Exports.AsyncThreshold
 	if asyncThreshold <= 0 {
 		asyncThreshold = 10000
 	}
 
-	maxRows := r.cfg.Exports.MaxRows
+	maxRows := r.liveConfig().Exports.MaxRows
 	if maxRows <= 0 {
 		maxRows = 100000
 	}
@@ -143,7 +143,7 @@ func (r *Router) handleSyncExport(w http.ResponseWriter, req *http.Request, body
 func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, body exportRequest, maxRows int) {
 	ctx := req.Context()
 
-	retentionHours := r.cfg.Exports.RetentionHours
+	retentionHours := r.liveConfig().Exports.RetentionHours
 	if retentionHours <= 0 {
 		retentionHours = 24
 	}
@@ -203,7 +203,7 @@ func (r *Router) runAsyncExport(jobID string, body exportRequest, maxRows int) {
 	}
 
 	// Determine output path.
-	outputDir := r.cfg.Exports.OutputDirectory
+	outputDir := r.liveConfig().Exports.OutputDirectory
 	if outputDir == "" {
 		outputDir = "/var/lib/chef-migration-metrics/exports"
 	}

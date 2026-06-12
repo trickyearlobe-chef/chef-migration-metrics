@@ -60,6 +60,12 @@ type WebSocketHandler struct {
 	hub *EventHub
 	cfg WebSocketConfig
 
+	// cfgFn, when set, is a live accessor for the connection configuration.
+	// Each new connection resolves its timeouts through it, so a saved
+	// server.websocket.* change applies to connections opened afterwards
+	// (configuration-live-reload.md: subsystem). It takes precedence over cfg.
+	cfgFn func() WebSocketConfig
+
 	// logger is an optional callback for logging WebSocket lifecycle events.
 	// If nil, events are silently discarded. The webapi package does not
 	// import the logging package to avoid circular dependencies — the
@@ -70,10 +76,22 @@ type WebSocketHandler struct {
 // WebSocketHandlerOption is a functional option for NewWebSocketHandler.
 type WebSocketHandlerOption func(*WebSocketHandler)
 
-// WithWebSocketConfig sets the WebSocket connection configuration.
+// WithWebSocketConfig sets the WebSocket connection configuration. Used as a
+// static fallback (and in tests); WithWebSocketConfigFunc supersedes it.
 func WithWebSocketConfig(cfg WebSocketConfig) WebSocketHandlerOption {
 	return func(h *WebSocketHandler) {
 		h.cfg = cfg
+	}
+}
+
+// WithWebSocketConfigFunc wires a live accessor for the connection
+// configuration. When set, each new connection reads the current timeouts from
+// it, so a server.websocket.* save applies to connections opened afterwards
+// while existing connections keep the values they started with. Takes
+// precedence over WithWebSocketConfig.
+func WithWebSocketConfigFunc(fn func() WebSocketConfig) WebSocketHandlerOption {
+	return func(h *WebSocketHandler) {
+		h.cfgFn = fn
 	}
 }
 
@@ -110,6 +128,11 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method_not_allowed","message":"WebSocket endpoint requires GET"}`, http.StatusMethodNotAllowed)
 		return
 	}
+
+	// Resolve the connection configuration once, up front. A live accessor
+	// (cfgFn) means a server.websocket.* save applies to new connections; this
+	// connection holds the value it started with for its lifetime.
+	wsCfg := h.resolveConfig()
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// We serve the frontend from the same origin, so no need for
@@ -148,7 +171,7 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// session_expires_at would be populated by the auth middleware
 		// if we had access to session data here. For now, omit it.
 	})
-	if err := h.writeEvent(r.Context(), conn, connectedEvt); err != nil {
+	if err := h.writeEvent(r.Context(), conn, connectedEvt, wsCfg.WriteTimeout); err != nil {
 		h.logf("DEBUG", "websocket client disconnected during handshake from %s: %v", r.RemoteAddr, err)
 		return
 	}
@@ -163,7 +186,7 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go h.readPump(ctx, cancel, conn, c, r.RemoteAddr)
 
 	// Start the ping ticker.
-	pingTicker := time.NewTicker(h.cfg.PingInterval)
+	pingTicker := time.NewTicker(wsCfg.PingInterval)
 	defer pingTicker.Stop()
 
 	// Write pump: drain the client's send channel and write events.
@@ -180,13 +203,13 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				conn.Close(websocket.StatusGoingAway, "server shutting down")
 				return
 			}
-			if err := h.writeEvent(ctx, conn, evt); err != nil {
+			if err := h.writeEvent(ctx, conn, evt, wsCfg.WriteTimeout); err != nil {
 				h.logf("DEBUG", "websocket write failed for %s: %v", r.RemoteAddr, err)
 				return
 			}
 
 		case <-pingTicker.C:
-			pingCtx, pingCancel := context.WithTimeout(ctx, h.cfg.WriteTimeout)
+			pingCtx, pingCancel := context.WithTimeout(ctx, wsCfg.WriteTimeout)
 			err := conn.Ping(pingCtx)
 			pingCancel()
 			if err != nil {
@@ -197,14 +220,24 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// writeEvent serialises an Event to JSON and writes it as a text frame.
-func (h *WebSocketHandler) writeEvent(ctx context.Context, conn *websocket.Conn, evt Event) error {
+// resolveConfig returns the connection configuration for a new connection. It
+// prefers the live accessor (cfgFn) when wired, falling back to the static cfg.
+func (h *WebSocketHandler) resolveConfig() WebSocketConfig {
+	if h.cfgFn != nil {
+		return h.cfgFn()
+	}
+	return h.cfg
+}
+
+// writeEvent serialises an Event to JSON and writes it as a text frame, bounded
+// by writeTimeout (resolved once per connection from the live config).
+func (h *WebSocketHandler) writeEvent(ctx context.Context, conn *websocket.Conn, evt Event, writeTimeout time.Duration) error {
 	data, err := json.Marshal(evt)
 	if err != nil {
 		return fmt.Errorf("marshalling event: %w", err)
 	}
 
-	writeCtx, cancel := context.WithTimeout(ctx, h.cfg.WriteTimeout)
+	writeCtx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 
 	return conn.Write(writeCtx, websocket.MessageText, data)

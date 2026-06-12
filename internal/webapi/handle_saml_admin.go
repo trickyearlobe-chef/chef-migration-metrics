@@ -52,7 +52,7 @@ func (r *Router) handleSAMLGenerateKeypair(w http.ResponseWriter, req *http.Requ
 
 	// Determine CN from config SP entity ID (fall back to generic).
 	cn := "chef-migration-metrics-sp"
-	for _, p := range r.cfg.Auth.Providers {
+	for _, p := range r.liveConfig().Auth.Providers {
 		if p.Type == "saml" && p.SPEntityID != "" {
 			cn = p.SPEntityID
 			break

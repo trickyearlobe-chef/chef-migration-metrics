@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +24,11 @@ import (
 type putConfigResponse struct {
 	Value           json.RawMessage `json:"value"`
 	RestartRequired bool            `json:"restart_required"`
+	// Reload is the real reload granularity needed for the change to take effect
+	// ("applied"/"subsystem"/"listener"/"process"). Derived from the section's
+	// appliers; RestartRequired is true iff this is "process". Omitted when empty
+	// (handlers that do not yet flow through the applier path).
+	Reload string `json:"reload,omitempty"`
 	// Warnings carries non-fatal advisories about a save that was accepted and
 	// stored anyway (e.g. an incomplete TLS certificate chain — tls-static.md
 	// § 2.2). Omitted when empty.
@@ -82,7 +86,15 @@ func (r *Router) putAdminConfigCollection(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Collection: input}, configstore.KeyCollection, false)
+	// Collection thresholds are read live per request (handle_nodes.go) — applied.
+	// collection.schedule needs the scheduler to reschedule in place (subsystem);
+	// when a rescheduler is wired the new cron applies live, otherwise only the
+	// schedule half silently needs a restart (the thresholds still apply live).
+	appliers := []Applier{appliedApplier}
+	if r.collectionRescheduler != nil {
+		appliers = append(appliers, r.collectionScheduleApplier(input.Schedule))
+	}
+	r.storeAdminConfigSection(w, req, &config.Config{Collection: input}, configstore.KeyCollection, appliers...)
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +140,8 @@ func (r *Router) putAdminConfigTargetVersions(w http.ResponseWriter, req *http.R
 		// Non-fatal: statuses will be recomputed on next scan cycle.
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{TargetChefVersions: input}, configstore.KeyTargetChefVersions, false)
+	// Target versions are pulled per collector run and read live by handlers — applied.
+	r.storeAdminConfigSection(w, req, &config.Config{TargetChefVersions: input}, configstore.KeyTargetChefVersions, appliedApplier)
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +173,8 @@ func (r *Router) putAdminConfigGitURLs(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{GitBaseURLs: input}, configstore.KeyGitBaseURLs, false)
+	// Git base URLs are pulled per collector run — applied.
+	r.storeAdminConfigSection(w, req, &config.Config{GitBaseURLs: input}, configstore.KeyGitBaseURLs, appliedApplier)
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +226,12 @@ func (r *Router) putAdminConfigConcurrency(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency, false)
+	// All six concurrency fields are read live at the next collection/run: the
+	// collector pulls org_collection/node_page/git_pull/cookbook_download from its
+	// run-start cfg refresh, and the cookstyle scanner, readiness evaluator, and
+	// node-kitchen factory now read their pool size live (Chunk G). The semaphores
+	// are rebuilt per batch, so there is no persistent pool to resize — applied.
+	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency, appliedApplier)
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +272,14 @@ func (r *Router) putAdminConfigLogging(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Logging: input}, configstore.KeyLogging, false)
+	// When a log-level setter is wired the level applies in place (subsystem);
+	// otherwise no applier is registered and the section keeps the pessimistic
+	// process default — honest restart_required.
+	var appliers []Applier
+	if r.logLevelSetter != nil {
+		appliers = append(appliers, r.logLevelApplier(input.Level))
+	}
+	r.storeAdminConfigSection(w, req, &config.Config{Logging: input}, configstore.KeyLogging, appliers...)
 }
 
 // ---------------------------------------------------------------------------
@@ -343,11 +369,14 @@ func (r *Router) putAdminConfigOrganisations(w http.ResponseWriter, req *http.Re
 		}
 	}
 
-	var postReload []func(context.Context) error
+	// Organisations are pulled per collector run (applied); when a reconcile hook
+	// is wired it re-applies the operational org table in place (subsystem). Worst
+	// of the two decides the flag — both are live, so restart_required stays false.
+	appliers := []Applier{appliedApplier}
 	if r.onOrganisationsChanged != nil {
-		postReload = append(postReload, r.onOrganisationsChanged)
+		appliers = append(appliers, subsystemApplier(r.onOrganisationsChanged))
 	}
-	r.storeAdminConfigSection(w, req, &config.Config{Organisations: input}, configstore.KeyOrganisations, false, postReload...)
+	r.storeAdminConfigSection(w, req, &config.Config{Organisations: input}, configstore.KeyOrganisations, appliers...)
 }
 
 // ---------------------------------------------------------------------------
@@ -387,14 +416,20 @@ func decodeAdminConfigBody(w http.ResponseWriter, req *http.Request, target any)
 }
 
 // storeAdminConfigSection serialises the named key from partial via
-// ConfigToSections, writes it to the config store, optionally triggers a
-// ConfigHolder reload, and responds with the stored JSON on success.
-// postReload hooks run after the section is stored and the live config has
-// reloaded, before the success response is written. A hook error fails the
-// request with 500 (the section is already persisted, but the running app
-// could not be brought into sync — surfacing the error is better than a silent
-// drift). Used by the organisations PUT to reconcile the operational org table.
-func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Request, partial *config.Config, key string, restartRequired bool, postReload ...func(context.Context) error) {
+// ConfigToSections, writes it to the config store, triggers a ConfigHolder
+// reload, runs the section's appliers, and responds with the stored JSON.
+//
+// restart_required is *derived*, never declared: each applier reports the
+// reload granularity it actually needed, and the worst one decides the flag
+// (true iff "process"). A section that registers no applier defaults
+// pessimistically to "process" — honest about the fact that nothing has been
+// taught to apply the change live yet (configuration-live-reload.md).
+//
+// An applier runs after the section is persisted and the holder has reloaded;
+// an applier error fails the request with 500 (the section is already
+// persisted, but the running app could not be brought into sync — surfacing the
+// error is better than a silent drift).
+func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Request, partial *config.Config, key string, appliers ...Applier) {
 	sections, err := configstore.ConfigToSections(partial)
 	if err != nil {
 		r.logf("ERROR", "admin/config/%s: serialise: %v", key, err)
@@ -417,15 +452,23 @@ func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Reques
 		}
 	}
 
-	for _, hook := range postReload {
-		if err := hook(req.Context()); err != nil {
-			r.logf("ERROR", "admin/config/%s: post-update hook: %v", key, err)
+	results := make([]ApplyResult, 0, len(appliers))
+	for _, apply := range appliers {
+		res, err := apply(req.Context())
+		if err != nil {
+			r.logf("ERROR", "admin/config/%s: apply: %v", key, err)
 			WriteInternalError(w, "Failed to apply config change.")
 			return
 		}
+		results = append(results, res)
 	}
 
-	WriteJSON(w, http.StatusOK, putConfigResponse{Value: value, RestartRequired: restartRequired})
+	reload := worstGranularity(results)
+	WriteJSON(w, http.StatusOK, putConfigResponse{
+		Value:           value,
+		RestartRequired: reload == ReloadProcess,
+		Reload:          reload.String(),
+	})
 }
 
 // writeAdminConfigSection serialises the named key from partial and writes

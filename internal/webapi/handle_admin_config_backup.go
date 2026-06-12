@@ -54,5 +54,13 @@ func (r *Router) putAdminConfigBackup(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
-	r.storeAdminConfigSection(w, req, &config.Config{Backup: input}, configstore.KeyBackup, false)
+	// When a backup reconciler is wired, the scheduler is started/stopped/
+	// rescheduled in place to match the stored config (subsystem). Without one
+	// the backup section has no applier and stays at the pessimistic process
+	// default — honest about the fact that the change only takes effect on restart.
+	var appliers []Applier
+	if r.backupReconciler != nil {
+		appliers = append(appliers, r.backupApplier())
+	}
+	r.storeAdminConfigSection(w, req, &config.Config{Backup: input}, configstore.KeyBackup, appliers...)
 }

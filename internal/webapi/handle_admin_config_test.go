@@ -131,6 +131,13 @@ func newTestRouterForAdminConfig(cfg *config.Config, store *configstore.Store, h
 	return NewRouter(ms, cfg, hub, opts...)
 }
 
+// newTestConfigHolder builds a ConfigHolder backed by the given store so that a
+// PUT handler's post-save Reload reflects the persisted change in liveConfig().
+func newTestConfigHolder(t *testing.T, store *configstore.Store, cfg *config.Config) *configstore.ConfigHolder {
+	t.Helper()
+	return configstore.NewConfigHolder(cfg, store)
+}
+
 // decodeBody is a test helper that decodes a JSON response body into v.
 func decodeBody(t *testing.T, r *httptest.ResponseRecorder, v any) {
 	t.Helper()
@@ -633,6 +640,30 @@ func TestAdminConfigConcurrency_PUT_Success(t *testing.T) {
 	}
 }
 
+// All six concurrency fields are read live at the next collection/run (the
+// collector pulls from its run-start cfg refresh; the cookstyle scanner,
+// readiness evaluator, and node-kitchen factory read their pool size live), so
+// the section reports applied/false, not the pessimistic process default.
+func TestAdminConfigConcurrency_PUT_AppliedReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	body := `{"organisation_collection":5,"node_page_fetching":10,"git_pull":8,"cookbook_download":4,"cookstyle_scan":6,"readiness_evaluation":20}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/concurrency", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("concurrency PUT should not require restart (read live at next run)")
+	}
+	if resp.Reload != ReloadApplied.String() {
+		t.Errorf("concurrency reload = %q, want %q", resp.Reload, ReloadApplied.String())
+	}
+}
+
 func TestAdminConfigConcurrency_PUT_503_NilStore(t *testing.T) {
 	r := newTestRouterForAdminConfig(nil, nil, nil)
 
@@ -738,6 +769,158 @@ func TestAdminConfigLogging_GET_NilStore(t *testing.T) {
 	assertStatus(t, w, http.StatusOK)
 }
 
+// With a collection rescheduler wired, the collection section applies a
+// schedule change in place (subsystem) and reports restart_required:false — the
+// cron is no longer immutable at runtime. The thresholds still read live.
+func TestAdminConfigCollection_PUT_WithRescheduler_SubsystemReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	var gotSchedule string
+	calls := 0
+	resched := func(schedule string) error {
+		gotSchedule = schedule
+		calls++
+		return nil
+	}
+	r := newTestRouterForAdminConfig(nil, store, nil, WithCollectionRescheduler(resched))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/collection",
+		strings.NewReader(`{"schedule":"0 3 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("collection PUT with a rescheduler should not require restart")
+	}
+	if resp.Reload != ReloadSubsystem.String() {
+		t.Errorf("collection reload = %q, want %q", resp.Reload, ReloadSubsystem.String())
+	}
+	if calls != 1 {
+		t.Errorf("rescheduler called %d times, want 1", calls)
+	}
+	if gotSchedule != "0 3 * * *" {
+		t.Errorf("rescheduler schedule = %q, want %q", gotSchedule, "0 3 * * *")
+	}
+}
+
+// A rescheduler error (the schedule could not be applied) surfaces as a 500 —
+// better than silently claiming the new schedule is live when it is not.
+func TestAdminConfigCollection_PUT_ReschedulerError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	resched := func(string) error { return errors.New("reschedule failed") }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithCollectionRescheduler(resched))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/collection",
+		strings.NewReader(`{"schedule":"0 3 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/v1/admin/config/backup
+// ---------------------------------------------------------------------------
+
+// Without a backup reconciler wired, the backup section registers no applier and
+// falls to the pessimistic process default — honest restart_required:true.
+func TestAdminConfigBackup_PUT_NoReconciler_ProcessDefault(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/backup",
+		strings.NewReader(`{"enabled":true,"max_generations":7,"schedule":"0 3 * * *"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if !resp.RestartRequired {
+		t.Error("backup PUT without a reconciler should require restart (process default)")
+	}
+	if resp.Reload != ReloadProcess.String() {
+		t.Errorf("backup reload = %q, want %q", resp.Reload, ReloadProcess.String())
+	}
+}
+
+// With a backup reconciler wired, the section reconciles the running scheduler in
+// place (subsystem) and reports restart_required:false — enable/disable/reschedule
+// no longer need a process restart.
+func TestAdminConfigBackup_PUT_WithReconciler_SubsystemReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	calls := 0
+	reconcile := func() error {
+		calls++
+		return nil
+	}
+	r := newTestRouterForAdminConfig(nil, store, nil, WithBackupReconciler(reconcile))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/backup",
+		strings.NewReader(`{"enabled":true,"max_generations":7,"schedule":"0 3 * * *"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("backup PUT with a reconciler should not require restart")
+	}
+	if resp.Reload != ReloadSubsystem.String() {
+		t.Errorf("backup reload = %q, want %q", resp.Reload, ReloadSubsystem.String())
+	}
+	if calls != 1 {
+		t.Errorf("reconciler called %d times, want 1", calls)
+	}
+}
+
+// A reconciler error (the scheduler could not be brought into sync) surfaces as a
+// 500 — better than silently claiming the change is live when it is not.
+func TestAdminConfigBackup_PUT_ReconcilerError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	reconcile := func() error { return errors.New("reconcile failed") }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithBackupReconciler(reconcile))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/backup",
+		strings.NewReader(`{"enabled":true,"max_generations":7,"schedule":"0 3 * * *"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/v1/admin/config/exports
+// ---------------------------------------------------------------------------
+
+// The exports section is read live per request (handler reads) and its export
+// writers create the output dir on demand; the cleanup ticker deletes by stored
+// per-job FilePath, not a dir. So there is nothing to re-apply on a save — the
+// section registers appliedApplier and reports applied/false, not the pessimistic
+// process default.
+func TestAdminConfigExports_PUT_AppliedReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/exports",
+		strings.NewReader(`{"async_threshold":1000,"max_rows":50000,"retention_hours":24,"output_directory":"/tmp/exports"}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("exports PUT should not require restart (read live + on-demand dir)")
+	}
+	if resp.Reload != ReloadApplied.String() {
+		t.Errorf("exports reload = %q, want %q", resp.Reload, ReloadApplied.String())
+	}
+}
+
 // ---------------------------------------------------------------------------
 // PUT /api/v1/admin/config/logging
 // ---------------------------------------------------------------------------
@@ -753,10 +936,103 @@ func TestAdminConfigLogging_PUT_Success(t *testing.T) {
 
 	assertStatus(t, w, http.StatusOK)
 	var got map[string]any
-	decodePutValue(t, w, &got)
+	restartRequired := decodePutValue(t, w, &got)
 	if got["level"] != "DEBUG" {
 		t.Errorf("level = %v, want DEBUG", got["level"])
 	}
+	// No log-level setter wired here, so the logging section registers no applier
+	// and falls to the pessimistic process default — honest restart_required:true.
+	// (With a setter it reports subsystem/false — see the WithSetter test.)
+	if !restartRequired {
+		t.Error("logging PUT without a setter should require restart (process default)")
+	}
+}
+
+// A section with a live applier reports the real granularity and does not require
+// a restart; a section with none defaults pessimistically to process.
+func TestAdminConfigReload_GranularityReported(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	put := func(path, body string) putConfigResponse {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
+		r.ServeHTTP(w, req)
+		assertStatus(t, w, http.StatusOK)
+		var resp putConfigResponse
+		decodeBody(t, w, &resp)
+		return resp
+	}
+
+	// collection is read live per request (applied) -> false, reload "applied".
+	col := put("/api/v1/admin/config/collection",
+		`{"schedule":"0 2 * * *","stale_node_threshold_days":30,"stale_cookbook_threshold_days":90}`)
+	if col.RestartRequired {
+		t.Error("collection PUT should not require restart (applied)")
+	}
+	if col.Reload != ReloadApplied.String() {
+		t.Errorf("collection reload = %q, want %q", col.Reload, ReloadApplied.String())
+	}
+
+	// logging has no setter wired here -> no applier -> process -> true.
+	log := put("/api/v1/admin/config/logging", `{"level":"DEBUG","retention_days":14}`)
+	if !log.RestartRequired {
+		t.Error("logging PUT should require restart (process)")
+	}
+	if log.Reload != ReloadProcess.String() {
+		t.Errorf("logging reload = %q, want %q", log.Reload, ReloadProcess.String())
+	}
+}
+
+// With a log-level setter wired, the logging section applies the new level in
+// place (subsystem) and reports restart_required:false — the level is no longer
+// immutable at runtime.
+func TestAdminConfigLogging_PUT_WithSetter_SubsystemReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	var gotLevel string
+	calls := 0
+	setter := func(level string) error {
+		gotLevel = level
+		calls++
+		return nil
+	}
+	r := newTestRouterForAdminConfig(nil, store, nil, WithLogLevelSetter(setter))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/logging",
+		strings.NewReader(`{"level":"DEBUG","retention_days":14}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("logging PUT with a setter should not require restart")
+	}
+	if resp.Reload != ReloadSubsystem.String() {
+		t.Errorf("logging reload = %q, want %q", resp.Reload, ReloadSubsystem.String())
+	}
+	if calls != 1 {
+		t.Errorf("setter called %d times, want 1", calls)
+	}
+	if gotLevel != "DEBUG" {
+		t.Errorf("setter level = %q, want DEBUG", gotLevel)
+	}
+}
+
+// An applier error (the level could not be applied) surfaces as a 500 — better
+// than silently claiming a change is live when the subsystem rejected it.
+func TestAdminConfigLogging_PUT_SetterError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	setter := func(string) error { return errors.New("set level failed") }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithLogLevelSetter(setter))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/logging",
+		strings.NewReader(`{"level":"DEBUG","retention_days":14}`))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
 }
 
 func TestAdminConfigLogging_PUT_CaseInsensitiveLevel(t *testing.T) {

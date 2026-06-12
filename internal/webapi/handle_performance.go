@@ -72,7 +72,7 @@ func (r *Router) handlePerformanceGet(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, performanceResponse{
-		WindowSeconds: r.cfg.Performance.WindowSeconds,
+		WindowSeconds: r.liveConfig().Performance.WindowSeconds,
 		Endpoints:     endpoints,
 	})
 }

@@ -184,6 +184,46 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 - [ ] **`specifications/datastore.md` is a stub** — the datastore is referenced by ~10 other specs but has no full prose specification; the authoritative schema currently lives only in `migrations/*.up.sql`. A stub was added (during the spec-split/link-fix work) so cross-spec links resolve and the LLM is oriented. **Fix:** write the full datastore spec — table definitions and relationships, data-access patterns per consuming component (collector, analysis, web API, ownership), and retention/snapshot behaviour — using the migrations as the source of truth.
 
+## TLS — Dead `GracefulShutdownTimeout` Listener Field
+
+- [ ] **`apptls.ListenerConfig.GracefulShutdownTimeout` is set but never read.** `main.go` populates it at listener construction (static/self-signed paths) and `tls/listener.go` defaults it to 15s, but the actual drain budget comes from the `context.Context` passed to `Listener.Shutdown(ctx)` in `awaitShutdown` — the field is never consulted. Noticed during config live-reload H1 (graceful_shutdown_seconds now resolved live at shutdown time). **Fix:** remove the field and its boot-time assignments, or wire it through if a per-listener override is ever wanted (it is not today).
+
+## Config Live-Reload — Listener Rebind Scope Gaps (H2)
+
+Recorded 2026-06-12 (listener-rebind H2: in-place `listen_address`/`port` rebind).
+
+- [ ] **Listen rebind not wired for ACME.** `serverctl.Controller` is adopted for plain-`off` mode, for healthy static TLS where a single HTTPS listener owns the configured port (`https443Ln == nil`, with an optional explicit `http_redirect_port` redirect listener — H4b-2), and for the active auto-443 lifeboat (`https443Ln != nil` — H4b-3, same-mode static changes re-plan 443 + redirects in place). ACME still owns a port-80 challenge/redirect listener and a renewer that need a topology-aware re-plan (HTTPS + challenge/redirect + renewer cancel/restart) that **H4c** owns. Until then a `listen_address`/`port`/`tls` change in ACME mode reports `restart_required` (the no-rebinder fallback) and applies on the next restart. **Strategic fix:** land the H4c ACME rebuild, adopting a topology-aware controller for that mode. **Auto-443 residual (H4b-3):** leaving the auto-443 topology — a mode change (static→off/acme) or a `listen_address` change that moves the HTTPS bind — stays restart-required (refused → `ErrNoListenerRebinder`); only same-443-target static changes re-plan in place.
+- [ ] **SIGHUP after a TLS port rebind reloads the stale boot listener's CertManager.** `awaitShutdown`'s SIGHUP branch calls `srv.tlsListener.CertManager().Reload()`, but after a rebind the live listener is the controller's, not `srv.tlsListener`. A file-source cert change is still picked up within 30s by the new listener's `WatchForChanges` poll, so this only delays an *explicit* SIGHUP reload. **Fix:** route the SIGHUP reload through the controller's current listener (e.g. expose the live CertManager from the controller), folding in with the H4 topology work.
+
+## Config Live-Reload — Listener Rebind Scope Gaps (H4a)
+
+Recorded 2026-06-12 (listener-rebind H4a: in-place off↔static mode transition).
+
+- [x] **RESOLVED (H4b-3, pending removal confirmation) — auto-443 lifeboat re-plan.** The controller is now adopted at boot when auto-443 is active (`https443Ln != nil`); a same-mode static change re-plans HTTPS-on-the-lifeboat-port + its redirects in place via `effectiveTLSTopology`. Residual (leaving the topology — mode/listen_address change — stays restart-required) is folded into the ACME item above.
+- [ ] **static→off leaves a stale `tlsReload` pointer.** `buildTLSInstance` re-points `app.tlsReload` at each new HTTPS CertManager, but `buildPlainInstance` (static→off) does not clear it, so a later db-cert save in `off` mode calls Reload on the drained listener's CertManager (best-effort, logged warn; harmless as `off` serves no TLS). **Fix:** clear tlsReload when rebinding to a plain listener.
+
+## Config Live-Reload — ACME Rebind Scope Gaps (H4c-2a)
+
+Recorded 2026-06-12 (listener-rebind H4c-2a: in-place acme→off/static exit).
+
+- [ ] **acme exit always releases-first, even on a clean-port target.** An acme→off/static
+  save drains the whole acme Instance before binding the replacement (the live acme
+  topology holds HTTPS + port-80 challenge + any redirect, so bind-new-first could clash).
+  When the off/static target shares no port with the live acme topology, bind-new-first
+  would be strictly safer (a failed bind is a no-op). **Fix:** when the target ports don't
+  overlap the live acme topology, use `Rebind` (bind-new-first) instead of `RebindInPlace`.
+  Minor: a post-release bind failure on a clean-port exit briefly leaves HTTPS down until
+  restart (non-physical — we just freed the ports). Mirrors the H4a same-port residual.
+- [ ] **Entry into acme + acme-internal/port changes still restart-required.** off/static→acme
+  and any acme-internal save (domains/email/challenge/ca_url/dns/min_version/http_redirect_port/
+  server.port) are refused (→ `ErrNoListenerRebinder`). **Fix:** H4c-2b — dispatch an acme
+  target via an on-demand `buildACMEInstance` closure (renewer restart, `acmeTrigger` repoint,
+  port-80 challenge pre-bind+retry, auto-443 + fail-open reconciled).
+- [ ] **`acmeActive` is mutated by the applier without a lock.** Set at boot and cleared on a
+  successful exit from within `applyServerListener`; relies on admin server-config saves being
+  serialized. **Fix:** guard with the controller lock (or fold acme-ness into the controller
+  key) if concurrent saves ever become possible.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

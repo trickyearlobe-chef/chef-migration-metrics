@@ -45,9 +45,15 @@ type Scheduler struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 
-	// mu protects started.
+	// mu protects started and schedule (the loop reads schedule under mu each
+	// iteration; Reschedule swaps it).
 	mu      sync.Mutex
 	started bool
+
+	// reschedule wakes the loop when the schedule is swapped live so it stops
+	// the pending timer and recomputes the next fire from the new schedule.
+	// Buffered (size 1) with non-blocking sends, so bursts coalesce.
+	reschedule chan struct{}
 
 	// clock is used for time operations. Defaults to time.Now. Override
 	// in tests via WithClock.
@@ -90,10 +96,11 @@ func NewScheduler(
 	opts ...SchedulerOption,
 ) *Scheduler {
 	s := &Scheduler{
-		collector: collector,
-		schedule:  schedule,
-		logger:    logger,
-		clock:     time.Now,
+		collector:  collector,
+		schedule:   schedule,
+		logger:     logger,
+		reschedule: make(chan struct{}, 1),
+		clock:      time.Now,
 		newTimer: func(d time.Duration) (<-chan time.Time, func() bool) {
 			t := time.NewTimer(d)
 			return t.C, t.Stop
@@ -148,6 +155,30 @@ func (s *Scheduler) TriggerNow(ctx context.Context) (*RunResult, error) {
 	return s.collector.Run(ctx)
 }
 
+// Reschedule swaps the active cron schedule and wakes the loop so the new
+// schedule drives the next tick immediately — no scheduler restart. Safe to
+// call concurrently with the running loop. If the scheduler has not started,
+// it simply updates the schedule that Start will use. A nil schedule is
+// ignored.
+func (s *Scheduler) Reschedule(schedule CronParser) {
+	if schedule == nil {
+		return
+	}
+	s.mu.Lock()
+	s.schedule = schedule
+	started := s.started
+	s.mu.Unlock()
+	if !started {
+		return
+	}
+	// Non-blocking signal — the buffered channel coalesces bursts; the loop
+	// re-reads s.schedule on its next iteration.
+	select {
+	case s.reschedule <- struct{}{}:
+	default:
+	}
+}
+
 // loop is the main scheduling goroutine. It calculates the time until the
 // next cron tick, sleeps, and then triggers a collection run.
 func (s *Scheduler) loop(ctx context.Context) {
@@ -157,7 +188,10 @@ func (s *Scheduler) loop(ctx context.Context) {
 
 	for {
 		now := s.clock()
-		nextFire := s.schedule.Next(now)
+		s.mu.Lock()
+		schedule := s.schedule
+		s.mu.Unlock()
+		nextFire := schedule.Next(now)
 		if nextFire.IsZero() {
 			log.Error("cron schedule will never fire again — stopping scheduler")
 			return
@@ -178,6 +212,13 @@ func (s *Scheduler) loop(ctx context.Context) {
 			timerStop()
 			log.Info("scheduler shutting down")
 			return
+
+		case <-s.reschedule:
+			// Schedule changed live — drop the pending timer and recompute
+			// the next fire from the new schedule.
+			timerStop()
+			log.Info("collection schedule updated — recalculating next run")
+			continue
 
 		case <-timerCh:
 			// Timer fired — attempt to run collection.

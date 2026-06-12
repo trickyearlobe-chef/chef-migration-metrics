@@ -364,3 +364,23 @@ func containsLine(output, line string) bool {
 	}
 	return false
 }
+
+// TestRunnerFactory_Concurrency_Live verifies the factory resolves the
+// cookbook-download concurrency live on each run via ConcurrencyFn, and
+// reports 0 (assembly default) when no provider is wired.
+func TestRunnerFactory_Concurrency_Live(t *testing.T) {
+	var f RunnerFactory
+	if got := f.concurrency(); got != 0 {
+		t.Errorf("no provider: concurrency = %d, want 0", got)
+	}
+
+	live := 4
+	f.ConcurrencyFn = func() int { return live }
+	if got := f.concurrency(); got != 4 {
+		t.Errorf("live concurrency = %d, want 4", got)
+	}
+	live = 12
+	if got := f.concurrency(); got != 12 {
+		t.Errorf("live concurrency after change = %d, want 12", got)
+	}
+}

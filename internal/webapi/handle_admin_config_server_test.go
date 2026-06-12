@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -12,6 +13,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -237,6 +239,415 @@ func TestAdminConfigServer_PUT_Success_WithWebSocket(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusOK)
+}
+
+// A save that changes only graceful_shutdown_seconds applies live (it is read at
+// shutdown time), so the response reports applied / restart_required=false even
+// though the bundled PUT also rewrites the listener/TLS/websocket keys with
+// unchanged values (config live-reload listener-rebind H1).
+func TestAdminConfigServer_PUT_GracefulOnlyChange_Applied(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.ListenAddress = "127.0.0.1"
+	cfg.Server.Port = 8080
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	cfg.Server.GracefulShutdownSeconds = 30
+
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	// Body identical to the live server config except graceful_shutdown_seconds,
+	// so only that sub-key differs in the diff.
+	liveJSON, err := configstore.SerializeValue(cfg.Server)
+	if err != nil {
+		t.Fatalf("serialise live server: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(liveJSON, &body); err != nil {
+		t.Fatalf("unmarshal live server: %v", err)
+	}
+	body["graceful_shutdown_seconds"] = 45
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("graceful-only change must not require a restart")
+	}
+	if resp.Reload != "applied" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "applied")
+	}
+
+	stored, err := store.Get(context.Background(), configstore.KeyServerGracefulShutdown)
+	if err != nil {
+		t.Fatalf("store.Get graceful: %v", err)
+	}
+	if strings.TrimSpace(string(stored)) != "45" {
+		t.Errorf("stored graceful = %s, want 45", stored)
+	}
+}
+
+// A save that changes a websocket sub-key applies live (subsystem): the hub is
+// reconfigured in place, so the response reports subsystem / restart_required
+// =false and the new limits are visible on the running hub (H3).
+func TestAdminConfigServer_PUT_WebSocketChange_Subsystem(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.ListenAddress = "127.0.0.1"
+	cfg.Server.Port = 8080
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	cfg.Server.WebSocket.MaxConnections = 50
+	cfg.Server.WebSocket.SendBufferSize = 32
+
+	store := newTestConfigStore(t)
+	holder := newTestConfigHolder(t, store, cfg)
+	r := newTestRouterForAdminConfig(cfg, store, holder)
+
+	liveJSON, err := configstore.SerializeValue(cfg.Server)
+	if err != nil {
+		t.Fatalf("serialise live server: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(liveJSON, &body); err != nil {
+		t.Fatalf("unmarshal live server: %v", err)
+	}
+	body["websocket"].(map[string]any)["max_connections"] = 99
+	body["websocket"].(map[string]any)["send_buffer_size"] = 128
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("websocket change applies live and must not require a restart")
+	}
+	if resp.Reload != "subsystem" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "subsystem")
+	}
+
+	// The running hub was reconfigured in place.
+	if got := r.hub.maxConnections.Load(); got != 99 {
+		t.Errorf("hub maxConnections = %d, want 99 (reconfigured live)", got)
+	}
+	if got := r.hub.sendBufferSize.Load(); got != 128 {
+		t.Errorf("hub sendBufferSize = %d, want 128 (reconfigured live)", got)
+	}
+}
+
+// recordingRebinder captures the config a save asked to apply and returns a
+// configurable granularity/error, standing in for the server controller.
+type recordingRebinder struct {
+	gran   ReloadGranularity
+	err    error
+	calls  int
+	gotCfg config.ServerConfig
+}
+
+func (rb *recordingRebinder) fn(cfg config.ServerConfig) (ReloadGranularity, error) {
+	rb.calls++
+	rb.gotCfg = cfg
+	return rb.gran, rb.err
+}
+
+// serverBodyWithPort serialises the live server config and overrides only the
+// port, so the diff isolates a listen-section change.
+func serverBodyWithPort(t *testing.T, cfg *config.Config, port int) []byte {
+	t.Helper()
+	liveJSON, err := configstore.SerializeValue(cfg.Server)
+	if err != nil {
+		t.Fatalf("serialise live server: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(liveJSON, &body); err != nil {
+		t.Fatalf("unmarshal live server: %v", err)
+	}
+	body["port"] = port
+	out, _ := json.Marshal(body)
+	return out
+}
+
+func serverTestConfig(port int) *config.Config {
+	cfg := testConfig()
+	cfg.Server.ListenAddress = "127.0.0.1"
+	cfg.Server.Port = port
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	return cfg
+}
+
+// A changed listen target with an in-place rebinder wired applies live: the
+// rebinder is called with the new address/port and the save reports listener /
+// restart_required=false.
+func TestAdminConfigServer_PUT_ListenChange_RebindsLive(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	store := newTestConfigStore(t)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	newPort := freeTestPort(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(serverBodyWithPort(t, cfg, newPort)))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("live listener rebind must not require a restart")
+	}
+	if resp.Reload != "listener" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "listener")
+	}
+	if rb.calls != 1 {
+		t.Fatalf("rebinder calls = %d, want 1", rb.calls)
+	}
+	if rb.gotCfg.ListenAddress != "127.0.0.1" || rb.gotCfg.Port != newPort {
+		t.Errorf("rebinder called with %s:%d, want 127.0.0.1:%d", rb.gotCfg.ListenAddress, rb.gotCfg.Port, newPort)
+	}
+}
+
+// With no rebinder wired, a changed listen target is persisted but reported
+// restart-required (the no-rebinder fallback path).
+func TestAdminConfigServer_PUT_ListenChange_NoRebinder_Process(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	newPort := freeTestPort(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(serverBodyWithPort(t, cfg, newPort)))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if !resp.RestartRequired {
+		t.Error("listen change with no rebinder must require a restart")
+	}
+	if resp.Reload != "process" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "process")
+	}
+}
+
+// When the in-place rebind fails (the new port is held by another process), the
+// save returns 500 — the old listener keeps serving.
+func TestAdminConfigServer_PUT_ListenChange_RebindError_500(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	store := newTestConfigStore(t)
+	rb := &recordingRebinder{err: errors.New("listen tcp 127.0.0.1:9999: bind: address already in use")}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	newPort := freeTestPort(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(serverBodyWithPort(t, cfg, newPort)))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+	assertErrorCode(t, w, ErrCodeInternalError)
+	if rb.calls != 1 {
+		t.Errorf("rebinder calls = %d, want 1", rb.calls)
+	}
+}
+
+// A save that does not touch the listen section must not invoke the rebinder,
+// even with one wired (here only graceful_shutdown_seconds changes).
+func TestAdminConfigServer_PUT_NonListenChange_NoRebind(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	cfg.Server.GracefulShutdownSeconds = 30
+	store := newTestConfigStore(t)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["graceful_shutdown_seconds"] = 45
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if rb.calls != 0 {
+		t.Errorf("rebinder called %d times on a non-listen change; want 0", rb.calls)
+	}
+	if resp.Reload != "applied" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "applied")
+	}
+}
+
+// seedDBCertPair stores a (dummy) cert_source: db certificate/key pair so a
+// mode: static cert_source: db save validates without resubmitting the pair.
+func seedDBCertPair(t *testing.T, store *configstore.Store) {
+	t.Helper()
+	ctx := context.Background()
+	certJSON, _ := json.Marshal("-----BEGIN CERTIFICATE-----\nseed\n-----END CERTIFICATE-----")
+	if err := store.Set(ctx, configstore.KeyServerTLSCertificate, certJSON, false, "test"); err != nil {
+		t.Fatalf("seed cert: %v", err)
+	}
+	keyJSON, _ := json.Marshal("-----BEGIN PRIVATE KEY-----\nseed\n-----END PRIVATE KEY-----")
+	if err := store.Set(ctx, configstore.KeyServerTLSPrivateKey, keyJSON, true, "test"); err != nil {
+		t.Fatalf("seed key: %v", err)
+	}
+}
+
+// An off→static mode toggle with a port change is applied live by the rebinder:
+// it is called with the static target and the save reports listener /
+// restart_required=false (H4a).
+func TestAdminConfigServer_PUT_ModeToggle_RebindsLive(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	store := newTestConfigStore(t)
+	seedDBCertPair(t, store)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	newPort := freeTestPort(t)
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["port"] = newPort
+	body["tls"] = map[string]any{"mode": "static", "cert_source": "db"}
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("live off→static rebind must not require a restart")
+	}
+	if resp.Reload != "listener" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "listener")
+	}
+	if rb.calls != 1 {
+		t.Fatalf("rebinder calls = %d, want 1", rb.calls)
+	}
+	if rb.gotCfg.TLS.Mode != "static" || rb.gotCfg.Port != newPort {
+		t.Errorf("rebinder got mode=%q port=%d, want static %d", rb.gotCfg.TLS.Mode, rb.gotCfg.Port, newPort)
+	}
+}
+
+// A same-mode static field change (here min_version within static, no mode or
+// listen change) now reaches the in-place rebinder (H4b-1): it is called once with
+// the new config and the save reports listener / restart_required=false.
+func TestAdminConfigServer_PUT_SameModeTLSChange_RebindsLive(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	cfg.Server.TLS = config.TLSConfig{Mode: "static", CertSource: "db", MinVersion: "1.2"}
+	store := newTestConfigStore(t)
+	seedDBCertPair(t, store)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["tls"] = map[string]any{"mode": "static", "cert_source": "db", "min_version": "1.3"}
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if rb.calls != 1 {
+		t.Fatalf("rebinder calls = %d, want 1", rb.calls)
+	}
+	if rb.gotCfg.TLS.MinVersion != "1.3" {
+		t.Errorf("rebinder got min_version %q, want 1.3", rb.gotCfg.TLS.MinVersion)
+	}
+	if resp.RestartRequired || resp.Reload != "listener" {
+		t.Errorf("reload = %q restart=%v, want listener / false", resp.Reload, resp.RestartRequired)
+	}
+}
+
+// A static http_redirect_port change reaches the in-place rebinder (H4b-2): it is
+// called once with the new redirect port and the save reports listener /
+// restart_required=false (no longer restart-required as it was before H4b-2).
+func TestAdminConfigServer_PUT_RedirectPortChange_RebindsLive(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	cfg.Server.TLS = config.TLSConfig{Mode: "static", CertSource: "db"}
+	store := newTestConfigStore(t)
+	seedDBCertPair(t, store)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["tls"] = map[string]any{"mode": "static", "cert_source": "db", "http_redirect_port": 8081}
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if rb.calls != 1 {
+		t.Fatalf("rebinder calls = %d, want 1", rb.calls)
+	}
+	if rb.gotCfg.TLS.HTTPRedirectPort != 8081 {
+		t.Errorf("rebinder got http_redirect_port %d, want 8081", rb.gotCfg.TLS.HTTPRedirectPort)
+	}
+	if resp.RestartRequired || resp.Reload != "listener" {
+		t.Errorf("reload = %q restart=%v, want listener / false", resp.Reload, resp.RestartRequired)
+	}
+}
+
+// A same-mode static field change with no rebinder wired is persisted but reported
+// restart-required (the no-rebinder fallback).
+func TestAdminConfigServer_PUT_SameModeTLSChange_NoRebinder_Process(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	cfg.Server.TLS = config.TLSConfig{Mode: "static", CertSource: "db", MinVersion: "1.2"}
+	store := newTestConfigStore(t)
+	seedDBCertPair(t, store)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["tls"] = map[string]any{"mode": "static", "cert_source": "db", "min_version": "1.3"}
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if !resp.RestartRequired || resp.Reload != "process" {
+		t.Errorf("reload = %q restart=%v, want process / true", resp.Reload, resp.RestartRequired)
+	}
 }
 
 func TestAdminConfigServer_PUT_503_NilStore(t *testing.T) {

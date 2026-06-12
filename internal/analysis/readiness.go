@@ -266,6 +266,10 @@ type ReadinessEvaluator struct {
 	// configFn, when set, returns the current readiness config dynamically.
 	// This allows the evaluator to pick up config changes without a restart.
 	configFn func() ReadinessEvalConfig
+	// concurrencyFn, when set, returns the live max-parallel-evaluations value,
+	// read at the start of each evaluation so concurrency.readiness_evaluation
+	// applies at the next run without a restart. Falls back to baked concurrency.
+	concurrencyFn func() int
 }
 
 // ReadinessEvaluatorOption configures a ReadinessEvaluator.
@@ -280,6 +284,25 @@ func WithReadinessDataStore(ds ReadinessDataStore) ReadinessEvaluatorOption {
 // reads readiness config on each evaluation rather than using baked-in values.
 func WithConfigFunc(fn func() ReadinessEvalConfig) ReadinessEvaluatorOption {
 	return func(e *ReadinessEvaluator) { e.configFn = fn }
+}
+
+// WithReadinessConcurrencyFunc sets a live provider for the evaluation
+// concurrency. When set, the evaluator reads the worker-pool size on each
+// evaluation rather than using the value baked at construction, so
+// concurrency.readiness_evaluation applies at the next run without a restart.
+func WithReadinessConcurrencyFunc(fn func() int) ReadinessEvaluatorOption {
+	return func(e *ReadinessEvaluator) { e.concurrencyFn = fn }
+}
+
+// effectiveConcurrency returns the live concurrency when a provider is wired
+// (clamped to >= 1), otherwise the value baked at construction.
+func (e *ReadinessEvaluator) effectiveConcurrency() int {
+	if e.concurrencyFn != nil {
+		if n := e.concurrencyFn(); n >= 1 {
+			return n
+		}
+	}
+	return e.concurrency
 }
 
 // NewReadinessEvaluator creates an evaluator.
@@ -449,7 +472,7 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 
 	// Step 5: Fan out. evaluateOne uses only in-memory lookups (no DB calls),
 	// so context cancellation cannot corrupt evaluations.
-	sem := make(chan struct{}, e.concurrency)
+	sem := make(chan struct{}, e.effectiveConcurrency())
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	results := make([]ReadinessResult, 0, len(items))

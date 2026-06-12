@@ -1,5 +1,26 @@
 # Configuration — ToDo
 
+### Compatibility Guardrails (read before implementing)
+
+The fixes below MUST NOT break existing deployments. Hard rules:
+
+1. **No config-item renames or removals.** YAML keys, config-store `Key*` constants,
+   struct `yaml`/`json` tags, and env-var names stay byte-identical. Existing config
+   files and DB-stored sections must keep parsing. Changes are read/apply plumbing,
+   additive UI for existing fields, and additive DB columns only.
+2. **Preserve exact values when centralising defaults.** Dedup-to-a-const must keep the
+   identical value. Landmines: the `CMM_CREDENTIAL_ENCRYPTION_KEY` env-var *name string*
+   (wrong value ⇒ stored secrets won't decrypt); default literals (`exports` dir, port
+   `8080`, readiness `3072`/`6144` sentinels). Any *actual* default-value change is a
+   separate, explicitly-flagged decision — never a side effect of refactoring.
+3. **Keep legacy aliases.** `tls.enabled`→`mode`, legacy `test_kitchen_timeout_minutes`,
+   `readiness.min_free_disk_mb` back-compat shims stay. Do not delete in a cleanup pass.
+4. **`restart_required` value flips are the one intended contract change.** The applier
+   inversion + pessimistic default makes some sections report `true` where they returned
+   `false`. This is correct (honest reporting), but it changes the "Apply & Restart" UX
+   and breaks contract tests pinning specific values (e.g. `handle_admin_config_test.go:255`).
+   Update those assertions deliberately, not reflexively.
+
 ### Restart / Reload Audit (2026-06-11)
 
 Policy (`configuration-live-reload.md`): everything live-reloads except a small
@@ -27,17 +48,20 @@ claim and the behaviour drift. That drift IS the bug class.
 
 **Invert it: the subsystem owns the call; the flag is computed from the result.**
 
-- [ ] Evolve `postReload` into an applier the subsystem registers per section:
-  `type Applier func(ctx) (ApplyResult, error)` returning `ApplyResult{ Reload Granularity }`.
-- [ ] `storeAdminConfigSection`: persist → reload holder → run appliers →
-  `restartRequired := result.Reload == ReloadProcess`. Never pass the bool in.
-- [ ] **Default for a section with no applier = `process`** (pessimistic). Today's
-  default `false` *lies*; a pessimistic default at worst over-prompts a restart —
-  honest, never silently wrong. Adding a live applier flips the flag to `false`
-  automatically, so it can never drift again.
-- [ ] Appliers report `listener`/`subsystem` where applicable, so the API surfaces
-  the real granularity (e.g. a `port` change rebinds the listener and reports
-  `listener`, not `process`). The web layer becomes a dumb relay.
+DONE (`refactor/config-live-reload`, Chunk B): the machinery below shipped in
+`internal/webapi/config_apply.go` + `storeAdminConfigSection` rewrite. Remaining
+work is registering the real *subsystem* appliers in Bucket 2 (each flips its
+section from the pessimistic `process` default back to `false`).
+
+- [x] Evolve `postReload` into an applier the subsystem registers per section:
+  `type Applier func(ctx) (ApplyResult, error)` returning `ApplyResult{ Reload ReloadGranularity }`.
+- [x] `storeAdminConfigSection`: persist → reload holder → run appliers →
+  `restartRequired := worstGranularity(results) == ReloadProcess`. Bool no longer passed.
+- [x] **Default for a section with no applier = `process`** (pessimistic). Adding a
+  live applier flips the flag to `false` automatically, so it can never drift again.
+- [x] Granularity surfaced on the response (`putConfigResponse.Reload`, additive).
+  `listener` value exists for the future listener-rebind appliers (server/tls still
+  on their own hardcoded-`true` path until then). The web layer is now a relay.
 
 Do the trivial `r.cfg`→`r.liveConfig()` handler swaps (the `applied`-granularity
 items below) first — they're independent and unblock honest `false` immediately.
@@ -63,12 +87,12 @@ API returns `restart_required:false` but a boot-captured consumer no-ops the sav
 Each fix = register the applier named below (granularity in brackets); the flag
 then derives correctly with no literal to maintain.
 
-- [ ] `logging.level` — logger `level` is immutable (`logging.go:462,480`); no `SetLevel`. **Applier [subsystem]:** live level (e.g. `slog.LevelVar`/setter).
-- [ ] `collection.schedule` — cron parsed once; scheduler has no reschedule (`collector/scheduler.go`). **Applier [subsystem]:** add `Reschedule`.
-- [ ] `collection.stale_node_warning_hours` / `stale_node_critical_days` — read from static `r.cfg` (`handle_nodes.go:52,53,144,215`). **Fix [applied]:** `r.cfg`→`r.liveConfig()`.
-- [ ] `backup.schedule`, `backup.enabled` — `cronExpr` fixed in `NewScheduler` (`backup/scheduler.go:25`); no applier. **Applier [subsystem]:** reschedule/start/stop.
-- [ ] `exports.async_threshold` / `max_rows` / `retention_hours` / `output_directory` — static `r.cfg` (`handle_exports.go:103,108,146,206`); cleanup dir captured `main.go:1059`. **Fix [applied] + applier [subsystem]:** handler swap + re-point cleanup ticker.
-- [ ] `concurrency.cookstyle_scan`, `concurrency.readiness_evaluation` — baked into the scanner/evaluator analysis components at boot (`setupCollector`, `main.go:880–931`); the collector's run-start refresh does NOT reach them. **Applier [subsystem]:** resize live, mirroring kitchen `SetWorkerCount`. (`concurrency.cookbook_download` likewise snapshot at `main.go:1278` for the node-kitchen factory.)
+- [x] `logging.level` — DONE (`refactor/config-live-reload`, Chunk C). `Logger.level` now an `atomic.Int32` with `SetLevel`; webapi `logLevelApplier` (subsystem) wired via `WithLogLevelSetter` (string callback — webapi still doesn't import `logging`). Section reports subsystem/false when the setter is wired, process/true otherwise.
+- [x] `collection.schedule` — DONE (`refactor/config-live-reload`, Chunk D). `Scheduler.Reschedule(CronParser)` swaps the schedule under `s.mu` and signals a buffered `reschedule` chan; the loop reads the schedule under lock and a new select case recomputes `Next` on the live swap. webapi `collectionScheduleApplier` (subsystem) wired via `WithCollectionRescheduler` (string callback — webapi still doesn't import `collector`). Section reports subsystem/false when wired, applied/false otherwise.
+- [x] `collection.stale_node_warning_hours` / `stale_node_critical_days` — DONE (`refactor/config-live-reload`, Chunk A). `handle_nodes.go:52,53,144,215` already swapped to `r.liveConfig()`; the collection section's thresholds are applied/live.
+- [x] `backup.schedule`, `backup.enabled` — DONE (`refactor/config-live-reload`, Chunk E). `backup.Scheduler` gained `Reschedule(collector.CronParser)` (mu-guarded schedule swap + buffered `reschedule` chan signalling the loop, mirroring the collector scheduler). webapi `backupApplier` (subsystem) wired via `WithBackupReconciler` (parameterless `func() error` — webapi still doesn't import `backup`). main.go's reconciler reads the reloaded holder and reconciles `app.backupSched`: start when newly enabled, reschedule in place on a schedule change, stop+nil when disabled, all under a new `app.backupMu` (which also guards the restore hook). Section reports subsystem/false when wired, process/true otherwise.
+- [x] `exports.async_threshold` / `max_rows` / `retention_hours` / `output_directory` — DONE (`refactor/config-live-reload`, Chunk F). **Trace correction:** the original "[subsystem] re-point cleanup ticker" premise was wrong. `CleanupExpiredExports` deletes by each job's stored absolute `FilePath` (captured at creation, `handle_exports.go:215`), not by a dir — the `outputDir` param threaded through it and `StartCleanupTicker` was read nowhere (now removed). Handlers read all four fields live (Chunk A) and export writers `MkdirAll` on demand, so the section is fully **applied**; it just needed `appliedApplier` registered to flip the reported granularity from the pessimistic process/true to applied/false.
+- [x] `concurrency.cookstyle_scan`, `concurrency.readiness_evaluation`, `concurrency.cookbook_download` — DONE (`refactor/config-live-reload`, Chunk G). **Trace correction:** the "[subsystem] resize, mirror SetWorkerCount" premise was wrong — the scanner/evaluator build a fresh per-batch semaphore (no persistent pool to resize); the bug was the value being snapshotted at construction. Fix = read it live at batch start via a `func() int` provider (`WithCookstyleConcurrencyFunc`/`WithReadinessConcurrencyFunc`; `RunnerFactory.ConcurrencyFn`), the same pull-per-run model the collector already uses for org_collection/node_page/git_pull → **applied**, not subsystem. The node-kitchen factory (`main.go`) was the lone baked `cookbook_download` consumer (the collector's own reads were already live). webapi concurrency section registers `appliedApplier` → applied/false.
   - NOT restart: `concurrency.organisation_collection` / `node_page_fetching` are read from `c.cfg` *during* a run (`collector.go:605`, `node_metrics_snapshot.go:258`) and the collector refreshes `c.cfg = c.configFn()` at each run start (`collector.go:573`) → live at next run. (LSP xref correction to the earlier "all concurrency = restart" claim.)
 
 Other static-`r.cfg` read sites to convert to `liveConfig()` when touching their
@@ -136,8 +160,10 @@ is obsolete — all 6 `concurrency.*` workers are present; TK concurrency is
 
 Same logical value living in 2+ places that can drift. Ranked.
 
-- [ ] **`r.cfg` snapshot vs `liveConfig()`** (HIGH) — same root cause as restart Bucket 2
-  above; the inverted-applier fix + handler swaps resolve it. Don't fix twice.
+- [x] **`r.cfg` snapshot vs `liveConfig()`** (HIGH) — DONE (`refactor/config-live-reload`,
+  Chunk A). All non-test handler reads swapped to `r.liveConfig()`; LSP `findReferences`
+  confirmed no static `r.cfg` read sites remain in handlers (router.go setup-time reads
+  intentionally left). Resolved by the Bucket 2 fix, as predicted.
 - [ ] **`server.listen` carry-over duplicated** (HIGH) — "DB wins unless absent, else
   carry bootstrap" logic copied in `main.go:722-730` and `reloader.go:91-98`; must stay
   in lockstep by hand. **Fix:** extract one shared helper.

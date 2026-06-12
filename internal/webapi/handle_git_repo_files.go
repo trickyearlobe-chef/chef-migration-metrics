@@ -182,7 +182,7 @@ func (r *Router) handleGitRepoFileContent(w http.ResponseWriter, req *http.Reque
 // its local clone directory. Returns false if validation fails (response
 // already written).
 func (r *Router) resolveRepoDir(w http.ResponseWriter, repoName string) (string, bool) {
-	if r.cfg.Storage.GitCookbookDir == "" {
+	if r.liveConfig().Storage.GitCookbookDir == "" {
 		WriteError(w, http.StatusServiceUnavailable, "no_clone_dir",
 			"Git clone directory is not configured.")
 		return "", false
@@ -195,7 +195,7 @@ func (r *Router) resolveRepoDir(w http.ResponseWriter, repoName string) (string,
 		return "", false
 	}
 
-	repoDir := filepath.Join(r.cfg.Storage.GitCookbookDir, clean)
+	repoDir := filepath.Join(r.liveConfig().Storage.GitCookbookDir, clean)
 	if _, err := os.Stat(repoDir); err != nil {
 		if os.IsNotExist(err) {
 			WriteNotFound(w, "Repository clone not found. The repo may not have been cloned yet.")

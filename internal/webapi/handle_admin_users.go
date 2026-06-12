@@ -119,7 +119,7 @@ func (r *Router) handleAdminCreateUser(w http.ResponseWriter, req *http.Request)
 	}
 
 	// Validate password complexity.
-	minLen := r.cfg.Auth.MinPasswordLength
+	minLen := r.liveConfig().Auth.MinPasswordLength
 	if minLen <= 0 {
 		minLen = 8
 	}
@@ -299,7 +299,7 @@ func (r *Router) handleAdminResetPassword(w http.ResponseWriter, req *http.Reque
 	}
 
 	// Validate password complexity.
-	minLen := r.cfg.Auth.MinPasswordLength
+	minLen := r.liveConfig().Auth.MinPasswordLength
 	if minLen <= 0 {
 		minLen = 8
 	}

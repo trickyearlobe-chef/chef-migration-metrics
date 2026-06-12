@@ -6,6 +6,7 @@ package backup
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
@@ -13,12 +14,21 @@ import (
 
 // Scheduler runs backups on a cron schedule.
 type Scheduler struct {
-	svc      *Service
+	svc    *Service
+	logger func(level, msg string)
+	stopCh chan struct{}
+	doneCh chan struct{}
+	clock  func() time.Time
+
+	// mu protects schedule: the loop reads it under mu each iteration and
+	// Reschedule swaps it live.
+	mu       sync.Mutex
 	schedule collector.CronParser
-	logger   func(level, msg string)
-	stopCh   chan struct{}
-	doneCh   chan struct{}
-	clock    func() time.Time
+
+	// reschedule wakes the loop when the schedule is swapped live so it stops
+	// the pending timer and recomputes the next fire from the new schedule.
+	// Buffered (size 1) with non-blocking sends, so bursts coalesce.
+	reschedule chan struct{}
 }
 
 // NewScheduler creates a scheduler from a cron expression (5-field standard cron).
@@ -31,12 +41,13 @@ func NewScheduler(svc *Service, cronExpr string, logger func(level, msg string))
 		logger = func(_, _ string) {}
 	}
 	return &Scheduler{
-		svc:      svc,
-		schedule: sched,
-		logger:   logger,
-		stopCh:   make(chan struct{}),
-		doneCh:   make(chan struct{}),
-		clock:    time.Now,
+		svc:        svc,
+		schedule:   sched,
+		logger:     logger,
+		stopCh:     make(chan struct{}),
+		doneCh:     make(chan struct{}),
+		reschedule: make(chan struct{}, 1),
+		clock:      time.Now,
 	}, nil
 }
 
@@ -52,12 +63,33 @@ func (s *Scheduler) Stop() {
 	<-s.doneCh
 }
 
+// Reschedule swaps the active cron schedule and wakes the loop so the new
+// schedule drives the next backup immediately — no scheduler restart. Safe to
+// call concurrently with the running loop. A nil schedule is ignored.
+func (s *Scheduler) Reschedule(schedule collector.CronParser) {
+	if schedule == nil {
+		return
+	}
+	s.mu.Lock()
+	s.schedule = schedule
+	s.mu.Unlock()
+	// Non-blocking signal — the buffered channel coalesces bursts; the loop
+	// re-reads s.schedule on its next iteration.
+	select {
+	case s.reschedule <- struct{}{}:
+	default:
+	}
+}
+
 func (s *Scheduler) run(ctx context.Context) {
 	defer close(s.doneCh)
 
 	for {
 		now := s.clock()
-		next := s.schedule.Next(now)
+		s.mu.Lock()
+		schedule := s.schedule
+		s.mu.Unlock()
+		next := schedule.Next(now)
 		if next.IsZero() {
 			s.logger("error", "backup: schedule will never fire — stopping scheduler")
 			return
@@ -74,6 +106,12 @@ func (s *Scheduler) run(ctx context.Context) {
 		case <-s.stopCh:
 			timer.Stop()
 			return
+		case <-s.reschedule:
+			// Schedule changed live — drop the pending timer and recompute the
+			// next fire from the new schedule.
+			timer.Stop()
+			s.logger("info", "backup: schedule updated — recalculating next run")
+			continue
 		case <-timer.C:
 			s.runBackup(ctx)
 		}

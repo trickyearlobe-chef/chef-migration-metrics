@@ -34,7 +34,19 @@ type RunnerFactory struct {
 	Logger         Logger
 	TKConfigFn     func() config.TestKitchenConfig
 	GitCookbookDir string
-	Concurrency    int
+	// ConcurrencyFn returns the live max-concurrent-downloads value, read on
+	// each Run so concurrency.cookbook_download applies at the next node-kitchen
+	// run without a restart. When nil or <= 0, assembly falls back to its default.
+	ConcurrencyFn func() int
+}
+
+// concurrency resolves the live cookbook-download concurrency for a run,
+// returning 0 when no provider is wired (assembly clamps 0 to its default).
+func (f *RunnerFactory) concurrency() int {
+	if f.ConcurrencyFn != nil {
+		return f.ConcurrencyFn()
+	}
+	return 0
 }
 
 // Run creates an org-specific runner and delegates the run to it.
@@ -58,7 +70,7 @@ func (f *RunnerFactory) Run(ctx context.Context, req RunRequest) RunResult {
 		Logger:         f.Logger,
 		TKConfigFn:     f.TKConfigFn,
 		GitCookbookDir: f.GitCookbookDir,
-		Concurrency:    f.Concurrency,
+		Concurrency:    f.concurrency(),
 	})
 
 	return runner.Run(ctx, req)

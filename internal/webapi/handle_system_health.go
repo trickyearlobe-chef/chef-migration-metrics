@@ -21,7 +21,7 @@ func (r *Router) handleAdminSystemHealth(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	sh := r.cfg.SystemHealth
+	sh := r.liveConfig().SystemHealth
 
 	th := syshealth.Thresholds{
 		DiskUsedWarningPercent:  sh.DiskUsedWarningPercent,
