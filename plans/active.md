@@ -259,16 +259,27 @@ on-demand acme rebuild.
   listener, plain serves; acmeActive cleared; entry + acme-internal still refused.
   All `-race`.
 
-#### H4c-2b — acme ENTRY + internal/port change [in-place]
-- Applier dispatches an acme target via an on-demand `buildACMEInstance` closure
-  (refactored out of setupACME, fail-open to degraded self-signed inside the new
-  Instance), for off/static→acme entry and acme-internal changes (domains/email/
-  challenge/ca_url/dns/min_version/http_redirect_port/server.port) via an acme
-  fingerprint key → rebuild. Renewer cancel/restart through the Instance swap;
-  `acmeTrigger` repointed to the new renewer each rebuild; port-80 challenge
-  pre-bound with retry (like redirect ports) so a same-port rebind reclaims it;
-  an HTTPS-port-only change keeps the challenge reachable. Auto-443 in acme +
-  fail-open (degraded) interactions reconciled; deferrals → todo-tech-debt.
+#### H4c-2b — acme ENTRY + internal/port re-plan [WON'T DO — restart-required by design]
+Decided 2026-06-12. Entering ACME (off/static→acme) and acme-internal/port changes
+stay restart-required (the persisted change applies on the next restart — the spec's
+documented fallback). Live in-place was deliberately NOT built:
+- **Cost is highest, frequency is lowest.** ACME owns three coupled OS resources
+  (HTTPS listener + port-80 challenge server + renewal goroutine) + fail-open
+  semantics, vs one listener for every other mode — so a live rebuild needs a
+  validate-then-bind build path, multi-port release-first reclaim, renewer cancel/
+  restart, and holder repointing. All to make the *rarest* operator action instant.
+- **A process restart gets the clean slate for free.** Exit releases every socket
+  (no port-handover race) and kills the renewer goroutine; the new process binds
+  fresh via the existing boot `setupACME`. In-place is re-implementing a restart
+  without that clean slate, purely to preserve in-flight work.
+- **The two reasons we avoid restart elsewhere barely apply to ACME.** "Stays down on
+  an unsupervised host" — anyone binding 443/80 + auto-renewing is on a supervised
+  server. "Kills in-flight work" — `POST /api/v1/admin/restart` already does a
+  *graceful* restart (drains in-flight, honors graceful_shutdown_seconds) from the UI.
+- **What IS live:** all common rebinds (listen_address/port, static TLS fields,
+  redirect/443 topology, websocket, graceful) + acme→off/static EXIT (H4c-2a).
+If ever revived: `prepareACMEInstance` validate-then-bind build closure, acme
+fingerprint key for internal changes, port-80 challenge pre-bind+retry, auto-443-in-acme.
 
 ## Notes / cross-branch
 - `auth.*` is listed in this spec's rebind section as subsystem; on this branch

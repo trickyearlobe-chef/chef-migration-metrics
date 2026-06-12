@@ -158,9 +158,10 @@ type serverApp struct {
 	listenerRebind *webapi.ListenerRebindHolder
 
 	// listenerController owns the live HTTP(S) listener for the rebind-capable
-	// modes. After a rebind the boot serverResult no longer references the
-	// serving listener, so awaitShutdown drains via this controller instead.
-	// Nil in modes that did not adopt one (ACME, active auto-443, degraded).
+	// modes (plain off, static, acme — H4c-1). After a rebind the boot serverResult
+	// no longer references the serving listener, so awaitShutdown drains via this
+	// controller instead. Nil only on the degraded fail-open paths that did not
+	// adopt one.
 	listenerController *serverctl.Controller
 
 	// acmeTrigger forwards an admin ACME config save to the running renewer so
