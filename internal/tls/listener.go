@@ -123,6 +123,7 @@ type Listener struct {
 	httpsSrv     *http.Server
 	httpsLn      net.Listener
 	redirectSrvs []*http.Server
+	redirectLns  []net.Listener
 	log          LogFunc
 }
 
@@ -212,6 +213,17 @@ func (l *Listener) SetHTTPSListener(ln net.Listener) {
 	l.httpsLn = ln
 }
 
+// SetRedirectListeners supplies pre-bound TCP listeners for the HTTP-to-HTTPS
+// redirect servers, in the same order as RedirectAddrs(). When set, Serve serves
+// on them directly instead of binding the addresses itself — the redirect analogue
+// of SetHTTPSListener. It lets a live rebind (serverctl RebindInPlace, which
+// releases the old listener first) reclaim a redirect port the old process briefly
+// still holds via a retrying bind. Entries beyond the configured redirect server
+// count are ignored; a missing entry falls back to ListenAndServe.
+func (l *Listener) SetRedirectListeners(lns []net.Listener) {
+	l.redirectLns = lns
+}
+
 // CertManager returns the underlying CertManager so callers can trigger
 // manual reloads (e.g. from a SIGHUP handler) or inspect the current
 // certificate.
@@ -248,13 +260,25 @@ func (l *Listener) Serve() <-chan error {
 		}
 	}()
 
-	for _, srv := range l.redirectSrvs {
-		go func(srv *http.Server) {
+	for i, srv := range l.redirectSrvs {
+		var preBound net.Listener
+		if i < len(l.redirectLns) {
+			preBound = l.redirectLns[i]
+		}
+		go func(srv *http.Server, ln net.Listener) {
 			l.log("INFO", fmt.Sprintf("HTTP-to-HTTPS redirect listener on %s", srv.Addr))
-			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			// Serve on a pre-bound listener when one was supplied (live rebind),
+			// otherwise bind the configured address ourselves (boot path).
+			var err error
+			if ln != nil {
+				err = srv.Serve(ln)
+			} else {
+				err = srv.ListenAndServe()
+			}
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- fmt.Errorf("HTTP redirect server %s: %w", srv.Addr, err)
 			}
-		}(srv)
+		}(srv, preBound)
 	}
 
 	return errCh

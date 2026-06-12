@@ -537,18 +537,19 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 
 	// Rebind the running listener in place when the listen target changed or the
 	// TLS section changed (configuration-live-reload.md listener-rebind). A tls
-	// change covers both an off↔static mode toggle (H4a) and a same-mode static
-	// field change — min_version / mTLS CA / cert source-or-paths — that rebuilds
-	// the single HTTPS listener (H4b-1); the applier dispatches and either rebinds
-	// in place or refuses an unsupported topology. The new listener is bound first
-	// (or, on a same-address:port change, validated then rebound in place); only
-	// once it is serving is the old one drained. The resolved granularity is folded
-	// into the response via listenGran (listen key) and tlsGran (tls key):
+	// change covers an off↔static mode toggle (H4a), a same-mode static field
+	// change — min_version / mTLS CA / cert source-or-paths (H4b-1) — and an
+	// http_redirect_port change (H4b-2), each rebuilding the HTTPS (+ redirect)
+	// listener topology; the applier dispatches and either rebinds in place or
+	// refuses an unsupported topology. The new listener is bound first (or, on a
+	// same-address:port change, validated then rebound in place); only once it is
+	// serving is the old one drained. The resolved granularity is folded into the
+	// response via listenGran (listen key) and tlsGran (tls key):
 	//   - unchanged / no-op       → applied
 	//   - rebound in place        → listener (no restart)
 	//   - no rebinder / refused   → process (restart_required; persisted, applies on
-	//     the next restart — auto-443 / http_redirect_port / ACME / degraded fall
-	//     here)
+	//     the next restart — ACME, the auto-443 lifeboat re-plan, and the degraded
+	//     self-signed fallback fall here)
 	// A bind failure (e.g. the port is now held by another process) keeps the old
 	// listener serving and is surfaced as a 500.
 	listenChanged := listenSectionChanged(sections, liveSections)

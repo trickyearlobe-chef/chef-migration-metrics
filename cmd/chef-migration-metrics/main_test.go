@@ -449,6 +449,66 @@ func adoptStaticBoot(t *testing.T, app *serverApp, handler http.Handler, certPat
 	return boot.Addr()
 }
 
+// adoptStaticBootWithRedirect boots a static-TLS (file cert) HTTPS listener plus
+// an http_redirect_port redirect listener on app's configured target and adopts it
+// into the unified listener controller, returning the boot HTTPS address. It mirrors
+// the boot path where a single HTTPS listener owns the configured port and an
+// explicit redirect listener serves http_redirect_port (no auto-443).
+func adoptStaticBootWithRedirect(t *testing.T, app *serverApp, handler http.Handler, certPath, keyPath string, redirectPort int) string {
+	t.Helper()
+	lcfg := apptls.ListenerConfig{
+		ListenAddress:    app.cfg.Server.ListenAddress,
+		Port:             app.cfg.Server.Port,
+		CertSource:       "file",
+		CertPath:         certPath,
+		KeyPath:          keyPath,
+		HTTPRedirectPort: redirectPort,
+		HSTSEnabled:      app.hstsEnabledFn(),
+	}
+	boot, err := apptls.NewListener(handler, lcfg, app.tlsLog)
+	if err != nil {
+		t.Fatalf("boot listener: %v", err)
+	}
+	boot.Serve()
+	app.cfg.Server.TLS.Mode = "static"
+	app.cfg.Server.TLS.CertSource = "file"
+	app.cfg.Server.TLS.CertPath = certPath
+	app.cfg.Server.TLS.KeyPath = keyPath
+	app.cfg.Server.TLS.HTTPRedirectPort = redirectPort
+	app.adoptListenerController(handler,
+		&serverctl.Instance{Addr: boot.Addr(), Shutdown: boot.Shutdown}, app.cfg.Server)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = app.listenerController.Shutdown(ctx)
+	})
+	return boot.Addr()
+}
+
+// waitRedirects polls until the HTTP listener at addr 301-redirects to https, or
+// fails after the deadline. It proves a redirect listener is bound and serving.
+func waitRedirects(t *testing.T, addr string) {
+	t.Helper()
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Timeout:       time.Second,
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get("http://" + addr + "/")
+		if err == nil {
+			loc := resp.Header.Get("Location")
+			code := resp.StatusCode
+			_ = resp.Body.Close()
+			if code == http.StatusMovedPermanently && strings.HasPrefix(loc, "https://") {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("redirect listener %s did not 301 to https within the deadline", addr)
+}
+
 // insecureTLSClient is an HTTP client that accepts the self-signed certs the
 // rebind tests serve.
 func insecureTLSClient() *http.Client {
@@ -612,8 +672,9 @@ func TestAdoptListenerController_SamePortToggleBadCertKeepsOld(t *testing.T) {
 	}
 }
 
-// ACME and static-with-http_redirect_port targets are not rebindable in place yet
-// (H4b/H4c): the applier refuses them so the save is reported restart_required.
+// An ACME target is not rebindable in place yet (H4c): the applier refuses it so
+// the save is reported restart_required. (A static http_redirect_port target IS
+// rebindable as of H4b-2 — see the redirect tests below.)
 func TestAdoptListenerController_RefusesUnsupportedTargets(t *testing.T) {
 	app := newTestApp(t)
 	app.listenerRebind = webapi.NewListenerRebindHolder()
@@ -621,18 +682,10 @@ func TestAdoptListenerController_RefusesUnsupportedTargets(t *testing.T) {
 	app.cfg.Server.Port = freePort(t)
 	adoptPlainBoot(t, app, http.NewServeMux())
 
-	certPath, keyPath := writeSelfSignedFiles(t)
-
 	acme := offServerCfg("127.0.0.1", freePort(t))
 	acme.TLS.Mode = "acme"
 	if _, err := app.listenerRebind.Apply(acme); !errors.Is(err, webapi.ErrNoListenerRebinder) {
 		t.Errorf("Apply acme target: err = %v, want ErrNoListenerRebinder", err)
-	}
-
-	redir := staticServerCfg("127.0.0.1", freePort(t), certPath, keyPath)
-	redir.TLS.HTTPRedirectPort = freePort(t)
-	if _, err := app.listenerRebind.Apply(redir); !errors.Is(err, webapi.ErrNoListenerRebinder) {
-		t.Errorf("Apply static+redirect target: err = %v, want ErrNoListenerRebinder", err)
 	}
 }
 
@@ -712,4 +765,132 @@ func TestAdoptListenerController_StaticUnchangedNoOp(t *testing.T) {
 	}
 	// Nothing was torn down — still serving on the same port.
 	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+}
+
+// Adding an http_redirect_port to a running static deployment is applied live
+// (H4b-2): the HTTPS port is unchanged so the controller rebinds in place (releases
+// the old, rebinds the same HTTPS port + the new redirect listener). HTTPS still
+// serves on its port and the new redirect listener 301s to https.
+func TestAdoptListenerController_StaticAddRedirectAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+
+	oldAddr := adoptStaticBoot(t, app, http.NewServeMux(), certPath, keyPath)
+	getWithRetry(t, insecureTLSClient(), "https://"+oldAddr+"/").Body.Close()
+
+	redirectPort := freePort(t)
+	cfg := staticServerCfg("127.0.0.1", samePort, certPath, keyPath)
+	cfg.TLS.HTTPRedirectPort = redirectPort
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply add redirect: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	// HTTPS still serves on the same port, and the new redirect listener 301s.
+	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", redirectPort))
+}
+
+// Changing an existing http_redirect_port is applied live (H4b-2): the old redirect
+// listener drains and the new redirect port begins serving, with HTTPS unchanged on
+// its port.
+func TestAdoptListenerController_StaticChangeRedirectAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+	oldRedirect := freePort(t)
+
+	adoptStaticBootWithRedirect(t, app, http.NewServeMux(), certPath, keyPath, oldRedirect)
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", oldRedirect))
+
+	newRedirect := freePort(t)
+	cfg := staticServerCfg("127.0.0.1", samePort, certPath, keyPath)
+	cfg.TLS.HTTPRedirectPort = newRedirect
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply change redirect: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", newRedirect))
+	waitUnreachable(t, fmt.Sprintf("127.0.0.1:%d", oldRedirect)) // old redirect drained
+}
+
+// A static field change (min_version) while an http_redirect_port stays the same
+// rebinds in place: RebindInPlace releases BOTH the HTTPS port and the redirect
+// port, so the rebuild must reclaim both via the retrying bind (H4b-2). Both serve
+// again after the rebind.
+func TestAdoptListenerController_StaticRedirectKeptAcrossFieldChange(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+	redirectPort := freePort(t)
+
+	adoptStaticBootWithRedirect(t, app, http.NewServeMux(), certPath, keyPath, redirectPort)
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", redirectPort))
+
+	cfg := staticServerCfg("127.0.0.1", samePort, certPath, keyPath)
+	cfg.TLS.HTTPRedirectPort = redirectPort
+	cfg.TLS.MinVersion = "1.3"
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply min_version raise (redirect kept): %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	// Both the HTTPS port and the (reclaimed) redirect port serve after the rebind.
+	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", redirectPort))
+}
+
+// Removing an http_redirect_port is applied live (H4b-2): the redirect listener
+// drains and only HTTPS keeps serving on its port.
+func TestAdoptListenerController_StaticRemoveRedirectAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+	redirectPort := freePort(t)
+
+	adoptStaticBootWithRedirect(t, app, http.NewServeMux(), certPath, keyPath, redirectPort)
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", redirectPort))
+
+	gran, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", samePort, certPath, keyPath))
+	if err != nil {
+		t.Fatalf("Apply remove redirect: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+	waitUnreachable(t, fmt.Sprintf("127.0.0.1:%d", redirectPort)) // redirect drained
 }

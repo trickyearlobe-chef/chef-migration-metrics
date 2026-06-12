@@ -586,6 +586,43 @@ func TestAdminConfigServer_PUT_SameModeTLSChange_RebindsLive(t *testing.T) {
 	}
 }
 
+// A static http_redirect_port change reaches the in-place rebinder (H4b-2): it is
+// called once with the new redirect port and the save reports listener /
+// restart_required=false (no longer restart-required as it was before H4b-2).
+func TestAdminConfigServer_PUT_RedirectPortChange_RebindsLive(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	cfg.Server.TLS = config.TLSConfig{Mode: "static", CertSource: "db"}
+	store := newTestConfigStore(t)
+	seedDBCertPair(t, store)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["tls"] = map[string]any{"mode": "static", "cert_source": "db", "http_redirect_port": 8081}
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if rb.calls != 1 {
+		t.Fatalf("rebinder calls = %d, want 1", rb.calls)
+	}
+	if rb.gotCfg.TLS.HTTPRedirectPort != 8081 {
+		t.Errorf("rebinder got http_redirect_port %d, want 8081", rb.gotCfg.TLS.HTTPRedirectPort)
+	}
+	if resp.RestartRequired || resp.Reload != "listener" {
+		t.Errorf("reload = %q restart=%v, want listener / false", resp.Reload, resp.RestartRequired)
+	}
+}
+
 // A same-mode static field change with no rebinder wired is persisted but reported
 // restart-required (the no-rebinder fallback).
 func TestAdminConfigServer_PUT_SameModeTLSChange_NoRebinder_Process(t *testing.T) {

@@ -151,9 +151,32 @@ then the multi-listener topology (redirect/443).
   static min_version change → rebinder called once → listener; no rebinder → process).
   All `-race`.
 
-#### H4b-2 — http_redirect_port topology
-- Add/remove/change the redirect listener within static, in place (multi-listener
-  bind: the old process holds the redirect port during the drain window).
+#### H4b-2 — http_redirect_port topology [DONE]
+- **Pre-bound redirect seam.** `apptls.Listener.SetRedirectListeners([]net.Listener)`
+  (the redirect analogue of `SetHTTPSListener`): when set, `Serve` serves each
+  redirect server on its pre-bound listener (`srv.Serve(ln)`) instead of
+  `ListenAndServe`, so the live rebuild can reclaim a redirect port the old process
+  still holds across a same-target drain via a retrying bind.
+- **Applier.** `newTLSListener` now sets `HTTPRedirectPort` from cfg;
+  `serveTLSListener` pre-binds each `RedirectAddrs()` port via `listenTCPTarget`
+  (new, retry-capable; `listenTCP` refactored onto it) with the same attempts as the
+  HTTPS port, then `SetRedirectListeners` — a bind failure unwinds everything bound.
+  The static `http_redirect_port != 0` refusal in `applyServerListener` is removed
+  (only ACME is still refused).
+- **Fingerprint.** `tlsTopologyFingerprint` gains `;redirect=%d`, so a same-port
+  add/remove/change of `http_redirect_port` yields a new key → `RebindInPlace` (HTTPS
+  port unchanged). A redirect-only change still tears down + rebinds the HTTPS
+  listener (controller swaps the whole Instance) — accepted, consistent with the H4a
+  residual.
+- **Boot adopt.** Guard relaxed from `https443Ln == nil && http_redirect_port == 0`
+  to `https443Ln == nil`: the single-HTTPS-on-configured-port topology (server.port
+  == 443, or the 443-not-bindable fallback) with an explicit redirect is now adopted.
+  The auto-443 lifeboat (`https443Ln != nil`) is still NOT adopted — H4b-3.
+- TDD: apptls (pre-bound redirect served + 301s); main (add / change / remove
+  redirect → listener, old redirect drained; min_version change with redirect kept →
+  both ports reclaimed via retry); handler (http_redirect_port change → rebinder
+  called once with the port → listener). `RefusesUnsupportedTargets` trimmed to ACME
+  only. All `-race`.
 
 #### H4b-3 — auto-443 lifeboat re-plan
 - Adopt a topology-aware controller for the auto-443 boot case; re-plan 443 +
