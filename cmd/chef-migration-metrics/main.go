@@ -180,6 +180,17 @@ type serverApp struct {
 	// available/unavailable" deterministically without needing privilege. Nil ⇒
 	// a real bind on 443.
 	auto443Listen func(listenAddr string) (net.Listener, error)
+
+	// autoHTTPSActive records that boot bound the automatic-443 lifeboat (tls.md
+	// § 1.5: HTTPS on a separate 443 listener with the configured port redirecting
+	// to it). When set, the listener controller re-plans that topology in place on a
+	// same-mode static change (H4b-3) rather than collapsing to a single HTTPS
+	// listener on the configured port. autoHTTPSPort is the actual bound lifeboat
+	// port (443 in production; a free port via the auto443Listen test seam), used as
+	// the live HTTPS bind target so a rebind reclaims it. Both are read-only after
+	// setupAndServeHTTP.
+	autoHTTPSActive bool
+	autoHTTPSPort   int
 }
 
 // exitCodeRestart is the process exit code used for an admin-requested restart.
@@ -1625,19 +1636,19 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		// Adopt the listener controller so a saved listen_address/port, an
 		// off↔static mode toggle (H4a), a same-mode static field change (min_version
 		// / mTLS CA / cert source-or-paths — H4b-1), or an http_redirect_port change
-		// (H4b-2) rebinds in place (no restart). This covers the single-HTTPS
-		// topology where the configured port owns HTTPS with at most one explicit
-		// redirect listener — i.e. whenever the auto-443 lifeboat is NOT active
-		// (https443Ln == nil: server.port is already 443, or 443 was not bindable so
-		// HTTPS serves on the configured port). An active auto-443 lifeboat
-		// (https443Ln != nil) serves HTTPS on 443 with the configured port as a
-		// redirect; that multi-listener re-plan is H4b-3, so leave the rebinder unset
-		// there and changes stay restart-required.
-		if https443Ln == nil {
-			app.adoptListenerController(apiRouter,
-				&serverctl.Instance{Addr: tlsListener.Addr(), Shutdown: tlsListener.Shutdown},
-				app.cfg.Server)
+		// (H4b-2) rebinds in place (no restart). When the auto-443 lifeboat is active
+		// (https443Ln != nil) HTTPS serves on 443 with the configured port as a
+		// redirect; record that topology so the controller re-plans 443 + redirects in
+		// place on a same-mode static change (H4b-3) instead of collapsing to a single
+		// HTTPS listener on the configured port. autoHTTPSPort is the actual bound
+		// lifeboat port (443 in production), captured so a live rebind reclaims it.
+		if https443Ln != nil {
+			app.autoHTTPSActive = true
+			app.autoHTTPSPort = listenerPort(https443Ln)
 		}
+		app.adoptListenerController(apiRouter,
+			&serverctl.Instance{Addr: tlsListener.Addr(), Shutdown: tlsListener.Shutdown},
+			app.cfg.Server)
 
 	case "acme":
 		return app.setupACME(apiRouter, app.cfgStore, shutdownTimeout)
@@ -1723,6 +1734,49 @@ func serverListenerKey(cfg config.ServerConfig) string {
 	return fmt.Sprintf("%s|%s:%d|%s", serverListenerVariant(cfg.TLS.Mode), addr, port, tlsTopologyFingerprint(cfg))
 }
 
+// listenerKey is the controller target fingerprint for cfg, accounting for the
+// auto-443 lifeboat. When the lifeboat is active and the target is static, HTTPS
+// lives on the lifeboat port (autoHTTPSPort) and the configured port is only a
+// redirect, so the key's listen target is "<addr>:<autoHTTPSPort>" and the
+// configured port is folded into the fingerprint — a server.port /
+// http_redirect_port / min_version / CA / cert change yields a new key while the
+// HTTPS target stays the same (→ a same-target RebindInPlace that swaps the
+// redirects). Otherwise it is the standard single-listener key.
+func (app *serverApp) listenerKey(cfg config.ServerConfig) string {
+	if app.autoHTTPSActive && cfg.TLS.Mode == "static" {
+		addr, port := resolveListen(cfg)
+		return fmt.Sprintf("tls443|%s:%d|%s;cfgport=%d",
+			addr, app.autoHTTPSPort, tlsTopologyFingerprint(cfg), port)
+	}
+	return serverListenerKey(cfg)
+}
+
+// effectiveTLSTopology returns the HTTPS port and redirect ports a static-TLS
+// listener should bind for cfg. With the auto-443 lifeboat active, HTTPS serves on
+// the lifeboat port and both the configured port and http_redirect_port redirect to
+// it; otherwise HTTPS serves on the configured port with http_redirect_port as the
+// only redirect. Zero/duplicate/HTTPS-equal redirect ports are filtered by the
+// listener.
+func (app *serverApp) effectiveTLSTopology(cfg config.ServerConfig) (httpsPort int, redirectPorts []int) {
+	_, port := resolveListen(cfg)
+	if app.autoHTTPSActive {
+		return app.autoHTTPSPort, []int{port, cfg.TLS.HTTPRedirectPort}
+	}
+	return port, []int{cfg.TLS.HTTPRedirectPort}
+}
+
+// listenerPort extracts the bound TCP port from a listener's address. Used to
+// capture the actual auto-443 lifeboat port (443 in production, a free port under
+// the auto443Listen test seam) so a live rebind reclaims that exact port.
+func listenerPort(ln net.Listener) int {
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return 0
+	}
+	p, _ := strconv.Atoi(portStr)
+	return p
+}
+
 // keyListenTarget returns the address:port segment of a serverListenerKey (between
 // the first and second "|"), so two keys can be compared for the same bind target
 // regardless of variant or tls topology. A same target means bind-new-first is
@@ -1746,7 +1800,7 @@ func (app *serverApp) adoptListenerController(handler http.Handler, boot *server
 		return
 	}
 	ctrl := serverctl.New(app.resolveShutdownTimeout, app.rebindLog)
-	ctrl.Adopt(boot, serverListenerKey(bootCfg))
+	ctrl.Adopt(boot, app.listenerKey(bootCfg))
 	app.listenerController = ctrl
 	app.listenerRebind.Set(func(cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
 		return app.applyServerListener(handler, ctrl, cfg)
@@ -1768,9 +1822,10 @@ const (
 // http_redirect_port redirect listener (H4b-2). The only target not yet supported
 // in place is ACME (the port-80 challenge/redirect + renewer rebuild is H4c) —
 // returning ErrNoListenerRebinder so the save is reported restart_required and
-// applied on the next restart. The auto-443 lifeboat topology is not re-planned on
-// a live change either (H4b-3): a live static rebuild serves a single HTTPS
-// listener on the configured port, never a separate 443.
+// applied on the next restart. When the auto-443 lifeboat is active (H4b-3), a
+// same-mode static change re-plans HTTPS-on-the-lifeboat-port + its redirects in
+// place via effectiveTLSTopology; leaving that topology (a mode or listen_address
+// change) is refused and stays restart-required.
 //
 // A different-target change binds the new listener before retiring the old
 // (bind-new-first), so a bind clash keeps the old serving. A same-address:port
@@ -1785,11 +1840,20 @@ func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.
 		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
 	}
 
-	newKey := serverListenerKey(cfg)
+	newKey := app.listenerKey(cfg)
 	cur := ctrl.CurrentKey()
 	if cur == newKey {
 		return webapi.ReloadApplied, nil // unchanged target — no-op
 	}
+
+	// Auto-443 lifeboat (H4b-3): only a same-mode, same-HTTPS-target static change is
+	// re-planned in place. Leaving the auto-443 topology (a mode change) or moving the
+	// HTTPS bind (a listen_address change) needs a full topology re-plan and stays
+	// restart-required — the no-rebinder fallback.
+	if app.autoHTTPSActive && (cfg.TLS.Mode != "static" || keyListenTarget(cur) != keyListenTarget(newKey)) {
+		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
+	}
+
 	inPlace := keyListenTarget(cur) == keyListenTarget(newKey)
 
 	addr, port := resolveListen(cfg)
@@ -1801,13 +1865,17 @@ func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.
 	var build serverctl.BuildFunc
 	if cfg.TLS.Mode == "static" {
 		// Construct (but do not bind) the TLS listener up front so a cert/config
-		// error fails here, before the old listener is disturbed.
-		listener, err := app.newTLSListener(handler, cfg, addr, port)
+		// error fails here, before the old listener is disturbed. With the auto-443
+		// lifeboat active HTTPS targets the lifeboat port and the configured port +
+		// http_redirect_port redirect to it; otherwise HTTPS targets the configured
+		// port with http_redirect_port as the only redirect.
+		httpsPort, redirectPorts := app.effectiveTLSTopology(cfg)
+		listener, err := app.newTLSListener(handler, cfg, addr, httpsPort, redirectPorts)
 		if err != nil {
 			return webapi.ReloadProcess, err
 		}
 		build = func() (*serverctl.Instance, error) {
-			return app.serveTLSListener(listener, addr, port, attempts)
+			return app.serveTLSListener(listener, addr, httpsPort, attempts)
 		}
 	} else {
 		build = func() (*serverctl.Instance, error) {
@@ -1890,16 +1958,20 @@ func (app *serverApp) buildPlainInstance(handler http.Handler, addr string, port
 // certificate/TLS config is validated (off→static toggle, min_version/CA change)
 // before the live listener is disturbed. For cert_source: db it fetches the
 // current cert/key from the encrypted store so a prior hot-swap is preserved.
-func (app *serverApp) newTLSListener(handler http.Handler, cfg config.ServerConfig, addr string, port int) (*apptls.Listener, error) {
+// httpsPort/redirectPorts come from effectiveTLSTopology (the configured port and
+// its http_redirect_port, or the lifeboat port and its redirect set under auto-443);
+// redirectPorts is passed via RedirectPorts (HTTPRedirectPort folds into it, so 0
+// here is equivalent for the single-redirect case).
+func (app *serverApp) newTLSListener(handler http.Handler, cfg config.ServerConfig, addr string, httpsPort int, redirectPorts []int) (*apptls.Listener, error) {
 	lcfg := apptls.ListenerConfig{
 		ListenAddress:           addr,
-		Port:                    port,
+		Port:                    httpsPort,
 		CertSource:              cfg.TLS.CertSource,
 		CertPath:                cfg.TLS.CertPath,
 		KeyPath:                 cfg.TLS.KeyPath,
 		CAPath:                  cfg.TLS.CAPath,
 		MinVersion:              cfg.TLS.MinVersion,
-		HTTPRedirectPort:        cfg.TLS.HTTPRedirectPort,
+		RedirectPorts:           redirectPorts,
 		GracefulShutdownTimeout: app.resolveShutdownTimeout(),
 		TrustedProxy:            cfg.TrustedProxy,
 		HSTSEnabled:             app.hstsEnabledFn(),
@@ -1921,9 +1993,11 @@ func (app *serverApp) newTLSListener(handler http.Handler, cfg config.ServerConf
 // configured port; an explicit http_redirect_port is served on a secondary
 // redirect listener pre-bound here with the same retry (H4b-2) — the old process
 // holds that port across a same-target RebindInPlace drain, so the bind must
-// reclaim it. The auto-443 lifeboat topology is still H4b-3, so RedirectPorts are
-// not re-planned here. A bind failure closes whatever was bound and returns the
-// error (nothing left serving the target on a same-target rebind).
+// reclaim it. Under the auto-443 lifeboat (H4b-3) the same path serves HTTPS on the
+// lifeboat port with the configured port + http_redirect_port as the redirect set
+// (assembled by effectiveTLSTopology into RedirectPorts). A bind failure closes
+// whatever was bound and returns the error (nothing left serving the target on a
+// same-target rebind).
 func (app *serverApp) serveTLSListener(listener *apptls.Listener, addr string, port, attempts int) (*serverctl.Instance, error) {
 	ln, err := listenTCP(addr, port, attempts)
 	if err != nil {

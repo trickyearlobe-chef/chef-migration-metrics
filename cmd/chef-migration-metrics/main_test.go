@@ -894,3 +894,223 @@ func TestAdoptListenerController_StaticRemoveRedirectAppliesLive(t *testing.T) {
 	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
 	waitUnreachable(t, fmt.Sprintf("127.0.0.1:%d", redirectPort)) // redirect drained
 }
+
+// adoptAuto443Boot boots the automatic-HTTPS-on-443 lifeboat topology (tls.md
+// § 1.5): a static-TLS HTTPS listener on a free "443 stand-in" port with the
+// configured server.port (and an optional http_redirect_port) redirecting to it,
+// then adopts it into the listener controller with autoHTTPSActive set. It returns
+// the lifeboat HTTPS port. Mirrors the setupAndServeHTTP auto-443 branch without a
+// privileged 443 bind.
+func adoptAuto443Boot(t *testing.T, app *serverApp, handler http.Handler, certPath, keyPath string, redirectPort int) int {
+	t.Helper()
+	ln443, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("bind 443 stand-in: %v", err)
+	}
+	httpsPort := ln443.Addr().(*net.TCPAddr).Port
+
+	redirectPorts := []int{app.cfg.Server.Port}
+	if redirectPort > 0 {
+		redirectPorts = append(redirectPorts, redirectPort)
+	}
+	lcfg := apptls.ListenerConfig{
+		ListenAddress: "127.0.0.1",
+		Port:          httpsPort,
+		CertSource:    "file",
+		CertPath:      certPath,
+		KeyPath:       keyPath,
+		RedirectPorts: redirectPorts,
+		HSTSEnabled:   app.hstsEnabledFn(),
+	}
+	boot, err := apptls.NewListener(handler, lcfg, app.tlsLog)
+	if err != nil {
+		_ = ln443.Close()
+		t.Fatalf("boot auto-443 listener: %v", err)
+	}
+	boot.SetHTTPSListener(ln443)
+	boot.Serve()
+
+	app.cfg.Server.TLS.Mode = "static"
+	app.cfg.Server.TLS.CertSource = "file"
+	app.cfg.Server.TLS.CertPath = certPath
+	app.cfg.Server.TLS.KeyPath = keyPath
+	app.cfg.Server.TLS.HTTPRedirectPort = redirectPort
+	app.autoHTTPSActive = true
+	app.autoHTTPSPort = httpsPort
+	app.adoptListenerController(handler,
+		&serverctl.Instance{Addr: boot.Addr(), Shutdown: boot.Shutdown}, app.cfg.Server)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = app.listenerController.Shutdown(ctx)
+	})
+	return httpsPort
+}
+
+// A same-mode static field change (min_version) on an active auto-443 lifeboat is
+// re-planned in place (H4b-3): RebindInPlace releases the lifeboat HTTPS port and
+// the configured-port redirect, and the rebuild reclaims both. HTTPS still serves
+// on the lifeboat port (now min 1.3 — a TLS 1.2 client is rejected) and the
+// redirect keeps 301ing.
+func TestAdoptListenerController_Auto443MinVersionAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	redirectFrom := app.cfg.Server.Port
+
+	httpsPort := adoptAuto443Boot(t, app, http.NewServeMux(), certPath, keyPath, 0)
+	httpsURL := fmt.Sprintf("https://127.0.0.1:%d/", httpsPort)
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", redirectFrom))
+
+	cfg := staticServerCfg("127.0.0.1", app.cfg.Server.Port, certPath, keyPath)
+	cfg.TLS.MinVersion = "1.3"
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply auto-443 min_version raise: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	// HTTPS still serves on the lifeboat port and the redirect keeps working.
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", redirectFrom))
+
+	// A TLS 1.2-max client is now rejected (poll until only the min-1.3 listener answers).
+	tls12 := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		InsecureSkipVerify: true, MaxVersion: tls.VersionTLS12, //nolint:gosec // self-signed test cert
+	}}}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp, getErr := tls12.Get(httpsURL)
+		if getErr != nil {
+			break
+		}
+		resp.Body.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("TLS 1.2 client still accepted after auto-443 min_version raised to 1.3")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Changing server.port on an active auto-443 lifeboat re-plans the redirect in
+// place (H4b-3): HTTPS stays on the lifeboat port, the new configured port begins
+// redirecting, and the old redirect drains. The HTTPS target (the lifeboat port) is
+// unchanged so it is a same-target RebindInPlace.
+func TestAdoptListenerController_Auto443ServerPortChangeAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	oldRedirect := app.cfg.Server.Port
+
+	httpsPort := adoptAuto443Boot(t, app, http.NewServeMux(), certPath, keyPath, 0)
+	httpsURL := fmt.Sprintf("https://127.0.0.1:%d/", httpsPort)
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", oldRedirect))
+
+	newPort := freePort(t)
+	cfg := staticServerCfg("127.0.0.1", newPort, certPath, keyPath)
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply auto-443 server.port change: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()  // HTTPS unchanged
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", newPort))       // new redirect serves
+	waitUnreachable(t, fmt.Sprintf("127.0.0.1:%d", oldRedirect)) // old redirect drained
+}
+
+// Adding an http_redirect_port to an active auto-443 lifeboat is applied live
+// (H4b-3): HTTPS stays on the lifeboat port, the configured-port redirect keeps
+// working, and the new explicit redirect listener begins 301ing.
+func TestAdoptListenerController_Auto443AddRedirectAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	redirectFrom := app.cfg.Server.Port
+
+	httpsPort := adoptAuto443Boot(t, app, http.NewServeMux(), certPath, keyPath, 0)
+	httpsURL := fmt.Sprintf("https://127.0.0.1:%d/", httpsPort)
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()
+
+	explicitRedirect := freePort(t)
+	cfg := staticServerCfg("127.0.0.1", app.cfg.Server.Port, certPath, keyPath)
+	cfg.TLS.HTTPRedirectPort = explicitRedirect
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply auto-443 add redirect: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", redirectFrom))     // configured-port redirect kept
+	waitRedirects(t, fmt.Sprintf("127.0.0.1:%d", explicitRedirect)) // new explicit redirect
+}
+
+// Re-saving an unchanged auto-443 config is a no-op: the controller key is
+// unchanged so nothing is rebound and the save reports applied, not listener.
+func TestAdoptListenerController_Auto443UnchangedNoOp(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	explicitRedirect := freePort(t)
+
+	httpsPort := adoptAuto443Boot(t, app, http.NewServeMux(), certPath, keyPath, explicitRedirect)
+	httpsURL := fmt.Sprintf("https://127.0.0.1:%d/", httpsPort)
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()
+
+	cfg := staticServerCfg("127.0.0.1", app.cfg.Server.Port, certPath, keyPath)
+	cfg.TLS.HTTPRedirectPort = explicitRedirect
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply unchanged auto-443: %v", err)
+	}
+	if gran != webapi.ReloadApplied {
+		t.Errorf("granularity = %v, want applied (no-op)", gran)
+	}
+	getWithRetry(t, insecureTLSClient(), httpsURL).Body.Close()
+}
+
+// Leaving the auto-443 topology (mode → off) is refused in place (H4b-3 residual):
+// the full topology teardown is restart-required, so Apply returns
+// ErrNoListenerRebinder and the old lifeboat keeps serving.
+func TestAdoptListenerController_Auto443RefusesModeChange(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+
+	httpsPort := adoptAuto443Boot(t, app, http.NewServeMux(), certPath, keyPath, 0)
+
+	if _, err := app.listenerRebind.Apply(offServerCfg("127.0.0.1", app.cfg.Server.Port)); !errors.Is(err, webapi.ErrNoListenerRebinder) {
+		t.Errorf("Apply auto-443 → off: err = %v, want ErrNoListenerRebinder", err)
+	}
+	// Old lifeboat untouched — still serving HTTPS.
+	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", httpsPort)).Body.Close()
+}

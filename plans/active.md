@@ -178,9 +178,40 @@ then the multi-listener topology (redirect/443).
   called once with the port → listener). `RefusesUnsupportedTargets` trimmed to ACME
   only. All `-race`.
 
-#### H4b-3 — auto-443 lifeboat re-plan
-- Adopt a topology-aware controller for the auto-443 boot case; re-plan 443 +
-  redirects on a static change, in place.
+#### H4b-3 — auto-443 lifeboat re-plan [DONE]
+- **State.** `serverApp.autoHTTPSActive bool` + `autoHTTPSPort int`, set at boot when
+  `https443Ln != nil` (`autoHTTPSPort` = the actual bound lifeboat port via
+  `listenerPort()` — 443 in prod, a free port under the `auto443Listen` test seam).
+  The static serve branch now ALWAYS adopts the controller (the `https443Ln == nil`
+  guard is dropped); auto-443-ness is carried forward, never re-probed (a same-target
+  RebindInPlace drains the old listener async, so a re-probe would see 443 still held
+  and wrongly downgrade).
+- **Key.** `app.listenerKey(cfg)` method: when `autoHTTPSActive && mode==static`,
+  `tls443|<addr>:<autoHTTPSPort>|<tlsTopologyFingerprint>;cfgport=<port>` — the HTTPS
+  target is the lifeboat port (so a server.port change keeps the same target →
+  RebindInPlace swaps the redirect) and the configured port is folded into the
+  fingerprint (server.port / http_redirect_port / min_version / CA / cert change →
+  new key). Else delegates to the unchanged `serverListenerKey`. `adoptListenerController`
+  + `applyServerListener` now key via this method.
+- **Topology.** `app.effectiveTLSTopology(cfg) (httpsPort, redirectPorts)`: auto-443
+  → `(autoHTTPSPort, [server.port, http_redirect_port])`; else `(port,
+  [http_redirect_port])`. `newTLSListener` signature now `(…, httpsPort,
+  redirectPorts)`, setting `Port=httpsPort` + `RedirectPorts=redirectPorts`
+  (`HTTPRedirectPort` dropped — folded into RedirectPorts, equivalent for the
+  non-auto path). `serveTLSListener` already pre-binds `RedirectAddrs()` with retry,
+  so it reclaims the lifeboat port + every redirect on a same-target drain unchanged.
+- **Applier refusal.** When `autoHTTPSActive`, refuse (→ ErrNoListenerRebinder,
+  restart_required) any target that leaves the auto-443 topology: `mode != static`
+  or a listen-target (listen_address) change. Surviving cases are same-lifeboat-target
+  static changes → always RebindInPlace.
+- **Residual (todo-tech-debt):** leaving auto-443 (static→off/acme) and a
+  listen_address change stay restart-required; an off/acme→auto-443 upgrade is not a
+  thing (auto-443-ness is boot-only). H4c owns ACME.
+- TDD (all `-race`): main — auto-443 min_version applies live (HTTPS still on the
+  lifeboat port, redirect kept, TLS1.2 then rejected); server.port change re-plans
+  the redirect (old drained, new serves, HTTPS unchanged); add http_redirect_port
+  applies live; unchanged save → applied no-op; mode→off refused (restart_required).
+  New `adoptAuto443Boot` helper mirrors the boot lifeboat topology.
 
 ### H4c — ACME transitions + ACME port rebind [riskiest]
 - →acme / acme→ / acme port change: port-80 challenge/redirect + renewer
