@@ -36,7 +36,7 @@ independent of target version / readiness rows. Chosen over derive-on-read so th
 - TDD: `EvaluateDisk` unit tests (sufficient; insufficient by absolute; insufficient
   by min-free-%; unknown/no-fs; windows path; required always set). All green + `-race`.
 
-### Chunk 2 — persist verdict on node_snapshots [migration + datastore + collector]
+### Chunk 2 — persist verdict on node_snapshots [migration + datastore + collector] [DONE]
 - Migration 0037: `node_snapshots.sufficient_disk_space BOOLEAN`, `available_disk_mb INT`,
   `required_disk_mb INT` (all NULL-able; NULL sufficient = indeterminate). + down.
 - datastore: add the 3 fields to `NodeSnapshot` + `InsertNodeSnapshotParams`; wire the
