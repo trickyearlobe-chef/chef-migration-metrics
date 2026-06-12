@@ -41,10 +41,10 @@ type CollectionTriggerFunc func(ctx context.Context) error
 // It assembles the ServeMux with all API routes, the WebSocket endpoint,
 // health/version endpoints, and the frontend static asset fallback.
 type Router struct {
-	mux     *http.ServeMux
-	hub     *EventHub
-	db      DataStore
-	cfg     *config.Config
+	mux           *http.ServeMux
+	hub           *EventHub
+	db            DataStore
+	cfg           *config.Config
 	version       string
 	schemaVersion int
 
@@ -161,6 +161,14 @@ type Router struct {
 	// deployments or when the running listener is not a DB source — the save
 	// still persists and a restart applies it. Set via WithTLSReload.
 	tlsReload *TLSReloadHolder
+
+	// listenerRebind rebinds the running HTTP/TLS listener in place when a
+	// changed server.listen_address/port is saved, so the change applies without
+	// a restart (configuration-live-reload.md listener-rebind H2). Nil/unset on
+	// deployments where no rebinder is wired (tests, active auto-443, ACME, or a
+	// degraded fallback) — the save then reports restart_required. Set via
+	// WithListenerRebinder.
+	listenerRebind *ListenerRebindHolder
 
 	// acmeReRegister, when set, is called after an ACME config save to wake the
 	// renewer so hostname registration and an issuance check re-run immediately
@@ -880,12 +888,17 @@ func (r *Router) registerRoutes() {
 
 // webSocketOpts builds the WebSocketHandler options from the loaded config.
 func (r *Router) webSocketOpts() []WebSocketHandlerOption {
-	wsCfg := r.cfg.Server.WebSocket
+	// Pull timeouts live so a server.websocket.* save applies to connections
+	// opened afterwards without a restart (configuration-live-reload.md:
+	// subsystem). secondsToDuration maps an unset (0) field to the default.
 	opts := []WebSocketHandlerOption{
-		WithWebSocketConfig(WebSocketConfig{
-			WriteTimeout: secondsToDuration(wsCfg.WriteTimeoutSeconds),
-			PingInterval: secondsToDuration(wsCfg.PingIntervalSeconds),
-			PongTimeout:  secondsToDuration(wsCfg.PongTimeoutSeconds),
+		WithWebSocketConfigFunc(func() WebSocketConfig {
+			ws := r.liveConfig().Server.WebSocket
+			return WebSocketConfig{
+				WriteTimeout: secondsToDuration(ws.WriteTimeoutSeconds),
+				PingInterval: secondsToDuration(ws.PingIntervalSeconds),
+				PongTimeout:  secondsToDuration(ws.PongTimeoutSeconds),
+			}
 		}),
 	}
 	if r.logger != nil {

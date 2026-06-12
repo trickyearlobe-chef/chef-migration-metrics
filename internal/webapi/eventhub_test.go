@@ -284,25 +284,109 @@ func TestEventHub_RegisterAfterStop(t *testing.T) {
 
 func TestEventHub_DefaultOptions(t *testing.T) {
 	hub := NewEventHub()
-	if hub.maxConnections != 100 {
-		t.Errorf("default maxConnections = %d, want 100", hub.maxConnections)
+	if got := hub.maxConnections.Load(); got != 100 {
+		t.Errorf("default maxConnections = %d, want 100", got)
 	}
-	if hub.sendBufferSize != 64 {
-		t.Errorf("default sendBufferSize = %d, want 64", hub.sendBufferSize)
+	if got := hub.sendBufferSize.Load(); got != 64 {
+		t.Errorf("default sendBufferSize = %d, want 64", got)
 	}
 }
 
 func TestWithMaxConnections_IgnoresNonPositive(t *testing.T) {
 	hub := NewEventHub(WithMaxConnections(0), WithMaxConnections(-5))
-	if hub.maxConnections != 100 {
-		t.Errorf("maxConnections = %d, want 100 (default)", hub.maxConnections)
+	if got := hub.maxConnections.Load(); got != 100 {
+		t.Errorf("maxConnections = %d, want 100 (default)", got)
 	}
 }
 
 func TestWithSendBufferSize_IgnoresNonPositive(t *testing.T) {
 	hub := NewEventHub(WithSendBufferSize(0), WithSendBufferSize(-1))
-	if hub.sendBufferSize != 64 {
-		t.Errorf("sendBufferSize = %d, want 64 (default)", hub.sendBufferSize)
+	if got := hub.sendBufferSize.Load(); got != 64 {
+		t.Errorf("sendBufferSize = %d, want 64 (default)", got)
+	}
+}
+
+// Reconfigure applies new limits live. Non-positive values leave a setting
+// unchanged, and a lowered max never evicts already-registered clients.
+func TestEventHub_Reconfigure(t *testing.T) {
+	hub := NewEventHub(WithMaxConnections(10), WithSendBufferSize(8))
+
+	hub.Reconfigure(25, 128)
+	if got := hub.maxConnections.Load(); got != 25 {
+		t.Errorf("maxConnections after reconfigure = %d, want 25", got)
+	}
+	if got := hub.sendBufferSize.Load(); got != 128 {
+		t.Errorf("sendBufferSize after reconfigure = %d, want 128", got)
+	}
+
+	// Non-positive values leave the current setting in place.
+	hub.Reconfigure(0, -1)
+	if got := hub.maxConnections.Load(); got != 25 {
+		t.Errorf("maxConnections after no-op reconfigure = %d, want 25", got)
+	}
+	if got := hub.sendBufferSize.Load(); got != 128 {
+		t.Errorf("sendBufferSize after no-op reconfigure = %d, want 128", got)
+	}
+}
+
+// A live send-buffer change applies to clients registered after Reconfigure;
+// clients registered before keep their original buffer capacity.
+func TestEventHub_Reconfigure_SendBufferAppliesToNewClients(t *testing.T) {
+	hub := NewEventHub(WithMaxConnections(10), WithSendBufferSize(8))
+	go hub.Run()
+	defer hub.Stop()
+
+	before := hub.Register()
+	if got := cap(before.send); got != 8 {
+		t.Fatalf("pre-reconfigure client buffer = %d, want 8", got)
+	}
+
+	hub.Reconfigure(10, 32)
+
+	after := hub.Register()
+	if got := cap(after.send); got != 32 {
+		t.Errorf("post-reconfigure client buffer = %d, want 32", got)
+	}
+	if got := cap(before.send); got != 8 {
+		t.Errorf("existing client buffer changed to %d, want 8 (unchanged)", got)
+	}
+}
+
+// Lowering max_connections below the current client count keeps existing
+// clients connected; only new registrations beyond the new ceiling are rejected.
+func TestEventHub_Reconfigure_LowerMaxKeepsExisting(t *testing.T) {
+	hub := NewEventHub(WithMaxConnections(3), WithSendBufferSize(8))
+	go hub.Run()
+	defer hub.Stop()
+
+	c1 := hub.Register()
+	c2 := hub.Register()
+	time.Sleep(20 * time.Millisecond)
+	if hub.ClientCount() != 2 {
+		t.Fatalf("ClientCount = %d, want 2", hub.ClientCount())
+	}
+
+	// Lower the ceiling below the current count. Existing clients must stay.
+	hub.Reconfigure(1, 8)
+
+	hub.Broadcast(NewEvent("evt", nil))
+	for i, c := range []*client{c1, c2} {
+		select {
+		case _, ok := <-c.send:
+			if !ok {
+				t.Fatalf("client %d evicted by lowered max_connections", i)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("client %d: timed out", i)
+		}
+	}
+
+	// A new registration is rejected (count 2 >= new ceiling 1): its channel
+	// is closed immediately.
+	c3 := hub.Register()
+	time.Sleep(20 * time.Millisecond)
+	if _, ok := <-c3.send; ok {
+		t.Error("new client should be rejected when over the lowered ceiling")
 	}
 }
 

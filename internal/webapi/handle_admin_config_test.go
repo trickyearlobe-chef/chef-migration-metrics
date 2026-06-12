@@ -131,6 +131,13 @@ func newTestRouterForAdminConfig(cfg *config.Config, store *configstore.Store, h
 	return NewRouter(ms, cfg, hub, opts...)
 }
 
+// newTestConfigHolder builds a ConfigHolder backed by the given store so that a
+// PUT handler's post-save Reload reflects the persisted change in liveConfig().
+func newTestConfigHolder(t *testing.T, store *configstore.Store, cfg *config.Config) *configstore.ConfigHolder {
+	t.Helper()
+	return configstore.NewConfigHolder(cfg, store)
+}
+
 // decodeBody is a test helper that decodes a JSON response body into v.
 func decodeBody(t *testing.T, r *httptest.ResponseRecorder, v any) {
 	t.Helper()

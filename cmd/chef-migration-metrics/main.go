@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -46,6 +47,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/serverctl"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
 	migrations "github.com/trickyearlobe-chef/chef-migration-metrics/migrations"
@@ -147,6 +149,21 @@ type serverApp struct {
 	// CertManager once the static listener is built; nil/empty otherwise.
 	tlsReload *webapi.TLSReloadHolder
 
+	// listenerRebind lets the admin server save rebind the running listener in
+	// place when listen_address/port changes (no restart). Wired into the router
+	// up front; populated by setupAndServeHTTP with a serverctl.Controller for
+	// plain-HTTP and healthy static-TLS modes. Left unset (so the no-rebinder
+	// fallback applies → restart_required) for active auto-443, ACME, and the
+	// degraded fallbacks until H4. See configuration-live-reload.md.
+	listenerRebind *webapi.ListenerRebindHolder
+
+	// listenerController owns the live HTTP(S) listener for the rebind-capable
+	// modes (plain off, static, acme — H4c-1). After a rebind the boot serverResult
+	// no longer references the serving listener, so awaitShutdown drains via this
+	// controller instead. Nil only on the degraded fail-open paths that did not
+	// adopt one.
+	listenerController *serverctl.Controller
+
 	// acmeTrigger forwards an admin ACME config save to the running renewer so
 	// hostname registration / issuance re-run immediately (tls-acme.md § 3.14).
 	// Bound to the renewer once setupACME builds it; a no-op before then.
@@ -164,6 +181,25 @@ type serverApp struct {
 	// available/unavailable" deterministically without needing privilege. Nil ⇒
 	// a real bind on 443.
 	auto443Listen func(listenAddr string) (net.Listener, error)
+
+	// autoHTTPSActive records that boot bound the automatic-443 lifeboat (tls.md
+	// § 1.5: HTTPS on a separate 443 listener with the configured port redirecting
+	// to it). When set, the listener controller re-plans that topology in place on a
+	// same-mode static change (H4b-3) rather than collapsing to a single HTTPS
+	// listener on the configured port. autoHTTPSPort is the actual bound lifeboat
+	// port (443 in production; a free port via the auto443Listen test seam), used as
+	// the live HTTPS bind target so a rebind reclaims it. Both are read-only after
+	// setupAndServeHTTP.
+	autoHTTPSActive bool
+	autoHTTPSPort   int
+
+	// acmeActive records that boot came up serving the full acme topology (HTTPS
+	// listener + renewer + port-80 challenge/redirect server, adopted into the
+	// listener controller as one composite Instance — H4c-1). While set, the applier
+	// refuses every server-config save (restart_required) because leaving or
+	// re-planning the acme topology in place is deferred to H4c-2. Read-only after
+	// setupAndServeHTTP.
+	acmeActive bool
 }
 
 // exitCodeRestart is the process exit code used for an admin-requested restart.
@@ -319,8 +355,12 @@ func (app *serverApp) setupDatabase() error {
 
 	// EventHub — create early so the DBWriter broadcast callback can
 	// capture it. The run loop starts immediately in a background
-	// goroutine; it will be stopped during graceful shutdown.
-	app.hub = webapi.NewEventHub()
+	// goroutine; it will be stopped during graceful shutdown. Limits come
+	// from server.websocket.* and are reconfigured live on save.
+	app.hub = webapi.NewEventHub(
+		webapi.WithMaxConnections(app.cfg.Server.WebSocket.MaxConnections),
+		webapi.WithSendBufferSize(app.cfg.Server.WebSocket.SendBufferSize),
+	)
 	go app.hub.Run()
 
 	return nil
@@ -1244,6 +1284,13 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	app.acmeTrigger = &acmeTriggerHolder{}
 	routerOpts = append(routerOpts, webapi.WithACMETrigger(app.acmeTrigger.Trigger))
 
+	// Holder for the in-place listener rebinder. Wired up front like tlsReload;
+	// the serve switch below adopts a serverctl.Controller into it for the modes
+	// that support live listen_address/port rebind (configuration-live-reload.md
+	// listener-rebind H2). Unset modes fall back to restart-required.
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+	routerOpts = append(routerOpts, webapi.WithListenerRebinder(app.listenerRebind))
+
 	if recorder != nil {
 		routerOpts = append(routerOpts, webapi.WithPerformance(recorder))
 	}
@@ -1637,14 +1684,435 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		res.errCh = tlsListener.Serve()
 		res.tlsListener = tlsListener
 
+		// Adopt the listener controller so a saved listen_address/port, an
+		// off↔static mode toggle (H4a), a same-mode static field change (min_version
+		// / mTLS CA / cert source-or-paths — H4b-1), or an http_redirect_port change
+		// (H4b-2) rebinds in place (no restart). When the auto-443 lifeboat is active
+		// (https443Ln != nil) HTTPS serves on 443 with the configured port as a
+		// redirect; record that topology so the controller re-plans 443 + redirects in
+		// place on a same-mode static change (H4b-3) instead of collapsing to a single
+		// HTTPS listener on the configured port. autoHTTPSPort is the actual bound
+		// lifeboat port (443 in production), captured so a live rebind reclaims it.
+		if https443Ln != nil {
+			app.autoHTTPSActive = true
+			app.autoHTTPSPort = listenerPort(https443Ln)
+		}
+		app.adoptListenerController(apiRouter,
+			&serverctl.Instance{Addr: tlsListener.Addr(), Shutdown: tlsListener.Shutdown},
+			app.cfg.Server)
+
 	case "acme":
 		return app.setupACME(apiRouter, app.cfgStore, shutdownTimeout)
 
 	default:
 		res = app.servePlainHTTP(apiRouter)
+		if res.plainSrv != nil {
+			app.adoptListenerController(apiRouter,
+				&serverctl.Instance{Addr: res.plainSrv.Addr, Shutdown: res.plainSrv.Shutdown},
+				app.cfg.Server)
+		}
 	}
 
 	return res, nil
+}
+
+// rebindLog adapts the application logger to the serverctl.LogFunc seam, scoping
+// messages to the startup scope.
+func (app *serverApp) rebindLog(level, msg string) {
+	scoped := app.logger.WithScope(logging.ScopeStartup)
+	switch level {
+	case "ERROR":
+		scoped.Error(msg)
+	default:
+		scoped.Info(msg)
+	}
+}
+
+// serverListenerVariant maps a TLS mode to the listener topology the controller
+// builds for it: static → a TLS listener, acme → the acme topology (adopted as a
+// composite Instance, H4c-1), anything else (off/"") → plain HTTP. A distinct acme
+// variant keeps the adopted acme key from colliding with off; in-place acme
+// transitions remain refused until H4c-2 (so the exact acme key beyond the variant
+// does not yet drive any rebind — H4c-2 will fold the effective HTTPS port and an
+// acme fingerprint into it).
+func serverListenerVariant(mode string) string {
+	switch mode {
+	case "static":
+		return "tls"
+	case "acme":
+		return "acme"
+	default:
+		return "plain"
+	}
+}
+
+// resolveListen returns the effective bind address and port for cfg, applying the
+// same defaults the listeners use (empty address → 0.0.0.0, zero port → 8080) so
+// the controller's no-op key is stable across an unchanged save.
+func resolveListen(cfg config.ServerConfig) (string, int) {
+	addr := cfg.ListenAddress
+	if addr == "" {
+		addr = "0.0.0.0"
+	}
+	port := cfg.Port
+	if port == 0 {
+		port = 8080
+	}
+	return addr, port
+}
+
+// tlsTopologyFingerprint captures the static-TLS listener-affecting config fields
+// — cert source/paths, mTLS CA, min version, and http_redirect_port — so a
+// same-port change to any of them yields a different controller key and rebinds the
+// HTTPS (+ redirect) listener topology in place (H4b-1 fields, H4b-2 redirect). It
+// is empty for non-static modes: plain HTTP has no TLS topology, and the acme /
+// auto-443 topologies are not rebound in place yet (acme refused by
+// applyServerListener before the key is computed). cert_source "" normalises to
+// "file" to match the listener default, so a cosmetic round-trip of the default is
+// not seen as a change.
+func tlsTopologyFingerprint(cfg config.ServerConfig) string {
+	if cfg.TLS.Mode != "static" {
+		return ""
+	}
+	src := cfg.TLS.CertSource
+	if src == "" {
+		src = "file"
+	}
+	return fmt.Sprintf("src=%s;cert=%s;key=%s;ca=%s;min=%s;redirect=%d",
+		src, cfg.TLS.CertPath, cfg.TLS.KeyPath, cfg.TLS.CAPath, cfg.TLS.MinVersion, cfg.TLS.HTTPRedirectPort)
+}
+
+// serverListenerKey is the opaque controller target fingerprint for cfg:
+// "<variant>|<addr:port>|<tls-topology>". off↔static on the same port yields a
+// different key (different variant), a listen change yields a different bind
+// target, and a same-mode static field change (min_version / mTLS CA / cert
+// source-or-paths) yields a different tls-topology segment — each triggers a
+// rebuild. An unchanged save yields the same key and is a no-op.
+func serverListenerKey(cfg config.ServerConfig) string {
+	addr, port := resolveListen(cfg)
+	return fmt.Sprintf("%s|%s:%d|%s", serverListenerVariant(cfg.TLS.Mode), addr, port, tlsTopologyFingerprint(cfg))
+}
+
+// listenerKey is the controller target fingerprint for cfg, accounting for the
+// auto-443 lifeboat. When the lifeboat is active and the target is static, HTTPS
+// lives on the lifeboat port (autoHTTPSPort) and the configured port is only a
+// redirect, so the key's listen target is "<addr>:<autoHTTPSPort>" and the
+// configured port is folded into the fingerprint — a server.port /
+// http_redirect_port / min_version / CA / cert change yields a new key while the
+// HTTPS target stays the same (→ a same-target RebindInPlace that swaps the
+// redirects). Otherwise it is the standard single-listener key.
+func (app *serverApp) listenerKey(cfg config.ServerConfig) string {
+	if app.autoHTTPSActive && cfg.TLS.Mode == "static" {
+		addr, port := resolveListen(cfg)
+		return fmt.Sprintf("tls443|%s:%d|%s;cfgport=%d",
+			addr, app.autoHTTPSPort, tlsTopologyFingerprint(cfg), port)
+	}
+	return serverListenerKey(cfg)
+}
+
+// effectiveTLSTopology returns the HTTPS port and redirect ports a static-TLS
+// listener should bind for cfg. With the auto-443 lifeboat active, HTTPS serves on
+// the lifeboat port and both the configured port and http_redirect_port redirect to
+// it; otherwise HTTPS serves on the configured port with http_redirect_port as the
+// only redirect. Zero/duplicate/HTTPS-equal redirect ports are filtered by the
+// listener.
+func (app *serverApp) effectiveTLSTopology(cfg config.ServerConfig) (httpsPort int, redirectPorts []int) {
+	_, port := resolveListen(cfg)
+	if app.autoHTTPSActive {
+		return app.autoHTTPSPort, []int{port, cfg.TLS.HTTPRedirectPort}
+	}
+	return port, []int{cfg.TLS.HTTPRedirectPort}
+}
+
+// listenerPort extracts the bound TCP port from a listener's address. Used to
+// capture the actual auto-443 lifeboat port (443 in production, a free port under
+// the auto443Listen test seam) so a live rebind reclaims that exact port.
+func listenerPort(ln net.Listener) int {
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return 0
+	}
+	p, _ := strconv.Atoi(portStr)
+	return p
+}
+
+// keyListenTarget returns the address:port segment of a serverListenerKey (between
+// the first and second "|"), so two keys can be compared for the same bind target
+// regardless of variant or tls topology. A same target means bind-new-first is
+// impossible (the old listener holds the port) and the rebind must release-first.
+func keyListenTarget(key string) string {
+	parts := strings.SplitN(key, "|", 3)
+	if len(parts) >= 2 {
+		return parts[1]
+	}
+	return key
+}
+
+// adoptListenerController wires the single serverctl.Controller that rebinds the
+// live listener in place across listen_address/port changes and off↔static TLS
+// mode transitions (H4a). boot is the Instance already serving at startup;
+// bootCfg seeds the initial no-op key from the configured (not the bound) target,
+// so an unchanged save is a no-op. handler is rebuilt onto the new listener on
+// each rebind. No-op when no boot Instance or no rebind holder is wired.
+func (app *serverApp) adoptListenerController(handler http.Handler, boot *serverctl.Instance, bootCfg config.ServerConfig) {
+	if boot == nil || app.listenerRebind == nil {
+		return
+	}
+	ctrl := serverctl.New(app.resolveShutdownTimeout, app.rebindLog)
+	ctrl.Adopt(boot, app.listenerKey(bootCfg))
+	app.listenerController = ctrl
+	app.listenerRebind.Set(func(cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
+		return app.applyServerListener(handler, ctrl, cfg)
+	})
+}
+
+// inPlaceBindAttempts / inPlaceBindRetryDelay bound the bind retry on a
+// same-target (off↔static, same port) rebind, where the new listener must reclaim
+// the port the old one just released. SO_REUSEADDR (Go's default) makes the
+// reclaim succeed; the retry only absorbs the brief OS release lag. ~2s total.
+const (
+	inPlaceBindAttempts   = 40
+	inPlaceBindRetryDelay = 50 * time.Millisecond
+)
+
+// applyServerListener rebuilds the live listener for the desired cfg via the
+// controller, dispatching on the target TLS mode: off → plain, static → a
+// static-TLS HTTPS listener on the configured port plus an optional
+// http_redirect_port redirect listener (H4b-2). The only target not yet supported
+// in place is ACME (the port-80 challenge/redirect + renewer rebuild is H4c) —
+// returning ErrNoListenerRebinder so the save is reported restart_required and
+// applied on the next restart. When the auto-443 lifeboat is active (H4b-3), a
+// same-mode static change re-plans HTTPS-on-the-lifeboat-port + its redirects in
+// place via effectiveTLSTopology; leaving that topology (a mode or listen_address
+// change) is refused and stays restart-required.
+//
+// A different-target change binds the new listener before retiring the old
+// (bind-new-first), so a bind clash keeps the old serving. A same-address:port
+// change (an off↔static toggle on one port, or a same-mode static field change —
+// min_version / mTLS CA / cert source-or-paths — that keeps the port) cannot
+// bind-new-first, so it validates the replacement is constructible first — a bad
+// certificate is caught with the old listener untouched — then releases the old
+// and binds the new on the freed port, retrying briefly to absorb the OS release
+// lag.
+func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.Controller, cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
+	// Entering acme (target mode), or re-planning the live acme topology in place
+	// (an acme-internal save while app.acmeActive), is deferred to H4c-2b — refuse
+	// so the save is reported restart_required. Leaving acme for off/static (H4c-2a)
+	// is handled below: the controller swap drains the whole acme Instance (HTTPS +
+	// renewer + port-80 challenge) and binds the off/static replacement.
+	if cfg.TLS.Mode == "acme" {
+		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
+	}
+	exitingACME := app.acmeActive // mode != acme here, so this is an acme→off/static exit
+
+	newKey := app.listenerKey(cfg)
+	cur := ctrl.CurrentKey()
+	if cur == newKey {
+		return webapi.ReloadApplied, nil // unchanged target — no-op
+	}
+
+	// Auto-443 lifeboat (H4b-3): only a same-mode, same-HTTPS-target static change is
+	// re-planned in place. Leaving the auto-443 topology (a mode change) or moving the
+	// HTTPS bind (a listen_address change) needs a full topology re-plan and stays
+	// restart-required — the no-rebinder fallback.
+	if app.autoHTTPSActive && (cfg.TLS.Mode != "static" || keyListenTarget(cur) != keyListenTarget(newKey)) {
+		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
+	}
+
+	// An acme exit always releases first: the live acme topology holds several ports
+	// (HTTPS + port-80 challenge + any redirect), so draining the whole Instance
+	// before binding the replacement avoids a bind-new-first clash with a port the
+	// old topology still holds. The replacement binds on the freed port(s) with the
+	// same release-lag retry as a same-target rebind. Otherwise use same-target
+	// detection (a same-address:port variant change cannot bind-new-first).
+	inPlace := exitingACME || keyListenTarget(cur) == keyListenTarget(newKey)
+
+	addr, port := resolveListen(cfg)
+	attempts := 1
+	if inPlace {
+		attempts = inPlaceBindAttempts
+	}
+
+	var build serverctl.BuildFunc
+	if cfg.TLS.Mode == "static" {
+		// Construct (but do not bind) the TLS listener up front so a cert/config
+		// error fails here, before the old listener is disturbed. With the auto-443
+		// lifeboat active HTTPS targets the lifeboat port and the configured port +
+		// http_redirect_port redirect to it; otherwise HTTPS targets the configured
+		// port with http_redirect_port as the only redirect.
+		httpsPort, redirectPorts := app.effectiveTLSTopology(cfg)
+		listener, err := app.newTLSListener(handler, cfg, addr, httpsPort, redirectPorts)
+		if err != nil {
+			return webapi.ReloadProcess, err
+		}
+		build = func() (*serverctl.Instance, error) {
+			return app.serveTLSListener(listener, addr, httpsPort, attempts)
+		}
+	} else {
+		build = func() (*serverctl.Instance, error) {
+			return app.buildPlainInstance(handler, addr, port, attempts)
+		}
+	}
+
+	var changed bool
+	var err error
+	if inPlace {
+		changed, err = ctrl.RebindInPlace(newKey, build)
+	} else {
+		changed, err = ctrl.Rebind(newKey, build)
+	}
+	if err != nil {
+		return webapi.ReloadProcess, err
+	}
+	if !changed {
+		return webapi.ReloadApplied, nil
+	}
+	if exitingACME {
+		// Now serving plain/static off the acme topology — the renewer + challenge
+		// drained with the old Instance. Clear acmeActive so subsequent saves take
+		// the normal off/static path (re-entering acme stays restart-required —
+		// H4c-2b). Stale tlsReload pointer on acme→off mirrors the H4a residual.
+		app.acmeActive = false
+	}
+	return webapi.ReloadListener, nil
+}
+
+// listenTCP binds addr:port, retrying up to attempts times (attempts<=1 = a single
+// try) with a fixed delay. The retry absorbs the OS port-release lag when the new
+// listener must reclaim a port the old one just released on a same-target rebind.
+func listenTCP(addr string, port, attempts int) (net.Listener, error) {
+	return listenTCPTarget(net.JoinHostPort(addr, strconv.Itoa(port)), attempts)
+}
+
+// listenTCPTarget binds a "host:port" target, retrying up to attempts times
+// (attempts<=1 = a single try) with a fixed delay. It is the redirect-listener
+// analogue of listenTCP, letting serveTLSListener pre-bind each redirect port with
+// the same release-lag retry as the HTTPS port on a same-target rebind.
+func listenTCPTarget(target string, attempts int) (net.Listener, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		ln, err := net.Listen("tcp", target)
+		if err == nil {
+			return ln, nil
+		}
+		lastErr = err
+		if i < attempts-1 {
+			time.Sleep(inPlaceBindRetryDelay)
+		}
+	}
+	return nil, lastErr
+}
+
+// buildPlainInstance binds a new plain-HTTP listener at addr:port (retrying
+// attempts times) and starts serving handler on it. A bind failure returns the
+// error with nothing bound.
+func (app *serverApp) buildPlainInstance(handler http.Handler, addr string, port, attempts int) (*serverctl.Instance, error) {
+	if addr == "" {
+		addr = "0.0.0.0"
+	}
+	if port == 0 {
+		port = 8080
+	}
+	ln, err := listenTCP(addr, port, attempts)
+	if err != nil {
+		return nil, err
+	}
+	srv := apptls.NewPlainListener(handler, "", 0)
+	srv.Addr = ln.Addr().String()
+	go func() {
+		app.startup.Info(fmt.Sprintf("HTTP server listening on %s (rebound)", ln.Addr()))
+		if serveErr := srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			app.logger.WithScope(logging.ScopeWebAPI).Error(fmt.Sprintf("rebound HTTP server %s: %v", ln.Addr(), serveErr))
+		}
+	}()
+	return &serverctl.Instance{Addr: ln.Addr().String(), Shutdown: srv.Shutdown}, nil
+}
+
+// newTLSListener assembles the apptls.ListenerConfig from the desired server
+// config and constructs the static-TLS listener WITHOUT binding any port — so the
+// certificate/TLS config is validated (off→static toggle, min_version/CA change)
+// before the live listener is disturbed. For cert_source: db it fetches the
+// current cert/key from the encrypted store so a prior hot-swap is preserved.
+// httpsPort/redirectPorts come from effectiveTLSTopology (the configured port and
+// its http_redirect_port, or the lifeboat port and its redirect set under auto-443);
+// redirectPorts is passed via RedirectPorts (HTTPRedirectPort folds into it, so 0
+// here is equivalent for the single-redirect case).
+func (app *serverApp) newTLSListener(handler http.Handler, cfg config.ServerConfig, addr string, httpsPort int, redirectPorts []int) (*apptls.Listener, error) {
+	lcfg := apptls.ListenerConfig{
+		ListenAddress:           addr,
+		Port:                    httpsPort,
+		CertSource:              cfg.TLS.CertSource,
+		CertPath:                cfg.TLS.CertPath,
+		KeyPath:                 cfg.TLS.KeyPath,
+		CAPath:                  cfg.TLS.CAPath,
+		MinVersion:              cfg.TLS.MinVersion,
+		RedirectPorts:           redirectPorts,
+		GracefulShutdownTimeout: app.resolveShutdownTimeout(),
+		TrustedProxy:            cfg.TrustedProxy,
+		HSTSEnabled:             app.hstsEnabledFn(),
+	}
+	if lcfg.CertSource == "db" && app.cfgStore != nil {
+		certPEM, keyPEM, loadErr := app.loadDBCertKey(context.Background())
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		lcfg.CertPEM = certPEM
+		lcfg.KeyPEM = keyPEM
+	}
+	return apptls.NewListener(handler, lcfg, app.tlsLog)
+}
+
+// serveTLSListener binds the already-constructed listener at addr:port (retrying
+// attempts times to absorb a same-target release race), starts serving, and wires
+// the in-place cert reloader and watch. The HTTPS listener is served on the
+// configured port; an explicit http_redirect_port is served on a secondary
+// redirect listener pre-bound here with the same retry (H4b-2) — the old process
+// holds that port across a same-target RebindInPlace drain, so the bind must
+// reclaim it. Under the auto-443 lifeboat (H4b-3) the same path serves HTTPS on the
+// lifeboat port with the configured port + http_redirect_port as the redirect set
+// (assembled by effectiveTLSTopology into RedirectPorts). A bind failure closes
+// whatever was bound and returns the error (nothing left serving the target on a
+// same-target rebind).
+func (app *serverApp) serveTLSListener(listener *apptls.Listener, addr string, port, attempts int) (*serverctl.Instance, error) {
+	ln, err := listenTCP(addr, port, attempts)
+	if err != nil {
+		return nil, err
+	}
+	listener.SetHTTPSListener(ln)
+
+	// Pre-bind each redirect listener (http_redirect_port) with the same retry, so
+	// a same-target rebind can reclaim the redirect port the old process is still
+	// draining. A bind failure unwinds the HTTPS and any redirect already bound.
+	if redirectAddrs := listener.RedirectAddrs(); len(redirectAddrs) > 0 {
+		redirectLns := make([]net.Listener, 0, len(redirectAddrs))
+		for _, raddr := range redirectAddrs {
+			rln, rerr := listenTCPTarget(raddr, attempts)
+			if rerr != nil {
+				_ = ln.Close()
+				for _, bound := range redirectLns {
+					_ = bound.Close()
+				}
+				return nil, rerr
+			}
+			redirectLns = append(redirectLns, rln)
+		}
+		listener.SetRedirectListeners(redirectLns)
+	}
+
+	listener.CertManager().WatchForChanges(30 * time.Second)
+	if app.tlsReload != nil {
+		app.tlsReload.Set(listener.CertManager())
+	}
+	errCh := listener.Serve()
+	go func() {
+		if serveErr := <-errCh; serveErr != nil {
+			app.logger.WithScope(logging.ScopeTLS).Error(fmt.Sprintf("rebound HTTPS server %s: %v", listener.Addr(), serveErr))
+		}
+	}()
+	return &serverctl.Instance{Addr: listener.Addr(), Shutdown: listener.Shutdown}, nil
 }
 
 // loadDBCertKey fetches the cert_source: db certificate and private key from
@@ -1939,11 +2407,25 @@ func (app *serverApp) degradeToPlainHTTP(handler http.Handler, cause error) serv
 // Phase: signal handling loop and graceful shutdown.
 // ---------------------------------------------------------------------------
 
-func (app *serverApp) awaitShutdown(srv serverResult) int {
-	shutdownTimeout := time.Duration(app.cfg.Server.GracefulShutdownSeconds) * time.Second
-	if shutdownTimeout <= 0 {
-		shutdownTimeout = 15 * time.Second
+// resolveShutdownTimeout returns the graceful-shutdown drain budget, read live
+// from the config holder when one is wired so a saved graceful_shutdown_seconds
+// change applies at the next shutdown without a restart (config live-reload H1).
+// It falls back to the boot config when no holder is set, and a non-positive
+// value defaults to 15s.
+func (app *serverApp) resolveShutdownTimeout() time.Duration {
+	secs := app.cfg.Server.GracefulShutdownSeconds
+	if app.configHolder != nil {
+		secs = app.configHolder.Get().Server.GracefulShutdownSeconds
 	}
+	timeout := time.Duration(secs) * time.Second
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	return timeout
+}
+
+func (app *serverApp) awaitShutdown(srv serverResult) int {
+	shutdownTimeout := app.resolveShutdownTimeout()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
@@ -1983,7 +2465,10 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 	}
 
 	// Stop the ACME renewal loop first (mode: acme) so no new issuance starts
-	// while we drain.
+	// while we drain. This is the fallback path: when the controller adopted the
+	// acme topology (H4c-1, rebinder wired), renewerCancel/challengeSrv are nil
+	// here and the renewer + challenge server drain via the composite Instance in
+	// the controller.Shutdown branch below.
 	if srv.renewerCancel != nil {
 		app.startup.Info("stopping ACME renewal loop...")
 		srv.renewerCancel()
@@ -2014,12 +2499,21 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 		}
 	}
 
-	if srv.tlsListener != nil {
+	// In rebind-capable modes the controller owns the live listener (which a
+	// rebind may have swapped out from under the boot serverResult), so drain via
+	// it. Otherwise fall back to the boot listener captured in srv.
+	switch {
+	case app.listenerController != nil:
+		if err := app.listenerController.Shutdown(shutdownCtx); err != nil {
+			app.startup.Error(fmt.Sprintf("HTTP(S) server shutdown: %v", err))
+			return 1
+		}
+	case srv.tlsListener != nil:
 		if err := srv.tlsListener.Shutdown(shutdownCtx); err != nil {
 			app.startup.Error(fmt.Sprintf("TLS server shutdown: %v", err))
 			return 1
 		}
-	} else if srv.plainSrv != nil {
+	case srv.plainSrv != nil:
 		if err := srv.plainSrv.Shutdown(shutdownCtx); err != nil {
 			app.startup.Error(fmt.Sprintf("HTTP server shutdown: %v", err))
 			return 1

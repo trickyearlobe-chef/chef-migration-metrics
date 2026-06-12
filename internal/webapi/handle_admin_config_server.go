@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -46,6 +47,67 @@ type acmeRoute53CredSubmission struct {
 			} `yaml:"route53"`
 		} `yaml:"acme"`
 	} `yaml:"tls"`
+}
+
+// serverKeyGranularity maps each persisted server sub-key to the reload
+// granularity a change to it currently needs. graceful_shutdown_seconds is read
+// live at shutdown time, so it applies without a restart; websocket is a
+// subsystem rebuild (the hub is reconfigured in place — see putAdminConfigServer);
+// trusted_proxy stays pessimistically process until its in-place rebind lands.
+// The listen and tls keys are NOT here: their granularity is resolved
+// per-request from the in-place rebind outcome (an off↔static mode toggle or a
+// listen change rebinds to ReloadListener on success, ReloadProcess when no
+// rebinder is wired) — see putAdminConfigServer.
+var serverKeyGranularity = map[string]ReloadGranularity{
+	configstore.KeyServerGracefulShutdown: ReloadApplied,
+	configstore.KeyServerWebSocket:        ReloadSubsystem,
+	configstore.KeyServerTrustedProxy:     ReloadProcess,
+}
+
+// serverReloadGranularity reports the worst reload granularity across the server
+// sub-keys whose stored value actually changed between the pre-save live config
+// and the submitted config. Unchanged keys are ignored; with nothing changed the
+// save is applied (a no-op needs no restart). A nil live snapshot (no holder and
+// no boot config) is treated pessimistically as changed for every key. listenGran
+// and tlsGran are the listen and tls keys' already-resolved granularities (folded
+// in directly because they are applied via the in-place rebinder, not the static
+// map).
+func serverReloadGranularity(newSections, liveSections map[string]json.RawMessage, listenGran, tlsGran ReloadGranularity) ReloadGranularity {
+	worst := listenGran
+	if tlsGran > worst {
+		worst = tlsGran
+	}
+	for key, g := range serverKeyGranularity {
+		changed := liveSections == nil || !bytes.Equal(newSections[key], liveSections[key])
+		if changed && g > worst {
+			worst = g
+		}
+	}
+	return worst
+}
+
+// listenSectionChanged reports whether the persisted server.listen section
+// differs between the submitted and pre-save live config. A nil live snapshot is
+// treated pessimistically as changed.
+func listenSectionChanged(newSections, liveSections map[string]json.RawMessage) bool {
+	return liveSections == nil ||
+		!bytes.Equal(newSections[configstore.KeyServerListen], liveSections[configstore.KeyServerListen])
+}
+
+// websocketSectionChanged reports whether the persisted server.websocket section
+// differs between the submitted and pre-save live config. A nil live snapshot is
+// treated pessimistically as changed.
+func websocketSectionChanged(newSections, liveSections map[string]json.RawMessage) bool {
+	return liveSections == nil ||
+		!bytes.Equal(newSections[configstore.KeyServerWebSocket], liveSections[configstore.KeyServerWebSocket])
+}
+
+// tlsSectionChanged reports whether the persisted server.tls section differs
+// between the submitted and pre-save live config. A nil live snapshot is treated
+// pessimistically as changed.
+func tlsSectionChanged(newSections, liveSections map[string]json.RawMessage) bool {
+	return liveSections == nil ||
+		!bytes.Equal(newSections[configstore.KeyServerTLS], liveSections[configstore.KeyServerTLS])
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +423,15 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Snapshot the pre-save live server sections so the response can report the
+	// worst reload granularity of the sub-keys that actually changed (the PUT
+	// bundles listen/tls/websocket/graceful, but a graceful-only change applies
+	// live and must not claim a restart). Captured before the holder reloads.
+	var liveSections map[string]json.RawMessage
+	if live := r.liveConfig(); live != nil {
+		liveSections, _ = configstore.ConfigToSections(&config.Config{Server: live.Server})
+	}
+
 	// --- Persist all listen/TLS/WebSocket/shutdown sub-keys then reload ---
 
 	sections, err := configstore.ConfigToSections(&config.Config{Server: input})
@@ -432,6 +503,21 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Reconfigure the running WebSocket hub in place when the websocket section
+	// changed (configuration-live-reload.md: subsystem). Existing connections are
+	// preserved — the new max_connections/send_buffer_size take effect on
+	// subsequent registrations, and timeouts on subsequent connections (pulled
+	// live by the handler). Values come from the reloaded live config so unset
+	// fields carry their applied defaults. Reported as subsystem (no restart) via
+	// serverKeyGranularity.
+	if r.hub != nil && websocketSectionChanged(sections, liveSections) {
+		ws := input.WebSocket
+		if lc := r.liveConfig(); lc != nil {
+			ws = lc.Server.WebSocket
+		}
+		r.hub.Reconfigure(ws.MaxConnections, ws.SendBufferSize)
+	}
+
 	// Swap the running static-TLS certificate in place so the listener serves
 	// the new pair without a restart (tls-static.md § 2.3). Best-effort: when
 	// no reloader is wired (file source, plain HTTP, or no DB listener yet) the
@@ -449,13 +535,79 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		r.acmeReRegister()
 	}
 
+	// Rebind the running listener in place when the listen target changed or the
+	// TLS section changed (configuration-live-reload.md listener-rebind). A tls
+	// change covers an off↔static mode toggle (H4a), a same-mode static field
+	// change — min_version / mTLS CA / cert source-or-paths (H4b-1) — and an
+	// http_redirect_port change (H4b-2), each rebuilding the HTTPS (+ redirect)
+	// listener topology; the applier dispatches and either rebinds in place or
+	// refuses an unsupported topology. The new listener is bound first (or, on a
+	// same-address:port change, validated then rebound in place); only once it is
+	// serving is the old one drained. The resolved granularity is folded into the
+	// response via listenGran (listen key) and tlsGran (tls key):
+	//   - unchanged / no-op       → applied
+	//   - rebound in place        → listener (no restart)
+	//   - no rebinder / refused   → process (restart_required; persisted, applies on
+	//     the next restart — ACME, the auto-443 lifeboat re-plan, and the degraded
+	//     self-signed fallback fall here)
+	// A bind failure (e.g. the port is now held by another process) keeps the old
+	// listener serving and is surfaced as a 500.
+	listenChanged := listenSectionChanged(sections, liveSections)
+	tlsChanged := tlsSectionChanged(sections, liveSections)
+
+	listenGran := ReloadApplied
+	tlsGran := ReloadApplied
+
+	if listenChanged || tlsChanged {
+		applyGran := ReloadProcess
+		if r.listenerRebind != nil {
+			// The submitted config is the desired target. A zero submitted port means
+			// "unchanged", so fill it from the live port rather than rebinding to an
+			// ephemeral one.
+			effCfg := input
+			if effCfg.Port == 0 {
+				if lc := r.liveConfig(); lc != nil {
+					effCfg.Port = lc.Server.Port
+				}
+			}
+			g, applyErr := r.listenerRebind.Apply(effCfg)
+			switch {
+			case applyErr == nil:
+				applyGran = g
+			case errors.Is(applyErr, ErrNoListenerRebinder):
+				// No in-place rebinder / refused topology — restart-required
+				// (applyGran stays process). The new config is already persisted.
+			default:
+				addr := effCfg.ListenAddress
+				if addr == "" {
+					addr = "0.0.0.0"
+				}
+				r.logf("ERROR", "admin/config/server: listener rebind to %s:%d failed: %v", addr, effCfg.Port, applyErr)
+				WriteError(w, http.StatusInternalServerError, ErrCodeInternalError,
+					fmt.Sprintf("server: could not rebind the listener to %s:%d (%v) — the previous listener is still serving; free that port or revert the change.", addr, effCfg.Port, applyErr))
+				return
+			}
+		}
+		if listenChanged {
+			listenGran = applyGran
+		}
+		if tlsChanged {
+			tlsGran = applyGran
+		}
+	}
+
 	data, err := configstore.SerializeValue(input)
 	if err != nil {
 		r.logf("ERROR", "admin/config/server: serialise response: %v", err)
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	resp := putConfigResponse{Value: data, RestartRequired: true}
+	reload := serverReloadGranularity(sections, liveSections, listenGran, tlsGran)
+	resp := putConfigResponse{
+		Value:           data,
+		RestartRequired: reload == ReloadProcess,
+		Reload:          reload.String(),
+	}
 	if dbCertWarning != "" {
 		r.logf("WARN", "admin/config/server: TLS certificate chain stored with warning: %s", dbCertWarning)
 		resp.Warnings = append(resp.Warnings, dbCertWarning)

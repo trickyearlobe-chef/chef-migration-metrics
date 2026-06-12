@@ -169,8 +169,10 @@ is obsolete — all 6 `concurrency.*` workers are present; TK concurrency is
 
 Same logical value living in 2+ places that can drift. Ranked.
 
-- [ ] **`r.cfg` snapshot vs `liveConfig()`** (HIGH) — same root cause as restart Bucket 2
-  above; the inverted-applier fix + handler swaps resolve it. Don't fix twice.
+- [x] **`r.cfg` snapshot vs `liveConfig()`** (HIGH) — DONE (`refactor/config-live-reload`,
+  Chunk A). All non-test handler reads swapped to `r.liveConfig()`; LSP `findReferences`
+  confirmed no static `r.cfg` read sites remain in handlers (router.go setup-time reads
+  intentionally left). Resolved by the Bucket 2 fix, as predicted.
 - [ ] **`server.listen` carry-over duplicated** (HIGH) — "DB wins unless absent, else
   carry bootstrap" logic copied in `main.go:722-730` and `reloader.go:91-98`; must stay
   in lockstep by hand. **Fix:** extract one shared helper.
