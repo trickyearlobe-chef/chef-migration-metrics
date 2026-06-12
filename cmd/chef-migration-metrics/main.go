@@ -492,11 +492,20 @@ func (app *serverApp) setupAuth(ctx context.Context) error {
 
 	app.sessionMgr = auth.NewSessionManager(app.db, sessionLifetime,
 		auth.WithSessionLogger(authLogFn),
+		// Live session_expiry: read from the holder at session creation so a
+		// config change applies without a restart.
+		auth.WithSessionLifetimeFunc(func() time.Duration {
+			return auth.ParseDuration(app.configHolder.Get().Auth.SessionExpiry, 8*time.Hour)
+		}),
 	)
 
 	app.localAuth = auth.NewLocalAuthenticator(app.db, app.cfg.Auth.LockoutAttempts,
 		auth.WithLocalAuthLogger(authLogFn),
 		auth.WithTrustedProxy(app.cfg.Server.TrustedProxy),
+		// Live lockout_attempts: read from the holder on each login attempt.
+		auth.WithLockoutAttemptsFunc(func() int {
+			return app.configHolder.Get().Auth.LockoutAttempts
+		}),
 	)
 
 	app.authMiddleware = auth.NewMiddleware(app.sessionMgr,
@@ -536,20 +545,33 @@ func (app *serverApp) setupAuth(ctx context.Context) error {
 // setupSAML configures the SAML Service Provider if a SAML auth provider is
 // present in the configuration. Requires setupAuth to have run first.
 func (app *serverApp) setupSAML(ctx context.Context) {
-	// Find the SAML provider in the config.
-	var samlCfg *config.AuthProvider
-	for i := range app.cfg.Auth.Providers {
-		if app.cfg.Auth.Providers[i].Type == "saml" {
-			samlCfg = &app.cfg.Auth.Providers[i]
-			break
-		}
-	}
-	if samlCfg == nil {
-		return
+	// Always create the handler (provider may be nil) so the SAML routes are
+	// wired and a later config change can enable/rebuild SAML live without a
+	// restart. With a nil provider the request handlers return 501.
+	provider, endpoints, err := app.buildSAMLProvider(ctx, app.cfg)
+	if err != nil {
+		app.startup.Error(fmt.Sprintf("SAML: %v — SAML login disabled until the config is corrected", err))
 	}
 
+	app.samlHandler = webapi.NewSAMLHandler(
+		provider,
+		jit.New(app.db, app.authScopedLogFn()),
+		app.sessionMgr,
+		app.db,
+		app.cfg.Server.TrustedProxy,
+		app.authScopedLogFn(),
+	)
+	app.samlHandler.SetEndpoints(endpoints)
+
+	if provider != nil {
+		app.startup.Info(fmt.Sprintf("SAML SSO configured: entity_id=%s", endpoints.EntityID))
+	}
+}
+
+// authScopedLogFn returns a level/message log callback scoped to the auth area.
+func (app *serverApp) authScopedLogFn() func(level, msg string) {
 	authLog := app.logger.WithScope(logging.ScopeAuth)
-	logFn := func(level, msg string) {
+	return func(level, msg string) {
 		switch level {
 		case "DEBUG":
 			authLog.Debug(msg)
@@ -561,41 +583,52 @@ func (app *serverApp) setupSAML(ctx context.Context) {
 			authLog.Info(msg)
 		}
 	}
+}
 
-	// Resolve SP certificate and private key from credential store.
-	if app.credResolver == nil {
-		app.startup.Warn("SAML provider configured but credential resolver is nil — skipping SAML setup")
-		return
+// buildSAMLProvider constructs the SAML provider and SP endpoint URLs from cfg.
+// Returns (nil, zero, nil) when no SAML provider is configured. The endpoint URLs
+// are derived from the same base URL fed to the provider, so they match the
+// advertised SP metadata exactly. Reused at boot and on each live auth reload.
+func (app *serverApp) buildSAMLProvider(ctx context.Context, cfg *config.Config) (*samlsp.Provider, webapi.SAMLEndpoints, error) {
+	var samlCfg *config.AuthProvider
+	for i := range cfg.Auth.Providers {
+		if cfg.Auth.Providers[i].Type == "saml" {
+			samlCfg = &cfg.Auth.Providers[i]
+			break
+		}
 	}
+	if samlCfg == nil {
+		return nil, webapi.SAMLEndpoints{}, nil
+	}
+
+	if app.credResolver == nil {
+		return nil, webapi.SAMLEndpoints{}, fmt.Errorf("credential resolver is nil")
+	}
+
+	logFn := app.authScopedLogFn()
 
 	certCred, err := app.credResolver.Resolve(ctx, secrets.CredentialSource{
 		CredentialName: samlCfg.SPCertificateCredential,
 	})
 	if err != nil {
-		app.startup.Error(fmt.Sprintf("SAML: failed to resolve SP certificate %q: %v", samlCfg.SPCertificateCredential, err))
-		return
+		return nil, webapi.SAMLEndpoints{}, fmt.Errorf("resolving SP certificate %q: %w", samlCfg.SPCertificateCredential, err)
 	}
-
 	keyCred, err := app.credResolver.Resolve(ctx, secrets.CredentialSource{
 		CredentialName: samlCfg.SPPrivateKeyCredential,
 	})
 	if err != nil {
-		app.startup.Error(fmt.Sprintf("SAML: failed to resolve SP private key %q: %v", samlCfg.SPPrivateKeyCredential, err))
-		return
+		return nil, webapi.SAMLEndpoints{}, fmt.Errorf("resolving SP private key %q: %w", samlCfg.SPPrivateKeyCredential, err)
 	}
 
 	// Derive base URL for ACS/SLO/metadata endpoints.
 	scheme := "http"
-	if app.cfg.Server.TLS.Mode == "static" || app.cfg.Server.TLS.Mode == "acme" {
+	if cfg.Server.TLS.Mode == "static" || cfg.Server.TLS.Mode == "acme" {
 		scheme = "https"
 	}
-	baseURL := fmt.Sprintf("%s://localhost:%d", scheme, app.cfg.Server.Port)
-	if samlCfg.SPEntityID != "" {
-		// Use entity ID host as the base if it looks like a URL.
-		if strings.HasPrefix(samlCfg.SPEntityID, "http") {
-			if u, err := url.Parse(samlCfg.SPEntityID); err == nil {
-				baseURL = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-			}
+	baseURL := fmt.Sprintf("%s://localhost:%d", scheme, cfg.Server.Port)
+	if strings.HasPrefix(samlCfg.SPEntityID, "http") {
+		if u, err := url.Parse(samlCfg.SPEntityID); err == nil {
+			baseURL = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 		}
 	}
 
@@ -624,22 +657,15 @@ func (app *serverApp) setupSAML(ctx context.Context) {
 
 	provider, err := samlsp.New(spCfg)
 	if err != nil {
-		app.startup.Error(fmt.Sprintf("SAML: failed to create provider: %v", err))
-		return
+		return nil, webapi.SAMLEndpoints{}, fmt.Errorf("creating provider: %w", err)
 	}
 
-	provisioner := jit.New(app.db, logFn)
-
-	app.samlHandler = webapi.NewSAMLHandler(
-		provider,
-		provisioner,
-		app.sessionMgr,
-		app.db,
-		app.cfg.Server.TrustedProxy,
-		logFn,
-	)
-
-	app.startup.Info(fmt.Sprintf("SAML SSO configured: entity_id=%s", samlCfg.SPEntityID))
+	return provider, webapi.SAMLEndpoints{
+		ACSURL:      spCfg.ACSURL,
+		SLOURL:      spCfg.SLOURL,
+		MetadataURL: spCfg.MetadataURL,
+		EntityID:    spCfg.SPEntityID,
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1283,8 +1309,24 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		routerOpts = append(routerOpts, webapi.WithCredentialResolver(app.credResolver))
 	}
 
+	// The SAML handler is always created (provider may be nil); wiring it makes
+	// the SAML routes live so a config change can enable/rebuild SAML without a
+	// restart. The reconciler rebuilds the provider from the reloaded config and
+	// swaps it in (the subsystem half of the auth applier).
 	if app.samlHandler != nil {
 		routerOpts = append(routerOpts, webapi.WithSAML(app.samlHandler))
+		routerOpts = append(routerOpts, webapi.WithSAMLReconciler(func() error {
+			rctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			provider, endpoints, err := app.buildSAMLProvider(rctx, app.configHolder.Get())
+			if err != nil {
+				return err
+			}
+			// Swap together: nil provider + zero endpoints when SAML was removed.
+			app.samlHandler.SetProvider(provider)
+			app.samlHandler.SetEndpoints(endpoints)
+			return nil
+		}))
 	}
 
 	// Wire Node Kitchen runner factory when kitchen binary is available.

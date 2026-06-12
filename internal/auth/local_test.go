@@ -1088,3 +1088,25 @@ func TestLoginErrorFromResultGenericError(t *testing.T) {
 		t.Errorf("expected default status 401, got %d", le.StatusCode)
 	}
 }
+
+func TestLocalAuthenticator_LiveLockoutAttempts(t *testing.T) {
+	// No provider: baked threshold.
+	a := NewLocalAuthenticator(nil, 5)
+	if got := a.LockoutAttempts(); got != 5 {
+		t.Errorf("baked lockout = %d, want 5", got)
+	}
+
+	// Live provider overrides on each read.
+	live := 5
+	a2 := NewLocalAuthenticator(nil, 5, WithLockoutAttemptsFunc(func() int { return live }))
+	live = 3
+	if got := a2.LockoutAttempts(); got != 3 {
+		t.Errorf("live lockout = %d, want 3", got)
+	}
+
+	// Non-positive live value falls back to the baked threshold.
+	live = 0
+	if got := a2.LockoutAttempts(); got != 5 {
+		t.Errorf("live lockout with 0 = %d, want fallback 5", got)
+	}
+}

@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,9 +113,74 @@ func TestAdminConfigAuth_PUT_Success_Local(t *testing.T) {
 	if first["type"] != "local" {
 		t.Errorf("provider type = %v, want \"local\"", first["type"])
 	}
-	if !restartRequired {
-		t.Error("auth PUT should set restart_required = true")
+	// Auth is now fully live: session_expiry/lockout/min-password are read at
+	// point of use, and with no SAML reconciler wired the section reports
+	// applied/false (no restart).
+	if restartRequired {
+		t.Error("auth PUT should not require restart (session/lockout read live)")
 	}
+}
+
+// With no SAML reconciler wired, the auth section reloads purely via applied
+// reads (session/lockout/min-password) and reports applied/false.
+func TestAdminConfigAuth_PUT_AppliedReload_NoSAML(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(validAuthBodyLocal))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("auth PUT without SAML should not require restart")
+	}
+	if resp.Reload != ReloadApplied.String() {
+		t.Errorf("auth reload = %q, want %q", resp.Reload, ReloadApplied.String())
+	}
+}
+
+// With a SAML reconciler wired, the auth section rebuilds the provider in place
+// (subsystem) and reports subsystem/false — sp_entity_id etc. no longer need a
+// restart.
+func TestAdminConfigAuth_PUT_WithSAMLReconciler_SubsystemReload(t *testing.T) {
+	store := newTestConfigStore(t)
+	calls := 0
+	reconcile := func() error { calls++; return nil }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithSAMLReconciler(reconcile))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(validAuthBodyLocal))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("auth PUT with a SAML reconciler should not require restart")
+	}
+	if resp.Reload != ReloadSubsystem.String() {
+		t.Errorf("auth reload = %q, want %q", resp.Reload, ReloadSubsystem.String())
+	}
+	if calls != 1 {
+		t.Errorf("reconciler called %d times, want 1", calls)
+	}
+}
+
+// A SAML reconciler error (the provider could not be rebuilt) surfaces as a 500 —
+// better than silently claiming the new config is live when it is not.
+func TestAdminConfigAuth_PUT_SAMLReconcilerError_500(t *testing.T) {
+	store := newTestConfigStore(t)
+	reconcile := func() error { return errors.New("rebuild failed") }
+	r := newTestRouterForAdminConfig(nil, store, nil, WithSAMLReconciler(reconcile))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(validAuthBodyLocal))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
 }
 
 func TestAdminConfigAuth_PUT_Success_SAML(t *testing.T) {

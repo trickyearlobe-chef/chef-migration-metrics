@@ -74,12 +74,21 @@ items below) first — they're independent and unblock honest `false` immediatel
 | `server.tls.mode` / paths / `min_version` / mTLS CA | listener | cert *material* (db source + ACME) already hot-swaps in place |
 | `server.websocket.*` | subsystem | hub rebuildable without process restart |
 | `server.graceful_shutdown_seconds` | applied | only read at shutdown; could read live |
-| `auth.*` | subsystem | auth chain rebuildable |
+| ~~`auth.*`~~ | ~~subsystem~~ | **DONE** (`fix/saml-config-ux`) — now applied/subsystem, not process |
 
 These are `process` today only because no applier exists yet. Under the inverted
 model each becomes a candidate applier returning `listener`/`subsystem`; until
 then they correctly default to `process`. No action required to stay correct —
 they're honest. Listed as downgrade candidates, not bugs.
+
+- [x] `auth.*` — DONE (`fix/saml-config-ux`, branched off `refactor/config-live-reload`).
+  `session_expiry`, `lockout_attempts`, `min_password_length` are read live at point of
+  use (applied). The SAML provider is rebuilt in place on save and swapped into the
+  running handler under a lock (subsystem), wired via `WithSAMLReconciler`; the handler
+  is always created (nil provider ⇒ 501) so SAML can be enabled/disabled live. Auth
+  section reports applied/false (no SAML) or subsystem/false (SAML wired). Also surfaced
+  the SP endpoint URLs (ACS/SLO/metadata/entity) in the admin UI — operators were
+  guessing the ACS callback path. (server/tls listener-rebind items remain.)
 
 #### Bucket 2 — declared live but silently needs restart (BUGS — violate policy)
 

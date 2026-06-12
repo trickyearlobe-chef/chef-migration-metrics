@@ -194,6 +194,31 @@ describe("AdminAuthPage", () => {
     vi.unstubAllGlobals();
   });
 
+  it("surfaces the backend-computed ACS (callback) URL with a copy button", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLEndpoints).mockResolvedValue({
+      acs_url: "https://cmm.example.com/api/v1/auth/saml/acs",
+      slo_url: "https://cmm.example.com/api/v1/auth/saml/slo",
+      metadata_url: "https://cmm.example.com/api/v1/auth/saml/metadata",
+      entity_id: "https://cmm.example.com",
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("https://cmm.example.com/api/v1/auth/saml/acs"),
+      ).toBeInTheDocument(),
+    );
+    // The callback URL field has its own copy control.
+    fireEvent.click(screen.getAllByRole("button", { name: "Copy" })[0]);
+    expect(writeText).toHaveBeenCalledWith(
+      "https://cmm.example.com/api/v1/auth/saml/acs",
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("shows Sign AuthnRequests checkbox for a SAML provider", async () => {
     vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
     render(<AdminAuthPage />);

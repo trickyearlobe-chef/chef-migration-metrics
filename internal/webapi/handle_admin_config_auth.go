@@ -82,7 +82,14 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// No applier yet: the auth chain is built at boot. Pessimistic process until
-	// an auth-rebuild applier lands (todo-configuration.md Bucket 1).
-	r.storeAdminConfigSection(w, req, &config.Config{Auth: input}, configstore.KeyAuth)
+	// session_expiry / lockout_attempts / min_password_length are read live at
+	// point of use (applied). The SAML provider is rebuilt in place when a
+	// reconciler is wired (subsystem); without one (no SAML handler) the section
+	// is still fully live via the applied reads. Worst granularity decides the
+	// flag — restart_required stays false either way.
+	appliers := []Applier{appliedApplier}
+	if r.samlReconciler != nil {
+		appliers = append(appliers, r.samlApplier())
+	}
+	r.storeAdminConfigSection(w, req, &config.Config{Auth: input}, configstore.KeyAuth, appliers...)
 }

@@ -176,6 +176,30 @@ func (r *Router) handleSAMLGetCertificate(w http.ResponseWriter, req *http.Reque
 	})
 }
 
+// handleSAMLEndpoints returns the absolute SP endpoint URLs (ACS/SLO/metadata)
+// and SP entity ID an administrator must give the IdP. The ACS URL in particular
+// is otherwise non-discoverable, which leads to operators guessing the wrong
+// callback path. Returns 501 when SAML is not configured (no SP to describe).
+func (r *Router) handleSAMLEndpoints(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
+		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "GET only")
+		return
+	}
+	if r.samlHandler == nil {
+		WriteError(w, http.StatusNotImplemented, "not_implemented",
+			"SAML is not configured.")
+		return
+	}
+	endpoints := r.samlHandler.Endpoints()
+	if endpoints.ACSURL == "" {
+		// Handler wired but no provider initialised (SAML not configured yet).
+		WriteError(w, http.StatusNotImplemented, "not_implemented",
+			"SAML is not configured.")
+		return
+	}
+	WriteJSON(w, http.StatusOK, endpoints)
+}
+
 // upsertCredential creates or updates a credential in the store.
 func (r *Router) upsertCredential(ctx context.Context, name string, value []byte, username string) error {
 	// Try create first, fall back to update.

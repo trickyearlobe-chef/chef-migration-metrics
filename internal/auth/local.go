@@ -57,10 +57,35 @@ type LocalAuthenticator struct {
 	lockoutAttempts int
 	trustedProxy    bool
 	logger          func(level, msg string)
+	// lockoutAttemptsFn, when set, returns the live lockout threshold read on
+	// each login attempt, so a lockout_attempts config change applies without a
+	// restart. Falls back to the baked threshold when nil or non-positive.
+	lockoutAttemptsFn func() int
 }
 
 // LocalAuthOption is a functional option for NewLocalAuthenticator.
 type LocalAuthOption func(*LocalAuthenticator)
+
+// WithLockoutAttemptsFunc sets a live provider for the lockout threshold. When
+// set, the authenticator reads the threshold on each login attempt rather than
+// using the value baked at construction, so lockout_attempts takes effect
+// without a restart.
+func WithLockoutAttemptsFunc(fn func() int) LocalAuthOption {
+	return func(a *LocalAuthenticator) {
+		a.lockoutAttemptsFn = fn
+	}
+}
+
+// effectiveLockoutAttempts returns the live threshold when a provider is wired
+// (and positive), otherwise the value baked at construction.
+func (a *LocalAuthenticator) effectiveLockoutAttempts() int {
+	if a.lockoutAttemptsFn != nil {
+		if n := a.lockoutAttemptsFn(); n > 0 {
+			return n
+		}
+	}
+	return a.lockoutAttempts
+}
 
 // WithLocalAuthLogger sets a logging callback for authentication events.
 func WithLocalAuthLogger(fn func(level, msg string)) LocalAuthOption {
@@ -96,9 +121,10 @@ func NewLocalAuthenticator(store LocalAuthStore, lockoutAttempts int, opts ...Lo
 	return a
 }
 
-// LockoutAttempts returns the configured lockout threshold.
+// LockoutAttempts returns the lockout threshold currently in effect (live when
+// a provider is wired).
 func (a *LocalAuthenticator) LockoutAttempts() int {
-	return a.lockoutAttempts
+	return a.effectiveLockoutAttempts()
 }
 
 // Authenticate verifies the username and password against the local user
@@ -171,11 +197,12 @@ func (a *LocalAuthenticator) handleFailedAttempt(ctx context.Context, user datas
 		return LoginResult{Error: ErrInvalidCredentials}
 	}
 
+	lockoutAttempts := a.effectiveLockoutAttempts()
 	a.logf("WARN", "login failed: invalid password for %q (attempt %d/%d, ip=%s)",
-		user.Username, failedCount, a.lockoutAttempts, sourceIP)
+		user.Username, failedCount, lockoutAttempts, sourceIP)
 
 	// Lock the account if the threshold has been reached.
-	if failedCount >= a.lockoutAttempts {
+	if failedCount >= lockoutAttempts {
 		if lockErr := a.store.LockUser(ctx, user.Username); lockErr != nil {
 			a.logf("ERROR", "failed to lock account %q after %d failed attempts: %v",
 				user.Username, failedCount, lockErr)
