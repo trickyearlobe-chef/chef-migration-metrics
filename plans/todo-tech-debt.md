@@ -188,6 +188,13 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 - [ ] **`apptls.ListenerConfig.GracefulShutdownTimeout` is set but never read.** `main.go` populates it at listener construction (static/self-signed paths) and `tls/listener.go` defaults it to 15s, but the actual drain budget comes from the `context.Context` passed to `Listener.Shutdown(ctx)` in `awaitShutdown` — the field is never consulted. Noticed during config live-reload H1 (graceful_shutdown_seconds now resolved live at shutdown time). **Fix:** remove the field and its boot-time assignments, or wire it through if a per-listener override is ever wanted (it is not today).
 
+## Config Live-Reload — Listener Rebind Scope Gaps (H2)
+
+Recorded 2026-06-12 (listener-rebind H2: in-place `listen_address`/`port` rebind).
+
+- [ ] **Listen rebind not wired for active auto-443, explicit `http_redirect_port`, ACME, or degraded fallbacks.** `serverctl.Controller` is adopted only for plain-`off` mode and healthy static TLS where a single HTTPS listener owns the configured port with no redirect listener (`https443Ln == nil && tls.http_redirect_port == 0`). When the auto-443 lifeboat is active the configured port is only a redirect source; an explicit `http_redirect_port` adds a redirect listener the old process still holds during the drain window (so bind-new-first on it would fail); and ACME owns a port-80 challenge/redirect listener — all need a full listener-*topology* rebuild (HTTPS + redirect/challenge) that **H4** owns. Until then a `listen_address`/`port` change in those modes reports `restart_required` (the no-rebinder fallback) and applies on the next restart. **Strategic fix:** land H4's topology rebuild and adopt a controller (or a topology-aware variant) for those modes.
+- [ ] **SIGHUP after a TLS port rebind reloads the stale boot listener's CertManager.** `awaitShutdown`'s SIGHUP branch calls `srv.tlsListener.CertManager().Reload()`, but after a rebind the live listener is the controller's, not `srv.tlsListener`. A file-source cert change is still picked up within 30s by the new listener's `WatchForChanges` poll, so this only delays an *explicit* SIGHUP reload. **Fix:** route the SIGHUP reload through the controller's current listener (e.g. expose the live CertManager from the controller), folding in with the H4 topology work.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

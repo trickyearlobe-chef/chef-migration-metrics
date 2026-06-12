@@ -153,6 +153,14 @@ type Router struct {
 	// still persists and a restart applies it. Set via WithTLSReload.
 	tlsReload *TLSReloadHolder
 
+	// listenerRebind rebinds the running HTTP/TLS listener in place when a
+	// changed server.listen_address/port is saved, so the change applies without
+	// a restart (configuration-live-reload.md listener-rebind H2). Nil/unset on
+	// deployments where no rebinder is wired (tests, active auto-443, ACME, or a
+	// degraded fallback) — the save then reports restart_required. Set via
+	// WithListenerRebinder.
+	listenerRebind *ListenerRebindHolder
+
 	// acmeReRegister, when set, is called after an ACME config save to wake the
 	// renewer so hostname registration and an issuance check re-run immediately
 	// rather than waiting out the renewal interval (tls-acme.md § 3.14). Nil in

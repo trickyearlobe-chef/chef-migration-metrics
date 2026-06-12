@@ -37,18 +37,30 @@ Wired to webapi via `WithListenerRebinder`; the server config applier calls it.
 - Tech debt logged: dead `apptls.ListenerConfig.GracefulShutdownTimeout` field.
 - H2 extends the diff: listen key → listener granularity + wire the rebinder.
 
-## Chunk H2 — listener ownership + `listen_address`/`port` rebind [architectural core]
-- Extract listener ownership so the bound listener(s) can be closed/rebound:
-  plain HTTP (`servePlainHTTP`) and static TLS (`apptls.Listener`). The TLS
-  `Listener` already takes a pre-bound listener via `SetHTTPSListener` — lean on
-  that. Build a server controller holding the current listener + a `Rebind`.
-- `WithListenerRebinder` option + server config applier (listener granularity);
-  make the server PUT diff-aware (listen key changed → rebind → report listener).
-- Bind-new-first/keep-old/rollback; surface bind errors on the save (500 + msg).
-- TDD: rebind across ephemeral ports (`:0`), assert old served until new up, and
-  a forced-bind-failure keeps the old listener + returns the error. `-race`.
-- Acceptance: changing listen_address/port applies live (plain + static TLS); no
-  restart; in-flight requests on the old listener drain.
+## Chunk H2 — listener ownership + `listen_address`/`port` rebind [DONE]
+- `internal/serverctl.Controller`: owns the live `Instance` (Addr+Shutdown),
+  `Rebind(addr,port)` binds-new-first via an injected `BuildFunc`, swaps current,
+  drains the old in the background (live graceful budget). No-op on unchanged
+  target; bind failure keeps the old serving + returns the error.
+- webapi `ListenerRebindHolder` (func-based, no import cycle) +
+  `WithListenerRebinder`; `ErrNoListenerRebinder` sentinel. Wired up front like
+  `tlsReload`.
+- Server PUT diff-aware: listen key changed → call rebinder. Success → report
+  `listener` (no restart); no rebinder wired → `process` (restart_required);
+  bind error → 500 (old keeps serving). `serverReloadGranularity` now takes the
+  resolved listen granularity; static map keeps tls/websocket/trusted_proxy.
+- main: holder created in `setupAndServeHTTP`; plain-`off` mode adopts a plain
+  controller, healthy static-TLS-on-configured-port adopts a TLS controller
+  (BuildFunc rebuilds `apptls.Listener` at the new target, re-points `tlsReload`
+  + re-arms cert watch; db source refetches cert from store so a prior hot-swap
+  is preserved).
+- **Scope deferred to H4** (restart_required until then — holder simply not
+  adopted, so the no-rebinder path applies): active auto-443 lifeboat
+  (`https443Ln != nil`), ACME mode, and the degraded self-signed/plain
+  fallbacks. These need the full listener-topology rebuild that H4 owns.
+- TDD: serverctl protocol (rebind across ephemeral ports, old drained, forced
+  bind-failure keeps old); handler (listener/process/500); main (plain rebind +
+  bind-failure). All under `-race`.
 
 ## Chunk H3 — `server.websocket.*` → subsystem [hub rebuild]
 - Rebuild the websocket hub in place from live config (max_connections, buffers,

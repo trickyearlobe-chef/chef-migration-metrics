@@ -51,12 +51,14 @@ type acmeRoute53CredSubmission struct {
 
 // serverKeyGranularity maps each persisted server sub-key to the reload
 // granularity a change to it currently needs. graceful_shutdown_seconds is read
-// live at shutdown time, so it applies without a restart; the listener/TLS/
-// websocket/trusted_proxy keys stay pessimistically process until their in-place
-// rebind lands (configuration-live-reload.md listener-rebind H2–H4).
+// live at shutdown time, so it applies without a restart; the TLS/websocket/
+// trusted_proxy keys stay pessimistically process until their in-place rebind
+// lands (configuration-live-reload.md listener-rebind H3–H4). The listen key is
+// NOT here: its granularity is resolved per-request from the in-place rebind
+// outcome (listener on success, process when no rebinder is wired) — see
+// putAdminConfigServer.
 var serverKeyGranularity = map[string]ReloadGranularity{
 	configstore.KeyServerGracefulShutdown: ReloadApplied,
-	configstore.KeyServerListen:           ReloadProcess,
 	configstore.KeyServerTLS:              ReloadProcess,
 	configstore.KeyServerWebSocket:        ReloadProcess,
 	configstore.KeyServerTrustedProxy:     ReloadProcess,
@@ -66,9 +68,11 @@ var serverKeyGranularity = map[string]ReloadGranularity{
 // sub-keys whose stored value actually changed between the pre-save live config
 // and the submitted config. Unchanged keys are ignored; with nothing changed the
 // save is applied (a no-op needs no restart). A nil live snapshot (no holder and
-// no boot config) is treated pessimistically as changed for every key.
-func serverReloadGranularity(newSections, liveSections map[string]json.RawMessage) ReloadGranularity {
-	worst := ReloadApplied
+// no boot config) is treated pessimistically as changed for every key. listenGran
+// is the listen key's already-resolved granularity (folded in directly because
+// the listen key is applied via the in-place rebinder, not the static map).
+func serverReloadGranularity(newSections, liveSections map[string]json.RawMessage, listenGran ReloadGranularity) ReloadGranularity {
+	worst := listenGran
 	for key, g := range serverKeyGranularity {
 		changed := liveSections == nil || !bytes.Equal(newSections[key], liveSections[key])
 		if changed && g > worst {
@@ -76,6 +80,14 @@ func serverReloadGranularity(newSections, liveSections map[string]json.RawMessag
 		}
 	}
 	return worst
+}
+
+// listenSectionChanged reports whether the persisted server.listen section
+// differs between the submitted and pre-save live config. A nil live snapshot is
+// treated pessimistically as changed.
+func listenSectionChanged(newSections, liveSections map[string]json.RawMessage) bool {
+	return liveSections == nil ||
+		!bytes.Equal(newSections[configstore.KeyServerListen], liveSections[configstore.KeyServerListen])
 }
 
 // ---------------------------------------------------------------------------
@@ -488,13 +500,55 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		r.acmeReRegister()
 	}
 
+	// Rebind the running listener in place when the listen target changed
+	// (configuration-live-reload.md listener-rebind H2). The new address is bound
+	// first; only once it is serving is the old one drained. listenGran carries
+	// the listen key's resolved granularity into the response:
+	//   - unchanged          → applied (contributes nothing)
+	//   - rebound in place    → listener (no restart)
+	//   - no rebinder wired   → process (restart_required; persisted, applies next
+	//     restart — active auto-443/ACME/degraded fall here until H4)
+	// A bind failure (e.g. the port is now held by another process) keeps the old
+	// listener serving and is surfaced on the save.
+	listenGran := ReloadApplied
+	if listenSectionChanged(sections, liveSections) {
+		listenGran = ReloadProcess
+		if r.listenerRebind != nil {
+			// Resolve the effective port: a zero submitted port means "unchanged",
+			// so rebind to the live port rather than binding an ephemeral one.
+			effPort := input.Port
+			if effPort == 0 {
+				if lc := r.liveConfig(); lc != nil {
+					effPort = lc.Server.Port
+				}
+			}
+			g, rebindErr := r.listenerRebind.Rebind(input.ListenAddress, effPort)
+			switch {
+			case rebindErr == nil:
+				listenGran = g
+			case errors.Is(rebindErr, ErrNoListenerRebinder):
+				// No in-place rebinder — restart-required path (listenGran stays
+				// process). The new target is already persisted.
+			default:
+				addr := input.ListenAddress
+				if addr == "" {
+					addr = "0.0.0.0"
+				}
+				r.logf("ERROR", "admin/config/server: listener rebind to %s:%d failed: %v", addr, effPort, rebindErr)
+				WriteError(w, http.StatusInternalServerError, ErrCodeInternalError,
+					fmt.Sprintf("server: could not rebind the listener to %s:%d (%v) — the previous address is still serving; free that port or revert the change.", addr, effPort, rebindErr))
+				return
+			}
+		}
+	}
+
 	data, err := configstore.SerializeValue(input)
 	if err != nil {
 		r.logf("ERROR", "admin/config/server: serialise response: %v", err)
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	reload := serverReloadGranularity(sections, liveSections)
+	reload := serverReloadGranularity(sections, liveSections, listenGran)
 	resp := putConfigResponse{
 		Value:           data,
 		RestartRequired: reload == ReloadProcess,

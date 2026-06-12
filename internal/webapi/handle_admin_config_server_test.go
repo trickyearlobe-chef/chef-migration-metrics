@@ -13,6 +13,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -328,6 +329,158 @@ func TestAdminConfigServer_PUT_WebSocketChange_Process(t *testing.T) {
 	}
 	if resp.Reload != "process" {
 		t.Errorf("reload = %q, want %q", resp.Reload, "process")
+	}
+}
+
+// recordingRebinder captures the addr/port a save asked to rebind and returns a
+// configurable granularity/error, standing in for the server controller.
+type recordingRebinder struct {
+	gran   ReloadGranularity
+	err    error
+	calls  int
+	gotAdr string
+	gotPrt int
+}
+
+func (rb *recordingRebinder) fn(addr string, port int) (ReloadGranularity, error) {
+	rb.calls++
+	rb.gotAdr = addr
+	rb.gotPrt = port
+	return rb.gran, rb.err
+}
+
+// serverBodyWithPort serialises the live server config and overrides only the
+// port, so the diff isolates a listen-section change.
+func serverBodyWithPort(t *testing.T, cfg *config.Config, port int) []byte {
+	t.Helper()
+	liveJSON, err := configstore.SerializeValue(cfg.Server)
+	if err != nil {
+		t.Fatalf("serialise live server: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(liveJSON, &body); err != nil {
+		t.Fatalf("unmarshal live server: %v", err)
+	}
+	body["port"] = port
+	out, _ := json.Marshal(body)
+	return out
+}
+
+func serverTestConfig(port int) *config.Config {
+	cfg := testConfig()
+	cfg.Server.ListenAddress = "127.0.0.1"
+	cfg.Server.Port = port
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	return cfg
+}
+
+// A changed listen target with an in-place rebinder wired applies live: the
+// rebinder is called with the new address/port and the save reports listener /
+// restart_required=false.
+func TestAdminConfigServer_PUT_ListenChange_RebindsLive(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	store := newTestConfigStore(t)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	newPort := freeTestPort(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(serverBodyWithPort(t, cfg, newPort)))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("live listener rebind must not require a restart")
+	}
+	if resp.Reload != "listener" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "listener")
+	}
+	if rb.calls != 1 {
+		t.Fatalf("rebinder calls = %d, want 1", rb.calls)
+	}
+	if rb.gotAdr != "127.0.0.1" || rb.gotPrt != newPort {
+		t.Errorf("rebinder called with %s:%d, want 127.0.0.1:%d", rb.gotAdr, rb.gotPrt, newPort)
+	}
+}
+
+// With no rebinder wired, a changed listen target is persisted but reported
+// restart-required (the no-rebinder fallback path).
+func TestAdminConfigServer_PUT_ListenChange_NoRebinder_Process(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	newPort := freeTestPort(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(serverBodyWithPort(t, cfg, newPort)))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if !resp.RestartRequired {
+		t.Error("listen change with no rebinder must require a restart")
+	}
+	if resp.Reload != "process" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "process")
+	}
+}
+
+// When the in-place rebind fails (the new port is held by another process), the
+// save returns 500 — the old listener keeps serving.
+func TestAdminConfigServer_PUT_ListenChange_RebindError_500(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	store := newTestConfigStore(t)
+	rb := &recordingRebinder{err: errors.New("listen tcp 127.0.0.1:9999: bind: address already in use")}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	newPort := freeTestPort(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(serverBodyWithPort(t, cfg, newPort)))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusInternalServerError)
+	assertErrorCode(t, w, ErrCodeInternalError)
+	if rb.calls != 1 {
+		t.Errorf("rebinder calls = %d, want 1", rb.calls)
+	}
+}
+
+// A save that does not touch the listen section must not invoke the rebinder,
+// even with one wired (here only graceful_shutdown_seconds changes).
+func TestAdminConfigServer_PUT_NonListenChange_NoRebind(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	cfg.Server.GracefulShutdownSeconds = 30
+	store := newTestConfigStore(t)
+	rb := &recordingRebinder{gran: ReloadListener}
+	h := NewListenerRebindHolder()
+	h.Set(rb.fn)
+	r := newTestRouterForAdminConfig(cfg, store, nil, WithListenerRebinder(h))
+
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["graceful_shutdown_seconds"] = 45
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if rb.calls != 0 {
+		t.Errorf("rebinder called %d times on a non-listen change; want 0", rb.calls)
+	}
+	if resp.Reload != "applied" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "applied")
 	}
 }
 
