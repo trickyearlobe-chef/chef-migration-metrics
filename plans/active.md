@@ -214,8 +214,38 @@ then the multi-listener topology (redirect/443).
   New `adoptAuto443Boot` helper mirrors the boot lifeboat topology.
 
 ### H4c — ACME transitions + ACME port rebind [riskiest]
-- →acme / acme→ / acme port change: port-80 challenge/redirect + renewer
-  cancel/restart, bind-new-first; challenge stays reachable across a port change.
+ACME mode owns THREE long-lived resources (HTTPS listener + renewer goroutine +
+port-80 challenge/redirect server) vs the controller's single-`Instance` model,
+so split into two sessions: first fold the topology into one rebindable Instance
+(no new transitions), then enable the transitions.
+
+#### H4c-1 — ACME topology → composite serverctl.Instance + boot-adopt [refactor] [DONE]
+- `acmeRuntime{listener, challengeSrv, renewerCancel}` + `shutdown(ctx)`
+  (cancel renewer → shutdown challenge → drain HTTPS, all nil-guarded). setupACME
+  builds it and wraps it in one `serverctl.Instance` (Shutdown = rt.shutdown).
+- Boot adopts that Instance into the controller (new `acme|<addr:httpsPort>|<fp>`
+  key branch in `listenerKey`; `app.acmeActive bool` set like `autoHTTPSActive`).
+  When the rebinder is wired the controller owns teardown → boot serverResult
+  drops challengeSrv/renewerCancel (awaitShutdown drains via the controller, as
+  for static/off); no rebinder → keep them for the fallback teardown path.
+- Applier still refuses EVERY acme transition (entry `cfg.TLS.Mode=="acme"`, and
+  leaving via `app.acmeActive`) → ErrNoListenerRebinder (restart_required). No
+  operator-visible change — pure scaffolding so all existing boot/shutdown tests
+  still pass and H4c-2 has the swap seam.
+- TDD: setupACME with rebinder wired adopts the controller; composite Shutdown
+  cancels renewer + stops challenge + closes HTTPS; acme→off/static Apply refused
+  (acmeActive); existing acme boot/degraded/auto-443 tests unchanged. All `-race`.
+
+#### H4c-2 — acme transitions: entry / exit / internal+port change [in-place]
+- Applier dispatches an acme target via the acmeRuntime build closure (entry),
+  acme→off/static via the existing plain/static builds (old Instance.Shutdown
+  tears down renewer+challenge), and acme-internal changes (domains/email/
+  challenge/ca_url/dns/min_version/http_redirect_port/server.port) via the acme
+  fingerprint key → rebuild. Renewer cancel/restart through the Instance swap;
+  `acmeTrigger` repointed to the new renewer each rebuild; port-80 challenge
+  pre-bound with retry (like redirect ports) so a same-port rebind reclaims it;
+  an HTTPS-port-only change keeps the challenge reachable. Auto-443 in acme +
+  fail-open (degraded) interactions reconciled; deferrals → todo-tech-debt.
 
 ## Notes / cross-branch
 - `auth.*` is listed in this spec's rebind section as subsystem; on this branch

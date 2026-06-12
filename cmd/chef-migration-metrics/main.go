@@ -191,6 +191,14 @@ type serverApp struct {
 	// setupAndServeHTTP.
 	autoHTTPSActive bool
 	autoHTTPSPort   int
+
+	// acmeActive records that boot came up serving the full acme topology (HTTPS
+	// listener + renewer + port-80 challenge/redirect server, adopted into the
+	// listener controller as one composite Instance — H4c-1). While set, the applier
+	// refuses every server-config save (restart_required) because leaving or
+	// re-planning the acme topology in place is deferred to H4c-2. Read-only after
+	// setupAndServeHTTP.
+	acmeActive bool
 }
 
 // exitCodeRestart is the process exit code used for an admin-requested restart.
@@ -1678,13 +1686,21 @@ func (app *serverApp) rebindLog(level, msg string) {
 }
 
 // serverListenerVariant maps a TLS mode to the listener topology the controller
-// builds for it: static → a TLS listener, anything else (off/"") → plain HTTP.
-// ACME is not rebindable in place yet (H4c), so it has no variant here.
+// builds for it: static → a TLS listener, acme → the acme topology (adopted as a
+// composite Instance, H4c-1), anything else (off/"") → plain HTTP. A distinct acme
+// variant keeps the adopted acme key from colliding with off; in-place acme
+// transitions remain refused until H4c-2 (so the exact acme key beyond the variant
+// does not yet drive any rebind — H4c-2 will fold the effective HTTPS port and an
+// acme fingerprint into it).
 func serverListenerVariant(mode string) string {
-	if mode == "static" {
+	switch mode {
+	case "static":
 		return "tls"
+	case "acme":
+		return "acme"
+	default:
+		return "plain"
 	}
-	return "plain"
 }
 
 // resolveListen returns the effective bind address and port for cfg, applying the
@@ -1836,7 +1852,12 @@ const (
 // and binds the new on the freed port, retrying briefly to absorb the OS release
 // lag.
 func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.Controller, cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
-	if cfg.TLS.Mode == "acme" {
+	// Any acme transition is deferred to H4c-2: entering acme (target mode), or
+	// leaving/re-planning the live acme topology (app.acmeActive). Refuse so the
+	// save is reported restart_required and applied on the next restart. The
+	// composite acme Instance is still adopted (H4c-1) so it drains via the
+	// controller and H4c-2 has the swap seam.
+	if cfg.TLS.Mode == "acme" || app.acmeActive {
 		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
 	}
 
@@ -2387,7 +2408,10 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 	}
 
 	// Stop the ACME renewal loop first (mode: acme) so no new issuance starts
-	// while we drain.
+	// while we drain. This is the fallback path: when the controller adopted the
+	// acme topology (H4c-1, rebinder wired), renewerCancel/challengeSrv are nil
+	// here and the renewer + challenge server drain via the composite Instance in
+	// the controller.Shutdown branch below.
 	if srv.renewerCancel != nil {
 		app.startup.Info("stopping ACME renewal loop...")
 		srv.renewerCancel()

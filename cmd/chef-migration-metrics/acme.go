@@ -14,9 +14,39 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/acme"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/serverctl"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
 )
+
+// acmeRuntime bundles the three long-lived resources of a running acme topology
+// — the HTTPS listener, the port-80 http-01 challenge/redirect server, and the
+// background renewer — so they can be torn down as a unit. It is wrapped in a
+// single serverctl.Instance (H4c-1) whose Shutdown is rt.shutdown, letting the
+// controller own and (H4c-2) swap the whole topology like any other listener.
+type acmeRuntime struct {
+	listener      interface{ Shutdown(context.Context) error }
+	challengeSrv  *http.Server
+	renewerCancel context.CancelFunc
+}
+
+// shutdown cancels the renewer first (so no new issuance starts while draining),
+// then stops the challenge/redirect server, then drains the HTTPS listener. Each
+// resource is nil-guarded (dns-01 has no challenge server; a degraded bootstrap
+// still has a renewer). A challenge shutdown error is non-fatal; the listener
+// drain error is returned.
+func (rt *acmeRuntime) shutdown(ctx context.Context) error {
+	if rt.renewerCancel != nil {
+		rt.renewerCancel()
+	}
+	if rt.challengeSrv != nil {
+		_ = rt.challengeSrv.Shutdown(ctx)
+	}
+	if rt.listener != nil {
+		return rt.listener.Shutdown(ctx)
+	}
+	return nil
+}
 
 // setupACME wires TLS mode: acme. It always brings the server up on HTTPS — the
 // stored issued certificate if one exists in the DB, otherwise an ephemeral
@@ -236,12 +266,29 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 		}()
 	}
 
-	return serverResult{
-		errCh:         listener.Serve(),
-		tlsListener:   listener,
-		challengeSrv:  challengeSrv,
-		renewerCancel: renewCancel,
-	}, nil
+	// We are serving the full acme topology. Fold the three live resources into one
+	// composite Instance (H4c-1) so the controller owns and drains them as a unit.
+	app.acmeActive = true
+	rt := &acmeRuntime{listener: listener, challengeSrv: challengeSrv, renewerCancel: renewCancel}
+	res := serverResult{errCh: listener.Serve(), tlsListener: listener}
+
+	if app.listenerRebind != nil {
+		// Adopt the topology into the controller; its Instance.Shutdown (rt.shutdown)
+		// now owns renewer + challenge + listener teardown, so awaitShutdown drains
+		// everything via the controller and the boot serverResult must not also carry
+		// them (single owner — avoids a double teardown and gives H4c-2 the swap seam).
+		app.adoptListenerController(handler,
+			&serverctl.Instance{Addr: listener.Addr(), Shutdown: rt.shutdown},
+			app.cfg.Server)
+	} else {
+		// No rebinder wired (unsupervised host / tests): the controller is not adopted,
+		// so the boot serverResult keeps the challenge + renewer for awaitShutdown's
+		// fallback teardown path.
+		res.challengeSrv = challengeSrv
+		res.renewerCancel = renewCancel
+	}
+
+	return res, nil
 }
 
 // promotingIssuer wraps an acme.CertObtainer so that a successful issuance is

@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -288,5 +289,127 @@ func TestACMETriggerHolder_ForwardsAndNoOpBeforeBind(t *testing.T) {
 	h.Trigger()
 	if calls != 2 {
 		t.Errorf("bound trigger called %d times, want 2", calls)
+	}
+}
+
+// stubShutdowner records that Shutdown was called, standing in for the HTTPS
+// listener in the acmeRuntime composition test.
+type stubShutdowner struct{ called bool }
+
+func (s *stubShutdowner) Shutdown(context.Context) error { s.called = true; return nil }
+
+// acmeRuntime.shutdown must tear down all three resources it owns — cancel the
+// renewer, stop the port-80 challenge/redirect server, and drain the HTTPS
+// listener — so a single Instance.Shutdown (H4c-1) cleans up the whole ACME
+// topology on a controller drain or a future rebind swap.
+func TestACMERuntimeShutdown_TearsDownRenewerChallengeListener(t *testing.T) {
+	cancelled := false
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("bind challenge: %v", err)
+	}
+	challenge := &http.Server{Handler: http.NewServeMux()}
+	go func() { _ = challenge.Serve(ln) }()
+	caddr := ln.Addr().String()
+
+	listener := &stubShutdowner{}
+	rt := &acmeRuntime{
+		listener:      listener,
+		challengeSrv:  challenge,
+		renewerCancel: func() { cancelled = true },
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := rt.shutdown(ctx); err != nil {
+		t.Fatalf("rt.shutdown: %v", err)
+	}
+
+	if !cancelled {
+		t.Error("renewer was not cancelled")
+	}
+	if !listener.called {
+		t.Error("HTTPS listener was not drained")
+	}
+	if c, derr := net.DialTimeout("tcp", caddr, 200*time.Millisecond); derr == nil {
+		c.Close()
+		t.Error("challenge/redirect server still listening after shutdown")
+	}
+}
+
+// In acme mode, when a listener rebinder is wired, setupACME adopts the live
+// topology into the serverctl.Controller as a single composite Instance: the
+// challenge server + renewer move into the Instance's Shutdown (so the boot
+// serverResult no longer carries them), draining via the controller stops
+// everything, and app.acmeActive records that we are serving acme. This is the
+// H4c-1 seam — transitions are still refused (H4c-2).
+func TestSetupACME_AdoptsControllerForRebind(t *testing.T) {
+	app := newACMEApp(t)
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}
+	app.cfg.Server.TLS.ACME.Challenge = "http-01"
+	app.cfg.Server.TLS.ACME.AgreeToTOS = false // keeps the renewer offline
+
+	res, err := app.setupACME(http.NewServeMux(), newFakeSecretStore(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("setupACME: %v", err)
+	}
+
+	if !app.acmeActive {
+		t.Error("acmeActive must be set when serving the acme topology")
+	}
+	if app.listenerController == nil {
+		t.Fatal("controller must be adopted in acme mode when a rebinder is wired")
+	}
+	if res.challengeSrv != nil || res.renewerCancel != nil {
+		t.Error("adopted acme: challenge + renewer teardown must move into the controller Instance")
+	}
+	if res.tlsListener == nil {
+		t.Fatal("expected an HTTPS listener")
+	}
+	addr := res.tlsListener.Addr()
+
+	client := insecureTLSClient()
+	getWithRetry(t, client, "https://"+addr+"/").Body.Close()
+
+	// The controller is now the sole owner — draining it stops the HTTPS listener
+	// (and, via the composite Instance, the renewer + challenge server).
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := app.listenerController.Shutdown(ctx); err != nil {
+		t.Fatalf("controller shutdown: %v", err)
+	}
+	if resp, gerr := client.Get("https://" + addr + "/"); gerr == nil {
+		resp.Body.Close()
+		t.Error("HTTPS listener still answering after controller shutdown")
+	}
+}
+
+// Leaving acme (acme→off, acme→static) is deferred to H4c-2: while acmeActive the
+// applier refuses every target so the save is reported restart_required.
+func TestAdoptListenerController_RefusesLeavingACME(t *testing.T) {
+	app := newACMEApp(t)
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}
+	app.cfg.Server.TLS.ACME.Challenge = "http-01"
+	app.cfg.Server.TLS.ACME.AgreeToTOS = false
+
+	res, err := app.setupACME(http.NewServeMux(), newFakeSecretStore(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("setupACME: %v", err)
+	}
+	_ = res
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = app.listenerController.Shutdown(ctx)
+	}()
+
+	if _, err := app.listenerRebind.Apply(offServerCfg("127.0.0.1", freePort(t))); !errors.Is(err, webapi.ErrNoListenerRebinder) {
+		t.Errorf("acme→off: err = %v, want ErrNoListenerRebinder", err)
+	}
+	certPath, keyPath := writeSelfSignedFiles(t)
+	if _, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", freePort(t), certPath, keyPath)); !errors.Is(err, webapi.ErrNoListenerRebinder) {
+		t.Errorf("acme→static: err = %v, want ErrNoListenerRebinder", err)
 	}
 }
