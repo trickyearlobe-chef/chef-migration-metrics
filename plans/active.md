@@ -81,14 +81,57 @@ Wired to webapi via `WithListenerRebinder`; the server config applier calls it.
   (live/static/default); handler PUT → subsystem + hub reconfigured. All `-race`.
 
 ## Chunk H4 — TLS mode transitions + ACME port rebind [largest / riskiest]
-- Live `off`/`static`/`acme` transitions and ACME-mode port changes: rebuild the
-  listener topology in place (HTTPS listener + port-80 challenge/redirect +
-  renewer lifecycle) using bind-new-first. Cert *material* hot-swap already done.
-- Riskiest: ACME owns port 80, issuance may be in flight; coordinate the
-  challenge server + renewer cancel/restart. Likely sub-chunks (static↔off first,
-  then acme).
-- TDD: mode transition rebinds without dropping the process; ACME challenge stays
-  reachable across a port change.
+Split into sub-chunks (one session each), static↔off first, then static
+topology, then acme.
+
+### H4a — off↔static mode transition [config-driven seam] [DONE]
+- **Seam generalised.** serverctl.Controller becomes mode-agnostic: target is an
+  opaque `key` string + a per-call `build func() (*Instance, error)` (was stored
+  BuildFunc + addr/port). No-op iff key unchanged; bind-new-first / drain-old
+  protocol is unchanged. main owns key construction (`plain|addr:port` /
+  `tls|addr:port`) and the build closure (plain vs static-TLS).
+- **webapi seam** `ListenerRebindHolder.Apply(cfg config.ServerConfig)` (was
+  `Rebind(addr,port)`): carries the full desired server config so the applier can
+  rebuild either listener type. `ErrNoListenerRebinder` unchanged.
+- **main**: one controller adopted at boot (plain-off, or static single-listener
+  via the existing guard). Applier dispatches on `cfg.TLS.Mode`: off→plain,
+  static→static-TLS (single HTTPS listener on the configured port). `buildTLSInstance`
+  now assembles its `ListenerConfig` from the passed `cfg` + `loadDBCertKey` (db),
+  not a boot `baseCfg`. Refuse (→ ErrNoListenerRebinder, restart_required) when
+  target mode is `acme` or static with `http_redirect_port != 0` — deferred to
+  H4b/H4c.
+- **handler**: detect a normalised mode change (off↔static); trigger Apply when
+  listen section OR mode changed. Drop `KeyServerTLS` from `serverKeyGranularity`;
+  fold a resolved `tlsGran` into `serverReloadGranularity` like `listenGran`
+  (mode-toggle applied in place → listener; other tls sub-changes still process).
+- **Same-port toggle applies live** (no spec caveat needed). bind-new-first can't
+  bind a port the old listener still holds, so for a same-address:port variant
+  change `applyServerListener` instead: (1) constructs the new TLS listener WITHOUT
+  binding (`newTLSListener` → validates the cert — a bad cert fails here with the
+  old listener untouched), then (2) `Controller.RebindInPlace` releases the old
+  listener and binds the new on the freed port, with a bind retry (`listenTCP`,
+  ~2s) to absorb the OS release lag (SO_REUSEADDR reclaims it). A port-changing
+  toggle still uses bind-new-first (`Rebind`). Residual: a post-release bind
+  failure (non-physical after validation + we held the port) would briefly leave
+  it down until restart — accepted over the socket-reuse complexity.
+- **Deferred to H4b** (logged in todo-tech-debt): auto-443 re-plan +
+  http_redirect_port topology; same-mode static topology changes (min_version /
+  mTLS CA / redirect); static→off does not clear the stale tlsReload pointer.
+  Off→static via H4a serves a single HTTPS listener on the configured port (no 443
+  lifeboat); static→off only rebinds when the static boot was the adopted
+  single-listener case.
+- TDD: serverctl key no-op + cross-variant rebuild + RebindInPlace (drain-then-build,
+  build-failure-leaves-nothing); webapi Apply seam; main off↔static rebind across
+  ports + same-port toggle applies live + same-port bad-cert-keeps-old +
+  bind-failure-keeps-old + unsupported-target refusal; handler mode-toggle →
+  listener, non-mode tls change → process, no-rebinder → process. All `-race`.
+
+### H4b — static topology changes (no mode change)
+- redirect_port / mTLS CA / min_version / auto-443 re-plan within static, in place.
+
+### H4c — ACME transitions + ACME port rebind [riskiest]
+- →acme / acme→ / acme port change: port-80 challenge/redirect + renewer
+  cancel/restart, bind-new-first; challenge stays reachable across a port change.
 
 ## Notes / cross-branch
 - `auth.*` is listed in this spec's rebind section as subsystem; on this branch

@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/serverctl"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
 )
@@ -299,67 +302,100 @@ func waitUnreachable(t *testing.T, addr string) {
 	t.Fatalf("listener %s still accepting after rebind", addr)
 }
 
-// A plain-HTTP server adopted into a controller rebinds to a new port in place:
-// the new address serves and the old one drains, with no restart.
-func TestAdoptPlainController_RebindsAcrossPorts(t *testing.T) {
-	app := newTestApp(t)
-	app.listenerRebind = webapi.NewListenerRebindHolder()
-
-	app.cfg.Server.ListenAddress = "127.0.0.1"
-	app.cfg.Server.Port = freePort(t)
-	app.bootstrapListenAddr = "127.0.0.1"
-	app.bootstrapPort = app.cfg.Server.Port
-
-	res := app.servePlainHTTP(http.NewServeMux())
-	app.adoptPlainController(http.NewServeMux(), res)
+// adoptPlainBoot boots a plain-HTTP listener on app's configured target and
+// adopts it into the unified listener controller, returning the boot address.
+func adoptPlainBoot(t *testing.T, app *serverApp, handler http.Handler) string {
+	t.Helper()
+	res := app.servePlainHTTP(handler)
+	if res.plainSrv == nil {
+		t.Fatalf("servePlainHTTP produced no server")
+	}
+	app.adoptListenerController(handler,
+		&serverctl.Instance{Addr: res.plainSrv.Addr, Shutdown: res.plainSrv.Shutdown},
+		app.cfg.Server)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = app.listenerController.Shutdown(ctx)
 	})
+	return res.plainSrv.Addr
+}
 
-	oldAddr := res.plainSrv.Addr
-	if !reachable(oldAddr) {
-		// Give the boot goroutine a moment to start accepting.
-		client := &http.Client{Timeout: time.Second}
-		getWithRetry(t, client, "http://"+oldAddr+"/").Body.Close()
+// writeSelfSignedFiles writes a fresh self-signed cert/key pair to temp files and
+// returns their paths, for exercising the cert_source: file static-TLS path.
+func writeSelfSignedFiles(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	certPEM, keyPEM, err := apptls.GenerateSelfSigned([]string{"localhost"})
+	if err != nil {
+		t.Fatalf("self-signed: %v", err)
 	}
+	dir := t.TempDir()
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	return certPath, keyPath
+}
+
+// offServerCfg / staticServerCfg build the desired server configs the rebinder
+// applies in tests.
+func offServerCfg(addr string, port int) config.ServerConfig {
+	var cfg config.ServerConfig
+	cfg.ListenAddress = addr
+	cfg.Port = port
+	return cfg
+}
+
+func staticServerCfg(addr string, port int, certPath, keyPath string) config.ServerConfig {
+	cfg := offServerCfg(addr, port)
+	cfg.TLS.Mode = "static"
+	cfg.TLS.CertSource = "file"
+	cfg.TLS.CertPath = certPath
+	cfg.TLS.KeyPath = keyPath
+	return cfg
+}
+
+// A plain-HTTP server adopted into the listener controller rebinds to a new port
+// in place: the new address serves and the old one drains, with no restart.
+func TestAdoptListenerController_PlainRebindsAcrossPorts(t *testing.T) {
+	app := newTestApp(t)
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+
+	oldAddr := adoptPlainBoot(t, app, http.NewServeMux())
+	client := &http.Client{Timeout: time.Second}
+	getWithRetry(t, client, "http://"+oldAddr+"/").Body.Close()
 
 	newPort := freePort(t)
-	gran, err := app.listenerRebind.Rebind("127.0.0.1", newPort)
+	gran, err := app.listenerRebind.Apply(offServerCfg("127.0.0.1", newPort))
 	if err != nil {
-		t.Fatalf("Rebind: %v", err)
+		t.Fatalf("Apply: %v", err)
 	}
 	if gran != webapi.ReloadListener {
 		t.Errorf("granularity = %v, want listener", gran)
 	}
 
 	newAddr := fmt.Sprintf("127.0.0.1:%d", newPort)
-	client := &http.Client{Timeout: time.Second}
 	getWithRetry(t, client, "http://"+newAddr+"/").Body.Close()
 	waitUnreachable(t, oldAddr)
 }
 
-// A rebind to a port held by another process fails: the bind error is returned
+// An apply to a port held by another process fails: the bind error is returned
 // and the old listener keeps serving (bind-new-first is a no-op on failure).
-func TestAdoptPlainController_RebindBindFailureKeepsOld(t *testing.T) {
+func TestAdoptListenerController_PlainBindFailureKeepsOld(t *testing.T) {
 	app := newTestApp(t)
 	app.listenerRebind = webapi.NewListenerRebindHolder()
 
 	app.cfg.Server.ListenAddress = "127.0.0.1"
 	app.cfg.Server.Port = freePort(t)
-	app.bootstrapListenAddr = "127.0.0.1"
-	app.bootstrapPort = app.cfg.Server.Port
 
-	res := app.servePlainHTTP(http.NewServeMux())
-	app.adoptPlainController(http.NewServeMux(), res)
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = app.listenerController.Shutdown(ctx)
-	})
-
-	oldAddr := res.plainSrv.Addr
+	oldAddr := adoptPlainBoot(t, app, http.NewServeMux())
 	client := &http.Client{Timeout: time.Second}
 	getWithRetry(t, client, "http://"+oldAddr+"/").Body.Close()
 
@@ -370,59 +406,90 @@ func TestAdoptPlainController_RebindBindFailureKeepsOld(t *testing.T) {
 	defer occupied.Close()
 	badPort := occupied.Addr().(*net.TCPAddr).Port
 
-	if _, err := app.listenerRebind.Rebind("127.0.0.1", badPort); err == nil {
-		t.Fatal("Rebind to occupied port: want error, got nil")
+	if _, err := app.listenerRebind.Apply(offServerCfg("127.0.0.1", badPort)); err == nil {
+		t.Fatal("Apply to occupied port: want error, got nil")
 	}
 	// Old listener must still be serving.
 	if !reachable(oldAddr) {
-		t.Errorf("old listener %s stopped serving after a failed rebind", oldAddr)
+		t.Errorf("old listener %s stopped serving after a failed apply", oldAddr)
 	}
 }
 
 // A static-TLS listener adopted into a controller rebinds the HTTPS listener to
 // a new port in place: HTTPS serves on the new address and the old drains.
-func TestAdoptTLSController_RebindsAcrossPorts(t *testing.T) {
-	app := newTestApp(t)
-	app.tlsReload = webapi.NewTLSReloadHolder()
-	app.listenerRebind = webapi.NewListenerRebindHolder()
-
-	certPEM, keyPEM, err := apptls.GenerateSelfSigned([]string{"localhost"})
-	if err != nil {
-		t.Fatalf("self-signed: %v", err)
-	}
-	app.cfg.Server.ListenAddress = "127.0.0.1"
-	app.cfg.Server.Port = freePort(t)
-
+// adoptStaticBoot boots a static-TLS (file cert) listener on app's configured
+// target and adopts it into the unified listener controller, returning the boot
+// HTTPS address.
+func adoptStaticBoot(t *testing.T, app *serverApp, handler http.Handler, certPath, keyPath string) string {
+	t.Helper()
 	lcfg := apptls.ListenerConfig{
-		ListenAddress: "127.0.0.1",
+		ListenAddress: app.cfg.Server.ListenAddress,
 		Port:          app.cfg.Server.Port,
-		CertSource:    "db",
-		CertPEM:       certPEM,
-		KeyPEM:        keyPEM,
+		CertSource:    "file",
+		CertPath:      certPath,
+		KeyPath:       keyPath,
 		HSTSEnabled:   app.hstsEnabledFn(),
 	}
-	boot, err := apptls.NewListener(http.NewServeMux(), lcfg, app.tlsLog)
+	boot, err := apptls.NewListener(handler, lcfg, app.tlsLog)
 	if err != nil {
 		t.Fatalf("boot listener: %v", err)
 	}
 	boot.Serve()
-	app.adoptTLSController(http.NewServeMux(), lcfg, boot)
+	app.cfg.Server.TLS.Mode = "static"
+	app.cfg.Server.TLS.CertSource = "file"
+	app.cfg.Server.TLS.CertPath = certPath
+	app.cfg.Server.TLS.KeyPath = keyPath
+	app.adoptListenerController(handler,
+		&serverctl.Instance{Addr: boot.Addr(), Shutdown: boot.Shutdown}, app.cfg.Server)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = app.listenerController.Shutdown(ctx)
 	})
+	return boot.Addr()
+}
 
-	tlsClient := &http.Client{Transport: &http.Transport{
+// insecureTLSClient is an HTTP client that accepts the self-signed certs the
+// rebind tests serve.
+func insecureTLSClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed by design
 	}}
-	oldAddr := boot.Addr()
+}
+
+// waitTLSUnreachable fails if the HTTPS listener at addr is still accepting after
+// the drain window.
+func waitTLSUnreachable(t *testing.T, client *http.Client, addr string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := client.Get("https://" + addr + "/"); err != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("old HTTPS listener %s still accepting after rebind", addr)
+}
+
+// A static-TLS listener adopted into the controller rebinds the HTTPS listener to
+// a new port in place: HTTPS serves on the new address and the old drains.
+func TestAdoptListenerController_TLSRebindsAcrossPorts(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+
+	oldAddr := adoptStaticBoot(t, app, http.NewServeMux(), certPath, keyPath)
+	tlsClient := insecureTLSClient()
 	getWithRetry(t, tlsClient, "https://"+oldAddr+"/").Body.Close()
 
 	newPort := freePort(t)
-	gran, err := app.listenerRebind.Rebind("127.0.0.1", newPort)
+	gran, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", newPort, certPath, keyPath))
 	if err != nil {
-		t.Fatalf("Rebind: %v", err)
+		t.Fatalf("Apply: %v", err)
 	}
 	if gran != webapi.ReloadListener {
 		t.Errorf("granularity = %v, want listener", gran)
@@ -430,14 +497,141 @@ func TestAdoptTLSController_RebindsAcrossPorts(t *testing.T) {
 
 	newAddr := fmt.Sprintf("127.0.0.1:%d", newPort)
 	getWithRetry(t, tlsClient, "https://"+newAddr+"/").Body.Close()
+	waitTLSUnreachable(t, tlsClient, oldAddr)
+}
 
-	// Old HTTPS listener drains.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := tlsClient.Get("https://" + oldAddr + "/"); err != nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+// off→static with a port change rebinds the plain listener to an HTTPS listener
+// in place (H4a): HTTPS serves on the new port and the old plain listener drains.
+func TestAdoptListenerController_OffToStaticNewPort(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+
+	oldAddr := adoptPlainBoot(t, app, http.NewServeMux())
+	getWithRetry(t, &http.Client{Timeout: time.Second}, "http://"+oldAddr+"/").Body.Close()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	newPort := freePort(t)
+	gran, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", newPort, certPath, keyPath))
+	if err != nil {
+		t.Fatalf("Apply off→static: %v", err)
 	}
-	t.Fatalf("old HTTPS listener %s still accepting after rebind", oldAddr)
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	newAddr := fmt.Sprintf("127.0.0.1:%d", newPort)
+	tlsClient := insecureTLSClient()
+	getWithRetry(t, tlsClient, "https://"+newAddr+"/").Body.Close()
+	waitUnreachable(t, oldAddr) // old plain listener drained
+}
+
+// static→off with a port change rebinds the HTTPS listener to a plain listener in
+// place (H4a): plain HTTP serves on the new port and the old HTTPS drains.
+func TestAdoptListenerController_StaticToOffNewPort(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+
+	oldAddr := adoptStaticBoot(t, app, http.NewServeMux(), certPath, keyPath)
+	tlsClient := insecureTLSClient()
+	getWithRetry(t, tlsClient, "https://"+oldAddr+"/").Body.Close()
+
+	newPort := freePort(t)
+	gran, err := app.listenerRebind.Apply(offServerCfg("127.0.0.1", newPort))
+	if err != nil {
+		t.Fatalf("Apply static→off: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	newAddr := fmt.Sprintf("127.0.0.1:%d", newPort)
+	getWithRetry(t, &http.Client{Timeout: time.Second}, "http://"+newAddr+"/").Body.Close()
+	waitTLSUnreachable(t, tlsClient, oldAddr) // old HTTPS listener drained
+}
+
+// A mode toggle that keeps the SAME address:port is applied live: bind-new-first
+// is impossible (the old listener holds the port), so the controller releases the
+// old plain listener and binds the new HTTPS listener on the freed port (with a
+// bind retry to absorb the release lag). The new HTTPS serves on the same port.
+func TestAdoptListenerController_SamePortModeToggleAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+
+	oldAddr := adoptPlainBoot(t, app, http.NewServeMux())
+	getWithRetry(t, &http.Client{Timeout: time.Second}, "http://"+oldAddr+"/").Body.Close()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	gran, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", samePort, certPath, keyPath))
+	if err != nil {
+		t.Fatalf("Apply same-port off→static: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+	// HTTPS now serves on the same port (the plain listener was replaced).
+	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+}
+
+// A same-port mode toggle with an UNUSABLE certificate is rejected before the old
+// listener is touched: the construct-without-bind validation fails, the error is
+// returned, and the old plain listener keeps serving (nothing released).
+func TestAdoptListenerController_SamePortToggleBadCertKeepsOld(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+
+	oldAddr := adoptPlainBoot(t, app, http.NewServeMux())
+	getWithRetry(t, &http.Client{Timeout: time.Second}, "http://"+oldAddr+"/").Body.Close()
+
+	// Point at a non-existent cert file so NewListener (construct) fails.
+	bad := staticServerCfg("127.0.0.1", samePort, filepath.Join(t.TempDir(), "missing.pem"), filepath.Join(t.TempDir(), "missing.key"))
+	if _, err := app.listenerRebind.Apply(bad); err == nil {
+		t.Fatal("Apply same-port toggle with bad cert: want error, got nil")
+	}
+	// Old plain listener untouched — validation happened before any release.
+	if !reachable(oldAddr) {
+		t.Errorf("old listener %s stopped serving after a rejected bad-cert toggle", oldAddr)
+	}
+}
+
+// ACME and static-with-http_redirect_port targets are not rebindable in place yet
+// (H4b/H4c): the applier refuses them so the save is reported restart_required.
+func TestAdoptListenerController_RefusesUnsupportedTargets(t *testing.T) {
+	app := newTestApp(t)
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	adoptPlainBoot(t, app, http.NewServeMux())
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+
+	acme := offServerCfg("127.0.0.1", freePort(t))
+	acme.TLS.Mode = "acme"
+	if _, err := app.listenerRebind.Apply(acme); !errors.Is(err, webapi.ErrNoListenerRebinder) {
+		t.Errorf("Apply acme target: err = %v, want ErrNoListenerRebinder", err)
+	}
+
+	redir := staticServerCfg("127.0.0.1", freePort(t), certPath, keyPath)
+	redir.TLS.HTTPRedirectPort = freePort(t)
+	if _, err := app.listenerRebind.Apply(redir); !errors.Is(err, webapi.ErrNoListenerRebinder) {
+		t.Errorf("Apply static+redirect target: err = %v, want ErrNoListenerRebinder", err)
+	}
 }

@@ -1622,16 +1622,19 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		res.errCh = tlsListener.Serve()
 		res.tlsListener = tlsListener
 
-		// Adopt a listener controller so a saved listen_address/port rebinds in
-		// place (no restart) — but only when a single HTTPS listener owns the
-		// configured port with no separate redirect listener. An active auto-443
-		// lifeboat (https443Ln != nil) serves HTTPS on 443 with the configured
-		// port as a redirect, and an explicit http_redirect_port adds a redirect
-		// listener the old process still holds during the drain window; both need
-		// the full listener-topology rebuild that H4 owns. Leave the rebinder
-		// unset there so listen changes stay restart-required.
+		// Adopt the listener controller so a saved listen_address/port — or an
+		// off↔static mode toggle (H4a) — rebinds in place (no restart), but only
+		// when a single HTTPS listener owns the configured port with no separate
+		// redirect listener. An active auto-443 lifeboat (https443Ln != nil) serves
+		// HTTPS on 443 with the configured port as a redirect, and an explicit
+		// http_redirect_port adds a redirect listener the old process still holds
+		// during the drain window; both need the full listener-topology rebuild
+		// that H4b owns. Leave the rebinder unset there so changes stay
+		// restart-required.
 		if https443Ln == nil && app.cfg.Server.TLS.HTTPRedirectPort == 0 {
-			app.adoptTLSController(apiRouter, lcfg, tlsListener)
+			app.adoptListenerController(apiRouter,
+				&serverctl.Instance{Addr: tlsListener.Addr(), Shutdown: tlsListener.Shutdown},
+				app.cfg.Server)
 		}
 
 	case "acme":
@@ -1639,7 +1642,11 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 
 	default:
 		res = app.servePlainHTTP(apiRouter)
-		app.adoptPlainController(apiRouter, res)
+		if res.plainSrv != nil {
+			app.adoptListenerController(apiRouter,
+				&serverctl.Instance{Addr: res.plainSrv.Addr, Shutdown: res.plainSrv.Shutdown},
+				app.cfg.Server)
+		}
 	}
 
 	return res, nil
@@ -1657,54 +1664,179 @@ func (app *serverApp) rebindLog(level, msg string) {
 	}
 }
 
-// setRebinder installs an adapter that maps the serverctl.Controller's Rebind
-// result into the webapi reload granularity the save handler reports.
-func (app *serverApp) setRebinder(ctrl *serverctl.Controller) {
-	if app.listenerRebind == nil {
+// serverListenerVariant maps a TLS mode to the listener topology the controller
+// builds for it: static → a TLS listener, anything else (off/"") → plain HTTP.
+// ACME is not rebindable in place yet (H4c), so it has no variant here.
+func serverListenerVariant(mode string) string {
+	if mode == "static" {
+		return "tls"
+	}
+	return "plain"
+}
+
+// resolveListen returns the effective bind address and port for cfg, applying the
+// same defaults the listeners use (empty address → 0.0.0.0, zero port → 8080) so
+// the controller's no-op key is stable across an unchanged save.
+func resolveListen(cfg config.ServerConfig) (string, int) {
+	addr := cfg.ListenAddress
+	if addr == "" {
+		addr = "0.0.0.0"
+	}
+	port := cfg.Port
+	if port == 0 {
+		port = 8080
+	}
+	return addr, port
+}
+
+// serverListenerKey is the opaque controller target fingerprint for cfg: the
+// listener variant plus the effective bind address, joined by "|". off↔static on
+// the same port therefore yields a different key (different variant) and triggers
+// a rebuild, while an unchanged save yields the same key and is a no-op.
+func serverListenerKey(cfg config.ServerConfig) string {
+	addr, port := resolveListen(cfg)
+	return fmt.Sprintf("%s|%s:%d", serverListenerVariant(cfg.TLS.Mode), addr, port)
+}
+
+// keyListenTarget returns the address:port portion of a serverListenerKey (the
+// part after "|"), so two keys can be compared for the same bind target
+// regardless of variant.
+func keyListenTarget(key string) string {
+	if i := strings.IndexByte(key, '|'); i >= 0 {
+		return key[i+1:]
+	}
+	return key
+}
+
+// adoptListenerController wires the single serverctl.Controller that rebinds the
+// live listener in place across listen_address/port changes and off↔static TLS
+// mode transitions (H4a). boot is the Instance already serving at startup;
+// bootCfg seeds the initial no-op key from the configured (not the bound) target,
+// so an unchanged save is a no-op. handler is rebuilt onto the new listener on
+// each rebind. No-op when no boot Instance or no rebind holder is wired.
+func (app *serverApp) adoptListenerController(handler http.Handler, boot *serverctl.Instance, bootCfg config.ServerConfig) {
+	if boot == nil || app.listenerRebind == nil {
 		return
 	}
+	ctrl := serverctl.New(app.resolveShutdownTimeout, app.rebindLog)
+	ctrl.Adopt(boot, serverListenerKey(bootCfg))
 	app.listenerController = ctrl
-	app.listenerRebind.Set(func(addr string, port int) (webapi.ReloadGranularity, error) {
-		changed, err := ctrl.Rebind(addr, port)
-		if err != nil {
-			return webapi.ReloadProcess, err
-		}
-		if !changed {
-			return webapi.ReloadApplied, nil
-		}
-		return webapi.ReloadListener, nil
+	app.listenerRebind.Set(func(cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
+		return app.applyServerListener(handler, ctrl, cfg)
 	})
 }
 
-// adoptPlainController wires a serverctl.Controller around the boot plain-HTTP
-// server so a saved listen_address/port rebinds in place. No-op when the boot
-// bind produced no server (all candidates failed → fatal).
-func (app *serverApp) adoptPlainController(handler http.Handler, res serverResult) {
-	if res.plainSrv == nil || app.listenerRebind == nil {
-		return
+// inPlaceBindAttempts / inPlaceBindRetryDelay bound the bind retry on a
+// same-target (off↔static, same port) rebind, where the new listener must reclaim
+// the port the old one just released. SO_REUSEADDR (Go's default) makes the
+// reclaim succeed; the retry only absorbs the brief OS release lag. ~2s total.
+const (
+	inPlaceBindAttempts   = 40
+	inPlaceBindRetryDelay = 50 * time.Millisecond
+)
+
+// applyServerListener rebuilds the live listener for the desired cfg via the
+// controller, dispatching on the target TLS mode: off → plain, static → a single
+// static-TLS HTTPS listener on the configured port. Targets not yet supported in
+// place — ACME, and static with an http_redirect_port (the redirect/auto-443
+// topology rebuild is H4b/H4c) — return ErrNoListenerRebinder so the save is
+// reported restart_required and applied on the next restart.
+//
+// A different-target change binds the new listener before retiring the old
+// (bind-new-first), so a bind clash keeps the old serving. A same-address:port
+// variant change (off↔static on one port) cannot bind-new-first, so it validates
+// the replacement is constructible first — a bad certificate is caught with the
+// old listener untouched — then releases the old and binds the new on the freed
+// port, retrying briefly to absorb the OS release lag.
+func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.Controller, cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
+	switch cfg.TLS.Mode {
+	case "acme":
+		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
+	case "static":
+		if cfg.TLS.HTTPRedirectPort != 0 {
+			return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
+		}
 	}
-	ctrl := serverctl.New(
-		func(addr string, port int) (*serverctl.Instance, error) {
-			return app.buildPlainInstance(handler, addr, port)
-		},
-		app.resolveShutdownTimeout, app.rebindLog,
-	)
-	host, port := splitHostPort(res.plainSrv.Addr)
-	ctrl.Adopt(&serverctl.Instance{Addr: res.plainSrv.Addr, Shutdown: res.plainSrv.Shutdown}, host, port)
-	app.setRebinder(ctrl)
+
+	newKey := serverListenerKey(cfg)
+	cur := ctrl.CurrentKey()
+	if cur == newKey {
+		return webapi.ReloadApplied, nil // unchanged target — no-op
+	}
+	inPlace := keyListenTarget(cur) == keyListenTarget(newKey)
+
+	addr, port := resolveListen(cfg)
+	attempts := 1
+	if inPlace {
+		attempts = inPlaceBindAttempts
+	}
+
+	var build serverctl.BuildFunc
+	if cfg.TLS.Mode == "static" {
+		// Construct (but do not bind) the TLS listener up front so a cert/config
+		// error fails here, before the old listener is disturbed.
+		listener, err := app.newTLSListener(handler, cfg, addr, port)
+		if err != nil {
+			return webapi.ReloadProcess, err
+		}
+		build = func() (*serverctl.Instance, error) {
+			return app.serveTLSListener(listener, addr, port, attempts)
+		}
+	} else {
+		build = func() (*serverctl.Instance, error) {
+			return app.buildPlainInstance(handler, addr, port, attempts)
+		}
+	}
+
+	var changed bool
+	var err error
+	if inPlace {
+		changed, err = ctrl.RebindInPlace(newKey, build)
+	} else {
+		changed, err = ctrl.Rebind(newKey, build)
+	}
+	if err != nil {
+		return webapi.ReloadProcess, err
+	}
+	if !changed {
+		return webapi.ReloadApplied, nil
+	}
+	return webapi.ReloadListener, nil
 }
 
-// buildPlainInstance binds a new plain-HTTP listener at addr:port and starts
-// serving handler on it (bind-new-first). A bind failure returns the error with
-// nothing bound, so the caller keeps the previous listener serving.
-func (app *serverApp) buildPlainInstance(handler http.Handler, addr string, port int) (*serverctl.Instance, error) {
+// listenTCP binds addr:port, retrying up to attempts times (attempts<=1 = a single
+// try) with a fixed delay. The retry absorbs the OS port-release lag when the new
+// listener must reclaim a port the old one just released on a same-target rebind.
+func listenTCP(addr string, port, attempts int) (net.Listener, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	target := net.JoinHostPort(addr, strconv.Itoa(port))
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		ln, err := net.Listen("tcp", target)
+		if err == nil {
+			return ln, nil
+		}
+		lastErr = err
+		if i < attempts-1 {
+			time.Sleep(inPlaceBindRetryDelay)
+		}
+	}
+	return nil, lastErr
+}
+
+// buildPlainInstance binds a new plain-HTTP listener at addr:port (retrying
+// attempts times) and starts serving handler on it. A bind failure returns the
+// error with nothing bound.
+func (app *serverApp) buildPlainInstance(handler http.Handler, addr string, port, attempts int) (*serverctl.Instance, error) {
 	if addr == "" {
 		addr = "0.0.0.0"
 	}
 	if port == 0 {
 		port = 8080
 	}
-	ln, err := net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(port)))
+	ln, err := listenTCP(addr, port, attempts)
 	if err != nil {
 		return nil, err
 	}
@@ -1719,54 +1851,24 @@ func (app *serverApp) buildPlainInstance(handler http.Handler, addr string, port
 	return &serverctl.Instance{Addr: ln.Addr().String(), Shutdown: srv.Shutdown}, nil
 }
 
-// adoptTLSController wires a serverctl.Controller around the boot static-TLS
-// listener so a saved listen_address/port rebinds the HTTPS listener in place.
-// baseCfg carries the boot listener config (cert source, min version, redirect
-// port, etc.); the BuildFunc clones it for the new target.
-func (app *serverApp) adoptTLSController(handler http.Handler, baseCfg apptls.ListenerConfig, boot *apptls.Listener) {
-	if app.listenerRebind == nil {
-		return
+// newTLSListener assembles the apptls.ListenerConfig from the desired server
+// config and constructs the static-TLS listener WITHOUT binding any port — so the
+// certificate/TLS config is validated (off→static toggle, min_version/CA change)
+// before the live listener is disturbed. For cert_source: db it fetches the
+// current cert/key from the encrypted store so a prior hot-swap is preserved.
+func (app *serverApp) newTLSListener(handler http.Handler, cfg config.ServerConfig, addr string, port int) (*apptls.Listener, error) {
+	lcfg := apptls.ListenerConfig{
+		ListenAddress:           addr,
+		Port:                    port,
+		CertSource:              cfg.TLS.CertSource,
+		CertPath:                cfg.TLS.CertPath,
+		KeyPath:                 cfg.TLS.KeyPath,
+		CAPath:                  cfg.TLS.CAPath,
+		MinVersion:              cfg.TLS.MinVersion,
+		GracefulShutdownTimeout: app.resolveShutdownTimeout(),
+		TrustedProxy:            cfg.TrustedProxy,
+		HSTSEnabled:             app.hstsEnabledFn(),
 	}
-	ctrl := serverctl.New(
-		func(addr string, port int) (*serverctl.Instance, error) {
-			return app.buildTLSInstance(handler, baseCfg, addr, port)
-		},
-		app.resolveShutdownTimeout, app.rebindLog,
-	)
-	ctrl.Adopt(
-		&serverctl.Instance{Addr: boot.Addr(), Shutdown: boot.Shutdown},
-		app.cfg.Server.ListenAddress, app.cfg.Server.Port,
-	)
-	app.setRebinder(ctrl)
-}
-
-// buildTLSInstance binds a new static-TLS HTTPS listener at addr:port and starts
-// serving (bind-new-first). It rebuilds the apptls.Listener from a clone of the
-// boot config, re-points the in-place cert reloader at the new listener's
-// CertManager, and re-arms the cert watch. For cert_source: db it refetches the
-// current cert/key from the encrypted store so a prior hot-swap is preserved
-// across the rebind. A bind or build failure returns the error with nothing
-// bound, leaving the previous listener serving.
-func (app *serverApp) buildTLSInstance(handler http.Handler, baseCfg apptls.ListenerConfig, addr string, port int) (*serverctl.Instance, error) {
-	if addr == "" {
-		addr = "0.0.0.0"
-	}
-	if port == 0 {
-		port = baseCfg.Port
-	}
-
-	lcfg := baseCfg
-	lcfg.ListenAddress = addr
-	lcfg.Port = port
-	// Serve a single HTTPS listener on the new configured port: a controller is
-	// only adopted when there is no redirect/auto-443 topology (guarded at
-	// adoption), so drop any redirect ports defensively — re-planning that
-	// topology on a rebind is H4's job.
-	lcfg.RedirectPorts = nil
-	lcfg.HTTPRedirectPort = 0
-
-	// Refetch the live cert material for the db source so a hot-swapped cert is
-	// not reverted to the boot material on a port change.
 	if lcfg.CertSource == "db" && app.cfgStore != nil {
 		certPEM, keyPEM, loadErr := app.loadDBCertKey(context.Background())
 		if loadErr != nil {
@@ -1775,16 +1877,17 @@ func (app *serverApp) buildTLSInstance(handler http.Handler, baseCfg apptls.List
 		lcfg.CertPEM = certPEM
 		lcfg.KeyPEM = keyPEM
 	}
+	return apptls.NewListener(handler, lcfg, app.tlsLog)
+}
 
-	// Bind-new-first: pre-bind the HTTPS listener at the new target so a bind
-	// clash fails here, before anything is torn down.
-	ln, err := net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(port)))
+// serveTLSListener binds the already-constructed listener at addr:port (retrying
+// attempts times to absorb a same-target release race), starts serving, and wires
+// the in-place cert reloader and watch. A single HTTPS listener is served on the
+// configured port — the redirect/auto-443 topology rebuild is H4b — so any
+// redirect ports are intentionally omitted. A bind failure returns the error.
+func (app *serverApp) serveTLSListener(listener *apptls.Listener, addr string, port, attempts int) (*serverctl.Instance, error) {
+	ln, err := listenTCP(addr, port, attempts)
 	if err != nil {
-		return nil, err
-	}
-	listener, err := apptls.NewListener(handler, lcfg, app.tlsLog)
-	if err != nil {
-		_ = ln.Close()
 		return nil, err
 	}
 	listener.SetHTTPSListener(ln)
@@ -1792,7 +1895,6 @@ func (app *serverApp) buildTLSInstance(handler http.Handler, baseCfg apptls.List
 	if app.tlsReload != nil {
 		app.tlsReload.Set(listener.CertManager())
 	}
-
 	errCh := listener.Serve()
 	go func() {
 		if serveErr := <-errCh; serveErr != nil {
@@ -1800,20 +1902,6 @@ func (app *serverApp) buildTLSInstance(handler http.Handler, baseCfg apptls.List
 		}
 	}()
 	return &serverctl.Instance{Addr: listener.Addr(), Shutdown: listener.Shutdown}, nil
-}
-
-// splitHostPort parses a "host:port" listen address into its parts, defaulting
-// the host to 0.0.0.0 and leaving port 0 when unparseable.
-func splitHostPort(addr string) (string, int) {
-	host, portStr, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "0.0.0.0", 0
-	}
-	if host == "" {
-		host = "0.0.0.0"
-	}
-	port, _ := strconv.Atoi(portStr)
-	return host, port
 }
 
 // loadDBCertKey fetches the cert_source: db certificate and private key from
