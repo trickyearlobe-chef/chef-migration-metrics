@@ -549,10 +549,10 @@ func TestAdminConfigServer_PUT_ModeToggle_RebindsLive(t *testing.T) {
 	}
 }
 
-// A tls change that is not a mode toggle and not a listen change (here
-// min_version within static) is not applied in place yet (H4b): the rebinder is
-// not called and the save reports process / restart_required.
-func TestAdminConfigServer_PUT_NonModeTLSChange_Process(t *testing.T) {
+// A same-mode static field change (here min_version within static, no mode or
+// listen change) now reaches the in-place rebinder (H4b-1): it is called once with
+// the new config and the save reports listener / restart_required=false.
+func TestAdminConfigServer_PUT_SameModeTLSChange_RebindsLive(t *testing.T) {
 	cfg := serverTestConfig(8080)
 	cfg.Server.TLS = config.TLSConfig{Mode: "static", CertSource: "db", MinVersion: "1.2"}
 	store := newTestConfigStore(t)
@@ -575,9 +575,39 @@ func TestAdminConfigServer_PUT_NonModeTLSChange_Process(t *testing.T) {
 	assertStatus(t, w, http.StatusOK)
 	var resp putConfigResponse
 	decodeBody(t, w, &resp)
-	if rb.calls != 0 {
-		t.Errorf("rebinder called %d times on a non-mode tls change; want 0", rb.calls)
+	if rb.calls != 1 {
+		t.Fatalf("rebinder calls = %d, want 1", rb.calls)
 	}
+	if rb.gotCfg.TLS.MinVersion != "1.3" {
+		t.Errorf("rebinder got min_version %q, want 1.3", rb.gotCfg.TLS.MinVersion)
+	}
+	if resp.RestartRequired || resp.Reload != "listener" {
+		t.Errorf("reload = %q restart=%v, want listener / false", resp.Reload, resp.RestartRequired)
+	}
+}
+
+// A same-mode static field change with no rebinder wired is persisted but reported
+// restart-required (the no-rebinder fallback).
+func TestAdminConfigServer_PUT_SameModeTLSChange_NoRebinder_Process(t *testing.T) {
+	cfg := serverTestConfig(8080)
+	cfg.Server.TLS = config.TLSConfig{Mode: "static", CertSource: "db", MinVersion: "1.2"}
+	store := newTestConfigStore(t)
+	seedDBCertPair(t, store)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	liveJSON, _ := configstore.SerializeValue(cfg.Server)
+	var body map[string]any
+	_ = json.Unmarshal(liveJSON, &body)
+	body["tls"] = map[string]any{"mode": "static", "cert_source": "db", "min_version": "1.3"}
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
 	if !resp.RestartRequired || resp.Reload != "process" {
 		t.Errorf("reload = %q restart=%v, want process / true", resp.Reload, resp.RestartRequired)
 	}

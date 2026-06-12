@@ -1622,15 +1622,16 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		res.errCh = tlsListener.Serve()
 		res.tlsListener = tlsListener
 
-		// Adopt the listener controller so a saved listen_address/port — or an
-		// off↔static mode toggle (H4a) — rebinds in place (no restart), but only
-		// when a single HTTPS listener owns the configured port with no separate
-		// redirect listener. An active auto-443 lifeboat (https443Ln != nil) serves
-		// HTTPS on 443 with the configured port as a redirect, and an explicit
-		// http_redirect_port adds a redirect listener the old process still holds
-		// during the drain window; both need the full listener-topology rebuild
-		// that H4b owns. Leave the rebinder unset there so changes stay
-		// restart-required.
+		// Adopt the listener controller so a saved listen_address/port, an
+		// off↔static mode toggle (H4a), or a same-mode static field change
+		// (min_version / mTLS CA / cert source-or-paths — H4b-1) rebinds in place
+		// (no restart), but only when a single HTTPS listener owns the configured
+		// port with no separate redirect listener. An active auto-443 lifeboat
+		// (https443Ln != nil) serves HTTPS on 443 with the configured port as a
+		// redirect, and an explicit http_redirect_port adds a redirect listener the
+		// old process still holds during the drain window; both need the full
+		// listener-topology rebuild that H4b-2/H4b-3 own. Leave the rebinder unset
+		// there so changes stay restart-required.
 		if https443Ln == nil && app.cfg.Server.TLS.HTTPRedirectPort == 0 {
 			app.adoptListenerController(apiRouter,
 				&serverctl.Instance{Addr: tlsListener.Addr(), Shutdown: tlsListener.Shutdown},
@@ -1689,21 +1690,45 @@ func resolveListen(cfg config.ServerConfig) (string, int) {
 	return addr, port
 }
 
-// serverListenerKey is the opaque controller target fingerprint for cfg: the
-// listener variant plus the effective bind address, joined by "|". off↔static on
-// the same port therefore yields a different key (different variant) and triggers
-// a rebuild, while an unchanged save yields the same key and is a no-op.
-func serverListenerKey(cfg config.ServerConfig) string {
-	addr, port := resolveListen(cfg)
-	return fmt.Sprintf("%s|%s:%d", serverListenerVariant(cfg.TLS.Mode), addr, port)
+// tlsTopologyFingerprint captures the static-TLS listener-affecting config fields
+// — cert source/paths, mTLS CA, and min version — so a same-port change to any of
+// them yields a different controller key and rebinds the single HTTPS listener in
+// place (H4b-1). It is empty for non-static modes: plain HTTP has no TLS topology,
+// and the acme / redirect / auto-443 topologies are not rebound in place yet
+// (refused by applyServerListener before the key is computed). cert_source ""
+// normalises to "file" to match the listener default, so a cosmetic round-trip of
+// the default is not seen as a change.
+func tlsTopologyFingerprint(cfg config.ServerConfig) string {
+	if cfg.TLS.Mode != "static" {
+		return ""
+	}
+	src := cfg.TLS.CertSource
+	if src == "" {
+		src = "file"
+	}
+	return fmt.Sprintf("src=%s;cert=%s;key=%s;ca=%s;min=%s",
+		src, cfg.TLS.CertPath, cfg.TLS.KeyPath, cfg.TLS.CAPath, cfg.TLS.MinVersion)
 }
 
-// keyListenTarget returns the address:port portion of a serverListenerKey (the
-// part after "|"), so two keys can be compared for the same bind target
-// regardless of variant.
+// serverListenerKey is the opaque controller target fingerprint for cfg:
+// "<variant>|<addr:port>|<tls-topology>". off↔static on the same port yields a
+// different key (different variant), a listen change yields a different bind
+// target, and a same-mode static field change (min_version / mTLS CA / cert
+// source-or-paths) yields a different tls-topology segment — each triggers a
+// rebuild. An unchanged save yields the same key and is a no-op.
+func serverListenerKey(cfg config.ServerConfig) string {
+	addr, port := resolveListen(cfg)
+	return fmt.Sprintf("%s|%s:%d|%s", serverListenerVariant(cfg.TLS.Mode), addr, port, tlsTopologyFingerprint(cfg))
+}
+
+// keyListenTarget returns the address:port segment of a serverListenerKey (between
+// the first and second "|"), so two keys can be compared for the same bind target
+// regardless of variant or tls topology. A same target means bind-new-first is
+// impossible (the old listener holds the port) and the rebind must release-first.
 func keyListenTarget(key string) string {
-	if i := strings.IndexByte(key, '|'); i >= 0 {
-		return key[i+1:]
+	parts := strings.SplitN(key, "|", 3)
+	if len(parts) >= 2 {
+		return parts[1]
 	}
 	return key
 }
@@ -1739,15 +1764,17 @@ const (
 // controller, dispatching on the target TLS mode: off → plain, static → a single
 // static-TLS HTTPS listener on the configured port. Targets not yet supported in
 // place — ACME, and static with an http_redirect_port (the redirect/auto-443
-// topology rebuild is H4b/H4c) — return ErrNoListenerRebinder so the save is
-// reported restart_required and applied on the next restart.
+// topology rebuild is H4b-2/H4b-3/H4c) — return ErrNoListenerRebinder so the save
+// is reported restart_required and applied on the next restart.
 //
 // A different-target change binds the new listener before retiring the old
 // (bind-new-first), so a bind clash keeps the old serving. A same-address:port
-// variant change (off↔static on one port) cannot bind-new-first, so it validates
-// the replacement is constructible first — a bad certificate is caught with the
-// old listener untouched — then releases the old and binds the new on the freed
-// port, retrying briefly to absorb the OS release lag.
+// change (an off↔static toggle on one port, or a same-mode static field change —
+// min_version / mTLS CA / cert source-or-paths — that keeps the port) cannot
+// bind-new-first, so it validates the replacement is constructible first — a bad
+// certificate is caught with the old listener untouched — then releases the old
+// and binds the new on the freed port, retrying briefly to absorb the OS release
+// lag.
 func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.Controller, cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
 	switch cfg.TLS.Mode {
 	case "acme":

@@ -110,15 +110,6 @@ func tlsSectionChanged(newSections, liveSections map[string]json.RawMessage) boo
 		!bytes.Equal(newSections[configstore.KeyServerTLS], liveSections[configstore.KeyServerTLS])
 }
 
-// normTLSMode maps the empty TLS mode to "off" so "" and "off" compare equal
-// (both mean plain HTTP), matching the listener default.
-func normTLSMode(m string) string {
-	if m == "" {
-		return "off"
-	}
-	return m
-}
-
 // ---------------------------------------------------------------------------
 // GET/PUT /api/v1/admin/config/server
 // ---------------------------------------------------------------------------
@@ -436,13 +427,9 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	// worst reload granularity of the sub-keys that actually changed (the PUT
 	// bundles listen/tls/websocket/graceful, but a graceful-only change applies
 	// live and must not claim a restart). Captured before the holder reloads.
-	// preSaveMode is the live TLS mode before the save, used to detect an
-	// off↔static transition that the listener rebinder applies in place.
 	var liveSections map[string]json.RawMessage
-	preSaveMode := ""
 	if live := r.liveConfig(); live != nil {
 		liveSections, _ = configstore.ConfigToSections(&config.Config{Server: live.Server})
-		preSaveMode = live.Server.TLS.Mode
 	}
 
 	// --- Persist all listen/TLS/WebSocket/shutdown sub-keys then reload ---
@@ -549,30 +536,28 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	// Rebind the running listener in place when the listen target changed or the
-	// TLS mode toggled off↔static (configuration-live-reload.md listener-rebind
-	// H2/H4a). The new listener is bound first; only once it is serving is the old
-	// one drained. The resolved granularity is folded into the response via
-	// listenGran (listen key) and tlsGran (tls key):
-	//   - unchanged             → applied (contributes nothing)
+	// TLS section changed (configuration-live-reload.md listener-rebind). A tls
+	// change covers both an off↔static mode toggle (H4a) and a same-mode static
+	// field change — min_version / mTLS CA / cert source-or-paths — that rebuilds
+	// the single HTTPS listener (H4b-1); the applier dispatches and either rebinds
+	// in place or refuses an unsupported topology. The new listener is bound first
+	// (or, on a same-address:port change, validated then rebound in place); only
+	// once it is serving is the old one drained. The resolved granularity is folded
+	// into the response via listenGran (listen key) and tlsGran (tls key):
+	//   - unchanged / no-op       → applied
 	//   - rebound in place        → listener (no restart)
 	//   - no rebinder / refused   → process (restart_required; persisted, applies on
 	//     the next restart — auto-443 / http_redirect_port / ACME / degraded fall
 	//     here)
-	// A non-mode tls sub-change (cert paths, min_version, mTLS CA, redirect port)
-	// is not yet applied in place (H4b), so it reports process. A bind failure
-	// (e.g. the port is now held by another process) keeps the old listener
-	// serving and is surfaced as a 500.
+	// A bind failure (e.g. the port is now held by another process) keeps the old
+	// listener serving and is surfaced as a 500.
 	listenChanged := listenSectionChanged(sections, liveSections)
-	modeChanged := normTLSMode(preSaveMode) != normTLSMode(input.TLS.Mode)
+	tlsChanged := tlsSectionChanged(sections, liveSections)
 
 	listenGran := ReloadApplied
 	tlsGran := ReloadApplied
-	if tlsSectionChanged(sections, liveSections) {
-		// A tls change reports process unless the rebinder applies it below.
-		tlsGran = ReloadProcess
-	}
 
-	if listenChanged || modeChanged {
+	if listenChanged || tlsChanged {
 		applyGran := ReloadProcess
 		if r.listenerRebind != nil {
 			// The submitted config is the desired target. A zero submitted port means
@@ -605,7 +590,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		if listenChanged {
 			listenGran = applyGran
 		}
-		if modeChanged {
+		if tlsChanged {
 			tlsGran = applyGran
 		}
 	}

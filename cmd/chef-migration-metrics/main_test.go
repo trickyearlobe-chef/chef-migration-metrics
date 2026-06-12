@@ -635,3 +635,81 @@ func TestAdoptListenerController_RefusesUnsupportedTargets(t *testing.T) {
 		t.Errorf("Apply static+redirect target: err = %v, want ErrNoListenerRebinder", err)
 	}
 }
+
+// A same-mode static change that only raises min_version is applied live in place
+// (H4b-1): bind-new-first is impossible (the new listener wants the port the old
+// one holds), so the controller validates the rebuilt listener then rebinds it on
+// the freed port. The rebuilt HTTPS listener serves on the same port and now
+// rejects a TLS 1.2 client — proving the new min_version actually took effect.
+func TestAdoptListenerController_StaticMinVersionAppliesLive(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+
+	oldAddr := adoptStaticBoot(t, app, http.NewServeMux(), certPath, keyPath)
+	getWithRetry(t, insecureTLSClient(), "https://"+oldAddr+"/").Body.Close()
+
+	cfg := staticServerCfg("127.0.0.1", samePort, certPath, keyPath)
+	cfg.TLS.MinVersion = "1.3"
+	gran, err := app.listenerRebind.Apply(cfg)
+	if err != nil {
+		t.Fatalf("Apply min_version raise: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+
+	// The rebuilt listener serves on the same port.
+	url := fmt.Sprintf("https://127.0.0.1:%d/", samePort)
+	getWithRetry(t, insecureTLSClient(), url).Body.Close()
+
+	// A TLS 1.2-max client is now rejected (poll until the old listener has fully
+	// drained and only the min-1.3 listener answers).
+	tls12 := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		InsecureSkipVerify: true, MaxVersion: tls.VersionTLS12, //nolint:gosec // self-signed test cert
+	}}}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp, getErr := tls12.Get(url)
+		if getErr != nil {
+			break // rejected — min 1.3 is enforced
+		}
+		resp.Body.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("TLS 1.2 client still accepted after min_version raised to 1.3")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Re-saving an unchanged static config is a no-op: the controller key (including
+// the TLS topology fingerprint) is unchanged, so nothing is rebound and the save
+// reports applied, not listener. The listener keeps serving on the same port.
+func TestAdoptListenerController_StaticUnchangedNoOp(t *testing.T) {
+	app := newTestApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	app.listenerRebind = webapi.NewListenerRebindHolder()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	app.cfg.Server.ListenAddress = "127.0.0.1"
+	app.cfg.Server.Port = freePort(t)
+	samePort := app.cfg.Server.Port
+
+	oldAddr := adoptStaticBoot(t, app, http.NewServeMux(), certPath, keyPath)
+	getWithRetry(t, insecureTLSClient(), "https://"+oldAddr+"/").Body.Close()
+
+	gran, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", samePort, certPath, keyPath))
+	if err != nil {
+		t.Fatalf("Apply unchanged static: %v", err)
+	}
+	if gran != webapi.ReloadApplied {
+		t.Errorf("granularity = %v, want applied (no-op)", gran)
+	}
+	// Nothing was torn down — still serving on the same port.
+	getWithRetry(t, insecureTLSClient(), fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+}

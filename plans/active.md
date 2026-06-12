@@ -127,7 +127,37 @@ topology, then acme.
   listener, non-mode tls change → process, no-rebinder → process. All `-race`.
 
 ### H4b — static topology changes (no mode change)
-- redirect_port / mTLS CA / min_version / auto-443 re-plan within static, in place.
+Split into sub-chunks (one session each); single-listener field changes first,
+then the multi-listener topology (redirect/443).
+
+#### H4b-1 — single-listener static field changes [config-fingerprint key] [DONE]
+- **Trigger generalised.** The server PUT now drives the in-place rebinder on ANY
+  tls-section change (not just an off↔static mode toggle or a listen change), so a
+  same-mode static field change reaches `applyServerListener`. `modeChanged` +
+  `preSaveMode` + `normTLSMode` dropped; the byte-diff `tlsSectionChanged` is the
+  trigger and the mode comparison is subsumed (mode lives in the tls section).
+- **Topology-fingerprint key.** `serverListenerKey` gains a third `|`-segment from
+  `tlsTopologyFingerprint(cfg)` (static: cert source/cert/key/ca paths + min_version,
+  normalising cert_source ""→"file"; empty otherwise), so a same-port change to
+  min_version / mTLS ca_path / cert source-or-paths yields a different key and rebinds
+  in place (same addr:port → `RebindInPlace`, validate-then-rebind). `keyListenTarget`
+  now extracts the middle addr:port segment.
+- **Scope.** Applies on adopted single-listener static deployments (port 443, or the
+  degraded-443 fallback — `https443Ln == nil && http_redirect_port == 0`). The auto-443
+  lifeboat and an explicit http_redirect_port are still refused (→ ErrNoListenerRebinder,
+  restart_required) — deferred to H4b-2/H4b-3.
+- TDD: main (static min_version applies live across a same-port rebind + TLS1.2-max
+  client then rejected; unchanged static save is a no-op/applied); handler (same-mode
+  static min_version change → rebinder called once → listener; no rebinder → process).
+  All `-race`.
+
+#### H4b-2 — http_redirect_port topology
+- Add/remove/change the redirect listener within static, in place (multi-listener
+  bind: the old process holds the redirect port during the drain window).
+
+#### H4b-3 — auto-443 lifeboat re-plan
+- Adopt a topology-aware controller for the auto-443 boot case; re-plan 443 +
+  redirects on a static change, in place.
 
 ### H4c — ACME transitions + ACME port rebind [riskiest]
 - →acme / acme→ / acme port change: port-80 challenge/redirect + renewer
