@@ -184,6 +184,10 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 - [ ] **`specifications/datastore.md` is a stub** — the datastore is referenced by ~10 other specs but has no full prose specification; the authoritative schema currently lives only in `migrations/*.up.sql`. A stub was added (during the spec-split/link-fix work) so cross-spec links resolve and the LLM is oriented. **Fix:** write the full datastore spec — table definitions and relationships, data-access patterns per consuming component (collector, analysis, web API, ownership), and retention/snapshot behaviour — using the migrations as the source of truth.
 
+## TLS — Dead `GracefulShutdownTimeout` Listener Field
+
+- [ ] **`apptls.ListenerConfig.GracefulShutdownTimeout` is set but never read.** `main.go` populates it at listener construction (static/self-signed paths) and `tls/listener.go` defaults it to 15s, but the actual drain budget comes from the `context.Context` passed to `Listener.Shutdown(ctx)` in `awaitShutdown` — the field is never consulted. Noticed during config live-reload H1 (graceful_shutdown_seconds now resolved live at shutdown time). **Fix:** remove the field and its boot-time assignments, or wire it through if a per-listener override is ever wanted (it is not today).
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

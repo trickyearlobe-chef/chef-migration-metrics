@@ -1897,11 +1897,25 @@ func (app *serverApp) degradeToPlainHTTP(handler http.Handler, cause error) serv
 // Phase: signal handling loop and graceful shutdown.
 // ---------------------------------------------------------------------------
 
-func (app *serverApp) awaitShutdown(srv serverResult) int {
-	shutdownTimeout := time.Duration(app.cfg.Server.GracefulShutdownSeconds) * time.Second
-	if shutdownTimeout <= 0 {
-		shutdownTimeout = 15 * time.Second
+// resolveShutdownTimeout returns the graceful-shutdown drain budget, read live
+// from the config holder when one is wired so a saved graceful_shutdown_seconds
+// change applies at the next shutdown without a restart (config live-reload H1).
+// It falls back to the boot config when no holder is set, and a non-positive
+// value defaults to 15s.
+func (app *serverApp) resolveShutdownTimeout() time.Duration {
+	secs := app.cfg.Server.GracefulShutdownSeconds
+	if app.configHolder != nil {
+		secs = app.configHolder.Get().Server.GracefulShutdownSeconds
 	}
+	timeout := time.Duration(secs) * time.Second
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	return timeout
+}
+
+func (app *serverApp) awaitShutdown(srv serverResult) int {
+	shutdownTimeout := app.resolveShutdownTimeout()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)

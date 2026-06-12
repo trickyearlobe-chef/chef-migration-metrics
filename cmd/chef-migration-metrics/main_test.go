@@ -16,6 +16,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/webapi"
 )
@@ -79,6 +80,33 @@ func TestAwaitShutdown_RestartRequestReturnsRestartCode(t *testing.T) {
 	code := app.awaitShutdown(serverResult{})
 	if code != exitCodeRestart {
 		t.Fatalf("expected restart exit code %d, got %d", exitCodeRestart, code)
+	}
+}
+
+// graceful_shutdown_seconds must be resolved live from the config holder at
+// shutdown time, so a saved change applies without a restart (config live-reload
+// H1). The boot config is only a fallback when no holder is wired.
+func TestResolveShutdownTimeout_LiveFromHolder(t *testing.T) {
+	app := newTestApp(t)
+
+	// No holder wired: the boot config value is used.
+	app.cfg.Server.GracefulShutdownSeconds = 30
+	if got := app.resolveShutdownTimeout(); got != 30*time.Second {
+		t.Errorf("boot fallback: got %v, want 30s", got)
+	}
+
+	// Holder wired with a different value: the live value wins over boot.
+	live := &config.Config{}
+	live.Server.GracefulShutdownSeconds = 5
+	app.configHolder = configstore.NewConfigHolder(live, nil)
+	if got := app.resolveShutdownTimeout(); got != 5*time.Second {
+		t.Errorf("live holder: got %v, want 5s", got)
+	}
+
+	// A non-positive live value falls back to the 15s default.
+	app.configHolder.Set(&config.Config{})
+	if got := app.resolveShutdownTimeout(); got != 15*time.Second {
+		t.Errorf("default: got %v, want 15s", got)
 	}
 }
 

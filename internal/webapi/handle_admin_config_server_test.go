@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -237,6 +238,97 @@ func TestAdminConfigServer_PUT_Success_WithWebSocket(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusOK)
+}
+
+// A save that changes only graceful_shutdown_seconds applies live (it is read at
+// shutdown time), so the response reports applied / restart_required=false even
+// though the bundled PUT also rewrites the listener/TLS/websocket keys with
+// unchanged values (config live-reload listener-rebind H1).
+func TestAdminConfigServer_PUT_GracefulOnlyChange_Applied(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.ListenAddress = "127.0.0.1"
+	cfg.Server.Port = 8080
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	cfg.Server.GracefulShutdownSeconds = 30
+
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	// Body identical to the live server config except graceful_shutdown_seconds,
+	// so only that sub-key differs in the diff.
+	liveJSON, err := configstore.SerializeValue(cfg.Server)
+	if err != nil {
+		t.Fatalf("serialise live server: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(liveJSON, &body); err != nil {
+		t.Fatalf("unmarshal live server: %v", err)
+	}
+	body["graceful_shutdown_seconds"] = 45
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if resp.RestartRequired {
+		t.Error("graceful-only change must not require a restart")
+	}
+	if resp.Reload != "applied" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "applied")
+	}
+
+	stored, err := store.Get(context.Background(), configstore.KeyServerGracefulShutdown)
+	if err != nil {
+		t.Fatalf("store.Get graceful: %v", err)
+	}
+	if strings.TrimSpace(string(stored)) != "45" {
+		t.Errorf("stored graceful = %s, want 45", stored)
+	}
+}
+
+// A save that changes a non-graceful sub-key (here websocket limits) still
+// reports the pessimistic process granularity until that key's in-place rebind
+// lands (H2–H4), even when graceful is also touched in the same bundle.
+func TestAdminConfigServer_PUT_WebSocketChange_Process(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.ListenAddress = "127.0.0.1"
+	cfg.Server.Port = 8080
+	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
+	cfg.Server.WebSocket.MaxConnections = 50
+
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(cfg, store, nil)
+
+	liveJSON, err := configstore.SerializeValue(cfg.Server)
+	if err != nil {
+		t.Fatalf("serialise live server: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(liveJSON, &body); err != nil {
+		t.Fatalf("unmarshal live server: %v", err)
+	}
+	body["websocket"].(map[string]any)["max_connections"] = 99
+	bodyBytes, _ := json.Marshal(body)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/server", bytes.NewReader(bodyBytes))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+
+	var resp putConfigResponse
+	decodeBody(t, w, &resp)
+	if !resp.RestartRequired {
+		t.Error("websocket change must still require a restart at H1")
+	}
+	if resp.Reload != "process" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "process")
+	}
 }
 
 func TestAdminConfigServer_PUT_503_NilStore(t *testing.T) {

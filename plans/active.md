@@ -27,11 +27,15 @@ port change reports listener). Introduced in H2, extended per chunk.
 live listener(s) and exposes `Rebind(newServerCfg) (ReloadGranularity, error)`.
 Wired to webapi via `WithListenerRebinder`; the server config applier calls it.
 
-## Chunk H1 — `graceful_shutdown_seconds` → applied [low risk, self-contained]
-- Read the shutdown timeout from the holder at shutdown time (not boot).
-- Scope: `main.go` shutdown path (`awaitShutdown`/graceful drain).
-- TDD: a unit seam that resolves the timeout live. Acceptance: change applies
-  without restart; section reports applied for a graceful-only change.
+## Chunk H1 — `graceful_shutdown_seconds` → applied [DONE]
+- `resolveShutdownTimeout()` reads the drain budget live from the holder at
+  shutdown time (fallback to boot cfg; ≤0 → 15s); `awaitShutdown` uses it.
+- Server PUT is now diff-aware (minimal): `serverReloadGranularity` diffs the
+  submitted vs pre-save live sections; graceful-only change → applied (no
+  restart), any listen/tls/websocket/trusted_proxy change → process (pessimistic
+  until H2–H4). Reports `reload`/`restart_required` like the generic handler.
+- Tech debt logged: dead `apptls.ListenerConfig.GracefulShutdownTimeout` field.
+- H2 extends the diff: listen key → listener granularity + wire the rebinder.
 
 ## Chunk H2 — listener ownership + `listen_address`/`port` rebind [architectural core]
 - Extract listener ownership so the bound listener(s) can be closed/rebound:

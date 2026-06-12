@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -46,6 +47,35 @@ type acmeRoute53CredSubmission struct {
 			} `yaml:"route53"`
 		} `yaml:"acme"`
 	} `yaml:"tls"`
+}
+
+// serverKeyGranularity maps each persisted server sub-key to the reload
+// granularity a change to it currently needs. graceful_shutdown_seconds is read
+// live at shutdown time, so it applies without a restart; the listener/TLS/
+// websocket/trusted_proxy keys stay pessimistically process until their in-place
+// rebind lands (configuration-live-reload.md listener-rebind H2–H4).
+var serverKeyGranularity = map[string]ReloadGranularity{
+	configstore.KeyServerGracefulShutdown: ReloadApplied,
+	configstore.KeyServerListen:           ReloadProcess,
+	configstore.KeyServerTLS:              ReloadProcess,
+	configstore.KeyServerWebSocket:        ReloadProcess,
+	configstore.KeyServerTrustedProxy:     ReloadProcess,
+}
+
+// serverReloadGranularity reports the worst reload granularity across the server
+// sub-keys whose stored value actually changed between the pre-save live config
+// and the submitted config. Unchanged keys are ignored; with nothing changed the
+// save is applied (a no-op needs no restart). A nil live snapshot (no holder and
+// no boot config) is treated pessimistically as changed for every key.
+func serverReloadGranularity(newSections, liveSections map[string]json.RawMessage) ReloadGranularity {
+	worst := ReloadApplied
+	for key, g := range serverKeyGranularity {
+		changed := liveSections == nil || !bytes.Equal(newSections[key], liveSections[key])
+		if changed && g > worst {
+			worst = g
+		}
+	}
+	return worst
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +391,15 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Snapshot the pre-save live server sections so the response can report the
+	// worst reload granularity of the sub-keys that actually changed (the PUT
+	// bundles listen/tls/websocket/graceful, but a graceful-only change applies
+	// live and must not claim a restart). Captured before the holder reloads.
+	var liveSections map[string]json.RawMessage
+	if live := r.liveConfig(); live != nil {
+		liveSections, _ = configstore.ConfigToSections(&config.Config{Server: live.Server})
+	}
+
 	// --- Persist all listen/TLS/WebSocket/shutdown sub-keys then reload ---
 
 	sections, err := configstore.ConfigToSections(&config.Config{Server: input})
@@ -455,7 +494,12 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		WriteInternalError(w, "Failed to serialise response.")
 		return
 	}
-	resp := putConfigResponse{Value: data, RestartRequired: true}
+	reload := serverReloadGranularity(sections, liveSections)
+	resp := putConfigResponse{
+		Value:           data,
+		RestartRequired: reload == ReloadProcess,
+		Reload:          reload.String(),
+	}
 	if dbCertWarning != "" {
 		r.logf("WARN", "admin/config/server: TLS certificate chain stored with warning: %s", dbCertWarning)
 		resp.Warnings = append(resp.Warnings, dbCertWarning)
