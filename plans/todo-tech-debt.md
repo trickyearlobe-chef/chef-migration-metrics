@@ -224,6 +224,26 @@ Recorded 2026-06-12 (listener-rebind H4c-2a: in-place acme→off/static exit).
   serialized. **Fix:** guard with the controller lock (or fold acme-ness into the controller
   key) if concurrent saves ever become possible.
 
+## Collector — Cron Schedule `N/step` Not Honoured [TO INVESTIGATE]
+
+Recorded 2026-06-12. Surfaced while verifying the disk decouple on the lab box.
+
+- [ ] **A collection schedule of `0/2 * * * *` fires hourly, not every 2 minutes.**
+  `parseCronPart` (`internal/collector/scheduler.go`) only applies a `/step` to a
+  `*` wildcard or an `a-b` range; for a **literal** base (`0/2`) it truncates to
+  `0` and drops the step → the minute field becomes `{0}` → effectively `0 * * * *`
+  (hourly). Standard cron treats `0/2` as `0,2,4,…`. Workaround: use `*/2` (verified
+  working live — it fired on the 20:36 even-minute boundary).
+  **To investigate:** operator reports collections "used to parse fine" before the
+  config-live-reload work. The parser code itself is **unchanged** (added in commit
+  `81ee14d`; the config commits `e04ba28`/`8b8b7b9` only touched live rescheduling,
+  which works — a live schedule update triggered an immediate run). So confirm
+  whether the schedule *value* changed (e.g. `*/2` → `0/2` via the YAML→config_store
+  migration or a UI save) rather than the parsing. Check config history / the
+  encrypted `collection` config-store value.
+  **Likely fix (if confirmed a gap):** honour `N/step` in `parseCronPart` (start at
+  N, step by the step) like standard cron, plus a unit test for `0/2`, `5/10`, etc.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
