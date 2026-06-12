@@ -292,18 +292,20 @@ func TestAdminConfigServer_PUT_GracefulOnlyChange_Applied(t *testing.T) {
 	}
 }
 
-// A save that changes a non-graceful sub-key (here websocket limits) still
-// reports the pessimistic process granularity until that key's in-place rebind
-// lands (H2–H4), even when graceful is also touched in the same bundle.
-func TestAdminConfigServer_PUT_WebSocketChange_Process(t *testing.T) {
+// A save that changes a websocket sub-key applies live (subsystem): the hub is
+// reconfigured in place, so the response reports subsystem / restart_required
+// =false and the new limits are visible on the running hub (H3).
+func TestAdminConfigServer_PUT_WebSocketChange_Subsystem(t *testing.T) {
 	cfg := testConfig()
 	cfg.Server.ListenAddress = "127.0.0.1"
 	cfg.Server.Port = 8080
 	cfg.Server.TLS = config.TLSConfig{Mode: "off"}
 	cfg.Server.WebSocket.MaxConnections = 50
+	cfg.Server.WebSocket.SendBufferSize = 32
 
 	store := newTestConfigStore(t)
-	r := newTestRouterForAdminConfig(cfg, store, nil)
+	holder := newTestConfigHolder(t, store, cfg)
+	r := newTestRouterForAdminConfig(cfg, store, holder)
 
 	liveJSON, err := configstore.SerializeValue(cfg.Server)
 	if err != nil {
@@ -314,6 +316,7 @@ func TestAdminConfigServer_PUT_WebSocketChange_Process(t *testing.T) {
 		t.Fatalf("unmarshal live server: %v", err)
 	}
 	body["websocket"].(map[string]any)["max_connections"] = 99
+	body["websocket"].(map[string]any)["send_buffer_size"] = 128
 	bodyBytes, _ := json.Marshal(body)
 
 	w := httptest.NewRecorder()
@@ -324,11 +327,19 @@ func TestAdminConfigServer_PUT_WebSocketChange_Process(t *testing.T) {
 
 	var resp putConfigResponse
 	decodeBody(t, w, &resp)
-	if !resp.RestartRequired {
-		t.Error("websocket change must still require a restart at H1")
+	if resp.RestartRequired {
+		t.Error("websocket change applies live and must not require a restart")
 	}
-	if resp.Reload != "process" {
-		t.Errorf("reload = %q, want %q", resp.Reload, "process")
+	if resp.Reload != "subsystem" {
+		t.Errorf("reload = %q, want %q", resp.Reload, "subsystem")
+	}
+
+	// The running hub was reconfigured in place.
+	if got := r.hub.maxConnections.Load(); got != 99 {
+		t.Errorf("hub maxConnections = %d, want 99 (reconfigured live)", got)
+	}
+	if got := r.hub.sendBufferSize.Load(); got != 128 {
+		t.Errorf("hub sendBufferSize = %d, want 128 (reconfigured live)", got)
 	}
 }
 

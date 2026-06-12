@@ -62,10 +62,23 @@ Wired to webapi via `WithListenerRebinder`; the server config applier calls it.
   bind-failure keeps old); handler (listener/process/500); main (plain rebind +
   bind-failure). All under `-race`.
 
-## Chunk H3 — `server.websocket.*` → subsystem [hub rebuild]
-- Rebuild the websocket hub in place from live config (max_connections, buffers,
-  timeouts, ping/pong). Assess hub ownership + safe swap with active connections.
-- TDD: hub rebuild applies new limits; existing connections handled gracefully.
+## Chunk H3 — `server.websocket.*` → subsystem [hub rebuild] [DONE]
+- `EventHub.Reconfigure(max, buf)`: max_connections/send_buffer_size now atomic
+  and reconfigured live. Lowering max never evicts existing clients (new
+  registrations rejected until count drops below the new ceiling); buffer change
+  sizes only clients registered after the call. Non-positive → unchanged.
+- Handler timeouts (write/ping/pong) pulled live via `WithWebSocketConfigFunc`
+  (router closes over `liveConfig()`); resolved once per connection, so existing
+  connections keep their started values — graceful.
+- Server PUT diff-aware: websocket key changed → `r.hub.Reconfigure(...)` from the
+  reloaded live config (defaulted) → reports `subsystem` (no restart). The hub is
+  router-owned, so no holder/seam is needed and it always applies (never
+  restart_required). `serverKeyGranularity[websocket]` flipped process→subsystem.
+- main: hub now created with `WithMaxConnections/WithSendBufferSize` from
+  `server.websocket.*` (was ignoring config at boot — pre-existing gap, fixed).
+- TDD: hub reconfigure (live max/buf, non-positive no-op, lowered-max keeps
+  existing + rejects new, buffer applies to new only); handler resolveConfig
+  (live/static/default); handler PUT → subsystem + hub reconfigured. All `-race`.
 
 ## Chunk H4 — TLS mode transitions + ACME port rebind [largest / riskiest]
 - Live `off`/`static`/`acme` transitions and ACME-mode port changes: rebuild the

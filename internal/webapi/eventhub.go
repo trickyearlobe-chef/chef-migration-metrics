@@ -256,10 +256,14 @@ func (c *client) shouldReceive(evt Event) bool {
 // deregistration are serialised through the hub's internal channels.
 type EventHub struct {
 	// maxConnections is the upper limit on simultaneous WebSocket clients.
-	maxConnections int
+	// Stored atomically so it can be reconfigured live (Reconfigure) while the
+	// run loop reads it on each registration.
+	maxConnections atomic.Int64
 
-	// sendBufferSize is the capacity of each client's send channel.
-	sendBufferSize int
+	// sendBufferSize is the capacity of each client's send channel. Stored
+	// atomically so a live Reconfigure can resize the buffer of subsequently
+	// registered clients while Register (a separate goroutine) reads it.
+	sendBufferSize atomic.Int64
 
 	// register requests a new client be added.
 	register chan *client
@@ -293,7 +297,7 @@ type EventHubOption func(*EventHub)
 func WithMaxConnections(n int) EventHubOption {
 	return func(h *EventHub) {
 		if n > 0 {
-			h.maxConnections = n
+			h.maxConnections.Store(int64(n))
 		}
 	}
 }
@@ -302,7 +306,7 @@ func WithMaxConnections(n int) EventHubOption {
 func WithSendBufferSize(n int) EventHubOption {
 	return func(h *EventHub) {
 		if n > 0 {
-			h.sendBufferSize = n
+			h.sendBufferSize.Store(int64(n))
 		}
 	}
 }
@@ -311,18 +315,35 @@ func WithSendBufferSize(n int) EventHubOption {
 // Stop() to shut it down.
 func NewEventHub(opts ...EventHubOption) *EventHub {
 	h := &EventHub{
-		maxConnections: 100,
-		sendBufferSize: 64,
-		register:       make(chan *client, 16),
-		unregister:     make(chan *client, 16),
-		broadcast:      make(chan Event, 256),
-		clients:        make(map[*client]struct{}),
-		done:           make(chan struct{}),
+		register:   make(chan *client, 16),
+		unregister: make(chan *client, 16),
+		broadcast:  make(chan Event, 256),
+		clients:    make(map[*client]struct{}),
+		done:       make(chan struct{}),
 	}
+	h.maxConnections.Store(100)
+	h.sendBufferSize.Store(64)
 	for _, opt := range opts {
 		opt(h)
 	}
 	return h
+}
+
+// Reconfigure applies new WebSocket hub limits live, without dropping existing
+// connections (configuration-live-reload.md: server.websocket.* is a subsystem
+// rebuild). maxConnections takes effect on the next registration — existing
+// clients are never evicted when the limit is lowered; new clients are simply
+// rejected until the count falls back below the new ceiling. sendBufferSize
+// sizes the send channel of clients registered after this call; existing
+// clients keep their original buffer. A non-positive value leaves the
+// corresponding setting unchanged.
+func (h *EventHub) Reconfigure(maxConnections, sendBufferSize int) {
+	if maxConnections > 0 {
+		h.maxConnections.Store(int64(maxConnections))
+	}
+	if sendBufferSize > 0 {
+		h.sendBufferSize.Store(int64(sendBufferSize))
+	}
 }
 
 // Run starts the hub's event loop. It blocks until Stop() is called. Callers
@@ -343,7 +364,7 @@ func (h *EventHub) Run() {
 			return
 
 		case c := <-h.register:
-			if len(h.clients) >= h.maxConnections {
+			if int64(len(h.clients)) >= h.maxConnections.Load() {
 				// At capacity — reject the client immediately.
 				close(c.send)
 				continue
@@ -413,7 +434,7 @@ func (h *EventHub) Broadcast(evt Event) {
 // channel will be closed immediately.
 func (h *EventHub) Register() *client {
 	c := &client{
-		send:          make(chan Event, h.sendBufferSize),
+		send:          make(chan Event, h.sendBufferSize.Load()),
 		subscriptions: make(map[string]Subscription),
 	}
 	select {

@@ -41,10 +41,10 @@ type CollectionTriggerFunc func(ctx context.Context) error
 // It assembles the ServeMux with all API routes, the WebSocket endpoint,
 // health/version endpoints, and the frontend static asset fallback.
 type Router struct {
-	mux     *http.ServeMux
-	hub     *EventHub
-	db      DataStore
-	cfg     *config.Config
+	mux           *http.ServeMux
+	hub           *EventHub
+	db            DataStore
+	cfg           *config.Config
 	version       string
 	schemaVersion int
 
@@ -870,12 +870,17 @@ func (r *Router) registerRoutes() {
 
 // webSocketOpts builds the WebSocketHandler options from the loaded config.
 func (r *Router) webSocketOpts() []WebSocketHandlerOption {
-	wsCfg := r.cfg.Server.WebSocket
+	// Pull timeouts live so a server.websocket.* save applies to connections
+	// opened afterwards without a restart (configuration-live-reload.md:
+	// subsystem). secondsToDuration maps an unset (0) field to the default.
 	opts := []WebSocketHandlerOption{
-		WithWebSocketConfig(WebSocketConfig{
-			WriteTimeout: secondsToDuration(wsCfg.WriteTimeoutSeconds),
-			PingInterval: secondsToDuration(wsCfg.PingIntervalSeconds),
-			PongTimeout:  secondsToDuration(wsCfg.PongTimeoutSeconds),
+		WithWebSocketConfigFunc(func() WebSocketConfig {
+			ws := r.liveConfig().Server.WebSocket
+			return WebSocketConfig{
+				WriteTimeout: secondsToDuration(ws.WriteTimeoutSeconds),
+				PingInterval: secondsToDuration(ws.PingIntervalSeconds),
+				PongTimeout:  secondsToDuration(ws.PongTimeoutSeconds),
+			}
 		}),
 	}
 	if r.logger != nil {

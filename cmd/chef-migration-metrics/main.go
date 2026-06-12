@@ -335,8 +335,12 @@ func (app *serverApp) setupDatabase() error {
 
 	// EventHub — create early so the DBWriter broadcast callback can
 	// capture it. The run loop starts immediately in a background
-	// goroutine; it will be stopped during graceful shutdown.
-	app.hub = webapi.NewEventHub()
+	// goroutine; it will be stopped during graceful shutdown. Limits come
+	// from server.websocket.* and are reconfigured live on save.
+	app.hub = webapi.NewEventHub(
+		webapi.WithMaxConnections(app.cfg.Server.WebSocket.MaxConnections),
+		webapi.WithSendBufferSize(app.cfg.Server.WebSocket.SendBufferSize),
+	)
 	go app.hub.Run()
 
 	return nil

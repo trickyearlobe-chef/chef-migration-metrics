@@ -51,16 +51,17 @@ type acmeRoute53CredSubmission struct {
 
 // serverKeyGranularity maps each persisted server sub-key to the reload
 // granularity a change to it currently needs. graceful_shutdown_seconds is read
-// live at shutdown time, so it applies without a restart; the TLS/websocket/
-// trusted_proxy keys stay pessimistically process until their in-place rebind
-// lands (configuration-live-reload.md listener-rebind H3–H4). The listen key is
+// live at shutdown time, so it applies without a restart; websocket is a
+// subsystem rebuild (the hub is reconfigured in place — see putAdminConfigServer);
+// tls/trusted_proxy stay pessimistically process until their in-place rebind
+// lands (configuration-live-reload.md listener-rebind H4). The listen key is
 // NOT here: its granularity is resolved per-request from the in-place rebind
 // outcome (listener on success, process when no rebinder is wired) — see
 // putAdminConfigServer.
 var serverKeyGranularity = map[string]ReloadGranularity{
 	configstore.KeyServerGracefulShutdown: ReloadApplied,
 	configstore.KeyServerTLS:              ReloadProcess,
-	configstore.KeyServerWebSocket:        ReloadProcess,
+	configstore.KeyServerWebSocket:        ReloadSubsystem,
 	configstore.KeyServerTrustedProxy:     ReloadProcess,
 }
 
@@ -88,6 +89,14 @@ func serverReloadGranularity(newSections, liveSections map[string]json.RawMessag
 func listenSectionChanged(newSections, liveSections map[string]json.RawMessage) bool {
 	return liveSections == nil ||
 		!bytes.Equal(newSections[configstore.KeyServerListen], liveSections[configstore.KeyServerListen])
+}
+
+// websocketSectionChanged reports whether the persisted server.websocket section
+// differs between the submitted and pre-save live config. A nil live snapshot is
+// treated pessimistically as changed.
+func websocketSectionChanged(newSections, liveSections map[string]json.RawMessage) bool {
+	return liveSections == nil ||
+		!bytes.Equal(newSections[configstore.KeyServerWebSocket], liveSections[configstore.KeyServerWebSocket])
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +490,21 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 			WriteInternalError(w, "Failed to reload config after update.")
 			return
 		}
+	}
+
+	// Reconfigure the running WebSocket hub in place when the websocket section
+	// changed (configuration-live-reload.md: subsystem). Existing connections are
+	// preserved — the new max_connections/send_buffer_size take effect on
+	// subsequent registrations, and timeouts on subsequent connections (pulled
+	// live by the handler). Values come from the reloaded live config so unset
+	// fields carry their applied defaults. Reported as subsystem (no restart) via
+	// serverKeyGranularity.
+	if r.hub != nil && websocketSectionChanged(sections, liveSections) {
+		ws := input.WebSocket
+		if lc := r.liveConfig(); lc != nil {
+			ws = lc.Server.WebSocket
+		}
+		r.hub.Reconfigure(ws.MaxConnections, ws.SendBufferSize)
 	}
 
 	// Swap the running static-TLS certificate in place so the listener serves
