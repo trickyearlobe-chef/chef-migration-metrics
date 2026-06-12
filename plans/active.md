@@ -61,13 +61,24 @@ Chunk 3 split by layer: backend (API + filter) first, then frontend.
   rows); filter SQL-string tests updated to the column form; functional round-trip +
   disk filter (light + heavy scan) verified against a real Postgres. All `-race`.
 
-### Chunk 3b — frontend: consume node-level disk [next]
-- list `DiskBadge` reads `node.disk_status`/`node.disk_detail` (drop the
-  `readiness[0]` fallback); detail `DiskSpacePanel` reads the node-level fields from
-  `data.node` and renders even with zero readiness rows (move it out of
-  `ReadinessSection`). Update `types/nodes.ts`.
-- `node_readiness` disk columns become vestigial → follow-up tech-debt to drop them.
-- TDD: list badge + detail card with no readiness rows.
+### Chunk 3b — frontend: consume node-level disk [DONE]
+- list `DiskBadge` reads `node.disk_status`/`node.disk_detail` (dropped the
+  `readiness[0]` fallback). `DiskSpacePanel` now takes discrete disk props (not a
+  readiness row) and renders once at the node level from `data.node`, OUTSIDE
+  `ReadinessSection`, so the disk card shows even with zero readiness rows (the
+  original "card vanished" regression). Removed it from per-target `ReadinessCard`.
+  `types/nodes.ts`: disk fields on `NodeListItem` + `NodeSnapshot`.
+- `node_readiness` disk columns now vestigial → recorded in todo-tech-debt.
+- TDD: `NodeDetailDiskPanel.test.tsx` — disk card renders Sufficient/Insufficient/
+  Unknown with `readiness: null`. Full frontend suite (390) + `tsc -b` + lint green.
+
+## DONE — all chunks complete
+
+The disk verdict is decoupled from `target_chef_versions`: computed per node at
+collection time, stored on `node_snapshots`, surfaced in list + detail + filter.
+A fresh node, or an instance with no target configured, now shows disk status.
+Ready to merge after the user sets the dev target back to 19.3.15 + a collection
+run repopulates verdicts (or it self-heals on the next collection).
 
 ## Spec
 - `analysis-node-readiness.md` §version-invariance already states the contract; Chunk 2

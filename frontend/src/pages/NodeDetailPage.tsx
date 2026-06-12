@@ -28,23 +28,26 @@ function diskDetailPath(org: string, name: string): string {
 // ---------------------------------------------------------------------------
 
 function DiskSpacePanel({
-  r,
+  sufficient,
+  available,
+  required,
+  stale,
   org,
   nodeName,
   installPath,
   minRemainingFreePercent,
 }: {
-  r: NodeReadiness;
+  // Version-invariant disk verdict, sourced from the node snapshot (not a
+  // per-target readiness row), so the panel renders even with no readiness rows.
+  sufficient?: boolean | null;
+  available?: number | null;
+  required?: number | null;
+  stale?: boolean;
   org?: string;
   nodeName?: string;
   installPath?: string;
   minRemainingFreePercent?: number;
 }) {
-  const available = r.available_disk_mb;
-  const required = r.required_disk_mb;
-  const sufficient = r.sufficient_disk_space;
-  const stale = r.stale_data;
-
   // Unknown / stale state
   if (sufficient === null || sufficient === undefined) {
     const reason = stale
@@ -160,15 +163,11 @@ function ReadinessCard({
   org,
   nodeName,
   targetChefVersion,
-  installPath,
-  minRemainingFreePercent,
 }: {
   r: NodeReadiness;
   org?: string;
   nodeName?: string;
   targetChefVersion?: string;
-  installPath?: string;
-  minRemainingFreePercent?: number;
 }) {
   const ready = r.is_ready;
 
@@ -231,7 +230,8 @@ function ReadinessCard({
         )}
       </div>
 
-      {/* Analysis panels: dependency tree + disk */}
+      {/* Analysis panel: dependency tree. Disk space is version-invariant, so it
+          renders once at the node level (below) rather than per readiness card. */}
       <div className="mt-4 space-y-3">
         {org && nodeName && (
           <ReadinessDependencyTree
@@ -241,7 +241,6 @@ function ReadinessCard({
             blockingCookbooks={r.blocking_cookbooks}
           />
         )}
-        <DiskSpacePanel r={r} org={org} nodeName={nodeName} installPath={installPath} minRemainingFreePercent={minRemainingFreePercent} />
       </div>
     </div>
   );
@@ -444,8 +443,6 @@ function ReadinessSection({
             org={org}
             nodeName={nodeName}
             targetChefVersion={r.target_chef_version}
-            installPath={data.install_path}
-            minRemainingFreePercent={data.min_remaining_free_percent}
           />
         ))}
       </div>
@@ -945,6 +942,19 @@ export function NodeDetailPage() {
 
       {/* Deployment State — parallel deployment tracking */}
       <DeploymentStatePanel node={node} />
+
+      {/* Disk space — version-invariant node-level verdict (self-labelled panel),
+          shown even when there are no readiness rows (e.g. no target configured). */}
+      <DiskSpacePanel
+        sufficient={node.sufficient_disk_space}
+        available={node.available_disk_mb}
+        required={node.required_disk_mb}
+        stale={node.is_stale}
+        org={org}
+        nodeName={name}
+        installPath={data.install_path}
+        minRemainingFreePercent={data.min_remaining_free_percent}
+      />
 
       {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
       <ReadinessSection data={data} org={org} nodeName={name} />
