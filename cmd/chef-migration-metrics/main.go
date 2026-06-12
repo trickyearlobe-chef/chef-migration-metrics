@@ -1852,14 +1852,15 @@ const (
 // and binds the new on the freed port, retrying briefly to absorb the OS release
 // lag.
 func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.Controller, cfg config.ServerConfig) (webapi.ReloadGranularity, error) {
-	// Any acme transition is deferred to H4c-2: entering acme (target mode), or
-	// leaving/re-planning the live acme topology (app.acmeActive). Refuse so the
-	// save is reported restart_required and applied on the next restart. The
-	// composite acme Instance is still adopted (H4c-1) so it drains via the
-	// controller and H4c-2 has the swap seam.
-	if cfg.TLS.Mode == "acme" || app.acmeActive {
+	// Entering acme (target mode), or re-planning the live acme topology in place
+	// (an acme-internal save while app.acmeActive), is deferred to H4c-2b — refuse
+	// so the save is reported restart_required. Leaving acme for off/static (H4c-2a)
+	// is handled below: the controller swap drains the whole acme Instance (HTTPS +
+	// renewer + port-80 challenge) and binds the off/static replacement.
+	if cfg.TLS.Mode == "acme" {
 		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
 	}
+	exitingACME := app.acmeActive // mode != acme here, so this is an acme→off/static exit
 
 	newKey := app.listenerKey(cfg)
 	cur := ctrl.CurrentKey()
@@ -1875,7 +1876,13 @@ func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.
 		return webapi.ReloadProcess, webapi.ErrNoListenerRebinder
 	}
 
-	inPlace := keyListenTarget(cur) == keyListenTarget(newKey)
+	// An acme exit always releases first: the live acme topology holds several ports
+	// (HTTPS + port-80 challenge + any redirect), so draining the whole Instance
+	// before binding the replacement avoids a bind-new-first clash with a port the
+	// old topology still holds. The replacement binds on the freed port(s) with the
+	// same release-lag retry as a same-target rebind. Otherwise use same-target
+	// detection (a same-address:port variant change cannot bind-new-first).
+	inPlace := exitingACME || keyListenTarget(cur) == keyListenTarget(newKey)
 
 	addr, port := resolveListen(cfg)
 	attempts := 1
@@ -1916,6 +1923,13 @@ func (app *serverApp) applyServerListener(handler http.Handler, ctrl *serverctl.
 	}
 	if !changed {
 		return webapi.ReloadApplied, nil
+	}
+	if exitingACME {
+		// Now serving plain/static off the acme topology — the renewer + challenge
+		// drained with the old Instance. Clear acmeActive so subsequent saves take
+		// the normal off/static path (re-entering acme stays restart-required —
+		// H4c-2b). Stale tlsReload pointer on acme→off mirrors the H4a residual.
+		app.acmeActive = false
 	}
 	return webapi.ReloadListener, nil
 }

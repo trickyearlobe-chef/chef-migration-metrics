@@ -202,6 +202,28 @@ Recorded 2026-06-12 (listener-rebind H4a: in-place off↔static mode transition)
 - [x] **RESOLVED (H4b-3, pending removal confirmation) — auto-443 lifeboat re-plan.** The controller is now adopted at boot when auto-443 is active (`https443Ln != nil`); a same-mode static change re-plans HTTPS-on-the-lifeboat-port + its redirects in place via `effectiveTLSTopology`. Residual (leaving the topology — mode/listen_address change — stays restart-required) is folded into the ACME item above.
 - [ ] **static→off leaves a stale `tlsReload` pointer.** `buildTLSInstance` re-points `app.tlsReload` at each new HTTPS CertManager, but `buildPlainInstance` (static→off) does not clear it, so a later db-cert save in `off` mode calls Reload on the drained listener's CertManager (best-effort, logged warn; harmless as `off` serves no TLS). **Fix:** clear tlsReload when rebinding to a plain listener.
 
+## Config Live-Reload — ACME Rebind Scope Gaps (H4c-2a)
+
+Recorded 2026-06-12 (listener-rebind H4c-2a: in-place acme→off/static exit).
+
+- [ ] **acme exit always releases-first, even on a clean-port target.** An acme→off/static
+  save drains the whole acme Instance before binding the replacement (the live acme
+  topology holds HTTPS + port-80 challenge + any redirect, so bind-new-first could clash).
+  When the off/static target shares no port with the live acme topology, bind-new-first
+  would be strictly safer (a failed bind is a no-op). **Fix:** when the target ports don't
+  overlap the live acme topology, use `Rebind` (bind-new-first) instead of `RebindInPlace`.
+  Minor: a post-release bind failure on a clean-port exit briefly leaves HTTPS down until
+  restart (non-physical — we just freed the ports). Mirrors the H4a same-port residual.
+- [ ] **Entry into acme + acme-internal/port changes still restart-required.** off/static→acme
+  and any acme-internal save (domains/email/challenge/ca_url/dns/min_version/http_redirect_port/
+  server.port) are refused (→ `ErrNoListenerRebinder`). **Fix:** H4c-2b — dispatch an acme
+  target via an on-demand `buildACMEInstance` closure (renewer restart, `acmeTrigger` repoint,
+  port-80 challenge pre-bind+retry, auto-443 + fail-open reconciled).
+- [ ] **`acmeActive` is mutated by the applier without a lock.** Set at boot and cleared on a
+  successful exit from within `applyServerListener`; relies on admin server-config saves being
+  serialized. **Fix:** guard with the controller lock (or fold acme-ness into the controller
+  key) if concurrent saves ever become possible.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

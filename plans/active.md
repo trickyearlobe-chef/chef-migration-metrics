@@ -236,11 +236,34 @@ so split into two sessions: first fold the topology into one rebindable Instance
   cancels renewer + stops challenge + closes HTTPS; acme→off/static Apply refused
   (acmeActive); existing acme boot/degraded/auto-443 tests unchanged. All `-race`.
 
-#### H4c-2 — acme transitions: entry / exit / internal+port change [in-place]
-- Applier dispatches an acme target via the acmeRuntime build closure (entry),
-  acme→off/static via the existing plain/static builds (old Instance.Shutdown
-  tears down renewer+challenge), and acme-internal changes (domains/email/
-  challenge/ca_url/dns/min_version/http_redirect_port/server.port) via the acme
+H4c-2 is large + riskiest, so split by direction: exit first (reuses H4c-1's
+tested composite teardown + existing plain/static builders), then entry + the
+on-demand acme rebuild.
+
+#### H4c-2a — acme EXIT (acme→off / acme→static) [in-place] [DONE]
+- Applier stops refusing when leaving acme (`app.acmeActive && mode != acme`):
+  builds the off/static target via the existing plain/static closures and swaps,
+  so the old acme Instance.Shutdown (H4c-1) tears down renewer + challenge +
+  HTTPS as a unit. Entry (`mode == acme`) and acme-internal saves stay refused
+  (H4c-2b).
+- **Always release-first (`RebindInPlace`).** The live acme topology holds several
+  ports (HTTPS + port-80 challenge + any redirect), so drain the whole Instance
+  first, then bind the replacement on the freed port(s) with the existing retry —
+  bind-new-first is unsafe (the new listener could clash with a port the old
+  topology still holds). Residual (todo-tech-debt): a clean-port exit could
+  bind-new-first; not worth the multi-port-overlap bookkeeping.
+- Clear `app.acmeActive` on a successful exit so subsequent saves use normal
+  off/static logic. Stale tlsReload pointer on acme→off mirrors the H4a residual.
+- TDD: acme(degraded http-01)→static on a new port + same port (reclaim via
+  retry) → listener, new HTTPS serves, old acme HTTPS/challenge stop; acme→off →
+  listener, plain serves; acmeActive cleared; entry + acme-internal still refused.
+  All `-race`.
+
+#### H4c-2b — acme ENTRY + internal/port change [in-place]
+- Applier dispatches an acme target via an on-demand `buildACMEInstance` closure
+  (refactored out of setupACME, fail-open to degraded self-signed inside the new
+  Instance), for off/static→acme entry and acme-internal changes (domains/email/
+  challenge/ca_url/dns/min_version/http_redirect_port/server.port) via an acme
   fingerprint key → rebuild. Renewer cancel/restart through the Instance swap;
   `acmeTrigger` repointed to the new renewer each rebuild; port-80 challenge
   pre-bound with retry (like redirect ports) so a same-port rebind reclaims it;

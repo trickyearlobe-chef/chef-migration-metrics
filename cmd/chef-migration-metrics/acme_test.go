@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"testing"
@@ -387,8 +388,12 @@ func TestSetupACME_AdoptsControllerForRebind(t *testing.T) {
 
 // Leaving acme (acme→off, acme→static) is deferred to H4c-2: while acmeActive the
 // applier refuses every target so the save is reported restart_required.
-func TestAdoptListenerController_RefusesLeavingACME(t *testing.T) {
-	app := newACMEApp(t)
+// bootACMEForRebind boots a degraded (no stored cert) http-01 acme topology with
+// the listener rebinder wired and adopted into the controller, returning the live
+// acme HTTPS address. The renewer stays offline (agree_to_tos false). The caller
+// drains via app.listenerController on cleanup.
+func bootACMEForRebind(t *testing.T, app *serverApp) string {
+	t.Helper()
 	app.listenerRebind = webapi.NewListenerRebindHolder()
 	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}
 	app.cfg.Server.TLS.ACME.Challenge = "http-01"
@@ -398,18 +403,104 @@ func TestAdoptListenerController_RefusesLeavingACME(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setupACME: %v", err)
 	}
-	_ = res
-	defer func() {
+	if app.listenerController == nil {
+		t.Fatal("acme boot did not adopt the controller")
+	}
+	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = app.listenerController.Shutdown(ctx)
-	}()
+	})
+	return res.tlsListener.Addr()
+}
 
-	if _, err := app.listenerRebind.Apply(offServerCfg("127.0.0.1", freePort(t))); !errors.Is(err, webapi.ErrNoListenerRebinder) {
-		t.Errorf("acme→off: err = %v, want ErrNoListenerRebinder", err)
-	}
+// acme→static exit on a NEW port (H4c-2a): the applier leaves acme by building the
+// static listener via the normal closure and release-first swapping the whole acme
+// Instance, so the renewer + port-80 challenge + HTTPS all tear down and the new
+// static HTTPS serves. acmeActive is cleared so subsequent saves use static logic.
+func TestSetupACME_ExitToStaticNewPort(t *testing.T) {
+	app := newACMEApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	acmeAddr := bootACMEForRebind(t, app)
+
+	client := insecureTLSClient()
+	getWithRetry(t, client, "https://"+acmeAddr+"/").Body.Close()
+
 	certPath, keyPath := writeSelfSignedFiles(t)
-	if _, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", freePort(t), certPath, keyPath)); !errors.Is(err, webapi.ErrNoListenerRebinder) {
-		t.Errorf("acme→static: err = %v, want ErrNoListenerRebinder", err)
+	newPort := freePort(t)
+	gran, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", newPort, certPath, keyPath))
+	if err != nil {
+		t.Fatalf("acme→static Apply: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+	if app.acmeActive {
+		t.Error("acmeActive must be cleared after leaving acme")
+	}
+
+	getWithRetry(t, client, fmt.Sprintf("https://127.0.0.1:%d/", newPort)).Body.Close()
+	waitUnreachable(t, acmeAddr) // old acme HTTPS (+ challenge + renewer) drained
+}
+
+// acme→static exit on the SAME port the acme HTTPS held: release-first frees the
+// port and the static build reclaims it via the bind retry.
+func TestSetupACME_ExitToStaticSamePort(t *testing.T) {
+	app := newACMEApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	samePort := app.cfg.Server.Port // acme HTTPS binds the configured port when degraded
+	acmeAddr := bootACMEForRebind(t, app)
+
+	client := insecureTLSClient()
+	getWithRetry(t, client, "https://"+acmeAddr+"/").Body.Close()
+
+	certPath, keyPath := writeSelfSignedFiles(t)
+	gran, err := app.listenerRebind.Apply(staticServerCfg("127.0.0.1", samePort, certPath, keyPath))
+	if err != nil {
+		t.Fatalf("acme→static same-port Apply: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+	getWithRetry(t, client, fmt.Sprintf("https://127.0.0.1:%d/", samePort)).Body.Close()
+}
+
+// acme→off exit (H4c-2a): leaves acme for plain HTTP, tearing down the acme
+// topology; the new plain listener serves and acmeActive is cleared.
+func TestSetupACME_ExitToOff(t *testing.T) {
+	app := newACMEApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	acmeAddr := bootACMEForRebind(t, app)
+
+	tlsClient := insecureTLSClient()
+	getWithRetry(t, tlsClient, "https://"+acmeAddr+"/").Body.Close()
+
+	newPort := freePort(t)
+	gran, err := app.listenerRebind.Apply(offServerCfg("127.0.0.1", newPort))
+	if err != nil {
+		t.Fatalf("acme→off Apply: %v", err)
+	}
+	if gran != webapi.ReloadListener {
+		t.Errorf("granularity = %v, want listener", gran)
+	}
+	if app.acmeActive {
+		t.Error("acmeActive must be cleared after leaving acme")
+	}
+	getWithRetry(t, &http.Client{Timeout: time.Second}, fmt.Sprintf("http://127.0.0.1:%d/", newPort)).Body.Close()
+	waitUnreachable(t, acmeAddr)
+}
+
+// Re-planning the acme topology in place (entry, or an acme-internal change such
+// as a different challenge port) is deferred to H4c-2b: the applier still refuses
+// any acme target so the save is reported restart_required.
+func TestSetupACME_RefusesACMEInternalChange(t *testing.T) {
+	app := newACMEApp(t)
+	app.tlsReload = webapi.NewTLSReloadHolder()
+	_ = bootACMEForRebind(t, app)
+
+	internal := app.cfg.Server // still mode acme
+	internal.TLS.HTTPRedirectPort = freePort(t)
+	if _, err := app.listenerRebind.Apply(internal); !errors.Is(err, webapi.ErrNoListenerRebinder) {
+		t.Errorf("acme-internal change: err = %v, want ErrNoListenerRebinder", err)
 	}
 }
