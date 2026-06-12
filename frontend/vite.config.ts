@@ -13,6 +13,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    // Single-bundle build is intentional: this is an internal admin tool served
+    // over VDI, load times are a non-issue, and route-level code splitting would be
+    // extra config to maintain (and re-tune) on every refactor. Raise the warning
+    // threshold so the build stays quiet until the bundle grows substantially; the
+    // size itself is not a concern. Revisit (React.lazy route splitting) only if a
+    // real load-time problem appears.
+    chunkSizeWarningLimit: 1500,
   },
   server: {
     port: 3000,
