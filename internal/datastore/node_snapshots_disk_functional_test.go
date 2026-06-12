@@ -124,3 +124,82 @@ func TestFunctional_NodeSnapshot_DiskVerdictRoundTrip(t *testing.T) {
 		t.Errorf("list AvailableDiskMB = %v, want 512", ins.AvailableDiskMB)
 	}
 }
+
+// The filtered-list path (CTE + light/heavy scan) must carry the disk verdict,
+// and the disk_blocked / disk_unknown filters must resolve on the node_snapshots
+// column — independent of any target version / readiness rows.
+func TestFunctional_NodeSnapshot_DiskFilter(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	org, err := db.UpsertOrganisationFromConfig(ctx, UpsertOrganisationParams{
+		Name:          "func-disk-filter-org",
+		ChefServerURL: "https://example.com/organizations/test",
+		OrgName:       "test",
+		ClientName:    "test-client",
+	})
+	if err != nil {
+		t.Fatalf("creating org: %v", err)
+	}
+	run, err := db.CreateCollectionRun(ctx, CreateCollectionRunParams{OrganisationName: org.Name})
+	if err != nil {
+		t.Fatalf("creating collection run: %v", err)
+	}
+	cleanupTestData(t, db,
+		"DELETE FROM node_snapshots WHERE collection_run_org = '"+run.OrganisationName+"'",
+		"DELETE FROM collection_runs WHERE organisation_name = '"+run.OrganisationName+"'",
+		"DELETE FROM organisations WHERE name = '"+org.Name+"'",
+	)
+
+	now := time.Now().UTC()
+	mk := func(name string, suff *bool) InsertNodeSnapshotParams {
+		return InsertNodeSnapshotParams{
+			CollectionRunOrg: run.OrganisationName, OrganisationName: org.Name,
+			NodeName: name, Platform: "ubuntu", CollectedAt: now,
+			SufficientDiskSpace: suff, RequiredDiskMB: ptrInt(2048),
+		}
+	}
+	if _, err := db.BulkUpsertNodeSnapshots(ctx, []InsertNodeSnapshotParams{
+		mk("ff-ok", ptrBool(true)), mk("ff-low", ptrBool(false)), mk("ff-unknown", nil),
+	}); err != nil {
+		t.Fatalf("bulk upsert: %v", err)
+	}
+
+	names := func(f NodeSnapshotFilter) []string {
+		f.OrganisationNames = []string{org.Name}
+		list, _, lerr := db.ListNodeSnapshotsFiltered(ctx, f)
+		if lerr != nil {
+			t.Fatalf("filtered list: %v", lerr)
+		}
+		var out []string
+		for _, ns := range list {
+			out = append(out, ns.NodeName)
+		}
+		return out
+	}
+
+	// Light scan carries the verdict (no IncludeHeavyJSON).
+	all := names(NodeSnapshotFilter{})
+	if len(all) != 3 {
+		t.Fatalf("unfiltered list = %v, want 3 nodes", all)
+	}
+	// disk_blocked → only the insufficient node.
+	if got := names(NodeSnapshotFilter{ReadinessFilter: "disk_blocked"}); len(got) != 1 || got[0] != "ff-low" {
+		t.Errorf("disk_blocked = %v, want [ff-low]", got)
+	}
+	// disk_unknown → only the indeterminate node.
+	if got := names(NodeSnapshotFilter{ReadinessFilter: "disk_unknown"}); len(got) != 1 || got[0] != "ff-unknown" {
+		t.Errorf("disk_unknown = %v, want [ff-unknown]", got)
+	}
+
+	// Heavy scan path also carries the verdict in the returned snapshot.
+	heavy, _, err := db.ListNodeSnapshotsFiltered(ctx, NodeSnapshotFilter{
+		OrganisationNames: []string{org.Name}, ReadinessFilter: "disk_blocked", IncludeHeavyJSON: true,
+	})
+	if err != nil {
+		t.Fatalf("heavy filtered list: %v", err)
+	}
+	if len(heavy) != 1 || heavy[0].SufficientDiskSpace == nil || *heavy[0].SufficientDiskSpace {
+		t.Errorf("heavy disk_blocked verdict = %+v, want one node with sufficient=false", heavy)
+	}
+}

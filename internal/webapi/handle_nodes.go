@@ -38,6 +38,15 @@ type nodeResp struct {
 	CollectedAt         string                      `json:"collected_at"`
 	Readiness           []nodeReadinessSummaryEntry `json:"readiness,omitempty"`
 
+	// Node-level, version-invariant disk verdict (from the snapshot — migration
+	// 0037), so the list disk badge is correct even when no target version is
+	// configured or the node has no readiness rows yet.
+	DiskStatus          string  `json:"disk_status"`
+	DiskDetail          *string `json:"disk_detail,omitempty"`
+	SufficientDiskSpace *bool   `json:"sufficient_disk_space,omitempty"`
+	AvailableDiskMB     *int    `json:"available_disk_mb,omitempty"`
+	RequiredDiskMB      *int    `json:"required_disk_mb,omitempty"`
+
 	// Parallel deployment tracking
 	MigrationState       string `json:"migration_state,omitempty"`
 	TargetConvergeStatus string `json:"target_converge_status,omitempty"`
@@ -65,23 +74,30 @@ func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadine
 		ageHours = now.Sub(ohaiTime).Hours()
 	}
 
+	installPath := r.installPathForNode(n.Platform)
+
 	return nodeResp{
-		OrganisationName:    n.OrganisationName,
-		NodeName:            n.NodeName,
-		ChefEnvironment:     n.ChefEnvironment,
-		ChefVersion:         n.ChefVersion,
-		Platform:            n.Platform,
-		PlatformVersion:     n.PlatformVersion,
-		PlatformFamily:      n.PlatformFamily,
-		PlatformDisplayName: platformDisplayName,
-		PolicyName:          n.PolicyName,
-		PolicyGroup:         n.PolicyGroup,
-		IsStale:             n.IsStale,
-		StalenesTier:        string(tier),
-		OhaiTimeAgeHours:    ageHours,
-		OhaiTime:            n.OhaiTime,
-		CollectedAt:         n.CollectedAt.Format("2006-01-02T15:04:05Z"),
-		Readiness:           readiness,
+		OrganisationName:     n.OrganisationName,
+		NodeName:             n.NodeName,
+		ChefEnvironment:      n.ChefEnvironment,
+		ChefVersion:          n.ChefVersion,
+		Platform:             n.Platform,
+		PlatformVersion:      n.PlatformVersion,
+		PlatformFamily:       n.PlatformFamily,
+		PlatformDisplayName:  platformDisplayName,
+		PolicyName:           n.PolicyName,
+		PolicyGroup:          n.PolicyGroup,
+		IsStale:              n.IsStale,
+		StalenesTier:         string(tier),
+		OhaiTimeAgeHours:     ageHours,
+		OhaiTime:             n.OhaiTime,
+		CollectedAt:          n.CollectedAt.Format("2006-01-02T15:04:05Z"),
+		Readiness:            readiness,
+		DiskStatus:           diskStatusFor(n.SufficientDiskSpace),
+		DiskDetail:           diskDetailFor(n.SufficientDiskSpace, n.AvailableDiskMB, n.RequiredDiskMB, installPath),
+		SufficientDiskSpace:  n.SufficientDiskSpace,
+		AvailableDiskMB:      n.AvailableDiskMB,
+		RequiredDiskMB:       n.RequiredDiskMB,
 		MigrationState:       migrationStateLabel(n.MigrationState),
 		TargetConvergeStatus: n.TargetConvergeStatus,
 		ReadyToActivate:      n.MigrationState == "hab_dormant" && n.TargetConvergeStatus == "success",
@@ -348,12 +364,12 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	pdn := resolvePlatformDisplayName(snapshot.Platform, snapshot.PlatformVersion, mappings)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"node":                        snapshot,
-		"organisation_name":           org.Name,
-		"readiness":                   readiness,
-		"platform_display_name":       pdn,
-		"install_path":                r.installPathForNode(snapshot.Platform),
-		"min_remaining_free_percent":  r.liveConfig().Readiness.MinRemainingFreePercent,
+		"node":                       snapshot,
+		"organisation_name":          org.Name,
+		"readiness":                  readiness,
+		"platform_display_name":      pdn,
+		"install_path":               r.installPathForNode(snapshot.Platform),
+		"min_remaining_free_percent": r.liveConfig().Readiness.MinRemainingFreePercent,
 	})
 }
 

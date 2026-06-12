@@ -46,18 +46,28 @@ independent of target version / readiness rows. Chosen over derive-on-read so th
   now produced for every collected node regardless of target version.
 - TDD: datastore round-trip (set/NULL); collector populates verdict + NULL when stale/no-fs.
 
-### Chunk 3 — read path + filter + frontend read node-level disk
-- webapi: node list + detail expose a node-level `disk_status`/`sufficient_disk_space`/
-  `available_disk_mb`/`required_disk_mb` from the snapshot (via `deriveDiskStatus`),
-  independent of readiness rows.
-- filter: `disk_blocked`/`disk_unknown` resolve on `node_snapshots` columns
-  (`cn.sufficient_disk_space = false` / `IS NULL`) instead of the `node_readiness` EXISTS.
-- frontend: list `DiskBadge` + detail `DiskSpacePanel` read the node-level field; the
-  detail disk card renders even with zero readiness rows (move it out of `ReadinessSection`).
-- readiness eval keeps using `EvaluateDisk` for its `is_ready` gate (consistent logic);
-  `node_readiness` disk columns become vestigial → follow-up tech-debt to drop them.
-- TDD: handler node-level disk (sufficient/insufficient/unknown); filter on columns;
-  frontend list badge + detail card with no readiness rows.
+Chunk 3 split by layer: backend (API + filter) first, then frontend.
+
+### Chunk 3a — backend: node-level disk on API + filter [DONE]
+- webapi `nodeResp` now carries node-level `disk_status` + `disk_detail` +
+  `sufficient_disk_space`/`available_disk_mb`/`required_disk_mb` from the snapshot,
+  via shared `diskStatusFor`/`diskDetailFor` (extracted in `check_status.go`;
+  `deriveDiskStatus`/`diskDetail` delegate). Detail handler already returns the raw
+  `node` snapshot, which now includes the disk fields.
+- filter: `disk_blocked` → `cn.sufficient_disk_space = false`, `disk_unknown` →
+  `cn.sufficient_disk_space IS NULL` (was the `node_readiness` EXISTS). Disk columns
+  threaded through the `current_nodes` CTE + light/heavy projection + filtered scan.
+- TDD: handler test (disk_status sufficient/insufficient/unknown with NO readiness
+  rows); filter SQL-string tests updated to the column form; functional round-trip +
+  disk filter (light + heavy scan) verified against a real Postgres. All `-race`.
+
+### Chunk 3b — frontend: consume node-level disk [next]
+- list `DiskBadge` reads `node.disk_status`/`node.disk_detail` (drop the
+  `readiness[0]` fallback); detail `DiskSpacePanel` reads the node-level fields from
+  `data.node` and renders even with zero readiness rows (move it out of
+  `ReadinessSection`). Update `types/nodes.ts`.
+- `node_readiness` disk columns become vestigial → follow-up tech-debt to drop them.
+- TDD: list badge + detail card with no readiness rows.
 
 ## Spec
 - `analysis-node-readiness.md` §version-invariance already states the contract; Chunk 2
