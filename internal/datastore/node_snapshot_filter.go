@@ -163,7 +163,8 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at,
 		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
 		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
-		       cn.target_converge_status`
+		       cn.target_converge_status,
+		       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
 
 	heavyCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
 		       cn.chef_environment, cn.chef_version,
@@ -175,7 +176,8 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 		       cn.is_stale, cn.collected_at, cn.created_at,
 		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
 		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
-		       cn.target_converge_status`
+		       cn.target_converge_status,
+		       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
 
 	cols := lightCols
 	if f.IncludeHeavyJSON {
@@ -276,6 +278,8 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		var migrationState, activeChefVer, dormantChefVer sql.NullString
 		var dormantInstalled sql.NullBool
 		var targetVer, targetExecTime, targetConvergeStatus sql.NullString
+		var sufficientDisk sql.NullBool
+		var availableDiskMB, requiredDiskMB sql.NullInt64
 
 		if includeHeavy {
 			var filesystem, cookbooks, customAttributes []byte
@@ -307,6 +311,9 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&targetVer,
 				&targetExecTime,
 				&targetConvergeStatus,
+				&sufficientDisk,
+				&availableDiskMB,
+				&requiredDiskMB,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (heavy): %w", err)
@@ -340,6 +347,9 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&targetVer,
 				&targetExecTime,
 				&targetConvergeStatus,
+				&sufficientDisk,
+				&availableDiskMB,
+				&requiredDiskMB,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (light): %w", err)
@@ -365,6 +375,9 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		ns.TargetVersion = stringFromNull(targetVer)
 		ns.TargetExecutionTime = stringFromNull(targetExecTime)
 		ns.TargetConvergeStatus = stringFromNull(targetConvergeStatus)
+		ns.SufficientDiskSpace = boolFromNull(sufficientDisk)
+		ns.AvailableDiskMB = intPtrFromNull(availableDiskMB)
+		ns.RequiredDiskMB = intPtrFromNull(requiredDiskMB)
 
 		totalCount = rowTotal
 		snapshots = append(snapshots, ns)
@@ -633,7 +646,8 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		       ns.is_stale, ns.collected_at, ns.created_at,
 		       ns.migration_state, ns.active_chef_version, ns.dormant_installed,
 		       ns.dormant_chef_version, ns.target_version, ns.target_execution_time,
-		       ns.target_converge_status
+		       ns.target_converge_status,
+		       ns.sufficient_disk_space, ns.available_disk_mb, ns.required_disk_mb
 		  FROM node_snapshots ns
 	)`
 
@@ -744,21 +758,18 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		args = append(args, *f.Stale)
 	}
 
-	// Disk readiness filters are version-invariant: the disk verdict is computed
-	// from the node's platform install size and free space, identical across
-	// every target-version row (see internal/analysis/readiness.go). Resolve
-	// them from ANY readiness row for the node via a correlated subquery — not
-	// the version-scoped `nr` JOIN — so the list view agrees with the detail
-	// view regardless of the selected target version, and so they work even when
-	// no target version is selected.
+	// Disk readiness filters are version-invariant: the verdict is computed from
+	// the node's platform install size + free space and stored per node on the
+	// snapshot at collection time (migration 0037), independent of any target
+	// version. Resolve them directly from the node_snapshots columns so the list
+	// agrees with the detail view and works even when no target version is set.
 	switch f.ReadinessFilter {
 	case "disk_blocked":
-		where += " AND EXISTS (SELECT 1 FROM node_readiness nrd WHERE nrd.organisation_name = cn.organisation_name AND nrd.node_name = cn.node_name AND nrd.sufficient_disk_space = false)"
+		where += " AND cn.sufficient_disk_space = false"
 	case "disk_unknown":
-		// Unknown = no determinate disk verdict in any readiness row. Covers
-		// both "node has no readiness row" and "row(s) present but disk
-		// indeterminate (missing/stale filesystem data)".
-		where += " AND NOT EXISTS (SELECT 1 FROM node_readiness nrd WHERE nrd.organisation_name = cn.organisation_name AND nrd.node_name = cn.node_name AND nrd.sufficient_disk_space IS NOT NULL)"
+		// Unknown = indeterminate verdict (NULL): missing/unparseable filesystem
+		// data, a stale node, or a node not yet collected with the verdict.
+		where += " AND cn.sufficient_disk_space IS NULL"
 	}
 
 	// Version-scoped readiness filters — JOIN node_readiness when

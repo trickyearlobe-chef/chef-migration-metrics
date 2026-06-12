@@ -512,11 +512,6 @@ export function NodesPage() {
                             r.target_chef_version === selectedTargetVersion,
                         )
                       : node.readiness?.[0];
-                    // Disk status is version-invariant — the verdict is identical
-                    // across every target-version row. Fall back to any readiness
-                    // row so the badge agrees with the detail view even when the
-                    // selected target has no row for this node.
-                    const diskEntry = readinessEntry ?? node.readiness?.[0];
                     const csStatus = readinessEntry?.cookstyle_status ?? "unknown";
                     const csMapped = csStatus === "passed" ? "compatible" : csStatus === "failed" ? "incompatible" : "untested";
                     return (
@@ -563,8 +558,10 @@ export function NodesPage() {
                         />
                       </td>
                       <td>
-                        <span title={diskEntry?.disk_detail ?? "Disk: unknown"}>
-                          <DiskBadge status={diskEntry?.disk_status ?? "unknown"} size="sm" />
+                        {/* Version-invariant node-level disk verdict (from the
+                            snapshot), correct even with no target/readiness rows. */}
+                        <span title={node.disk_detail ?? "Disk: unknown"}>
+                          <DiskBadge status={node.disk_status ?? "unknown"} size="sm" />
                         </span>
                       </td>
                       <td>

@@ -708,6 +708,19 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 	return result, nil
 }
 
+// nodeDiskVerdict computes the version-invariant disk-space verdict to store on a
+// node snapshot. The required size is platform-only, so it is always returned;
+// the sufficiency + available space are returned indeterminate (nil) for a stale
+// node, whose reported free space is old — matching readiness evaluation.
+func nodeDiskVerdict(filesystem json.RawMessage, platform string, stale bool, cfg analysis.DiskConfig) (sufficient *bool, availableMB *int, requiredMB *int) {
+	v := analysis.EvaluateDisk(filesystem, platform, cfg)
+	req := v.RequiredMB
+	if stale {
+		return nil, nil, &req
+	}
+	return v.Sufficient, v.AvailableMB, &req
+}
+
 // collectOrganisation runs the full collection sequence for a single
 // organisation. It returns the number of nodes collected and cookbook
 // versions upserted.
@@ -803,6 +816,18 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// Build NodeRecord slice for usage analysis (populated alongside snapshot params).
 	nodeRecords := make([]analysis.NodeRecord, 0, len(searchRows))
 
+	// The disk-space verdict is version-invariant (filesystem + platform install
+	// size only), so compute it once per node here and store it on the snapshot —
+	// available regardless of whether any target Chef version is configured
+	// (decoupled from per-target readiness evaluation). Read live from c.cfg.
+	diskCfg := analysis.DiskConfig{
+		InstallPathLinux:        c.cfg.Readiness.InstallPathLinux,
+		InstallPathWindows:      c.cfg.Readiness.InstallPathWindows,
+		InstallSizeMBLinux:      c.cfg.Readiness.InstallSizeMBLinux,
+		InstallSizeMBWindows:    c.cfg.Readiness.InstallSizeMBWindows,
+		MinRemainingFreePercent: c.cfg.Readiness.MinRemainingFreePercent,
+	}
+
 	snapshotParams := make([]datastore.InsertNodeSnapshotParams, 0, len(searchRows))
 	for _, row := range searchRows {
 		nd := chefapi.NewNodeData(row.Data)
@@ -862,26 +887,28 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			}
 		}
 
+		diskSufficient, diskAvailable, diskRequired := nodeDiskVerdict(fsJSON, nd.Platform(), nodeIsStale, diskCfg)
+
 		snapshotParams = append(snapshotParams, datastore.InsertNodeSnapshotParams{
-			CollectionRunOrg: run.OrganisationName,
-			OrganisationName: org.Name,
-			NodeName:         nd.Name(),
-			ChefEnvironment:  nd.ChefEnvironment(),
-			ChefVersion:      nd.ChefVersion(),
-			Platform:         nd.Platform(),
-			PlatformVersion:  nd.PlatformVersion(),
-			PlatformFamily:   nd.PlatformFamily(),
-			PlatformCaption:  nd.PlatformCaption(),
-			Filesystem:       fsJSON,
-			Cookbooks:        cbJSON,
-			RunList:          rlJSON,
-			Roles:            rolesJSON,
-			PolicyName:       nd.PolicyName(),
-			PolicyGroup:      nd.PolicyGroup(),
-			OhaiTime:         nd.OhaiTime(),
-			CustomAttributes: customAttrsJSON,
-			IsStale:          nodeIsStale,
-			CollectedAt:      now,
+			CollectionRunOrg:     run.OrganisationName,
+			OrganisationName:     org.Name,
+			NodeName:             nd.Name(),
+			ChefEnvironment:      nd.ChefEnvironment(),
+			ChefVersion:          nd.ChefVersion(),
+			Platform:             nd.Platform(),
+			PlatformVersion:      nd.PlatformVersion(),
+			PlatformFamily:       nd.PlatformFamily(),
+			PlatformCaption:      nd.PlatformCaption(),
+			Filesystem:           fsJSON,
+			Cookbooks:            cbJSON,
+			RunList:              rlJSON,
+			Roles:                rolesJSON,
+			PolicyName:           nd.PolicyName(),
+			PolicyGroup:          nd.PolicyGroup(),
+			OhaiTime:             nd.OhaiTime(),
+			CustomAttributes:     customAttrsJSON,
+			IsStale:              nodeIsStale,
+			CollectedAt:          now,
 			MigrationState:       nd.MigrationState(),
 			ActiveChefVersion:    nd.ActiveChefVersion(),
 			DormantInstalled:     boolPtr(nd.DormantInstalled(), nd.HasMigrationData()),
@@ -889,6 +916,9 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			TargetVersion:        nd.TargetVersion(),
 			TargetExecutionTime:  nd.TargetExecutionTime(),
 			TargetConvergeStatus: nd.TargetConvergeStatus(),
+			SufficientDiskSpace:  diskSufficient,
+			AvailableDiskMB:      diskAvailable,
+			RequiredDiskMB:       diskRequired,
 		})
 	}
 

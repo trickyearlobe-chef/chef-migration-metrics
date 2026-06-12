@@ -542,30 +542,18 @@ func (e *ReadinessEvaluator) evaluateOne(
 	result.BlockingCookbooks = blockingCookbooks
 	result.AllCookbooksCompatible = len(blockingCookbooks) == 0
 
-	// --- Disk space ---
+	// --- Disk space (version-invariant; computed by analysis/disk.go) ---
 	if snapshot.IsStale {
 		// Stale nodes: disk space treated as unknown.
 		result.SufficientDiskSpace = nil
 		result.AvailableDiskMB = nil
 	} else {
-		availMB, totalMB, known := e.evaluateDiskSpace(snapshot)
-		if known {
-			result.AvailableDiskMB = &availMB
-			requiredMB := e.installSizeForPlatform(snapshot.Platform)
-			// Dual threshold: (1) absolute size and (2) remaining free %.
-			absoluteOK := availMB >= requiredMB
-			percentOK := true
-			minPct := e.getMinRemainingFreePercent()
-			if totalMB > 0 && minPct > 0 {
-				remainingAfterInstallKB := (int64(availMB) - int64(requiredMB)) * 1024
-				totalKB := int64(totalMB) * 1024
-				pctRemaining := float64(remainingAfterInstallKB) / float64(totalKB) * 100
-				percentOK = pctRemaining >= float64(minPct)
-			}
-			sufficient := absoluteOK && percentOK
-			result.SufficientDiskSpace = &sufficient
-		}
-		// If not known: SufficientDiskSpace and AvailableDiskMB remain nil.
+		// The verdict depends only on the filesystem + platform install size, never
+		// the target version — the same EvaluateDisk the collector stores per node.
+		v := EvaluateDisk(snapshot.Filesystem, snapshot.Platform, e.diskConfig())
+		result.SufficientDiskSpace = v.Sufficient
+		result.AvailableDiskMB = v.AvailableMB
+		// result.RequiredDiskMB was set at construction (== v.RequiredMB).
 	}
 
 	// --- Overall readiness ---
@@ -992,40 +980,34 @@ type filesystemEntry struct {
 	Mount       interface{} `json:"mount"`
 }
 
+// diskConfig assembles the version-invariant DiskConfig for EvaluateDisk from the
+// live config (configFn) or the values baked at construction.
+func (e *ReadinessEvaluator) diskConfig() DiskConfig {
+	if e.configFn != nil {
+		c := e.configFn()
+		return DiskConfig{
+			InstallPathLinux:        c.InstallPathLinux,
+			InstallPathWindows:      c.InstallPathWindows,
+			InstallSizeMBLinux:      c.InstallSizeMBLinux,
+			InstallSizeMBWindows:    c.InstallSizeMBWindows,
+			MinRemainingFreePercent: c.MinRemainingFreePercent,
+		}
+	}
+	return DiskConfig{
+		InstallPathLinux:        e.installPathLinux,
+		InstallPathWindows:      e.installPathWindows,
+		InstallSizeMBLinux:      e.installSizeMBLinux,
+		InstallSizeMBWindows:    e.installSizeMBWindows,
+		MinRemainingFreePercent: e.minRemainingFreePercent,
+	}
+}
+
 // evaluateDiskSpace determines the available disk space on the installation
-// target mount point and returns (available MB, total MB, known).
+// target mount point and returns (available MB, total MB, known). It delegates
+// to resolveDiskUsage (the shared parser EvaluateDisk uses) so the readiness
+// path and the node-level disk verdict never drift.
 func (e *ReadinessEvaluator) evaluateDiskSpace(snapshot datastore.NodeSnapshot) (availableMB int, totalMB int, known bool) {
-	if len(snapshot.Filesystem) == 0 {
-		return 0, 0, false
-	}
-
-	fsMap := parseFilesystemAttribute(snapshot.Filesystem)
-	if len(fsMap) == 0 {
-		return 0, 0, false
-	}
-
-	// Determine the installation target path based on platform.
-	installPath := e.installPathForPlatform(snapshot.Platform)
-
-	// Find the filesystem entry whose mount is the longest prefix match.
-	matchedMount, entry := findBestMount(fsMap, installPath, snapshot.Platform)
-	if matchedMount == "" && entry == nil {
-		return 0, 0, false
-	}
-
-	// Extract kb_available and kb_size.
-	kbAvail := toInt64(entry.KBAvailable)
-	if kbAvail < 0 {
-		kbAvail = 0
-	}
-	kbSize := toInt64(entry.KBSize)
-	if kbSize < 0 {
-		kbSize = 0
-	}
-
-	availableMB = int(kbAvail / 1024)
-	totalMB = int(kbSize / 1024)
-	return availableMB, totalMB, true
+	return resolveDiskUsage(snapshot.Filesystem, snapshot.Platform, e.installPathForPlatform(snapshot.Platform))
 }
 
 // installPathForPlatform returns the configured install path for the platform.
@@ -1056,14 +1038,6 @@ func (e *ReadinessEvaluator) installSizeForPlatform(platform string) int {
 		return e.installSizeMBWindows
 	}
 	return e.installSizeMBLinux
-}
-
-// getMinRemainingFreePercent returns the current buffer percentage threshold.
-func (e *ReadinessEvaluator) getMinRemainingFreePercent() int {
-	if e.configFn != nil {
-		return e.configFn().MinRemainingFreePercent
-	}
-	return e.minRemainingFreePercent
 }
 
 // parseFilesystemAttribute parses the automatic.filesystem JSONB into a map

@@ -38,6 +38,13 @@ export interface NodeListItem {
   ohai_time_age_hours?: number;
   collected_at: string;
   readiness?: NodeReadinessSummary[];
+  // Node-level, version-invariant disk verdict (from the snapshot — migration
+  // 0037), so the disk badge is correct even with no target version / readiness rows.
+  disk_status?: "sufficient" | "insufficient" | "unknown";
+  disk_detail?: string | null;
+  sufficient_disk_space?: boolean | null;
+  available_disk_mb?: number | null;
+  required_disk_mb?: number | null;
   migration_state?: string | null;
   target_converge_status?: string | null;
   ready_to_activate?: boolean;
@@ -77,6 +84,12 @@ export interface NodeSnapshot {
   target_version?: string | null;
   target_execution_time?: string | null;
   target_converge_status?: string | null;
+
+  // Version-invariant disk verdict, stored per node (migration 0037). Absent →
+  // indeterminate. Independent of target version / readiness rows.
+  sufficient_disk_space?: boolean | null;
+  available_disk_mb?: number | null;
+  required_disk_mb?: number | null;
 }
 
 export interface BlockingCookbook {

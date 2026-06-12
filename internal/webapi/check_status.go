@@ -87,12 +87,19 @@ func deriveCheckStatus(nr datastore.NodeReadiness, installPath string) checkStat
 	return result
 }
 
-// deriveDiskStatus returns the disk check status.
+// deriveDiskStatus returns the disk check status for a readiness record.
 func deriveDiskStatus(nr datastore.NodeReadiness) string {
-	if nr.SufficientDiskSpace == nil {
+	return diskStatusFor(nr.SufficientDiskSpace)
+}
+
+// diskStatusFor maps a version-invariant disk verdict (nil = indeterminate) to a
+// status string. Shared by the readiness path and the node-level snapshot verdict
+// so the list and detail views always agree.
+func diskStatusFor(sufficient *bool) string {
+	if sufficient == nil {
 		return DiskStatusUnknown
 	}
-	if *nr.SufficientDiskSpace {
+	if *sufficient {
 		return DiskStatusSufficient
 	}
 	return DiskStatusInsufficient
@@ -205,26 +212,33 @@ func deriveKitchenStatus(nr datastore.NodeReadiness) string {
 	return KitchenStatusUnknown
 }
 
-// diskDetail returns a human-readable detail string for the disk check.
+// diskDetail returns a human-readable detail string for the disk check of a
+// readiness record.
 func diskDetail(nr datastore.NodeReadiness, installPath string) *string {
-	if nr.SufficientDiskSpace == nil {
+	return diskDetailFor(nr.SufficientDiskSpace, nr.AvailableDiskMB, nr.RequiredDiskMB, installPath)
+}
+
+// diskDetailFor builds the disk detail string from a version-invariant verdict.
+// Shared by the readiness path and the node-level snapshot verdict.
+func diskDetailFor(sufficient *bool, availableMB, requiredMB *int, installPath string) *string {
+	if sufficient == nil {
 		return strPtr("Disk: unknown")
 	}
-	if *nr.SufficientDiskSpace {
-		if nr.AvailableDiskMB != nil {
-			s := fmt.Sprintf("Disk: sufficient (%.1f GB free on %s)", float64(*nr.AvailableDiskMB)/1024.0, installPath)
+	if *sufficient {
+		if availableMB != nil {
+			s := fmt.Sprintf("Disk: sufficient (%.1f GB free on %s)", float64(*availableMB)/1024.0, installPath)
 			return &s
 		}
 		return strPtr("Disk: sufficient")
 	}
 	// Insufficient.
 	switch {
-	case nr.AvailableDiskMB != nil && nr.RequiredDiskMB != nil:
+	case availableMB != nil && requiredMB != nil:
 		s := fmt.Sprintf("Disk: insufficient (%.1f GB free on %s, need %.1f GB)",
-			float64(*nr.AvailableDiskMB)/1024.0, installPath, float64(*nr.RequiredDiskMB)/1024.0)
+			float64(*availableMB)/1024.0, installPath, float64(*requiredMB)/1024.0)
 		return &s
-	case nr.AvailableDiskMB != nil:
-		s := fmt.Sprintf("Disk: insufficient (%.1f GB free on %s)", float64(*nr.AvailableDiskMB)/1024.0, installPath)
+	case availableMB != nil:
+		s := fmt.Sprintf("Disk: insufficient (%.1f GB free on %s)", float64(*availableMB)/1024.0, installPath)
 		return &s
 	default:
 		return strPtr("Disk: insufficient")

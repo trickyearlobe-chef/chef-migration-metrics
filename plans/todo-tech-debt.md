@@ -38,7 +38,7 @@ status surface landed — that sub-item resolved and removed).
 
 - [ ] **Client-side filtering/sorting/dashboarding is fragile** — derived values like blast radius scores, complexity calculations, and TK pass/fail/partial statuses are computed independently in multiple places (API handlers, frontend sort comparators, dashboard aggregation, export formatters). When the calculation logic drifts between copies, filters disagree with dashboards and sort order doesn't match displayed values. **Strategic fix:** push derived calculations into the database as materialised columns or summary tables, computed once at collection time. API surfaces then filter/sort/aggregate on pre-computed values rather than re-deriving them. This also enables server-side pagination with correct sort order and eliminates the class of paging bugs caused by client-side recomputation. Relates to the platform filter tree multiselect item (server-side group filtering). **Note (Phase 2 caption):** adding `platform_caption` introduces a 4th input to `ResolveInfo` that is re-derived at 6 call sites — increases urgency of materialising platform display/group into DB columns.
 
-- [ ] **Disk verdict is version-invariant but stored per (node, target_chef_version).** `evaluateOne` (`internal/analysis/readiness.go`) computes `sufficient_disk_space` from platform install size + node free space only — it does not depend on `target_chef_version` — yet writes the identical verdict into every per-target `node_readiness` row. This duplication caused a list-vs-detail disagreement (list showed "Disk Unknown", detail showed "Sufficient") when the globally-selected target version had no readiness row for a node: the list's version-scoped `LEFT JOIN` turned "no row for this target" into `NULL` = "unknown". **Fixed (read path, branch `fix/disk-status-version-agnostic`):** disk filter resolves via a version-agnostic correlated `EXISTS` (`node_snapshot_filter.go`) and the list badge falls back to any readiness row (`NodesPage.tsx`). **Residual strategic fix:** stop keying the disk verdict by target version on the write path — store it once per node (or in a node-level summary column) so the source of truth is single, not duplicated N times. **Prevention lesson:** the source-of-truth revamp unified *derivation* across views but not *which record represents a node*. Detail is target-agnostic (renders all rows); list is target-scoped (one row). Consistency requires sharing the record-selection step, not just the derivation function — and a `LEFT JOIN` that collapses "no data" into the same `NULL` as "indeterminate" silently merges two distinct states.
+- [ ] **Disk verdict is version-invariant but stored per (node, target_chef_version).** `evaluateOne` (`internal/analysis/readiness.go`) computes `sufficient_disk_space` from platform install size + node free space only — it does not depend on `target_chef_version` — yet writes the identical verdict into every per-target `node_readiness` row. This duplication caused a list-vs-detail disagreement (list showed "Disk Unknown", detail showed "Sufficient") when the globally-selected target version had no readiness row for a node: the list's version-scoped `LEFT JOIN` turned "no row for this target" into `NULL` = "unknown". **RESOLVED (branch `fix/disk-readiness-decouple-target`, 2026-06-12):** the strategic fix landed — the verdict is now computed once at collection time and stored per node on `node_snapshots` (`sufficient_disk_space`/`available_disk_mb`/`required_disk_mb`, migration 0037), via the shared pure `analysis.EvaluateDisk`. Display (list `disk_status` + detail `DiskSpacePanel`) and the `disk_blocked`/`disk_unknown` filter all read this node-level value, so disk status is correct even with **no target version configured** and **no readiness rows** (the original symptom). **Remaining cleanup (new residual):** the per-target `node_readiness` disk columns are now vestigial — `evaluateOne` still computes the verdict via `EvaluateDisk` for its `is_ready` gate and writes the (now duplicate) columns. Drop `node_readiness.{sufficient_disk_space,available_disk_mb,required_disk_mb}` and have readiness read the node-level verdict, leaving a single source of truth. **Prevention lesson:** the source-of-truth revamp unified *derivation* across views but not *which record represents a node*; consistency required moving the verdict off the per-target record entirely.
 
 ## Frontend — Large Files
 
@@ -223,6 +223,26 @@ Recorded 2026-06-12 (listener-rebind H4c-2a: in-place acme→off/static exit).
   successful exit from within `applyServerListener`; relies on admin server-config saves being
   serialized. **Fix:** guard with the controller lock (or fold acme-ness into the controller
   key) if concurrent saves ever become possible.
+
+## Collector — Cron Schedule `N/step` Not Honoured [TO INVESTIGATE]
+
+Recorded 2026-06-12. Surfaced while verifying the disk decouple on the lab box.
+
+- [ ] **A collection schedule of `0/2 * * * *` fires hourly, not every 2 minutes.**
+  `parseCronPart` (`internal/collector/scheduler.go`) only applies a `/step` to a
+  `*` wildcard or an `a-b` range; for a **literal** base (`0/2`) it truncates to
+  `0` and drops the step → the minute field becomes `{0}` → effectively `0 * * * *`
+  (hourly). Standard cron treats `0/2` as `0,2,4,…`. Workaround: use `*/2` (verified
+  working live — it fired on the 20:36 even-minute boundary).
+  **To investigate:** operator reports collections "used to parse fine" before the
+  config-live-reload work. The parser code itself is **unchanged** (added in commit
+  `81ee14d`; the config commits `e04ba28`/`8b8b7b9` only touched live rescheduling,
+  which works — a live schedule update triggered an immediate run). So confirm
+  whether the schedule *value* changed (e.g. `*/2` → `0/2` via the YAML→config_store
+  migration or a UI save) rather than the parsing. Check config history / the
+  encrypted `collection` config-store value.
+  **Likely fix (if confirmed a gap):** honour `N/step` in `parseCronPart` (start at
+  N, step by the step) like standard cron, plus a unit test for `0/2`, `5/10`, etc.
 
 ## Phasing Notes
 

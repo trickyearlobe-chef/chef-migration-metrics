@@ -47,6 +47,13 @@ type NodeSnapshot struct {
 	TargetVersion        string `json:"target_version,omitempty"`
 	TargetExecutionTime  string `json:"target_execution_time,omitempty"`
 	TargetConvergeStatus string `json:"target_converge_status,omitempty"`
+
+	// Version-invariant disk-space verdict, computed at collection time and stored
+	// per node (migration 0037), independent of target_chef_version / readiness rows.
+	// Nil SufficientDiskSpace = indeterminate (no usable filesystem data).
+	SufficientDiskSpace *bool `json:"sufficient_disk_space,omitempty"`
+	AvailableDiskMB     *int  `json:"available_disk_mb,omitempty"`
+	RequiredDiskMB      *int  `json:"required_disk_mb,omitempty"`
 }
 
 // IsPolicyfileNode returns true if the node is managed by Policyfiles
@@ -96,6 +103,11 @@ type InsertNodeSnapshotParams struct {
 	TargetVersion        string
 	TargetExecutionTime  string
 	TargetConvergeStatus string
+
+	// Version-invariant disk-space verdict (migration 0037). Nil = NULL/unknown.
+	SufficientDiskSpace *bool
+	AvailableDiskMB     *int
+	RequiredDiskMB      *int
 }
 
 // UpsertNodeSnapshot inserts a node snapshot or updates the existing row for
@@ -127,11 +139,13 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			is_stale, collected_at,
 			migration_state, active_chef_version, dormant_installed,
 			dormant_chef_version, target_version, target_execution_time,
-			target_converge_status
+			target_converge_status,
+			sufficient_disk_space, available_disk_mb, required_disk_mb
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
 			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22, $23, $24, $25, $26
+			$20, $21, $22, $23, $24, $25, $26,
+			$27, $28, $29
 		)
 		ON CONFLICT (organisation_name, node_name) DO UPDATE SET
 			collection_run_org = EXCLUDED.collection_run_org,
@@ -157,7 +171,10 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 			dormant_chef_version  = EXCLUDED.dormant_chef_version,
 			target_version        = EXCLUDED.target_version,
 			target_execution_time = EXCLUDED.target_execution_time,
-			target_converge_status = EXCLUDED.target_converge_status
+			target_converge_status = EXCLUDED.target_converge_status,
+			sufficient_disk_space  = EXCLUDED.sufficient_disk_space,
+			available_disk_mb      = EXCLUDED.available_disk_mb,
+			required_disk_mb       = EXCLUDED.required_disk_mb
 		RETURNING collection_run_org, organisation_name, node_name,
 		          chef_environment, chef_version, platform, platform_version,
 		          platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
@@ -165,7 +182,8 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 		          is_stale, collected_at, created_at,
 		          migration_state, active_chef_version, dormant_installed,
 		          dormant_chef_version, target_version, target_execution_time,
-		          target_converge_status
+		          target_converge_status,
+		          sufficient_disk_space, available_disk_mb, required_disk_mb
 	`
 
 	return scanNodeSnapshot(q.QueryRowContext(ctx, query,
@@ -195,6 +213,9 @@ func (db *DB) upsertNodeSnapshot(ctx context.Context, q queryable, p InsertNodeS
 		nullString(p.TargetVersion),
 		nullString(p.TargetExecutionTime),
 		nullString(p.TargetConvergeStatus),
+		nullBool(p.SufficientDiskSpace),
+		nullIntPtr(p.AvailableDiskMB),
+		nullIntPtr(p.RequiredDiskMB),
 	))
 }
 
@@ -225,7 +246,7 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 	}
 
 	const batchSize = 500
-	const numCols = 26
+	const numCols = 29
 	inserted := 0
 
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
@@ -261,7 +282,8 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					is_stale, collected_at,
 					migration_state, active_chef_version, dormant_installed,
 					dormant_chef_version, target_version, target_execution_time,
-					target_converge_status
+					target_converge_status,
+					sufficient_disk_space, available_disk_mb, required_disk_mb
 				) VALUES `)
 
 			// ON CONFLICT clause will be appended after the VALUES rows.
@@ -273,12 +295,12 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 				}
 				offset := i * numCols
 				fmt.Fprintf(&sb,
-					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+					"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 					offset+1, offset+2, offset+3, offset+4, offset+5, offset+6,
 					offset+7, offset+8, offset+9, offset+10, offset+11, offset+12,
 					offset+13, offset+14, offset+15, offset+16, offset+17, offset+18,
 					offset+19, offset+20, offset+21, offset+22, offset+23, offset+24,
-					offset+25, offset+26,
+					offset+25, offset+26, offset+27, offset+28, offset+29,
 				)
 
 				if p.CollectedAt.IsZero() {
@@ -312,6 +334,9 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					nullString(p.TargetVersion),
 					nullString(p.TargetExecutionTime),
 					nullString(p.TargetConvergeStatus),
+					nullBool(p.SufficientDiskSpace),
+					nullIntPtr(p.AvailableDiskMB),
+					nullIntPtr(p.RequiredDiskMB),
 				)
 			}
 
@@ -341,7 +366,10 @@ func (db *DB) bulkUpsertNodeSnapshots(ctx context.Context, params []InsertNodeSn
 					dormant_chef_version  = EXCLUDED.dormant_chef_version,
 					target_version        = EXCLUDED.target_version,
 					target_execution_time = EXCLUDED.target_execution_time,
-					target_converge_status = EXCLUDED.target_converge_status
+					target_converge_status = EXCLUDED.target_converge_status,
+					sufficient_disk_space  = EXCLUDED.sufficient_disk_space,
+					available_disk_mb      = EXCLUDED.available_disk_mb,
+					required_disk_mb       = EXCLUDED.required_disk_mb
 			`)
 
 			if returnKeys {
@@ -400,7 +428,8 @@ func (db *DB) listNodeSnapshotsByCollectionRun(ctx context.Context, q queryable,
 		       is_stale, collected_at, created_at,
 		       migration_state, active_chef_version, dormant_installed,
 		       dormant_chef_version, target_version, target_execution_time,
-		       target_converge_status
+		       target_converge_status,
+		       sufficient_disk_space, available_disk_mb, required_disk_mb
 		FROM node_snapshots
 		WHERE collection_run_org = $1
 		ORDER BY node_name
@@ -427,7 +456,8 @@ func (db *DB) listNodeSnapshotsByOrganisation(ctx context.Context, q queryable, 
 		       ns.is_stale, ns.collected_at, ns.created_at,
 		       ns.migration_state, ns.active_chef_version, ns.dormant_installed,
 		       ns.dormant_chef_version, ns.target_version, ns.target_execution_time,
-		       ns.target_converge_status
+		       ns.target_converge_status,
+		       ns.sufficient_disk_space, ns.available_disk_mb, ns.required_disk_mb
 		FROM node_snapshots ns
 		WHERE ns.organisation_name = $1
 		ORDER BY ns.node_name
@@ -451,7 +481,8 @@ func (db *DB) getNodeSnapshotByName(ctx context.Context, q queryable, organisati
 		       is_stale, collected_at, created_at,
 		       migration_state, active_chef_version, dormant_installed,
 		       dormant_chef_version, target_version, target_execution_time,
-		       target_converge_status
+		       target_converge_status,
+		       sufficient_disk_space, available_disk_mb, required_disk_mb
 		FROM node_snapshots
 		WHERE organisation_name = $1 AND node_name = $2
 		ORDER BY collected_at DESC
@@ -599,6 +630,8 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	var migrationState, activeChefVer, dormantChefVer sql.NullString
 	var dormantInstalled sql.NullBool
 	var targetVer, targetExecTime, targetConvergeStatus sql.NullString
+	var sufficientDisk sql.NullBool
+	var availableDiskMB, requiredDiskMB sql.NullInt64
 
 	err := row.Scan(
 		&collectionRunOrg,
@@ -628,6 +661,9 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 		&targetVer,
 		&targetExecTime,
 		&targetConvergeStatus,
+		&sufficientDisk,
+		&availableDiskMB,
+		&requiredDiskMB,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -658,6 +694,9 @@ func scanNodeSnapshot(row *sql.Row) (NodeSnapshot, error) {
 	ns.TargetVersion = stringFromNull(targetVer)
 	ns.TargetExecutionTime = stringFromNull(targetExecTime)
 	ns.TargetConvergeStatus = stringFromNull(targetConvergeStatus)
+	ns.SufficientDiskSpace = boolFromNull(sufficientDisk)
+	ns.AvailableDiskMB = intPtrFromNull(availableDiskMB)
+	ns.RequiredDiskMB = intPtrFromNull(requiredDiskMB)
 	return ns, nil
 }
 
@@ -679,6 +718,8 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		var migrationState, activeChefVer, dormantChefVer sql.NullString
 		var dormantInstalled sql.NullBool
 		var targetVer, targetExecTime, targetConvergeStatus sql.NullString
+		var sufficientDisk sql.NullBool
+		var availableDiskMB, requiredDiskMB sql.NullInt64
 
 		if err := rows.Scan(
 			&collectionRunOrg,
@@ -708,6 +749,9 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 			&targetVer,
 			&targetExecTime,
 			&targetConvergeStatus,
+			&sufficientDisk,
+			&availableDiskMB,
+			&requiredDiskMB,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning node snapshot row: %w", err)
 		}
@@ -734,6 +778,9 @@ func scanNodeSnapshots(rows *sql.Rows, err error) ([]NodeSnapshot, error) {
 		ns.TargetVersion = stringFromNull(targetVer)
 		ns.TargetExecutionTime = stringFromNull(targetExecTime)
 		ns.TargetConvergeStatus = stringFromNull(targetConvergeStatus)
+		ns.SufficientDiskSpace = boolFromNull(sufficientDisk)
+		ns.AvailableDiskMB = intPtrFromNull(availableDiskMB)
+		ns.RequiredDiskMB = intPtrFromNull(requiredDiskMB)
 		snapshots = append(snapshots, ns)
 	}
 	if err := rows.Err(); err != nil {
