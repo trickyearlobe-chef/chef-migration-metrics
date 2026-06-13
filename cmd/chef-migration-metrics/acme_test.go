@@ -333,7 +333,7 @@ func TestACMERuntimeShutdown_TearsDownRenewerChallengeListener(t *testing.T) {
 		t.Error("HTTPS listener was not drained")
 	}
 	if c, derr := net.DialTimeout("tcp", caddr, 200*time.Millisecond); derr == nil {
-		c.Close()
+		_ = c.Close()
 		t.Error("challenge/redirect server still listening after shutdown")
 	}
 }
