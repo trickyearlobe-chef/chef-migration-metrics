@@ -244,6 +244,17 @@ Recorded 2026-06-12. Surfaced while verifying the disk decouple on the lab box.
   **Likely fix (if confirmed a gap):** honour `N/step` in `parseCronPart` (start at
   N, step by the step) like standard cron, plus a unit test for `0/2`, `5/10`, etc.
 
+## CI / Release — `action-gh-release` Pinned to Deprecated Node 20
+
+Recorded 2026-06-13. Surfaced in the v2.12.2 release run log.
+
+- [ ] **`softprops/action-gh-release@3bb1273…` runs on Node.js 20, which GitHub is
+  deprecating.** Actions are forced to Node 24 from 2026-06-16 and Node 20 is removed
+  from runners on 2026-09-16; the pinned commit may break once forced.
+  **Fix:** bump the action to a release whose `runs.using` targets Node 24, re-pin to
+  the new commit SHA, and supply-chain check the bump (per CLAUDE.md). Stop-gap if the
+  bump can't land in time: set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` on the runner.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
