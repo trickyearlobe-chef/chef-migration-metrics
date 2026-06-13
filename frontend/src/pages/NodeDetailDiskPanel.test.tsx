@@ -30,12 +30,14 @@ vi.mock("react-router-dom", () => ({
 // per-target readiness row. This is the regression the decouple fixes.
 function detail(
   nodeOverrides: Partial<NodeDetailResponse["node"]> = {},
+  topOverrides: Partial<NodeDetailResponse> = {},
 ): NodeDetailResponse {
   return {
     organisation_name: "test-org",
     install_path: "/hab",
     min_remaining_free_percent: 10,
     readiness: null,
+    ...topOverrides,
     node: {
       id: "n1",
       collection_run_id: "cr1",
@@ -116,5 +118,23 @@ describe("NodeDetailPage — Disk Space panel (node-level, no readiness rows)", 
   it("shows Unknown (panel still present) when the verdict is absent", async () => {
     const panel = await renderDetail(detail({}));
     expect(within(panel).getByText("Unknown")).toBeInTheDocument();
+  });
+
+  // The original bug: a node that passes the install size but fails the % buffer
+  // showed a NEGATIVE "short" (required - available). With the total available,
+  // the bars now show a correct positive shortfall (homekube001: 1.5 GB).
+  it("renders a positive shortfall via the bars when the % buffer is missed", async () => {
+    await renderDetail(
+      detail(
+        {
+          sufficient_disk_space: false,
+          available_disk_mb: 7220,
+          required_disk_mb: 3072,
+        },
+        { total_disk_mb: 28396, min_remaining_free_percent: 20 },
+      ),
+    );
+    // Bars render the real overflow (1531 MB → 1.5 GB), never a negative.
+    expect(screen.getByText("1.5 GB over capacity")).toBeInTheDocument();
   });
 });

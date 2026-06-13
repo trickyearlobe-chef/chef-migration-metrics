@@ -16,6 +16,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge, DeploymentStateBadge, ConvergeBadge } from "../components/StatusBadge";
+import { DiskUsageBars, computeDiskBars } from "../components/DiskUsageBars";
 import type { NodeSnapshot } from "../types";
 
 // Helper to build the disk detail link for a node.
@@ -31,6 +32,7 @@ function DiskSpacePanel({
   sufficient,
   available,
   required,
+  total,
   stale,
   org,
   nodeName,
@@ -42,6 +44,7 @@ function DiskSpacePanel({
   sufficient?: boolean | null;
   available?: number | null;
   required?: number | null;
+  total?: number | null;
   stale?: boolean;
   org?: string;
   nodeName?: string;
@@ -116,13 +119,21 @@ function DiskSpacePanel({
               <span> + <strong className="text-gray-700">{minRemainingFreePercent}%</strong> free after</span>
             )}
           </div>
-          <div className={sufficient ? "text-green-600" : "text-red-600"}>
-            {sufficient
-              ? `✓ ${formatMB(available - required)} headroom after install`
-              : `✗ ${formatMB(required - available)} short`}
-          </div>
         </div>
       )}
+
+      {/* "Have vs need" bars — clearer than a signed shortfall, and they model
+          the min-free-% buffer correctly. Falls back to nothing extra when the
+          install-path mount total is unavailable. */}
+      {(() => {
+        const bars = computeDiskBars({
+          totalMB: total,
+          availableMB: available,
+          requiredMB: required,
+          minRemainingFreePercent,
+        });
+        return bars ? <DiskUsageBars bars={bars} /> : null;
+      })()}
 
       {available != null && required == null && (
         <p className="mt-1 text-xs text-gray-500">
@@ -949,6 +960,7 @@ export function NodeDetailPage() {
         sufficient={node.sufficient_disk_space}
         available={node.available_disk_mb}
         required={node.required_disk_mb}
+        total={data.total_disk_mb}
         stale={node.is_stale}
         org={org}
         nodeName={name}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/staleness"
 )
@@ -363,13 +364,27 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 	}
 	pdn := resolvePlatformDisplayName(snapshot.Platform, snapshot.PlatformVersion, mappings)
 
+	// Compute the install-path mount's total size at read time (cheap for one
+	// node) so the detail page can draw the disk-usage bars. The verdict picks the
+	// same mount as the stored sufficient/available verdict; we only need its
+	// total. nil when the filesystem data is missing/unparseable.
+	rc := r.liveConfig().Readiness
+	diskVerdict := analysis.EvaluateDisk(snapshot.Filesystem, snapshot.Platform, analysis.DiskConfig{
+		InstallPathLinux:        rc.InstallPathLinux,
+		InstallPathWindows:      rc.InstallPathWindows,
+		InstallSizeMBLinux:      rc.InstallSizeMBLinux,
+		InstallSizeMBWindows:    rc.InstallSizeMBWindows,
+		MinRemainingFreePercent: rc.MinRemainingFreePercent,
+	})
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"node":                       snapshot,
 		"organisation_name":          org.Name,
 		"readiness":                  readiness,
 		"platform_display_name":      pdn,
 		"install_path":               r.installPathForNode(snapshot.Platform),
-		"min_remaining_free_percent": r.liveConfig().Readiness.MinRemainingFreePercent,
+		"min_remaining_free_percent": rc.MinRemainingFreePercent,
+		"total_disk_mb":              diskVerdict.TotalMB,
 	})
 }
 

@@ -56,6 +56,31 @@ const CONVERGE_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "failed", label: "Failed" },
 ];
 
+// Drill-down params NodesPage reads into its own local state from the URL. After
+// consuming them on mount we strip ONLY these, leaving the global filter params
+// (target_chef_version, stale_tiers — owned by GlobalFilterContext, which shares
+// the same useSearchParams) intact. A blanket setSearchParams({}) would wipe those
+// and desync the global staleness/target state from the URL.
+export const NODE_DRILLDOWN_PARAMS = [
+  "readiness",
+  "target_version",
+  "chef_version",
+  "platform",
+  "environment",
+  "role",
+  "policy_name",
+  "policy_group",
+  "migration_state",
+  "target_converge_status",
+] as const;
+
+/** Returns a copy of params with the NodesPage drill-down params removed. */
+export function stripNodeDrilldownParams(prev: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(prev);
+  NODE_DRILLDOWN_PARAMS.forEach((p) => next.delete(p));
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Nodes list page — paginated table from GET /api/v1/nodes with filter
 // dropdowns for environment, platform, chef_version, role, policy name,
@@ -135,22 +160,17 @@ export function NodesPage() {
     { value: string; label: string }[]
   >([]);
 
-  // Clear the search params after they have been consumed so the URL stays
-  // clean and subsequent filter changes don't conflict with the initial params.
+  // After the drill-down params have been read into local state, strip ONLY those
+  // page-owned params from the URL so it stays clean. Crucially, preserve the
+  // global filter params (target_chef_version, stale_tiers) — GlobalFilterContext
+  // shares this same useSearchParams, and a blanket setSearchParams({}) would wipe
+  // them, desyncing the global staleness/target state from the URL (the cause of
+  // the "only fresh after clear / refresh needed / toggle no effect" bug).
   useEffect(() => {
-    if (
-      searchParams.has("readiness") ||
-      searchParams.has("target_version") ||
-      searchParams.has("chef_version") ||
-      searchParams.has("platform") ||
-      searchParams.has("environment") ||
-      searchParams.has("role") ||
-      searchParams.has("policy_name") ||
-      searchParams.has("policy_group") ||
-      searchParams.has("migration_state") ||
-      searchParams.has("target_converge_status")
-    ) {
-      setSearchParams({}, { replace: true });
+    if (NODE_DRILLDOWN_PARAMS.some((p) => searchParams.has(p))) {
+      setSearchParams((prev) => stripNodeDrilldownParams(prev), {
+        replace: true,
+      });
     }
   }, []); // run once on mount
 
