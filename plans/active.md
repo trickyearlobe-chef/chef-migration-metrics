@@ -1,47 +1,35 @@
-# Active — fix node-list filter URL desync + phantom drill-down filter
+# Active Plan — vCenter SSL-verify key reconciliation + typed UI widgets
 
-Branch: `fix/node-filter-url-desync`. Reported: from the dashboard readiness bar
-"blocked" drill-down, the node list shows "Clear (2)" but only 1 chip (readiness);
-clearing leaves only fresh nodes; toggling the global staleness filter has no
-effect; a refresh is needed for the full list — and it's inconsistent (a race).
+## Problem
+Orphan sweep fails with x509 even though SSL verify is "disabled" in the UI.
+Root cause: three consumers of `driver_settings` disagree on TLS.
+- Test Kitchen (VM launch) reads `vcenter_disable_ssl_verify` (lenient, works).
+- CMM test-connection (`ListTemplates`, SOAP) hardcodes `insecure=true` (vcenter.go:136) — always green, hides the problem.
+- CMM orphan sweep (REST) reads a *different* key `vcenter_insecure` and needs a real bool; the UI's freeform text box stores a string. Key never matches + type never matches → verify stays on → x509.
 
-## Root causes (confirmed)
+## Decisions (confirmed with user)
+- Standardise on `vcenter_disable_ssl_verify` as the canonical key; CMM reads it, falls back to legacy `vcenter_insecure`.
+- UI: checkbox for `vcenter_disable_ssl_verify` (emits JSON bool); dropdown for `clone_type` (full/linked).
+- `ListTemplates` must honour the flag so test-connection stops lying.
 
-1. **Global filter URL clobber (the freshness desync + inconsistency).**
-   `GlobalFilterContext` owns `target_chef_version` + `stale_tiers` in the URL and
-   merges politely (functional `setSearchParams`). NodesPage's mount effect does
-   `setSearchParams({}, {replace:true})` — a full wipe that races with / destroys
-   those global params, while the global `staleTiers` React state persists →
-   state/URL desync. Refresh "fixes" it by re-reading the wiped URL (→ no
-   `stale_tiers` → all nodes); toggling/clearing behave inconsistently.
-2. **Phantom `target_version` filter ("2 applied, 1 visible").**
-   The dashboard readiness links go to `/nodes?readiness=blocked&target_version=X`.
-   `target_version` maps to NodesPage's deployment `targetVersionFilter`, which has
-   NO visible control → counted (2) but invisible (1 chip). It is also the wrong
-   filter for readiness (readiness is scoped by the global target, not the
-   deployment `target_version`).
+## Chunk A — Backend (Go)  [internal/hypervisor/factory.go, vcenter.go + tests]  ✅ DONE
+- [x] `settingBool` accepts bool AND string "true"/"false".
+- [x] `newVCenterFromConfig` reads `vcenter_disable_ssl_verify`, falls back to `vcenter_insecure`.
+- [x] `VCenterClient` stores `insecureSkipTLSVerify`; `ListTemplates` passes it to `govmomi.NewClient`.
+- Accept: factory tests (bool/string/legacy/default) pass; `go test ./...` + golangci-lint green.
 
-## Fixes
+## Chunk B — Frontend (typed widgets)  [AdminTestKitchenPage.tsx + test]  ✅ DONE
+- [x] Known-key widgets: `vcenter_disable_ssl_verify`→checkbox, `clone_type`→select[full,linked].
+- [x] Save converts known boolean keys to real JSON booleans (`kvToRecordTyped`).
+- [x] Load tolerates string "true"/"false".
+- Accept: 402 frontend tests pass; tsc + lint green.
 
-- **A — NodesPage clears only its own params.** The once-on-mount drill-down
-  cleanup deletes only the page-owned params (readiness, target_version,
-  chef_version, platform, environment, role, policy_name, policy_group,
-  migration_state, target_converge_status) via the functional updater, PRESERVING
-  `target_chef_version`/`stale_tiers`. No more global-state desync.
-- **B — readiness drill-down drops `target_version`.** `StatusCards` ready/blocked
-  links go to `/nodes?readiness=ready|blocked` (no `target_version`); readiness is
-  scoped by the global target. Removes the phantom invisible filter.
+## Chunk C — Docs/spec/tech-debt  ✅ DONE
+- [x] `specifications/test-kitchen-config-ui.md`: typed widgets + canonical `vcenter_disable_ssl_verify` read by both TK and CMM.
+- [x] `plans/todo-tech-debt.md`: reconciled item + legacy-key deprecation + proxmox-unify follow-ups.
 
-## TDD
-- NodesPage: mounting at `?readiness=blocked&stale_tiers=fresh,warning` removes
-  `readiness` but keeps `stale_tiers` after the cleanup effect.
-- StatusCards: ready/blocked links href = `/nodes?readiness=…` with no `target_version`.
-- Full frontend suite + tsc + lint green; rebuild binary + verify live.
+## Status: ready for commit + sign-off (NOT yet committed; NOT merged).
 
-## Follow-up (note, not in scope)
-- Multi-target: a per-version drill-down can't re-scope the global target because
-  `GlobalFilterContext` reads the URL only at mount (doesn't watch changes). For
-  single-target deployments this is a non-issue. If wanted, add a URL→state
-  watcher so drill-down links can set `target_chef_version`.
-- `target_version` (deployment) filter is invisible when set via the
-  DeploymentCards converge drill-down too — give it a visible chip.
+## Notes
+- Proxmox left as-is (`proxmox_insecure`); benefits from the `settingBool` string fix.
+- Branch: `fix/vcenter-ssl-verify-key`. Do not merge without sign-off.
