@@ -30,6 +30,12 @@ type VCenterClient struct {
 	datacenter string // optional datacenter name for SOAP/govmomi queries
 	httpClient *http.Client
 
+	// insecureSkipTLSVerify mirrors the REST httpClient's TLS setting so the
+	// SOAP/govmomi path (ListTemplates) makes the same trust decision. Without
+	// this, template discovery would silently skip verification and mask a
+	// misconfigured or untrusted vCenter certificate.
+	insecureSkipTLSVerify bool
+
 	sessionMu  sync.Mutex
 	sessionID  string
 	sessionExp time.Time
@@ -66,11 +72,12 @@ func NewVCenterClient(baseURL, username, password, datacenter string, opts ...Cl
 		},
 	}
 	return &VCenterClient{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		username:   username,
-		password:   password,
-		datacenter: datacenter,
-		httpClient: httpClient,
+		baseURL:               strings.TrimRight(baseURL, "/"),
+		username:              username,
+		password:              password,
+		datacenter:            datacenter,
+		httpClient:            httpClient,
+		insecureSkipTLSVerify: o.insecureSkipTLSVerify,
 	}
 }
 
@@ -133,7 +140,7 @@ func (c *VCenterClient) ListTemplates(ctx context.Context) ([]Template, error) {
 	}
 	u.User = url.UserPassword(c.username, c.password)
 
-	client, err := govmomi.NewClient(ctx, u, true)
+	client, err := govmomi.NewClient(ctx, u, c.insecureSkipTLSVerify)
 	if err != nil {
 		return nil, fmt.Errorf("vcenter: SOAP connect: %w", err)
 	}
