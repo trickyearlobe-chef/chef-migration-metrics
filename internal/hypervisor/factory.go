@@ -5,6 +5,7 @@ package hypervisor
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -74,7 +75,13 @@ func newVCenterFromConfig(settings map[string]any, secrets map[string]string) (H
 		baseURL = "https://" + host
 	}
 	datacenter := settingStr(settings, "datacenter")
-	insecure := settingBool(settings, "vcenter_insecure")
+	// Canonical key is vcenter_disable_ssl_verify (the kitchen-vcenter driver's
+	// own setting, shared by the generated overlay). Fall back to the legacy
+	// CMM-only vcenter_insecure so existing configs keep working.
+	insecure := settingBool(settings, "vcenter_disable_ssl_verify")
+	if _, ok := settings["vcenter_disable_ssl_verify"]; !ok {
+		insecure = settingBool(settings, "vcenter_insecure")
+	}
 	return NewVCenterClient(baseURL, username, password, datacenter, WithInsecureSkipTLSVerify(insecure)), nil
 }
 
@@ -89,12 +96,21 @@ func settingStr(m map[string]any, key string) string {
 }
 
 // settingBool extracts a bool value from a map[string]any, defaulting to false
-// when the key is absent or not a bool.
+// when the key is absent or unparseable. It accepts a real bool or a string
+// "true"/"false" (case-insensitive) — driver settings entered through the UI
+// arrive as strings, so a strict bool assertion would silently drop them.
 func settingBool(m map[string]any, key string) bool {
 	v, ok := m[key]
 	if !ok {
 		return false
 	}
-	b, _ := v.(bool)
-	return b
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		b, _ := strconv.ParseBool(strings.TrimSpace(val))
+		return b
+	default:
+		return false
+	}
 }

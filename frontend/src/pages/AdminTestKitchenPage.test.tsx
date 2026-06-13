@@ -331,3 +331,91 @@ describe("AdminTestKitchenPage — Platform Map Section", () => {
     });
   });
 });
+
+describe("AdminTestKitchenPage — Typed driver settings", () => {
+  const vcenterConfig = {
+    ...defaultConfig,
+    driver: "vcenter",
+    driver_settings: {
+      vcenter_host: "vc.example.com",
+      vcenter_disable_ssl_verify: false,
+      clone_type: "full",
+    } as Record<string, unknown>,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchCredentials).mockResolvedValue({ data: [], total: 0 });
+    vi.mocked(fetchPlatformMappingStatus).mockResolvedValue({
+      ...defaultMappingStatus,
+    });
+    vi.mocked(saveTestKitchenConfig).mockResolvedValue({
+      value: vcenterConfig,
+      restartRequired: false,
+    });
+  });
+
+  it("renders vcenter_disable_ssl_verify as a checkbox and saves a real boolean", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchTestKitchenConfig).mockResolvedValue({ ...vcenterConfig });
+
+    render(<AdminTestKitchenPage />);
+
+    const checkbox = (await screen.findByLabelText(
+      /Disable SSL certificate verification/,
+    )) as HTMLInputElement;
+    expect(checkbox.type).toBe("checkbox");
+    expect(checkbox.checked).toBe(false);
+
+    await user.click(checkbox);
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(saveTestKitchenConfig).toHaveBeenCalled();
+    });
+    const saved = vi.mocked(saveTestKitchenConfig).mock.calls[0][0];
+    // Must be a JSON boolean true, not the string "true".
+    expect(saved.driver_settings.vcenter_disable_ssl_verify).toBe(true);
+  });
+
+  it("reads a legacy string \"true\" as a checked box", async () => {
+    vi.mocked(fetchTestKitchenConfig).mockResolvedValue({
+      ...vcenterConfig,
+      driver_settings: {
+        ...vcenterConfig.driver_settings,
+        vcenter_disable_ssl_verify: "true",
+      },
+    });
+
+    render(<AdminTestKitchenPage />);
+
+    const checkbox = (await screen.findByLabelText(
+      /Disable SSL certificate verification/,
+    )) as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it("renders clone_type as a full/linked dropdown and preserves the value on save", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchTestKitchenConfig).mockResolvedValue({ ...vcenterConfig });
+
+    render(<AdminTestKitchenPage />);
+
+    const select = (await screen.findByLabelText(
+      /Clone type/,
+    )) as HTMLSelectElement;
+    expect(select.value).toBe("full");
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    expect(optionValues).toContain("full");
+    expect(optionValues).toContain("linked");
+
+    await user.selectOptions(select, "linked");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(saveTestKitchenConfig).toHaveBeenCalled();
+    });
+    const saved = vi.mocked(saveTestKitchenConfig).mock.calls[0][0];
+    expect(saved.driver_settings.clone_type).toBe("linked");
+  });
+});

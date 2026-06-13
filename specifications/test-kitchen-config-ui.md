@@ -192,6 +192,9 @@ The page has three sections stacked vertically:
 - Two-column key-value editor for `driver_settings` (add/remove rows)
 - Key-value editor for `driver_secrets` where the value column is a dropdown populated from the credentials list (`fetchCredentials`)
 - When a known driver is selected, pre-populate common setting keys as empty rows (e.g. for `vcenter`: `vcenter_host`, `vcenter_username`, `vcenter_disable_ssl_verify`, `clone_type`, `datacenter`)
+- Known setting keys render a typed value widget instead of a freeform text box, and serialise to the correct JSON type:
+  - `vcenter_disable_ssl_verify` → checkbox → JSON boolean. This is the canonical TLS-verify key: it is written verbatim into the kitchen overlay (consumed by the kitchen-vcenter driver) AND read by CMM's own hypervisor client for template discovery and orphan sweeps. A string value silently fails CMM's bool parse and leaves verification on, so the boolean type matters. The load path tolerates a legacy string `"true"`/`"false"`.
+  - `clone_type` → dropdown (`full`, `linked`). An existing out-of-list value is preserved as an extra option rather than dropped.
 
 **3. Platform Map**
 - Table with columns: Kitchen Name, Image, Driver Settings (expandable), Transport Username, Transport Password Credential (dropdown), Transport SSH Key Credential (dropdown)

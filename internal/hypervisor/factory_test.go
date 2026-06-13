@@ -4,6 +4,7 @@
 package hypervisor
 
 import (
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -320,5 +321,52 @@ func TestNewFromConfig_VCenterInsecureSetting(t *testing.T) {
 	}
 	if !tlsInsecure(t, h2.(*VCenterClient).httpClient) {
 		t.Error("vcenter_insecure: true should disable TLS verification")
+	}
+}
+
+// TestNewFromConfig_VCenterDisableSSLVerifyKey verifies CMM honours the
+// canonical Test Kitchen key vcenter_disable_ssl_verify (bool or string),
+// keeps the legacy vcenter_insecure as a fallback, and that the resolved
+// flag also reaches the SOAP/govmomi path via the struct field.
+func TestNewFromConfig_VCenterDisableSSLVerifyKey(t *testing.T) {
+	secrets := map[string]string{"vcenter_password": "p"}
+	host := map[string]any{"vcenter_host": "vc.example.com", "vcenter_username": "u"}
+
+	merge := func(extra map[string]any) map[string]any {
+		m := map[string]any{}
+		maps.Copy(m, host)
+		maps.Copy(m, extra)
+		return m
+	}
+
+	cases := []struct {
+		name     string
+		settings map[string]any
+		insecure bool
+	}{
+		{"canonical bool true", merge(map[string]any{"vcenter_disable_ssl_verify": true}), true},
+		{"canonical bool false", merge(map[string]any{"vcenter_disable_ssl_verify": false}), false},
+		{"canonical string true", merge(map[string]any{"vcenter_disable_ssl_verify": "true"}), true},
+		{"canonical string false", merge(map[string]any{"vcenter_disable_ssl_verify": "false"}), false},
+		{"legacy fallback string", merge(map[string]any{"vcenter_insecure": "true"}), true},
+		{"canonical false overrides legacy true", merge(map[string]any{"vcenter_disable_ssl_verify": false, "vcenter_insecure": true}), false},
+		{"unset verifies", host, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, err := NewFromConfig("vcenter", tc.settings, secrets)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			vc := h.(*VCenterClient)
+			if got := tlsInsecure(t, vc.httpClient); got != tc.insecure {
+				t.Errorf("REST httpClient InsecureSkipVerify = %v, want %v", got, tc.insecure)
+			}
+			// The same flag must reach the SOAP/govmomi path (ListTemplates).
+			if vc.insecureSkipTLSVerify != tc.insecure {
+				t.Errorf("insecureSkipTLSVerify = %v, want %v", vc.insecureSkipTLSVerify, tc.insecure)
+			}
+		})
 	}
 }
