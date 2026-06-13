@@ -128,6 +128,9 @@ export interface NodeDetailResponse {
   readiness: NodeReadiness[] | null;
   install_path?: string;
   min_remaining_free_percent?: number;
+  // Total size (MB) of the install-path mount, computed at read time so the disk
+  // panel can draw "have vs need" bars. Null when filesystem data is unavailable.
+  total_disk_mb?: number | null;
 }
 
 export interface NodesByVersionResponse {
