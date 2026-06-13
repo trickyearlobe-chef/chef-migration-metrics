@@ -255,6 +255,12 @@ Recorded 2026-06-13. Surfaced in the v2.12.2 release run log.
   the new commit SHA, and supply-chain check the bump (per CLAUDE.md). Stop-gap if the
   bump can't land in time: set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` on the runner.
 
+## Testing — Datastore Functional Tests Not Run in CI
+
+Recorded 2026-06-13 (while fixing the failed-batch delete bug).
+
+- [ ] **The `-tags functional` datastore suite (`CMM_TEST_DATABASE_URL`) is not wired into CI.** Because nothing runs it, it silently rotted: the `CookbookPlatformCoverage`/`GitRepo` natural-key migration left the `TestFunctional_CookbookPlatformCoverage_*` tests referencing removed fields (`result.ID`/`repo.ID`/`GitRepoID`) so the whole package failed to compile, and a drifted org cleanup (`DELETE … WHERE id = <name>`) leaked rows that collided with the disk tests' shared `(chef_server_url, org_name)` key. Both were fixed on `fix/delete-failed-kitchen-batch` (2026-06-13) so the suite is green again — but it will rot the same way without a gate. **Fix:** add a CI job (or `make` target) that spins up a throwaway Postgres and runs `go test -tags functional ./internal/datastore/` so compile drift and isolation bugs fail fast.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

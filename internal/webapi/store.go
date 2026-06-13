@@ -657,7 +657,7 @@ type DataStore interface {
 	// UpdateKitchenBatchStatus transitions a batch to a new status.
 	UpdateKitchenBatchStatus(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error)
 
-	// DeleteKitchenBatch removes a batch (only draft/completed/cancelled).
+	// DeleteKitchenBatch removes a batch (only draft/completed/cancelled/failed).
 	DeleteKitchenBatch(ctx context.Context, id string) error
 
 	// UpdateKitchenBatchStatusIfCurrent is a CAS-style status transition.
