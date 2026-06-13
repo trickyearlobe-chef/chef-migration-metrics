@@ -214,7 +214,7 @@ export function ReadinessCard({ organisation }: { organisation?: string }) {
                   {r.total_nodes > 0 && (
                     <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
                       <Link
-                        to={`/nodes?readiness=ready&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                        to={`/nodes?readiness=ready`}
                         className="bg-green-500 transition-all duration-500 hover:bg-green-600"
                         style={{
                           width: `${(r.ready_nodes / r.total_nodes) * 100}%`,
@@ -222,7 +222,7 @@ export function ReadinessCard({ organisation }: { organisation?: string }) {
                         title={`Ready: ${r.ready_nodes}`}
                       />
                       <Link
-                        to={`/nodes?readiness=blocked&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                        to={`/nodes?readiness=blocked`}
                         className="bg-red-400 transition-all duration-500 hover:bg-red-500"
                         style={{
                           width: `${(r.blocked_nodes / r.total_nodes) * 100}%`,
@@ -233,7 +233,7 @@ export function ReadinessCard({ organisation }: { organisation?: string }) {
                   )}
                   <div className="flex gap-4 text-xs">
                     <Link
-                      to={`/nodes?readiness=ready&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                      to={`/nodes?readiness=ready`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
@@ -241,7 +241,7 @@ export function ReadinessCard({ organisation }: { organisation?: string }) {
                       {r.ready_percent.toFixed(1)}%)
                     </Link>
                     <Link
-                      to={`/nodes?readiness=blocked&target_version=${encodeURIComponent(r.target_chef_version)}`}
+                      to={`/nodes?readiness=blocked`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
