@@ -1,35 +1,51 @@
-# Active Plan — vCenter SSL-verify key reconciliation + typed UI widgets
+# Active Plan — Retire SMTP/webhook + notifications scaffolding; K8s/TLS-perm backlog cleanup
 
-## Problem
-Orphan sweep fails with x509 even though SSL verify is "disabled" in the UI.
-Root cause: three consumers of `driver_settings` disagree on TLS.
-- Test Kitchen (VM launch) reads `vcenter_disable_ssl_verify` (lenient, works).
-- CMM test-connection (`ListTemplates`, SOAP) hardcodes `insecure=true` (vcenter.go:136) — always green, hides the problem.
-- CMM orphan sweep (REST) reads a *different* key `vcenter_insecure` and needs a real bool; the UI's freeform text box stores a string. Key never matches + type never matches → verify stays on → x509.
+Branch: `chore/retire-notifications-cleanup`. Do not merge without sign-off.
 
-## Decisions (confirmed with user)
-- Standardise on `vcenter_disable_ssl_verify` as the canonical key; CMM reads it, falls back to legacy `vcenter_insecure`.
-- UI: checkbox for `vcenter_disable_ssl_verify` (emits JSON bool); dropdown for `clone_type` (full/linked).
-- `ListTemplates` must honour the flag so test-connection stops lying.
+## Context
+SMTP/webhook were spec'd but never built — no `internal/notify`, no senders.
+Only scaffolding exists (credential types + validation + UI). User decision:
+drop fully (code, UI, specs, docs) AND retire the notifications-via-ownership
+spec scaffolding, **keeping ownership** (a real feature). K8s was dropped; the
+app is not containerised (already true + correctly documented). TLS key-file
+perm check is already done.
 
-## Chunk A — Backend (Go)  [internal/hypervisor/factory.go, vcenter.go + tests]  ✅ DONE
-- [x] `settingBool` accepts bool AND string "true"/"false".
-- [x] `newVCenterFromConfig` reads `vcenter_disable_ssl_verify`, falls back to `vcenter_insecure`.
-- [x] `VCenterClient` stores `insecureSkipTLSVerify`; `ListTemplates` passes it to `govmomi.NewClient`.
-- Accept: factory tests (bool/string/legacy/default) pass; `go test ./...` + golangci-lint green.
+## Done this branch (backlog hygiene)
+- [x] todo-secrets-storage: removed stale "TLS key file perm" item (already
+      implemented); kept keys-dir/env-file items; added clarifying note.
+- [x] todo-secrets-storage: removed "Document K8s External Secrets Operator" item.
 
-## Chunk B — Frontend (typed widgets)  [AdminTestKitchenPage.tsx + test]  ✅ DONE
-- [x] Known-key widgets: `vcenter_disable_ssl_verify`→checkbox, `clone_type`→select[full,linked].
-- [x] Save converts known boolean keys to real JSON booleans (`kvToRecordTyped`).
-- [x] Load tolerates string "true"/"false".
-- Accept: 402 frontend tests pass; tsc + lint green.
+## Chunk 1 — Remove SMTP/webhook credential types (code + tests) [TDD]
+Files: `internal/secrets/validation.go` (type consts CredentialTypeSMTPPassword/
+WebhookURL, valid-types map entries, validateWebhookURL, switch cases,
+ErrInvalidWebhookURL) + fixtures in `internal/secrets/validation_test.go`,
+`credential_store_test.go`, `encryption_test.go`,
+`internal/webapi/handle_credentials_test.go`,
+`internal/configstore/credential_adapter_test.go`.
+- Update tests first (remove smtp/webhook cases; ensure remaining types pass).
+- Confirm no other consumer references the removed constants.
+- Accept: `go test ./...` + golangci-lint green.
 
-## Chunk C — Docs/spec/tech-debt  ✅ DONE
-- [x] `specifications/test-kitchen-config-ui.md`: typed widgets + canonical `vcenter_disable_ssl_verify` read by both TK and CMM.
-- [x] `plans/todo-tech-debt.md`: reconciled item + legacy-key deprecation + proxmox-unify follow-ups.
+## Chunk 2 — Remove SMTP/webhook from credentials UI
+Files: `frontend/src/pages/credentials/constants.ts` (type option, badge, label),
+`ValueField.tsx` (webhook_url branch), `AdminCredentialsPage.tsx` (description text).
+- Update/adjust any credentials component test referencing those types.
+- Accept: `npm test` + tsc + lint green.
 
-## Status: ready for commit + sign-off (NOT yet committed; NOT merged).
+## Chunk 3 — Specs/docs prune (needs owner sign-off per CLAUDE.md)
+- Delete the **notification half** of `web-api-notifications-ownership.md`,
+  keeping ownership endpoints; rename if appropriate.
+- Remove SMTP/webhook from `secrets-storage*.md` (notably credential-model,
+  validation-api, secrets-storage.md TL;DR "Chef API keys, SMTP passwords, and
+  webhook URLs").
+- Correct `secrets-storage.md:3` TL;DR line implying a Helm chart /
+  chart-managed Secrets (no k8s packaging exists).
+- Remove smtp/webhook live-test items from `todo-secrets-storage.md` (Credential
+  Testing section) — now out of scope.
+- Check `web-api-admin.md`, `logging.md`, `ownership*.md` for dangling notif refs.
 
-## Notes
-- Proxmox left as-is (`proxmox_insecure`); benefits from the `settingBool` string fix.
-- Branch: `fix/vcenter-ssl-verify-key`. Do not merge without sign-off.
+## Out of scope (leave as-is)
+- `deploy/docker-compose/` (DB) and `deploy/elk/` (ES) — kept for local testing.
+- Legit K8s/orchestrator deployment guidance (env-var secret injection,
+  cert-manager mounts, HTTPS probes) — true, not "packaging we built".
+- Credential keys-dir (>0700) / env-file (>0640) perm warnings — still open work.

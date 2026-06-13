@@ -13,10 +13,14 @@
 
 ## Startup Validation
 
-- [ ] Warn if TLS key file permissions > `0600` (static mode) — deferred until TLS subsystem is implemented
 - [ ] Warn if keys directory permissions > `0700`
 - [ ] Warn if env file permissions > `0640` (RPM/DEB)
 - [ ] Write unit tests for startup validation (all pass, various failure modes)
+
+> TLS key-file permission warning (>0600) is **done**: `config.go` startup
+> validation (`server.tls.key_path`) and `tls/certmanager.go checkKeyPermissions`.
+> The two items above are about the credential key material (keys dir / env
+> file), not TLS, and are still open.
 
 ## Consumer Integration
 
@@ -64,5 +68,4 @@
 - [ ] Document master key generation procedure
 - [ ] Document master key rotation procedure
 - [ ] Document credential value rotation procedure
-- [ ] Document Kubernetes External Secrets Operator integration pattern
 - [ ] Document RPM/DEB credential file setup
