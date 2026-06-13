@@ -184,7 +184,7 @@ func defaultRouteIPv4() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("auto-detect default-route IPv4: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	addr, ok := conn.LocalAddr().(*net.UDPAddr)
 	if !ok || addr.IP.To4() == nil {
 		return "", errors.New("auto-detect default-route IPv4: no IPv4 source address")

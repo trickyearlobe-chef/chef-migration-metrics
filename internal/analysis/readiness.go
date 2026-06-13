@@ -984,14 +984,9 @@ type filesystemEntry struct {
 // live config (configFn) or the values baked at construction.
 func (e *ReadinessEvaluator) diskConfig() DiskConfig {
 	if e.configFn != nil {
-		c := e.configFn()
-		return DiskConfig{
-			InstallPathLinux:        c.InstallPathLinux,
-			InstallPathWindows:      c.InstallPathWindows,
-			InstallSizeMBLinux:      c.InstallSizeMBLinux,
-			InstallSizeMBWindows:    c.InstallSizeMBWindows,
-			MinRemainingFreePercent: c.MinRemainingFreePercent,
-		}
+		// ReadinessEvalConfig and DiskConfig are field-identical, so a direct
+		// conversion is equivalent to a field-by-field literal (staticcheck S1016).
+		return DiskConfig(e.configFn())
 	}
 	return DiskConfig{
 		InstallPathLinux:        e.installPathLinux,

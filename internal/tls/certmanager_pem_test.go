@@ -76,7 +76,7 @@ func TestNewCertManagerFromPEM_ValidCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManagerFromPEM: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	got := cm.LeafCert()
 	if got == nil {
@@ -147,7 +147,7 @@ func TestNewCertManagerFromPEM_ExpiredWarns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManagerFromPEM: expired cert should still load, got: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	if !logs.Contains("EXPIRED") {
 		t.Errorf("expected EXPIRED warning, got: %v", logs.Snapshot())
@@ -167,7 +167,7 @@ func TestReloadFromPEM_SwapsCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManagerFromPEM: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	newCertPEM, newKeyPEM, newLeaf := generateTestCertPEM(t, "pem-after",
 		time.Now().Add(-time.Hour), time.Now().Add(24*time.Hour))
@@ -194,7 +194,7 @@ func TestReloadFromPEM_BadPEMKeepsPreviousCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManagerFromPEM: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	err = cm.ReloadFromPEM([]byte("garbage"), []byte("garbage"))
 	if err == nil {
@@ -220,7 +220,7 @@ func TestReloadFromPEM_NotSupportedForFileSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManager: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	certPEM, keyPEM, _ := generateTestCertPEM(t, "file-src-new",
 		time.Now().Add(-time.Hour), time.Now().Add(24*time.Hour))
@@ -241,7 +241,7 @@ func TestCertKeyPath_EmptyForPEMSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManagerFromPEM: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	if cm.CertPath() != "" {
 		t.Errorf("CertPath = %q, want empty for PEM source", cm.CertPath())
@@ -259,7 +259,7 @@ func TestWatchForChanges_NoOpForPEMSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManagerFromPEM: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	// Must not panic or start a file watcher.
 	cm.WatchForChanges(10 * time.Millisecond)
@@ -277,7 +277,7 @@ func TestTLSConfig_PEMSourceServesCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCertManagerFromPEM: %v", err)
 	}
-	defer cm.Close()
+	defer func() { _ = cm.Close() }()
 
 	cfg := cm.TLSConfig("1.2")
 	served, err := cfg.GetCertificate(nil)
