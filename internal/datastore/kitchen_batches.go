@@ -226,16 +226,18 @@ func (db *DB) updateKitchenBatchStatus(ctx context.Context, q queryable, id stri
 // Delete
 // ---------------------------------------------------------------------------
 
-// DeleteKitchenBatch removes a kitchen batch. Only batches in draft,
-// completed, or cancelled status can be deleted. Returns ErrNotFound if the
-// batch does not exist or is not in a deletable status.
+// DeleteKitchenBatch removes a kitchen batch. Only batches in a non-running
+// status — draft (pre-run) or a terminal status (completed, cancelled,
+// failed) — can be deleted. In-flight batches (preparing, previewing,
+// running) must be cancelled first. Returns ErrNotFound if the batch does not
+// exist or is not in a deletable status.
 func (db *DB) DeleteKitchenBatch(ctx context.Context, id string) error {
 	return db.deleteKitchenBatch(ctx, db.q(), id)
 }
 
 func (db *DB) deleteKitchenBatch(ctx context.Context, q queryable, id string) error {
 	const query = `DELETE FROM kitchen_batches
-		WHERE id = $1 AND status IN ('draft', 'completed', 'cancelled')`
+		WHERE id = $1 AND status IN ('draft', 'completed', 'cancelled', 'failed')`
 
 	res, err := q.ExecContext(ctx, query, id)
 	if err != nil {

@@ -95,9 +95,6 @@ func TestFunctional_CookbookPlatformCoverage_InsertAndGet(t *testing.T) {
 	if result.CookbookName != "func-test-coverage-insert" {
 		t.Errorf("CookbookName: got %q, want %q", result.CookbookName, "func-test-coverage-insert")
 	}
-	if result.ID == "" {
-		t.Error("ID should not be empty")
-	}
 	if result.EvaluatedAt.IsZero() {
 		t.Error("EvaluatedAt should not be zero")
 	}
@@ -141,9 +138,9 @@ func TestFunctional_CookbookPlatformCoverage_UpsertUpdatesExisting(t *testing.T)
 		t.Fatalf("second upsert: %v", err)
 	}
 
-	// Same row, same ID.
-	if second.ID != first.ID {
-		t.Errorf("expected same ID after upsert: first=%s, second=%s", first.ID, second.ID)
+	// Same row — keyed by cookbook_name.
+	if second.CookbookName != first.CookbookName {
+		t.Errorf("expected same cookbook_name after upsert: first=%s, second=%s", first.CookbookName, second.CookbookName)
 	}
 
 	// Coverage data should reflect the second write.
@@ -337,23 +334,24 @@ func TestFunctional_CookbookPlatformCoverage_WithGitRepoFK(t *testing.T) {
 	}
 	cleanupTestData(t, db,
 		"DELETE FROM cookbook_platform_coverage WHERE cookbook_name = 'func-test-coverage-fk'",
-		"DELETE FROM git_repos WHERE id = '"+repo.ID+"'",
+		"DELETE FROM git_repos WHERE name = '"+repo.Name+"'",
 	)
 
 	result, err := db.UpsertCookbookPlatformCoverage(ctx, UpsertCookbookPlatformCoverageParams{
-		GitRepoID:    repo.ID,
+		GitRepoName:  repo.Name,
+		GitRepoURL:   repo.GitRepoURL,
 		CookbookName: "func-test-coverage-fk",
 		CoverageData: map[string]any{"gap_count": 2},
 	})
 	if err != nil {
 		t.Fatalf("upserting coverage with FK: %v", err)
 	}
-	if result.GitRepoID != repo.ID {
-		t.Errorf("GitRepoID: got %q, want %q", result.GitRepoID, repo.ID)
+	if result.GitRepoName != repo.Name {
+		t.Errorf("GitRepoName: got %q, want %q", result.GitRepoName, repo.Name)
 	}
 
 	// Verify FK cascade: deleting the git repo should cascade-delete coverage.
-	if err := db.DeleteGitRepo(ctx, repo.ID); err != nil {
+	if err := db.DeleteGitRepo(ctx, repo.Name, repo.GitRepoURL); err != nil {
 		t.Fatalf("deleting git repo: %v", err)
 	}
 	fetched, err := db.GetCookbookPlatformCoverage(ctx, "func-test-coverage-fk")
@@ -391,8 +389,8 @@ func TestFunctional_CookbookPlatformCoverage_UniqueConstraint(t *testing.T) {
 		t.Fatalf("second upsert: %v", err)
 	}
 
-	if second.ID != first.ID {
-		t.Errorf("upsert should reuse ID: first=%s, second=%s", first.ID, second.ID)
+	if second.CookbookName != first.CookbookName {
+		t.Errorf("upsert should reuse natural key: first=%s, second=%s", first.CookbookName, second.CookbookName)
 	}
 
 	// updated_at should be >= first insert.
@@ -431,7 +429,7 @@ func TestFunctional_GetProductionPlatformsForCookbook(t *testing.T) {
 	cleanupTestData(t, db,
 		"DELETE FROM node_snapshots WHERE collection_run_org = '"+run.OrganisationName+"'",
 		"DELETE FROM collection_runs WHERE organisation_name = '"+run.OrganisationName+"'",
-		"DELETE FROM organisations WHERE id = '"+org.Name+"'",
+		"DELETE FROM organisations WHERE name = '"+org.Name+"'",
 	)
 
 	// Insert node snapshots with cookbook data. The cookbooks column is

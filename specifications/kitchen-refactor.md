@@ -198,11 +198,17 @@ Control what runs in bulk Git Kitchen scans. Prevents all-or-nothing execution. 
 | `max_count` | INTEGER | Cap on number of cookbooks to include |
 | ~~`max_concurrent_vms`~~ | — | **Removed** (migration 0036). Concurrency is global, not per-batch — see [kitchen-run-queue.md](kitchen-run-queue.md). |
 | `dry_run` | BOOLEAN DEFAULT false | Preview only, don't execute |
-| `status` | TEXT | `draft`, `previewing`, `running`, `completed`, `cancelled` |
+| `status` | TEXT | `draft`, `preparing`, `previewing`, `running`, `completed`, `cancelled`, `failed` |
 | `created_by` | TEXT | |
 | `created_at` | TIMESTAMPTZ | |
 | `started_at` | TIMESTAMPTZ | |
 | `completed_at` | TIMESTAMPTZ | |
+
+Status lifecycle: `draft` → `preparing` → (`previewing` for dry-run | `running`) →
+terminal (`completed`, `cancelled`, or `failed`). A `DELETE` is permitted only
+when the batch is in `draft` or a terminal status (`completed`, `cancelled`,
+`failed`); in-flight batches (`preparing`, `previewing`, `running`) must be
+cancelled first.
 
 ### Filter Criteria
 
