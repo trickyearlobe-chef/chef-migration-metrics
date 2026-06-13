@@ -26,7 +26,11 @@ function GlobalFilterBar() {
 
   return (
     <div className="flex items-center gap-3">
-      {targetVersions.length > 0 && (
+      {/* Only offer the target-version selector when there's an actual choice.
+          With a single configured version (the common case) it auto-resolves in
+          GlobalFilterContext and the dropdown is dead weight — but the underlying
+          selection still scopes readiness/compatibility analysis across the app. */}
+      {targetVersions.length > 1 && (
         <div className="flex items-center gap-1.5">
           <label className="text-xs font-medium text-gray-500">Target</label>
           <select
