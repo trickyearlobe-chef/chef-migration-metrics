@@ -44,6 +44,22 @@ const DRIVER_SETTING_HINTS: Record<string, string[]> = {
   vra: ["base_url", "username", "tenant"],
 };
 
+// Known driver-setting keys that get a typed widget instead of a freeform
+// text box. BOOLEAN_SETTING_KEYS render as a checkbox and serialise to a real
+// JSON boolean (a string "true" silently fails the backend's bool parse and
+// leaves TLS verification on — the cause of the orphan-sweep x509 failures).
+// SELECT_SETTING_OPTIONS render as a constrained dropdown. Each entry maps the
+// raw key to its human-readable label and (for selects) allowed values.
+const BOOLEAN_SETTING_KEYS: Record<string, string> = {
+  vcenter_disable_ssl_verify: "Disable SSL certificate verification",
+};
+const SELECT_SETTING_OPTIONS: Record<
+  string,
+  { label: string; options: string[] }
+> = {
+  clone_type: { label: "Clone type", options: ["full", "linked"] },
+};
+
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
 const INPUT_FLEX_CLASS =
@@ -94,6 +110,18 @@ function kvToRecord(pairs: KVPair[]): Record<string, string> {
   for (const { key, value } of pairs) {
     const k = key.trim();
     if (k) rec[k] = value;
+  }
+  return rec;
+}
+
+// kvToRecordTyped is like kvToRecord but emits real JSON types for known keys:
+// BOOLEAN_SETTING_KEYS become booleans. Everything else stays a string.
+function kvToRecordTyped(pairs: KVPair[]): Record<string, unknown> {
+  const rec: Record<string, unknown> = {};
+  for (const { key, value } of pairs) {
+    const k = key.trim();
+    if (!k) continue;
+    rec[k] = k in BOOLEAN_SETTING_KEYS ? value === "true" : value;
   }
   return rec;
 }
@@ -451,7 +479,7 @@ export function AdminTestKitchenPage() {
 
     const payload: TestKitchenConfig = {
       ...config,
-      driver_settings: kvToRecord(driverSettings),
+      driver_settings: kvToRecordTyped(driverSettings),
       driver_secrets: kvToRecord(driverSecrets),
       images,
       setup_scripts: setupScripts,
@@ -790,14 +818,50 @@ export function AdminTestKitchenPage() {
                 disabled={saving}
                 className={INPUT_CLASS}
               />
-              <input
-                type="text"
-                value={pair.value}
-                onChange={(e) => updateSetting(idx, "value", e.target.value)}
-                placeholder="Value"
-                disabled={saving}
-                className={INPUT_CLASS}
-              />
+              {pair.key in BOOLEAN_SETTING_KEYS ? (
+                <label className="flex flex-1 items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    aria-label={BOOLEAN_SETTING_KEYS[pair.key]}
+                    checked={pair.value === "true"}
+                    onChange={(e) =>
+                      updateSetting(idx, "value", e.target.checked ? "true" : "false")
+                    }
+                    disabled={saving}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {BOOLEAN_SETTING_KEYS[pair.key]}
+                </label>
+              ) : pair.key in SELECT_SETTING_OPTIONS ? (
+                <select
+                  aria-label={SELECT_SETTING_OPTIONS[pair.key].label}
+                  value={pair.value}
+                  onChange={(e) => updateSetting(idx, "value", e.target.value)}
+                  disabled={saving}
+                  className={INPUT_CLASS}
+                >
+                  <option value="">— select —</option>
+                  {/* Preserve an existing out-of-list value rather than silently dropping it. */}
+                  {pair.value &&
+                    !SELECT_SETTING_OPTIONS[pair.key].options.includes(
+                      pair.value,
+                    ) && <option value={pair.value}>{pair.value}</option>}
+                  {SELECT_SETTING_OPTIONS[pair.key].options.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={pair.value}
+                  onChange={(e) => updateSetting(idx, "value", e.target.value)}
+                  placeholder="Value"
+                  disabled={saving}
+                  className={INPUT_CLASS}
+                />
+              )}
               <RemoveButton
                 onClick={() => removeSetting(idx)}
                 disabled={saving}
