@@ -41,6 +41,12 @@ type Config struct {
 	// Mutually exclusive with IDPMetadataURL.
 	IDPMetadataPath string
 
+	// IDPMetadataXML is the raw IdP metadata XML pasted directly into the
+	// configuration. Used when the IdP exposes neither a fetchable URL nor a
+	// file the server can read. Mutually exclusive with IDPMetadataURL and
+	// IDPMetadataPath.
+	IDPMetadataXML []byte
+
 	// SPEntityID is the entity ID of this service provider.
 	SPEntityID string
 
@@ -136,8 +142,8 @@ type Provider struct {
 
 // New creates a new SAML Provider from the given configuration.
 func New(cfg Config) (*Provider, error) {
-	if cfg.IDPMetadataURL == "" && cfg.IDPMetadataPath == "" {
-		return nil, errors.New("samlsp: idp_metadata_url or idp_metadata_path is required")
+	if cfg.IDPMetadataURL == "" && cfg.IDPMetadataPath == "" && len(cfg.IDPMetadataXML) == 0 {
+		return nil, errors.New("samlsp: idp_metadata_url, idp_metadata_path, or idp_metadata_xml is required")
 	}
 	if cfg.SPEntityID == "" {
 		return nil, errors.New("samlsp: sp_entity_id is required")
@@ -166,11 +172,14 @@ func New(cfg Config) (*Provider, error) {
 	metadataURL, _ := url.Parse(cfg.MetadataURL)
 	sloURL, _ := url.Parse(cfg.SLOURL)
 
-	// Load IdP metadata from URL or file.
+	// Load IdP metadata from inline XML, file, or URL (in that precedence).
 	var idpMeta *saml.EntityDescriptor
-	if cfg.IDPMetadataPath != "" {
+	switch {
+	case len(cfg.IDPMetadataXML) > 0:
+		idpMeta, err = loadIDPMetadataFromXML(cfg.IDPMetadataXML)
+	case cfg.IDPMetadataPath != "":
 		idpMeta, err = loadIDPMetadataFromFile(cfg.IDPMetadataPath)
-	} else {
+	default:
 		idpMeta, err = fetchIDPMetadata(cfg.IDPMetadataURL)
 	}
 	if err != nil {
@@ -331,7 +340,13 @@ func (p *Provider) IDPEntityID() string {
 
 // RefreshMetadata fetches fresh IdP metadata and updates the provider.
 // Should be called periodically (e.g. every MetadataRefreshInterval).
+// Only the URL source is refreshable; file and pasted-XML sources are static,
+// so this is a no-op for them.
 func (p *Provider) RefreshMetadata(ctx context.Context) error {
+	if p.cfg.IDPMetadataURL == "" {
+		return nil
+	}
+
 	meta, err := fetchIDPMetadata(p.cfg.IDPMetadataURL)
 	if err != nil {
 		p.logger("ERROR", fmt.Sprintf("SAML metadata refresh failed: %v", err))
@@ -550,6 +565,25 @@ func loadIDPMetadataFromFile(path string) (*saml.EntityDescriptor, error) {
 	descriptor, err := samlsp.ParseMetadata(body)
 	if err != nil {
 		return nil, fmt.Errorf("parsing metadata XML from %q: %w", path, err)
+	}
+
+	return descriptor, nil
+}
+
+// loadIDPMetadataFromXML parses IdP metadata from raw XML pasted into the
+// configuration (the "paste" source). The same 1MB size limit as the file and
+// URL loaders applies.
+func loadIDPMetadataFromXML(body []byte) (*saml.EntityDescriptor, error) {
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return nil, errors.New("idp metadata XML is empty")
+	}
+	if len(body) > 1<<20 {
+		return nil, fmt.Errorf("idp metadata XML exceeds 1MB size limit")
+	}
+
+	descriptor, err := samlsp.ParseMetadata(body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing pasted metadata XML: %w", err)
 	}
 
 	return descriptor, nil

@@ -70,6 +70,34 @@ describe("AdminAuthPage", () => {
     );
   });
 
+  it("shows IdP metadata source dropdown defaulting to URL", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Generate SP Certificate" }),
+    );
+    expect(screen.getByRole("option", { name: "Paste XML" })).toBeInTheDocument();
+    // Default source is URL → URL input visible, no paste textarea.
+    expect(
+      screen.getByPlaceholderText("https://idp.example.com/metadata.xml"),
+    ).toBeInTheDocument();
+  });
+
+  it("switches IdP metadata source to paste XML", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("button", { name: "Generate SP Certificate" }),
+    );
+    fireEvent.change(screen.getByDisplayValue("Fetch from URL"), {
+      target: { value: "xml" },
+    });
+    expect(screen.getByPlaceholderText(/EntityDescriptor/)).toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText("https://idp.example.com/metadata.xml"),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not show cert section when no SAML provider", async () => {
     render(<AdminAuthPage />);
     await waitFor(() => screen.getByText("Authentication"));

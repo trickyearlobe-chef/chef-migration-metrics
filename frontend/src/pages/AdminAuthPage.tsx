@@ -142,6 +142,27 @@ function ProviderCard({
   onChange: (index: number, field: keyof AuthProvider, value: string | number | boolean | Record<string, string> | undefined) => void;
   onRemove: (index: number) => void;
 }) {
+  // The three IdP metadata sources are mutually exclusive. Track the selected
+  // source in local state (seeded from whichever field is populated) so the
+  // choice survives even before the admin types anything into it.
+  const [metadataSource, setMetadataSource] = useState<"url" | "path" | "xml">(
+    provider.idp_metadata_url
+      ? "url"
+      : provider.idp_metadata_path
+        ? "path"
+        : provider.idp_metadata_xml
+          ? "xml"
+          : "url",
+  );
+
+  function changeMetadataSource(next: "url" | "path" | "xml") {
+    setMetadataSource(next);
+    // Clear the non-selected sources so exactly one is ever sent to the backend.
+    if (next !== "url") onChange(index, "idp_metadata_url", "");
+    if (next !== "path") onChange(index, "idp_metadata_path", "");
+    if (next !== "xml") onChange(index, "idp_metadata_xml", "");
+  }
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -184,26 +205,54 @@ function ProviderCard({
 
         {provider.type === "saml" && (
           <div className="space-y-4">
-            <FieldRow label="IDP Metadata URL" hint="URL to the IdP SAML metadata XML (use this OR path below)">
-              <input
-                type="url"
-                value={provider.idp_metadata_url ?? ""}
-                onChange={(e) => onChange(index, "idp_metadata_url", e.target.value)}
-                placeholder="https://idp.example.com/metadata.xml"
-                className={INPUT_CLASS}
+            <FieldRow label="IdP Metadata Source" hint="How to supply the IdP's SAML metadata. Choose exactly one.">
+              <select
+                value={metadataSource}
+                onChange={(e) => changeMetadataSource(e.target.value as "url" | "path" | "xml")}
+                className={SELECT_CLASS}
                 disabled={saving}
-              />
+              >
+                <option value="url">Fetch from URL</option>
+                <option value="path">Read from file path</option>
+                <option value="xml">Paste XML</option>
+              </select>
             </FieldRow>
-            <FieldRow label="IDP Metadata Path" hint="Local file path to IdP metadata XML (e.g. for Google Workspace)">
-              <input
-                type="text"
-                value={provider.idp_metadata_path ?? ""}
-                onChange={(e) => onChange(index, "idp_metadata_path", e.target.value)}
-                placeholder="./GoogleIDPMetadata.xml"
-                className={INPUT_CLASS}
-                disabled={saving}
-              />
-            </FieldRow>
+            {metadataSource === "url" && (
+              <FieldRow label="IdP Metadata URL" hint="HTTPS URL to the IdP SAML metadata XML.">
+                <input
+                  type="url"
+                  value={provider.idp_metadata_url ?? ""}
+                  onChange={(e) => onChange(index, "idp_metadata_url", e.target.value)}
+                  placeholder="https://idp.example.com/metadata.xml"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+            )}
+            {metadataSource === "path" && (
+              <FieldRow label="IdP Metadata Path" hint="Local file path to IdP metadata XML (e.g. for Google Workspace).">
+                <input
+                  type="text"
+                  value={provider.idp_metadata_path ?? ""}
+                  onChange={(e) => onChange(index, "idp_metadata_path", e.target.value)}
+                  placeholder="./GoogleIDPMetadata.xml"
+                  className={INPUT_CLASS}
+                  disabled={saving}
+                />
+              </FieldRow>
+            )}
+            {metadataSource === "xml" && (
+              <FieldRow label="IdP Metadata XML" hint="Paste the IdP's SAML metadata XML directly.">
+                <textarea
+                  value={provider.idp_metadata_xml ?? ""}
+                  onChange={(e) => onChange(index, "idp_metadata_xml", e.target.value)}
+                  placeholder="<EntityDescriptor ...>...</EntityDescriptor>"
+                  rows={8}
+                  className={`${INPUT_CLASS} font-mono`}
+                  disabled={saving}
+                />
+              </FieldRow>
+            )}
             <FieldRow label="SP Entity ID" hint="Service Provider entity ID (e.g. https://app.example.com/saml)">
               <input
                 type="text"

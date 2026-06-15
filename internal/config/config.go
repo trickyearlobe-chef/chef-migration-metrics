@@ -740,6 +740,7 @@ type AuthProvider struct {
 	Type            string `yaml:"type"`
 	IDPMetadataURL  string `yaml:"idp_metadata_url,omitempty"`
 	IDPMetadataPath string `yaml:"idp_metadata_path,omitempty"`
+	IDPMetadataXML  string `yaml:"idp_metadata_xml,omitempty"`
 	SPEntityID      string `yaml:"sp_entity_id,omitempty"`
 
 	// SAML SP signing credentials (stored in encrypted credential store).
@@ -1833,10 +1834,27 @@ func (c *Config) validateAuth(ve *ValidationError) {
 		case "local":
 			// no additional config required
 		case "saml":
-			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
-				ve.addf("%s: idp_metadata_url or idp_metadata_path is required for saml provider", prefix)
-			} else if p.IDPMetadataURL != "" && !isHTTPSURL(p.IDPMetadataURL) {
+			sources := 0
+			if p.IDPMetadataURL != "" {
+				sources++
+			}
+			if p.IDPMetadataPath != "" {
+				sources++
+			}
+			if p.IDPMetadataXML != "" {
+				sources++
+			}
+			switch {
+			case sources == 0:
+				ve.addf("%s: idp_metadata_url, idp_metadata_path, or idp_metadata_xml is required for saml provider", prefix)
+			case sources > 1:
+				ve.addf("%s: idp_metadata_url, idp_metadata_path, and idp_metadata_xml are mutually exclusive (set exactly one)", prefix)
+			}
+			if p.IDPMetadataURL != "" && !isHTTPSURL(p.IDPMetadataURL) {
 				ve.addf("%s: idp_metadata_url must be an https:// URL", prefix)
+			}
+			if len(p.IDPMetadataXML) > 1<<20 {
+				ve.addf("%s: idp_metadata_xml exceeds 1MB size limit", prefix)
 			}
 			if p.SPEntityID == "" {
 				ve.addf("%s: sp_entity_id is required for saml provider", prefix)

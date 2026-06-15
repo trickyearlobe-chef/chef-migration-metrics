@@ -134,12 +134,24 @@ Configurable attribute names to extract identity fields from SAML assertions:
 
 ### IdP Metadata
 
-- IdP metadata must be fetchable from a configured HTTPS URL.
-- Metadata is cached locally with configurable refresh interval (default 24h).
+IdP metadata is supplied by exactly one of three mutually exclusive sources,
+selected in the admin auth page via a dropdown:
+
+- `idp_metadata_url` — fetched from a configured HTTPS URL (refreshable).
+- `idp_metadata_path` — read from a local file (e.g. Google Workspace export).
+- `idp_metadata_xml` — pasted directly and stored inline in the provider config
+  (for IdPs that expose neither a fetchable URL nor a server-readable file).
+
+Rules:
+- Exactly one source must be set; setting more than one is a validation error.
 - Only `https://` metadata URLs are accepted (SSRF protection).
-- Fetch timeout: 30 seconds. Response size limit: 1 MB.
-- On refresh failure, last-known-good metadata continues to be used.
-- IdP certificate rollover is supported via metadata refresh (new certs in metadata are trusted alongside existing ones until old ones expire).
+- Size limit: 1 MB (applies to all three sources). URL fetch timeout: 30 seconds.
+- The URL source is cached locally with a configurable refresh interval
+  (default 24h); on refresh failure, last-known-good metadata continues to be
+  used. The file and pasted-XML sources are static — there is nothing to refresh.
+- IdP certificate rollover is supported for the URL source via metadata refresh
+  (new certs in metadata are trusted alongside existing ones until old ones
+  expire). For file/pasted sources, rollover requires re-saving the metadata.
 
 ### RelayState Security
 

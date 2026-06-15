@@ -635,6 +635,7 @@ func (app *serverApp) buildSAMLProvider(ctx context.Context, cfg *config.Config)
 	spCfg := samlsp.Config{
 		IDPMetadataURL:    samlCfg.IDPMetadataURL,
 		IDPMetadataPath:   samlCfg.IDPMetadataPath,
+		IDPMetadataXML:    []byte(samlCfg.IDPMetadataXML),
 		SPEntityID:        samlCfg.SPEntityID,
 		ACSURL:            baseURL + "/api/v1/auth/saml/acs",
 		SLOURL:            baseURL + "/api/v1/auth/saml/slo",
