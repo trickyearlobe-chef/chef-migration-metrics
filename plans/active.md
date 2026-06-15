@@ -3,25 +3,17 @@
 Branch: `feature/saml-config-improvements` (off `main`). Do not merge without
 sign-off. Full plan: `plans/saml-config-improvements.md`.
 
-## Chunk A — IdP metadata via paste (3rd source) [TDD]
-Add inline `idp_metadata_xml` config field + provider support; UI swaps the two
-URL/path fields for a 3-way source dropdown (URL / file path / paste XML).
-Backend: `config.go` (field + one-of validation), `samlsp/provider.go` (Config
-field, New() load branch, refresh guard), `main.go buildSAMLProvider`.
-Frontend: `types/config.ts`, `AdminAuthPage.tsx`.
-Accept: `go test ./...`, golangci-lint, `npm test`+tsc+lint green.
+## Chunk A — IdP metadata via paste (3rd source) [TDD]  ✅ DONE (1a32fef)
+Inline `idp_metadata_xml` config field + provider support; UI 3-way source
+dropdown (URL / file path / paste XML). spec auth.md §IdP Metadata updated.
 
-## Chunk B — SP base URL for export (hostname + port) [TDD]
-Per-provider `sp_base_url` field as canonical base for ACS/SLO/metadata/entity
-(fixes `localhost:8080`). UI field defaults to admin browser origin; fallback
-never emits the http-redirect port.
-Backend: `config.go` (field + validation), `main.go buildSAMLProvider`.
-Frontend: `types/config.ts`, `AdminAuthPage.tsx`.
-Accept: same as Chunk A.
+## Chunk B — SP base URL for export (hostname + port) [TDD]  ✅ DONE (764c1da)
+Per-provider `sp_base_url` (canonical base for ACS/SLO/metadata/entity, fixes
+`localhost:8080`); UI defaults to admin browser origin, persisted on save;
+fallback uses effective HTTPS port, never the redirect port. spec auth.md
+§SP Metadata Export + config example updated.
 
-## Spec edits (sign-off: amend as part of work, review in final summary)
-`auth.md` §IdP Metadata (paste source), §SP Metadata Export (sp_base_url),
-config example; check `web-api-auth.md`.
+## Status: ready for sign-off + merge (NOT merged). web-api-auth.md needed no change.
 
 ## Parked
 - Notifications retirement: Chunk 1 committed on
