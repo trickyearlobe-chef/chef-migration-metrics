@@ -166,6 +166,7 @@ export interface AuthProvider {
   idp_metadata_path?: string;
   idp_metadata_xml?: string;
   sp_entity_id?: string;
+  sp_base_url?: string;
   sp_certificate_credential?: string;
   sp_private_key_credential?: string;
   username_attr?: string;

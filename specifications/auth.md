@@ -65,13 +65,25 @@ required) so the IdP can poll it directly — it exposes no private key material
 
 Alongside the metadata URL the page surfaces the absolute **ACS (callback) URL**,
 **SLO URL**, and **SP entity ID**, each with a copy action. These are computed by
-the backend from the same base URL the SP metadata advertises (not guessed from the
-browser origin), so they match exactly what the IdP must be told. They exist for
-IdPs configured by hand rather than by metadata import (e.g. Google, Okta), where
-the administrator pastes the ACS/reply URL directly — without a surfaced value the
-correct path (`/saml/acs`, not the `/saml` prefix) is not discoverable. The values
-are served by an admin-only endpoint and are available only once a SAML provider is
-configured and initialised.
+the backend from the same base URL the SP metadata advertises, so they match
+exactly what the IdP must be told. They exist for IdPs configured by hand rather
+than by metadata import (e.g. Google, Okta), where the administrator pastes the
+ACS/reply URL directly — without a surfaced value the correct path (`/saml/acs`,
+not the `/saml` prefix) is not discoverable. The values are served by an
+admin-only endpoint and are available only once a SAML provider is configured
+and initialised.
+
+The advertised base URL (scheme + host + port) comes from the per-provider
+**`sp_base_url`** setting. The admin auth page defaults this field to the browser
+origin the administrator is currently using — i.e. the externally-reachable
+scheme/host (and port, if non-standard) — and persists it on save, so the
+exported metadata points at a host users can actually reach. When `sp_base_url`
+is unset the backend falls back to the host of an http(s) `sp_entity_id`, and
+finally to `scheme://localhost:<effective-https-port>`. The fallback uses the
+effective HTTPS port (e.g. 443 under automatic HTTPS), never the
+HTTP-redirect/plain port — the previous hardcoded `https://localhost:8080` was
+both unreachable and pointed at the redirect listener. `sp_base_url` must be an
+absolute http(s) URL with no path.
 
 ### SP-Initiated SSO Flow
 
@@ -317,7 +329,9 @@ auth:
     - type: local
     - type: saml
       idp_metadata_url: "https://idp.example.com/metadata"
+      # ...or idp_metadata_path / idp_metadata_xml (exactly one source).
       sp_entity_id: "https://cmm.example.com"
+      sp_base_url: "https://cmm.example.com"
       sp_certificate_credential: "saml-sp-cert"
       sp_private_key_credential: "saml-sp-key"
       username_attr: ""

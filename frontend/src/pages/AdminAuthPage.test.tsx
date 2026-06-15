@@ -98,6 +98,16 @@ describe("AdminAuthPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("defaults the SP Base URL field to the browser origin", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue(window.location.origin),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it("does not show cert section when no SAML provider", async () => {
     render(<AdminAuthPage />);
     await waitFor(() => screen.getByText("Authentication"));

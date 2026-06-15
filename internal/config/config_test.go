@@ -1646,6 +1646,51 @@ auth:
 	expectParseError(t, yaml, "idp_metadata_url, idp_metadata_path, or idp_metadata_xml is required for saml")
 }
 
+func TestValidation_AuthSAMLInvalidSPBaseURL(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: https://idp.example.com/metadata
+      sp_entity_id: test
+      sp_private_key_credential: key
+      sp_certificate_credential: cert
+      sp_base_url: "cmm.example.com/path"
+`
+	expectParseError(t, yaml, "sp_base_url")
+}
+
+func TestValidation_AuthSAMLValidSPBaseURL(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+auth:
+  providers:
+    - type: saml
+      idp_metadata_url: https://idp.example.com/metadata
+      sp_entity_id: test
+      sp_private_key_credential: key
+      sp_certificate_credential: cert
+      sp_base_url: "https://cmm.example.com"
+`
+	cfg := mustParse(t, yaml)
+	if got := cfg.Auth.Providers[0].SPBaseURL; got != "https://cmm.example.com" {
+		t.Fatalf("sp_base_url = %q, want %q", got, "https://cmm.example.com")
+	}
+}
+
 func TestValidation_AuthSAMLMetadataSourcesMutuallyExclusive(t *testing.T) {
 	yaml := `
 organisations:

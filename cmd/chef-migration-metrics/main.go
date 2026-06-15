@@ -620,17 +620,13 @@ func (app *serverApp) buildSAMLProvider(ctx context.Context, cfg *config.Config)
 		return nil, webapi.SAMLEndpoints{}, fmt.Errorf("resolving SP private key %q: %w", samlCfg.SPPrivateKeyCredential, err)
 	}
 
-	// Derive base URL for ACS/SLO/metadata endpoints.
+	// Derive the externally-reachable base URL for ACS/SLO/metadata endpoints.
 	scheme := "http"
 	if cfg.Server.TLS.Mode == "static" || cfg.Server.TLS.Mode == "acme" {
 		scheme = "https"
 	}
-	baseURL := fmt.Sprintf("%s://localhost:%d", scheme, cfg.Server.Port)
-	if strings.HasPrefix(samlCfg.SPEntityID, "http") {
-		if u, err := url.Parse(samlCfg.SPEntityID); err == nil {
-			baseURL = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-		}
-	}
+	httpsPort, _ := app.effectiveTLSTopology(cfg.Server)
+	baseURL := resolveSPBaseURL(samlCfg.SPBaseURL, samlCfg.SPEntityID, scheme, httpsPort)
 
 	spCfg := samlsp.Config{
 		IDPMetadataURL:    samlCfg.IDPMetadataURL,
@@ -667,6 +663,31 @@ func (app *serverApp) buildSAMLProvider(ctx context.Context, cfg *config.Config)
 		MetadataURL: spCfg.MetadataURL,
 		EntityID:    spCfg.SPEntityID,
 	}, nil
+}
+
+// resolveSPBaseURL determines the externally-reachable base URL the SP metadata
+// advertises (the ACS/SLO/metadata Locations). Precedence:
+//  1. an explicit sp_base_url (canonical; the admin UI defaults it to the
+//     browser origin so it reflects how users actually reach the server),
+//  2. the host of an http(s) sp_entity_id,
+//  3. a scheme://localhost:<httpsPort> fallback (standard ports omitted).
+//
+// httpsPort must be the effective HTTPS listen port (443 when automatic HTTPS is
+// active), never the http-redirect port — that is what made the old hardcoded
+// "https://localhost:8080" both unreachable and pointed at the wrong service.
+func resolveSPBaseURL(spBaseURL, spEntityID, scheme string, httpsPort int) string {
+	if spBaseURL != "" {
+		return strings.TrimRight(spBaseURL, "/")
+	}
+	if strings.HasPrefix(spEntityID, "http") {
+		if u, err := url.Parse(spEntityID); err == nil && u.Host != "" {
+			return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+		}
+	}
+	if (scheme == "https" && httpsPort == 443) || (scheme == "http" && httpsPort == 80) {
+		return scheme + "://localhost"
+	}
+	return fmt.Sprintf("%s://localhost:%d", scheme, httpsPort)
 }
 
 // ---------------------------------------------------------------------------

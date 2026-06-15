@@ -71,6 +71,11 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 					fmt.Sprintf("%s: sp_entity_id is required for saml provider", prefix))
 				return
 			}
+			if p.SPBaseURL != "" && !config.IsValidSPBaseURL(p.SPBaseURL) {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: sp_base_url must be an absolute http(s) URL with no path (e.g. https://cmm.example.com)", prefix))
+				return
+			}
 			if p.SPPrivateKeyCredential == "" {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
 					fmt.Sprintf("%s: sp_private_key_credential is required for saml provider", prefix))

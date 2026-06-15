@@ -263,6 +263,19 @@ function ProviderCard({
                 disabled={saving}
               />
             </FieldRow>
+            <FieldRow
+              label="SP Base URL"
+              hint="Externally-reachable base URL (scheme://host[:port]) advertised in the exported metadata. Defaults to how you reached this page."
+            >
+              <input
+                type="url"
+                value={provider.sp_base_url ?? window.location.origin}
+                onChange={(e) => onChange(index, "sp_base_url", e.target.value)}
+                placeholder="https://cmm.example.com"
+                className={INPUT_CLASS}
+                disabled={saving}
+              />
+            </FieldRow>
             <div className="grid grid-cols-2 gap-4">
               <FieldRow label="SP Certificate Credential" hint="Credential store name for SP cert">
                 <input
@@ -480,6 +493,9 @@ export function AdminAuthPage() {
               ...p,
               sp_certificate_credential: p.sp_certificate_credential || "saml-sp-cert",
               sp_private_key_credential: p.sp_private_key_credential || "saml-sp-key",
+              // Persist the displayed default (browser origin) when unedited, so
+              // the exported metadata advertises a reachable host/port.
+              sp_base_url: p.sp_base_url || window.location.origin,
             }
           : p,
       ),
