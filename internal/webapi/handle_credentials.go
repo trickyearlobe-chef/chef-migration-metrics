@@ -369,6 +369,5 @@ func credentialToResponse(m *secrets.CredentialMetadata) credentialResponse {
 func isValidationError(err error) bool {
 	return errors.Is(err, secrets.ErrInvalidCredentialType) ||
 		errors.Is(err, secrets.ErrEmptyValue) ||
-		errors.Is(err, secrets.ErrInvalidPEMKey) ||
-		errors.Is(err, secrets.ErrInvalidWebhookURL)
+		errors.Is(err, secrets.ErrInvalidPEMKey)
 }

@@ -35,7 +35,7 @@ type Credential struct {
 	Name string
 
 	// CredentialType is one of the recognised credential types:
-	// chef_client_key, smtp_password, webhook_url, generic.
+	// chef_client_key, generic.
 	CredentialType string
 
 	// Plaintext is the decrypted credential value. The caller MUST call
