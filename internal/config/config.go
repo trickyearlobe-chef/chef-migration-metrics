@@ -740,7 +740,14 @@ type AuthProvider struct {
 	Type            string `yaml:"type"`
 	IDPMetadataURL  string `yaml:"idp_metadata_url,omitempty"`
 	IDPMetadataPath string `yaml:"idp_metadata_path,omitempty"`
+	IDPMetadataXML  string `yaml:"idp_metadata_xml,omitempty"`
 	SPEntityID      string `yaml:"sp_entity_id,omitempty"`
+
+	// SPBaseURL is the externally-reachable base URL (scheme://host[:port]) the
+	// SP metadata advertises for its ACS/SLO/metadata endpoints. When empty the
+	// server falls back to a best-effort value; the admin UI defaults it to the
+	// browser origin. Must be an absolute http(s) URL with no path.
+	SPBaseURL string `yaml:"sp_base_url,omitempty"`
 
 	// SAML SP signing credentials (stored in encrypted credential store).
 	SPCertificateCredential string `yaml:"sp_certificate_credential,omitempty"`
@@ -1833,13 +1840,33 @@ func (c *Config) validateAuth(ve *ValidationError) {
 		case "local":
 			// no additional config required
 		case "saml":
-			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
-				ve.addf("%s: idp_metadata_url or idp_metadata_path is required for saml provider", prefix)
-			} else if p.IDPMetadataURL != "" && !isHTTPSURL(p.IDPMetadataURL) {
+			sources := 0
+			if p.IDPMetadataURL != "" {
+				sources++
+			}
+			if p.IDPMetadataPath != "" {
+				sources++
+			}
+			if p.IDPMetadataXML != "" {
+				sources++
+			}
+			switch {
+			case sources == 0:
+				ve.addf("%s: idp_metadata_url, idp_metadata_path, or idp_metadata_xml is required for saml provider", prefix)
+			case sources > 1:
+				ve.addf("%s: idp_metadata_url, idp_metadata_path, and idp_metadata_xml are mutually exclusive (set exactly one)", prefix)
+			}
+			if p.IDPMetadataURL != "" && !isHTTPSURL(p.IDPMetadataURL) {
 				ve.addf("%s: idp_metadata_url must be an https:// URL", prefix)
+			}
+			if len(p.IDPMetadataXML) > 1<<20 {
+				ve.addf("%s: idp_metadata_xml exceeds 1MB size limit", prefix)
 			}
 			if p.SPEntityID == "" {
 				ve.addf("%s: sp_entity_id is required for saml provider", prefix)
+			}
+			if p.SPBaseURL != "" && !IsValidSPBaseURL(p.SPBaseURL) {
+				ve.addf("%s: sp_base_url must be an absolute http(s) URL with no path (e.g. https://cmm.example.com)", prefix)
 			}
 			if p.SPPrivateKeyCredential == "" {
 				ve.addf("%s: sp_private_key_credential is required for saml provider", prefix)
@@ -1929,6 +1956,26 @@ func (c *Config) validateOwnership(ve *ValidationError) {
 // isHTTPSURL returns true if s starts with "https://".
 func isHTTPSURL(s string) bool {
 	return len(s) > 8 && strings.EqualFold(s[:8], "https://")
+}
+
+// IsValidSPBaseURL returns true if s is an absolute http(s) URL with a host and
+// no path/query/fragment — the shape required for a SAML SP base URL that the
+// ACS/SLO/metadata endpoint paths are appended to.
+func IsValidSPBaseURL(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	if u.Host == "" {
+		return false
+	}
+	if u.Path != "" && u.Path != "/" {
+		return false
+	}
+	return u.RawQuery == "" && u.Fragment == ""
 }
 
 // checkDirWritable checks that the given path exists and is a writable

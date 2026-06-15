@@ -1,35 +1,20 @@
-# Active Plan — vCenter SSL-verify key reconciliation + typed UI widgets
+# Active Plan — SAML config improvements
 
-## Problem
-Orphan sweep fails with x509 even though SSL verify is "disabled" in the UI.
-Root cause: three consumers of `driver_settings` disagree on TLS.
-- Test Kitchen (VM launch) reads `vcenter_disable_ssl_verify` (lenient, works).
-- CMM test-connection (`ListTemplates`, SOAP) hardcodes `insecure=true` (vcenter.go:136) — always green, hides the problem.
-- CMM orphan sweep (REST) reads a *different* key `vcenter_insecure` and needs a real bool; the UI's freeform text box stores a string. Key never matches + type never matches → verify stays on → x509.
+Branch: `feature/saml-config-improvements` (off `main`). Do not merge without
+sign-off. Full plan: `plans/saml-config-improvements.md`.
 
-## Decisions (confirmed with user)
-- Standardise on `vcenter_disable_ssl_verify` as the canonical key; CMM reads it, falls back to legacy `vcenter_insecure`.
-- UI: checkbox for `vcenter_disable_ssl_verify` (emits JSON bool); dropdown for `clone_type` (full/linked).
-- `ListTemplates` must honour the flag so test-connection stops lying.
+## Chunk A — IdP metadata via paste (3rd source) [TDD]  ✅ DONE (1a32fef)
+Inline `idp_metadata_xml` config field + provider support; UI 3-way source
+dropdown (URL / file path / paste XML). spec auth.md §IdP Metadata updated.
 
-## Chunk A — Backend (Go)  [internal/hypervisor/factory.go, vcenter.go + tests]  ✅ DONE
-- [x] `settingBool` accepts bool AND string "true"/"false".
-- [x] `newVCenterFromConfig` reads `vcenter_disable_ssl_verify`, falls back to `vcenter_insecure`.
-- [x] `VCenterClient` stores `insecureSkipTLSVerify`; `ListTemplates` passes it to `govmomi.NewClient`.
-- Accept: factory tests (bool/string/legacy/default) pass; `go test ./...` + golangci-lint green.
+## Chunk B — SP base URL for export (hostname + port) [TDD]  ✅ DONE (764c1da)
+Per-provider `sp_base_url` (canonical base for ACS/SLO/metadata/entity, fixes
+`localhost:8080`); UI defaults to admin browser origin, persisted on save;
+fallback uses effective HTTPS port, never the redirect port. spec auth.md
+§SP Metadata Export + config example updated.
 
-## Chunk B — Frontend (typed widgets)  [AdminTestKitchenPage.tsx + test]  ✅ DONE
-- [x] Known-key widgets: `vcenter_disable_ssl_verify`→checkbox, `clone_type`→select[full,linked].
-- [x] Save converts known boolean keys to real JSON booleans (`kvToRecordTyped`).
-- [x] Load tolerates string "true"/"false".
-- Accept: 402 frontend tests pass; tsc + lint green.
+## Status: ready for sign-off + merge (NOT merged). web-api-auth.md needed no change.
 
-## Chunk C — Docs/spec/tech-debt  ✅ DONE
-- [x] `specifications/test-kitchen-config-ui.md`: typed widgets + canonical `vcenter_disable_ssl_verify` read by both TK and CMM.
-- [x] `plans/todo-tech-debt.md`: reconciled item + legacy-key deprecation + proxmox-unify follow-ups.
-
-## Status: ready for commit + sign-off (NOT yet committed; NOT merged).
-
-## Notes
-- Proxmox left as-is (`proxmox_insecure`); benefits from the `settingBool` string fix.
-- Branch: `fix/vcenter-ssl-verify-key`. Do not merge without sign-off.
+## Parked
+- Notifications retirement: Chunk 1 committed on
+  `chore/retire-notifications-cleanup` (31c887c); Chunks 2-3 queued there.

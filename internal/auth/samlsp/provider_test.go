@@ -259,9 +259,9 @@ func TestNewProvider_ValidationErrors(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "missing idp_metadata_url",
+			name:    "missing all metadata sources",
 			cfg:     Config{SPEntityID: "x", ACSURL: "x", Certificate: []byte("x"), PrivateKey: []byte("x")},
-			wantErr: "idp_metadata_url or idp_metadata_path is required",
+			wantErr: "idp_metadata_url, idp_metadata_path, or idp_metadata_xml is required",
 		},
 		{
 			name:    "missing sp_entity_id",
@@ -295,6 +295,39 @@ func TestNewProvider_ValidationErrors(t *testing.T) {
 				t.Errorf("error %q should contain %q", err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+// minimalIDPMetadataXML is a valid SAML 2.0 IdP EntityDescriptor used to
+// exercise the inline-XML (paste) metadata source.
+const minimalIDPMetadataXML = `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com/idp">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>`
+
+func TestLoadIDPMetadataFromXML_Valid(t *testing.T) {
+	desc, err := loadIDPMetadataFromXML([]byte(minimalIDPMetadataXML))
+	if err != nil {
+		t.Fatalf("loadIDPMetadataFromXML: %v", err)
+	}
+	if desc == nil {
+		t.Fatal("expected descriptor, got nil")
+	}
+	if desc.EntityID != "https://idp.example.com/idp" {
+		t.Errorf("EntityID = %q, want %q", desc.EntityID, "https://idp.example.com/idp")
+	}
+}
+
+func TestLoadIDPMetadataFromXML_Invalid(t *testing.T) {
+	if _, err := loadIDPMetadataFromXML([]byte("not xml at all")); err == nil {
+		t.Fatal("expected error for non-metadata XML, got nil")
+	}
+}
+
+func TestLoadIDPMetadataFromXML_Empty(t *testing.T) {
+	if _, err := loadIDPMetadataFromXML([]byte("   ")); err == nil {
+		t.Fatal("expected error for empty XML, got nil")
 	}
 }
 

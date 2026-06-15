@@ -46,14 +46,34 @@ func (r *Router) putAdminConfigAuth(w http.ResponseWriter, req *http.Request) {
 		case "local":
 			// no additional fields required
 		case "saml":
-			if p.IDPMetadataURL == "" && p.IDPMetadataPath == "" {
+			sources := 0
+			if p.IDPMetadataURL != "" {
+				sources++
+			}
+			if p.IDPMetadataPath != "" {
+				sources++
+			}
+			if p.IDPMetadataXML != "" {
+				sources++
+			}
+			if sources == 0 {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
-					fmt.Sprintf("%s: idp_metadata_url or idp_metadata_path is required for saml provider", prefix))
+					fmt.Sprintf("%s: idp_metadata_url, idp_metadata_path, or idp_metadata_xml is required for saml provider", prefix))
+				return
+			}
+			if sources > 1 {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: idp_metadata_url, idp_metadata_path, and idp_metadata_xml are mutually exclusive (set exactly one)", prefix))
 				return
 			}
 			if p.SPEntityID == "" {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
 					fmt.Sprintf("%s: sp_entity_id is required for saml provider", prefix))
+				return
+			}
+			if p.SPBaseURL != "" && !config.IsValidSPBaseURL(p.SPBaseURL) {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: sp_base_url must be an absolute http(s) URL with no path (e.g. https://cmm.example.com)", prefix))
 				return
 			}
 			if p.SPPrivateKeyCredential == "" {
