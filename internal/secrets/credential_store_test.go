@@ -421,20 +421,6 @@ func mustCreateGeneric(t *testing.T, store CredentialStore, name, value, created
 	return meta
 }
 
-func mustCreateWebhook(t *testing.T, store CredentialStore, name, url, createdBy string) *CredentialMetadata {
-	t.Helper()
-	meta, err := store.Create(context.Background(), CreateCredentialInput{
-		Name:           name,
-		CredentialType: CredentialTypeWebhookURL,
-		Plaintext:      []byte(url),
-		CreatedBy:      createdBy,
-	})
-	if err != nil {
-		t.Fatalf("failed to create webhook credential %q: %v", name, err)
-	}
-	return meta
-}
-
 // ---------------------------------------------------------------------------
 // Create tests
 // ---------------------------------------------------------------------------
@@ -475,46 +461,6 @@ func TestStore_Create_Success_Generic(t *testing.T) {
 	// Not rotated yet.
 	if meta.LastRotatedAt != nil {
 		t.Error("LastRotatedAt should be nil on initial creation")
-	}
-}
-
-func TestStore_Create_Success_WebhookURL(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	meta, err := store.Create(ctx, CreateCredentialInput{
-		Name:           "webhook-prod",
-		CredentialType: CredentialTypeWebhookURL,
-		Plaintext:      []byte("https://hooks.example.com/notify"),
-		CreatedBy:      "admin",
-	})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-
-	if meta.Name != "webhook-prod" {
-		t.Errorf("Name = %q, want %q", meta.Name, "webhook-prod")
-	}
-	if meta.CredentialType != CredentialTypeWebhookURL {
-		t.Errorf("CredentialType = %q, want %q", meta.CredentialType, CredentialTypeWebhookURL)
-	}
-}
-
-func TestStore_Create_Success_SMTPPassword(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	meta, err := store.Create(ctx, CreateCredentialInput{
-		Name:           "smtp-pass",
-		CredentialType: CredentialTypeSMTPPassword,
-		Plaintext:      []byte("smtp-secret"),
-		CreatedBy:      "admin",
-	})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-	if meta.CredentialType != CredentialTypeSMTPPassword {
-		t.Errorf("CredentialType = %q, want %q", meta.CredentialType, CredentialTypeSMTPPassword)
 	}
 }
 
@@ -625,24 +571,6 @@ func TestStore_Create_NilPlaintext(t *testing.T) {
 	}
 }
 
-func TestStore_Create_WebhookInvalidURL(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	_, err := store.Create(ctx, CreateCredentialInput{
-		Name:           "bad-webhook",
-		CredentialType: CredentialTypeWebhookURL,
-		Plaintext:      []byte("ftp://not-http.example.com"),
-		CreatedBy:      "admin",
-	})
-	if err == nil {
-		t.Fatal("expected error for FTP webhook URL")
-	}
-	if !errors.Is(err, ErrInvalidWebhookURL) {
-		t.Errorf("expected ErrInvalidWebhookURL in chain, got: %v", err)
-	}
-}
-
 func TestStore_Create_NoEncryptor(t *testing.T) {
 	store := testStoreNoEncryptor(t)
 	ctx := context.Background()
@@ -698,8 +626,6 @@ func TestStore_Get_DecryptionRoundTrip_AllTypes(t *testing.T) {
 		value          string
 	}{
 		{"generic-cred", CredentialTypeGeneric, "generic-secret"},
-		{"smtp-cred", CredentialTypeSMTPPassword, "smtp-password"},
-		{"webhook-cred", CredentialTypeWebhookURL, "https://hooks.example.com/test"},
 	}
 
 	for _, tt := range tests {
@@ -932,58 +858,28 @@ func TestStore_Update_PreservesCredentialType(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	mustCreateWebhook(t, store, "webhook-update", "https://old.example.com", "admin")
+	mustCreateGeneric(t, store, "generic-update", "old-value", "admin")
 
 	_, err := store.Update(ctx, UpdateCredentialInput{
-		Name:      "webhook-update",
-		Plaintext: []byte("https://new.example.com/hook"),
+		Name:      "generic-update",
+		Plaintext: []byte("new-value"),
 		UpdatedBy: "operator",
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
 
-	cred, err := store.Get(ctx, "webhook-update")
+	cred, err := store.Get(ctx, "generic-update")
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
 	defer ZeroBytes(cred.Plaintext)
 
-	if cred.CredentialType != CredentialTypeWebhookURL {
+	if cred.CredentialType != CredentialTypeGeneric {
 		t.Errorf("CredentialType changed to %q after update", cred.CredentialType)
 	}
-	if string(cred.Plaintext) != "https://new.example.com/hook" {
+	if string(cred.Plaintext) != "new-value" {
 		t.Errorf("Plaintext = %q", string(cred.Plaintext))
-	}
-}
-
-func TestStore_Update_ValidationFailure_WebhookInvalidURL(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	mustCreateWebhook(t, store, "webhook-bad-update", "https://valid.example.com", "admin")
-
-	_, err := store.Update(ctx, UpdateCredentialInput{
-		Name:      "webhook-bad-update",
-		Plaintext: []byte("ftp://not-http.example.com"),
-		UpdatedBy: "operator",
-	})
-	if err == nil {
-		t.Fatal("expected validation error for FTP URL")
-	}
-	if !errors.Is(err, ErrInvalidWebhookURL) {
-		t.Errorf("expected ErrInvalidWebhookURL in chain, got: %v", err)
-	}
-
-	// Original value should be unchanged.
-	cred, err := store.Get(ctx, "webhook-bad-update")
-	if err != nil {
-		t.Fatalf("Get failed: %v", err)
-	}
-	defer ZeroBytes(cred.Plaintext)
-
-	if string(cred.Plaintext) != "https://valid.example.com" {
-		t.Errorf("Value should be unchanged after failed update, got %q", string(cred.Plaintext))
 	}
 }
 
@@ -1286,25 +1182,15 @@ func TestStore_List_MixedTypes(t *testing.T) {
 	ctx := context.Background()
 
 	mustCreateGeneric(t, store, "generic-1", "v1", "admin")
-	mustCreateWebhook(t, store, "webhook-1", "https://example.com", "admin")
-
-	_, err := store.Create(ctx, CreateCredentialInput{
-		Name:           "smtp-1",
-		CredentialType: CredentialTypeSMTPPassword,
-		Plaintext:      []byte("smtp-pass"),
-		CreatedBy:      "admin",
-	})
-	if err != nil {
-		t.Fatalf("Create SMTP failed: %v", err)
-	}
+	mustCreateGeneric(t, store, "generic-2", "v2", "admin")
 
 	list, err := store.List(ctx)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
 
-	if len(list) != 3 {
-		t.Fatalf("List length = %d, want 3", len(list))
+	if len(list) != 2 {
+		t.Fatalf("List length = %d, want 2", len(list))
 	}
 
 	types := make(map[string]bool)
@@ -1313,12 +1199,6 @@ func TestStore_List_MixedTypes(t *testing.T) {
 	}
 	if !types[CredentialTypeGeneric] {
 		t.Error("missing generic type in list")
-	}
-	if !types[CredentialTypeWebhookURL] {
-		t.Error("missing webhook type in list")
-	}
-	if !types[CredentialTypeSMTPPassword] {
-		t.Error("missing smtp type in list")
 	}
 }
 
@@ -1332,7 +1212,6 @@ func TestStore_ListByType_Success(t *testing.T) {
 
 	mustCreateGeneric(t, store, "gen-1", "v1", "admin")
 	mustCreateGeneric(t, store, "gen-2", "v2", "admin")
-	mustCreateWebhook(t, store, "hook-1", "https://example.com", "admin")
 
 	list, err := store.ListByType(ctx, CredentialTypeGeneric)
 	if err != nil {
@@ -1356,7 +1235,7 @@ func TestStore_ListByType_Empty(t *testing.T) {
 
 	mustCreateGeneric(t, store, "gen-only", "v1", "admin")
 
-	list, err := store.ListByType(ctx, CredentialTypeWebhookURL)
+	list, err := store.ListByType(ctx, CredentialTypeChefClientKey)
 	if err != nil {
 		t.Fatalf("ListByType failed: %v", err)
 	}
@@ -1408,17 +1287,9 @@ func TestStore_ListByType_AllTypes(t *testing.T) {
 	ctx := context.Background()
 
 	mustCreateGeneric(t, store, "gen", "v", "admin")
-	mustCreateWebhook(t, store, "hook", "https://x.com", "admin")
-
-	_, _ = store.Create(ctx, CreateCredentialInput{
-		Name: "smtp", CredentialType: CredentialTypeSMTPPassword,
-		Plaintext: []byte("p"), CreatedBy: "admin",
-	})
 
 	for _, ct := range []string{
 		CredentialTypeGeneric,
-		CredentialTypeWebhookURL,
-		CredentialTypeSMTPPassword,
 	} {
 		list, err := store.ListByType(ctx, ct)
 		if err != nil {
@@ -1441,21 +1312,6 @@ func TestStore_Test_Generic_Valid(t *testing.T) {
 	mustCreateGeneric(t, store, "test-generic", "some-value", "admin")
 
 	result, err := store.Test(ctx, "test-generic")
-	if err != nil {
-		t.Fatalf("Test failed: %v", err)
-	}
-	if !result.Valid {
-		t.Errorf("expected Valid=true, got Valid=false, Error=%v", result.Error)
-	}
-}
-
-func TestStore_Test_Webhook_Valid(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	mustCreateWebhook(t, store, "test-webhook", "https://hooks.example.com/test", "admin")
-
-	result, err := store.Test(ctx, "test-webhook")
 	if err != nil {
 		t.Fatalf("Test failed: %v", err)
 	}
@@ -1943,7 +1799,6 @@ func TestSentinelErrors_AreDistinct(t *testing.T) {
 		ErrInvalidCredentialType,
 		ErrEmptyValue,
 		ErrInvalidPEMKey,
-		ErrInvalidWebhookURL,
 	}
 
 	for i := 0; i < len(sentinels); i++ {
@@ -2123,14 +1978,10 @@ func TestStore_MultipleTypes_IndependentStorage(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	// Create one of each type (except chef_client_key which needs a real PEM).
+	// Create multiple generic credentials (other types need a real PEM or
+	// have been retired).
 	mustCreateGeneric(t, store, "generic-1", "gen-value", "admin")
-	mustCreateWebhook(t, store, "webhook-1", "https://example.com/hook", "admin")
-
-	_, _ = store.Create(ctx, CreateCredentialInput{
-		Name: "smtp-1", CredentialType: CredentialTypeSMTPPassword,
-		Plaintext: []byte("smtp-pass"), CreatedBy: "admin",
-	})
+	mustCreateGeneric(t, store, "generic-2", "gen-value-2", "admin")
 
 	// Verify each can be retrieved independently.
 	cred, _ := store.Get(ctx, "generic-1")
@@ -2139,22 +1990,16 @@ func TestStore_MultipleTypes_IndependentStorage(t *testing.T) {
 	}
 	ZeroBytes(cred.Plaintext)
 
-	cred, _ = store.Get(ctx, "webhook-1")
-	if string(cred.Plaintext) != "https://example.com/hook" {
-		t.Errorf("webhook value = %q", string(cred.Plaintext))
+	cred, _ = store.Get(ctx, "generic-2")
+	if string(cred.Plaintext) != "gen-value-2" {
+		t.Errorf("generic-2 value = %q", string(cred.Plaintext))
 	}
 	ZeroBytes(cred.Plaintext)
 
-	cred, _ = store.Get(ctx, "smtp-1")
-	if string(cred.Plaintext) != "smtp-pass" {
-		t.Errorf("smtp value = %q", string(cred.Plaintext))
-	}
-	ZeroBytes(cred.Plaintext)
-
-	// Verify list shows all 3.
+	// Verify list shows both.
 	list, _ := store.List(ctx)
-	if len(list) != 3 {
-		t.Errorf("List length = %d, want 3", len(list))
+	if len(list) != 2 {
+		t.Errorf("List length = %d, want 2", len(list))
 	}
 }
 

@@ -139,6 +139,7 @@ skip_content_allowlist() {
   case "$f" in
     .githooks/pre-commit) return 0 ;;
     cmd/chef-migration-metrics/main.go) return 0 ;; # default seed password constant, not a real secret
+    frontend/src/pages/credentials/ValueField.tsx) return 0 ;; # PEM-header placeholder in input hint, not a real key
     deploy/docker-compose/.env.example) return 0 ;;
     deploy/docker-compose/README.md) return 0 ;;
     deploy/pkg/env-file) return 0 ;; # packaged env template — placeholder DATABASE_URL, not a real secret

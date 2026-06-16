@@ -30,7 +30,7 @@ The `credentials` table (fully specified in the [Datastore Specification](datast
 |--------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
 | `name` | TEXT | No | Unique human-readable identifier (e.g. `myorg-production-key`) |
-| `credential_type` | TEXT | No | One of: `chef_client_key`, `smtp_password`, `webhook_url`, `generic` |
+| `credential_type` | TEXT | No | One of: `chef_client_key`, `generic` |
 | `encrypted_value` | TEXT | No | `<nonce_hex>:<ciphertext_hex>` |
 | `metadata` | JSONB | Yes | Non-sensitive metadata (e.g. `{"key_format": "pkcs1", "bits": 2048}`). **Never** contains plaintext. |
 | `last_rotated_at` | TIMESTAMPTZ | Yes | When the credential value was last updated |
@@ -65,8 +65,8 @@ The `credentials` table (fully specified in the [Datastore Specification](datast
 
 ┌──────────────────────┐   Credential needed   ┌───────────────────────┐
 │  Chef API signing    │ ◄──────────────────── │  credentials table    │
-│  SMTP auth           │   1. Read ciphertext  │                       │
-│  Webhook dispatch    │   2. Decrypt in mem   │  (encrypted_value)    │
+│                      │   1. Read ciphertext  │                       │
+│                      │   2. Decrypt in mem   │  (encrypted_value)    │
 │                      │   3. Use              │                       │
 │                      │   4. Zero memory      │                       │
 └──────────────────────┘                       └───────────────────────┘
@@ -158,7 +158,7 @@ When rotated via the Web API, the `last_rotated_at` timestamp is updated. The ol
 
 These rules apply to **all** credential storage methods (database, env var, file path):
 
-1. **Memory lifetime** — Plaintext must only be held in a Go variable for the duration of the operation that needs it (e.g. signing a Chef API request, sending an SMTP `AUTH`). It must not be assigned to a package-level variable, cached in a map or struct field that outlives the operation, or stored in a sync.Pool.
+1. **Memory lifetime** — Plaintext must only be held in a Go variable for the duration of the operation that needs it (e.g. signing a Chef API request). It must not be assigned to a package-level variable, cached in a map or struct field that outlives the operation, or stored in a sync.Pool.
 
 2. **Zeroing** — After use, the byte slice or string holding the plaintext should be overwritten with zeros before the variable goes out of scope. While Go's garbage collector does not guarantee immediate reclamation, zeroing reduces the window of exposure. Use a helper function:
 

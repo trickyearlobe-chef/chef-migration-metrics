@@ -6,8 +6,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"net/url"
-	"strings"
 )
 
 // Sentinel errors returned by credential validation.
@@ -22,10 +20,6 @@ var (
 	// ErrInvalidPEMKey is returned when a chef_client_key value is not a
 	// valid PEM-encoded RSA private key.
 	ErrInvalidPEMKey = errors.New("secrets: value is not a valid PEM-encoded RSA private key")
-
-	// ErrInvalidWebhookURL is returned when a webhook_url value is not a
-	// valid HTTP or HTTPS URL.
-	ErrInvalidWebhookURL = errors.New("secrets: value is not a valid http or https URL")
 )
 
 // Known credential type constants. These match the CHECK constraint on the
@@ -33,16 +27,12 @@ var (
 // application.
 const (
 	CredentialTypeChefClientKey = "chef_client_key"
-	CredentialTypeSMTPPassword  = "smtp_password"
-	CredentialTypeWebhookURL    = "webhook_url"
 	CredentialTypeGeneric       = "generic"
 )
 
 // ValidCredentialTypes is the set of all recognised credential types.
 var ValidCredentialTypes = map[string]bool{
 	CredentialTypeChefClientKey: true,
-	CredentialTypeSMTPPassword:  true,
-	CredentialTypeWebhookURL:    true,
 	CredentialTypeGeneric:       true,
 }
 
@@ -86,10 +76,6 @@ func ValidateCredentialValue(credentialType string, value []byte) ValidationResu
 	switch credentialType {
 	case CredentialTypeChefClientKey:
 		return validateChefClientKey(value)
-	case CredentialTypeWebhookURL:
-		return validateWebhookURL(value)
-	case CredentialTypeSMTPPassword:
-		return validateNonEmpty(value)
 	case CredentialTypeGeneric:
 		return validateNonEmpty(value)
 	default:
@@ -183,49 +169,10 @@ func validateChefClientKey(value []byte) ValidationResult {
 	}
 }
 
-// validateWebhookURL validates that the value is a well-formed HTTP or
-// HTTPS URL.
-func validateWebhookURL(value []byte) ValidationResult {
-	raw := strings.TrimSpace(string(value))
-	if raw == "" {
-		return ValidationResult{
-			Valid: false,
-			Error: ErrEmptyValue,
-		}
-	}
-
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return ValidationResult{
-			Valid: false,
-			Error: fmt.Errorf("%w: %v", ErrInvalidWebhookURL, err),
-		}
-	}
-
-	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return ValidationResult{
-			Valid: false,
-			Error: fmt.Errorf("%w: scheme must be http or https, got %q", ErrInvalidWebhookURL, parsed.Scheme),
-		}
-	}
-
-	if parsed.Host == "" {
-		return ValidationResult{
-			Valid: false,
-			Error: fmt.Errorf("%w: URL must include a host", ErrInvalidWebhookURL),
-		}
-	}
-
-	return ValidationResult{
-		Valid: true,
-	}
-}
-
 // validateNonEmpty is the fallback validator for credential types that
-// only require a non-empty value (smtp_password, generic). The empty check
-// is already performed by ValidateCredentialValue before dispatching, so
-// this always succeeds.
+// only require a non-empty value (generic). The empty check is already
+// performed by ValidateCredentialValue before dispatching, so this always
+// succeeds.
 func validateNonEmpty(_ []byte) ValidationResult {
 	return ValidationResult{
 		Valid: true,

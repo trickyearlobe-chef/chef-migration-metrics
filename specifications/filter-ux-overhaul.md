@@ -26,7 +26,6 @@ Redesign the filter system into three tiers — global filters in the top bar, m
 ### Out of Scope
 
 - Saved/named filter presets (future enhancement)
-- Filter-based notification rules
 - Changes to the `OrgSelector` component itself (it stays as-is; new global filters sit alongside it)
 - Database schema changes (filtering uses existing indexed columns)
 - Ownership filters (already specified in ownership spec)

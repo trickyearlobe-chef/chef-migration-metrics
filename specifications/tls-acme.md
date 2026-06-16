@@ -124,7 +124,7 @@ Secret values use the same encryption stack as all other config-store secrets
 - Automatically renew before expiry, controlled by `renew_before_days` (default: 30).
 - Exponential backoff on failure: 1 hour initial, 24 hour cap.
 - Log `INFO` on success (with new expiry), `ERROR` on failure (with error and current expiry).
-- When within 7 days of expiry without successful renewal, log `WARN` and send `certificate_expiry_warning` event if notifications are configured.
+- When within 7 days of expiry without successful renewal, log `WARN`.
 
 ### 3.7 Terms of Service
 

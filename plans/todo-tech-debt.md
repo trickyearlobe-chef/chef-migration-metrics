@@ -269,5 +269,4 @@ Recorded 2026-06-13 (while fixing the failed-batch delete bug).
 These are not debt — they are deliberate holds awaiting prerequisites.
 
 - SAML authentication endpoints return 501 — waiting for customer environment access to test.
-- Notification subsystem (`internal/notify/`) not yet implemented — entire feature deferred.
 - TLS ACME mode logged as "not yet implemented" in `main.go`.

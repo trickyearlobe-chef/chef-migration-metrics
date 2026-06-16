@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-All components emit structured JSON log entries persisted to the PostgreSQL datastore and viewable in the web UI log viewer. Each entry has: timestamp, severity (`DEBUG`/`INFO`/`WARN`/`ERROR`), scope, and contextual metadata (org, cookbook, commit SHA, etc.). Log scopes: `collection`, `git_operation`, `test_kitchen`, `cookstyle_scan`, `readiness_evaluation`, `notification_dispatch`, `export_job`. External process stdout/stderr (TK, CookStyle, git) is captured and associated with the relevant scope. Configurable minimum severity level and retention period with automated purge.
+All components emit structured JSON log entries persisted to the PostgreSQL datastore and viewable in the web UI log viewer. Each entry has: timestamp, severity (`DEBUG`/`INFO`/`WARN`/`ERROR`), scope, and contextual metadata (org, cookbook, commit SHA, etc.). Log scopes: `collection`, `git_operation`, `test_kitchen`, `cookstyle_scan`, `readiness_evaluation`, `export_job`. External process stdout/stderr (TK, CookStyle, git) is captured and associated with the relevant scope. Configurable minimum severity level and retention period with automated purge.
 
 ---
 
@@ -27,7 +27,6 @@ Logs are organised into scopes that correspond to the unit of work being perform
 | `git_operation` | A clone or pull operation for a single cookbook git repository |
 | `test_kitchen_run` | A Test Kitchen execution for a single cookbook against a single target Chef Client version |
 | `cookstyle_scan` | A CookStyle scan for a single cookbook version sourced from the Chef server |
-| `notification_dispatch` | A notification delivery attempt to a configured channel (webhook or email) |
 | `export_job` | A data export operation (ready nodes, blocked nodes, or cookbook remediation report) |
 | `tls` | TLS certificate lifecycle events — mode selection, certificate loading, reload, ACME issuance, renewal, expiry warnings, and errors |
 
@@ -50,7 +49,6 @@ Every log entry must include the following fields:
 | `commit_sha` | String | Git commit SHA, where applicable (git-sourced cookbooks) |
 | `chef_client_version` | String | Target Chef Client version, where applicable (Test Kitchen runs) |
 | `process_output` | String | Captured stdout/stderr from an external process, where applicable |
-| `notification_channel` | String | Name of the notification channel, where applicable (notification_dispatch scope) |
 | `export_job_id` | String | Export job ID, where applicable (export_job scope) |
 | `tls_domain` | String | Domain name associated with a TLS certificate event, where applicable (tls scope) |
 
@@ -89,17 +87,6 @@ The following logging-related settings are exposed via the application configura
 |---------|-------------|---------|
 | `log_level` | Minimum severity level to persist. Entries below this level are discarded. | `INFO` |
 | `log_retention_days` | Number of days to retain log entries in the datastore before purging. | `90` |
-
----
-
-## Notification Logging
-
-Notification delivery attempts must be logged with the `notification_dispatch` scope:
-
-- **Successful deliveries** are logged at `INFO` severity with the channel name, event type, and a summary of the notification content.
-- **Failed deliveries** are logged at `ERROR` severity with the channel name, event type, error message, and retry count.
-- **Retries** are logged at `WARN` severity with the retry attempt number and delay before the next attempt.
-- The notification payload is not stored in the log entry `process_output` field (it is stored in the `notification_history` table instead — see [Datastore Specification](datastore.md)).
 
 ---
 

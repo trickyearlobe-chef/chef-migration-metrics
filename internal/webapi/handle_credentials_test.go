@@ -429,7 +429,7 @@ func TestCredentials_List_Empty(t *testing.T) {
 func TestCredentials_List_WithCredentials(t *testing.T) {
 	cs := newMockCredentialStore(testCredentialEncryptor(t))
 	mustCreateCredential(t, cs, "cred-a", secrets.CredentialTypeGeneric, "secret-a")
-	mustCreateCredential(t, cs, "cred-b", secrets.CredentialTypeWebhookURL, "https://example.com/hook")
+	mustCreateCredential(t, cs, "cred-b", secrets.CredentialTypeGeneric, "secret-b")
 	r := newTestRouterWithCredentials(cs)
 
 	w := httptest.NewRecorder()
@@ -475,7 +475,7 @@ func TestCredentials_List_WithCredentials(t *testing.T) {
 func TestCredentials_List_FilterByType(t *testing.T) {
 	cs := newMockCredentialStore(testCredentialEncryptor(t))
 	mustCreateCredential(t, cs, "gen-1", secrets.CredentialTypeGeneric, "val1")
-	mustCreateCredential(t, cs, "hook-1", secrets.CredentialTypeWebhookURL, "https://example.com/hook")
+	mustCreateCredential(t, cs, "gen-2", secrets.CredentialTypeGeneric, "val2")
 	r := newTestRouterWithCredentials(cs)
 
 	w := httptest.NewRecorder()
@@ -498,17 +498,16 @@ func TestCredentials_List_FilterByType(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Pagination.TotalItems != 1 {
-		t.Errorf("total_items = %d, want 1", body.Pagination.TotalItems)
+	if body.Pagination.TotalItems != 2 {
+		t.Errorf("total_items = %d, want 2", body.Pagination.TotalItems)
 	}
-	if len(body.Data) != 1 {
-		t.Fatalf("data length = %d, want 1", len(body.Data))
+	if len(body.Data) != 2 {
+		t.Fatalf("data length = %d, want 2", len(body.Data))
 	}
-	if body.Data[0].Name != "gen-1" {
-		t.Errorf("name = %q, want %q", body.Data[0].Name, "gen-1")
-	}
-	if body.Data[0].CredentialType != secrets.CredentialTypeGeneric {
-		t.Errorf("credential_type = %q, want %q", body.Data[0].CredentialType, secrets.CredentialTypeGeneric)
+	for _, d := range body.Data {
+		if d.CredentialType != secrets.CredentialTypeGeneric {
+			t.Errorf("credential_type = %q, want %q", d.CredentialType, secrets.CredentialTypeGeneric)
+		}
 	}
 }
 
@@ -518,7 +517,7 @@ func TestCredentials_List_FilterByType_NoMatch(t *testing.T) {
 	r := newTestRouterWithCredentials(cs)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/credentials?type=webhook_url", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/credentials?type=chef_client_key", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -636,35 +635,6 @@ func TestCredentials_Create_Success_Generic(t *testing.T) {
 	}
 }
 
-func TestCredentials_Create_Success_WebhookURL(t *testing.T) {
-	cs := newMockCredentialStore(testCredentialEncryptor(t))
-	r := newTestRouterWithCredentials(cs)
-
-	payload := `{"name":"hook","credential_type":"webhook_url","value":"https://example.com/hook"}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/credentials", bytes.NewBufferString(payload))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
-	}
-
-	var body struct {
-		Name           string `json:"name"`
-		CredentialType string `json:"credential_type"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if body.Name != "hook" {
-		t.Errorf("name = %q, want %q", body.Name, "hook")
-	}
-	if body.CredentialType != secrets.CredentialTypeWebhookURL {
-		t.Errorf("credential_type = %q, want %q", body.CredentialType, secrets.CredentialTypeWebhookURL)
-	}
-}
-
 func TestCredentials_Create_DuplicateName(t *testing.T) {
 	cs := newMockCredentialStore(testCredentialEncryptor(t))
 	mustCreateCredential(t, cs, "dup-cred", secrets.CredentialTypeGeneric, "first")
@@ -748,21 +718,6 @@ func TestCredentials_Create_InvalidType(t *testing.T) {
 	}
 	if body.Error != ErrCodeValidationError {
 		t.Errorf("error = %q, want %q", body.Error, ErrCodeValidationError)
-	}
-}
-
-func TestCredentials_Create_InvalidWebhookURL(t *testing.T) {
-	cs := newMockCredentialStore(testCredentialEncryptor(t))
-	r := newTestRouterWithCredentials(cs)
-
-	payload := `{"name":"bad-hook","credential_type":"webhook_url","value":"not-a-url"}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/credentials", bytes.NewBufferString(payload))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
 	}
 }
 
@@ -887,22 +842,6 @@ func TestCredentials_Update_MissingValue(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
-func TestCredentials_Update_ValidationError_WebhookInvalidURL(t *testing.T) {
-	cs := newMockCredentialStore(testCredentialEncryptor(t))
-	mustCreateCredential(t, cs, "my-hook", secrets.CredentialTypeWebhookURL, "https://example.com/original")
-	r := newTestRouterWithCredentials(cs)
-
-	payload := `{"value":"not-a-valid-url"}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/credentials/my-hook", bytes.NewBufferString(payload))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
 	}
 }
 

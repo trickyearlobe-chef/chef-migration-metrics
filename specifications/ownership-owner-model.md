@@ -11,7 +11,7 @@ An owner represents a responsible party. Owners are lightweight — they carry a
 | `id` | UUID | Yes | Primary key |
 | `name` | TEXT | Yes | Unique human-readable name (e.g. `platform-team`, `app-payments`, `sre-emea`, `jsmith`) |
 | `display_name` | TEXT | No | Friendly display name (e.g. `Platform Engineering Team`) |
-| `contact_email` | TEXT | No | Contact email for notifications and reports |
+| `contact_email` | TEXT | No | Contact email for the owner (e.g. reports) |
 | `contact_channel` | TEXT | No | Slack channel, Teams channel, or other contact reference |
 | `owner_type` | TEXT | Yes | One of: `team`, `individual`, `business_unit`, `cost_centre`, `custom` |
 | `metadata` | JSONB | No | Arbitrary key-value metadata (e.g. `{"department": "engineering", "region": "emea"}`) |

@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config) and operator actions (ownership management, bulk import/reassignment). Key endpoint groups: nodes, server cookbooks, git repos, compatibility results, readiness, remediation, ownership, dependency graph, exports, notifications, logs, and admin. Cookbooks are split into **server cookbooks** (sourced from Chef Infra Server) and **git repos** (cloned from Git), each with their own endpoints. Dashboard and remediation priority endpoints aggregate across both sources. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label, owner), and sorting. Auth via session cookie with RBAC middleware (viewer / operator / admin). CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Notification endpoints manage webhook/email channels and history. Ownership endpoints manage owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows (see [Ownership Specification](ownership.md)). See `auth.md` for auth details, `datastore.md` for schema.
+RESTful JSON API (Go) between backend and React frontend. Mostly read-only over the datastore; write operations limited to admin actions (user management, manual rescan, auth provider config) and operator actions (ownership management, bulk import/reassignment). Key endpoint groups: nodes, server cookbooks, git repos, compatibility results, readiness, remediation, ownership, dependency graph, exports, logs, and admin. Cookbooks are split into **server cookbooks** (sourced from Chef Infra Server) and **git repos** (cloned from Git), each with their own endpoints. Dashboard and remediation priority endpoints aggregate across both sources. All list endpoints support pagination (`page`/`per_page`), filtering (org, environment, role, policy, platform, stale status, complexity label, owner), and sorting. Auth via session cookie with RBAC middleware (viewer / operator / admin). CORS configurable. Export endpoints support sync (small) and async (large, returns job ID). Ownership endpoints manage owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows (see [Ownership Specification](ownership.md)). See `auth.md` for auth details, `datastore.md` for schema.
 
 ---
 
@@ -71,13 +71,9 @@ Moved to [web-api-dependency-graph.md](web-api-dependency-graph.md).
 
 Moved to [web-api-exports.md](web-api-exports.md).
 
-## Notification Endpoints
-
-Moved to [web-api-notifications-ownership.md](web-api-notifications-ownership.md).
-
 ## Ownership Endpoints
 
-Moved to [web-api-notifications-ownership.md](web-api-notifications-ownership.md).
+Moved to [web-api-ownership.md](web-api-ownership.md).
 
 ## Organisation Endpoints
 

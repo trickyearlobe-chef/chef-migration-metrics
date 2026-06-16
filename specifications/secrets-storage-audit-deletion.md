@@ -27,10 +27,9 @@ The `GET /api/v1/admin/status` endpoint includes a `credential_storage` section:
 {
   "credential_storage": {
     "encryption_key_configured": true,
-    "total_credentials": 4,
+    "total_credentials": 3,
     "credential_types": {
-      "chef_client_key": 3,
-      "smtp_password": 1
+      "chef_client_key": 3
     },
     "orphaned_credentials": 0
   }
@@ -48,7 +47,7 @@ The `GET /api/v1/admin/status` endpoint includes a `credential_storage` section:
 |-------|-----------|
 | **Application** | AES-256-GCM encryption with HKDF-derived key; per-row nonces; AAD binding; plaintext zeroed after use; never logged; API never returns values |
 | **Database** | Standard PostgreSQL access controls; `encrypted_value` column contains only ciphertext; connection via TLS (`sslmode=verify-full` recommended) |
-| **Transport** | All external connections (PostgreSQL, SMTP, Chef API, webhooks) should use TLS |
+| **Transport** | All external connections (PostgreSQL, Chef API) should use TLS |
 | **Filesystem** | PEM files `0600`, key directories `0700`, env files `0640`; owned by service account |
 | **Backups** | Database backups contain only ciphertext; restoring without the master key renders credentials unusable |
 | **Key management** | Master key is external to the database; key and encrypted data never in the same storage system |

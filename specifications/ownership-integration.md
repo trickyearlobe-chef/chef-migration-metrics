@@ -1,4 +1,4 @@
-# Ownership — Configuration, Data Collection, Export & Notification Integration
+# Ownership — Configuration, Data Collection & Export Integration
 
 ## 6. Configuration
 
@@ -96,39 +96,3 @@ When ownership is enabled, all export types (CSV, JSON) include ownership column
 ### 8.2 Export Filters
 
 The `owner` and `unowned` filters are available in export requests, allowing operators to export data scoped to a specific team.
-
----
-
-## 9. Notification Integration
-
-### 9.1 Owner-Scoped Notifications
-
-Notification channels (see [Configuration Specification](configuration.md)) gain an optional `owners` filter:
-
-```yaml
-notifications:
-  channels:
-    - name: web-platform-alerts
-      type: webhook
-      url_env: WEB_PLATFORM_WEBHOOK_URL
-      events:
-        - cookbook_status_change
-        - readiness_milestone
-      filters:
-        owners:
-          - web-platform
-```
-
-When an `owners` filter is set on a channel, the channel only fires for events related to entities owned by the specified owners.
-
-### 9.2 Ownership Change Events
-
-Three notification event types for ownership:
-
-| Event | Description |
-|-------|-------------|
-| `ownership_assigned` | Fired when ownership is assigned (manual, import, or auto-rule). Payload includes the owner name, entity type/key, and source. |
-| `ownership_removed` | Fired when ownership is removed. Payload includes the owner name and entity type/key. |
-| `ownership_reassigned` | Fired when assignments are bulk-reassigned between owners. Payload includes the source owner, target owner, number of assignments moved, and whether the source owner was deleted. Fired once per reassignment operation (not per individual assignment). |
-
-These events are low-volume (ownership changes are infrequent) and are primarily useful for audit trails and team communication.

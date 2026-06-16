@@ -61,19 +61,15 @@ Moved to [ownership-integration.md](ownership-integration.md).
 
 Moved to [ownership-integration.md](ownership-integration.md).
 
-## 9. Notification Integration
-
-Moved to [ownership-integration.md](ownership-integration.md).
-
-## 10. Retention and Cleanup
+## 9. Retention and Cleanup
 
 Moved to [ownership-operations.md](ownership-operations.md).
 
-## 11. Scalability Considerations
+## 10. Scalability Considerations
 
 Moved to [ownership-operations.md](ownership-operations.md).
 
-## 12. Migration Path
+## 11. Migration Path
 
 Moved to [ownership-operations.md](ownership-operations.md).
 

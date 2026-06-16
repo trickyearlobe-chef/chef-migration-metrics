@@ -90,12 +90,10 @@ All events use a consistent JSON envelope:
 |-------|---------|------|
 | `log_entry` | A new log entry was persisted (scoped to collection, analysis, or export) | `{ "id": "...", "severity": "ERROR", "scope": "collection", "message": "...", "organisation": "myorg" }` |
 
-#### Notification Events
+#### Ownership Events
 
 | Event | Trigger | Data |
 |-------|---------|------|
-| `notification_sent` | A notification was dispatched to a channel | `{ "id": "...", "channel_name": "slack-ops", "event_type": "cookbook_status_changed", "status": "sent" }` |
-| `notification_failed` | A notification delivery failed | `{ "id": "...", "channel_name": "slack-ops", "event_type": "cookbook_status_changed", "status": "failed", "error": "..." }` |
 | `ownership_assigned` | An ownership assignment was created | `{ "owner_name": "web-platform", "entity_type": "cookbook", "entity_key": "acme-web", "assignment_source": "manual" }` |
 | `ownership_removed` | An ownership assignment was removed | `{ "owner_name": "web-platform", "entity_type": "cookbook", "entity_key": "acme-web" }` |
 | `ownership_reassigned` | Assignments were bulk-reassigned between owners | `{ "from_owner": "old-team", "to_owner": "new-team", "reassigned": 47 }` |

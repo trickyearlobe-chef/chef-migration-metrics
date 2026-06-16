@@ -8,9 +8,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Unit tests for blast radius computation (node count, role count via dependency graph, policy count)
 - [ ] Unit tests for CookStyle version profile selection per target Chef Client version
 - [ ] Unit tests for dependency graph traversal (transitive dependencies)
-- [ ] Unit tests for notification trigger evaluation (status change detection, milestone crossing)
-- [ ] Unit tests for webhook notification payload construction and delivery
-- [ ] Unit tests for email notification construction
 - [ ] Unit tests for export async/sync threshold decision
 - [ ] Unit tests for Elasticsearch NDJSON export (document format, doc_id generation, .tmp suffix handling)
 - [ ] Unit tests for Elasticsearch high-water-mark tracking (incremental export, first-run full export)
@@ -20,7 +17,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Integration tests for remediation API endpoints
 - [ ] Integration tests for dependency graph API endpoints
 - [ ] Integration tests for export API endpoints
-- [ ] Integration tests for notification delivery (webhook mock, SMTP mock)
 - [ ] Integration tests for Elasticsearch export pipeline (write NDJSON → Logstash → Elasticsearch → Kibana query)
 - [ ] End-to-end test covering collection → analysis → remediation → dashboard display
 - [ ] Verify embedded Ruby environment builds successfully for amd64 and arm64

@@ -512,30 +512,24 @@ func TestCredentialAdapter_ListByType(t *testing.T) {
 	adapter, _ := mustNewAdapter(t)
 	ctx := context.Background()
 
-	createTestCredential(t, adapter, "generic-cred", "generic", "val", "admin")
-	createTestCredential(t, adapter, "webhook-cred", "webhook_url", "https://hooks.example.com/test", "admin")
+	createTestCredential(t, adapter, "generic-cred-a", "generic", "val-a", "admin")
+	createTestCredential(t, adapter, "generic-cred-b", "generic", "https://hooks.example.com/test", "admin")
 
 	genericList, err := adapter.ListByType(ctx, "generic")
 	if err != nil {
 		t.Fatalf("ListByType(generic): %v", err)
 	}
 
-	if len(genericList) != 1 {
-		t.Fatalf("expected 1 generic credential, got %d", len(genericList))
-	}
-	if genericList[0].Name != "generic-cred" {
-		t.Errorf("expected generic-cred, got %q", genericList[0].Name)
+	if len(genericList) != 2 {
+		t.Fatalf("expected 2 generic credentials, got %d", len(genericList))
 	}
 
-	webhookList, err := adapter.ListByType(ctx, "webhook_url")
-	if err != nil {
-		t.Fatalf("ListByType(webhook_url): %v", err)
+	names := map[string]bool{}
+	for _, m := range genericList {
+		names[m.Name] = true
 	}
-	if len(webhookList) != 1 {
-		t.Fatalf("expected 1 webhook credential, got %d", len(webhookList))
-	}
-	if webhookList[0].Name != "webhook-cred" {
-		t.Errorf("expected webhook-cred, got %q", webhookList[0].Name)
+	if !names["generic-cred-a"] || !names["generic-cred-b"] {
+		t.Errorf("expected generic-cred-a and generic-cred-b, got %v", names)
 	}
 }
 
@@ -687,8 +681,8 @@ func TestCredentialAdapter_MultipleTypes(t *testing.T) {
 	ctx := context.Background()
 
 	createTestCredential(t, adapter, "generic-one", "generic", "val1", "admin")
-	createTestCredential(t, adapter, "webhook-one", "webhook_url", "https://hooks.example.com/test", "admin")
-	createTestCredential(t, adapter, "smtp-one", "smtp_password", "smtp-pass", "admin")
+	createTestCredential(t, adapter, "generic-two", "generic", "https://hooks.example.com/test", "admin")
+	createTestCredential(t, adapter, "generic-three", "generic", "another-secret", "admin")
 
 	list, err := adapter.List(ctx)
 	if err != nil {
@@ -699,7 +693,7 @@ func TestCredentialAdapter_MultipleTypes(t *testing.T) {
 	}
 
 	// Verify each can be individually retrieved.
-	for _, name := range []string{"generic-one", "webhook-one", "smtp-one"} {
+	for _, name := range []string{"generic-one", "generic-two", "generic-three"} {
 		cred, err := adapter.Get(ctx, name)
 		if err != nil {
 			t.Errorf("Get(%q): %v", name, err)

@@ -15,6 +15,7 @@ fallback uses effective HTTPS port, never the redirect port. spec auth.md
 
 ## Status: ready for sign-off + merge (NOT merged). web-api-auth.md needed no change.
 
-## Parked
-- Notifications retirement: Chunk 1 committed on
-  `chore/retire-notifications-cleanup` (31c887c); Chunks 2-3 queued there.
+## Done (merged to main)
+- Notifications retirement: ✅ complete (Chunks 1-3) — code, UI, specs, and
+  backlog all removed; ownership kept. Merged from
+  `chore/retire-notifications-cleanup`.

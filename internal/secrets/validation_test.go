@@ -49,8 +49,6 @@ func generateTestRSAKeyPKCS8(t *testing.T, bits int) []byte {
 func TestIsValidCredentialType_AllKnownTypes(t *testing.T) {
 	knownTypes := []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeSMTPPassword,
-		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
 	}
 	for _, ct := range knownTypes {
@@ -97,8 +95,6 @@ func TestValidate_UnrecognisedType(t *testing.T) {
 func TestValidate_EmptyValue_AllTypes(t *testing.T) {
 	for _, ct := range []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeSMTPPassword,
-		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
 	} {
 		t.Run(ct, func(t *testing.T) {
@@ -116,8 +112,6 @@ func TestValidate_EmptyValue_AllTypes(t *testing.T) {
 func TestValidate_NilValue_AllTypes(t *testing.T) {
 	for _, ct := range []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeSMTPPassword,
-		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
 	} {
 		t.Run(ct, func(t *testing.T) {
@@ -281,155 +275,6 @@ func TestValidate_ChefClientKey_WithLeadingWhitespace(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// webhook_url validation
-// ---------------------------------------------------------------------------
-
-func TestValidate_WebhookURL_HTTPS(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("https://hooks.slack.com/services/T00/B00/xxx"))
-	if !result.Valid {
-		t.Fatalf("expected HTTPS URL to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_HTTP(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("http://internal-webhook.corp.example.com/notify"))
-	if !result.Valid {
-		t.Fatalf("expected HTTP URL to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_WithPort(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("https://hooks.example.com:8443/webhook"))
-	if !result.Valid {
-		t.Fatalf("expected URL with port to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_WithAuth(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("https://user:secret@hooks.example.com/webhook"))
-	if !result.Valid {
-		t.Fatalf("expected URL with auth to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_WithQueryParams(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("https://hooks.example.com/webhook?token=abc123&channel=ops"))
-	if !result.Valid {
-		t.Fatalf("expected URL with query params to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_FTPScheme(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("ftp://files.example.com/data"))
-	if result.Valid {
-		t.Fatal("expected FTP URL to fail validation")
-	}
-}
-
-func TestValidate_WebhookURL_NoScheme(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("hooks.example.com/webhook"))
-	if result.Valid {
-		t.Fatal("expected URL without scheme to fail validation")
-	}
-}
-
-func TestValidate_WebhookURL_NoHost(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("https:///path/only"))
-	if result.Valid {
-		t.Fatal("expected URL without host to fail validation")
-	}
-}
-
-func TestValidate_WebhookURL_EmptyScheme(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("://example.com/webhook"))
-	if result.Valid {
-		t.Fatal("expected URL with empty scheme to fail validation")
-	}
-}
-
-func TestValidate_WebhookURL_JustWhitespace(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("   \t\n  "))
-	if result.Valid {
-		t.Fatal("expected whitespace-only URL to fail validation")
-	}
-}
-
-func TestValidate_WebhookURL_WithWhitespacePadding(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("  https://hooks.example.com/webhook  "))
-	if !result.Valid {
-		t.Fatalf("expected URL with whitespace padding to pass after trimming: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_MixedCaseScheme(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("HTTPS://hooks.example.com/webhook"))
-	if !result.Valid {
-		t.Fatalf("expected mixed-case HTTPS scheme to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_Localhost(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("http://localhost:9090/webhook"))
-	if !result.Valid {
-		t.Fatalf("expected localhost URL to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_IPAddress(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("http://192.168.1.100:8080/webhook"))
-	if !result.Valid {
-		t.Fatalf("expected IP address URL to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_IPv6(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("http://[::1]:8080/webhook"))
-	if !result.Valid {
-		t.Fatalf("expected IPv6 URL to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_WebhookURL_NoMetadata(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeWebhookURL, []byte("https://example.com/hook"))
-	if !result.Valid {
-		t.Fatalf("unexpected error: %v", result.Error)
-	}
-	// webhook_url validation should not produce metadata.
-	if result.Metadata != nil {
-		t.Fatalf("expected nil metadata for webhook_url, got %v", result.Metadata)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// smtp_password validation
-// ---------------------------------------------------------------------------
-
-func TestValidate_SMTPPassword_Valid(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeSMTPPassword, []byte("smtp-secret-123"))
-	if !result.Valid {
-		t.Fatalf("expected non-empty SMTP password to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_SMTPPassword_AppPassword(t *testing.T) {
-	// Google app passwords have a specific format.
-	result := ValidateCredentialValue(CredentialTypeSMTPPassword, []byte("abcd efgh ijkl mnop"))
-	if !result.Valid {
-		t.Fatalf("expected app-password format to pass: %v", result.Error)
-	}
-}
-
-func TestValidate_SMTPPassword_NoMetadata(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeSMTPPassword, []byte("secret"))
-	if !result.Valid {
-		t.Fatalf("unexpected error: %v", result.Error)
-	}
-	if result.Metadata != nil {
-		t.Fatalf("expected nil metadata for smtp_password, got %v", result.Metadata)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // generic validation
 // ---------------------------------------------------------------------------
 
@@ -476,8 +321,6 @@ func TestValidate_Generic_NoMetadata(t *testing.T) {
 func TestValidCredentialTypes_ContainsAllConstants(t *testing.T) {
 	expected := []string{
 		CredentialTypeChefClientKey,
-		CredentialTypeSMTPPassword,
-		CredentialTypeWebhookURL,
 		CredentialTypeGeneric,
 	}
 	for _, ct := range expected {
@@ -500,8 +343,6 @@ func TestCredentialTypeConstants(t *testing.T) {
 		expected string
 	}{
 		{CredentialTypeChefClientKey, "chef_client_key"},
-		{CredentialTypeSMTPPassword, "smtp_password"},
-		{CredentialTypeWebhookURL, "webhook_url"},
 		{CredentialTypeGeneric, "generic"},
 	}
 	for _, tt := range tests {

@@ -11,19 +11,6 @@ export function ValueField({
   onChange: (v: string) => void;
   disabled?: boolean;
 }) {
-  if (credentialType === "webhook_url") {
-    return (
-      <input
-        type="text"
-        className={INPUT_CLS}
-        placeholder="https://hooks.example.com/..."
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        required
-      />
-    );
-  }
   return (
     <textarea
       className={`${INPUT_CLS} font-mono`}
