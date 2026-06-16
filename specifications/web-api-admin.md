@@ -6,7 +6,7 @@ All endpoints in this section require the `admin` role.
 
 ### Credential Management
 
-These endpoints manage encrypted credentials stored in the database. Credentials are used for Chef API private keys, SMTP passwords, and webhook URLs. All credential values are encrypted at the application layer using AES-256-GCM before storage — see the [Datastore Specification](datastore.md) for the encryption model.
+These endpoints manage encrypted credentials stored in the database. Credentials are used for Chef API private keys and other generic secrets. All credential values are encrypted at the application layer using AES-256-GCM before storage — see the [Datastore Specification](datastore.md) for the encryption model.
 
 > **Security principles:**
 > - The API **never** returns the plaintext or encrypted value of a credential in any response.
@@ -22,7 +22,7 @@ Lists all stored credentials (metadata only, never values).
 
 | Parameter | Description |
 |-----------|-------------|
-| `type` | Filter by `credential_type` (e.g. `chef_client_key`, `smtp_password`) |
+| `type` | Filter by `credential_type` (e.g. `chef_client_key`, `generic`) |
 
 **Response (200):**
 
@@ -66,7 +66,7 @@ Creates a new encrypted credential.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Unique name for this credential |
-| `credential_type` | Yes | One of: `chef_client_key`, `smtp_password`, `webhook_url`, `generic` |
+| `credential_type` | Yes | One of: `chef_client_key`, `generic` |
 | `value` | Yes | The plaintext credential value. Validated per type (e.g. RSA key must be parseable, URL must be valid). Encrypted before storage. **Never logged.** |
 | `metadata` | No | Non-sensitive metadata object. Must not contain the credential value. |
 
@@ -89,8 +89,6 @@ The `value` field is **never** included in the response.
 | `credential_type` | Validation |
 |--------------------|------------|
 | `chef_client_key` | Must be a PEM-encoded RSA private key. Parsed to extract key size for metadata. |
-| `smtp_password` | Non-empty string. |
-| `webhook_url` | Must be a valid URL with `http` or `https` scheme. |
 | `generic` | Non-empty string. No format validation. |
 
 **Errors:**
@@ -182,8 +180,6 @@ Tests a stored credential by performing a lightweight validation appropriate to 
 | `credential_type` | Test action |
 |--------------------|------------|
 | `chef_client_key` | Parse the RSA key and verify it can produce a valid signature. If linked to an organisation, optionally make a test API call to the Chef server. |
-| `smtp_password` | Attempt an SMTP `AUTH` handshake using the configured SMTP settings and this password. |
-| `webhook_url` | Send an HTTP `HEAD` request to the URL and verify a 2xx or 3xx response. |
 | `generic` | Verify the credential can be decrypted (confirms master key is correct). |
 
 **Response (200):**
@@ -201,10 +197,10 @@ Tests a stored credential by performing a lightweight validation appropriate to 
 
 ```json
 {
-  "name": "smtp-password",
-  "credential_type": "smtp_password",
+  "name": "myorg-staging-key",
+  "credential_type": "chef_client_key",
   "status": "error",
-  "message": "SMTP AUTH failed: invalid credentials"
+  "message": "RSA key is valid but Chef server authentication failed: 401 Unauthorized"
 }
 ```
 
@@ -331,8 +327,7 @@ Returns the system health status including datastore connectivity, credential en
     "encryption_key_configured": true,
     "total_credentials": 4,
     "credential_types": {
-      "chef_client_key": 3,
-      "smtp_password": 1
+      "chef_client_key": 3
     },
     "orphaned_credentials": 0
   },

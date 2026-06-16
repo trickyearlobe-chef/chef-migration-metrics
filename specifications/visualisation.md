@@ -1,6 +1,6 @@
 # Data Visualisation - Component Specification
 
-> **TL;DR:** React web dashboard consumed via the Web API. Views: Chef Client version distribution, cookbook compatibility matrix, node upgrade readiness summary, role→cookbook dependency graph, remediation priority list with auto-correct diff previews. Interactive filters (org, environment, role, policy name/group, platform, target version, stale status, complexity label). Data exports (CSV, JSON, Chef search query). Notifications (webhook, email) on status changes and milestones. Historical trend charts. Integrated log viewer scoped per job/cookbook/scan, and ownership summary view (per-owner migration progress, coverage metrics, ownership badges on node/cookbook lists).
+> **TL;DR:** React web dashboard consumed via the Web API. Views: Chef Client version distribution, cookbook compatibility matrix, node upgrade readiness summary, role→cookbook dependency graph, remediation priority list with auto-correct diff previews. Interactive filters (org, environment, role, policy name/group, platform, target version, stale status, complexity label). Data exports (CSV, JSON, Chef search query). Historical trend charts. Integrated log viewer scoped per job/cookbook/scan, and ownership summary view (per-owner migration progress, coverage metrics, ownership badges on node/cookbook lists).
 
 ## Overview
 
@@ -272,35 +272,6 @@ The dashboard must support exporting data for use in external upgrade automation
 
 ---
 
-## Notifications
-
-The dashboard must support configuring notifications that alert practitioners when significant events occur. This integrates the tool into existing development workflows.
-
-### Notification Triggers
-
-| Trigger | Description |
-|---------|-------------|
-| Cookbook status change | A cookbook's compatibility status changed (e.g. incompatible → compatible, or compatible → incompatible after a new commit) |
-| Readiness milestone | The percentage of ready nodes crossed a configured threshold (e.g. 50%, 75%, 90%) |
-| New incompatible cookbook detected | A previously untested or compatible cookbook is now incompatible |
-| Collection failure | A collection run failed for one or more organisations |
-| Stale node threshold exceeded | The number of stale nodes exceeded a configured count |
-
-### Notification Channels
-
-| Channel | Description |
-|---------|-------------|
-| Webhook | HTTP POST to a configurable URL with a JSON payload. Supports Slack, Microsoft Teams, PagerDuty, and generic webhook receivers. |
-| Email | Send notifications to configured email addresses (requires SMTP configuration). |
-
-### Notification Configuration
-
-Notifications are configured under the `notifications` key in the application configuration (see [Configuration Specification](configuration.md)). Each notification rule specifies a trigger, optional filters (e.g. only for specific organisations or cookbooks), and one or more channels.
-
-The notification history must be viewable in the dashboard so that operators can see what notifications have been sent and when.
-
----
-
 ## Real-Time Updates
 
 The dashboard receives live event notifications from the backend via a WebSocket connection (see [Web API specification § WebSocket Real-Time Events](web-api.md#websocket-real-time-events)). This eliminates polling and makes the UI feel immediately responsive to backend activity.
@@ -313,7 +284,6 @@ The dashboard receives live event notifications from the backend via a WebSocket
 - When **readiness counts change** (`readiness_updated` event), the readiness summary and trend views refresh.
 - The **log viewer** appends new entries in real time when `log_entry` events arrive, without requiring a manual refresh. Entries matching the current filter scope are appended; others are silently counted and shown as a "N new entries" badge.
 - **Export progress** is tracked via `export_started` / `export_complete` / `export_failed` events, replacing the previous polling-based approach. The UI shows a progress state and offers the download link immediately when the export completes.
-- **Notification delivery** results (`notification_sent` / `notification_failed`) appear in the notification history view in real time.
 
 ### Connection Status Indicator
 

@@ -17,7 +17,6 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 - [ ] Document remediation guidance features (auto-correct preview, migration docs, complexity scoring)
 - [ ] Document dependency graph view (how to read the graph, filtering, table alternative)
 - [ ] Document data export functionality (formats, Chef search query usage with knife ssh)
-- [ ] Document notification configuration (webhook setup for Slack/Teams/PagerDuty, email/SMTP setup, trigger configuration)
 - [ ] Document confidence indicators (high vs. medium vs. untested)
 - [ ] Document cookbook complexity scoring model (weights, labels, blast radius)
 - [ ] Document embedded analysis tools (CookStyle, Test Kitchen embedded in all packages, no Chef Workstation required, Docker is only external dep for TK)

@@ -116,8 +116,6 @@ Config keys use dot notation matching the YAML structure:
 | `frontend` | `{"base_path":"/"}` | false |
 | `logging` | `{"level":"INFO", ...}` | false |
 | `auth` | `{"providers":[...]}` | false |
-| `notifications` | `{"enabled":true, ...}` | false |
-| `smtp` | `{"host":"...", ...}` | false |
 | `exports` | `{"max_rows":100000, ...}` | false |
 | `elasticsearch` | `{"enabled":false, ...}` | false |
 | `ownership` | `{"enabled":true, ...}` | false |
@@ -184,8 +182,6 @@ Each config section gets a dedicated GET/PUT endpoint pair for clean UI binding:
 | `PUT` | `/api/v1/admin/config/server` | Update server settings |
 | `GET` | `/api/v1/admin/config/auth` | Auth providers |
 | `PUT` | `/api/v1/admin/config/auth` | Update auth config |
-| `GET` | `/api/v1/admin/config/notifications` | Notification channels and triggers |
-| `PUT` | `/api/v1/admin/config/notifications` | Update notifications |
 | `GET` | `/api/v1/admin/config/logging` | Log level and retention |
 | `PUT` | `/api/v1/admin/config/logging` | Update logging settings |
 
@@ -238,7 +234,6 @@ Admin
     ├── Analysis Tools
     ├── Server & TLS
     ├── Authentication
-    ├── Notifications
     ├── Logging
     └── Exports
 ```
@@ -323,14 +318,12 @@ Changes show "Restart required" banner.
 | `analysis_tools` | Yes — next collection run |
 | `test_kitchen` (under analysis_tools) | Yes — next collection run |
 | `readiness` | Yes — next collection run |
-| `notifications` | Yes — next notification event |
 | `logging.level` | Yes — immediate |
 | `server.tls` | No — restart required |
 | `server.websocket` | No — restart required |
 | `server.graceful_shutdown_seconds` | No — restart required |
 | `auth` | No — restart required |
 | `frontend` | No — restart required |
-| `smtp` | Yes — next notification send |
 | `exports` | Yes — next export request |
 | `elasticsearch` | Yes — next collection run |
 
@@ -358,7 +351,7 @@ The collector re-reads config from `config_store` at the start of each collectio
 
 - Organisations page (most complex — do first to prove the pattern)
 - Collection, Target Versions, Git URLs, Concurrency (simple forms)
-- Analysis Tools, Server & TLS, Auth, Notifications, Logging, Exports
+- Analysis Tools, Server & TLS, Auth, Logging, Exports
 - Setup wizard for empty `config_store`
 
 ### Phase 4: Deprecation

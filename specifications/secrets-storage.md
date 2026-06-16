@@ -1,12 +1,12 @@
 # Secrets Storage - Component Specification
 
-> **TL;DR** — Three credential storage methods in precedence order: **database** (AES-256-GCM encrypted, managed via Web UI/API), **environment variable** (Kubernetes Secrets, ECS, CI/CD), **file path** (traditional on-prem PEM files). Database credentials are encrypted with a master key (`CMM_CREDENTIAL_ENCRYPTION_KEY`) that must live outside the database. The `credentials` table stores Chef API keys, SMTP passwords, and webhook URLs — all encrypted at rest with per-row nonces and AAD binding. Plaintext is only held in memory for the duration of each operation. Key rotation (both credential values and the master encryption key) is supported without downtime. Admin-only Web API endpoints manage credentials (CRUD + test) and never return plaintext. Kubernetes deployments use `existingSecret` references or chart-managed Secrets; RPM/DEB installs use file paths and env files. See `todo/secrets-storage.md` for implementation status.
+> **TL;DR** — Three credential storage methods in precedence order: **database** (AES-256-GCM encrypted, managed via Web UI/API), **environment variable** (Kubernetes Secrets, ECS, CI/CD), **file path** (traditional on-prem PEM files). Database credentials are encrypted with a master key (`CMM_CREDENTIAL_ENCRYPTION_KEY`) that must live outside the database. The `credentials` table stores Chef API keys and generic secrets — all encrypted at rest with per-row nonces and AAD binding. Plaintext is only held in memory for the duration of each operation. Key rotation (both credential values and the master encryption key) is supported without downtime. Admin-only Web API endpoints manage credentials (CRUD + test) and never return plaintext. RPM/DEB installs use file paths and env files; container/orchestrator deployments inject secrets via env vars or mounted files. See `todo/secrets-storage.md` for implementation status.
 
 ---
 
 ## Overview
 
-This specification consolidates all secrets and credential management for the Chef Migration Metrics application. Secrets include Chef API private keys, SMTP credentials, webhook URLs, the database connection string, TLS private keys, and the credential encryption master key itself.
+This specification consolidates all secrets and credential management for the Chef Migration Metrics application. Secrets include Chef API private keys, the database connection string, TLS private keys, and the credential encryption master key itself.
 
 The design follows a defence-in-depth model: secrets are protected at the application layer (encryption, memory-only plaintext), the transport layer (TLS for database and API connections), the storage layer (database access controls, file permissions), and the operational layer (key separation, rotation procedures, audit logging).
 

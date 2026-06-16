@@ -7,8 +7,6 @@
 ## Credential Testing
 
 - [ ] Implement `chef_client_key` live test: optionally test Chef API call with the key
-- [ ] Implement `smtp_password` live test: attempt SMTP AUTH handshake with configured settings
-- [ ] Implement `webhook_url` live test: send HTTP HEAD request, verify 2xx/3xx response
 - [ ] Write unit tests for live credential test functions (with mocked external services)
 
 ## Startup Validation
@@ -25,17 +23,12 @@
 ## Consumer Integration
 
 - [ ] Update `internal/chefapi/` to resolve Chef API keys via `CredentialResolver`
-- [ ] *(deferred — `internal/notify/` not yet implemented)* Update SMTP sender to resolve password via `CredentialResolver`
-- [ ] *(deferred — `internal/notify/` not yet implemented)* Update webhook sender to resolve URL via `CredentialResolver`
 - [ ] Verify plaintext is zeroed after use in all consumer call sites
 - [ ] Write integration tests for Chef API signing with each credential source
-- [ ] Write integration tests for SMTP auth with each credential source
 
 ## Configuration Integration
 
 - [ ] Add `client_key_env` field to organisation config schema
-- [ ] Add `password_credential` field to SMTP config schema
-- [ ] *(deferred — `internal/notify/` not yet implemented)* Add `url_credential` field to notification channel config schema
 
 ## System Status
 

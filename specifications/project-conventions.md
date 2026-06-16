@@ -100,4 +100,4 @@ Project-specific technical conventions for the Chef Migration Metrics dashboard.
 - **Migration files**: `NNNN_short_description.up.sql` / `NNNN_short_description.down.sql` (e.g. `0001_create_node_snapshots.up.sql`).
 - **API endpoints**: kebab-case paths under `/api/v1/` (e.g. `/api/v1/dependency-graph`, `/api/v1/cookbook-compatibility`).
 - **Configuration keys**: `snake_case` in YAML (e.g. `stale_node_threshold_days`, `cookstyle_timeout_minutes`).
-- **Environment variable overrides**: `SCREAMING_SNAKE_CASE` with `CM_` prefix (e.g. `CM_DATABASE_URL`, `CM_SMTP_PASSWORD`).
+- **Environment variable overrides**: `SCREAMING_SNAKE_CASE` with `CM_` prefix (e.g. `CM_DATABASE_URL`).

@@ -248,7 +248,6 @@ dbWriter := logging.NewDBWriter(dbAdapter,
             "commit_sha":           entry.CommitSHA,
             "chef_client_version":  entry.ChefClientVersion,
             "collection_run_id":    entry.CollectionRunID,
-            "notification_channel": entry.NotificationChannel,
             "export_job_id":        entry.ExportJobID,
             "tls_domain":           entry.TLSDomain,
             // process_output intentionally omitted — too large for WebSocket
@@ -375,7 +374,6 @@ export interface WSLogEntryData {
   commit_sha?: string;
   chef_client_version?: string;
   collection_run_id?: string;
-  notification_channel?: string;
   export_job_id?: string;
   tls_domain?: string;
 }

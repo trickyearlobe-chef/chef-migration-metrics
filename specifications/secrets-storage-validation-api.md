@@ -24,8 +24,6 @@ When creating or updating credentials via the Web API:
 | `credential_type` | Validation |
 |--------------------|------------|
 | `chef_client_key` | Must be a PEM-encoded RSA private key. Key size extracted for metadata. |
-| `smtp_password` | Non-empty string. |
-| `webhook_url` | Must be a valid URL with `http` or `https` scheme. |
 | `generic` | Non-empty string. No format validation. |
 
 ---
@@ -92,19 +90,6 @@ auth:
       sp_entity_id: chef-migration-metrics
 ```
 
-### SMTP Credential References
-
-```yaml
-smtp:
-  host: smtp.example.com
-  port: 587
-  username_env: SMTP_USERNAME
-  # Database-stored:
-  password_credential: smtp-password
-  # Or environment variable:
-  # password_env: SMTP_PASSWORD
-```
-
 ### Environment Variables
 
 | Variable | Description |
@@ -112,9 +97,6 @@ smtp:
 | `CMM_CREDENTIAL_ENCRYPTION_KEY` | Base64-encoded AES-256 master key. Required when DB credentials are used. |
 | `CMM_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | Previous master key. Required during key rotation only. |
 | `DATABASE_URL` | PostgreSQL connection string. |
-| `SMTP_PASSWORD` | SMTP password (when using env var method). |
-| `SMTP_USERNAME` | SMTP username (when using env var method). |
-| `NOTIFICATION_WEBHOOK_URL` | Webhook URL (when using env var method). |
 
 ---
 
@@ -131,7 +113,7 @@ Secrets management logic lives in `internal/secrets/` (new package) with the fol
 - `validation.go` — Per-type credential validation (RSA PEM parsing, URL validation, etc.)
 - `zeroing.go` — Memory zeroing helpers
 
-The `internal/secrets/` package is the only package that performs encryption/decryption operations. Other packages (`internal/chefapi/`, `internal/auth/`) call through the `CredentialStore` interface to obtain plaintext for their operations. `internal/notify/` will also use this interface once the notification subsystem is implemented (currently planned, not yet built).
+The `internal/secrets/` package is the only package that performs encryption/decryption operations. Other packages (`internal/chefapi/`, `internal/auth/`) call through the `CredentialStore` interface to obtain plaintext for their operations.
 
 ### Dependencies
 

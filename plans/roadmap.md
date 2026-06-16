@@ -81,25 +81,7 @@ only). **Plan:** `data-layer-revamp.md`.
 
 ---
 
-## Phase 4 — Notifications subsystem (greenfield)
-
-**Genuinely unbuilt** (`internal/notify/` does not exist; `notification_history`
-was removed as dead code). Unblocks ~15 deferred items across
-`todo-visualisation.md`, `todo-secrets-storage.md`, `todo-testing.md`. **Spec:**
-config schema exists in `encrypted-config-store.md`; API in
-`web-api-notifications-ownership.md`.
-
-- `internal/notify/` package: webhook (HTTP POST JSON) + email (SMTP) channels,
-  delivery retry/backoff.
-- Triggers: cookbook status change, readiness milestone, new incompatible cookbook,
-  collection failure, stale-node threshold.
-- `notification_history` table (re-add) + history API + frontend page.
-- Config: `notifications`/`smtp` sections + `url_credential` credential field;
-  resolve URL/password via `CredentialResolver`.
-
----
-
-## Phase 5 — Data Exports re-spec + Elasticsearch
+## Phase 4 — Data Exports re-spec + Elasticsearch
 
 **Spec rewrite first** — `specifications/data-export.md` incoherently mixes webhook
 push / Elasticsearch NDJSON / Logstash. **Todo:** `todo-data-layer.md` (Re-specify
@@ -114,7 +96,7 @@ chef_search_query downloads exist; `ElasticsearchConfig` is a config stub
 
 ---
 
-## Phase 6 — Blast Radius
+## Phase 5 — Blast Radius
 
 **Todo:** `todo-blast-radius.md`. **Spec:** `blast-radius.md`. Underlying data
 (`affected_node_count/role_count/policy_count`, dependency edges) exists; endpoint
@@ -126,7 +108,7 @@ approach, entry points, transitive vs direct — confirm with customer).
 
 ---
 
-## Phase 7 — Org-level dependency graph + compatibility filtering
+## Phase 6 — Org-level dependency graph + compatibility filtering
 
 **Todo:** `todo-visualisation.md`. Role/node-level `compatibility_status` colouring
 is done (`handle_roles.go`, `ForceGraph.tsx`); the org/fleet-level graph and
@@ -138,21 +120,20 @@ filtering-by-compatibility are not started.
 
 ---
 
-## Phase 8 — Secrets hardening + smaller gaps
+## Phase 7 — Secrets hardening + smaller gaps
 
 **Todo:** `todo-secrets-storage.md`, `todo-test-kitchen-config-ui.md`,
 `todo-platform-mapping-ui.md`. Critical path (chefapi resolver, config fields, TLS
 key-perm warning) is **done**; remaining:
 
-- Live credential tests: `chef_client_key` (Chef API call), `smtp_password` (SMTP
-  AUTH), `webhook_url` (HTTP HEAD 2xx/3xx) + unit tests.
+- Live credential test: `chef_client_key` (Chef API call) + unit tests.
 - Startup perm warnings: keys dir > 0700, env file > 0640 (TLS key > 0600 done).
 - TK credential-reference warnings on PUT (placeholder today).
 - Platform-mapping dedicated UI page (handler/API exist; embedded only).
 
 ---
 
-## Phase 9 — Release readiness (packaging + docs)
+## Phase 8 — Release readiness (packaging + docs)
 
 **Todos:** `todo-packaging.md`, `todo-testing.md`, `todo-documentation.md`,
 `todo-ci.md`. Largely environment-dependent manual verification + writing.

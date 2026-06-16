@@ -101,16 +101,6 @@ auth:
   providers:
     - type: local
 
-notifications:
-  enabled: false
-  channels: []
-  readiness_milestones:
-    - 50
-    - 75
-    - 90
-    - 100
-  stale_node_alert_count: 50
-
 exports:
   max_rows: 100000
   async_threshold: 10000
