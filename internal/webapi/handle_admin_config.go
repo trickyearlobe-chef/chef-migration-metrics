@@ -438,6 +438,36 @@ func (r *Router) storeAdminConfigSection(w http.ResponseWriter, req *http.Reques
 	}
 
 	value := sections[key]
+
+	// Validate the prospective assembled config BEFORE persisting. This handler
+	// writes the section and only then reloads; a reload-time validation failure
+	// happens *after* the write, leaving invalid config in the encrypted,
+	// non-hand-editable store — which then bricks the next reload/startup.
+	// Validating the assembled result up front rejects bad input with a 422 and
+	// never persists it. (In production the holder is always wired with the store.)
+	if r.configHolder != nil {
+		if current := r.configHolder.Get(); current != nil {
+			prospectiveSections, err := configstore.ConfigToSections(current)
+			if err != nil {
+				r.logf("ERROR", "admin/config/%s: build prospective config: %v", key, err)
+				WriteInternalError(w, "Failed to validate config section.")
+				return
+			}
+			prospectiveSections[key] = value
+			prospective, err := configstore.AssembleConfigRaw(prospectiveSections)
+			if err != nil {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: %v", key, err))
+				return
+			}
+			prospective.ApplyDefaults()
+			if _, valErr := prospective.Validate(); valErr != nil {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError, valErr.Error())
+				return
+			}
+		}
+	}
+
 	if err := r.configStore.Set(req.Context(), key, value, false, "admin"); err != nil {
 		r.logf("ERROR", "admin/config/%s: store: %v", key, err)
 		WriteInternalError(w, "Failed to store config section.")

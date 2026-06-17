@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -261,6 +262,49 @@ func TestAdminConfigAuth_PUT_422_UnknownProviderType(t *testing.T) {
 
 	assertStatus(t, w, http.StatusUnprocessableEntity)
 	assertErrorCode(t, w, ErrCodeValidationError)
+}
+
+// A SAML config that passes the handler's fast-fail checks but violates a rule
+// only enforced by the full validator (here a non-https idp_metadata_url) must
+// be rejected with 422 BEFORE it is written to the store. Otherwise the bad
+// value is persisted and only rejected on the post-write reload, leaving
+// invalid config in the encrypted (non-hand-editable) store that bricks the
+// next reload/startup.
+func TestAdminConfigAuth_PUT_422_InvalidNotPersisted(t *testing.T) {
+	store := newTestConfigStore(t)
+	holder := configstore.NewConfigHolder(testConfig(), store)
+	r := newTestRouterForAdminConfig(nil, store, holder)
+
+	// http:// (not https) passes the metadata one-of check but fails validateAuth.
+	body := `{"providers":[{"type":"saml","idp_metadata_url":"http://idp.example.com/metadata","sp_entity_id":"https://app.example.com","sp_private_key_credential":"saml-sp-key","sp_certificate_credential":"saml-sp-cert"}]}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+
+	// The invalid section must NOT have been persisted.
+	if _, err := store.Get(context.Background(), configstore.KeyAuth); !errors.Is(err, configstore.ErrNotFound) {
+		t.Errorf("invalid auth config was persisted (store.Get err = %v); want ErrNotFound", err)
+	}
+}
+
+// A valid SAML config still saves and persists when the holder is wired to the
+// store — the validate-before-persist guard must not reject good config.
+func TestAdminConfigAuth_PUT_Valid_PersistsWithHolder(t *testing.T) {
+	store := newTestConfigStore(t)
+	holder := configstore.NewConfigHolder(testConfig(), store)
+	r := newTestRouterForAdminConfig(nil, store, holder)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/auth", strings.NewReader(validAuthBodySAML))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	if _, err := store.Get(context.Background(), configstore.KeyAuth); err != nil {
+		t.Errorf("valid auth config not persisted: store.Get err = %v", err)
+	}
 }
 
 func TestAdminConfigAuth_PUT_405_WrongMethod(t *testing.T) {
