@@ -263,6 +263,12 @@ Recorded 2026-06-13 (while fixing the failed-batch delete bug).
 
 - [ ] **The `-tags functional` datastore suite (`CMM_TEST_DATABASE_URL`) is not wired into CI.** Because nothing runs it, it silently rotted: the `CookbookPlatformCoverage`/`GitRepo` natural-key migration left the `TestFunctional_CookbookPlatformCoverage_*` tests referencing removed fields (`result.ID`/`repo.ID`/`GitRepoID`) so the whole package failed to compile, and a drifted org cleanup (`DELETE … WHERE id = <name>`) leaked rows that collided with the disk tests' shared `(chef_server_url, org_name)` key. Both were fixed on `fix/delete-failed-kitchen-batch` (2026-06-13) so the suite is green again — but it will rot the same way without a gate. **Fix:** add a CI job (or `make` target) that spins up a throwaway Postgres and runs `go test -tags functional ./internal/datastore/` so compile drift and isolation bugs fail fast.
 
+## Testing — Frontend Test Files Not Type-Checked
+
+Recorded 2026-06-17.
+
+- [ ] **`frontend/*.test.tsx` are excluded from TypeScript checking.** `frontend/tsconfig.json` has `exclude: ["src/**/*.test.ts", "src/**/*.test.tsx"]`, so the build (`tsc -b`) never type-checks test files and CI has no type-checking of them (only `eslint .` + `vitest run` at runtime). Two consequences: (1) the editor LSP flags every jest-dom matcher (`toBeInTheDocument`/`toHaveValue`/`toBeDisabled`, etc.) in `*.test.tsx` as "does not exist on type `Assertion<…>`" — false-positive noise because the augmentation lives in the excluded `src/test/setup.ts` (`@testing-library/jest-dom/vitest`); (2) real type errors in tests (stale mock shapes — e.g. `'total' does not exist in PaginatedResponse<Credential>` — wrong props) go uncaught by the build. Runtime is fine (vitest loads the augmentation; 405 tests pass), so this is not a release blocker. **Fix:** give tests a dedicated tsconfig (or project reference) that *includes* the test files + `src/test/setup.ts` so the jest-dom augmentation is in scope, and wire a `tsc` over it into CI. Prefer this over a band-aid ambient `/// <reference types="@testing-library/jest-dom/vitest" />` `.d.ts`, which would quiet the editor but still leave tests un-type-checked in CI.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
