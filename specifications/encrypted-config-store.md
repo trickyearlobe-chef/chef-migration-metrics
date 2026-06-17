@@ -189,6 +189,8 @@ Response for each GET returns the decrypted JSON value for that section. Fields 
 
 PUT endpoints validate the input using the same rules as startup validation, encrypt, and store. Changes take effect on the next collection run without restart (config is re-read from DB at the start of each run). Server-level changes (TLS, listen address) require a restart — the API response indicates this.
 
+**Validate before persist.** A PUT validates the *prospective assembled config* — the current live config with the incoming section overlaid — using the full startup validation rules, and only writes to `config_store` if it passes. Invalid input is rejected with `422` and the section is **not** stored. This is a hard requirement: the store is encrypted and not hand-editable, so persisting a section that then fails validation on reload would leave config that cannot be corrected without the UI and can block the next reload/startup. Validation must therefore run **before** the encrypt-and-store step, not only on the post-write reload.
+
 ### Credentials API
 
 Credentials are a special case — they are `secret: true` config entries with a write-only contract.
