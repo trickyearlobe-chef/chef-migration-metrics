@@ -177,21 +177,23 @@ Rules:
 
 On successful SAML assertion:
 
-1. Resolve user identity using stable federated key: `{idp_entity_id}:{NameID}` stored as `saml_subject` on the user record.
-2. If no user exists with that `saml_subject`:
+1. Resolve user identity, in order:
+   a. By federated key `{idp_entity_id}:{NameID}` stored as `saml_subject` (the normal case — IdP sends a stable NameID).
+   b. Fallback: by the stable `username` of an existing SAML user, refreshing that user's `saml_subject`. This tolerates IdPs that emit an unstable (transient) NameID, where the federated key changes every login while the username attribute stays constant.
+2. If no existing SAML user matches:
    - Create user with `auth_provider: "saml"`, mapped role, display_name, email.
    - Store `saml_subject` for future login matching.
    - Auto-link to owner via alias if email matches an existing alias (log the link).
-3. If user exists:
-   - Update display_name and email if changed.
+3. If an existing SAML user matches (by either key):
+   - Update display_name and email if changed; refresh `saml_subject` from the current assertion.
    - Re-evaluate role from group mapping (see Role Mapping below).
 4. Create session with `auth_provider: "saml"`.
 
 ### Identity Matching
 
-- User identity is matched by `saml_subject` (`{idp_entity_id}:{NameID}`), NOT by email or username alone.
-- Email and username are display/contact fields that may change; they do not determine identity.
-- A SAML login never automatically links to an existing local-password user. If a local user with the same username exists, the SAML user is created as a separate record (admin can merge manually).
+- User identity is matched by `saml_subject` (`{idp_entity_id}:{NameID}`), with a fallback to the stable `username` of an existing SAML user when `saml_subject` does not match (e.g. an unstable/transient NameID). The matched row's `saml_subject` is then refreshed.
+- Email is a display/contact field that may change; it does not determine identity.
+- The username fallback applies only to SAML users. A SAML login never links to or takes over an existing local-password user: if the username belongs to a local account, provisioning fails rather than hijacking it (admin can resolve manually). The proper fix for an unstable NameID remains IdP-side — configure a persistent NameID.
 
 ---
 
