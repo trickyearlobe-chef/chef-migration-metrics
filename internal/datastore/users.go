@@ -169,61 +169,85 @@ func (db *DB) GetUserBySAMLSubject(ctx context.Context, samlSubject string) (Use
 	return u, nil
 }
 
-// UpsertSAMLUser creates or updates a SAML user based on saml_subject.
-// On conflict with saml_subject, it updates display_name, email, and role.
+// UpsertSAMLUser creates or updates a SAML user, anchoring identity on the
+// stable username rather than solely on the federated saml_subject.
+//
+// Identity resolution order:
+//  1. Match by saml_subject ("{idp_entity_id}:{NameID}") — the normal case when
+//     the IdP sends a stable NameID. The matched row is updated in place.
+//  2. Fall back to matching an existing SAML user by the (stable) username, and
+//     refresh its saml_subject. This tolerates IdPs that emit an unstable
+//     (transient) NameID: the federated subject changes every login, so step 1
+//     never matches, but the username attribute stays constant. Without this,
+//     the second login would attempt a fresh INSERT and collide on the username
+//     unique constraint ("already exists").
+//  3. Otherwise INSERT a new user.
+//
+// A username already owned by a non-SAML (local) account is never taken over —
+// ErrAlreadyExists is returned, keeping SAML and local identities separate.
+//
 // Returns the upserted user record and whether it was newly created.
 func (db *DB) UpsertSAMLUser(ctx context.Context, p InsertUserParams) (User, bool, error) {
-	query := `
-		INSERT INTO users (username, display_name, email, password_hash, role, auth_provider, saml_subject)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (saml_subject) WHERE saml_subject IS NOT NULL
-		DO UPDATE SET
-			display_name = EXCLUDED.display_name,
-			email = EXCLUDED.email,
-			role = EXCLUDED.role,
-			updated_at = now()
-		RETURNING ` + userColumns + `, (xmax = 0) AS is_new`
+	// 1. Stable federated subject match.
+	if existing, err := db.GetUserBySAMLSubject(ctx, p.SAMLSubject); err == nil {
+		u, uErr := db.updateSAMLUserByUsername(ctx, existing.Username, p)
+		return u, false, uErr
+	} else if !errors.Is(err, ErrNotFound) {
+		return User{}, false, fmt.Errorf("datastore: matching SAML user by subject: %w", err)
+	}
 
-	var u User
-	var displayName, email, samlSubject, passwordHash sql.NullString
-	var lastLogin sql.NullTime
-	var isNew bool
-
-	err := db.pool.QueryRowContext(ctx, query,
-		p.Username,
-		nullString(p.DisplayName),
-		nullString(p.Email),
-		nullString(p.PasswordHash),
-		p.Role,
-		p.AuthProvider,
-		nullString(p.SAMLSubject),
-	).Scan(
-		&u.Username,
-		&displayName,
-		&email,
-		&passwordHash,
-		&u.Role,
-		&u.AuthProvider,
-		&samlSubject,
-		&u.IsLocked,
-		&u.FailedLoginAttempts,
-		&lastLogin,
-		&u.CreatedAt,
-		&u.UpdatedAt,
-		&isNew,
-	)
-	if err != nil {
-		if isUniqueViolation(err) {
+	// 2. Fallback: same human under a changed (transient) NameID — match the
+	//    stable username and refresh saml_subject.
+	if existing, err := db.GetUserByUsername(ctx, p.Username); err == nil {
+		if existing.AuthProvider != "saml" {
+			// Username belongs to a local-password user; do not hijack it.
 			return User{}, false, ErrAlreadyExists
 		}
-		return User{}, false, fmt.Errorf("datastore: upserting SAML user: %w", err)
+		u, uErr := db.updateSAMLUserByUsername(ctx, existing.Username, p)
+		return u, false, uErr
+	} else if !errors.Is(err, ErrNotFound) {
+		return User{}, false, fmt.Errorf("datastore: matching SAML user by username: %w", err)
 	}
-	u.DisplayName = stringFromNull(displayName)
-	u.Email = stringFromNull(email)
-	u.PasswordHash = stringFromNull(passwordHash)
-	u.SAMLSubject = stringFromNull(samlSubject)
-	u.LastLoginAt = timeFromNull(lastLogin)
-	return u, isNew, nil
+
+	// 3. New user.
+	created, err := db.InsertUser(ctx, p)
+	if err != nil {
+		return User{}, false, err
+	}
+	return created, true, nil
+}
+
+// updateSAMLUserByUsername updates the mutable assertion-derived fields of a SAML
+// user (display_name, email, role) and refreshes saml_subject to the value from
+// the current assertion. Keyed on the stable username.
+func (db *DB) updateSAMLUserByUsername(ctx context.Context, username string, p InsertUserParams) (User, error) {
+	query := `
+		UPDATE users SET
+			display_name = $2,
+			email = $3,
+			role = $4,
+			saml_subject = $5,
+			updated_at = now()
+		WHERE username = $1
+		RETURNING ` + userColumns
+
+	row := db.pool.QueryRowContext(ctx, query,
+		username,
+		nullString(p.DisplayName),
+		nullString(p.Email),
+		p.Role,
+		nullString(p.SAMLSubject),
+	)
+
+	u, err := scanUser(row)
+	if err != nil {
+		if isUniqueViolation(err) {
+			// The refreshed saml_subject collides with another row.
+			return User{}, ErrAlreadyExists
+		}
+		return User{}, fmt.Errorf("datastore: updating SAML user: %w", err)
+	}
+	return u, nil
 }
 
 // ListUsers returns all users ordered by username.
