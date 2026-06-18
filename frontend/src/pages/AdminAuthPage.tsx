@@ -501,11 +501,21 @@ export function AdminAuthPage() {
       ),
     };
     try {
-      const { value: updated } = await saveAuthConfig(toSave);
+      const { value: updated, restartRequired: needsRestart } = await saveAuthConfig(toSave);
       setConfig(updated ?? toSave);
       setSaved(updated ?? toSave);
       setSuccess(true);
-      setRestartRequired(true);
+      // Auth/SAML is applied live by the backend reconciler, so honour the
+      // API's verdict rather than always demanding a restart.
+      setRestartRequired(needsRestart);
+      // The SP endpoints (ACS/SLO/entity-id) are derived from the saved base URL,
+      // so re-fetch them to refresh the copy fields. Non-fatal on failure — keep
+      // the existing display rather than blanking the panel.
+      try {
+        setSamlEndpoints(await fetchSAMLEndpoints());
+      } catch {
+        // ignore: endpoint refresh is best-effort
+      }
     } catch (err: unknown) {
       setSaveError(err instanceof Error ? err.message : "Failed to save auth config.");
     } finally {
@@ -582,7 +592,7 @@ export function AdminAuthPage() {
       <div>
         <h2 className="text-xl font-semibold text-gray-900">Authentication</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Authentication providers and session policy. Changes require an application restart.
+          Authentication providers and session policy. Changes apply immediately.
         </p>
       </div>
 
