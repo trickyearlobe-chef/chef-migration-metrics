@@ -303,4 +303,107 @@ describe("AdminAuthPage", () => {
     expect(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ })).toBeChecked();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
+
+  // --- Issue 1: SP base URL save should not falsely demand a restart and must
+  // refresh the backend-computed ACS/SLO/entity copy fields. ---
+
+  it("page subtitle does not claim auth changes require a restart", async () => {
+    render(<AdminAuthPage />);
+    await waitFor(() => screen.getByText("Authentication"));
+    expect(
+      screen.queryByText(/require an application restart/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show a restart banner after saving when the backend applies changes live", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLEndpoints).mockResolvedValue({
+      acs_url: "https://cmm.example.com/api/v1/auth/saml/acs",
+      slo_url: "https://cmm.example.com/api/v1/auth/saml/slo",
+      metadata_url: "https://cmm.example.com/api/v1/auth/saml/metadata",
+      entity_id: "https://cmm.example.com",
+    });
+    vi.mocked(api.saveAuthConfig).mockResolvedValue({
+      value: { ...mockSAMLAuthConfig, providers: [{ type: "saml", sign_requests: true }] },
+      restartRequired: false,
+    } as never);
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Settings saved successfully.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Restart required/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a restart banner after saving only when the backend reports restart_required", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLEndpoints).mockResolvedValue({
+      acs_url: "https://cmm.example.com/api/v1/auth/saml/acs",
+      slo_url: "https://cmm.example.com/api/v1/auth/saml/slo",
+      metadata_url: "https://cmm.example.com/api/v1/auth/saml/metadata",
+      entity_id: "https://cmm.example.com",
+    });
+    vi.mocked(api.saveAuthConfig).mockResolvedValue({
+      value: { ...mockSAMLAuthConfig, providers: [{ type: "saml", sign_requests: true }] },
+      restartRequired: true,
+    } as never);
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Restart required/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("re-fetches SAML endpoints after save so ACS reflects the new base URL", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    vi.mocked(api.fetchSAMLEndpoints)
+      .mockResolvedValueOnce({
+        acs_url: "https://old.example.com/api/v1/auth/saml/acs",
+        slo_url: "https://old.example.com/api/v1/auth/saml/slo",
+        metadata_url: "https://old.example.com/api/v1/auth/saml/metadata",
+        entity_id: "https://old.example.com",
+      })
+      .mockResolvedValueOnce({
+        acs_url: "https://new.example.com/api/v1/auth/saml/acs",
+        slo_url: "https://new.example.com/api/v1/auth/saml/slo",
+        metadata_url: "https://new.example.com/api/v1/auth/saml/metadata",
+        entity_id: "https://new.example.com",
+      });
+    vi.mocked(api.saveAuthConfig).mockResolvedValue({
+      value: { ...mockSAMLAuthConfig, providers: [{ type: "saml", sign_requests: true }] },
+      restartRequired: false,
+    } as never);
+
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("https://old.example.com/api/v1/auth/saml/acs"),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Sign AuthnRequests/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    // After save the ACS copy field reflects the freshly-fetched base URL.
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("https://new.example.com/api/v1/auth/saml/acs"),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByDisplayValue("https://old.example.com/api/v1/auth/saml/acs"),
+    ).not.toBeInTheDocument();
+  });
 });
