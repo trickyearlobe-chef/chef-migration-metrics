@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -299,6 +300,22 @@ type stubShutdowner struct{ called bool }
 
 func (s *stubShutdowner) Shutdown(context.Context) error { s.called = true; return nil }
 
+// servingListener closes its accepting channel the first time Accept is called.
+// http.Server.Serve only reaches Accept after it has tracked the listener, so
+// waiting on the channel guarantees a subsequent Shutdown will actually find and
+// close the listener — without it, Shutdown can win the race against Serve, which
+// then returns ErrServerClosed without ever tracking (or closing) the listener.
+type servingListener struct {
+	net.Listener
+	once      sync.Once
+	accepting chan struct{}
+}
+
+func (l *servingListener) Accept() (net.Conn, error) {
+	l.once.Do(func() { close(l.accepting) })
+	return l.Listener.Accept()
+}
+
 // acmeRuntime.shutdown must tear down all three resources it owns — cancel the
 // renewer, stop the port-80 challenge/redirect server, and drain the HTTPS
 // listener — so a single Instance.Shutdown (H4c-1) cleans up the whole ACME
@@ -310,8 +327,17 @@ func TestACMERuntimeShutdown_TearsDownRenewerChallengeListener(t *testing.T) {
 		t.Fatalf("bind challenge: %v", err)
 	}
 	challenge := &http.Server{Handler: http.NewServeMux()}
-	go func() { _ = challenge.Serve(ln) }()
+	sl := &servingListener{Listener: ln, accepting: make(chan struct{})}
+	go func() { _ = challenge.Serve(sl) }()
 	caddr := ln.Addr().String()
+
+	// Wait until Serve has tracked the listener (is in Accept) before shutting
+	// down, so Shutdown deterministically closes it rather than racing Serve.
+	select {
+	case <-sl.accepting:
+	case <-time.After(2 * time.Second):
+		t.Fatal("challenge server did not start serving")
+	}
 
 	listener := &stubShutdowner{}
 	rt := &acmeRuntime{
