@@ -92,6 +92,11 @@ type Config struct {
 	// SignRequests controls whether AuthnRequests are signed.
 	SignRequests bool
 
+	// DebugLogAssertions, when true, logs the full decrypted assertion XML at
+	// the ACS point (at WARN, since the XML contains PII and a replayable
+	// credential). Off by default; intended as a short-lived diagnostic toggle.
+	DebugLogAssertions bool
+
 	// ClockSkewTolerance is the maximum clock skew allowed for assertion
 	// validation. Zero means use the default (5 minutes).
 	ClockSkewTolerance time.Duration
@@ -281,6 +286,9 @@ func (p *Provider) ParseACSResponse(r *http.Request) (*UserInfo, error) {
 		}
 	}
 
+	// Optionally dump the full decrypted assertion for troubleshooting.
+	p.logAssertionIfEnabled(assertion)
+
 	// Build UserInfo from the assertion.
 	info := p.extractUserInfo(assertion)
 
@@ -365,6 +373,23 @@ func (p *Provider) RefreshMetadata(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+// logAssertionIfEnabled dumps the full decrypted assertion XML when the
+// DebugLogAssertions toggle is on. It logs at WARN because the dumped XML
+// contains PII and a replayable credential; the toggle is meant to be enabled
+// only briefly while diagnosing an IdP integration. No-op when disabled.
+func (p *Provider) logAssertionIfEnabled(assertion *saml.Assertion) {
+	if !p.cfg.DebugLogAssertions || assertion == nil {
+		return
+	}
+	xmlBytes, err := xml.MarshalIndent(assertion, "", "  ")
+	if err != nil {
+		p.logger("ERROR", fmt.Sprintf("SAML assertion debug logging: marshal failed: %v", err))
+		return
+	}
+	p.logger("WARN", fmt.Sprintf("SAML assertion debug logging is ENABLED — the following contains PII "+
+		"and a replayable credential; disable saml_debug_log_assertions once finished:\n%s", string(xmlBytes)))
+}
 
 // extractUserInfo maps SAML assertion attributes to UserInfo.
 func (p *Provider) extractUserInfo(assertion *saml.Assertion) *UserInfo {

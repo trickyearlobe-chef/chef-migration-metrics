@@ -292,6 +292,35 @@ describe("AdminAuthPage", () => {
     );
   });
 
+  it("reflects debug_log_assertions=true as checked", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue({
+      ...mockSAMLAuthConfig,
+      providers: [{ type: "saml", debug_log_assertions: true }],
+    } as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: /Log decrypted assertions/ }),
+      ).toBeChecked(),
+    );
+  });
+
+  it("toggling Log decrypted assertions enables Save", async () => {
+    vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
+    render(<AdminAuthPage />);
+    await waitFor(() =>
+      screen.getByRole("checkbox", { name: /Log decrypted assertions/ }),
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Log decrypted assertions/ }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: /Log decrypted assertions/ }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
   it("toggling Sign AuthnRequests enables Save", async () => {
     vi.mocked(api.fetchAuthConfig).mockResolvedValue(mockSAMLAuthConfig as never);
     render(<AdminAuthPage />);

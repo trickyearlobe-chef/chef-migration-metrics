@@ -177,6 +177,7 @@ export interface AuthProvider {
   role_mapping?: Record<string, string>;
   allow_idp_initiated?: boolean;
   sign_requests?: boolean;
+  debug_log_assertions?: boolean;
 }
 
 export interface AuthConfig {
