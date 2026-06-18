@@ -345,15 +345,24 @@ auth:
         "cmm-operators": "operator"
       allow_idp_initiated: false
       sign_requests: true
+      debug_log_assertions: false
       clock_skew_tolerance: "5m"
       metadata_refresh_interval: "24h"
 ```
 
-`sign_requests` and `allow_idp_initiated` are editable as checkboxes on the admin
-auth page (per SAML provider). When `sign_requests` is enabled, outgoing
-AuthnRequests are signed with the SP key (RSA-SHA256) and the SP metadata
-advertises `AuthnRequestsSigned="true"`; the IdP validates the signature against
-the SP signing certificate published in that metadata.
+`sign_requests`, `allow_idp_initiated`, and `debug_log_assertions` are editable as
+checkboxes on the admin auth page (per SAML provider). When `sign_requests` is
+enabled, outgoing AuthnRequests are signed with the SP key (RSA-SHA256) and the SP
+metadata advertises `AuthnRequestsSigned="true"`; the IdP validates the signature
+against the SP signing certificate published in that metadata.
+
+`debug_log_assertions` (default `false`) is a diagnostic toggle: when enabled, the
+full decrypted assertion XML is written to the server log at the ACS point on every
+login, at `WARN` level with a notice that the output contains PII and a replayable
+credential. It exists to troubleshoot attribute/mapping problems on a customer site
+reachable only via support bundle or screenshot. Leave it off in normal operation
+and turn it back off once finished. Like the other flags it takes effect on the
+next login without a restart (the provider is rebuilt live on save).
 
 The entire auth section live-reloads (per `configuration-live-reload.md`); no auth
 change requires a restart:
@@ -361,8 +370,8 @@ change requires a restart:
 - **SAML provider (subsystem):** on save the auth section's applier reconstructs the
   provider from the reloaded config (re-resolving SP credentials and re-fetching IdP
   metadata) and swaps it into the running SAML handler under a lock. `sign_requests`,
-  `allow_idp_initiated`, `sp_entity_id`, the IdP metadata source, and the
-  attribute/role mappings all take effect immediately. A rebuild failure surfaces as
+  `allow_idp_initiated`, `debug_log_assertions`, `sp_entity_id`, the IdP metadata
+  source, and the attribute/role mappings all take effect immediately. A rebuild failure surfaces as
   an error on the save (the previous provider keeps serving) rather than being
   silently dropped.
 - **Session expiry / lockout / min password length (applied):** `session_expiry`,

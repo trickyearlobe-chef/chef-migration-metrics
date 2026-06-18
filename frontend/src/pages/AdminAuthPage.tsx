@@ -390,6 +390,24 @@ function ProviderCard({
                   </span>
                 </span>
               </label>
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={provider.debug_log_assertions ?? false}
+                  onChange={(e) => onChange(index, "debug_log_assertions", e.target.checked)}
+                  disabled={saving}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span>
+                  Log decrypted assertions (diagnostic)
+                  <span className="block text-xs text-amber-600">
+                    Writes the full decrypted assertion XML to the server log on every
+                    login. The XML contains personal data and a replayable credential —
+                    enable only briefly while diagnosing an IdP issue, then turn it back
+                    off. Takes effect immediately; no restart needed.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
         )}

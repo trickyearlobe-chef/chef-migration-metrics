@@ -211,6 +211,52 @@ func TestExtractUserInfo_FallbackToNameID(t *testing.T) {
 	}
 }
 
+func TestLogAssertionIfEnabled(t *testing.T) {
+	assertion := &saml.Assertion{
+		Subject: &saml.Subject{
+			NameID: &saml.NameID{Value: "nameid-debug-123"},
+		},
+	}
+
+	t.Run("enabled logs full assertion XML at WARN", func(t *testing.T) {
+		var levels, msgs []string
+		p := &Provider{
+			cfg:    Config{DebugLogAssertions: true},
+			logger: func(level, msg string) { levels = append(levels, level); msgs = append(msgs, msg) },
+		}
+
+		p.logAssertionIfEnabled(assertion)
+
+		joined := strings.Join(msgs, "\n")
+		if !strings.Contains(joined, "nameid-debug-123") {
+			t.Errorf("expected assertion XML containing NameID to be logged, got %q", joined)
+		}
+		var sawWarn bool
+		for _, l := range levels {
+			if l == "WARN" {
+				sawWarn = true
+			}
+		}
+		if !sawWarn {
+			t.Errorf("expected a WARN-level log when debug logging is enabled, got levels %v", levels)
+		}
+	})
+
+	t.Run("disabled logs nothing", func(t *testing.T) {
+		var msgs []string
+		p := &Provider{
+			cfg:    Config{DebugLogAssertions: false},
+			logger: func(_, msg string) { msgs = append(msgs, msg) },
+		}
+
+		p.logAssertionIfEnabled(assertion)
+
+		if len(msgs) != 0 {
+			t.Errorf("expected no logs when debug logging is disabled, got %v", msgs)
+		}
+	})
+}
+
 func TestRequestStore(t *testing.T) {
 	store := newRequestStore(100 * time.Millisecond)
 

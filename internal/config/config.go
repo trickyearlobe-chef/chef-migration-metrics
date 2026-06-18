@@ -766,6 +766,7 @@ type AuthProvider struct {
 	// SAML behaviour options.
 	AllowIDPInitiated       bool   `yaml:"allow_idp_initiated,omitempty"`
 	SignRequests            bool   `yaml:"sign_requests,omitempty"`
+	DebugLogAssertions      bool   `yaml:"debug_log_assertions,omitempty"`
 	ClockSkewTolerance      string `yaml:"clock_skew_tolerance,omitempty"`
 	MetadataRefreshInterval string `yaml:"metadata_refresh_interval,omitempty"`
 }
