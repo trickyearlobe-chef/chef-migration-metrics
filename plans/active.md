@@ -1,69 +1,18 @@
 # Active Plan
 
-Two chunks: (1) wire the orphan-sweep ticker [current], (2) UI revamp follow-up
-cleanup [queued, return after the ticker]. SAML follow-ups parked at the bottom.
+One chunk: UI revamp follow-up cleanup [current]. SAML follow-ups parked below.
 
 Admin-status endpoint + frontend Status tab are DONE/merged (commits up to 61ab9be).
 
-## Chunk 1 — orphan-sweep ticker wiring [CURRENT]
+Orphan-sweep ticker wiring DONE on `feature/orphan-sweep-ticker` (2026-06-19,
+pending review/merge): `StartSweepTicker` made dynamic (live params + hypervisor
+factory each tick via closures), wired in main.go outside the kitchen-binary gate,
+synchronous `stop()` in `awaitShutdown`. Folder-scoping deferred per owner decision
+— scheduled real-destroy is prefix+age scoped with a logged caveat; tracked in
+`plans/todo-tech-debt.md` § "Scheduled Orphan Sweep Has No Folder Scoping" (known
+spec-acceptance divergence, reconcile spec when the filter lands).
 
-Spec: `specifications/bulk-kitchen-scanning.md` § "Hypervisor-side orphan sweep".
-Branch: `feature/orphan-sweep-ticker`.
-
-Problem: `StartSweepTicker` (`internal/hypervisor/sweep_ticker.go`) is implemented
-and tested but **never called** — `grep` finds no call site outside the file. The
-scheduled sweep silently never runs. The *manual* path is already live
-(`handleOrphanSweep`, `POST /api/v1/kitchen/orphan-sweep`, router.go:805).
-
-Wire the ticker at startup in `cmd/chef-migration-metrics/main.go`, near the
-kitchen-queue start (~main.go:1424-1475), gated on TK enabled + hypervisor
-configured. Register its `stop()` with the graceful-shutdown path (`awaitShutdown`,
-main.go:2450 — "stop the scheduler first" region ~2500).
-
-Config sources (`config.TestKitchenConfig`): `IsEnabled()`, `VMNamePrefix`,
-`OrphanSweepIntervalMinutes`, `OrphanSweepAgeMinutes` (helper
-`EffectiveOrphanSweepAge()` exists; confirm/add an interval helper). Spec defaults:
-interval 30m (min 5m), age 60m; interval `0`/disabled turns the ticker off.
-
-### Design decisions to settle BEFORE coding (record the choice in the spec/PR)
-
-1. **Dynamic config (CLAUDE.md mandate).** `StartSweepTicker` captures
-   `hyp`/`prefix`/`age`/`interval` at construction — static. A live change to
-   interval/age/enabled must take effect without restart. Decide: read config live
-   each tick (preferred — matches `handleOrphanSweep`, which calls `Get()` per
-   request) vs. tear down + restart the ticker on config change. Likely needs a
-   signature/closure change to `StartSweepTicker` (or a thin live wrapper).
-2. **Live Hypervisor.** There is no long-lived `Hypervisor`; clients are built
-   on-demand from live config via the credential resolver (main.go:1329). The
-   ticker must obtain a freshly-built client each tick (resolve creds → build
-   client) rather than holding one. Define how (factory/closure).
-3. **Enable/disable transitions.** TK toggled off at runtime → ticker must stop
-   sweeping; toggled on → must start. Tie to (1).
-
-### vSphere folder scoping — acceptance gap (decide: fold in here or split out)
-
-Spec acceptance: "Orphan sweep only touches VMs **in the configured folder**,
-matching the prefix, and older than the age threshold." But `ListManagedVMs(ctx,
-prefix)` has **no folder parameter** (proxmox.go:122, vcenter.go:188) — the spec
-says it "gains an optional folder filter". The production customer is **vSphere**
-(`folders=` server-side filter), see [[lab-vs-customer-hypervisor]]. Wiring an
-unscoped sweep against vSphere risks touching VMs outside the CMM folder. Either
-add the folder param first (prereq) or explicitly defer + gate the scheduled sweep
-to prefix-only with a logged caveat. Do NOT ship an unscoped auto-destroy loop.
-
-### TDD
-
-- New/changed ticker behaviour: table tests with a stub `Hypervisor` (existing
-  `sweep_test.go` mocks) — covers disabled→no-sweep, enabled→sweep, live interval
-  change, dry-run never on the scheduled path.
-- Startup wiring: assert ticker started only when TK enabled + hypervisor
-  configured; stop() invoked on shutdown.
-
-Acceptance: `go test ./...`, `go vet`, `golangci-lint`, `-race` green. Scheduled
-sweep observably runs (log line / WS `orphan_sweep_complete`). Folder-scoping
-decision recorded.
-
-## Chunk 2 — UI revamp follow-up cleanup [QUEUED — return after Chunk 1]
+## Chunk 2 — UI revamp follow-up cleanup [CURRENT]
 
 UI Revamp Phase 1 is DONE in main (audited 2026-06-19; nav restructure + polish all
 verified). Two divergences from the original plan remain — captured in

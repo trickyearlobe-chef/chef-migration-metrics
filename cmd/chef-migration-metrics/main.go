@@ -36,6 +36,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
@@ -138,6 +139,7 @@ type serverApp struct {
 	backupSched             *backup.Scheduler
 	schemaVersion           int
 	stopKitchenQueueCleanup func()
+	stopOrphanSweep         func()
 
 	// tlsStatus records whether static TLS failed at startup and the server
 	// fell open to plain HTTP (tls.md § 2.4). Shared with the webapi router so
@@ -1489,6 +1491,46 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		app.startup.Info("Node Kitchen runner not available (kitchen binary not found)")
 	}
 
+	// --- Scheduled hypervisor-side orphan sweep ---
+	// Independent of the kitchen binary (mirrors the always-live manual
+	// POST /kitchen/orphan-sweep endpoint). Needs only the credential resolver
+	// to build a hypervisor client from live config. All runtime gating — TK
+	// enabled, hypervisor configured, interval > 0 — is read live on every tick
+	// inside the ticker, so config changes take effect with no restart.
+	if app.credResolver != nil {
+		sweepScoped := logger.WithScope(logging.ScopeTestKitchenRun)
+		app.stopOrphanSweep = hypervisor.StartSweepTicker(
+			func() hypervisor.SweepParams {
+				tk := app.configHolder.Get().AnalysisTools.TestKitchen
+				interval := tk.EffectiveOrphanSweepInterval()
+				if !tk.IsEnabled() {
+					interval = 0 // TK disabled — pause the scheduled sweep
+				}
+				return hypervisor.SweepParams{
+					Prefix:   tk.EffectiveVMNamePrefix(),
+					Age:      tk.EffectiveOrphanSweepAge(),
+					Interval: interval,
+				}
+			},
+			func(ctx context.Context) (hypervisor.Hypervisor, error) {
+				tk := app.configHolder.Get().AnalysisTools.TestKitchen
+				return webapi.BuildHypervisorFromConfig(ctx, tk, app.credResolver)
+			},
+			func(level, msg string, args ...any) {
+				formatted := fmt.Sprintf(msg, args...)
+				switch level {
+				case "ERROR":
+					sweepScoped.Error(formatted)
+				case "WARN":
+					sweepScoped.Warn(formatted)
+				default:
+					sweepScoped.Info(formatted)
+				}
+			},
+		)
+		app.startup.Info("orphan sweep ticker started")
+	}
+
 	// --- Backup service (always available — "enabled" flag controls scheduler only) ---
 	{
 		backupConn, parseErr := backup.ParseConnString(app.cfg.Datastore.URL)
@@ -2502,6 +2544,14 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 	app.startup.Info("stopping collection scheduler...")
 	app.sched.Stop()
 	app.startup.Info("collection scheduler stopped")
+
+	// Stop the scheduled orphan sweep so no new sweep starts mid-drain; this
+	// blocks until the ticker goroutine exits (cancelling any in-flight sweep).
+	if app.stopOrphanSweep != nil {
+		app.startup.Info("stopping orphan sweep ticker...")
+		app.stopOrphanSweep()
+		app.startup.Info("orphan sweep ticker stopped")
+	}
 
 	// Stop kitchen queue workers (drain running items with timeout).
 	if app.kitchenQueue != nil {

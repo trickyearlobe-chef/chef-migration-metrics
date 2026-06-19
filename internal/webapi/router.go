@@ -1046,20 +1046,28 @@ func (r *Router) buildHypervisor(ctx context.Context) (hypervisor.Hypervisor, er
 	if r.hypervisor != nil {
 		return r.hypervisor, nil
 	}
+	return BuildHypervisorFromConfig(ctx, r.liveConfig().AnalysisTools.TestKitchen, r.credResolver)
+}
 
-	tk := r.liveConfig().AnalysisTools.TestKitchen
+// BuildHypervisorFromConfig builds a hypervisor client from the given live
+// Test Kitchen config and resolves its driver secrets via resolver. Returns
+// (nil, nil) when no hypervisor type is configured. Shared by the router's
+// on-demand client builder and the scheduled orphan-sweep ticker so both
+// resolve credentials identically from live config — config changes take
+// effect with no restart.
+func BuildHypervisorFromConfig(ctx context.Context, tk config.TestKitchenConfig, resolver *secrets.CredentialResolver) (hypervisor.Hypervisor, error) {
 	hypType := tk.EffectiveHypervisorType()
 	if hypType == "" {
 		return nil, nil
 	}
 
-	if r.credResolver == nil {
+	if resolver == nil {
 		return nil, fmt.Errorf("credential resolver not configured")
 	}
 
 	resolvedSecrets := make(map[string]string, len(tk.DriverSecrets))
 	for key, credName := range tk.DriverSecrets {
-		resolved, err := r.credResolver.Resolve(ctx, secrets.CredentialSource{
+		resolved, err := resolver.Resolve(ctx, secrets.CredentialSource{
 			CredentialName: credName,
 		})
 		if err != nil {
