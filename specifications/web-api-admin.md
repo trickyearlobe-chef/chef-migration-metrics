@@ -334,21 +334,21 @@ Returns the system health status including datastore connectivity, credential en
   "collection": {
     "next_run_at": "2024-06-15T13:00:00Z",
     "last_run_at": "2024-06-15T12:00:00Z",
-    "last_run_status": "success"
+    "last_run_status": "completed"
   },
   "organisations": [
     {
       "name": "myorg-production",
       "credential_source": "file",
       "last_collected_at": "2024-06-15T12:00:00Z",
-      "status": "success",
+      "status": "completed",
       "node_count": 2000
     },
     {
       "name": "myorg-staging",
       "credential_source": "database",
       "last_collected_at": "2024-06-15T12:00:00Z",
-      "status": "success",
+      "status": "completed",
       "node_count": 500
     }
   ]
@@ -361,5 +361,9 @@ Returns the system health status including datastore connectivity, credential en
 | `credential_storage.total_credentials` | Total number of credentials in the database. |
 | `credential_storage.credential_types` | Breakdown by `credential_type`. |
 | `credential_storage.orphaned_credentials` | Credentials not referenced by any organisation or config. May be candidates for cleanup. |
+| `status` | Overall health: `healthy`, or `degraded` when the datastore is unreachable or migrations are pending. A missing encryption key alone is not degraded (file-credential deployments are valid). |
+| `datastore.status` | `connected` or `error`. |
+| `collection.last_run_status` / `organisations[].status` | The latest collection run's status (`completed`, `failed`, `running`, `interrupted`), `never_collected` if the organisation has no runs yet, or `unknown` if the status could not be read. |
+| `organisations[].credential_source` | `database` when the org uses a stored credential, else `file`. |
 
 ---

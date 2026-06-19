@@ -840,7 +840,7 @@ func (r *Router) registerRoutes() {
 		r.adminOnly("/api/v1/admin/users/", r.handleNotImplemented)
 	}
 	r.adminOnly("/api/v1/admin/restart", r.handleAdminRestart)
-	r.adminOnly("/api/v1/admin/status", r.handleNotImplemented)
+	r.adminOnly("/api/v1/admin/status", r.handleAdminStatus)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)
 	r.adminOnly("/api/v1/admin/backups", r.handleAdminBackups)

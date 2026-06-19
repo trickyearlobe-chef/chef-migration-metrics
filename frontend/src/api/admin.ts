@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+  AdminStatus,
   AdminUser,
   AdminUserListResponse,
   CreateUserRequest,
@@ -9,6 +10,12 @@ import type {
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
 import type { PaginationQuery } from "./client";
+
+// fetchAdminStatus retrieves the operational status snapshot
+// (GET /api/v1/admin/status). Always 200; health is in the body's status field.
+export function fetchAdminStatus(): Promise<AdminStatus> {
+  return apiFetch<AdminStatus>(buildUrl("/admin/status"));
+}
 
 export function fetchAdminUsers(
   filters?: PaginationQuery & { search?: string; sort?: string; order?: string },
