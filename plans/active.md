@@ -4,6 +4,13 @@ From `plans/roadmap.md` Phase 1 ("features the code claims but doesn't do at
 runtime"). Then the orphan-sweep ticker (separate chunk). SAML customer work is
 done/merged — see `plans/saml-customer-fixes.md` + queued follow-ups at the bottom.
 
+## DONE (branch feature/admin-status-endpoint) — frontend status view
+Added as a "Status" tab in the existing System Health hub
+(`/admin/system-stats?tab=status`) — no new route/nav, avoids "Status" vs "Health"
+nav duplication. `AdminStatusPage.tsx` (+test), `fetchAdminStatus` in `api/admin.ts`,
+`AdminStatus` types, third tab wired into `AdminSystemHealthPage.tsx`. Reuses
+SectionCard/StatusBadge/Feedback/formatDate. tsc + eslint clean; 415 vitest pass.
+
 ## DONE (branch feature/admin-status-endpoint) — `GET /api/v1/admin/status`
 
 Implemented per spec: `handle_admin_status.go` + 6 table tests (key-not-configured,
