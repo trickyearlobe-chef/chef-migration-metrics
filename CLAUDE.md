@@ -57,6 +57,14 @@
 - Local dev is done with the DB in a docker container. Look at data for evidence to back up theories on bugs.
 - Customer is only accessible via VDI or file transfer so design for diagnostic collection in a support bundle or screenshot
 
+## Code Navigation
+
+- Before a refactor that renames, changes a signature, moves, or deletes a symbol, use LSP `findReferences` (or call hierarchy) to enumerate call sites. Grep alone misses indirect uses and false-matches text.
+- For "what implements this interface?" (esp. Go's implicit satisfaction), use LSP `goToImplementation`. Grep cannot find these reliably.
+- LSP and grep are complementary, not either/or: LSP finds semantic symbol references; grep still catches what LSP can't see — string/dynamic refs (reflection, struct tags, SQL columns, config keys) and cross-language uses (the Go↔TS boundary). For a rename that crosses those, run both.
+- Grep/Read remain the default for locating code and reading for understanding.
+- If an LSP server is cold/unresponsive (returns no symbols mid-indexing), fall back to grep rather than blocking.
+
 ## Specifications
 
 - Specs live under `specifications/<component>.md` (flat layout, no subdirectories).
