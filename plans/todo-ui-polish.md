@@ -45,20 +45,22 @@ Spec: `ui-polish-phase7.md`
 - [x] Backend: fix `last_fetched` sort case
 - [x] Backend: add `git_url` sort case
 
-## Follow-up cleanup (UI Revamp Phase 1 divergences — audited 2026-06-19)
+## Follow-up cleanup (UI Revamp Phase 1 divergences — resolved 2026-06-22)
 
-Phase 1 shipped, but the implementation diverged from the original plan. These are
-NOT regressions — record the decision rather than silently differing (CLAUDE.md).
-Active chunk: `plans/active.md` § "Chunk 2". Decide how to refactor, then do it.
+Phase 1 shipped, then diverged from the original *planning note* (not the spec).
+Reconciled 2026-06-22: the 2026-06-19 audit was stale on both items. Recording the
+decisions per CLAUDE.md ("never silently diverge").
 
-- [ ] System Health sub-tabs: plan was `Overview | API | Database | Actions`;
-  actual is `Overview | Performance | Status` (`AdminSystemHealthPage.tsx`). The
-  API/Database split was never built (folded into Performance); `Actions` stayed a
-  top-level admin nav item. Decide: accept actual + update plan/roadmap, or build
-  the intended split. Touches the same hub as the new `/admin/status` Status tab.
-- [ ] Orphaned-but-live Kitchen sub-routes: `/admin/kitchen-batches`,
-  `/admin/kitchen-queue`, `/admin/kitchen-analysis`, `/admin/config/concurrency`,
-  `/admin/config/analysis-tools` still resolve directly but have no nav link and no
-  redirect. `/admin/performance` got a `<Navigate>` redirect to the hub
-  (`App.tsx:376`); these did not. Decide: add matching redirects, or keep as deep
-  links. A stale bookmark currently lands outside the new nav.
+- [x] System Health sub-tabs — **accepted actual** (`Overview | Performance |
+  Status`, `AdminSystemHealthPage.tsx`). The 4-tab `Overview | API | Database |
+  Actions` split was only ever a planning note; the spec (`system-health-frontend.md`)
+  never mandated it. Actual covers the same semantics: Overview = system stats
+  (DB/runtime/tables, the "Database" content), Performance = API metrics (the "API"
+  content), Status = operational status (new), and Actions stayed a top-level admin
+  nav item by design. No spec divergence; no code change.
+- [x] Orphaned-but-live Kitchen sub-routes — **already redirected** (audit was
+  stale). `/admin/kitchen-batches`, `-queue`, `-analysis` → `/admin/test-kitchen`
+  hub tabs; `/admin/config/concurrency`, `-analysis-tools` →
+  `/admin/test-kitchen?tab=settings` (`App.tsx:276-317`, added 2026-06-02). Stale
+  bookmarks land in the right hub. They have no nav link by design (the hub is the
+  nav entry); the redirects are the intended cleanup, so nothing further to do.
