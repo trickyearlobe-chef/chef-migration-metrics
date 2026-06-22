@@ -30,6 +30,7 @@
 - `plans/active.md` is the single active work plan — what we're doing now, chunked for sessions.
 - `plans/todo-*.md` files are area backlogs — the full inventory of known work.
 - **Workflow**: Pull items from a `todo-*.md` into `active.md` as chunked work. On completion, remove from `active.md` and mark done/remove from the todo.
+- **Done lives in code, not prose**: completed work leaves the plan entirely — "done-ness" is git history + passing tests, never re-asserted in prose. Status checkboxes and "DONE/merged" notes rot and cause stale-audit drift. Record *decisions* (the why) in the spec's intent or a short decisions note; never leave *status* claims that nothing re-validates.
 - **Chunking for context management**: Split the active plan into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
 - **Session boundaries**: One chunk = one session/thread. Do not carry context pollution from prior chunks — start each chunk fresh by reading only the plan and relevant specs.
 - **Reprioritisation**: Rewrite `active.md` freely when priorities shift. Old items stay in their todo files.
@@ -41,6 +42,7 @@
 
 - Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main`) and for each either merge, queue, or note why it is parked — branches must not accumulate silently.
 - TODO hygiene: update todos as items complete or block; don't end a session with a net TODO increase unless they're genuine open questions.
+- Verify before you record: any claim about code state or completion must be checked against the tree at the current commit and cite `file:line @ <short-SHA>`. Never record a status/audit claim from memory or stale context — re-read the code first. Stale audits come from recording claims that were never re-verified.
 - Watch context relevance (re-check every few tool calls): suggest a fresh thread when the chunk is complete, context is >50% stale/irrelevant, or scope has shifted significantly from the plan.
 
 ## File Format

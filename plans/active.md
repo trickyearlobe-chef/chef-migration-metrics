@@ -1,20 +1,10 @@
 # Active Plan
 
-No active chunk. Both queued chunks are complete — next candidates are the parked
-SAML follow-ups below (or the credential-source status bug in
-`plans/todo-secrets-storage.md` § Bugs).
+Current: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
+Chunk A (lint impl out of specs) next; B/D rules done; then E (drift sweep),
+then C (criteria↔test linkage). Branch: `chore/spec-drift-control`.
 
-Done recently:
-- **Orphan-sweep ticker wiring** — merged to `main` (2026-06-19, commit 6bfe197):
-  `StartSweepTicker` made dynamic (live params + hypervisor factory each tick),
-  wired in main.go, synchronous `stop()` in `awaitShutdown`. Folder-scoping
-  deferred per owner decision (prefix+age scoped, logged caveat) — tracked in
-  `plans/todo-tech-debt.md` § "Scheduled Orphan Sweep Has No Folder Scoping".
-- **UI revamp follow-up cleanup** — reconciled 2026-06-22 (docs only). The
-  2026-06-19 audit was stale: System Health tabs accepted as-is
-  (`Overview|Performance|Status`; the 4-tab split was a planning note, not in the
-  spec), and the "orphaned" Kitchen routes already had redirects since 2026-06-02.
-  Decisions recorded in `plans/todo-ui-polish.md` § "Follow-up cleanup".
+Pending merge (separate, complete): `docs/ui-revamp-followup-reconcile`.
 
 ## Parked — SAML config follow-ups (lower priority)
 
