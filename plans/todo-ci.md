@@ -10,6 +10,14 @@ The Trivy npm production-dep gate fails on HIGH/CRITICAL; MEDIUM is staged behin
 land — react-router@6.30.4 + brace-expansion@5.0.6 (needs the registry; a
 dependabot branch for react-router-dom is open).
 
+## 1b. Enforce the pre-commit hook in CI
+The `.githooks/pre-commit` checks (secret/deny scan, spec ≤500 lines, and the new
+§5 "no implementation code in specs" lint) are local-opt-in only — installed via
+`make install-hooks` (`core.hooksPath`), not run in CI. They can be bypassed
+silently (`--no-verify`, or simply never installing). Add a CI job that runs the
+hook's checks against the PR diff so they are a real gate, not advisory. (Recorded
+2026-06-23 with spec-drift-control Chunk A; see `plans/spec-drift-control.md`.)
+
 ## 2. Verify scanner inputs on first CI run
 First push is the real test (cannot run GitHub Actions locally). Confirm:
 - trivy-action input names (`scan-ref`, `TRIVY_INCLUDE_DEV_DEPS`).

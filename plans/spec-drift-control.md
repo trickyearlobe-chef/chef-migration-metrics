@@ -7,21 +7,23 @@ nothing checks for agreement. Each chunk removes a duplicate or adds a link.
 Sequence: A + B/D (prevention, cheap) → E (diagnose current backlog) → C (durable
 linkage, prioritised by E's findings).
 
-## Chunk A — Lint implementation out of specs [prevention]
+## Chunk A — Lint implementation out of specs [prevention, DONE 2026-06-23]
 
-Scope: `.githooks/pre-commit` (extend, new §5 after the spec-size block).
-Block specs that contain *implementation*; allow *contracts/reference data*.
-- Block: fenced code in implementation languages (```go ```ruby ```rust ```python);
-  runs of ≥6 consecutive `NAME = value` / `NAME: value` constant lines outside a
-  fence (the "copy of code" rot).
-- Allow: ```json ```http ```yaml ```sql ```text and ```ts/```tsx blocks whose body
-  is only `interface`/`type` declarations (API response/contract shapes).
-- Conservative: when ambiguous, warn rather than block; tune on real specs.
-Steps: add check fn; run against all current `specifications/*.md` to find existing
-violations (report, don't auto-edit); document skip path (`--no-verify`).
-Acceptance: a spec with a ```go impl block or a long constant run is blocked; the
-existing contract blocks (e.g. `interface TableSize` in `system-health-frontend.md`)
-pass. List of pre-existing violations captured for cleanup (feeds E/C).
+`.githooks/pre-commit` §5 added + tested across all 118 specs. Blocks executing
+statements (`:=`, `return <expr>`, control flow) inside go/ruby/rust/python fences
+(= function body/impl); warns on ≥8-line constant-list runs. Allows contracts
+(JSON/YAML, struct/interface/type/const, bare method signatures). Verified: blocks a
+synthetic impl spec with line citations, passes contract specs.
+
+Two open follow-ups surfaced:
+- **Pre-existing violation:** `specifications/websocket-log-streaming.md` has one real
+  impl block (`json.Unmarshal` / `if err != nil { return nil }`, ~9 lines). Editing a
+  spec needs owner sign-off (CLAUDE.md) — convert to intent prose / signatures. The
+  hook will block the next commit that touches this file until fixed.
+- **Enforcement gap:** the hook is local-opt-in (`make install-hooks` →
+  `core.hooksPath`); it is NOT installed in this clone and NOT run in CI. So §5 (and
+  the existing secret/deny/spec-size checks) can be bypassed silently. A CI job that
+  runs the hook's checks on PRs would make it a real guarantee — see `todo-ci.md`.
 
 ## Chunk B/D — CLAUDE.md rules [prevention, DONE 2026-06-23]
 

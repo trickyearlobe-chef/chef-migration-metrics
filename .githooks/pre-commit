@@ -315,6 +315,50 @@ for file in "${STAGED_FILES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
+# 5. Specs are intent, not implementation
+# ---------------------------------------------------------------------------
+# Specs define WHAT, not HOW (CLAUDE.md). Contracts and reference data are
+# fine — JSON/YAML examples, struct/interface/type/const definitions, bare
+# method signatures, request/response shapes. What is NOT fine is function
+# bodies / algorithm implementations copied into a spec; that duplicates code
+# and drifts. We detect executing statements (:=, return <expr>, control flow)
+# inside an implementation-language fence (go/ruby/rust/python). A long run of
+# constant-style assignments (a code table copied into prose) is warned on.
+for file in "${STAGED_FILES[@]}"; do
+  case "$file" in
+    specifications/*.md) ;;
+    *) continue ;;
+  esac
+
+  spec_content=$(git show ":$file" 2>/dev/null) || continue
+  [[ -z "$spec_content" ]] && continue
+
+  impl_hits=$(printf '%s\n' "$spec_content" | awk '
+    /^```(go|ruby|rust|python)[[:space:]]*$/ { infence = 1; next }
+    /^```/                                   { infence = 0; next }
+    infence && ( /:=/ \
+              || /^[[:space:]]*return[[:space:]]+[^[:space:]]/ \
+              || /^[[:space:]]*(if|for|switch|range)[[:space:](]/ \
+              || /^[[:space:]]*\} else/ ) { print "    line " NR ": " $0 }
+  ')
+  if [[ -n "$impl_hits" ]]; then
+    block "$file" "implementation code in a spec (function body/algorithm) — specs define what, not how; move it to TDD"
+    printf '%s\n' "$impl_hits" >&2
+  fi
+
+  const_run=$(printf '%s\n' "$spec_content" | awk '
+    /^```/ { infence = !infence; run = 0; next }
+    !infence && /^[[:space:]]*[A-Z][A-Z0-9_]{2,}[[:space:]]*[:=][[:space:]]*[^[:space:]]/ {
+      run++; if (run >= 8) { print NR; exit }; next
+    }
+    { run = 0 }
+  ')
+  if [[ -n "$const_run" ]]; then
+    warn "$file" "long constant-list run ending ~line ${const_run} — specs are intent; avoid copying constant tables from code"
+  fi
+done
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 if [[ $BLOCKED -gt 0 ]]; then
