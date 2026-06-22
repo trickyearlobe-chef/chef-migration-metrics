@@ -1,5 +1,9 @@
 # Secrets Storage — ToDo
 
+## Bugs
+
+- [ ] **Operational status page mislabels config-synced orgs' credential source as "file".** `handle_admin_status.go:185-188` derives the source solely from the DB column `ClientKeyCredentialName` (empty → "file", non-empty → "database"). But the startup org sync at `main.go:877-882` never copies `org.ClientKeyCredential` (config) into `UpsertOrganisationParams.ClientKeyCredentialName`, so for **all config-synced orgs** that column is always NULL — the field is effectively hardcoded to "file" regardless of whether the YAML uses `client_key_credential:` (DB/encrypted store) or `client_key_path:` (real file). Only API-created orgs (`handle_organisations.go`) report "database" correctly. **Display-only bug** — runtime resolution is unaffected (collector.go:1582-1592 and main.go:1375-1383 fall back to live config). **Fix options:** (a) populate `ClientKeyCredentialName` in the sync params from `org.ClientKeyCredential` (smaller; only fixes the cred-name case); or (b) have the status handler consult live config with the same precedence the collector/ClientFactory use — DB cred name → config cred name → config file path — to report file/database truthfully (more accurate, distinguishes real file vs store). (Found 2026-06-19.)
+
 ## Credential Store
 
 - [ ] Write functional tests for `DBCredentialStore` SQL paths against real PostgreSQL (build-tagged `//go:build functional`)
