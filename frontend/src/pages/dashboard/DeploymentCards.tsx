@@ -74,12 +74,6 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
     { label: "Pending", count: pending, colour: "#d1d5db", convergeFilter: "pending" },
   ];
 
-  // Secondary info: deployment state
-  const deploymentStats = [
-    { label: "Staged", count: entry.staged, colour: "#60a5fa", stateFilter: "Staged" },
-    { label: "Activated", count: entry.activated, colour: "#34d399", stateFilter: "Activated" },
-  ];
-
   function nodesHref(convergeStatus: string): string {
     const params = new URLSearchParams();
     params.set("target_version", entry.version);
@@ -96,14 +90,34 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
     return `/nodes?${params.toString()}`;
   }
 
+  function allNodesHref(): string {
+    const params = new URLSearchParams();
+    params.set("target_version", entry.version);
+    return `/nodes?${params.toString()}`;
+  }
+
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-gray-700">{entry.version}</span>
         <span className="text-xs text-gray-500">
-          {entry.total} node{entry.total !== 1 ? "s" : ""}
+          <Link to={allNodesHref()} className="hover:underline">
+            {entry.total} node{entry.total !== 1 ? "s" : ""}
+          </Link>
           {" · "}
-          {entry.staged} staged, {entry.activated} activated
+          {entry.staged > 0 && (
+            <Link to={deploymentStateHref("Staged")} className="hover:underline">
+              {entry.staged} staged
+            </Link>
+          )}
+          {entry.staged > 0 && ", "}
+          {entry.activated > 0 ? (
+            <Link to={deploymentStateHref("Activated")} className="hover:underline">
+              {entry.activated} activated
+            </Link>
+          ) : (
+            <span>{entry.activated} activated</span>
+          )}
         </span>
       </div>
       <div
@@ -129,15 +143,6 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
         {barSegments.filter((s) => s.count > 0).map((seg) => (
           <Link key={seg.label} to={nodesHref(seg.convergeFilter)} className="flex items-center gap-1 hover:underline">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ backgroundColor: seg.colour }}
-            />
-            {seg.label}: {seg.count}
-          </Link>
-        ))}
-        {deploymentStats.filter((s) => s.count > 0).map((seg) => (
-          <Link key={seg.label} to={deploymentStateHref(seg.stateFilter)} className="flex items-center gap-1 hover:underline">
             <span
               className="inline-block h-2 w-2 rounded-full"
               style={{ backgroundColor: seg.colour }}
