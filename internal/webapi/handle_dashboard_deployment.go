@@ -94,7 +94,8 @@ type deploymentTrendVersionPt struct {
 // handleDashboardDeploymentTrend handles GET /api/v1/dashboard/deployment/trend.
 // Returns deployment progress (staged+activated count and converge-passing
 // count) over time by reading the deployment breakdown from node_metrics
-// snapshots.
+// snapshots. When multiple organisations are selected, per-day data is
+// aggregated (summed) across all orgs so the chart shows fleet-wide totals.
 func (r *Router) handleDashboardDeploymentTrend(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -108,7 +109,17 @@ func (r *Router) handleDashboardDeploymentTrend(w http.ResponseWriter, req *http
 	}
 
 	ctx := req.Context()
-	var points []deploymentTrendPoint
+
+	// Aggregate by day across all orgs. Key = date string (YYYY-MM-DD).
+	type dayAgg struct {
+		day               string
+		timestamp         string // latest snapshot_at for ordering
+		totalNodes        int
+		stagedOrActivated int
+		convergePassing   int
+		byVersion         map[string]deploymentTrendVersionPt
+	}
+	byDay := make(map[string]*dayAgg)
 
 	for _, org := range orgs {
 		metrics, mErr := r.db.ListDailyMetricSnapshotsByOrganisation(ctx, org.Name, "node_metrics", 365)
@@ -138,31 +149,51 @@ func (r *Router) handleDashboardDeploymentTrend(w http.ResponseWriter, req *http
 				continue
 			}
 
-			pt := deploymentTrendPoint{
-				OrganisationName:  org.Name,
-				CollectionRunOrg:  ms.CollectionRunOrg,
-				CompletedAt:       ms.SnapshotAt.Format(trendTimestampFormat),
-				TotalNodes:        payload.TotalNodes,
-				StagedOrActivated: payload.Deployment.StagedOrActivated,
-				ConvergePassing:   payload.Deployment.ConvergePassing,
-			}
-
-			// Include per-version data when available.
-			if len(payload.Deployment.ByVersion) > 0 {
-				pt.ByVersion = make(map[string]deploymentTrendVersionPt, len(payload.Deployment.ByVersion))
-				for ver, vd := range payload.Deployment.ByVersion {
-					pt.ByVersion[ver] = deploymentTrendVersionPt{
-						StagedOrActivated: vd.Staged + vd.Activated,
-						ConvergePassing:   vd.ConvergePassing,
-					}
+			day := ms.SnapshotAt.Format("2006-01-02")
+			agg, exists := byDay[day]
+			if !exists {
+				agg = &dayAgg{
+					day:       day,
+					timestamp: ms.SnapshotAt.Format(trendTimestampFormat),
+					byVersion: make(map[string]deploymentTrendVersionPt),
 				}
+				byDay[day] = agg
+			}
+			// Keep the latest timestamp for the day (for chart ordering).
+			ts := ms.SnapshotAt.Format(trendTimestampFormat)
+			if ts > agg.timestamp {
+				agg.timestamp = ts
 			}
 
-			points = append(points, pt)
+			agg.totalNodes += payload.TotalNodes
+			agg.stagedOrActivated += payload.Deployment.StagedOrActivated
+			agg.convergePassing += payload.Deployment.ConvergePassing
+
+			for ver, vd := range payload.Deployment.ByVersion {
+				existing := agg.byVersion[ver]
+				existing.StagedOrActivated += vd.Staged + vd.Activated
+				existing.ConvergePassing += vd.ConvergePassing
+				agg.byVersion[ver] = existing
+			}
 		}
 	}
 
-	if points == nil {
+	// Build response points from aggregated data.
+	points := make([]deploymentTrendPoint, 0, len(byDay))
+	for _, agg := range byDay {
+		pt := deploymentTrendPoint{
+			CompletedAt:       agg.timestamp,
+			TotalNodes:        agg.totalNodes,
+			StagedOrActivated: agg.stagedOrActivated,
+			ConvergePassing:   agg.convergePassing,
+		}
+		if len(agg.byVersion) > 0 {
+			pt.ByVersion = agg.byVersion
+		}
+		points = append(points, pt)
+	}
+
+	if len(points) == 0 {
 		points = []deploymentTrendPoint{}
 	}
 

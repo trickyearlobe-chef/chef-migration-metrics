@@ -54,6 +54,7 @@ const DEPLOYMENT_STATE_OPTIONS: { value: string; label: string }[] = [
 const CONVERGE_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "success", label: "Success" },
   { value: "failed", label: "Failed" },
+  { value: "pending", label: "Pending" },
 ];
 
 // Drill-down params NodesPage reads into its own local state from the URL. After

@@ -71,13 +71,13 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
   const barSegments = [
     { label: "Passing", count: entry.converge_passing, colour: "#22c55e", convergeFilter: "success" },
     { label: "Failing", count: entry.converge_failing, colour: "#ef4444", convergeFilter: "failed" },
-    { label: "Pending", count: pending, colour: "#d1d5db", convergeFilter: "" },
+    { label: "Pending", count: pending, colour: "#d1d5db", convergeFilter: "pending" },
   ];
 
   // Secondary info: deployment state
   const deploymentStats = [
-    { label: "Staged", count: entry.staged, colour: "#60a5fa" },
-    { label: "Activated", count: entry.activated, colour: "#34d399" },
+    { label: "Staged", count: entry.staged, colour: "#60a5fa", stateFilter: "Staged" },
+    { label: "Activated", count: entry.activated, colour: "#34d399", stateFilter: "Activated" },
   ];
 
   function nodesHref(convergeStatus: string): string {
@@ -86,6 +86,13 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
     if (convergeStatus) {
       params.set("target_converge_status", convergeStatus);
     }
+    return `/nodes?${params.toString()}`;
+  }
+
+  function deploymentStateHref(stateFilter: string): string {
+    const params = new URLSearchParams();
+    params.set("target_version", entry.version);
+    params.set("migration_state", stateFilter);
     return `/nodes?${params.toString()}`;
   }
 
@@ -130,13 +137,13 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
           </Link>
         ))}
         {deploymentStats.filter((s) => s.count > 0).map((seg) => (
-          <span key={seg.label} className="flex items-center gap-1">
+          <Link key={seg.label} to={deploymentStateHref(seg.stateFilter)} className="flex items-center gap-1 hover:underline">
             <span
               className="inline-block h-2 w-2 rounded-full"
               style={{ backgroundColor: seg.colour }}
             />
             {seg.label}: {seg.count}
-          </span>
+          </Link>
         ))}
       </div>
     </div>

@@ -804,8 +804,26 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		args = append(args, pq.Array(f.MigrationStates))
 	}
 	if len(f.TargetConvergeStatuses) > 0 {
-		where += " AND cn.target_converge_status = ANY(" + nextArg() + ")"
-		args = append(args, pq.Array(f.TargetConvergeStatuses))
+		// "pending" is a pseudo-value meaning NULL/empty (no converge result yet).
+		hasPending := false
+		real := make([]string, 0, len(f.TargetConvergeStatuses))
+		for _, s := range f.TargetConvergeStatuses {
+			if s == "pending" {
+				hasPending = true
+			} else {
+				real = append(real, s)
+			}
+		}
+		switch {
+		case hasPending && len(real) > 0:
+			where += " AND (cn.target_converge_status = ANY(" + nextArg() + ") OR cn.target_converge_status IS NULL OR cn.target_converge_status = '')"
+			args = append(args, pq.Array(real))
+		case hasPending:
+			where += " AND (cn.target_converge_status IS NULL OR cn.target_converge_status = '')"
+		default:
+			where += " AND cn.target_converge_status = ANY(" + nextArg() + ")"
+			args = append(args, pq.Array(real))
+		}
 	}
 	if len(f.TargetVersions) > 0 {
 		where += " AND cn.target_version = ANY(" + nextArg() + ")"
