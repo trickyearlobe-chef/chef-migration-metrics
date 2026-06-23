@@ -161,30 +161,9 @@ type wsClientFilters struct {
 
 #### Read Pump Changes
 
-```go
-func (h *WebSocketHandler) readPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, c *client, remoteAddr string) {
-    // ... existing close/pong handling ...
-    
-    // Parse message
-    var msg wsClientMessage
-    if err := json.Unmarshal(data, &msg); err != nil {
-        h.logf("DEBUG", "ignoring unparseable message from %s: %v", remoteAddr, err)
-        continue
-    }
-    
-    switch msg.Action {
-    case "subscribe":
-        // validate and add subscription
-        c.Subscribe(msg.Event, subscription{MinSeverity: msg.Filters.MinSeverity})
-        h.logf("DEBUG", "client %s subscribed to %s (min_severity=%s)", remoteAddr, msg.Event, msg.Filters.MinSeverity)
-    case "unsubscribe":
-        c.Unsubscribe(msg.Event)
-        h.logf("DEBUG", "client %s unsubscribed from %s", remoteAddr, msg.Event)
-    }
-}
-```
+Intent: `readPump` (`websocket.go`) parses each inbound frame as a `wsClientMessage`; unparseable frames are logged at DEBUG and skipped. `subscribe`/`unsubscribe` actions are dispatched to the message handlers, which validate (see Validation above) and update the client's subscriptions. `readPump` receives the `*client` (passed from `ServeHTTP`) so it can manage that client's subscriptions.
 
-The `readPump` signature changes to accept the `*client` so it can manage subscriptions. The `client` is passed from `ServeHTTP`.
+Authoritative code: `readPump`, `handleSubscribe`, `handleUnsubscribe` in `internal/webapi/websocket.go`.
 
 ### 3. Broadcast Hook on DBWriter (`db_writer.go`)
 
@@ -201,65 +180,19 @@ func WithOnBroadcast(fn func(entry Entry)) DBWriterOption
 
 #### WriteEntry Changes
 
-After a successful `InsertLogEntry`, call `onBroadcast(entry)` if set:
+Intent: after a successful `InsertLogEntry`, `WriteEntry` invokes the `onBroadcast(entry)` callback if one is set (read under `dw.mu`). Invariant: the broadcast fires only on **successful** inserts — failed entries are never broadcast.
 
-```go
-func (dw *DBWriter) WriteEntry(entry Entry) error {
-    // ... existing insert logic ...
-    
-    _, err := dw.inserter.InsertLogEntry(dw.ctx, p)
-    if err != nil {
-        // ... existing error handling ...
-        return nil
-    }
-    
-    // Broadcast to WebSocket clients (if anyone is listening)
-    dw.mu.RLock()
-    onBcast := dw.onBroadcast
-    dw.mu.RUnlock()
-    if onBcast != nil {
-        onBcast(entry)
-    }
-    
-    return nil
-}
-```
-
-The broadcast only fires on **successful** inserts — failed entries are not broadcast.
+Authoritative code: `WriteEntry` and `onBroadcast` in `internal/logging/db_writer.go`.
 
 ### 4. Wiring in `main.go`
 
-```go
-// In the DB writer setup section (around line 170):
-dbWriter := logging.NewDBWriter(dbAdapter,
-    logging.WithContext(context.Background()),
-    logging.WithOnError(func(entry logging.Entry, dbErr error) {
-        log.Printf("WARN: failed to persist log entry to database: %v", dbErr)
-    }),
-    logging.WithOnBroadcast(func(entry logging.Entry) {
-        hub.Broadcast(webapi.NewEvent(webapi.EventLogEntry, map[string]any{
-            "severity":             entry.Severity.String(),
-            "scope":                string(entry.Scope),
-            "message":              entry.Message,
-            "timestamp":            entry.Timestamp.Format(time.RFC3339Nano),
-            "organisation":         entry.Organisation,
-            "cookbook_name":         entry.CookbookName,
-            "cookbook_version":      entry.CookbookVersion,
-            "commit_sha":           entry.CommitSHA,
-            "chef_client_version":  entry.ChefClientVersion,
-            "collection_run_id":    entry.CollectionRunID,
-            "export_job_id":        entry.ExportJobID,
-            "tls_domain":           entry.TLSDomain,
-            // process_output intentionally omitted — too large for WebSocket
-            // frames. Clients fetch full detail via REST on click.
-        }))
-    }),
-)
-```
+Intent: `main.go` wires `WithOnBroadcast` on the DB writer so each persisted entry is broadcast as an `EventLogEntry` event whose `data` carries the entry's severity, scope, message, timestamp and provenance fields (organisation, cookbook name/version, commit SHA, chef client version, collection-run / export-job IDs, TLS domain).
 
-**Important:** `process_output` is **not** broadcast over WebSocket. It can contain kilobytes of CookStyle/Test Kitchen output. Clients that need it fetch via `GET /api/v1/logs/:id`.
+Invariants:
+- **`process_output` is never broadcast** — it can be kilobytes of CookStyle/Test Kitchen output, too large for WebSocket frames. Clients fetch full detail on demand via `GET /api/v1/logs/:id`.
+- The EventHub must be created **before** the DB writer so the broadcast closure can capture it.
 
-The EventHub must be created **before** the DB writer so the broadcast closure can capture it. Move EventHub creation above the DB writer wiring.
+Authoritative code: the `WithOnBroadcast` wiring in `cmd/chef-migration-metrics/main.go`; the broadcast payload fields are those set there.
 
 ### 5. Log Entry Event Payload
 
