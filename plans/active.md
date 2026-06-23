@@ -1,10 +1,14 @@
 # Active Plan
 
 Current: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
-Chunk A (lint impl out of specs) next; B/D rules done; then E (drift sweep),
-then C (criteria↔test linkage). Branch: `chore/spec-drift-control`.
-
-Pending merge (separate, complete): `docs/ui-revamp-followup-reconcile`.
+Chunks A (lint) + B/D (rules) landed in `main`. Open:
+- **E — drift sweep** (approved; multi-agent spec↔code audit → report). Run next
+  session for clean context.
+- **C — criteria↔test linkage** (stable IDs on acceptance criteria + a coverage
+  script). Prioritise from E's findings.
+- Copied-contract backlog: 5 specs still WARN (`diagnostic-bundle`,
+  `system-health-{package-layout,frontend,api-endpoint,configuration}`) —
+  reference-don't-copy conversion, fold into E.
 
 ## Parked — SAML config follow-ups (lower priority)
 
