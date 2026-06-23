@@ -35,10 +35,12 @@ Two open follow-ups surfaced:
   impl block (`json.Unmarshal` / `if err != nil { return nil }`, ~9 lines). Editing a
   spec needs owner sign-off (CLAUDE.md) — convert to intent prose / signatures. The
   hook will block the next commit that touches this file until fixed.
-- **Enforcement gap:** the hook is local-opt-in (`make install-hooks` →
-  `core.hooksPath`); it is NOT installed in this clone and NOT run in CI. So §5 (and
-  the existing secret/deny/spec-size checks) can be bypassed silently. A CI job that
-  runs the hook's checks on PRs would make it a real guarantee — see `todo-ci.md`.
+- **Enforcement gap:** the hook is local-opt-in via `make install-hooks` (sets
+  `core.hooksPath=.githooks`). It IS active in this clone (verified
+  `git config core.hooksPath` = `.githooks`), but is NOT run in CI, and any clone
+  that hasn't run install-hooks — or a `--no-verify` commit — skips it. So §5 and the
+  existing secret/deny/spec-size checks aren't a hard guarantee. A CI job running the
+  hook's checks on PRs would close this — see `todo-ci.md`.
 
 ## Chunk B/D — CLAUDE.md rules [prevention, DONE 2026-06-23]
 
