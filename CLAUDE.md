@@ -72,7 +72,8 @@
 - Specs live under `specifications/<component>.md` (flat layout, no subdirectories).
 - NEVER silently diverge from a spec.
 - Do not modify specs without asking.
-- Specs define *what*, not *how*. They contain contracts, expected outputs, reference data, and behaviour descriptions. No function bodies or algorithm implementations — that's what TDD is for.
+- Specs define *what*, not *how*. They hold intent, invariants, expected behaviour, and reference data. No function bodies or algorithm implementations — that's what TDD is for.
+- Specs **reference contracts, never copy them**. This is a code-first repo: the source of truth for any shape is the code that owns it — internal Go types (with their json tags) for our own shapes; the client/mapping code (`vcenter.go`, `proxmox.go`) for external Proxmox/VMware shapes we consume but don't own. A spec must point to the authoritative type and state the invariants it can't express (de-dup rules, units, N/A semantics, why we read a field) — not paste a struct/interface that drifts the moment code changes. A small illustrative example (sample JSON) is fine as reference data; the normative shape lives in code, pinned by a contract test.
 - Before implementing any feature, check whether a specification exists. If not, write one first.
 - When completing tasks, update the relevant `plans/todo-<component>.md` file.
 

@@ -356,6 +356,18 @@ for file in "${STAGED_FILES[@]}"; do
   if [[ -n "$const_run" ]]; then
     warn "$file" "long constant-list run ending ~line ${const_run} — specs are intent; avoid copying constant tables from code"
   fi
+
+  # Copied contract: a struct/interface block inside a code fence is almost
+  # always a paste of a code-owned type that will drift. Reference the
+  # authoritative type + state invariants instead (CLAUDE.md). Warn, not block.
+  contract_copy=$(printf '%s\n' "$spec_content" | awk '
+    /^```(go|typescript|ts|tsx)[[:space:]]*$/ { infence = 1; next }
+    /^```/                                    { infence = 0; next }
+    infence && /(struct|interface)[^{]*\{/ { print NR; exit }
+  ')
+  if [[ -n "$contract_copy" ]]; then
+    warn "$file" "struct/interface block (~line ${contract_copy}) looks like a copied contract — reference the authoritative type (Go type, or vcenter.go/proxmox.go for external shapes) and state invariants instead of pasting it"
+  fi
 done
 
 # ---------------------------------------------------------------------------
