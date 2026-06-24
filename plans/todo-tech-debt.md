@@ -281,6 +281,12 @@ Recorded 2026-06-18 (`fix/pin-harness-blocked-deps`).
 
 - [ ] **Several frontend deps are pinned below latest to dodge the Harness Artifact Registry quarantine.** The registry returns `403 Forbidden` on tarball download for *very recently published* versions (a scan/approval window — confirmed: e.g. `undici@7.27.2` blocked, `7.27.0` permitted; `typescript-eslint@8.61.0` blocked, `8.60.1` permitted). This broke `npm ci` in the build. As a tactical fix, 7 packages were pinned to the highest *permitted* version — `typescript-eslint` 8.60.1 + `@types/react` 19.2.16 (exact devDeps), and `overrides` for `undici` 7.27.0 / `semver` 7.8.1 / `caniuse-lite` 1.0.30001793 / `electron-to-chromium` 1.5.366 / `baseline-browser-mapping` 2.10.33. **Why tactical:** the versions aren't vulnerable — they're just newer than the quarantine window — so this is working around registry policy, not a real dep problem. Dependabot will keep proposing the blocked latest versions and re-break the build, and the pins drift further behind over time. **Strategic fix (Harness side, needs admin):** shorten or auto-approve the quarantine window (or enable on-demand upstream fetch) so recent versions resolve, then remove these pins/overrides and let the deps float again. Re-run the tarball scan (probe each lockfile `version`'s tarball for 403) after any registry-policy change to confirm.
 
+## Frontend — undici CVE-2026-12151 (high) blocked by quarantine
+
+Recorded 2026-06-24.
+
+- [ ] **`undici@7.28.0` fixes CVE-2026-12151 (SameSite cookie substring matching) but is in the Harness 14-day quarantine.** The vuln is test-only (jsdom → undici, not shipped to production). The override in `package.json` pins `undici` to `7.27.0`; bump to `7.28.0` once the quarantine clears (~2026-07-08). Then run `npm install --ignore-scripts && npm audit` to confirm clean.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
