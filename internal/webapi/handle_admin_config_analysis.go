@@ -150,16 +150,20 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 	}
 
 	// Apply cookstyle re-score and capture result.
-	cfg := r.liveConfig()
-	rules := analysis.EffectiveRules(
-		cfg.AnalysisTools.CookstyleFailurePreset,
-		cfg.AnalysisTools.CookstyleFailureRules,
-	)
-	rescoreResult, err := RescoreCookstyleResults(req.Context(), r.db, rules, r.logger)
-	if err != nil {
-		r.logf("ERROR", "admin/config/analysis_tools: apply rescore: %v", err)
-		WriteInternalError(w, "Failed to apply config change.")
-		return
+	var rescoreResult RescoreResult
+	if r.db != nil {
+		cfg := r.liveConfig()
+		rules := analysis.EffectiveRules(
+			cfg.AnalysisTools.CookstyleFailurePreset,
+			cfg.AnalysisTools.CookstyleFailureRules,
+		)
+		res, err := RescoreCookstyleResults(req.Context(), r.db, rules, r.logger)
+		if err != nil {
+			// Non-fatal: log the error but don't block the config save.
+			r.logf("ERROR", "admin/config/analysis_tools: apply rescore: %v", err)
+		} else {
+			rescoreResult = res
+		}
 	}
 
 	reload := worstGranularity([]ApplyResult{kitchenRes, {Reload: ReloadSubsystem}})

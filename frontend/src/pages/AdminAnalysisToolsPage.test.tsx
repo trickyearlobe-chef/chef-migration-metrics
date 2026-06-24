@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import * as api from "../api";
 import { AdminAnalysisToolsPage } from "./AdminAnalysisToolsPage";
 
@@ -49,47 +49,6 @@ describe("AdminAnalysisToolsPage", () => {
     render(<AdminAnalysisToolsPage />);
     await waitFor(() => screen.getByText("Analysis Tools"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-  });
-
-  it("renders the CookStyle Failure Rules section", async () => {
-    render(<AdminAnalysisToolsPage />);
-    await waitFor(() =>
-      expect(screen.getByText("CookStyle Failure Rules")).toBeInTheDocument(),
-    );
-  });
-
-  it("renders the failure rules grid with preset dropdown", async () => {
-    render(<AdminAnalysisToolsPage />);
-    await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: /preset/i })).toBeInTheDocument(),
-    );
-    expect(screen.getByRole("combobox", { name: /preset/i })).toHaveValue("default");
-  });
-
-  it("enables save button when failure rules change", async () => {
-    render(<AdminAnalysisToolsPage />);
-    await waitFor(() => screen.getByText("CookStyle Failure Rules"));
-    const presetSelect = screen.getByRole("combobox", { name: /preset/i });
-    fireEvent.change(presetSelect, { target: { value: "strict" } });
-    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
-  });
-
-  it("shows verdict count in success message after save", async () => {
-    vi.mocked(api.saveAnalysisTools).mockResolvedValue({
-      value: mockAnalysisToolsResponse.value,
-      restartRequired: false,
-      verdictsChanged: 5,
-    } as never);
-    render(<AdminAnalysisToolsPage />);
-    await waitFor(() => screen.getByText("CookStyle Failure Rules"));
-    // Change preset to make dirty
-    fireEvent.change(screen.getByRole("combobox", { name: /preset/i }), {
-      target: { value: "strict" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(screen.getByText(/5 cookbook verdicts changed/)).toBeInTheDocument(),
-    );
   });
 });
 

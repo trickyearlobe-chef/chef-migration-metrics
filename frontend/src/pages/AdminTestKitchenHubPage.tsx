@@ -8,11 +8,13 @@ import KitchenBatchesPage from "./KitchenBatchesPage";
 import KitchenQueuePage from "./KitchenQueuePage";
 import { AdminConcurrencyPage } from "./AdminConcurrencyPage";
 import { AdminAnalysisToolsPage } from "./AdminAnalysisToolsPage";
+import { AdminCookstylePage } from "./AdminCookstylePage";
 
-type KitchenTab = "config" | "analysis" | "batches" | "queue" | "settings";
+type KitchenTab = "config" | "cookstyle" | "analysis" | "batches" | "queue" | "settings";
 
 const TABS: { key: KitchenTab; label: string }[] = [
   { key: "config", label: "Hypervisor" },
+  { key: "cookstyle", label: "CookStyle" },
   { key: "analysis", label: "Analysis" },
   { key: "batches", label: "Batches" },
   { key: "queue", label: "Queue" },
@@ -20,7 +22,7 @@ const TABS: { key: KitchenTab; label: string }[] = [
 ];
 
 function isValidTab(value: string | null): value is KitchenTab {
-  return ["config", "analysis", "batches", "queue", "settings"].includes(
+  return ["config", "cookstyle", "analysis", "batches", "queue", "settings"].includes(
     value ?? "",
   );
 }
@@ -64,6 +66,7 @@ export function AdminTestKitchenHubPage() {
       </div>
 
       {activeTab === "config" && <AdminTestKitchenPage />}
+      {activeTab === "cookstyle" && <AdminCookstylePage />}
       {activeTab === "analysis" && <AdminKitchenAnalysisPage />}
       {activeTab === "batches" && <KitchenBatchesPage />}
       {activeTab === "queue" && <KitchenQueuePage />}
