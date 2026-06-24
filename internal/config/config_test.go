@@ -2040,6 +2040,87 @@ analysis_tools:
 	expectParseError(t, yaml, "test_kitchen_timeout_minutes must be >= 0")
 }
 
+func TestDefaults_CookstyleFailurePreset(t *testing.T) {
+	cfg := mustParse(t, minimalValidYAML())
+	if cfg.AnalysisTools.CookstyleFailurePreset != "default" {
+		t.Errorf("expected cookstyle_failure_preset 'default', got %q", cfg.AnalysisTools.CookstyleFailurePreset)
+	}
+}
+
+func TestValidation_CookstyleFailurePreset_Invalid(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  cookstyle_failure_preset: "banana"
+`
+	expectParseError(t, yaml, "cookstyle_failure_preset must be one of strict, default, relaxed")
+}
+
+func TestValidation_CookstyleFailurePreset_ValidValues(t *testing.T) {
+	for _, preset := range []string{"strict", "default", "relaxed"} {
+		yaml := minimalValidYAML() + `
+analysis_tools:
+  cookstyle_failure_preset: "` + preset + `"
+`
+		cfg := mustParse(t, yaml)
+		if cfg.AnalysisTools.CookstyleFailurePreset != preset {
+			t.Errorf("expected preset %q, got %q", preset, cfg.AnalysisTools.CookstyleFailurePreset)
+		}
+	}
+}
+
+func TestValidation_CookstyleFailureRules_EmptyKey(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  cookstyle_failure_rules:
+    "": ["error"]
+`
+	expectParseError(t, yaml, "keys must be non-empty")
+}
+
+func TestValidation_CookstyleFailureRules_InvalidSeverity(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  cookstyle_failure_rules:
+    "Chef/Style/": ["invalid_severity"]
+`
+	expectParseError(t, yaml, "invalid severity")
+}
+
+func TestValidation_CookstyleFailureRules_ValidExplicit(t *testing.T) {
+	yaml := minimalValidYAML() + `
+analysis_tools:
+  cookstyle_failure_rules:
+    "Chef/Deprecations/": ["warning", "error", "fatal"]
+    "Chef/Style/": []
+    "*": ["error", "fatal"]
+`
+	cfg := mustParse(t, yaml)
+	if len(cfg.AnalysisTools.CookstyleFailureRules) != 3 {
+		t.Errorf("expected 3 rules, got %d", len(cfg.AnalysisTools.CookstyleFailureRules))
+	}
+}
+
 func TestDefaults_TestKitchenDriver(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if cfg.AnalysisTools.TestKitchen.Driver != "" {

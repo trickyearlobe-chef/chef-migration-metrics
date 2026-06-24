@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchAnalysisTools, saveAnalysisTools, type AnalysisToolsConfig } from "../api";
+import {
+  fetchAnalysisTools,
+  saveAnalysisTools,
+  type AnalysisToolsConfig,
+} from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 
 const INPUT_CLASS =
@@ -25,8 +29,8 @@ export function AdminAnalysisToolsPage() {
     fetchAnalysisTools()
       .then((data) => {
         if (cancelled) return;
-        setConfig(data);
-        setSaved(data);
+        setConfig(data.value);
+        setSaved(data.value);
       })
       .catch((err: unknown) => {
         if (!cancelled)
@@ -58,10 +62,7 @@ export function AdminAnalysisToolsPage() {
     setSaving(true);
     setSaveError(null);
     setSuccess(false);
-    const payload: AnalysisToolsConfig = {
-      ...config,
-      cookstyle_enabled: config.cookstyle_enabled ?? true,
-    };
+    const payload: AnalysisToolsConfig = { ...config };
     try {
       const { value: updated } = await saveAnalysisTools(payload);
       setConfig(updated);
@@ -86,15 +87,12 @@ export function AdminAnalysisToolsPage() {
       />
     );
 
-  const cookstyleEnabled = config.cookstyle_enabled ?? true;
-
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-gray-900">Analysis Tools</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Controls the CookStyle and Test Kitchen analysis tool configuration. Test Kitchen driver
-          settings are managed separately on the Test Kitchen page.
+          Shared settings for the CookStyle and Test Kitchen analysis tools.
         </p>
       </div>
 
@@ -115,42 +113,6 @@ export function AdminAnalysisToolsPage() {
               Path to the directory containing the embedded Chef tools (cookstyle, kitchen). Leave
               empty to use system PATH.
             </p>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-gray-700">CookStyle Scanning Enabled</label>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={cookstyleEnabled}
-              onClick={() => handleChange("cookstyle_enabled", !cookstyleEnabled)}
-              disabled={saving}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${
-                cookstyleEnabled ? "bg-blue-600" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  cookstyleEnabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              CookStyle Timeout (minutes)
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={config.cookstyle_timeout_minutes}
-              onChange={(e) =>
-                handleChange("cookstyle_timeout_minutes", Number(e.target.value))
-              }
-              className={INPUT_CLASS}
-              disabled={saving}
-            />
           </div>
         </div>
       </div>

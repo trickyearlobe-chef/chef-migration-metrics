@@ -159,7 +159,7 @@ build-all: build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-a
 build-frontend: ## Build the React SPA frontend (creates placeholder dist/ if npm unavailable)
 	@if [ -d "$(FRONTEND_DIR)" ] && [ -f "$(FRONTEND_DIR)/package.json" ] && command -v npm >/dev/null 2>&1; then \
 		echo "$(GREEN)Building frontend...$(RESET)"; \
-		cd $(FRONTEND_DIR) && npm ci --prefer-offline && npm run build; \
+		cd $(FRONTEND_DIR) && npm install --prefer-offline && npm run build; \
 	else \
 		echo "$(YELLOW)npm not found or frontend/ missing — creating placeholder dist/$(RESET)"; \
 	fi

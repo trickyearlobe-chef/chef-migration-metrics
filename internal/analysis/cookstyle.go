@@ -216,6 +216,10 @@ type CookstyleScanner struct {
 	// at the start of each batch so a config change takes effect on the next
 	// collection run without a restart. Falls back to the baked concurrency.
 	concurrencyFn func() int
+	// failureRulesFn, when set, returns the live failure rules, read at scan
+	// time so a config change takes effect on the next scan without a restart.
+	// Falls back to DefaultFailureRules().
+	failureRulesFn func() CookstyleFailureRules
 }
 
 // CookstyleScannerOption configures a CookstyleScanner.
@@ -234,6 +238,13 @@ func WithCookstyleConcurrencyFunc(fn func() int) CookstyleScannerOption {
 	return func(s *CookstyleScanner) { s.concurrencyFn = fn }
 }
 
+// WithCookstyleFailureRulesFn sets a live provider for the failure rules.
+// When set, the scanner reads the rules at scan time so a config change takes
+// effect on the next scan without a restart.
+func WithCookstyleFailureRulesFn(fn func() CookstyleFailureRules) CookstyleScannerOption {
+	return func(s *CookstyleScanner) { s.failureRulesFn = fn }
+}
+
 // effectiveConcurrency returns the live concurrency when a provider is wired
 // (clamped to >= 1), otherwise the value baked at construction.
 func (s *CookstyleScanner) effectiveConcurrency() int {
@@ -243,6 +254,15 @@ func (s *CookstyleScanner) effectiveConcurrency() int {
 		}
 	}
 	return s.concurrency
+}
+
+// effectiveFailureRules returns the live failure rules when a provider is
+// wired, otherwise the default rules.
+func (s *CookstyleScanner) effectiveFailureRules() CookstyleFailureRules {
+	if s.failureRulesFn != nil {
+		return s.failureRulesFn()
+	}
+	return DefaultFailureRules()
 }
 
 // NewCookstyleScanner creates a scanner.
@@ -558,11 +578,10 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 			if off.Corrected {
 				sr.CorrectableCount++
 			}
-			if isErrorOrFatal(off.Severity) {
-				sr.Passed = false
-			}
 		}
 	}
+
+	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
 
 	// Step 7: log outcome.
 	if sr.Passed {
@@ -699,11 +718,10 @@ func (s *CookstyleScanner) scanOneGitRepo(
 			if off.Corrected {
 				sr.CorrectableCount++
 			}
-			if isErrorOrFatal(off.Severity) {
-				sr.Passed = false
-			}
 		}
 	}
+
+	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
 
 	// Step 7: log outcome.
 	if sr.Passed {

@@ -6,17 +6,27 @@ import { render, screen, waitFor } from "@testing-library/react";
 import * as api from "../api";
 import { AdminAnalysisToolsPage } from "./AdminAnalysisToolsPage";
 
-vi.mock("../api");
+vi.mock("../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof api>();
+  return {
+    ...actual,
+    fetchAnalysisTools: vi.fn(),
+    saveAnalysisTools: vi.fn(),
+  };
+});
 
-const mockAnalysisTools = {
-  embedded_bin_dir: "/opt/chef/embedded/bin",
-  cookstyle_enabled: true,
-  cookstyle_timeout_minutes: 30,
+const mockAnalysisToolsResponse = {
+  value: {
+    embedded_bin_dir: "/opt/chef/embedded/bin",
+    cookstyle_enabled: true,
+    cookstyle_timeout_minutes: 30,
+  },
+  effective_failure_rules: { "*": ["error", "fatal"] },
 };
 
 describe("AdminAnalysisToolsPage", () => {
   beforeEach(() => {
-    vi.mocked(api.fetchAnalysisTools).mockResolvedValue(mockAnalysisTools as never);
+    vi.mocked(api.fetchAnalysisTools).mockResolvedValue(mockAnalysisToolsResponse as never);
   });
 
   it("renders page heading", async () => {
@@ -41,3 +51,4 @@ describe("AdminAnalysisToolsPage", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });
+

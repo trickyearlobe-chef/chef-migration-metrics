@@ -36,6 +36,7 @@ import { AdminActionsPage } from "./pages/AdminActionsPage";
 import { AdminSystemHealthPage } from "./pages/AdminSystemHealthPage";
 import { AdminCredentialsPage } from "./pages/credentials";
 import { AdminTestKitchenHubPage } from "./pages/AdminTestKitchenHubPage";
+import { AdminCookstylePage } from "./pages/AdminCookstylePage";
 import { AdminGitURLsPage } from "./pages/AdminGitURLsPage";
 import { AdminCollectionPage } from "./pages/AdminCollectionPage";
 import { AdminLoggingPage } from "./pages/AdminLoggingPage";
@@ -273,6 +274,14 @@ export function App() {
                 }
               />
               <Route
+                path="/admin/cookstyle"
+                element={
+                  <RequireAdmin>
+                    <AdminCookstylePage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
                 path="/admin/kitchen-batches"
                 element={<Navigate to="/admin/test-kitchen?tab=batches" replace />}
               />
@@ -314,7 +323,7 @@ export function App() {
               />
               <Route
                 path="/admin/config/analysis-tools"
-                element={<Navigate to="/admin/test-kitchen?tab=settings" replace />}
+                element={<Navigate to="/admin/cookstyle" replace />}
               />
               <Route
                 path="/admin/config/exports"

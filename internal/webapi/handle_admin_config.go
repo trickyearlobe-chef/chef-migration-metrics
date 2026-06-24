@@ -33,6 +33,9 @@ type putConfigResponse struct {
 	// stored anyway (e.g. an incomplete TLS certificate chain — tls-static.md
 	// § 2.2). Omitted when empty.
 	Warnings []string `json:"warnings,omitempty"`
+	// VerdictsChanged reports how many cookstyle verdicts were flipped by a
+	// failure-rules re-score. Omitted (zero) for endpoints that don't re-score.
+	VerdictsChanged int `json:"verdicts_changed,omitempty"`
 }
 
 // adminConfigCronRe matches a basic 5-field cron expression.

@@ -23,7 +23,58 @@ export interface AnalysisToolsConfig {
   embedded_bin_dir: string;
   cookstyle_enabled: boolean | null;
   cookstyle_timeout_minutes: number;
+  cookstyle_failure_preset?: string;
+  cookstyle_failure_rules?: Record<string, string[]>;
 }
+
+export type CookstyleFailurePreset = "strict" | "default" | "relaxed" | "custom";
+
+export const COOKSTYLE_SEVERITIES = [
+  "convention",
+  "refactor",
+  "warning",
+  "error",
+  "fatal",
+] as const;
+
+export type CookstyleSeverity = (typeof COOKSTYLE_SEVERITIES)[number];
+
+export const COOKSTYLE_NAMESPACES = [
+  "Chef/Deprecations/",
+  "Chef/Correctness/",
+  "Chef/Style/",
+  "Chef/Modernize/",
+  "*",
+] as const;
+
+export const COOKSTYLE_NAMESPACE_LABELS: Record<string, string> = {
+  "Chef/Deprecations/": "Chef/Deprecations",
+  "Chef/Correctness/": "Chef/Correctness",
+  "Chef/Style/": "Chef/Style",
+  "Chef/Modernize/": "Chef/Modernize",
+  "*": "Other (catch-all)",
+};
+
+export const COOKSTYLE_PRESETS: Record<
+  Exclude<CookstyleFailurePreset, "custom">,
+  Record<string, string[]>
+> = {
+  strict: {
+    "Chef/Deprecations/": ["warning", "error", "fatal"],
+    "Chef/Correctness/": ["warning", "error", "fatal"],
+    "*": ["error", "fatal"],
+  },
+  default: {
+    "*": ["error", "fatal"],
+  },
+  relaxed: {
+    "Chef/Deprecations/": ["error", "fatal"],
+    "Chef/Correctness/": ["error", "fatal"],
+    "Chef/Style/": [],
+    "Chef/Modernize/": [],
+    "*": [],
+  },
+};
 
 export interface LoggingConfig {
   level: string;

@@ -73,6 +73,11 @@ type mockStore struct {
 	DeleteGitRepoComplexitiesByRepoFn                   func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteGitRepoAutocorrectPreviewsByRepoFn            func(ctx context.Context, gitRepoName, gitRepoURL string) error
 	DeleteAllGitRepoCookstyleResultsFn                  func(ctx context.Context) error
+	ListServerCookstyleResultsForRescoreFn              func(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
+	ListGitRepoCookstyleResultsForRescoreFn             func(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
+	BatchUpdateServerCookstylePassedFn                  func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
+	BatchUpdateGitRepoCookstylePassedFn                 func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
+	RecomputeGitRepoCompatibilityStatusFn               func(ctx context.Context, name, url, targetVersion string) error
 	DeleteAllGitRepoComplexitiesFn                      func(ctx context.Context) error
 	DeleteAllGitRepoAutocorrectPreviewsFn               func(ctx context.Context) error
 	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
@@ -624,6 +629,41 @@ func (m *mockStore) DeleteGitRepoAutocorrectPreviewsByRepo(ctx context.Context, 
 func (m *mockStore) DeleteAllGitRepoCookstyleResults(ctx context.Context) error {
 	if m.DeleteAllGitRepoCookstyleResultsFn != nil {
 		return m.DeleteAllGitRepoCookstyleResultsFn(ctx)
+	}
+	return nil
+}
+
+func (m *mockStore) ListServerCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error) {
+	if m.ListServerCookstyleResultsForRescoreFn != nil {
+		return m.ListServerCookstyleResultsForRescoreFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListGitRepoCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error) {
+	if m.ListGitRepoCookstyleResultsForRescoreFn != nil {
+		return m.ListGitRepoCookstyleResultsForRescoreFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) BatchUpdateServerCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error {
+	if m.BatchUpdateServerCookstylePassedFn != nil {
+		return m.BatchUpdateServerCookstylePassedFn(ctx, updates)
+	}
+	return nil
+}
+
+func (m *mockStore) BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error {
+	if m.BatchUpdateGitRepoCookstylePassedFn != nil {
+		return m.BatchUpdateGitRepoCookstylePassedFn(ctx, updates)
+	}
+	return nil
+}
+
+func (m *mockStore) RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error {
+	if m.RecomputeGitRepoCompatibilityStatusFn != nil {
+		return m.RecomputeGitRepoCompatibilityStatusFn(ctx, name, url, targetVersion)
 	}
 	return nil
 }

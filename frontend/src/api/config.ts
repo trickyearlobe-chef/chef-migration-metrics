@@ -29,12 +29,21 @@ export type {
   AcmeStatus,
   AuthConfig,
   AuthProvider,
+  CookstyleFailurePreset,
+  CookstyleSeverity,
+} from "../types/config";
+export {
+  COOKSTYLE_SEVERITIES,
+  COOKSTYLE_NAMESPACES,
+  COOKSTYLE_NAMESPACE_LABELS,
+  COOKSTYLE_PRESETS,
 } from "../types/config";
 import { apiFetch, buildUrl } from "./client";
 
 export interface PutConfigResponse<T> {
   value: T;
   restartRequired: boolean;
+  verdictsChanged?: number;
 }
 
 // Request body for the CSR generation endpoint (tls-csr.md § 4.3). All fields
@@ -60,13 +69,14 @@ function apiMutateConfig<T>(
   url: string,
   body: unknown,
 ): Promise<PutConfigResponse<T>> {
-  return apiFetch<{ value: T; restart_required?: boolean }>(url, {
+  return apiFetch<{ value: T; restart_required?: boolean; verdicts_changed?: number }>(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((envelope) => ({
     value: envelope.value,
     restartRequired: envelope.restart_required ?? false,
+    verdictsChanged: envelope.verdicts_changed,
   }));
 }
 
@@ -119,8 +129,13 @@ export function saveConcurrency(
   );
 }
 
-export function fetchAnalysisTools(): Promise<AnalysisToolsConfig> {
-  return apiFetch<AnalysisToolsConfig>(
+export interface AnalysisToolsGetResponse {
+  value: AnalysisToolsConfig;
+  effective_failure_rules: Record<string, string[]>;
+}
+
+export function fetchAnalysisTools(): Promise<AnalysisToolsGetResponse> {
+  return apiFetch<AnalysisToolsGetResponse>(
     buildUrl("/admin/config/analysis-tools"),
   );
 }
