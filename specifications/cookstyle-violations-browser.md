@@ -1,5 +1,11 @@
 # CookStyle Violations Browser — Component Specification
 
+> **⚠️ SUPERSEDED** — This spec's flat-list approach has been replaced by the
+> cop-centric classification system in
+> [cop-classification.md](cop-classification.md). The API endpoint (chunk 1)
+> remains useful as a data source; the frontend tab (chunk 2) will be replaced
+> by the Cop Analysis view.
+
 > **TL;DR** — A filterable list view of cookbooks with CookStyle violations, with filters for namespace (category), severity, cop name, and pass/fail status. Reuses existing per-cookbook cookstyle result data; no new aggregation endpoint required.
 
 ## Overview

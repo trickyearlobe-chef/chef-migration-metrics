@@ -1,0 +1,309 @@
+# Cop Classification & Analysis — Component Specification
+
+> **TL;DR** — A system for classifying CookStyle cops by their actual migration
+> impact (Blocker / Review / Noise), with auto-seeding from `RemovedIn` data, operator overrides, custom cop definitions for gaps in cookstyle, and a cop-centric analysis UI that answers "what must I fix to migrate?"
+
+## Overview
+
+CookStyle severity levels (`convention`, `refactor`, `warning`, `error`, `fatal`) do not reliably indicate whether a cop is a migration blocker. The `Chef/Deprecations/NodeSet` cop (removed in Chef 13 — hard crash) and `Chef/Deprecations/DependsPoise` (unmaintained but still works) both fire at `warning`. Operators need to know which cops actually block their migration.
+
+This specification adds:
+
+1. **Cop classification** — per-cop, per-target-version labels (Blocker / Review / Noise)
+2. **Auto-seeding** — cops with `RemovedIn ≤ target_version` are auto-classified as Blocker
+3. **Operator overrides** — reclassify any cop via the UI
+4. **Custom cop definitions** — define patterns not yet in cookstyle (e.g. `nil.=~` removal in Ruby 3)
+5. **Cop analysis view** — per-cop aggregation showing affected cookbooks, fix effort, and classification
+6. **Updated pass/fail** — classification-aware failure determination replaces pure severity rules
+
+## Classification Levels
+
+| Level | Meaning | Visual | Pass/Fail |
+|-------|---------|--------|-----------|
+| **Blocker** | Will crash or silently produce wrong results on target version | 🔴 | Fails cookbook |
+| **Review** | Likely problematic — operator should investigate | 🟠 | Does not fail (advisory) |
+| **Noise** | Tooling-only, style, or harmless on target version | ⚪ | Does not fail |
+| **Unclassified** | Not yet reviewed — falls back to severity rules | ❓ | Severity fallback |
+
+## Classification Resolution
+
+For a given cop + target version, classification is resolved in priority order:
+
+1. **Operator override** (stored in DB) — highest priority
+2. **Auto-seed: `RemovedIn ≤ target_version`** — from cop mapping table
+3. **Curated defaults** (shipped with application) — known behaviour-change cops
+4. **Unclassified** — fallback to severity-based failure rules
+
+### Pass/Fail Determination
+
+A cookbook **fails** if it has any offense where:
+- Classification = Blocker, OR
+- Classification = Unclassified AND severity ∈ configured failure severities (existing failure rules as fallback)
+
+This preserves backward compatibility: until operators classify cops, the existing severity-based rules still apply.
+
+## Data Model
+
+### Cop Classifications Table
+
+```sql
+CREATE TABLE cop_classifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cop_name TEXT NOT NULL,
+    target_chef_version TEXT NOT NULL,
+    classification TEXT NOT NULL CHECK (classification IN ('blocker', 'review', 'noise')),
+    reason TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (cop_name, target_chef_version)
+);
+```
+
+### Custom Cop Definitions Table
+
+```sql
+CREATE TABLE custom_cop_definitions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cop_name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    pattern_type TEXT NOT NULL CHECK (pattern_type IN ('regex', 'literal')),
+    pattern TEXT NOT NULL,
+    file_glob TEXT DEFAULT '*.rb',
+    target_chef_version_min TEXT,
+    removed_in TEXT,
+    classification TEXT DEFAULT 'blocker' CHECK (classification IN ('blocker', 'review', 'noise')),
+    enabled BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+Custom cops are scanned at analysis time (alongside cookstyle) and produce offenses in the same format. They appear in the classification UI like any other cop.
+
+## Curated Defaults
+
+Shipped as compiled Go data (like `embeddedCopMappings`). Covers well-known behaviour-change cops not captured by `RemovedIn`:
+
+| Cop | Default Classification | Reason |
+|-----|----------------------|--------|
+| `Lint/DeprecatedClassMethods` | Blocker (target ≥ 18) | `File.exists?` removed in Ruby 3 |
+| `Chef/Deprecations/LogResourceNotifications` | Blocker (target ≥ 16) | Notifications silently stop firing |
+| `Chef/Deprecations/WindowsFeatureServermanagercmd` | Blocker (target ≥ 14) | Install method silently ignored |
+| `Chef/Deprecations/HWRPWithoutUnifiedTrue` | Review (target ≥ 18) | Required for Chef 18 unified mode |
+| `Chef/Deprecations/ResourceWithoutUnifiedTrue` | Review (target ≥ 18) | Required for Chef 18 unified mode |
+| `Chef/Deprecations/ChefSpecLegacyRunner` | Noise | Test tooling only |
+| `Chef/Deprecations/FoodcriticTesting` | Noise | Test tooling only |
+| `Chef/Deprecations/LibrarianChefspec` | Noise | Test tooling only |
+| `Chef/Deprecations/Delivery` | Noise | CI tooling only |
+| `Chef/Deprecations/DependsPoise` | Noise | Still works, just unmaintained |
+
+## API
+
+### GET /api/v1/cookstyle/cops
+
+Returns all known cops (from scan results + mapping + custom definitions) with their resolved classification for the given target version.
+
+#### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `target_chef_version` | string | Required. Determines classification resolution. |
+| `source` | string | `server` or `git` — which results to aggregate |
+| `classification` | string | Filter: `blocker`, `review`, `noise`, `unclassified` |
+| `sort` | string | `cookbooks_affected`, `offence_count`, `cop_name` |
+| `sort_dir` | string | `asc` or `desc` |
+
+#### Response
+
+```json
+{
+  "summary": {
+    "blocker_cops": 8,
+    "blocker_cookbooks": 47,
+    "review_cops": 5,
+    "review_cookbooks": 23,
+    "noise_cops": 31,
+    "unclassified_cops": 12
+  },
+  "data": [
+    {
+      "cop_name": "Lint/DeprecatedClassMethods",
+      "description": "Checks for deprecated class method calls (File.exists? → File.exist?)",
+      "category": "Lint",
+      "severity": "warning",
+      "classification": "blocker",
+      "classification_source": "curated_default",
+      "removed_in": null,
+      "introduced_in": null,
+      "migration_url": null,
+      "cookbooks_affected": 34,
+      "total_offences": 89,
+      "auto_correctable_pct": 100,
+      "unblocks": 12,
+      "is_custom": false
+    }
+  ],
+  "pagination": { "page": 1, "per_page": 50, "total_items": 56, "total_pages": 2 }
+}
+```
+
+Fields:
+- `classification_source` — how classification was determined: `operator_override`, `removed_in`, `curated_default`, `unclassified`
+- `unblocks` — cookbooks that would pass if this cop alone were resolved (only meaningful for blockers)
+- `auto_correctable_pct` — percentage of offences cookstyle can auto-fix
+- `is_custom` — true if this is a custom-defined cop
+
+### GET /api/v1/cookstyle/cops/:cop_name/cookbooks
+
+Returns the list of cookbooks affected by a specific cop.
+
+#### Response
+
+```json
+{
+  "cop_name": "Lint/DeprecatedClassMethods",
+  "data": [
+    {
+      "source": "server",
+      "name": "example-cookbook",
+      "version": "1.2.3",
+      "organisation": "acme",
+      "offence_count": 5,
+      "auto_correctable": 5,
+      "would_pass_without": true
+    }
+  ],
+  "pagination": { ... }
+}
+```
+
+### PUT /api/v1/cookstyle/cops/:cop_name/classification
+
+Set or update the classification for a cop at a given target version.
+
+#### Request Body
+
+```json
+{
+  "target_chef_version": "18.5.0",
+  "classification": "blocker",
+  "reason": "File.exists? removed in Ruby 3, crashes at runtime on Chef 18+"
+}
+```
+
+### CRUD /api/v1/cookstyle/custom-cops
+
+Standard CRUD for custom cop definitions. See data model above.
+
+## Custom Cop Scanning
+
+Custom cops are simple pattern matchers run during analysis alongside cookstyle:
+
+- **regex** — Ruby regex applied line-by-line to cookbook source files
+- **literal** — exact string match (faster, simpler)
+
+The `file_glob` field limits which files are scanned (default `*.rb`).
+
+Example custom cop for `nil.=~` removal:
+
+```json
+{
+  "cop_name": "Custom/Ruby3/NilRegexpMatch",
+  "description": "The =~ method on nil was removed in Ruby 3. Code that relies on nil =~ /pattern/ returning nil will raise NoMethodError.",
+  "pattern_type": "regex",
+  "pattern": "=~",
+  "file_glob": "*.rb",
+  "target_chef_version_min": "18.0",
+  "removed_in": "18.0",
+  "classification": "blocker"
+}
+```
+
+Custom cop offenses are stored in the same `offences` JSONB as cookstyle results, with `cop_name` prefixed `Custom/` to distinguish them.
+
+## Frontend
+
+### Cop Analysis Page
+
+New tab on the Remediation page: **Priority | Cop Analysis**
+
+(Replaces the previously planned "CookStyle Violations" flat-list tab.)
+
+#### Layout
+
+1. **Summary cards** — Blocker cops / Review cops / Noise cops / Unclassified, with cookbook counts
+2. **Classification filter** — toggle which levels to show (default: Blockers only)
+3. **Cop table** — one row per cop, grouped by classification level:
+   - Cop name (with link to drill-down)
+   - Classification badge (🔴/🟠/⚪/❓) with source tooltip
+   - `RemovedIn` version (if known)
+   - Severity (from cookstyle)
+   - Cookbooks affected (count)
+   - Total offences
+   - Auto-correctable %
+   - Unblocks count (blocker cops only)
+4. **Drill-down panel** — click a cop → slide-out or expand showing affected cookbooks with links to remediation
+
+#### Interactions
+
+- Click classification badge → dropdown to reclassify (with reason field)
+- Reclassification takes effect immediately (triggers re-evaluation of affected cookbooks)
+- "Show unclassified" filter → review cops that need classification
+
+### Cop Management Page
+
+Admin page: **Admin → CookStyle → Cop Classification**
+
+Two sections:
+
+1. **Classifications** — searchable list of all cops with current classification, allows bulk reclassification
+2. **Custom Cops** — CRUD for custom cop definitions (name, pattern, target version, classification)
+
+### Updated Cookbook/Git Repo Detail Views
+
+Existing remediation detail pages gain:
+
+- Classification badge next to each offense group's cop name
+- `RemovedIn` shown inline where available (e.g. "Removed in Chef 14.0")
+- Filter offense groups by classification level
+- Summary stat: "3 blockers / 2 review / 8 noise"
+
+### Updated Remediation Priority View
+
+The existing priority table gains:
+
+- "Blocker offences" column — count of offences from Blocker-classified cops
+- Complexity scoring updated to weight Blocker cops higher
+- Filter: "Only show cookbooks with blockers"
+
+## Re-evaluation
+
+When classifications change (operator override, curated defaults update, custom cop added):
+
+1. Re-compute pass/fail for all affected cookstyle results
+2. Update `passed` field in `server_cookbook_cookstyle_results` / `git_repo_cookstyle_results`
+3. Recalculate complexity scores for affected cookbooks
+4. Emit a WebSocket event so open UI pages refresh
+
+This mirrors the existing re-scoring behaviour from the failure rules system.
+
+## Migration from Failure Rules
+
+The existing failure rules system (`cookstyle_failure_preset`, `cookstyle_failure_rules`) continues to function as the fallback for unclassified cops. Over time, as operators classify cops, the severity-based rules become less relevant.
+
+No breaking change: existing behaviour is preserved. The classification system is additive.
+
+## Performance
+
+- Cop aggregation query groups offences by `cop_name` across all results for a target version — same cardinality as the existing violations endpoint
+- Classification lookup is O(1) per cop (in-memory map from DB + curated defaults)
+- Custom cop scanning adds per-file regex matching during analysis — bounded by file count × pattern count
+- Re-evaluation on classification change is bounded by cookbooks with that cop in their offences
+
+## Related
+
+- [cookstyle-failure-rules.md](cookstyle-failure-rules.md) — Existing severity-based pass/fail (becomes fallback)
+- [cookstyle-violations-browser.md](cookstyle-violations-browser.md) — Superseded by this spec's Cop Analysis view
+- [analysis.md](analysis.md) — CookStyle invocation and output parsing (extended for custom cops)
+- `internal/remediation/copmapping.go` — Embedded cop mapping with `RemovedIn` data
