@@ -1,9 +1,34 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchAnalysisTools, saveAnalysisTools, type AnalysisToolsConfig } from "../api";
+import {
+  fetchAnalysisTools,
+  saveAnalysisTools,
+  type AnalysisToolsConfig,
+  type CookstyleFailurePreset,
+  COOKSTYLE_PRESETS,
+} from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
+import { CookstyleFailureRulesGrid } from "../components/CookstyleFailureRulesGrid";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
+
+function detectPreset(rules: Record<string, string[]>): CookstyleFailurePreset {
+  for (const name of ["strict", "default", "relaxed"] as const) {
+    const preset = COOKSTYLE_PRESETS[name];
+    if (JSON.stringify(normalizeRules(preset)) === JSON.stringify(normalizeRules(rules))) {
+      return name;
+    }
+  }
+  return "custom";
+}
+
+function normalizeRules(rules: Record<string, string[]>): Record<string, string[]> {
+  const sorted: Record<string, string[]> = {};
+  for (const key of Object.keys(rules).sort()) {
+    sorted[key] = [...(rules[key] ?? [])].sort();
+  }
+  return sorted;
+}
 
 export function AdminAnalysisToolsPage() {
   const [config, setConfig] = useState<AnalysisToolsConfig>({
@@ -12,11 +37,16 @@ export function AdminAnalysisToolsPage() {
     cookstyle_timeout_minutes: 10,
   });
   const [saved, setSaved] = useState<AnalysisToolsConfig | null>(null);
+  const [failurePreset, setFailurePreset] = useState<CookstyleFailurePreset>("default");
+  const [failureRules, setFailureRules] = useState<Record<string, string[]>>(
+    COOKSTYLE_PRESETS["default"],
+  );
+  const [savedRulesJSON, setSavedRulesJSON] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -25,8 +55,12 @@ export function AdminAnalysisToolsPage() {
     fetchAnalysisTools()
       .then((data) => {
         if (cancelled) return;
-        setConfig(data);
-        setSaved(data);
+        setConfig(data.value);
+        setSaved(data.value);
+        const effectiveRules = data.effective_failure_rules ?? COOKSTYLE_PRESETS["default"];
+        setFailureRules(effectiveRules);
+        setSavedRulesJSON(JSON.stringify(normalizeRules(effectiveRules)));
+        setFailurePreset(detectPreset(effectiveRules));
       })
       .catch((err: unknown) => {
         if (!cancelled)
@@ -44,29 +78,45 @@ export function AdminAnalysisToolsPage() {
 
   useEffect(() => load(), [load]);
 
-  const isDirty = JSON.stringify(config) !== JSON.stringify(saved);
+  const configDirty = JSON.stringify(config) !== JSON.stringify(saved);
+  const rulesDirty = JSON.stringify(normalizeRules(failureRules)) !== savedRulesJSON;
+  const isDirty = configDirty || rulesDirty;
 
   function handleChange<K extends keyof AnalysisToolsConfig>(
     key: K,
     value: AnalysisToolsConfig[K],
   ) {
     setConfig((prev) => ({ ...prev, [key]: value }));
-    setSuccess(false);
+    setSuccessMsg(null);
+  }
+
+  function handleRulesChange(preset: CookstyleFailurePreset, rules: Record<string, string[]>) {
+    setFailurePreset(preset);
+    setFailureRules(rules);
+    setSuccessMsg(null);
   }
 
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
-    setSuccess(false);
+    setSuccessMsg(null);
     const payload: AnalysisToolsConfig = {
       ...config,
       cookstyle_enabled: config.cookstyle_enabled ?? true,
+      cookstyle_failure_preset: failurePreset === "custom" ? "" : failurePreset,
+      cookstyle_failure_rules: failurePreset === "custom" ? failureRules : undefined,
     };
     try {
-      const { value: updated } = await saveAnalysisTools(payload);
+      const { value: updated, verdictsChanged } = await saveAnalysisTools(payload);
       setConfig(updated);
       setSaved(updated);
-      setSuccess(true);
+      const newRules = failureRules;
+      setSavedRulesJSON(JSON.stringify(normalizeRules(newRules)));
+      const verdictText =
+        verdictsChanged != null && verdictsChanged > 0
+          ? ` ${verdictsChanged} cookbook verdict${verdictsChanged === 1 ? "" : "s"} changed.`
+          : "";
+      setSuccessMsg(`Failure rules updated.${verdictText}`);
     } catch (err: unknown) {
       setSaveError(
         err instanceof Error ? err.message : "Failed to save analysis tools settings.",
@@ -155,11 +205,21 @@ export function AdminAnalysisToolsPage() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-4 text-lg font-medium text-gray-900">CookStyle Failure Rules</h3>
+        <CookstyleFailureRulesGrid
+          preset={failurePreset}
+          rules={failureRules}
+          onChange={handleRulesChange}
+          disabled={saving}
+        />
+      </div>
+
       {saveError && <ErrorAlert message="Failed to save" detail={saveError} />}
 
-      {success && (
+      {successMsg && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          Settings saved successfully.
+          {successMsg}
         </div>
       )}
 
