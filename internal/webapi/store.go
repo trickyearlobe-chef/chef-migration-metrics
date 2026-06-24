@@ -303,6 +303,30 @@ type DataStore interface {
 	// results.
 	DeleteAllGitRepoCookstyleResults(ctx context.Context) error
 
+	// -----------------------------------------------------------------
+	// Cookstyle re-score (bulk verdict update without full rescan)
+	// -----------------------------------------------------------------
+
+	// ListServerCookstyleResultsForRescore returns lightweight rows for
+	// re-scoring server cookbook cookstyle results.
+	ListServerCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
+
+	// ListGitRepoCookstyleResultsForRescore returns lightweight rows for
+	// re-scoring git repo cookstyle results.
+	ListGitRepoCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
+
+	// BatchUpdateServerCookstylePassed updates the passed column for the
+	// given server cookbook cookstyle result rows.
+	BatchUpdateServerCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
+
+	// BatchUpdateGitRepoCookstylePassed updates the passed column for the
+	// given git repo cookstyle result rows.
+	BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
+
+	// RecomputeGitRepoCompatibilityStatus recomputes the compatibility_status
+	// for a single git repo from its latest cookstyle result.
+	RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error
+
 	// DeleteAllGitRepoComplexities removes all git repo complexity records.
 	DeleteAllGitRepoComplexities(ctx context.Context) error
 

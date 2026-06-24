@@ -1,0 +1,291 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package webapi
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+)
+
+// ---------------------------------------------------------------------------
+// Mock re-score store
+// ---------------------------------------------------------------------------
+
+type mockRescoreStore struct {
+	serverResults []datastore.CookstyleRescoreRow
+	gitResults    []datastore.CookstyleRescoreRow
+	serverUpdates []datastore.CookstylePassedUpdate
+	gitUpdates    []datastore.CookstylePassedUpdate
+	recomputedGit []gitRepoKey
+}
+
+type gitRepoKey struct {
+	Name, URL, TargetVersion string
+}
+
+func (m *mockRescoreStore) ListServerCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error) {
+	return m.serverResults, nil
+}
+
+func (m *mockRescoreStore) ListGitRepoCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error) {
+	return m.gitResults, nil
+}
+
+func (m *mockRescoreStore) BatchUpdateServerCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error {
+	m.serverUpdates = append(m.serverUpdates, updates...)
+	return nil
+}
+
+func (m *mockRescoreStore) BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error {
+	m.gitUpdates = append(m.gitUpdates, updates...)
+	return nil
+}
+
+func (m *mockRescoreStore) RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error {
+	m.recomputedGit = append(m.recomputedGit, gitRepoKey{name, url, targetVersion})
+	return nil
+}
+
+var _ CookstyleRescoreStore = (*mockRescoreStore)(nil)
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+func TestRescoreCookstyleResults_NoResults(t *testing.T) {
+	store := &mockRescoreStore{}
+	rules := analysis.DefaultFailureRules()
+
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Total != 0 {
+		t.Errorf("total = %d, want 0", result.Total)
+	}
+	if result.Changed != 0 {
+		t.Errorf("changed = %d, want 0", result.Changed)
+	}
+}
+
+func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
+	// Offenses that already correctly reflect default rules (error/fatal → fail)
+	offenses := []analysis.CookstyleOffense{
+		{Severity: "error", CopName: "Chef/Deprecations/SomeRule"},
+	}
+	offJSON, _ := json.Marshal(offenses)
+
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:           "org1|cb1|1.0.0|18",
+				Offences:     offJSON,
+				ErrorMessage: "",
+				Passed:       false, // correct: error → fail
+			},
+		},
+		gitResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:           "myrepo|https://git.example.com/repo|18",
+				Offences:     offJSON,
+				ErrorMessage: "",
+				Passed:       false, // correct
+			},
+		},
+	}
+
+	rules := analysis.DefaultFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Total != 2 {
+		t.Errorf("total = %d, want 2", result.Total)
+	}
+	if result.Changed != 0 {
+		t.Errorf("changed = %d, want 0", result.Changed)
+	}
+	if len(store.serverUpdates) != 0 {
+		t.Errorf("serverUpdates = %d, want 0", len(store.serverUpdates))
+	}
+	if len(store.gitUpdates) != 0 {
+		t.Errorf("gitUpdates = %d, want 0", len(store.gitUpdates))
+	}
+}
+
+func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
+	// Offense with severity "warning" in Chef/Deprecations/
+	offenses := []analysis.CookstyleOffense{
+		{Severity: "warning", CopName: "Chef/Deprecations/SomeRule"},
+	}
+	offJSON, _ := json.Marshal(offenses)
+
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:       "org1|cb1|1.0.0|18",
+				Offences: offJSON,
+				Passed:   true, // was passing under default rules
+			},
+		},
+		gitResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:       "myrepo|https://git.example.com/repo|18",
+				Offences: offJSON,
+				Passed:   true, // was passing under default rules
+			},
+		},
+	}
+
+	// Switch to strict: warnings in Deprecations now fail
+	rules := analysis.StrictFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Total != 2 {
+		t.Errorf("total = %d, want 2", result.Total)
+	}
+	if result.Changed != 2 {
+		t.Errorf("changed = %d, want 2", result.Changed)
+	}
+
+	// Check server updates
+	if len(store.serverUpdates) != 1 {
+		t.Fatalf("serverUpdates = %d, want 1", len(store.serverUpdates))
+	}
+	if store.serverUpdates[0].ID != "org1|cb1|1.0.0|18" {
+		t.Errorf("serverUpdates[0].ID = %q", store.serverUpdates[0].ID)
+	}
+	if store.serverUpdates[0].Passed != false {
+		t.Errorf("serverUpdates[0].Passed = %v, want false", store.serverUpdates[0].Passed)
+	}
+
+	// Check git updates
+	if len(store.gitUpdates) != 1 {
+		t.Fatalf("gitUpdates = %d, want 1", len(store.gitUpdates))
+	}
+	if store.gitUpdates[0].Passed != false {
+		t.Errorf("gitUpdates[0].Passed = %v, want false", store.gitUpdates[0].Passed)
+	}
+
+	// Check compatibility recompute was triggered
+	if len(store.recomputedGit) != 1 {
+		t.Fatalf("recomputedGit = %d, want 1", len(store.recomputedGit))
+	}
+}
+
+func TestRescoreCookstyleResults_SkipsErrorMessageRows(t *testing.T) {
+	offenses := []analysis.CookstyleOffense{
+		{Severity: "error", CopName: "Chef/Deprecations/SomeRule"},
+	}
+	offJSON, _ := json.Marshal(offenses)
+
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:           "org1|cb1|1.0.0|18",
+				Offences:     offJSON,
+				ErrorMessage: "scan crashed",
+				Passed:       true, // inconclusive — should not be changed
+			},
+		},
+	}
+
+	rules := analysis.StrictFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Total != 0 {
+		t.Errorf("total = %d, want 0 (error_message rows are skipped)", result.Total)
+	}
+	if result.Changed != 0 {
+		t.Errorf("changed = %d, want 0", result.Changed)
+	}
+}
+
+func TestRescoreCookstyleResults_SkipsNilOffences(t *testing.T) {
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:       "org1|cb1|1.0.0|18",
+				Offences: nil, // no offences stored (legacy row)
+				Passed:   true,
+			},
+		},
+	}
+
+	rules := analysis.StrictFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Total != 0 {
+		t.Errorf("total = %d, want 0 (nil offences rows are skipped)", result.Total)
+	}
+}
+
+func TestRescoreCookstyleResults_RelaxedAllowsPreviouslyFailing(t *testing.T) {
+	// Style offense at error level was failing under default, now relaxed ignores Style
+	offenses := []analysis.CookstyleOffense{
+		{Severity: "error", CopName: "Chef/Style/SomeRule"},
+	}
+	offJSON, _ := json.Marshal(offenses)
+
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:       "org1|cb1|1.0.0|18",
+				Offences: offJSON,
+				Passed:   false, // was failing under default rules
+			},
+		},
+	}
+
+	rules := analysis.RelaxedFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Changed != 1 {
+		t.Errorf("changed = %d, want 1", result.Changed)
+	}
+	if len(store.serverUpdates) != 1 {
+		t.Fatalf("serverUpdates = %d, want 1", len(store.serverUpdates))
+	}
+	if store.serverUpdates[0].Passed != true {
+		t.Errorf("serverUpdates[0].Passed = %v, want true", store.serverUpdates[0].Passed)
+	}
+}
+
+func TestRescoreCookstyleResults_EmptyOffencesArrayPasses(t *testing.T) {
+	offJSON, _ := json.Marshal([]analysis.CookstyleOffense{})
+
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{
+				ID:       "org1|cb1|1.0.0|18",
+				Offences: offJSON,
+				Passed:   false, // incorrectly marked as failed
+			},
+		},
+	}
+
+	rules := analysis.DefaultFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Changed != 1 {
+		t.Errorf("changed = %d, want 1", result.Changed)
+	}
+	if store.serverUpdates[0].Passed != true {
+		t.Errorf("should pass with empty offenses")
+	}
+}

@@ -66,8 +66,9 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 	}
 
 	// Timeouts are pulled per collector run (applied); the kitchen worker pool is
-	// resized in place to the new MaxConcurrentVMs (subsystem) — both live, false.
-	r.storeAdminConfigSection(w, req, &config.Config{AnalysisTools: input}, configstore.KeyAnalysisTools, r.applyKitchenWorkerCount)
+	// resized in place to the new MaxConcurrentVMs (subsystem); cookstyle results
+	// are re-scored against the new failure rules (subsystem) — all live, no restart.
+	r.storeAdminConfigSection(w, req, &config.Config{AnalysisTools: input}, configstore.KeyAnalysisTools, r.applyKitchenWorkerCount, r.applyCookstyleRescore)
 }
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,11 @@
 
 package webapi
 
-import "context"
+import (
+	"context"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
+)
 
 // ReloadGranularity describes how much of the running system must re-apply a
 // stored config change for it to take effect. Values are ordered by severity
@@ -74,6 +78,23 @@ func subsystemApplier(fn func(context.Context) error) Applier {
 		}
 		return ApplyResult{Reload: ReloadSubsystem}, nil
 	}
+}
+
+// applyCookstyleRescore re-evaluates all stored cookstyle results against the
+// currently-active failure rules (subsystem). The rules are read from the
+// reloaded live config. Reports ReloadSubsystem so the caller knows verdicts
+// may have changed without a process restart.
+func (r *Router) applyCookstyleRescore(ctx context.Context) (ApplyResult, error) {
+	cfg := r.liveConfig()
+	rules := analysis.EffectiveRules(
+		cfg.AnalysisTools.CookstyleFailurePreset,
+		cfg.AnalysisTools.CookstyleFailureRules,
+	)
+	_, err := RescoreCookstyleResults(ctx, r.db, rules, r.logger)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	return ApplyResult{Reload: ReloadSubsystem}, nil
 }
 
 // applyKitchenWorkerCount resizes the kitchen queue worker pool to match the
