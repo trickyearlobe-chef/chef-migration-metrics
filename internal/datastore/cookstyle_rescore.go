@@ -106,7 +106,7 @@ func (db *DB) BatchUpdateServerCookstylePassed(ctx context.Context, updates []Co
 			sb.WriteString(", ")
 		}
 		base := i * 5
-		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d)",
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d::boolean)",
 			base+1, base+2, base+3, base+4, base+5)
 		args = append(args, parts[0], parts[1], parts[2], parts[3], u.Passed)
 	}
@@ -148,7 +148,7 @@ func (db *DB) BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []C
 			sb.WriteString(", ")
 		}
 		base := i * 4
-		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d)",
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d::boolean)",
 			base+1, base+2, base+3, base+4)
 		args = append(args, parts[0], parts[1], parts[2], u.Passed)
 	}
