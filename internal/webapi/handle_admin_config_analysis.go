@@ -4,10 +4,12 @@
 package webapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 )
@@ -28,14 +30,39 @@ var knownTKDrivers = map[string]bool{
 func (r *Router) handleAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodGet:
-		cfg := r.liveConfig()
-		r.writeAdminConfigSection(w, &config.Config{AnalysisTools: cfg.AnalysisTools}, configstore.KeyAnalysisTools)
+		r.getAdminConfigAnalysisTools(w)
 	case http.MethodPut:
 		r.putAdminConfigAnalysisTools(w, req)
 	default:
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
 			"This endpoint supports GET and PUT.")
 	}
+}
+
+// analysisToolsGetResponse wraps the standard config section JSON with the
+// resolved effective failure rules (so the UI can render the checkbox grid
+// without having to know preset definitions).
+type analysisToolsGetResponse struct {
+	Value                 json.RawMessage     `json:"value"`
+	EffectiveFailureRules map[string][]string `json:"effective_failure_rules"`
+}
+
+func (r *Router) getAdminConfigAnalysisTools(w http.ResponseWriter) {
+	cfg := r.liveConfig()
+	sections, err := configstore.ConfigToSections(&config.Config{AnalysisTools: cfg.AnalysisTools})
+	if err != nil {
+		r.logf("ERROR", "admin/config/analysis_tools: serialise: %v", err)
+		WriteInternalError(w, "Failed to serialise config section.")
+		return
+	}
+	rules := analysis.EffectiveRules(
+		cfg.AnalysisTools.CookstyleFailurePreset,
+		cfg.AnalysisTools.CookstyleFailureRules,
+	)
+	WriteJSON(w, http.StatusOK, analysisToolsGetResponse{
+		Value:                 sections[configstore.KeyAnalysisTools],
+		EffectiveFailureRules: rules.Rules,
+	})
 }
 
 func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Request) {
@@ -65,10 +92,83 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	// Timeouts are pulled per collector run (applied); the kitchen worker pool is
-	// resized in place to the new MaxConcurrentVMs (subsystem); cookstyle results
-	// are re-scored against the new failure rules (subsystem) — all live, no restart.
-	r.storeAdminConfigSection(w, req, &config.Config{AnalysisTools: input}, configstore.KeyAnalysisTools, r.applyKitchenWorkerCount, r.applyCookstyleRescore)
+	// Store, reload, and apply — inlined (not storeAdminConfigSection) so we
+	// can capture the rescore verdicts_changed count for the response.
+	partial := &config.Config{AnalysisTools: input}
+	sections, err := configstore.ConfigToSections(partial)
+	if err != nil {
+		r.logf("ERROR", "admin/config/analysis_tools: serialise: %v", err)
+		WriteInternalError(w, "Failed to serialise config section.")
+		return
+	}
+	value := sections[configstore.KeyAnalysisTools]
+
+	// Pre-persist validation against the assembled config.
+	if r.configHolder != nil {
+		if current := r.configHolder.Get(); current != nil {
+			prospectiveSections, err := configstore.ConfigToSections(current)
+			if err != nil {
+				r.logf("ERROR", "admin/config/analysis_tools: build prospective config: %v", err)
+				WriteInternalError(w, "Failed to validate config section.")
+				return
+			}
+			prospectiveSections[configstore.KeyAnalysisTools] = value
+			prospective, err := configstore.AssembleConfigRaw(prospectiveSections)
+			if err != nil {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
+					fmt.Sprintf("%s: %v", configstore.KeyAnalysisTools, err))
+				return
+			}
+			prospective.ApplyDefaults()
+			if _, valErr := prospective.Validate(); valErr != nil {
+				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError, valErr.Error())
+				return
+			}
+		}
+	}
+
+	if err := r.configStore.Set(req.Context(), configstore.KeyAnalysisTools, value, false, "admin"); err != nil {
+		r.logf("ERROR", "admin/config/analysis_tools: store: %v", err)
+		WriteInternalError(w, "Failed to store config section.")
+		return
+	}
+
+	if r.configHolder != nil {
+		if err := r.configHolder.Reload(req.Context()); err != nil {
+			r.logf("ERROR", "admin/config/analysis_tools: reload: %v", err)
+			WriteInternalError(w, "Failed to reload config after update.")
+			return
+		}
+	}
+
+	// Apply kitchen worker pool resize.
+	kitchenRes, err := r.applyKitchenWorkerCount(req.Context())
+	if err != nil {
+		r.logf("ERROR", "admin/config/analysis_tools: apply kitchen: %v", err)
+		WriteInternalError(w, "Failed to apply config change.")
+		return
+	}
+
+	// Apply cookstyle re-score and capture result.
+	cfg := r.liveConfig()
+	rules := analysis.EffectiveRules(
+		cfg.AnalysisTools.CookstyleFailurePreset,
+		cfg.AnalysisTools.CookstyleFailureRules,
+	)
+	rescoreResult, err := RescoreCookstyleResults(req.Context(), r.db, rules, r.logger)
+	if err != nil {
+		r.logf("ERROR", "admin/config/analysis_tools: apply rescore: %v", err)
+		WriteInternalError(w, "Failed to apply config change.")
+		return
+	}
+
+	reload := worstGranularity([]ApplyResult{kitchenRes, {Reload: ReloadSubsystem}})
+	WriteJSON(w, http.StatusOK, putConfigResponse{
+		Value:           value,
+		RestartRequired: reload == ReloadProcess,
+		Reload:          reload.String(),
+		VerdictsChanged: rescoreResult.Changed,
+	})
 }
 
 // ---------------------------------------------------------------------------
