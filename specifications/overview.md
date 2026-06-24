@@ -12,6 +12,7 @@
 | [bulk-kitchen-scanning](bulk-kitchen-scanning.md) | Bulk scanning of cookbooks through Test Kitchen. |
 | [chef-api](chef-api.md) | Chef Infra Server API client and reference used by data collection. |
 | [configuration](configuration.md) | The application's full configuration surface, live-reloadable without restart. |
+| [cookstyle-failure-rules](cookstyle-failure-rules.md) | Configurable per-namespace severity thresholds for CookStyle pass/fail, with presets and auto re-score. |
 | [data-collection](data-collection.md) | Collecting node, cookbook, and git-repo data from Chef servers and Git. |
 | [data-export](data-export.md) | Exporting metrics and data (synchronous and async job-based). |
 | [datastore](datastore.md) | PostgreSQL schema and data-access layer. DDL lives in `migrations/`; see the stub for the table map. |
