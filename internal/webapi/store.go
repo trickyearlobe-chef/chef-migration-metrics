@@ -335,6 +335,19 @@ type DataStore interface {
 	DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error
 
 	// -----------------------------------------------------------------
+	// Cookstyle violations browser
+	// -----------------------------------------------------------------
+
+	// ListAllServerCookbookCookstyleResultsByTargetVersion returns all
+	// server cookbook cookstyle results for the given target Chef version,
+	// across all organisations.
+	ListAllServerCookbookCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.ServerCookbookCookstyleResult, error)
+
+	// ListGitRepoCookstyleResultsByTargetVersion returns all git repo
+	// cookstyle results for a single target Chef version.
+	ListGitRepoCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.GitRepoCookstyleResult, error)
+
+	// -----------------------------------------------------------------
 	// Log entries
 	// -----------------------------------------------------------------
 

@@ -714,6 +714,11 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary)
 
 	// -----------------------------------------------------------------
+	// Cookstyle violations browser (viewer)
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/cookstyle/violations", r.handleCookstyleViolations)
+
+	// -----------------------------------------------------------------
 	// Export endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/exports", r.handleExports)

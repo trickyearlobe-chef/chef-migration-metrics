@@ -79,7 +79,9 @@ type mockStore struct {
 	BatchUpdateGitRepoCookstylePassedFn                 func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
 	RecomputeGitRepoCompatibilityStatusFn               func(ctx context.Context, name, url, targetVersion string) error
 	DeleteAllGitRepoComplexitiesFn                      func(ctx context.Context) error
-	DeleteAllGitRepoAutocorrectPreviewsFn               func(ctx context.Context) error
+	DeleteAllGitRepoAutocorrectPreviewsFn                             func(ctx context.Context) error
+	ListAllServerCookbookCookstyleResultsByTargetVersionFn             func(ctx context.Context, targetChefVersion string) ([]datastore.ServerCookbookCookstyleResult, error)
+	ListGitRepoCookstyleResultsByTargetVersionFn                       func(ctx context.Context, targetChefVersion string) ([]datastore.GitRepoCookstyleResult, error)
 	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
 	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
 	GetLogEntryFn                                       func(ctx context.Context, id int64) (datastore.LogEntry, error)
@@ -680,6 +682,24 @@ func (m *mockStore) DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) err
 		return m.DeleteAllGitRepoAutocorrectPreviewsFn(ctx)
 	}
 	return nil
+}
+
+// -----------------------------------------------------------------
+// Cookstyle violations browser
+// -----------------------------------------------------------------
+
+func (m *mockStore) ListAllServerCookbookCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.ServerCookbookCookstyleResult, error) {
+	if m.ListAllServerCookbookCookstyleResultsByTargetVersionFn != nil {
+		return m.ListAllServerCookbookCookstyleResultsByTargetVersionFn(ctx, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListGitRepoCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.GitRepoCookstyleResult, error) {
+	if m.ListGitRepoCookstyleResultsByTargetVersionFn != nil {
+		return m.ListGitRepoCookstyleResultsByTargetVersionFn(ctx, targetChefVersion)
+	}
+	return nil, nil
 }
 
 // -----------------------------------------------------------------
