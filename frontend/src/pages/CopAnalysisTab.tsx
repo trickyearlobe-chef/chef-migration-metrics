@@ -14,56 +14,11 @@ import type {
   CopAggregateItem,
   CopAggregationSummary,
   CopCookbookItem,
-  CopClassification,
   Pagination as PaginationType,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-
-// ---------------------------------------------------------------------------
-// Classification badge colours and labels
-// ---------------------------------------------------------------------------
-
-const CLASSIFICATION_STYLES: Record<
-  CopClassification,
-  { bg: string; text: string; label: string }
-> = {
-  blocker: { bg: "bg-red-100", text: "text-red-800", label: "Blocker" },
-  review: { bg: "bg-amber-100", text: "text-amber-800", label: "Review" },
-  noise: { bg: "bg-gray-100", text: "text-gray-500", label: "Noise" },
-  unclassified: { bg: "bg-blue-50", text: "text-blue-600", label: "Unclassified" },
-};
-
-function ClassificationBadge({
-  classification,
-  source,
-}: {
-  classification: CopClassification;
-  source?: string;
-}) {
-  const style = CLASSIFICATION_STYLES[classification] ?? CLASSIFICATION_STYLES.unclassified;
-  const tooltip = source ? `Source: ${source.replace(/_/g, " ")}` : undefined;
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${style.bg} ${style.text}`}
-      title={tooltip}
-    >
-      {style.label}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Classification filter buttons
-// ---------------------------------------------------------------------------
-
-const CLASSIFICATION_FILTERS: { value: string; label: string; colour: string }[] = [
-  { value: "", label: "All", colour: "bg-gray-100 text-gray-700" },
-  { value: "blocker", label: "Blockers", colour: "bg-red-100 text-red-700" },
-  { value: "review", label: "Review", colour: "bg-amber-100 text-amber-700" },
-  { value: "noise", label: "Noise", colour: "bg-gray-100 text-gray-500" },
-  { value: "unclassified", label: "Unclassified", colour: "bg-blue-50 text-blue-600" },
-];
+import { ClassificationBadge, CLASSIFICATION_FILTERS } from "../components/ClassificationBadge";
 
 // ---------------------------------------------------------------------------
 // CopAnalysisTab — classification-aware cop aggregation view

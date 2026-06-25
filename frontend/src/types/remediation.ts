@@ -71,6 +71,9 @@ export interface CopRemediation {
 export interface OffenseGroup {
   cop_name: string;
   severity: string;
+  classification: string;
+  classification_source: string;
+  removed_in?: string;
   count: number;
   correctable_count: number;
   remediation?: CopRemediation | null;
@@ -114,6 +117,13 @@ export interface ComplexityBreakdown {
   tk_fail: ComplexityBreakdownItem;
 }
 
+export interface ClassificationSummary {
+  blocker: number;
+  review: number;
+  noise: number;
+  unclassified: number;
+}
+
 export interface CookbookRemediationResponse {
   cookbook_name: string;
   cookbook_version: string;
@@ -125,6 +135,7 @@ export interface CookbookRemediationResponse {
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];
+  classification_summary?: ClassificationSummary;
   autocorrect_preview: AutocorrectPreview;
 }
 
@@ -140,5 +151,6 @@ export interface GitRepoRemediationResponse {
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];
+  classification_summary?: ClassificationSummary;
   autocorrect_preview: AutocorrectPreview;
 }
