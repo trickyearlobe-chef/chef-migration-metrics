@@ -581,16 +581,23 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 		}
 	}
 
+	// Step 6b: run custom cop scanning.
+	customOffenses := s.runCustomCopScan(ctx, cookbookDir, log)
+	for _, off := range customOffenses {
+		sr.Offenses = append(sr.Offenses, off)
+		sr.OffenseCount++
+	}
+
 	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
 
 	// Step 7: log outcome.
 	if sr.Passed {
-		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	} else {
-		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	}
 
@@ -721,16 +728,23 @@ func (s *CookstyleScanner) scanOneGitRepo(
 		}
 	}
 
+	// Step 6b: run custom cop scanning.
+	customOffenses := s.runCustomCopScan(ctx, repoDir, log)
+	for _, off := range customOffenses {
+		sr.Offenses = append(sr.Offenses, off)
+		sr.OffenseCount++
+	}
+
 	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
 
 	// Step 7: log outcome.
 	if sr.Passed {
-		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	} else {
-		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	}
 
@@ -838,6 +852,29 @@ func writeCookstyleTargetConfig(cookbookDir, targetChefVersion string) string {
 		return ""
 	}
 	return outPath
+}
+
+// ---------------------------------------------------------------------------
+// Custom cop scanning
+// ---------------------------------------------------------------------------
+
+// runCustomCopScan loads enabled custom cop definitions from the database and
+// runs pattern matching against cookbook source files.
+func (s *CookstyleScanner) runCustomCopScan(ctx context.Context, cookbookDir string, log *logging.ScopedLogger) []CookstyleOffense {
+	defs, err := s.db.ListEnabledCustomCopDefinitions(ctx)
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to load custom cop definitions: %v", err))
+		return nil
+	}
+	if len(defs) == 0 {
+		return nil
+	}
+
+	offenses := ScanCustomCops(cookbookDir, defs)
+	if len(offenses) > 0 {
+		log.Debug(fmt.Sprintf("custom cops: %d offense(s) from %d definition(s)", len(offenses), len(defs)))
+	}
+	return offenses
 }
 
 // ---------------------------------------------------------------------------
