@@ -7,7 +7,12 @@ Branch: `feature/cookstyle-violations-browser` (continuing)
 
 - ✅ Chunk 1 — API endpoint (`GET /api/v1/cookstyle/violations`) — committed
 - ⚠️  Chunk 2 — Flat-list frontend tab — committed but **will be replaced** by Cop Analysis view
-- ❌ Chunks below are the new direction
+- ✅ Chunk 3 — Data model & classification resolution — committed
+- ✅ Chunk 4 — Cop aggregation API — committed
+- ✅ Chunk 5 — Cop Analysis frontend tab — committed
+- ✅ Chunk 6 — Custom cops management UI — committed
+- ✅ Chunk 7 — Updated cookbook/git repo detail views — committed
+- ✅ Chunk 8 — Custom cop scanning in analysis pipeline — committed
 
 ## Chunk 3 — Data model & classification resolution (backend)
 
