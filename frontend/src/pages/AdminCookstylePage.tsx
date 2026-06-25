@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 import { CookstyleFailureRulesGrid } from "../components/CookstyleFailureRulesGrid";
+import { AdminCustomCopsSection } from "./AdminCustomCopsSection";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -216,6 +217,12 @@ export function AdminCookstylePage() {
           {saving ? "Saving…" : "Save"}
         </button>
       </div>
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Custom Cops section */}
+      <AdminCustomCopsSection />
     </div>
   );
 }
