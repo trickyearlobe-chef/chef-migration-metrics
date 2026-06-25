@@ -200,6 +200,18 @@ type mockStore struct {
 	ListAppliedMigrationsFn  func(ctx context.Context) ([]datastore.AppliedMigration, error)
 	InventoryStatsFn         func(ctx context.Context, includeNames bool) (datastore.InventoryStatsResult, error)
 	DependencyDepthStatsFn   func(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error)
+
+	// Cop classifications
+	ListCopClassificationsFn    func(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+	UpsertCopClassificationFn   func(ctx context.Context, copName, targetChefVersion, classification, reason, createdBy string) error
+	DeleteCopClassificationFn   func(ctx context.Context, copName, targetChefVersion string) error
+
+	// Custom cop definitions
+	ListCustomCopDefinitionsFn  func(ctx context.Context) ([]datastore.CustomCopDefinition, error)
+	GetCustomCopDefinitionFn    func(ctx context.Context, copName string) (*datastore.CustomCopDefinition, error)
+	CreateCustomCopDefinitionFn func(ctx context.Context, d datastore.CustomCopDefinition) (string, error)
+	UpdateCustomCopDefinitionFn func(ctx context.Context, d *datastore.CustomCopDefinition) error
+	DeleteCustomCopDefinitionFn func(ctx context.Context, copName string) error
 }
 
 // compile-time check
@@ -1548,4 +1560,68 @@ func (m *mockStore) DeleteOwnerAlias(_ context.Context, _ string) error {
 
 func (m *mockStore) SuggestOwnerAliases(_ context.Context, _ string, _ int) ([]datastore.AliasSuggestion, error) {
 	return nil, nil
+}
+
+// ---------------------------------------------------------------------------
+// Cop classification stubs
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error) {
+	if m.ListCopClassificationsFn != nil {
+		return m.ListCopClassificationsFn(ctx, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) UpsertCopClassification(ctx context.Context, copName, targetChefVersion, classification, reason, createdBy string) error {
+	if m.UpsertCopClassificationFn != nil {
+		return m.UpsertCopClassificationFn(ctx, copName, targetChefVersion, classification, reason, createdBy)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteCopClassification(ctx context.Context, copName, targetChefVersion string) error {
+	if m.DeleteCopClassificationFn != nil {
+		return m.DeleteCopClassificationFn(ctx, copName, targetChefVersion)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Custom cop definition stubs
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) ListCustomCopDefinitions(ctx context.Context) ([]datastore.CustomCopDefinition, error) {
+	if m.ListCustomCopDefinitionsFn != nil {
+		return m.ListCustomCopDefinitionsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetCustomCopDefinition(ctx context.Context, copName string) (*datastore.CustomCopDefinition, error) {
+	if m.GetCustomCopDefinitionFn != nil {
+		return m.GetCustomCopDefinitionFn(ctx, copName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CreateCustomCopDefinition(ctx context.Context, d datastore.CustomCopDefinition) (string, error) {
+	if m.CreateCustomCopDefinitionFn != nil {
+		return m.CreateCustomCopDefinitionFn(ctx, d)
+	}
+	return "mock-id", nil
+}
+
+func (m *mockStore) UpdateCustomCopDefinition(ctx context.Context, d *datastore.CustomCopDefinition) error {
+	if m.UpdateCustomCopDefinitionFn != nil {
+		return m.UpdateCustomCopDefinitionFn(ctx, d)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteCustomCopDefinition(ctx context.Context, copName string) error {
+	if m.DeleteCustomCopDefinitionFn != nil {
+		return m.DeleteCustomCopDefinitionFn(ctx, copName)
+	}
+	return nil
 }

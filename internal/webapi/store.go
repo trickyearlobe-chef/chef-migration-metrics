@@ -348,6 +348,38 @@ type DataStore interface {
 	ListGitRepoCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.GitRepoCookstyleResult, error)
 
 	// -----------------------------------------------------------------
+	// Cop classifications
+	// -----------------------------------------------------------------
+
+	// ListCopClassifications returns all operator overrides for a target version.
+	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+
+	// UpsertCopClassification creates or updates a cop classification.
+	UpsertCopClassification(ctx context.Context, copName, targetChefVersion, classification, reason, createdBy string) error
+
+	// DeleteCopClassification removes an operator override.
+	DeleteCopClassification(ctx context.Context, copName, targetChefVersion string) error
+
+	// -----------------------------------------------------------------
+	// Custom cop definitions
+	// -----------------------------------------------------------------
+
+	// ListCustomCopDefinitions returns all custom cop definitions.
+	ListCustomCopDefinitions(ctx context.Context) ([]datastore.CustomCopDefinition, error)
+
+	// GetCustomCopDefinition returns a custom cop definition by cop_name.
+	GetCustomCopDefinition(ctx context.Context, copName string) (*datastore.CustomCopDefinition, error)
+
+	// CreateCustomCopDefinition inserts a new custom cop and returns its ID.
+	CreateCustomCopDefinition(ctx context.Context, d datastore.CustomCopDefinition) (string, error)
+
+	// UpdateCustomCopDefinition updates an existing custom cop by cop_name.
+	UpdateCustomCopDefinition(ctx context.Context, d *datastore.CustomCopDefinition) error
+
+	// DeleteCustomCopDefinition removes a custom cop by cop_name.
+	DeleteCustomCopDefinition(ctx context.Context, copName string) error
+
+	// -----------------------------------------------------------------
 	// Log entries
 	// -----------------------------------------------------------------
 

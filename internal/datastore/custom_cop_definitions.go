@@ -109,17 +109,20 @@ func (db *DB) GetCustomCopDefinition(ctx context.Context, copName string) (*Cust
 	return &d, nil
 }
 
-// CreateCustomCopDefinition inserts a new custom cop definition.
-func (db *DB) CreateCustomCopDefinition(ctx context.Context, d *CustomCopDefinition) error {
+// CreateCustomCopDefinition inserts a new custom cop definition and returns
+// the generated UUID.
+func (db *DB) CreateCustomCopDefinition(ctx context.Context, d CustomCopDefinition) (string, error) {
 	const query = `
 		INSERT INTO custom_cop_definitions (cop_name, description, pattern_type, pattern, file_glob, target_chef_version_min, removed_in, classification, enabled)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), NULLIF($7, ''), $8, $9)`
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), NULLIF($7, ''), $8, $9)
+		RETURNING id`
 
-	_, err := db.pool.ExecContext(ctx, query,
+	var id string
+	err := db.pool.QueryRowContext(ctx, query,
 		d.CopName, d.Description, d.PatternType, d.Pattern, d.FileGlob,
 		d.TargetChefVersionMin, d.RemovedIn, d.Classification, d.Enabled,
-	)
-	return err
+	).Scan(&id)
+	return id, err
 }
 
 // UpdateCustomCopDefinition updates an existing custom cop definition by cop_name.

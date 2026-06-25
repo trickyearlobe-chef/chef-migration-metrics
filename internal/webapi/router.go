@@ -717,6 +717,10 @@ func (r *Router) registerRoutes() {
 	// Cookstyle violations browser (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/cookstyle/violations", r.handleCookstyleViolations)
+	r.protect("/api/v1/cookstyle/cops", r.handleCookstyleCops)
+	r.protect("/api/v1/cookstyle/cops/", r.handleCookstyleCopSubroute)
+	r.protect("/api/v1/cookstyle/custom-cops", r.handleCookstyleCustomCops)
+	r.protect("/api/v1/cookstyle/custom-cops/", r.handleCookstyleCustomCop)
 
 	// -----------------------------------------------------------------
 	// Export endpoints (viewer)
