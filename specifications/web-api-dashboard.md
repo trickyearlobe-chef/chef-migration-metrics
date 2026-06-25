@@ -77,7 +77,14 @@ Returns the version distribution over time as a time series for trend charts.
 
 #### `GET /api/v1/dashboard/readiness`
 
-Returns a summary of how many nodes are ready vs. blocked for each target Chef Client version.
+Returns a summary of how many nodes are Ready / Needs review / Blocked for each
+target Chef Client version. The summary uses the three-state node rollup
+vocabulary (🟢 Ready / 🟠 Needs review / 🔴 Blocked) mirroring the CookStyle rollup
+(see [cop-classification.md](cop-classification.md) and
+[analysis-node-readiness.md](analysis-node-readiness.md)). `needs_review_count`
+is non-zero only when `readiness.review_blocks_readiness` is on; with it off
+(default) it is `0` and the Ready/Blocked split is identical to today. CookStyle
+and Test Kitchen remain separate signals.
 
 **Query parameters:** standard filters plus `target_chef_version` (required).
 
@@ -87,6 +94,7 @@ Returns a summary of how many nodes are ready vs. blocked for each target Chef C
 {
   "target_chef_version": "19.0.0",
   "ready_count": 1800,
+  "needs_review_count": 0,
   "blocked_count": 700,
   "stale_count": 45,
   "total_nodes": 2500,
@@ -101,7 +109,8 @@ Returns a summary of how many nodes are ready vs. blocked for each target Chef C
 
 #### `GET /api/v1/dashboard/readiness/trend`
 
-Returns readiness counts over time for trend charts.
+Returns readiness counts over time for trend charts, using the same three-state
+vocabulary (Ready / Needs review / Blocked).
 
 **Additional query parameters:** `from`, `to`, `target_chef_version` (required).
 
@@ -114,18 +123,30 @@ Returns readiness counts over time for trend charts.
     {
       "timestamp": "2024-06-01T00:00:00Z",
       "ready_count": 1500,
+      "needs_review_count": 0,
       "blocked_count": 1000,
       "total_nodes": 2500
     },
     {
       "timestamp": "2024-06-02T00:00:00Z",
       "ready_count": 1800,
+      "needs_review_count": 0,
       "blocked_count": 700,
       "total_nodes": 2500
     }
   ]
 }
 ```
+
+**Trend recomputation:** Going forward, trend points are computed under the
+current readiness/classification criteria, so a criteria change (e.g. toggling
+`readiness.review_blocks_readiness`, or reclassifying a cop) is reflected in
+new points. Past trend points are **frozen** — they are not retroactively
+recomputed because the raw offense-level inputs behind older snapshots were not
+retained. See [enriched-metric-snapshots.md](enriched-metric-snapshots.md) and
+[cop-classification.md](cop-classification.md) (Re-evaluation & Propagation →
+History). A `needs_review_count` of `0` on points captured while the toggle was
+off is therefore expected and stays `0`.
 
 ### Cookbook Compatibility
 
@@ -224,5 +245,17 @@ Returns the compatibility status of each cookbook (and version) for each target 
 | `incompatible` | N/A | Test Kitchen converge or tests failed at HEAD (git repos) |
 | `cookstyle_only` | `medium` | Chef server-sourced; CookStyle results only — no integration test |
 | `untested` | N/A | No test or scan results available yet |
+
+**CookStyle rollup status & complexity:** The CookStyle portion of each entry
+surfaces the three-state rollup vocabulary (🟢 Ready / 🟠 Needs review / 🔴 Blocked
+/ ⚪ Untested) rather than a binary pass/fail, consistent with the node readiness
+and detail surfaces (see [cop-classification.md](cop-classification.md)). The
+`complexity.score`/`complexity.label` are **classification-weighted**: Blocker
+offenses dominate, Review offenses contribute a low advisory weight, Noise ~0,
+and Unclassified keeps the existing category weights as fallback (each offense
+counted once — no double-counting). CookStyle and Test Kitchen remain separate
+signals and are never merged into one verdict. The authoritative weighting rules
+live in [cop-classification.md](cop-classification.md) (Complexity Weighting by
+Classification).
 
 ---

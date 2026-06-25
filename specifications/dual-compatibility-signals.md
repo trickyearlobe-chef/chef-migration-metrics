@@ -32,10 +32,15 @@ These signals should remain separate throughout the UI. Users need to see both i
 
 ### Badge Style
 
-Two small coloured badges per cookbook/role where data exists:
+Two small coloured badges per cookbook/role where data exists. The CS and TK
+badges are **separate signals and are never merged into one verdict** — this spec
+is the source of that principle (see also
+[cop-classification.md](cop-classification.md)).
 
-- **CS badge**: green "CS ✓" / red "CS ✗" / grey "CS ?" (compatible/incompatible/untested)
-- **TK badge**: green "TK ✓" / red "TK ✗" / orange "TK ~" / grey "TK ?" (passed/failed/partial/untested)
+- **CS badge**: the 4-state CookStyle rollup status — 🟢 "CS Ready" / 🟠 "CS Needs
+  review" / 🔴 "CS Blocked" / ⚪ "CS Untested" (the canonical per-item rollup; see
+  the CookStyle Rollup Status table in [cop-classification.md](cop-classification.md))
+- **TK badge**: green "TK ✓" / red "TK ✗" / orange "TK ~" / grey "TK ?" (passed/failed/partial/untested) — unchanged
 
 TK badge is only shown when a matching git repo exists. Server-only cookbooks show CS badge only.
 
@@ -53,9 +58,9 @@ Add a `tk_status` column alongside `compatibility_status`:
 
 | Role | CS Status | TK Status | Nodes | Cookbooks |
 |------|-----------|-----------|-------|-----------|
-| web-server | Compatible | Passed | 12 | 8 |
-| db-server | Incompatible | Partial | 4 | 6 |
-| monitoring | Compatible | — | 3 | 4 |
+| web-server | Ready | Passed | 12 | 8 |
+| db-server | Blocked | Partial | 4 | 6 |
+| monitoring | Needs review | — | 3 | 4 |
 
 TK status for a role = worst-of TK status across its transitive git-repo cookbooks:
 - Any failed → "failed"
@@ -66,7 +71,7 @@ TK status for a role = worst-of TK status across its transitive git-repo cookboo
 ### Role Detail
 
 **Summary cards** — add TK summary alongside CS summary:
-- CS: X compatible / Y incompatible / Z untested
+- CS: W ready / X needs review / Y blocked / Z untested
 - TK: A passed / B failed / C partial / D untested
 
 **Dependency tree** — each cookbook node shows source icon + CS badge + TK badge (when available).
@@ -106,7 +111,7 @@ Add `tk_status` to cookbook list response. Join server_cookbooks → git_repos �
 
 ### StatusBadge Additions
 
-Add dedicated `cs_compatible`, `cs_incompatible`, `cs_untested`, `tk_passed`, `tk_failed`, `tk_partial`, `tk_untested` variants to the StatusBadge component with appropriate colours and labels.
+Add dedicated `cs_ready`, `cs_needs_review`, `cs_blocked`, `cs_untested`, `tk_passed`, `tk_failed`, `tk_partial`, `tk_untested` variants to the StatusBadge component with appropriate colours and labels. The `cs_*` variants map to the 4-state CookStyle rollup (Ready / Needs review / Blocked / Untested); the `tk_*` variants are unchanged.
 
 ### Dependency Tree
 

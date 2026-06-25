@@ -135,6 +135,107 @@ Write `node_metrics` after readiness evaluation completes (it runs in the same c
 
 The `recordMetricSnapshots` function (currently writes version distribution) and `recordReadinessSnapshots` function (currently writes readiness) will be consolidated into a single `recordNodeMetricsSnapshot` function called after readiness evaluation.
 
+## Offence Fingerprint History
+
+### Why
+
+The `node_metrics` snapshots above store **rolled-up aggregates only** (e.g. a
+Ready count), not the per-offence inputs that produced them. The
+`cookstyle_results` rows are current-state: they are overwritten on every rescan.
+Consequently, when classification criteria change (see
+[cop-classification.md](cop-classification.md) → Re-evaluation & Propagation), a
+**past** trend point cannot be recomputed under the new criteria — the offence-level
+inputs for that historical point no longer exist anywhere. Past points are frozen
+and unrecoverable. This limitation is permanent for data captured before this
+feature ships; it is stated explicitly so trend consumers do not assume historical
+points reflect current classification.
+
+To make trends recomputable **going forward**, we retain a compact,
+change-deduped per-scan offence **fingerprint** for each cookstyle result. This is
+the canonical home of the decision summarised in cop-classification.md → History.
+
+### Fingerprint Shape
+
+A fingerprint is the minimal per-scan input needed to re-derive a result's rollup
+status and weighted complexity under the *current* classification — nothing more:
+
+- `cop_name`
+- `count` (number of offences for that cop in that result)
+- `severity`
+- `correctable`
+
+It deliberately does **not** retain full offence messages or source locations:
+re-derivation needs only the inputs the classification resolver and complexity
+weighting consume (see cop-classification.md → Pass/Fail Determination and
+Complexity Weighting by Classification). One result's scan produces one fingerprint
+made of these per-cop entries.
+
+The authoritative offence shape consumed today lives in code (the `offences` JSONB
+on `server_cookbook_cookstyle_results` / `git_repo_cookstyle_results`); the
+fingerprint is a projection of those fields, pinned by a contract test. Illustrative
+projection only:
+
+```json
+{
+  "result_ref": "<server|git result identity>",
+  "scanned_at": "2026-06-26T00:00:00Z",
+  "cops": [
+    { "cop_name": "Lint/DeprecatedClassMethods", "count": 5, "severity": "warning", "correctable": true }
+  ]
+}
+```
+
+### Append-Only, Change-Deduped
+
+Fingerprint history is **append-only** and **deduped on change**:
+
+- A new fingerprint row is appended for a result only when its fingerprint
+  **differs** from that same result's most recent stored fingerprint.
+- If a rescan produces an identical fingerprint, nothing is appended; the existing
+  row remains valid (its validity simply extends forward in time).
+- Offences change only on rescan, and only when the cookbook source actually
+  changes, so the number of stored rows scales with **churn**, not with snapshot
+  cadence or scan frequency.
+
+Each row is valid from its `scanned_at` until the next row for the same result (or
+"now" for the latest). "Fingerprint valid at time T" = the latest row for that
+result with `scanned_at ≤ T`.
+
+### Trend Recompute Under Current Criteria
+
+A recomputable trend point at time T is derived by:
+
+1. Determine **membership at T** — which cookbooks/results belonged to each node /
+   git repo at that time (run-list / repo membership as of T).
+2. Look up the **fingerprint valid at T** for each member result.
+3. Re-derive each result's rollup **status** and weighted **complexity** from those
+   fingerprints under the *current* resolved classification (the resolver in
+   cop-classification.md), then roll up to node / repo / org exactly as the
+   single-source-of-truth derivation does for current state.
+
+This yields a trend recomputed under today's criteria for every point captured
+**after** this feature ships. It complements — does not replace — the frozen
+`node_metrics` aggregates: those remain the record of what each point reported at
+the time it was collected.
+
+### Limitations
+
+- **Past points stay frozen.** Points captured before fingerprint history exists
+  cannot be recomputed; they retain their original `node_metrics` aggregates.
+  Charts that mix pre- and post-fingerprint ranges MUST make the boundary explicit
+  rather than implying the whole series reflects current criteria.
+- Membership-at-T fidelity depends on the membership history available (see the
+  ownership/`node_fact_snapshots` note under Future Extensions); where membership
+  history is absent, recompute is limited to current membership.
+
+### Storage
+
+Bounded by **change rate**, not snapshot cadence. At real scale (~16,900 cookstyle
+results), a change-deduped per-scan fingerprint is on the order of **tens of MB per
+year** — a result only contributes a new row when its offences actually change. A
+churn-heavy fleet costs more rows; a stable fleet costs almost none. No per-offence
+message/location text is stored, which keeps each row small.
+
 ## Future Extensions
 
 - **Platform-filtered readiness**: Add `fresh.by_platform_family_readiness` cross-tab if users want readiness broken down by platform within fresh nodes

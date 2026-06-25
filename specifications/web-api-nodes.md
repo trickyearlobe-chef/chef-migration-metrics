@@ -10,6 +10,8 @@ Returns a paginated, filterable list of nodes.
 
 **Query parameters:** standard filters (including `policy_name`, `policy_group`, `stale_status`), pagination, sorting.
 
+The `readiness` filter (scoped to the active `target_chef_version`) accepts the three node rollup states — `ready`, `needs_review`, `blocked` — mirroring the CookStyle rollup vocabulary (see [cop-classification.md](cop-classification.md)). `needs_review` only ever returns rows when the operator config `readiness.review_blocks_readiness` is on; with it off (default) no node is `needs_review` and the filter behaves as `ready`/`blocked` only — identical to today.
+
 **Sortable fields:** `name`, `chef_version`, `platform`, `platform_version`, `chef_environment`, `policy_name`, `policy_group`, `last_collected_at`, `ohai_time`.
 
 **Response (200):**
@@ -44,6 +46,8 @@ Returns a paginated, filterable list of nodes.
 
 Returns full detail for a single node, including readiness status per target version, blocking reasons with complexity scores, Policyfile metadata, and stale data status.
 
+Each per-target readiness row carries a three-state node rollup `status` — `ready` / `needs_review` / `blocked` (🟢/🟠/🔴) — mirroring the CookStyle rollup (see [cop-classification.md](cop-classification.md) and [analysis-node-readiness.md](analysis-node-readiness.md)). The boolean `ready` is retained for back-compat = `status == "ready"`. `needs_review` only occurs when `readiness.review_blocks_readiness` is on; with it off (default) no row is `needs_review` and the `ready` set is identical to today. CookStyle (CS) and Test Kitchen (TK) remain separate signals and are never merged — the per-cookbook `verdicts` array exposes each source independently.
+
 **Response (200):**
 
 ```json
@@ -75,14 +79,18 @@ Returns full detail for a single node, including readiness status per target ver
   "readiness": [
     {
       "target_chef_version": "18.5.0",
+      "status": "ready",
       "ready": true,
       "stale_data": false,
-      "blocking_reasons": []
+      "blocking_reasons": [],
+      "review_reasons": []
     },
     {
       "target_chef_version": "19.0.0",
+      "status": "blocked",
       "ready": false,
       "stale_data": false,
+      "review_reasons": [],
       "blocking_reasons": [
         {
           "type": "incompatible_cookbook",
@@ -121,6 +129,12 @@ Returns full detail for a single node, including readiness status per target ver
   "last_collected_at": "2024-06-15T12:00:00Z"
 }
 ```
+
+**Readiness row notes:**
+
+- `status` is the canonical three-state verdict (`ready` / `needs_review` / `blocked`); `ready` (boolean) is a derived convenience = `status == "ready"`.
+- `review_reasons` mirrors the shape of `blocking_reasons` and lists cookbooks resolved to `needs_review`. It is populated only when `readiness.review_blocks_readiness` is on; otherwise it is an empty array and no row has `status == "needs_review"`.
+- The authoritative persisted shape lives in the node-readiness record (see [analysis-node-readiness.md](analysis-node-readiness.md)); this response is its read projection.
 
 ### Get Node Disk Detail
 

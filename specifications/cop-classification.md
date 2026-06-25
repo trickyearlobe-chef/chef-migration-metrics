@@ -42,6 +42,55 @@ A cookbook **fails** if it has any offense where:
 
 This preserves backward compatibility: until operators classify cops, the existing severity-based rules still apply.
 
+### CookStyle Rollup Status
+
+Binary pass/fail hides advisory work: a repo whose only issues are Review-level
+cops is neither "ready" nor "broken". The classification-derived **CookStyle
+rollup status** is the canonical per-cookbook / per-repo / per-node verdict used by
+every surface (list, summary card, detail header, node readiness, exports, trends),
+replacing the old compatible/incompatible/passed/failed wording:
+
+| Status | Visual | Condition |
+|--------|--------|-----------|
+| **Ready** | 🟢 | Scan exists; no blockers and no review-level offenses (clean, or only Noise / non-failing Unclassified) |
+| **Needs review** | 🟠 | No blockers, but ≥1 Review offense |
+| **Blocked** | 🔴 | ≥1 Blocker offense, OR ≥1 Unclassified offense that triggers the severity failure rules |
+| **Untested** | ⚪ | No CookStyle scan result for this unit + target |
+
+This is the **CookStyle signal only**. Test Kitchen remains a separate badge
+(passed/failed/partial/untested) — the two signals are never merged into one
+verdict (see [dual-compatibility-signals.md](dual-compatibility-signals.md)).
+
+Invariants:
+- **Single source of truth.** Status (and complexity) are derived once, by
+  `(offenses + resolved classification) → status`, and materialised. Every read
+  path consumes the materialised value; the cop-analysis view and offense-group
+  badges resolve from the same classification — the surfaces must never disagree
+  (this incoherence is the bug this revision fixes).
+- Unclassified offenses that severity-fail map to **Blocked** (conservative —
+  anything that fails today stays red until a human classifies it).
+- The boolean `passed` field is retained for backward-compat = `status not in
+  {Blocked}` (Untested has `passed = false`/null per existing semantics). New code
+  reads `status`; `passed` is a derived convenience.
+
+The scan pipeline MUST derive status via classification (the resolver), not via
+severity rules alone; severity rules remain only the Unclassified fallback.
+
+### Complexity Weighting by Classification
+
+Complexity scoring MUST weight offenses by their resolved classification, so an
+advisory-only repo does not score as "high":
+
+- **Blocker** offenses dominate the score (highest weight).
+- **Review** offenses contribute a low weight (advisory).
+- **Noise** offenses contribute ~0.
+- **Unclassified** offenses keep the existing category weights (deprecation /
+  correctness / manual-fix) as the fallback.
+
+The double-counting that produces today's inflated scores (the same offense
+counted as both a deprecation *and* a manual fix) is removed: each offense
+contributes once, via its classification.
+
 ## Data Model
 
 ### Cop Classifications Table
@@ -255,19 +304,49 @@ New tab on the Remediation page: **Priority | Cop Analysis**
 
 Admin page: **Admin → CookStyle → Cop Classification**
 
-Two sections:
+Three sections:
 
-1. **Classifications** — searchable list of all cops with current classification, allows bulk reclassification
+1. **Classifications** — searchable list of **all** known cops (curated defaults +
+   `RemovedIn` mappings + scanned + custom), with a target-version selector, the
+   resolved classification + its source (operator_override / removed_in /
+   curated_default / unclassified), and per-cop override (with reason). Curated
+   defaults are visible as the seed; overrides layer on top. This is the missing
+   surface — today reclassification is only reachable inline from the Cop Analysis
+   drill-down.
 2. **Custom Cops** — CRUD for custom cop definitions (name, pattern, target version, classification)
+3. **Fallback rules** — the existing severity-based "Failure Rules" grid, reframed
+   and labelled as applying **only to unclassified cops** (de-emphasised / below
+   classification). Not removed — it remains the Unclassified fallback.
 
 ### Updated Cookbook/Git Repo Detail Views
 
-Existing remediation detail pages gain:
+Existing remediation detail pages are reorganised to answer "what must I fix?"
+at a glance:
 
-- Classification badge next to each offense group's cop name
-- `RemovedIn` shown inline where available (e.g. "Removed in Chef 14.0")
-- Filter offense groups by classification level
-- Summary stat: "3 blockers / 2 review / 8 noise"
+- **Verdict headline** at the top — plain-language bottom line derived from the
+  CookStyle rollup status, e.g. "✓ No blockers for Chef 19 — 1 item to review
+  before migrating" or "🔴 2 blockers must be fixed for Chef 19". This is the first
+  thing the user reads.
+- **Rollup status badge** in the header (🟢/🟠/🔴) replacing the binary
+  CookStyle Passed/Failed badge, consistent with the list and summary card.
+- **Collapsible category sections** — offense groups grouped under **Blockers /
+  Review / Noise / Unclassified**, each section header showing a count
+  (e.g. "Blockers (0)", "Review (1)"). Blockers expanded by default; the rest
+  collapsed and visually de-emphasised. An explicit "Blockers (0)" header reads
+  as reassurance, not breakage.
+- Within each section, offense groups keep their classification badge,
+  `RemovedIn` inline where available, and per-cop counts.
+- The classification filter is retained; an empty result shows a real
+  empty-state ("No blocker-level cops for this target — items below are
+  advisory"), never a blank list.
+
+### Updated List & Summary Surfaces
+
+The git-repo / cookbook lists and the per-item summary cards show the **CookStyle
+rollup status** badge (🟢 Ready / 🟠 Needs review / 🔴 Blocked / ⚪ Untested) instead
+of a binary pass/fail, sourced from the same derivation as the detail header. The
+summary card replaces the bare "complexity N" number with the classification-
+weighted score plus its label (e.g. "low") so the figure is interpretable.
 
 ### Updated Remediation Priority View
 
@@ -277,16 +356,42 @@ The existing priority table gains:
 - Complexity scoring updated to weight Blocker cops higher
 - Filter: "Only show cookbooks with blockers"
 
-## Re-evaluation
+## Re-evaluation & Propagation
 
-When classifications change (operator override, curated defaults update, custom cop added):
+Any **criteria change** MUST trigger a scoped recompute through the derivation
+graph. Criteria changes are: operator override (PUT/DELETE classification),
+failure-rule edit, custom-cop add/edit, curated-default update (app upgrade), and
+target-version addition.
 
-1. Re-compute pass/fail for all affected cookstyle results
-2. Update `passed` field in `server_cookbook_cookstyle_results` / `git_repo_cookstyle_results`
-3. Recalculate complexity scores for affected cookbooks
-4. Emit a WebSocket event so open UI pages refresh
+The recompute closure (invalidate only what is downstream — see
+`plans/cookstyle-status-consistency.md` for the full table):
 
-This mirrors the existing re-scoring behaviour from the failure rules system.
+1. Re-derive **status + weighted complexity** for every cookstyle result
+   containing the affected cop(s), per affected target — re-resolution only, no
+   rescan (custom-cop *definition* changes are the exception: they require a
+   rescan because they change which offenses exist).
+2. Update `status`/`passed` + `complexity_score` in
+   `server_cookbook_cookstyle_results` / `git_repo_cookstyle_results`.
+3. Recompute git-repo compatibility status (CS ⊕ TK).
+4. Recompute **readiness** for nodes whose run-list includes an affected cookbook.
+   A run-list change alone re-rolls only that node's readiness; a readiness-config
+   change re-rolls all nodes.
+5. Record a criteria-change **audit event** (who/what/when) so a step in any trend
+   is explainable.
+6. Emit a WebSocket event so open UI pages refresh.
+
+Reclassification is cheap (re-resolve ~tens of thousands of results in memory; no
+rescan), so full current-state recompute on every criteria change is affordable.
+
+### History
+
+Past trend points are **not** retroactively recomputed — the raw offense-level
+inputs were never retained (snapshots store rolled-up aggregates only), so past
+points are unrecoverable and stay frozen. Going forward, a change-deduped per-scan
+offense **fingerprint** history (cop_name + count + severity + correctable per
+result per scan; appended only when it differs from the prior scan) makes trends
+recomputable under current criteria for data captured after it ships. See
+[enriched-metric-snapshots.md](enriched-metric-snapshots.md).
 
 ## Migration from Failure Rules
 

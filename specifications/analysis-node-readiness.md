@@ -129,24 +129,27 @@ For each node, the readiness evaluator must determine whether **all** cookbooks 
       - `cookbook_name` matches (via `git_repos.name`)
       - `target_chef_version` matches
 
-      Record the verdict: `compatible` if `passed = true`, otherwise `incompatible`. If no result exists, record `untested`.
+      Record the verdict from the result's **CookStyle rollup status** (see [cop-classification.md](cop-classification.md)): `Ready` → `compatible`; `Blocked` → `incompatible`; `Needs review` → governed by `readiness.review_blocks_readiness` (treated as `compatible` when off [default], `needs_review` when on). If no result exists, record `untested`.
 
    c. **Check for a server cookbook CookStyle result.** Query the datastore for a CookStyle result where:
       - `organisation` matches the node's organisation
       - `cookbook_name` and `cookbook_version` match the version on the node
       - `target_chef_version` matches (also try with no target version as fallback)
 
-      Record the verdict: `compatible` if `passed = true`, otherwise `incompatible`. If no result exists, record `untested`.
+      Record the verdict from the result's **CookStyle rollup status** (see [cop-classification.md](cop-classification.md)): `Ready` → `compatible`; `Blocked` → `incompatible`; `Needs review` → governed by `readiness.review_blocks_readiness` (treated as `compatible` when off [default], `needs_review` when on). If no result exists, record `untested`.
 
    d. **Compute the overall status from all verdicts:**
 
       | Scenario | Overall Status | Blocks Readiness? |
       |----------|---------------|-------------------|
       | Any source says `compatible` | `compatible` | No |
-      | All tested sources say `incompatible` (none compatible) | `incompatible` | **Yes** |
+      | No `compatible`, but ≥1 `needs_review` (toggle on) | `needs_review` | **Yes** (→ node "Needs review", not "Blocked") |
+      | All tested sources say `incompatible` (none compatible/needs-review) | `incompatible` | **Yes** |
       | No sources have results at all | `untested` | **Yes** |
 
       > **Policy note:** If the server version is incompatible but the git version is compatible, the node is still considered **ready** because a compatible version exists and can be uploaded. The per-source verdicts make it clear what action is needed.
+
+      > **Review handling:** `needs_review` only arises when `readiness.review_blocks_readiness` is **on**; with it off (default) Review-level cookbooks resolve to `compatible` and node readiness is unchanged from today's blocker-only behaviour.
 
    e. **Record per-source verdicts.** Each cookbook in the blocking list (or non-blocking list) carries a `verdicts` array with one entry per source checked:
 
@@ -175,11 +178,19 @@ For each node, the readiness evaluator must determine whether **all** cookbooks 
    - Complexity score and label (from the highest-confidence source, if available)
    - Per-source verdicts array (all sources checked with their individual results)
 
-5. **Combine with disk space result.** The node is **ready** only if:
-   - The cookbook blocking list is empty, AND
-   - Disk space is sufficient
+5. **Combine with disk space result → node rollup status.** The node rollup
+   mirrors the CookStyle rollup vocabulary (🟢 Ready / 🟠 Needs review / 🔴 Blocked):
+   - **Blocked** — any `incompatible`/`untested` cookbook, OR disk space
+     insufficient/unknown.
+   - **Needs review** — not Blocked, but ≥1 `needs_review` cookbook (only possible
+     when `readiness.review_blocks_readiness` is on).
+   - **Ready** — cookbook list clean (all `compatible`) AND disk space sufficient.
 
-   > **Note on unknown disk space:** Nodes with unknown disk space status are classified as **blocked (unknown disk space)** to err on the side of caution.
+   The boolean `ready` is retained = `status == Ready` (back-compat). With the
+   toggle off, no node is `needs_review`, so the `ready` set is identical to
+   today's.
+
+   > **Note on unknown disk space:** Nodes with unknown disk space status are classified as **Blocked (unknown disk space)** to err on the side of caution.
 
 **Persistence:**
 
@@ -190,9 +201,17 @@ Write one readiness record per node per target Chef Client version:
 | `organisation` | Chef server organisation name |
 | `node_name` | Node name |
 | `target_chef_version` | Target Chef Client version |
-| `ready` | Boolean |
+| `status` | Node rollup status: `ready` / `needs_review` / `blocked` |
+| `ready` | Boolean — derived convenience = `status == ready` (back-compat) |
 | `disk_space_available_mb` | Available MB on the installation mount (null if unknown) |
 | `disk_space_sufficient` | Boolean or null (unknown) |
 | `blocking_cookbooks` | JSON array of `{ name, version, reason, source, complexity_score, complexity_label, verdicts: [{ source, status, version, commit_sha, complexity_score, complexity_label }] }` |
+| `review_cookbooks` | JSON array (same shape) of cookbooks at `needs_review` — populated only when the toggle is on |
 | `stale_data` | Boolean — true if the node's last check-in exceeds the stale threshold |
 | `evaluated_at` | UTC timestamp |
+
+> **Re-evaluation:** A node's readiness is recomputed when its run-list/disk data
+> changes (that node only), when an affected cookbook's CookStyle status changes
+> (nodes using it), or when readiness config — including
+> `readiness.review_blocks_readiness` — changes (all nodes). See
+> [cop-classification.md](cop-classification.md) Re-evaluation & Propagation.

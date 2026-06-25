@@ -14,6 +14,12 @@ Branch: `feature/cookstyle-violations-browser` (continuing)
 - ✅ Chunk 7 — Updated cookbook/git repo detail views — committed
 - ✅ Chunk 8 — Custom cop scanning in analysis pipeline — committed
 
+## Revision — superseded
+
+The accuracy/usability/consistency follow-up (status vocabulary, single source of
+truth, readiness, history) moved to its own cross-surface plan:
+**`plans/cookstyle-status-consistency.md`**. See there.
+
 ## Chunk 3 — Data model & classification resolution (backend)
 
 Scope: `internal/datastore/`, `internal/remediation/`, `migrations/`

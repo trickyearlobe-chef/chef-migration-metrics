@@ -70,7 +70,16 @@ Chef Workstation must be installed on the host for CookStyle scanning to be avai
    | Deprecation warnings | Offenses where `cop_name` starts with `ChefDeprecations/` |
    | Correctness errors | Offenses where `cop_name` starts with `ChefCorrectness/` |
    | All offenses (full list) | `files[*].offenses[*]` |
-   | Pass/fail | Pass if zero offenses with severity `error` or `fatal` |
+   | Rollup status + complexity | Derived from `(offenses + resolved classification)` — see below |
+
+   **Status & complexity are classification-derived (single source of truth).**
+   The persisted **CookStyle rollup status** (Ready / Needs review / Blocked) and
+   the classification-weighted complexity score are derived by one function over
+   the offenses and the resolved cop classification for the target version, **not**
+   by severity alone. Severity-based failure rules apply only as the Unclassified
+   fallback. The same derivation runs on initial scan and on every criteria-change
+   re-evaluation. See [cop-classification.md](cop-classification.md) (CookStyle
+   Rollup Status, Re-evaluation & Propagation) for the rules.
 
 5. **Persist result** — Write the CookStyle result to the datastore:
 
@@ -79,7 +88,8 @@ Chef Workstation must be installed on the host for CookStyle scanning to be avai
    | `organisation` | Chef server organisation name |
    | `cookbook_name` | Cookbook name |
    | `cookbook_version` | Cookbook version |
-   | `passed` | Boolean — true if no `error` or `fatal` severity offenses |
+   | `status` | CookStyle rollup status (Ready / Needs review / Blocked) — classification-derived |
+   | `passed` | Boolean — derived convenience = `status != Blocked` (back-compat) |
    | `offense_count` | Total number of offenses |
    | `deprecation_count` | Number of `ChefDeprecations/*` offenses |
    | `correctness_count` | Number of `ChefCorrectness/*` offenses |

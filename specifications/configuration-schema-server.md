@@ -9,6 +9,7 @@ readiness:
   install_size_mb_linux: 3072       # disk space required for the Linux install bundle (MB)
   install_size_mb_windows: 6144     # disk space required for the Windows install bundle (MB)
   min_remaining_free_percent: 20    # minimum % of the filesystem that must remain free after install
+  review_blocks_readiness: false    # when true, Review-level cookbooks make a node "Needs review" (not ready)
 ```
 
 > ⚠️ **Warning: non-default install paths carry significant risk.** While symlinking the install directory to another filesystem location is supported, it does not guarantee that path-dependent behaviour within Chef and its cookbooks will continue to work correctly. Many cookbooks hardcode assumptions about the default install location. On **Windows**, relocating the install directory also changes the configuration directory, which causes failures with `knife bootstrap`. Only override `install_path_linux` or `install_path_windows` after fully understanding these risks and testing the non-standard path in a representative environment.
@@ -20,6 +21,7 @@ readiness:
 | `install_size_mb_linux` | `3072` | Disk space in MB required for the Chef Client bundle install on Linux. |
 | `install_size_mb_windows` | `6144` | Disk space in MB required for the Chef Client bundle install on Windows. |
 | `min_remaining_free_percent` | `20` | After reserving the platform install size, at least this percentage of the filesystem's total capacity must remain free. Both the absolute and percentage conditions must pass. |
+| `review_blocks_readiness` | `false` | CookStyle-classification policy for node readiness. When `false` (default), cookbooks whose CookStyle rollup status is **Needs review** (Review-level offenses, no Blocker) count as ready — no behaviour change from today's blocker-only model. When `true`, a node with a Review-level (but no Blocker) cookbook becomes **Needs review** rather than ready. Dynamic: a change takes effect immediately and triggers a readiness recompute for **all** nodes. See [Cop Classification](cop-classification.md) and [Node Upgrade Readiness](analysis-node-readiness.md). |
 
 The `install_path_linux` and `install_path_windows` fields must be accompanied by a prominent warning in the UI wherever they are displayed or edited. See the warning text in this spec — it must cover: cookbooks hardcoding default paths, and the Windows-specific knife bootstrap config directory issue.
 

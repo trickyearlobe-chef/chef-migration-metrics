@@ -24,12 +24,29 @@ This component has no write path to Chef servers or cookbook repositories — it
 
 ### Cookbook Compatibility Status
 
-- Display each cookbook (and version) alongside its compatibility status for each configured target Chef Client version.
-- Compatibility status values:
+CookStyle (CS) and Test Kitchen (TK) are **separate signals** and must never be
+merged into one verdict (see
+[cop-classification.md](cop-classification.md) and
+[dual-compatibility-signals.md](dual-compatibility-signals.md)). The CookStyle
+signal uses the three-state-plus-untested **rollup status** vocabulary
+(🟢 Ready / 🟠 Needs review / 🔴 Blocked / ⚪ Untested) — canonical in
+[cop-classification.md](cop-classification.md) § CookStyle Rollup Status,
+replacing the former compatible/incompatible/passed/failed wording.
+
+- Display each cookbook (and version) alongside both its TK compatibility status
+  and its CookStyle rollup status for each configured target Chef Client version.
+- Test Kitchen compatibility status values:
   - **Compatible** — Test Kitchen converge and tests passed at HEAD
   - **Incompatible** — Test Kitchen converge or tests failed at HEAD
-  - **CookStyle only** — Cookbook sourced from Chef server; no Test Kitchen results available. Show CookStyle pass/fail and any deprecation warnings.
-  - **Untested** — No scan or test results available yet
+  - **Untested** — No Test Kitchen results available yet
+- CookStyle rollup status values (the CS badge): **Ready** / **Needs review** /
+  **Blocked** / **Untested**. For a Chef-server-sourced cookbook with no TK
+  results, the CookStyle rollup status is the only available signal — show it
+  with its deprecation warnings, and treat it as a weaker signal than a TK pass
+  (see confidence indicators below).
+- The boolean `passed` field remains available for back-compat
+  (`passed = status not in {Blocked}`) but the UI renders the four-state badge,
+  not pass/fail.
 - Show the HEAD commit SHA and timestamp of the last test run for git-sourced cookbooks.
 - Show the organisation + cookbook name + version key for Chef server-sourced cookbooks.
 - Default view hides unused cookbooks (see active/unused filter below).
@@ -49,8 +66,8 @@ The distinction between green (Test Kitchen pass) and amber (CookStyle-only pass
 
 **Complexity scoring:**
 
-- Each incompatible or CookStyle-only cookbook must display its **complexity score** and **complexity label** (`low`, `medium`, `high`, `critical`) alongside the compatibility status.
-- The complexity score is computed by the Analysis component (see [Analysis Specification](analysis.md)).
+- Each cookbook not in the Ready state (Blocked / Needs review) must display its **complexity score** and **complexity label** (`low`, `medium`, `high`, `critical`) alongside the status badges.
+- The complexity score is **classification-weighted** (Blocker offenses dominate; Review low; Noise ~0) — computed by the Analysis component (see [Analysis Specification](analysis.md) and [cop-classification.md](cop-classification.md) § Complexity Weighting).
 - Cookbooks must be sortable by complexity score to help teams identify quick wins (low complexity) and plan for harder remediation (high complexity).
 
 **Stale cookbook indicator:**
@@ -60,9 +77,14 @@ The distinction between green (Test Kitchen pass) and amber (CookStyle-only pass
 
 ### Node Upgrade Readiness
 
-- Display a summary of how many nodes are ready vs. blocked per target Chef Client version.
-- Show blocking reasons per node:
-  - One or more cookbooks in the expanded run-list are incompatible with the target version
+- Display a summary of node readiness per target Chef Client version using the
+  three-state node readiness vocabulary: **ready** / **needs_review** / **blocked**
+  (canonical in [cop-classification.md](cop-classification.md); replaces the
+  former binary ready-vs-blocked split). The CookStyle contribution to readiness
+  uses the rollup status; CS and TK remain separate inputs and are not merged.
+- Show blocking / review reasons per node:
+  - One or more cookbooks in the expanded run-list are **Blocked** (or, for
+    needs_review, **Needs review**) for the target version
   - Insufficient disk space for the Habitat bundle
 - Support drill-down from the summary to a per-node detail view showing which specific cookbooks are blocking and why.
 
@@ -221,10 +243,27 @@ When `ownership.enabled` is `true`, the dashboard includes ownership-aware views
 - Store timestamped metric snapshots at the end of each collection run.
 - Provide trend charts for:
   - Chef Client version distribution over time
-  - Count of nodes ready vs. blocked per target Chef Client version over time
-  - Aggregate complexity score trend over time (showing whether remediation effort is reducing overall complexity)
+  - Count of nodes by readiness state (**ready** / **needs_review** / **blocked**)
+    per target Chef Client version over time
+  - CookStyle rollup status mix over time (**Ready** / **Needs review** /
+    **Blocked** / **Untested**), keeping CS distinct from TK
+  - Aggregate **classification-weighted** complexity score trend over time
+    (showing whether remediation effort is reducing overall complexity)
   - Count of stale nodes over time
 - Trend charts must be scoped by the same interactive filters as the summary views.
+
+### Retroactive recompute is forward-only
+
+Trends recompute under the **current** classification criteria **going forward**;
+**past trend points are frozen** and are not retroactively recomputed. The
+offense-level inputs needed to re-derive old points were never retained
+(snapshots store rolled-up aggregates), so historical points stay as captured and
+may reflect older criteria. A criteria change (reclassification, failure-rule or
+custom-cop edit, target-version add) recomputes current state and appends a new
+point under the new criteria; it does not rewrite history. An audit event marks
+criteria changes so a step in a trend is explainable. See
+[cop-classification.md](cop-classification.md) § History and
+[enriched-metric-snapshots.md](enriched-metric-snapshots.md).
 
 ---
 
@@ -258,17 +297,26 @@ The dashboard must support exporting data for use in external upgrade automation
 
 ### Blocked Node Export
 
-- Export a list of blocked nodes with their blocking reasons.
+- Export a list of nodes in the **blocked** (and optionally **needs_review**)
+  readiness state with their blocking / review reasons.
 - Export formats: **CSV**, **JSON**.
-- Include blocking cookbook names, versions, complexity scores, and disk space status.
+- Include blocking cookbook names, versions, **classification-weighted** complexity
+  scores, and disk space status.
 - Useful for creating tickets or work items in project management tools.
 
 ### Cookbook Remediation Export
 
-- Export the full remediation report for all incompatible cookbooks.
+- Export the full remediation report for all cookbooks not in the **Ready** state
+  (Blocked / Needs review).
 - Export formats: **CSV**, **JSON**.
-- Include cookbook name, version, complexity score, blast radius, auto-correctable offense count, manual fix count, and top deprecation cops.
+- Include cookbook name, version, CookStyle rollup status, **classification-weighted**
+  complexity score, blast radius, auto-correctable offense count, manual fix count,
+  and top deprecation cops with their classification.
 - Useful for generating work items or sprint planning.
+
+See [web-api-exports.md](web-api-exports.md) and [data-export.md](data-export.md)
+for the canonical export vocabulary and the back-compat `passed`/`ready` boolean
+retention.
 
 ---
 

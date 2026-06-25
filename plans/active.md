@@ -1,6 +1,10 @@
 # Active Plan
 
-Current: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
+Current: **CookStyle status vocabulary & consistency** (in design) — see
+`plans/cookstyle-status-consistency.md`. Decisions agreed; awaiting further design
+Qs before implementing.
+
+Also open: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
 Chunks A (lint) + B/D (rules) landed in `main`. Open:
 - **E — drift sweep** (approved; multi-agent spec↔code audit → report). Run next
   session for clean context.

@@ -10,6 +10,8 @@ Returns the full remediation guidance for a specific server cookbook version, in
 
 **Query parameters:** `organisation` (optional, scopes to a specific organisation's copy), `target_chef_version` (optional, defaults to all configured targets).
 
+**CookStyle rollup status:** The response carries a `cookstyle_status` field (per target) alongside the existing `complexity` / `passed` fields. Values: `ready` (🟢), `needs_review` (🟠), `blocked` (🔴), `untested` (⚪). It is **classification-derived** (the single source of truth — resolved from offenses + cop classification), not severity-derived. The legacy `passed` boolean is retained for back-compat = `cookstyle_status != blocked`. The `complexity.score` is now classification-weighted (same field, new derivation). This is the CookStyle signal only — Test Kitchen stays a separate signal and is never merged in. See [cop-classification.md](cop-classification.md) (CookStyle Rollup Status) for the canonical values, conditions, and invariants; the owning shape lives in the remediation detail handler/type in code.
+
 **Response (200):**
 
 ```json
@@ -93,6 +95,8 @@ Returns the full remediation guidance for a specific server cookbook version, in
 Returns all incompatible and CookStyle-flagged cookbooks sorted by a priority score that combines complexity and blast radius. This powers the remediation guidance view in the dashboard. This endpoint aggregates results from both **server cookbooks** and **git repos**. The `source` field in each entry (`"chef_server"` or `"git"`) indicates the origin.
 
 **Query parameters:** `target_chef_version` (required), standard filters, pagination.
+
+**CookStyle rollup status:** Each entry carries `cookstyle_status` (`ready`/`needs_review`/`blocked`/`untested`; 🟢/🟠/🔴/⚪) next to the existing `complexity_score`/`complexity_label` fields. It is **classification-derived** (single source of truth), not severity-derived; `complexity_score` is now classification-weighted. See [cop-classification.md](cop-classification.md) (CookStyle Rollup Status). The owning shape lives in the priority handler/type in code.
 
 **Response (200):**
 
