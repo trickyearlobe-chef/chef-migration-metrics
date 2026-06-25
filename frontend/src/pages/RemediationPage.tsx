@@ -20,22 +20,22 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { ComplexityBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
-import { CookstyleViolationsTab } from "./CookstyleViolationsTab";
+import { CopAnalysisTab } from "./CopAnalysisTab";
 
 // ---------------------------------------------------------------------------
-// Remediation page — tabbed layout with Priority (default) and CookStyle
-// Violations tabs. Tab selection is persisted via ?tab= query param.
+// Remediation page — tabbed layout with Priority (default) and Cop Analysis
+// tabs. Tab selection is persisted via ?tab= query param.
 // ---------------------------------------------------------------------------
 
-type RemediationTab = "priority" | "violations";
+type RemediationTab = "priority" | "cop-analysis";
 
 const TABS: { key: RemediationTab; label: string }[] = [
   { key: "priority", label: "Priority" },
-  { key: "violations", label: "CookStyle Violations" },
+  { key: "cop-analysis", label: "Cop Analysis" },
 ];
 
 function isValidTab(value: string | null): value is RemediationTab {
-  return value === "priority" || value === "violations";
+  return value === "priority" || value === "cop-analysis";
 }
 
 export function RemediationPage() {
@@ -50,10 +50,7 @@ export function RemediationPage() {
       if (tab === "priority") {
         next.delete("tab");
         next.delete("source");
-        next.delete("namespace");
-        next.delete("severity");
-        next.delete("cop");
-        next.delete("status");
+        next.delete("classification");
       } else {
         next.set("tab", tab);
       }
@@ -87,7 +84,7 @@ export function RemediationPage() {
       </div>
 
       {activeTab === "priority" && <RemediationPriorityContent />}
-      {activeTab === "violations" && <CookstyleViolationsTab />}
+      {activeTab === "cop-analysis" && <CopAnalysisTab />}
     </div>
   );
 }
