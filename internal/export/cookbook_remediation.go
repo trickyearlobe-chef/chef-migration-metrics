@@ -41,10 +41,14 @@ type CookbookRemediationExportParams struct {
 // exports. Each row represents one cookbook version evaluated against one
 // target Chef version.
 type cookbookRemediationRow struct {
-	CookbookName         string `json:"cookbook_name"`
-	Version              string `json:"version"`
-	Organisation         string `json:"organisation"`
-	TargetChefVersion    string `json:"target_chef_version"`
+	CookbookName      string `json:"cookbook_name"`
+	Version           string `json:"version"`
+	Organisation      string `json:"organisation"`
+	TargetChefVersion string `json:"target_chef_version"`
+	// CookstyleStatus is the single-source-of-truth rollup verdict for this
+	// cookbook × target: ready / needs_review / blocked (or "" / untested when no
+	// scan result exists). Replaces the former compatible/passed wording.
+	CookstyleStatus      string `json:"cookstyle_status"`
 	ComplexityScore      int    `json:"complexity_score"`
 	ComplexityLabel      string `json:"complexity_label"`
 	AffectedNodeCount    int    `json:"affected_node_count"`
@@ -120,6 +124,16 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 			continue
 		}
 
+		// Join the materialised CookStyle rollup status by (org, cookbook,
+		// version, target). A missing entry leaves the status empty (untested).
+		statusByKey := make(map[string]string)
+		if csResults, csErr := db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.Name); csErr == nil {
+			for _, cs := range csResults {
+				k := cs.OrganisationName + "/" + cs.CookbookName + "/" + cs.CookbookVersion + "/" + cs.TargetChefVersion
+				statusByKey[k] = cs.CookstyleStatus
+			}
+		}
+
 		// Apply target version and complexity label filters.
 		complexities = FilterComplexities(
 			complexities,
@@ -140,6 +154,7 @@ func collectCookbookRemediation(ctx context.Context, db DataStore, params Cookbo
 				Version:              cb.Version,
 				Organisation:         orgNameByID[org.Name],
 				TargetChefVersion:    cc.TargetChefVersion,
+				CookstyleStatus:      statusByKey[ccKey+"/"+cc.TargetChefVersion],
 				ComplexityScore:      cc.ComplexityScore,
 				ComplexityLabel:      cc.ComplexityLabel,
 				AffectedNodeCount:    cc.AffectedNodeCount,
@@ -227,6 +242,7 @@ func renderCookbookRemediationCSV(rows []cookbookRemediationRow) ([]byte, error)
 
 	header := []string{
 		"cookbook_name", "version", "organisation", "target_chef_version",
+		"cookstyle_status",
 		"complexity_score", "complexity_label",
 		"affected_node_count", "affected_role_count",
 		"auto_correctable_count", "manual_fix_count",
@@ -242,6 +258,7 @@ func renderCookbookRemediationCSV(rows []cookbookRemediationRow) ([]byte, error)
 			r.Version,
 			r.Organisation,
 			r.TargetChefVersion,
+			r.CookstyleStatus,
 			fmt.Sprintf("%d", r.ComplexityScore),
 			r.ComplexityLabel,
 			fmt.Sprintf("%d", r.AffectedNodeCount),

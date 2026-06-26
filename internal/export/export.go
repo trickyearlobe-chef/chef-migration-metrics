@@ -71,6 +71,11 @@ type DataStore interface {
 	// records for server cookbooks belonging to the given organisation.
 	ListServerCookbookComplexitiesByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error)
 
+	// ListServerCookbookCookstyleResultsByOrganisation returns the materialised
+	// CookStyle results (carrying the single-source-of-truth rollup status) for
+	// server cookbooks belonging to the given organisation.
+	ListServerCookbookCookstyleResultsByOrganisation(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error)
+
 	// CountNodeReadiness returns the total, ready, and blocked counts for
 	// the given organisation and target Chef version.
 	CountNodeReadiness(ctx context.Context, organisationID, targetChefVersion string) (total, ready, blocked int, err error)
