@@ -95,6 +95,16 @@ type Router struct {
 	// webapi need not import the backup package. Set via WithBackupReconciler.
 	backupReconciler func() error
 
+	// readinessReconciler triggers a recompute of node readiness for all
+	// organisations after a readiness config change (e.g. flipping
+	// readiness.review_blocks_readiness or a disk threshold). It reads the
+	// reloaded live config itself and should kick the recompute in the
+	// background, returning promptly so the admin PUT does not block on a
+	// full re-evaluation. nil when no evaluator is wired — the readiness
+	// section then applies live-per-request only (next collection cycle picks
+	// up the change). Set via WithReadinessReconciler.
+	readinessReconciler func() error
+
 	// --- Authentication components (set via WithAuth) ---
 
 	// localAuth handles local username/password authentication with
@@ -320,6 +330,19 @@ func WithCollectionRescheduler(fn func(schedule string) error) RouterOption {
 func WithBackupReconciler(fn func() error) RouterOption {
 	return func(r *Router) {
 		r.backupReconciler = fn
+	}
+}
+
+// WithReadinessReconciler wires the live apply point for the readiness config
+// section. fn recomputes node readiness for all organisations against the
+// reloaded live config (so a review_blocks_readiness or disk-threshold change
+// takes effect immediately rather than waiting for the next collection cycle).
+// fn should launch the recompute in the background and return promptly. When
+// set, a readiness PUT applies without a restart (subsystem). Without it the
+// section reads live-per-request only.
+func WithReadinessReconciler(fn func() error) RouterOption {
+	return func(r *Router) {
+		r.readinessReconciler = fn
 	}
 }
 

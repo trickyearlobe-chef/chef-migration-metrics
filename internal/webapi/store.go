@@ -150,6 +150,11 @@ type DataStore interface {
 	// the given organisation and target Chef version.
 	CountNodeReadiness(ctx context.Context, organisationName, targetChefVersion string) (total, ready, blocked int, err error)
 
+	// CountNodeReadinessByStatus returns the total and per-rollup-status counts
+	// (ready / needs_review / blocked) for the given organisation and target
+	// Chef version.
+	CountNodeReadinessByStatus(ctx context.Context, organisationName, targetChefVersion string) (total, ready, needsReview, blocked int, err error)
+
 	// -----------------------------------------------------------------
 	// Server cookbooks
 	// -----------------------------------------------------------------

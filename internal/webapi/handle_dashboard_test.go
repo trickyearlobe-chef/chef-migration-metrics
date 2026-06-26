@@ -638,6 +638,51 @@ func TestHandleDashboardReadiness_HappyPath_WithData(t *testing.T) {
 	}
 }
 
+func TestHandleDashboardReadiness_NeedsReviewBucket(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		CountNodeReadinessByStatusFn: func(ctx context.Context, orgID, tv string) (int, int, int, int, error) {
+			// total, ready, needsReview, blocked
+			return 10, 6, 1, 3, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			TargetChefVersion string  `json:"target_chef_version"`
+			TotalNodes        int     `json:"total_nodes"`
+			ReadyNodes        int     `json:"ready_nodes"`
+			NeedsReviewNodes  int     `json:"needs_review_nodes"`
+			BlockedNodes      int     `json:"blocked_nodes"`
+			ReadyPercent      float64 `json:"ready_percent"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	d := body.Data[0]
+	if d.ReadyNodes != 6 || d.NeedsReviewNodes != 1 || d.BlockedNodes != 3 {
+		t.Errorf("got ready=%d needs_review=%d blocked=%d, want 6/1/3", d.ReadyNodes, d.NeedsReviewNodes, d.BlockedNodes)
+	}
+	if d.ReadyPercent != 60 {
+		t.Errorf("ready_percent = %v, want 60", d.ReadyPercent)
+	}
+}
+
 func TestHandleDashboardReadiness_DBError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {

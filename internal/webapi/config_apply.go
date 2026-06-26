@@ -147,6 +147,26 @@ func (r *Router) samlApplier() Applier {
 	}
 }
 
+// readinessApplier recomputes node readiness for all organisations after a
+// readiness config change via the wired reconciler and reports ReloadSubsystem.
+// The reconciler kicks the recompute in the background and returns promptly, so
+// the change is live immediately (config is read per-request) and the persisted
+// readiness rows refresh shortly after without blocking the admin PUT. Only
+// registered when a reconciler is wired; without one the section applies
+// live-per-request (ReloadApplied) and the next collection cycle materialises
+// the new verdicts.
+func (r *Router) readinessApplier() Applier {
+	return func(context.Context) (ApplyResult, error) {
+		if r.readinessReconciler == nil {
+			return ApplyResult{Reload: ReloadApplied}, nil
+		}
+		if err := r.readinessReconciler(); err != nil {
+			return ApplyResult{}, err
+		}
+		return ApplyResult{Reload: ReloadSubsystem}, nil
+	}
+}
+
 // worstGranularity returns the most severe granularity among results. With no
 // results it returns ReloadProcess: a section that registered no applier is
 // assumed to need a restart (pessimistic — at worst over-prompts, never

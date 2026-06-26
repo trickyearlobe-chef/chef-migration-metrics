@@ -63,6 +63,7 @@ type readinessTrendPoint struct {
 	TargetChefVersion string             `json:"target_chef_version"`
 	TotalNodes        int                `json:"total_nodes"`
 	ReadyNodes        int                `json:"ready_nodes"`
+	NeedsReviewNodes  int                `json:"needs_review_nodes,omitempty"`
 	BlockedNodes      int                `json:"blocked_nodes"`
 	ReadyPercent      float64            `json:"ready_percent"`
 	BlockedBy         *blockedByResponse `json:"blocked_by,omitempty"`
@@ -379,9 +380,10 @@ func mergeReadinessTrendSnapshots(points []readinessTrendPoint) []readinessTrend
 
 	// Phase 2: Sum across orgs within each (hour, version) bucket.
 	type bucket struct {
-		totalNodes   int
-		readyNodes   int
-		blockedNodes int
+		totalNodes       int
+		readyNodes       int
+		needsReviewNodes int
+		blockedNodes     int
 	}
 
 	buckets := make(map[readinessKey]*bucket)
@@ -397,6 +399,7 @@ func mergeReadinessTrendSnapshots(points []readinessTrendPoint) []readinessTrend
 		}
 		b.totalNodes += entry.point.TotalNodes
 		b.readyNodes += entry.point.ReadyNodes
+		b.needsReviewNodes += entry.point.NeedsReviewNodes
 		b.blockedNodes += entry.point.BlockedNodes
 	}
 
@@ -419,6 +422,7 @@ func mergeReadinessTrendSnapshots(points []readinessTrendPoint) []readinessTrend
 			TargetChefVersion: k.version,
 			TotalNodes:        b.totalNodes,
 			ReadyNodes:        b.readyNodes,
+			NeedsReviewNodes:  b.needsReviewNodes,
 			BlockedNodes:      b.blockedNodes,
 			ReadyPercent:      pct,
 		})

@@ -41,6 +41,7 @@ type mockStore struct {
 	ListNodeReadinessByNodeNameFn                       func(ctx context.Context, organisationName, nodeName string) ([]datastore.NodeReadiness, error)
 	BulkListNodeReadinessByNodeNamesFn                  func(ctx context.Context, organisationName string, nodeNames []string) (map[string][]datastore.NodeReadiness, error)
 	CountNodeReadinessFn                                func(ctx context.Context, organisationName, targetChefVersion string) (int, int, int, error)
+	CountNodeReadinessByStatusFn                        func(ctx context.Context, organisationName, targetChefVersion string) (int, int, int, int, error)
 	ListCookbooksFilteredFn                             func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error)
 	ListServerCookbooksByOrganisationFn                 func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
 	ListServerCookbooksByNameFn                         func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
@@ -406,6 +407,19 @@ func (m *mockStore) CountNodeReadiness(ctx context.Context, organisationName, ta
 		return m.CountNodeReadinessFn(ctx, organisationName, targetChefVersion)
 	}
 	return 0, 0, 0, nil
+}
+
+func (m *mockStore) CountNodeReadinessByStatus(ctx context.Context, organisationName, targetChefVersion string) (int, int, int, int, error) {
+	if m.CountNodeReadinessByStatusFn != nil {
+		return m.CountNodeReadinessByStatusFn(ctx, organisationName, targetChefVersion)
+	}
+	// Fall back to the 3-value count (needs_review = 0) so tests that only set
+	// CountNodeReadinessFn keep working with the default-off behaviour.
+	if m.CountNodeReadinessFn != nil {
+		total, ready, blocked, err := m.CountNodeReadinessFn(ctx, organisationName, targetChefVersion)
+		return total, ready, 0, blocked, err
+	}
+	return 0, 0, 0, 0, nil
 }
 
 // -----------------------------------------------------------------

@@ -131,6 +131,11 @@ type serverApp struct {
 	// the complexity scorer + readiness evaluator) and wired into the router.
 	cookstylePropagator *webapi.CookstylePropagator
 
+	// readinessEval evaluates per-node upgrade readiness. Built in
+	// setupCollector and reused by the router's readiness reconciler to recompute
+	// readiness for all orgs when the readiness config changes.
+	readinessEval *analysis.ReadinessEvaluator
+
 	// Export cleanup stop function.
 	stopExportCleanup func()
 
@@ -1026,6 +1031,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			InstallSizeMBLinux:      app.cfg.Readiness.InstallSizeMBLinux,
 			InstallSizeMBWindows:    app.cfg.Readiness.InstallSizeMBWindows,
 			MinRemainingFreePercent: app.cfg.Readiness.MinRemainingFreePercent,
+			ReviewBlocksReadiness:   app.cfg.Readiness.ReviewBlocksReadiness,
 		},
 		analysis.WithConfigFunc(func() analysis.ReadinessEvalConfig {
 			cfg := app.configHolder.Get()
@@ -1035,6 +1041,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 				InstallSizeMBLinux:      cfg.Readiness.InstallSizeMBLinux,
 				InstallSizeMBWindows:    cfg.Readiness.InstallSizeMBWindows,
 				MinRemainingFreePercent: cfg.Readiness.MinRemainingFreePercent,
+				ReviewBlocksReadiness:   cfg.Readiness.ReviewBlocksReadiness,
 			}
 		}),
 		analysis.WithReadinessConcurrencyFunc(func() int {
@@ -1042,6 +1049,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		}),
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
+	app.readinessEval = readinessEval
 
 	// Re-evaluation propagator: reuses the classification-weighted complexity
 	// scorer + readiness evaluator so a cop reclassification or custom-cop change
@@ -1291,6 +1299,37 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		}),
 		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
 		webapi.WithCookstylePropagator(app.cookstylePropagator),
+		webapi.WithReadinessReconciler(func() error {
+			// A readiness config change (review_blocks_readiness toggle or disk
+			// threshold) re-evaluates readiness for all organisations so the new
+			// criteria take effect immediately. Run in the background so the admin
+			// PUT returns promptly; the recompute reads the reloaded live config.
+			if app.readinessEval == nil {
+				return nil
+			}
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				defer cancel()
+				rlog := logger.WithScope(logging.ScopeReadinessEvaluation)
+				orgs, err := app.db.ListOrganisations(ctx)
+				if err != nil {
+					rlog.Error(fmt.Sprintf("readiness reconcile: listing organisations: %v", err))
+					return
+				}
+				targets := app.configHolder.Get().TargetChefVersions
+				if len(targets) == 0 {
+					return
+				}
+				rlog.Info("readiness config changed — recomputing readiness for all organisations")
+				for _, org := range orgs {
+					if _, err := app.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, targets); err != nil {
+						rlog.Error(fmt.Sprintf("readiness reconcile: org %s: %v", org.Name, err))
+					}
+				}
+				rlog.Info("readiness recompute complete")
+			}()
+			return nil
+		}),
 		webapi.WithCollectionTrigger(func(ctx context.Context) error {
 			if coll.IsRunning() {
 				return fmt.Errorf("a collection run is already in progress")

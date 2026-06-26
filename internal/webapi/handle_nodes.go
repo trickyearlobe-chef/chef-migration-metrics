@@ -267,10 +267,12 @@ func (r *Router) handleNodesWithOwnerFilter(
 // nodeReadinessSummaryEntry is a compact readiness summary for the node list.
 type nodeReadinessSummaryEntry struct {
 	TargetChefVersion      string  `json:"target_chef_version"`
+	Status                 string  `json:"status"` // node rollup: ready / needs_review / blocked
 	IsReady                bool    `json:"is_ready"`
 	AllCookbooksCompatible bool    `json:"all_cookbooks_compatible"`
 	SufficientDiskSpace    *bool   `json:"sufficient_disk_space"`
 	BlockingCookbookCount  int     `json:"blocking_cookbook_count"`
+	ReviewCookbookCount    int     `json:"review_cookbook_count"`
 	StaleData              bool    `json:"stale_data"`
 	DiskStatus             string  `json:"disk_status"`
 	CookstyleStatus        string  `json:"cookstyle_status"`
@@ -682,10 +684,12 @@ func bulkLoadReadiness(ctx context.Context, db DataStore, nodes []datastore.Node
 				cs := deriveCheckStatus(rec, installPath)
 				result[nodeName] = append(result[nodeName], nodeReadinessSummaryEntry{
 					TargetChefVersion:      rec.TargetChefVersion,
+					Status:                 rec.Status,
 					IsReady:                rec.IsReady,
 					AllCookbooksCompatible: rec.AllCookbooksCompatible,
 					SufficientDiskSpace:    rec.SufficientDiskSpace,
 					BlockingCookbookCount:  countBlockingCookbooks(rec.BlockingCookbooks),
+					ReviewCookbookCount:    countBlockingCookbooks(rec.ReviewCookbooks),
 					StaleData:              rec.StaleData,
 					DiskStatus:             cs.DiskStatus,
 					CookstyleStatus:        cs.CookstyleStatus,
