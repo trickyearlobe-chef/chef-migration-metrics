@@ -122,6 +122,52 @@ func TestGroupFingerprintHistories(t *testing.T) {
 	}
 }
 
+// DistinctScanTimes collects the change points (distinct scanned_at) across all
+// histories, ascending and de-duplicated.
+func TestDistinctScanTimes(t *testing.T) {
+	histories := []ResultFingerprintHistory{
+		{Key: "a", Rows: []datastore.CookstyleOffenceFingerprint{fpRow(20), fpRow(10)}},
+		{Key: "b", Rows: []datastore.CookstyleOffenceFingerprint{fpRow(10), fpRow(30)}},
+	}
+	got := DistinctScanTimes(histories)
+	want := []time.Time{ts(10), ts(20), ts(30)}
+	if len(got) != len(want) {
+		t.Fatalf("got %d times, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if !got[i].Equal(want[i]) {
+			t.Errorf("time[%d] = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// RecomputeTrend produces one point per supplied time, and the series reflects a
+// reclassification applied to the CURRENT resolver across every historical point.
+func TestRecomputeTrend_ReclassificationAffectsWholeSeries(t *testing.T) {
+	rules := DefaultFailureRules()
+	histories := []ResultFingerprintHistory{
+		{Key: "r", Rows: []datastore.CookstyleOffenceFingerprint{
+			fpRow(10, datastore.FingerprintCopEntry{CopName: "Op/X", Count: 1, Severity: "warning"}),
+		}},
+	}
+	times := DistinctScanTimes(histories)
+
+	// Under the review classification, every post-boundary point is Needs review.
+	reviewResolver := resolverAt("18.0", map[string]string{"Op/X": ClassificationReview})
+	pts := RecomputeTrend(histories, times, rules, reviewResolver)
+	if len(pts) != 1 || pts[0].Rollup.NeedsReview != 1 {
+		t.Fatalf("review series = %+v, want one NeedsReview point", pts)
+	}
+
+	// Reclassify to blocker: the same frozen fingerprints now recompute to Blocked
+	// across the whole series — recompute uses TODAY's criteria for past points.
+	blockerResolver := resolverAt("18.0", map[string]string{"Op/X": ClassificationBlocker})
+	pts = RecomputeTrend(histories, times, rules, blockerResolver)
+	if len(pts) != 1 || pts[0].Rollup.Blocked != 1 {
+		t.Fatalf("blocker series = %+v, want one Blocked point", pts)
+	}
+}
+
 // FingerprintDataBoundary is the earliest scanned_at across all histories — the
 // point before which no trend point can be recomputed (frozen range).
 func TestFingerprintDataBoundary(t *testing.T) {

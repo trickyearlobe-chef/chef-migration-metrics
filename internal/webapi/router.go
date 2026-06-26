@@ -706,6 +706,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/dashboard/readiness", r.handleDashboardReadiness)
 	r.protect("/api/v1/dashboard/readiness/trend", r.handleDashboardReadinessTrend)
 	r.protect("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend)
+	r.protect("/api/v1/dashboard/cookstyle/recompute-trend", r.handleDashboardCookstyleRecomputeTrend)
 	r.protect("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend)
 	r.protect("/api/v1/dashboard/deployment/trend", r.handleDashboardDeploymentTrend)
 	r.protect("/api/v1/dashboard/deployment/status", r.handleDashboardDeploymentStatus)

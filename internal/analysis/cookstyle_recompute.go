@@ -4,6 +4,7 @@
 package analysis
 
 import (
+	"sort"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -189,6 +190,45 @@ func RecomputeRollupAt(histories []ResultFingerprintHistory, t time.Time, rules 
 		out.TotalComplexity += ComplexityFromFingerprint(cops, classifier)
 	}
 	return out
+}
+
+// RecomputeTrendPoint pairs a point in time with the rollup recomputed at it.
+type RecomputeTrendPoint struct {
+	At     time.Time
+	Rollup RecomputedRollup
+}
+
+// DistinctScanTimes returns every distinct scanned_at across all histories,
+// sorted ascending. These are the change points of the recomputed series: the
+// rollup only changes when some result's fingerprint changes, so evaluating at
+// exactly these times reproduces the full step function with no redundant points.
+func DistinctScanTimes(histories []ResultFingerprintHistory) []time.Time {
+	seen := make(map[int64]struct{})
+	var out []time.Time
+	for i := range histories {
+		for _, row := range histories[i].Rows {
+			k := row.ScannedAt.UnixNano()
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			out = append(out, row.ScannedAt)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Before(out[j]) })
+	return out
+}
+
+// RecomputeTrend evaluates RecomputeRollupAt at each supplied time, producing one
+// trend point per time (ascending order preserved). It is the assembly the trend
+// endpoint serialises; current-membership and target scoping are the caller's
+// responsibility (the histories passed in are the membership).
+func RecomputeTrend(histories []ResultFingerprintHistory, times []time.Time, rules CookstyleFailureRules, resolver *CopClassificationResolver) []RecomputeTrendPoint {
+	points := make([]RecomputeTrendPoint, 0, len(times))
+	for _, t := range times {
+		points = append(points, RecomputeTrendPoint{At: t, Rollup: RecomputeRollupAt(histories, t, rules, resolver)})
+	}
+	return points
 }
 
 // FingerprintDataBoundary returns the earliest scanned_at across all histories —

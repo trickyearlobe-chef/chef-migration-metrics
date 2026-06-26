@@ -365,6 +365,12 @@ type DataStore interface {
 	// DeleteCopClassification removes an operator override.
 	DeleteCopClassification(ctx context.Context, copName, targetChefVersion string) error
 
+	// ListOffenceFingerprintsByTarget returns every stored offence fingerprint
+	// row for a target version (all results), ordered by result identity then
+	// scanned_at ascending — the bulk feed for the CookStyle rollup recompute
+	// trend.
+	ListOffenceFingerprintsByTarget(ctx context.Context, targetChefVersion string) ([]datastore.CookstyleOffenceFingerprint, error)
+
 	// -----------------------------------------------------------------
 	// Custom cop definitions
 	// -----------------------------------------------------------------

@@ -1,0 +1,126 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package webapi
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+)
+
+func recomputeTestRouter(store *mockStore, targets []string) *Router {
+	cfg := testConfig()
+	cfg.TargetChefVersions = targets
+	return newTestRouterWithMockAndConfig(store, cfg)
+}
+
+// The recompute trend re-derives the rollup from fingerprints under the CURRENT
+// classification. With X reclassified to blocker, a frozen fingerprint whose only
+// cop is X recomputes to Blocked, and the response reports the frozen/recomputable
+// boundary.
+func TestDashboardCookstyleRecomputeTrend_HappyPath(t *testing.T) {
+	scan := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOffenceFingerprintsByTargetFn: func(_ context.Context, target string) ([]datastore.CookstyleOffenceFingerprint, error) {
+			if target != "19.3.15" {
+				return nil, nil
+			}
+			return []datastore.CookstyleOffenceFingerprint{{
+				ResultKind:        datastore.FingerprintKindServerCookbook,
+				OrganisationName:  "org-a",
+				CookbookName:      "cb",
+				CookbookVersion:   "1.0.0",
+				TargetChefVersion: "19.3.15",
+				ScannedAt:         scan,
+				Cops:              []datastore.FingerprintCopEntry{{CopName: "Op/X", Count: 2, Severity: "warning"}},
+			}}, nil
+		},
+		ListCopClassificationsFn: func(_ context.Context, target string) ([]datastore.CopClassification, error) {
+			return []datastore.CopClassification{{CopName: "Op/X", Classification: "blocker"}}, nil
+		},
+	}
+	r := recomputeTestRouter(store, []string{"19.3.15"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		RecomputeAvailableFrom *string `json:"recompute_available_from"`
+		Data                   []struct {
+			TargetChefVersion string `json:"target_chef_version"`
+			CompletedAt       string `json:"completed_at"`
+			TotalResults      int    `json:"total_results"`
+			Ready             int    `json:"ready"`
+			NeedsReview       int    `json:"needs_review"`
+			Blocked           int    `json:"blocked"`
+			Untested          int    `json:"untested"`
+			TotalComplexity   int    `json:"total_complexity"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if body.RecomputeAvailableFrom == nil || *body.RecomputeAvailableFrom != "2026-06-01T12:00:00Z" {
+		t.Errorf("recompute_available_from = %v, want 2026-06-01T12:00:00Z", body.RecomputeAvailableFrom)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	pt := body.Data[0]
+	if pt.Blocked != 1 || pt.TotalResults != 1 || pt.Ready != 0 || pt.NeedsReview != 0 {
+		t.Errorf("point = %+v, want blocked=1 total=1", pt)
+	}
+	if pt.TotalComplexity == 0 {
+		t.Error("expected non-zero recomputed complexity for a blocker")
+	}
+}
+
+// No fingerprint history → empty series and a null boundary (still the frozen era).
+func TestDashboardCookstyleRecomputeTrend_NoData(t *testing.T) {
+	store := &mockStore{} // ListOffenceFingerprintsByTargetFn nil → returns nil
+	r := recomputeTestRouter(store, []string{"19.3.15"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		RecomputeAvailableFrom *string           `json:"recompute_available_from"`
+		Data                   []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.RecomputeAvailableFrom != nil {
+		t.Errorf("recompute_available_from = %v, want null", *body.RecomputeAvailableFrom)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0", len(body.Data))
+	}
+}
+
+// POST is rejected (route exists, method-checked).
+func TestDashboardCookstyleRecomputeTrend_MethodNotAllowed(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
