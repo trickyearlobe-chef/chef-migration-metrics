@@ -206,7 +206,13 @@ result with `scanned_at ≤ T`.
 A recomputable trend point at time T is derived by:
 
 1. Determine **membership at T** — which cookbooks/results belonged to each node /
-   git repo at that time (run-list / repo membership as of T).
+   git repo at that time (run-list / repo membership as of T). Membership-at-T
+   history does not exist (see Limitations), so this is bounded to **current
+   membership**: the set of results that **still exist now** — the live
+   `server_cookbook_cookstyle_results` / git-repo result set. The fingerprint feed
+   MUST be intersected with that live set; a result that was fingerprinted but has
+   since been removed (cookbook deleted, repo dropped) MUST NOT contribute to any
+   recomputed point, even though its last fingerprint row persists in history.
 2. Look up the **fingerprint valid at T** for each member result.
 3. Re-derive each result's rollup **status** and weighted **complexity** from those
    fingerprints under the *current* resolved classification (the resolver in
@@ -224,9 +230,15 @@ the time it was collected.
   cannot be recomputed; they retain their original `node_metrics` aggregates.
   Charts that mix pre- and post-fingerprint ranges MUST make the boundary explicit
   rather than implying the whole series reflects current criteria.
-- Membership-at-T fidelity depends on the membership history available (see the
-  ownership/`node_fact_snapshots` note under Future Extensions); where membership
-  history is absent, recompute is limited to current membership.
+- **Recompute is bounded to current membership.** Membership-at-T fidelity
+  depends on the membership history available (see the
+  ownership/`node_fact_snapshots` note under Future Extensions); that history is
+  absent, so recompute is limited to results that exist now. "Current membership"
+  is normative, not best-effort: the fingerprint history feed MUST be intersected
+  with the live result set so removed-but-still-fingerprinted results are excluded
+  from every recomputed point (otherwise an early point over-counts results that
+  were later deleted). The recomputed series therefore answers "how would *today's*
+  fleet have looked at time T under current criteria", not "what existed at T".
 
 ### Storage
 

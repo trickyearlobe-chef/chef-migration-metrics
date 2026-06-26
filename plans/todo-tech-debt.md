@@ -317,6 +317,12 @@ Recorded 2026-06-26 (status-consistency Chunk 6, readiness + `review_blocks_read
 - [ ] **Trend snapshots do not yet record `needs_review`.** The dashboard readiness card (current state) is exact via `CountNodeReadinessByStatus`, and the live trend *fallback* carries `needs_review_nodes`. But the persisted snapshot writers (`node_metrics` / `readiness_summary`) still store ready/blocked only, so with the toggle on, `needs_review` nodes are counted as blocked in historical trend points. Forward-only `needs_review` trend data + recompute is **Chunk 8**'s scope; the `readinessTrendPoint.needs_review_nodes` field + merge plumbing are already in place for it.
 - [ ] **Readiness exports still use `is_ready`, not the 3-state `status`.** `ready_nodes` / `blocked_nodes` exports (and `ListReadyNodes`/`ListBlockedNodes`) filter on `is_ready`, so with the toggle on a `needs_review` node lands in the blocked export. Default-off (today) is unaffected. **Strategic fix:** add a `needs_review_nodes` export type and switch the blocked export to `status = 'blocked'` (the node-list filter already does this).
 
+## CookStyle — Trend Recompute (Chunk 8b)
+
+Recorded 2026-06-26 (status-consistency Chunk 8b, trend-recompute engine).
+
+- [ ] **Recompute membership is not intersected with the live result set.** The recompute-trend endpoint (`handleDashboardCookstyleRecomputeTrend`) builds membership from `ListOffenceFingerprintsByTarget` — every result ever fingerprinted for the target. `enriched-metric-snapshots.md` → Trend Recompute / Limitations now mandates that this feed MUST be intersected with the **current live** `*_cookstyle_results` / git-repo set, so a removed-but-still-fingerprinted result (deleted cookbook, dropped repo) does not over-count early points. **Strategic fix:** load the current result identities (or join in SQL) and drop histories whose `FingerprintResultKey` is no longer live before calling `RecomputeTrend`. Until then the series can slightly over-count results that were later deleted. The engine (`internal/analysis/cookstyle_recompute.go`) already takes membership as the passed-in histories, so the fix is confined to the handler.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
