@@ -191,6 +191,20 @@ export function ReadinessTrendCard({
           })),
         },
       );
+
+      // Needs-review series — only when the data actually carries it (the
+      // review_blocks_readiness toggle is on for some collected points).
+      if (sorted.some((p) => (p.needs_review_nodes ?? 0) > 0)) {
+        cntSeries.push({
+          key: `needs-review-${version}`,
+          label: `Chef ${version} — Needs review`,
+          colour: "#f59e0b",
+          data: sorted.map((p) => ({
+            timestamp: p.completed_at,
+            value: p.needs_review_nodes ?? 0,
+          })),
+        });
+      }
     }
 
     return { percentSeries: pctSeries, countSeries: cntSeries };

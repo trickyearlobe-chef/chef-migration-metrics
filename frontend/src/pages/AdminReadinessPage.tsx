@@ -12,6 +12,7 @@ export function AdminReadinessPage() {
     install_size_mb_linux: 3072,
     install_size_mb_windows: 6144,
     min_remaining_free_percent: 20,
+    review_blocks_readiness: false,
   });
   const [saved, setSaved] = useState<ReadinessConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -213,6 +214,31 @@ export function AdminReadinessPage() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-4 text-sm font-semibold text-gray-900">Readiness Policy</h3>
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={config.review_blocks_readiness}
+            onChange={(e) => handleChange("review_blocks_readiness", e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+            disabled={saving}
+          />
+          <span>
+            <span className="block text-sm font-medium text-gray-700">
+              Review-level cookbooks block readiness
+            </span>
+            <span className="mt-1 block text-xs text-gray-500">
+              When enabled, a node whose only issue is Review-level CookStyle
+              offences is marked <strong>Needs review</strong> (not Ready). When
+              disabled (default), Review-level cookbooks count as compatible and
+              readiness is gated only by Blockers and disk space. Applies at the
+              next readiness evaluation.
+            </span>
+          </span>
+        </label>
       </div>
 
       {saveError && <ErrorAlert message="Failed to save" detail={saveError} />}

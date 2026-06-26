@@ -5,10 +5,13 @@ import type { CookbookSourceVerdict } from "./cookbooks";
 
 export interface NodeReadinessSummary {
   target_chef_version: string;
+  // Node rollup status: ready / needs_review / blocked.
+  status?: "ready" | "needs_review" | "blocked";
   is_ready: boolean;
   all_cookbooks_compatible: boolean;
   sufficient_disk_space: boolean | null;
   blocking_cookbook_count: number;
+  review_cookbook_count?: number;
   stale_data: boolean;
   disk_status?: "sufficient" | "insufficient" | "unknown";
   cookstyle_status?: "passed" | "failed" | "unknown";
@@ -108,10 +111,13 @@ export interface NodeReadiness {
   organisation_id: string;
   node_name: string;
   target_chef_version: string;
+  // Node rollup status: ready / needs_review / blocked.
+  status?: "ready" | "needs_review" | "blocked";
   is_ready: boolean;
   all_cookbooks_compatible: boolean;
   sufficient_disk_space: boolean | null;
   blocking_cookbooks: BlockingCookbook[] | null;
+  review_cookbooks?: BlockingCookbook[] | null;
   available_disk_mb: number | null;
   required_disk_mb: number | null;
   stale_data: boolean;

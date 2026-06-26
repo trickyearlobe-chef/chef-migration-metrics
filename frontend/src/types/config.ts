@@ -87,6 +87,10 @@ export interface ReadinessConfig {
   install_size_mb_linux: number;
   install_size_mb_windows: number;
   min_remaining_free_percent: number;
+  // When true, Review-level CookStyle offences gate readiness: a node whose
+  // only issue is review-level cookbooks becomes "Needs review" (not ready).
+  // Off (default) preserves blocker-only readiness.
+  review_blocks_readiness: boolean;
 }
 
 export interface ExportsConfig {

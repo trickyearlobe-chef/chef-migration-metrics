@@ -29,6 +29,7 @@ type BadgeVariant =
   | CompatibilityStatus
   | ComplexityLabel
   | "ready"
+  | "needs_review"
   | "blocked"
   | "stale"
   | "fresh"
@@ -79,6 +80,7 @@ const variantStyles: Record<BadgeVariant, string> = {
 
   // Boolean / readiness states
   ready: "bg-green-100 text-green-800 ring-green-600/20",
+  needs_review: "bg-amber-100 text-amber-800 ring-amber-600/20",
   blocked: "bg-red-100 text-red-800 ring-red-600/20",
   stale: "bg-purple-100 text-purple-800 ring-purple-600/20",
   fresh: "bg-green-100 text-green-800 ring-green-600/20",
@@ -124,6 +126,7 @@ const variantLabels: Record<BadgeVariant, string> = {
   high: "High",
   critical: "Critical",
   ready: "Ready",
+  needs_review: "Needs review",
   blocked: "Blocked",
   stale: "Stale",
   fresh: "Fresh",

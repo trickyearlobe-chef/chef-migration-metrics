@@ -50,6 +50,7 @@ export interface ReadinessSummary {
   target_chef_version: string;
   total_nodes: number;
   ready_nodes: number;
+  needs_review_nodes?: number;
   blocked_nodes: number;
   ready_percent: number;
 }
@@ -73,6 +74,7 @@ export interface ReadinessTrendPoint {
   target_chef_version: string;
   total_nodes: number;
   ready_nodes: number;
+  needs_review_nodes?: number;
   blocked_nodes: number;
   ready_percent: number;
   blocked_by?: BlockedByBreakdown;

@@ -221,6 +221,16 @@ export function ReadinessCard({ organisation }: { organisation?: string }) {
                         }}
                         title={`Ready: ${r.ready_nodes}`}
                       />
+                      {(r.needs_review_nodes ?? 0) > 0 && (
+                        <Link
+                          to={`/nodes?readiness=needs_review`}
+                          className="bg-amber-400 transition-all duration-500 hover:bg-amber-500"
+                          style={{
+                            width: `${((r.needs_review_nodes ?? 0) / r.total_nodes) * 100}%`,
+                          }}
+                          title={`Needs review: ${r.needs_review_nodes ?? 0}`}
+                        />
+                      )}
                       <Link
                         to={`/nodes?readiness=blocked`}
                         className="bg-red-400 transition-all duration-500 hover:bg-red-500"
@@ -231,7 +241,7 @@ export function ReadinessCard({ organisation }: { organisation?: string }) {
                       />
                     </div>
                   )}
-                  <div className="flex gap-4 text-xs">
+                  <div className="flex flex-wrap gap-4 text-xs">
                     <Link
                       to={`/nodes?readiness=ready`}
                       className="flex items-center gap-1 hover:underline"
@@ -240,15 +250,30 @@ export function ReadinessCard({ organisation }: { organisation?: string }) {
                       Ready: {r.ready_nodes.toLocaleString()} (
                       {r.ready_percent.toFixed(1)}%)
                     </Link>
+                    {(r.needs_review_nodes ?? 0) > 0 && (
+                      <Link
+                        to={`/nodes?readiness=needs_review`}
+                        className="flex items-center gap-1 hover:underline"
+                      >
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+                        Needs review: {(r.needs_review_nodes ?? 0).toLocaleString()} (
+                        {(r.total_nodes > 0
+                          ? ((r.needs_review_nodes ?? 0) / r.total_nodes) * 100
+                          : 0
+                        ).toFixed(1)}
+                        %)
+                      </Link>
+                    )}
                     <Link
                       to={`/nodes?readiness=blocked`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
                       Blocked: {r.blocked_nodes.toLocaleString()} (
-                      {(r.total_nodes > 0 ? 100 - r.ready_percent : 0).toFixed(
-                        1,
-                      )}
+                      {(r.total_nodes > 0
+                        ? (r.blocked_nodes / r.total_nodes) * 100
+                        : 0
+                      ).toFixed(1)}
                       %)
                     </Link>
                   </div>
