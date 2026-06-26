@@ -4,9 +4,11 @@
 package webapi
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
 // ---------------------------------------------------------------------------
@@ -49,6 +51,11 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 	rules := r.cookstyleFailureRules()
 	targetVersions := r.liveConfig().TargetChefVersions
 
+	// Live result keys per target — the current-membership set the fingerprint
+	// feed is intersected with. A target absent from the map means its live
+	// membership could not be determined (filtering is skipped for it).
+	liveKeys := r.liveCookstyleResultKeys(ctx, targetVersions)
+
 	points := []cookstyleRecomputeTrendPoint{}
 	var earliest string
 
@@ -63,6 +70,17 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 		}
 
 		histories := analysis.GroupFingerprintHistories(rows)
+
+		// Bound to CURRENT membership: intersect the fingerprint feed with the live
+		// result set so a removed-but-still-fingerprinted result (deleted cookbook,
+		// dropped repo) does not over-count earlier points. See
+		// specifications/enriched-metric-snapshots.md → Trend Recompute / Limitations.
+		// When live membership cannot be determined, recompute over the full feed
+		// rather than show nothing (the over-count is bounded and self-heals).
+		if live, ok := liveKeys[tv]; ok {
+			histories = filterHistoriesToLive(histories, live)
+		}
+
 		resolver := analysis.NewResolverFromStore(ctx, r.db, tv)
 		times := analysis.DistinctScanTimes(histories)
 
@@ -97,4 +115,89 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 		resp["recompute_available_from"] = nil
 	}
 	WriteJSON(w, http.StatusOK, resp)
+}
+
+// liveCookstyleResultKeys builds, per target, the set of FingerprintResultKeys
+// for results that CURRENTLY exist — the live server-cookbook and git-repo
+// cookstyle result sets. The recompute handler intersects the fingerprint feed
+// with this so removed-but-still-fingerprinted results are excluded.
+//
+// A target is included in the returned map only when its live membership was
+// loaded without a top-level failure; an absent target signals "could not
+// determine — do not filter" (the handler then recomputes over the full feed
+// rather than dropping everything). Per-org / per-target read errors are logged
+// and skipped: those results simply do not appear in the live set.
+func (r *Router) liveCookstyleResultKeys(ctx context.Context, targets []string) map[string]map[string]struct{} {
+	out := make(map[string]map[string]struct{}, len(targets))
+	ensure := func(tv string) map[string]struct{} {
+		if out[tv] == nil {
+			out[tv] = make(map[string]struct{})
+		}
+		return out[tv]
+	}
+
+	// Git repos are fleet-wide; query per target (already target-filtered).
+	for _, tv := range targets {
+		gitRows, err := r.db.ListGitRepoCookstyleResultsByTargetVersion(ctx, tv)
+		if err != nil {
+			r.logf("WARN", "recompute trend: listing live git results for target %s: %v", tv, err)
+			continue
+		}
+		set := ensure(tv)
+		for _, g := range gitRows {
+			set[analysis.FingerprintResultKey(datastore.CookstyleOffenceFingerprint{
+				ResultKind:        datastore.FingerprintKindGitRepo,
+				GitRepoName:       g.GitRepoName,
+				GitRepoURL:        g.GitRepoURL,
+				TargetChefVersion: tv,
+			})] = struct{}{}
+		}
+	}
+
+	// Server cookbooks: fetch each org once (all targets) and bucket by target.
+	orgs, err := r.db.ListOrganisations(ctx)
+	if err != nil {
+		// Without the org list we cannot enumerate live server cookbooks; mark
+		// every target's membership as undeterminable so the handler does not
+		// wrongly drop all server-cookbook results.
+		r.logf("WARN", "recompute trend: listing organisations for live membership: %v", err)
+		return map[string]map[string]struct{}{}
+	}
+	targetSet := make(map[string]struct{}, len(targets))
+	for _, tv := range targets {
+		targetSet[tv] = struct{}{}
+		ensure(tv) // a target with zero live results is still "determined" (empty set).
+	}
+	for _, org := range orgs {
+		scRows, err := r.db.ListServerCookbookCookstyleResultsByOrganisation(ctx, org.Name)
+		if err != nil {
+			r.logf("WARN", "recompute trend: listing live server results for org %s: %v", org.Name, err)
+			continue
+		}
+		for _, sc := range scRows {
+			if _, ok := targetSet[sc.TargetChefVersion]; !ok {
+				continue
+			}
+			ensure(sc.TargetChefVersion)[analysis.FingerprintResultKey(datastore.CookstyleOffenceFingerprint{
+				ResultKind:        datastore.FingerprintKindServerCookbook,
+				OrganisationName:  sc.OrganisationName,
+				CookbookName:      sc.CookbookName,
+				CookbookVersion:   sc.CookbookVersion,
+				TargetChefVersion: sc.TargetChefVersion,
+			})] = struct{}{}
+		}
+	}
+	return out
+}
+
+// filterHistoriesToLive drops histories whose result key is not in the live set,
+// preserving order.
+func filterHistoriesToLive(histories []analysis.ResultFingerprintHistory, live map[string]struct{}) []analysis.ResultFingerprintHistory {
+	kept := histories[:0:0]
+	for _, h := range histories {
+		if _, ok := live[h.Key]; ok {
+			kept = append(kept, h)
+		}
+	}
+	return kept
 }

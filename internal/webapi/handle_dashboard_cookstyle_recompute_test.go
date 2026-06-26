@@ -44,6 +44,19 @@ func TestDashboardCookstyleRecomputeTrend_HappyPath(t *testing.T) {
 		ListCopClassificationsFn: func(_ context.Context, target string) ([]datastore.CopClassification, error) {
 			return []datastore.CopClassification{{CopName: "Op/X", Classification: "blocker"}}, nil
 		},
+		// The cookbook is still LIVE — present in the current cookstyle result set,
+		// so it survives the current-membership intersection.
+		ListOrganisationsFn: func(_ context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "org-a"}}, nil
+		},
+		ListServerCookbookCookstyleResultsByOrganisationFn: func(_ context.Context, org string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return []datastore.ServerCookbookCookstyleResult{{
+				OrganisationName:  "org-a",
+				CookbookName:      "cb",
+				CookbookVersion:   "1.0.0",
+				TargetChefVersion: "19.3.15",
+			}}, nil
+		},
 	}
 	r := recomputeTestRouter(store, []string{"19.3.15"})
 
@@ -84,6 +97,52 @@ func TestDashboardCookstyleRecomputeTrend_HappyPath(t *testing.T) {
 	}
 	if pt.TotalComplexity == 0 {
 		t.Error("expected non-zero recomputed complexity for a blocker")
+	}
+}
+
+// A result that still has fingerprint history but is no longer in the live
+// cookstyle result set (cookbook deleted) MUST be excluded from the recomputed
+// series — recompute is bounded to current membership.
+func TestDashboardCookstyleRecomputeTrend_ExcludesRemovedResult(t *testing.T) {
+	scan := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOffenceFingerprintsByTargetFn: func(_ context.Context, target string) ([]datastore.CookstyleOffenceFingerprint, error) {
+			return []datastore.CookstyleOffenceFingerprint{{
+				ResultKind:        datastore.FingerprintKindServerCookbook,
+				OrganisationName:  "org-a",
+				CookbookName:      "removed-cb",
+				CookbookVersion:   "1.0.0",
+				TargetChefVersion: "19.3.15",
+				ScannedAt:         scan,
+				Cops:              []datastore.FingerprintCopEntry{{CopName: "Op/X", Count: 1, Severity: "warning"}},
+			}}, nil
+		},
+		// Live membership is determinable (orgs load) but the cookbook is GONE from
+		// the current result set → it must not contribute any recomputed point.
+		ListOrganisationsFn: func(_ context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "org-a"}}, nil
+		},
+		ListServerCookbookCookstyleResultsByOrganisationFn: func(_ context.Context, _ string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return nil, nil // no live results
+		},
+	}
+	r := recomputeTestRouter(store, []string{"19.3.15"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 0 {
+		t.Errorf("len(data) = %d, want 0 (removed result excluded)", len(body.Data))
 	}
 }
 
