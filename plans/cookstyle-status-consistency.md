@@ -6,8 +6,8 @@ Status: **implementing.** Decisions below are agreed. Chunks 1–7 released and
 landed (SoT derivation; re-eval propagation + audit; API surfacing with a
 materialised `cookstyle_status` column; 4-state CS badge + list adoption;
 remediation detail redesign; readiness integration + `review_blocks_readiness`
-toggle; admin Cop Classifications management + Fallback Rules reframe). Remaining
-chunk 8 queued.
+toggle; admin Cop Classifications management + Fallback Rules reframe; chunk 8a
+fingerprint storage foundation). Remaining: chunk 8b (trend-recompute + vocab).
 
 ## Decisions (agreed)
 
@@ -138,17 +138,37 @@ Dependencies: Chunk 3
 
 Searchable list of all cops (resolved class + source, target-version selector, per-cop override, curated defaults visible); reframe Failure Rules as "fallback (unclassified only)". Tests.
 
-### Chunk 8 — Per-scan fingerprint history + retroactive trends (backend + trends)
+### Chunk 8a — Per-scan fingerprint storage foundation (backend) — LANDED
 
-Scope: new datastore table + writer, snapshot/trend recompute, `TrendCards`, exports
-Dependencies: Chunks 1–2, 6
+Scope: migration 0043, `internal/datastore/cookstyle_offence_fingerprints.go`,
+`internal/analysis/cookstyle_fingerprint.go`, scan persist hook in `cookstyle.go`
+Dependencies: Chunk 1
 
-1. Append-only `cookstyle_offence_fingerprints` (per result per scan: cop_name, count, severity, correctable, scanned_at); **dedupe** — only append when fingerprint differs from last.
-2. Trend recompute joins membership-at-T to fingerprint-valid-at-T; rebuilds trends under current criteria going forward.
+Append-only `cookstyle_offence_fingerprints` (per result per scan: cop_name,
+count, severity, correctable, scanned_at) with **change-dedupe** — a new row only
+when the fingerprint differs from the result's last stored one. `result_kind`
+discriminates server-cookbook vs git-repo identity. Builder is
+classification-independent (raw inputs only); hook skips errored scans. Contract
+test pins the projection of `CookstyleOffense`; functional tests cover
+append/dedupe/change/kind-isolation.
+
+### Chunk 8b — Trend-recompute engine + vocab (backend + trends) — QUEUED
+
+Scope: snapshot/trend recompute, `TrendCards`, `internal/export/*`
+Dependencies: Chunk 8a
+
+1. Trend recompute: fingerprint-valid-at-T (latest row with scanned_at ≤ T) ×
+   membership. **Membership-at-T history does not exist** (`node_fact_snapshots`
+   is a Future Extension) → recompute is bounded to *current* membership; mixed
+   pre/post-fingerprint ranges MUST mark the boundary.
+2. Re-derive status + weighted complexity from fingerprints under the current
+   resolver; roll up to node/repo/org as the SoT does for current state.
 3. Trends + exports use Ready/Needs review/Blocked vocabulary.
-4. Tests incl. dedupe + retroactive recompute over a reclassification.
+4. Tests incl. retroactive recompute over a reclassification (past points frozen).
 
-Acceptance: post-ship trend points recompute correctly after a reclassification; past points unchanged; storage grows ~per-change only.
+Acceptance: post-ship trend points recompute correctly after a reclassification;
+past points unchanged; storage grows ~per-change only (8a already satisfies the
+storage half).
 
 ## Spec edits (applied on this branch, uncommitted)
 

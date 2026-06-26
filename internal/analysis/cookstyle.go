@@ -986,6 +986,27 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 
 	if _, persistErr := s.db.UpsertServerCookbookCookstyleResult(ctx, params); persistErr != nil {
 		log.Error(fmt.Sprintf("failed to persist server cookbook result: %v", persistErr))
+		return
+	}
+
+	// Append a change-deduped offence fingerprint so this scan's status/complexity
+	// can be recomputed under future classification criteria. Skip errored scans:
+	// they have no offences, and recording an empty fingerprint would falsely read
+	// as "clean". See specifications/enriched-metric-snapshots.md.
+	if sr.ErrorMessage == "" {
+		entries, hash := BuildOffenceFingerprint(sr.Offenses)
+		if _, fpErr := s.db.AppendCookstyleOffenceFingerprint(ctx, datastore.AppendCookstyleOffenceFingerprintParams{
+			ResultKind:        datastore.FingerprintKindServerCookbook,
+			OrganisationName:  sr.OrganisationName,
+			CookbookName:      sr.CookbookName,
+			CookbookVersion:   sr.CookbookVersion,
+			TargetChefVersion: sr.TargetChefVersion,
+			FingerprintHash:   hash,
+			Cops:              entries,
+			ScannedAt:         sr.ScannedAt,
+		}); fpErr != nil {
+			log.Warn(fmt.Sprintf("failed to append offence fingerprint: %v", fpErr))
+		}
 	}
 }
 
@@ -1029,6 +1050,23 @@ func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr Cookstyl
 
 	if _, persistErr := s.db.UpsertGitRepoCookstyleResult(ctx, params); persistErr != nil {
 		log.Error(fmt.Sprintf("failed to persist git repo result: %v", persistErr))
+		return
+	}
+
+	// Append a change-deduped offence fingerprint (see persistServerCookbookResult).
+	if sr.ErrorMessage == "" {
+		entries, hash := BuildOffenceFingerprint(sr.Offenses)
+		if _, fpErr := s.db.AppendCookstyleOffenceFingerprint(ctx, datastore.AppendCookstyleOffenceFingerprintParams{
+			ResultKind:        datastore.FingerprintKindGitRepo,
+			GitRepoName:       sr.CookbookName,
+			GitRepoURL:        sr.GitRepoURL,
+			TargetChefVersion: sr.TargetChefVersion,
+			FingerprintHash:   hash,
+			Cops:              entries,
+			ScannedAt:         sr.ScannedAt,
+		}); fpErr != nil {
+			log.Warn(fmt.Sprintf("failed to append offence fingerprint: %v", fpErr))
+		}
 	}
 }
 
