@@ -103,6 +103,28 @@ export interface ComplexityTrendResponse {
   data: ComplexityTrendPoint[];
 }
 
+// CookStyle rollup recompute trend — re-derived from offence-fingerprint history
+// under the CURRENT classification (Ready/Needs review/Blocked vocabulary), not
+// the frozen node_metrics aggregates. Points before recompute_available_from
+// cannot be recomputed and must be flagged as the frozen era on a mixed chart.
+export interface CookstyleRecomputeTrendPoint {
+  target_chef_version: string;
+  completed_at: string;
+  total_results: number;
+  ready: number;
+  needs_review: number;
+  blocked: number;
+  untested: number;
+  total_complexity: number;
+}
+
+export interface CookstyleRecomputeTrendResponse {
+  // Earliest fingerprint timestamp; null when no history exists yet (whole series
+  // is still in the frozen, non-recomputable era).
+  recompute_available_from: string | null;
+  data: CookstyleRecomputeTrendPoint[];
+}
+
 export interface StaleTrendPoint {
   organisation_name: string;
   collection_run_id: string;

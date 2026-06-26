@@ -3,6 +3,7 @@ import {
   fetchVersionDistributionTrend,
   fetchReadinessTrend,
   fetchComplexityTrend,
+  fetchCookstyleRecomputeTrend,
   fetchStaleTrend,
   fetchDeploymentTrend,
 } from "../../api";
@@ -10,6 +11,7 @@ import type {
   VersionDistributionTrendResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
+  CookstyleRecomputeTrendResponse,
   StaleTrendResponse,
   DeploymentTrendResponse,
 } from "../../types";
@@ -386,6 +388,118 @@ export function ComplexityTrendCard({
                 ))}
               </div>
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CookStyle Rollup Recompute Trend Card
+// ---------------------------------------------------------------------------
+
+// Unlike the other cards (which read frozen per-collection aggregates), this card
+// reads the recompute-trend endpoint: the CookStyle rollup re-derived from offence
+// fingerprints under TODAY's classification, in Ready/Needs review/Blocked
+// vocabulary. Points before `recompute_available_from` cannot be recomputed, so we
+// surface that frozen/recomputable boundary explicitly rather than implying the
+// whole series reflects current criteria.
+export function CookstyleRecomputeTrendCard() {
+  const [data, setData] = useState<CookstyleRecomputeTrendResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchCookstyleRecomputeTrend()
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const countSeries: TrendSeries[] = (() => {
+    if (!data || data.data.length === 0) return [];
+
+    const byVersion = new Map<string, typeof data.data>();
+    for (const pt of data.data) {
+      if (!pt.completed_at) continue;
+      const list = byVersion.get(pt.target_chef_version) ?? [];
+      list.push(pt);
+      byVersion.set(pt.target_chef_version, list);
+    }
+
+    const series: TrendSeries[] = [];
+    for (const [version, points] of byVersion) {
+      const sorted = [...points].sort(
+        (a, b) =>
+          new Date(a.completed_at).getTime() -
+          new Date(b.completed_at).getTime(),
+      );
+      series.push(
+        {
+          key: `recompute-ready-${version}`,
+          label: `Chef ${version} — Ready`,
+          colour: "#22c55e",
+          data: sorted.map((p) => ({ timestamp: p.completed_at, value: p.ready })),
+        },
+        {
+          key: `recompute-needs-review-${version}`,
+          label: `Chef ${version} — Needs review`,
+          colour: "#f59e0b",
+          data: sorted.map((p) => ({
+            timestamp: p.completed_at,
+            value: p.needs_review,
+          })),
+        },
+        {
+          key: `recompute-blocked-${version}`,
+          label: `Chef ${version} — Blocked`,
+          colour: "#ef4444",
+          data: sorted.map((p) => ({ timestamp: p.completed_at, value: p.blocked })),
+        },
+      );
+    }
+    return series;
+  })();
+
+  const boundaryNote = (() => {
+    if (!data) return null;
+    if (!data.recompute_available_from) {
+      return "No fingerprint history yet — recomputed trend begins once scans capture offence fingerprints.";
+    }
+    const from = new Date(data.recompute_available_from);
+    return `Recomputed under current classification from ${from.toLocaleString()}. Earlier points are frozen and cannot be recomputed.`;
+  })();
+
+  return (
+    <div className="card">
+      <h3 className="card-header">CookStyle Rollup — Recomputed Trend</h3>
+      <p className="mb-3 text-xs text-gray-500">
+        Cookbooks/repos by rollup status (Ready / Needs review / Blocked),
+        re-derived from offence-fingerprint history under the current cop
+        classification — so a reclassification is reflected across the whole
+        series without a rescan.
+      </p>
+      {loading && <LoadingSpinner message="Loading recomputed CookStyle trend…" />}
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {!loading && !error && (
+        <div className="space-y-3">
+          <TrendChart
+            series={countSeries}
+            yLabel="Result count"
+            showArea={false}
+            height={220}
+          />
+          {boundaryNote && (
+            <p className="text-xs italic text-gray-500" data-testid="recompute-boundary-note">
+              {boundaryNote}
+            </p>
           )}
         </div>
       )}

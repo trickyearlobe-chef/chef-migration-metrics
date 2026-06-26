@@ -7,6 +7,7 @@ import type {
   VersionDistributionTrendResponse,
   ReadinessTrendResponse,
   ComplexityTrendResponse,
+  CookstyleRecomputeTrendResponse,
   StaleTrendResponse,
   DeploymentTrendResponse,
   DeploymentStatusResponse,
@@ -63,6 +64,12 @@ export function fetchComplexityTrend(
 ): Promise<ComplexityTrendResponse> {
   return apiFetch<ComplexityTrendResponse>(
     buildUrl("/dashboard/complexity/trend", { organisation }),
+  );
+}
+
+export function fetchCookstyleRecomputeTrend(): Promise<CookstyleRecomputeTrendResponse> {
+  return apiFetch<CookstyleRecomputeTrendResponse>(
+    buildUrl("/dashboard/cookstyle/recompute-trend", {}),
   );
 }
 
