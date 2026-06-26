@@ -140,8 +140,8 @@ export function AdminCookstylePage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
+    <div className="space-y-6">
+      <div className="max-w-3xl">
         <h2 className="text-xl font-semibold text-gray-900">CookStyle</h2>
         <p className="mt-1 text-sm text-gray-500">
           Controls CookStyle scanning behaviour and failure rules. CookStyle analyses cookbook code
@@ -149,7 +149,7 @@ export function AdminCookstylePage() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="max-w-2xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-gray-700">CookStyle Scanning Enabled</label>
