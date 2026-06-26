@@ -12,6 +12,8 @@ vi.mock("../api", async (importOriginal) => {
     ...actual,
     fetchAnalysisTools: vi.fn(),
     saveAnalysisTools: vi.fn(),
+    fetchTargetVersions: vi.fn(),
+    fetchCookstyleCops: vi.fn(),
   };
 });
 
@@ -27,6 +29,19 @@ const mockResponse = {
 describe("AdminCookstylePage", () => {
   beforeEach(() => {
     vi.mocked(api.fetchAnalysisTools).mockResolvedValue(mockResponse as never);
+    vi.mocked(api.fetchTargetVersions).mockResolvedValue(["18.5.0"]);
+    vi.mocked(api.fetchCookstyleCops).mockResolvedValue({
+      summary: {
+        blocker_cops: 0,
+        blocker_cookbooks: 0,
+        review_cops: 0,
+        review_cookbooks: 0,
+        noise_cops: 0,
+        unclassified_cops: 0,
+      },
+      data: [],
+      pagination: { page: 1, per_page: 200, total_items: 0, total_pages: 0 },
+    });
   });
 
   it("renders page heading", async () => {
@@ -50,10 +65,10 @@ describe("AdminCookstylePage", () => {
     );
   });
 
-  it("renders the failure rules grid", async () => {
+  it("renders the fallback rules grid", async () => {
     render(<AdminCookstylePage />);
     await waitFor(() =>
-      expect(screen.getByText("Failure Rules")).toBeInTheDocument(),
+      expect(screen.getByText("Fallback Rules")).toBeInTheDocument(),
     );
     expect(screen.getByRole("combobox", { name: /preset/i })).toHaveValue("default");
   });

@@ -12,6 +12,7 @@ import {
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 import { CookstyleFailureRulesGrid } from "../components/CookstyleFailureRulesGrid";
 import { AdminCustomCopsSection } from "./AdminCustomCopsSection";
+import { AdminCopClassificationsSection } from "./AdminCopClassificationsSection";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -188,41 +189,60 @@ export function AdminCookstylePage() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-lg font-medium text-gray-900">Failure Rules</h3>
-        <CookstyleFailureRulesGrid
-          preset={failurePreset}
-          rules={failureRules}
-          onChange={handleRulesChange}
-          disabled={saving}
-        />
-      </div>
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
 
-      {saveError && <ErrorAlert message="Failed to save" detail={saveError} />}
-
-      {successMsg && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {successMsg}
-        </div>
-      )}
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || !isDirty}
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-        >
-          {saving && <InlineSpinner />}
-          {saving ? "Saving…" : "Save"}
-        </button>
-      </div>
+      {/* Cop classifications — the primary classification surface */}
+      <AdminCopClassificationsSection />
 
       {/* Separator */}
       <hr className="my-6 border-gray-200" />
 
       {/* Custom Cops section */}
       <AdminCustomCopsSection />
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Fallback rules — de-emphasised; applies only to unclassified cops */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 shadow-sm">
+        <h3 className="text-lg font-medium text-gray-900">Fallback Rules</h3>
+        <p className="mb-4 mt-1 text-sm text-gray-500">
+          Severity-based pass/fail, applied <strong>only to unclassified cops</strong> —
+          those with no operator override, <code>RemovedIn</code> mapping, or curated
+          default. Classify a cop above and these rules no longer apply to it.
+        </p>
+        <CookstyleFailureRulesGrid
+          preset={failurePreset}
+          rules={failureRules}
+          onChange={handleRulesChange}
+          disabled={saving}
+        />
+
+        {saveError && (
+          <div className="mt-4">
+            <ErrorAlert message="Failed to save" detail={saveError} />
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            {successMsg}
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+          >
+            {saving && <InlineSpinner />}
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

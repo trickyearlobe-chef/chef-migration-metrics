@@ -2,11 +2,12 @@
 
 Branch: `feature/cookstyle-violations-browser` (continuing)
 Supersedes chunks 9–11 of `cookstyle-violations-browser.md`.
-Status: **implementing.** Decisions below are agreed. Chunks 1–6 released and
+Status: **implementing.** Decisions below are agreed. Chunks 1–7 released and
 landed (SoT derivation; re-eval propagation + audit; API surfacing with a
 materialised `cookstyle_status` column; 4-state CS badge + list adoption;
 remediation detail redesign; readiness integration + `review_blocks_readiness`
-toggle). Remaining chunks 7–8 queued.
+toggle; admin Cop Classifications management + Fallback Rules reframe). Remaining
+chunk 8 queued.
 
 ## Decisions (agreed)
 
