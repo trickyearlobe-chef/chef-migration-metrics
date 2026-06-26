@@ -313,12 +313,24 @@ func (f *fakeReadinessDS) addCookbookID(name, version, orgName string) {
 }
 
 func (f *fakeReadinessDS) addCSResult(orgName, cookbookName, cookbookVersion, targetChefVersion string, passed bool) {
+	status := StatusReady
+	if !passed {
+		status = StatusBlocked
+	}
+	f.addCSResultStatus(orgName, cookbookName, cookbookVersion, targetChefVersion, status)
+}
+
+// addCSResultStatus inserts a server CookStyle result with an explicit
+// materialised rollup status (ready / needs_review / blocked). passed is
+// derived = status != blocked, matching production materialisation.
+func (f *fakeReadinessDS) addCSResultStatus(orgName, cookbookName, cookbookVersion, targetChefVersion, status string) {
 	f.csResults[csKey(orgName, cookbookName, cookbookVersion, targetChefVersion)] = &datastore.ServerCookbookCookstyleResult{
 		OrganisationName:  orgName,
 		CookbookName:      cookbookName,
 		CookbookVersion:   cookbookVersion,
 		TargetChefVersion: targetChefVersion,
-		Passed:            passed,
+		Passed:            status != StatusBlocked,
+		CookstyleStatus:   status,
 	}
 }
 
@@ -334,10 +346,21 @@ func (f *fakeReadinessDS) addComplexity(orgName, cookbookName, cookbookVersion, 
 }
 
 func (f *fakeReadinessDS) addGitCSResult(gitRepoName, targetChefVersion string, passed bool) {
+	status := StatusReady
+	if !passed {
+		status = StatusBlocked
+	}
+	f.addGitCSResultStatus(gitRepoName, targetChefVersion, status)
+}
+
+// addGitCSResultStatus inserts a git repo CookStyle result with an explicit
+// materialised rollup status (ready / needs_review / blocked).
+func (f *fakeReadinessDS) addGitCSResultStatus(gitRepoName, targetChefVersion, status string) {
 	f.gitCSResults[gitCSKey(gitRepoName, targetChefVersion)] = &datastore.GitRepoCookstyleResult{
 		GitRepoName:       gitRepoName,
 		TargetChefVersion: targetChefVersion,
-		Passed:            passed,
+		Passed:            status != StatusBlocked,
+		CookstyleStatus:   status,
 	}
 }
 
@@ -1629,6 +1652,177 @@ func TestEvaluateOne_UntestedCookbook(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// review_blocks_readiness toggle — checkCookbookCompatibility
+// ---------------------------------------------------------------------------
+
+func TestCheckCookbookCompatibility_NeedsReview_ToggleOff(t *testing.T) {
+	// A Review-level CookStyle result resolves to compatible when the toggle is
+	// off (default) — preserving today's blocker-only behaviour.
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResultStatus("org-1", "apt", "7.4.0", "18.0", StatusNeedsReview)
+
+	cache := ds.buildFakeCache() // reviewBlocksReadiness defaults to false
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusCompatibleCookstyleOnly {
+		t.Errorf("toggle off: expected %s, got %s", StatusCompatibleCookstyleOnly, status)
+	}
+	if source != SourceCookstyle {
+		t.Errorf("expected %s, got %s", SourceCookstyle, source)
+	}
+}
+
+func TestCheckCookbookCompatibility_NeedsReview_ToggleOn(t *testing.T) {
+	// With the toggle on, a Review-level result becomes a needs-review verdict.
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResultStatus("org-1", "apt", "7.4.0", "18.0", StatusNeedsReview)
+
+	cache := ds.buildFakeCache()
+	cache.reviewBlocksReadiness = true
+	status, source, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusNeedsReview {
+		t.Errorf("toggle on: expected %s, got %s", StatusNeedsReview, status)
+	}
+	if source != SourceCookstyle {
+		t.Errorf("expected %s, got %s", SourceCookstyle, source)
+	}
+	if len(verdicts) != 1 || verdicts[0].Status != StatusNeedsReview {
+		t.Errorf("expected one needs_review verdict, got %+v", verdicts)
+	}
+}
+
+func TestCheckCookbookCompatibility_BlockedAlwaysIncompatible(t *testing.T) {
+	// A Blocked result is incompatible regardless of the toggle.
+	for _, toggle := range []bool{false, true} {
+		ds := newFakeReadinessDS()
+		ds.addCookbookID("apt", "7.4.0", "org-1")
+		ds.addCSResultStatus("org-1", "apt", "7.4.0", "18.0", StatusBlocked)
+
+		cache := ds.buildFakeCache()
+		cache.reviewBlocksReadiness = toggle
+		status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+		if status != StatusIncompatible {
+			t.Errorf("toggle=%v: expected %s, got %s", toggle, StatusIncompatible, status)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// review_blocks_readiness toggle — evaluateOne node rollup
+// ---------------------------------------------------------------------------
+
+// reviewOnlyNodeSetup builds a node with one Review-level cookbook and ample
+// disk, returning the evaluator + snapshot + datastore.
+func reviewOnlyNodeSetup(t *testing.T) (*ReadinessEvaluator, datastore.NodeSnapshot, *fakeReadinessDS) {
+	t.Helper()
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResultStatus("org-1", "apt", "7.4.0", "18.0", StatusNeedsReview)
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	snap := makeSnapshot("org-1", "node-1", false,
+		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
+		linuxFilesystemJSON(map[string]linuxMount{
+			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
+		}))
+	return e, snap, ds
+}
+
+func TestEvaluateOne_ReviewOnly_ToggleOff_StaysReady(t *testing.T) {
+	// Default-off: a Review-only node remains Ready — identical to today.
+	e, snap, ds := reviewOnlyNodeSetup(t)
+	cache := ds.buildFakeCache() // toggle off
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
+
+	if result.Status != StatusReady {
+		t.Errorf("toggle off: expected status %s, got %s", StatusReady, result.Status)
+	}
+	if !result.IsReady {
+		t.Error("toggle off: expected IsReady true")
+	}
+	if len(result.ReviewCookbooks) != 0 {
+		t.Errorf("toggle off: expected 0 review cookbooks, got %d", len(result.ReviewCookbooks))
+	}
+}
+
+func TestEvaluateOne_ReviewOnly_ToggleOn_NeedsReview(t *testing.T) {
+	// Toggle on: the Review-only node moves to Needs review (not ready, not blocked).
+	e, snap, ds := reviewOnlyNodeSetup(t)
+	cache := ds.buildFakeCache()
+	cache.reviewBlocksReadiness = true
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
+
+	if result.Status != StatusNeedsReview {
+		t.Errorf("toggle on: expected status %s, got %s", StatusNeedsReview, result.Status)
+	}
+	if result.IsReady {
+		t.Error("toggle on: expected IsReady false")
+	}
+	if len(result.BlockingCookbooks) != 0 {
+		t.Errorf("toggle on: expected 0 blocking, got %d", len(result.BlockingCookbooks))
+	}
+	if len(result.ReviewCookbooks) != 1 || result.ReviewCookbooks[0].Name != "apt" {
+		t.Errorf("toggle on: expected review cookbook apt, got %+v", result.ReviewCookbooks)
+	}
+	// all_cookbooks_compatible stays true — there are no incompatible cookbooks.
+	if !result.AllCookbooksCompatible {
+		t.Error("toggle on: expected AllCookbooksCompatible true (no incompatible cookbooks)")
+	}
+}
+
+func TestEvaluateOne_BlockerDominatesReview_ToggleOn(t *testing.T) {
+	// A blocker plus a review cookbook → Blocked dominates.
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCookbookID("nginx", "2.0.0", "org-1")
+	ds.addCSResultStatus("org-1", "apt", "7.4.0", "18.0", StatusNeedsReview)
+	ds.addCSResultStatus("org-1", "nginx", "2.0.0", "18.0", StatusBlocked)
+
+	e := NewReadinessEvaluator(ds, nil, 1, 2048)
+	snap := makeSnapshot("org-1", "node-1", false,
+		cookbooksJSON(map[string]string{"apt": "7.4.0", "nginx": "2.0.0"}),
+		linuxFilesystemJSON(map[string]linuxMount{
+			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "14340800", PercentUsed: "26%", Mount: "/"},
+		}))
+
+	cache := ds.buildFakeCache()
+	cache.reviewBlocksReadiness = true
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
+
+	if result.Status != StatusBlocked {
+		t.Errorf("expected status %s, got %s", StatusBlocked, result.Status)
+	}
+	if len(result.BlockingCookbooks) != 1 || result.BlockingCookbooks[0].Name != "nginx" {
+		t.Errorf("expected nginx blocking, got %+v", result.BlockingCookbooks)
+	}
+	if len(result.ReviewCookbooks) != 1 || result.ReviewCookbooks[0].Name != "apt" {
+		t.Errorf("expected apt review, got %+v", result.ReviewCookbooks)
+	}
+}
+
+func TestEvaluateOne_ReviewWithInsufficientDisk_Blocked(t *testing.T) {
+	// Disk insufficiency blocks even with only review cookbooks (toggle on).
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addCSResultStatus("org-1", "apt", "7.4.0", "18.0", StatusNeedsReview)
+
+	e := NewReadinessEvaluator(ds, nil, 1, 8192) // require 8 GB
+	snap := makeSnapshot("org-1", "node-1", false,
+		cookbooksJSON(map[string]string{"apt": "7.4.0"}),
+		linuxFilesystemJSON(map[string]linuxMount{
+			"/dev/sda1": {KBSize: "20511356", KBUsed: "5123456", KBAvailable: "1024000", PercentUsed: "95%", Mount: "/"},
+		}))
+
+	cache := ds.buildFakeCache()
+	cache.reviewBlocksReadiness = true
+	result := e.evaluateOne(snap, "18.0", ds.cookbookIDs, cache)
+
+	if result.Status != StatusBlocked {
+		t.Errorf("expected status %s (disk), got %s", StatusBlocked, result.Status)
+	}
+}
+
 func TestEvaluateOne_InsufficientDisk(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.addCookbookID("apt", "7.4.0", "org-1")
@@ -2057,7 +2251,7 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 		ComplexityLabel:   "low",
 	}
 
-	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2110,7 +2304,7 @@ func TestBuildReadinessCache_FiltersTargetVersions(t *testing.T) {
 	ds.addCSResult("org-1", "apt", "7.4.0", "17.0", false)
 
 	// Build cache for only 18.0
-	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2129,7 +2323,7 @@ func TestBuildReadinessCache_IncludesNullTargetVersionCSResults(t *testing.T) {
 	// Server CS result with empty target version (scanned without profile)
 	ds.addCSResult("org-1", "apt", "7.4.0", "", true)
 
-	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"})
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -783,8 +783,23 @@ func TestBuildNodeSnapshotFilterQuery_ReadinessBlocked(t *testing.T) {
 	if !strings.Contains(q, "LEFT JOIN node_readiness") {
 		t.Error("query missing LEFT JOIN node_readiness")
 	}
-	if !strings.Contains(q, "nr.is_ready = false OR nr.is_ready IS NULL") {
-		t.Error("query missing blocked condition (nr.is_ready = false OR nr.is_ready IS NULL)")
+	// Blocked excludes needs_review (status-based, not is_ready-based).
+	if !strings.Contains(q, "nr.status = 'blocked' OR nr.status IS NULL") {
+		t.Error("query missing blocked condition (nr.status = 'blocked' OR nr.status IS NULL)")
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_ReadinessNeedsReview(t *testing.T) {
+	q, _ := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		ReadinessFilter:   "needs_review",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "LEFT JOIN node_readiness") {
+		t.Error("query missing LEFT JOIN node_readiness")
+	}
+	if !strings.Contains(q, "nr.status = 'needs_review'") {
+		t.Error("query missing needs_review condition (nr.status = 'needs_review')")
 	}
 }
 

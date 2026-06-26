@@ -94,12 +94,17 @@ type ReadinessResult struct {
 	AllCookbooksCompatible bool
 	SufficientDiskSpace    *bool // nil = unknown
 	BlockingCookbooks      []BlockingCookbook
-	AvailableDiskMB        *int // nil = unknown
+	ReviewCookbooks        []BlockingCookbook // needs-review cookbooks (toggle-on only)
+	AvailableDiskMB        *int               // nil = unknown
 	RequiredDiskMB         int
 	StaleData              bool
-	CookstyleStatus        string // "passed", "failed", "unknown"
-	KitchenStatus          string // "passed", "failed", "partial", "unknown"
-	EvaluatedAt            time.Time
+	// Status is the node rollup verdict: StatusReady / StatusNeedsReview /
+	// StatusBlocked. It mirrors the CookStyle rollup vocabulary and is the
+	// authoritative 3-state readiness signal. IsReady = (Status == StatusReady).
+	Status          string
+	CookstyleStatus string // "passed", "failed", "unknown"
+	KitchenStatus   string // "passed", "failed", "partial", "unknown"
+	EvaluatedAt     time.Time
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +166,10 @@ type readinessCache struct {
 	serverComplexity map[string]*datastore.ServerCookbookComplexity      // cookbookID|target → complexity
 	gitComplexity    map[string]*datastore.GitRepoComplexity             // gitRepoID|target → complexity
 	gitTKStatuses    map[string]string                                   // repoName|target → "passed"/"failed"/"partial"
+	// reviewBlocksReadiness mirrors the live readiness toggle, snapshotted at
+	// cache-build time so every node in the batch evaluates against one
+	// consistent value. Off: Review cookbooks resolve to compatible.
+	reviewBlocksReadiness bool
 }
 
 // cacheKey builds a lookup key from two components (e.g. ID + target version).
@@ -176,14 +185,16 @@ func buildReadinessCache(
 	db ReadinessDataStore,
 	organisationID string,
 	targetChefVersions []string,
+	reviewBlocksReadiness bool,
 ) (*readinessCache, error) {
 	cache := &readinessCache{
-		gitRepos:         make(map[string]datastore.GitRepo),
-		gitCSResults:     make(map[string]*datastore.GitRepoCookstyleResult),
-		serverCSResults:  make(map[string]*datastore.ServerCookbookCookstyleResult),
-		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
-		gitComplexity:    make(map[string]*datastore.GitRepoComplexity),
-		gitTKStatuses:    make(map[string]string),
+		gitRepos:              make(map[string]datastore.GitRepo),
+		gitCSResults:          make(map[string]*datastore.GitRepoCookstyleResult),
+		serverCSResults:       make(map[string]*datastore.ServerCookbookCookstyleResult),
+		serverComplexity:      make(map[string]*datastore.ServerCookbookComplexity),
+		gitComplexity:         make(map[string]*datastore.GitRepoComplexity),
+		gitTKStatuses:         make(map[string]string),
+		reviewBlocksReadiness: reviewBlocksReadiness,
 	}
 
 	// 1. Git repos (all — small table)
@@ -263,6 +274,7 @@ type ReadinessEvaluator struct {
 	installSizeMBLinux      int
 	installSizeMBWindows    int
 	minRemainingFreePercent int
+	reviewBlocksReadiness   bool
 	// configFn, when set, returns the current readiness config dynamically.
 	// This allows the evaluator to pick up config changes without a restart.
 	configFn func() ReadinessEvalConfig
@@ -352,6 +364,10 @@ type ReadinessEvalConfig struct {
 	InstallSizeMBLinux      int
 	InstallSizeMBWindows    int
 	MinRemainingFreePercent int
+	// ReviewBlocksReadiness gates whether Review-level cookbooks block node
+	// readiness. Off (default): Review resolves to compatible. On: Review-only
+	// nodes become "needs review". See config.ReadinessConfig.
+	ReviewBlocksReadiness bool
 }
 
 // NewReadinessEvaluatorFromConfig creates an evaluator with full per-platform
@@ -391,6 +407,7 @@ func NewReadinessEvaluatorFromConfig(
 		installSizeMBLinux:      cfg.InstallSizeMBLinux,
 		installSizeMBWindows:    cfg.InstallSizeMBWindows,
 		minRemainingFreePercent: cfg.MinRemainingFreePercent,
+		reviewBlocksReadiness:   cfg.ReviewBlocksReadiness,
 	}
 	for _, o := range opts {
 		o(e)
@@ -451,7 +468,7 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 
 	// Step 3: Bulk-load all lookup data into an in-memory cache.
 	// This replaces ~12M individual DB queries with ~5 bulk queries.
-	cache, err := buildReadinessCache(ctx, e.db, organisationID, targetChefVersions)
+	cache, err := buildReadinessCache(ctx, e.db, organisationID, targetChefVersions, e.reviewBlocksReadinessNow())
 	if err != nil {
 		return nil, fmt.Errorf("readiness: building cache: %w", err)
 	}
@@ -538,8 +555,9 @@ func (e *ReadinessEvaluator) evaluateOne(
 	}
 
 	// --- Cookbook compatibility ---
-	blockingCookbooks, tkStats := e.evaluateCookbooks(snapshot, targetChefVersion, cookbookIDMap, cache)
+	blockingCookbooks, reviewCookbooks, tkStats := e.evaluateCookbooks(snapshot, targetChefVersion, cookbookIDMap, cache)
 	result.BlockingCookbooks = blockingCookbooks
+	result.ReviewCookbooks = reviewCookbooks
 	result.AllCookbooksCompatible = len(blockingCookbooks) == 0
 
 	// --- Disk space (version-invariant; computed by analysis/disk.go) ---
@@ -556,11 +574,21 @@ func (e *ReadinessEvaluator) evaluateOne(
 		// result.RequiredDiskMB was set at construction (== v.RequiredMB).
 	}
 
-	// --- Overall readiness ---
-	// Ready only if ALL cookbooks compatible AND disk space is sufficient.
-	// Unknown disk space blocks readiness (erring on the side of caution).
+	// --- Overall readiness (node rollup status) ---
+	// Blocked: any incompatible/untested cookbook OR disk insufficient/unknown
+	//   (unknown disk blocks, erring on the side of caution).
+	// Needs review: not blocked, but ≥1 needs-review cookbook (toggle-on only).
+	// Ready: cookbook list clean AND disk sufficient.
 	diskOK := result.SufficientDiskSpace != nil && *result.SufficientDiskSpace
-	result.IsReady = result.AllCookbooksCompatible && diskOK
+	switch {
+	case !diskOK || len(blockingCookbooks) > 0:
+		result.Status = StatusBlocked
+	case len(reviewCookbooks) > 0:
+		result.Status = StatusNeedsReview
+	default:
+		result.Status = StatusReady
+	}
+	result.IsReady = result.Status == StatusReady
 
 	// --- Materialised check statuses ---
 	result.CookstyleStatus = deriveCookstyleStatusFromBlocking(
@@ -598,19 +626,17 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 	targetChefVersion string,
 	cookbookIDMap map[string]map[string]string,
 	cache *readinessCache,
-) ([]BlockingCookbook, tkCoverageStats) {
+) (blocking, review []BlockingCookbook, stats tkCoverageStats) {
 	var tkStats tkCoverageStats
 	if len(snapshot.Cookbooks) == 0 {
-		return nil, tkStats
+		return nil, nil, tkStats
 	}
 
 	// Parse the automatic.cookbooks attribute.
 	cookbooks := parseCookbooksAttribute(snapshot.Cookbooks)
 	if len(cookbooks) == 0 {
-		return nil, tkStats
+		return nil, nil, tkStats
 	}
-
-	var blocking []BlockingCookbook
 
 	for cbName, cbVersion := range cookbooks {
 		tkStats.totalCookbooks++
@@ -633,51 +659,66 @@ func (e *ReadinessEvaluator) evaluateCookbooks(
 
 		switch status {
 		case StatusCompatible, StatusCompatibleCookstyleOnly:
-			// Not blocking.
+			// Not blocking, not needs-review.
 			continue
+		case StatusNeedsReview:
+			review = append(review, e.buildBlockingCookbook(cbName, cbVersion, status, source, verdicts, targetChefVersion, cookbookIDMap, cache))
 		case StatusIncompatible, StatusUntested:
-			bc := BlockingCookbook{
-				Name:     cbName,
-				Version:  cbVersion,
-				Reason:   status,
-				Source:   source,
-				Verdicts: verdicts,
-			}
-
-			// Try to enrich with server cookbook complexity data.
-			cookbookID := lookupCookbookID(cookbookIDMap, cbName, cbVersion)
-			if cookbookID != "" {
-				if cc := cache.serverComplexity[cacheKey(cookbookID, targetChefVersion)]; cc != nil {
-					bc.ComplexityScore = cc.ComplexityScore
-					bc.ComplexityLabel = cc.ComplexityLabel
-				}
-			}
-
-			// Enrich verdicts with complexity data.
-			for i := range bc.Verdicts {
-				switch bc.Verdicts[i].Source {
-				case SourceServerCookstyle:
-					if cookbookID != "" {
-						if cc := cache.serverComplexity[cacheKey(cookbookID, targetChefVersion)]; cc != nil {
-							bc.Verdicts[i].ComplexityScore = cc.ComplexityScore
-							bc.Verdicts[i].ComplexityLabel = cc.ComplexityLabel
-						}
-					}
-				case SourceGitCookstyle:
-					if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.Name != "" {
-						if gc := cache.gitComplexity[cacheKey(gitRepo.Name, targetChefVersion)]; gc != nil {
-							bc.Verdicts[i].ComplexityScore = gc.ComplexityScore
-							bc.Verdicts[i].ComplexityLabel = gc.ComplexityLabel
-						}
-					}
-				}
-			}
-
-			blocking = append(blocking, bc)
+			blocking = append(blocking, e.buildBlockingCookbook(cbName, cbVersion, status, source, verdicts, targetChefVersion, cookbookIDMap, cache))
 		}
 	}
 
-	return blocking, tkStats
+	return blocking, review, tkStats
+}
+
+// buildBlockingCookbook assembles a BlockingCookbook entry (used for both the
+// blocking and needs-review lists) enriched with complexity data from the
+// highest-confidence source and per-verdict complexity.
+func (e *ReadinessEvaluator) buildBlockingCookbook(
+	cbName, cbVersion, status, source string,
+	verdicts []CookbookSourceVerdict,
+	targetChefVersion string,
+	cookbookIDMap map[string]map[string]string,
+	cache *readinessCache,
+) BlockingCookbook {
+	bc := BlockingCookbook{
+		Name:     cbName,
+		Version:  cbVersion,
+		Reason:   status,
+		Source:   source,
+		Verdicts: verdicts,
+	}
+
+	// Try to enrich with server cookbook complexity data.
+	cookbookID := lookupCookbookID(cookbookIDMap, cbName, cbVersion)
+	if cookbookID != "" {
+		if cc := cache.serverComplexity[cacheKey(cookbookID, targetChefVersion)]; cc != nil {
+			bc.ComplexityScore = cc.ComplexityScore
+			bc.ComplexityLabel = cc.ComplexityLabel
+		}
+	}
+
+	// Enrich verdicts with complexity data.
+	for i := range bc.Verdicts {
+		switch bc.Verdicts[i].Source {
+		case SourceServerCookstyle:
+			if cookbookID != "" {
+				if cc := cache.serverComplexity[cacheKey(cookbookID, targetChefVersion)]; cc != nil {
+					bc.Verdicts[i].ComplexityScore = cc.ComplexityScore
+					bc.Verdicts[i].ComplexityLabel = cc.ComplexityLabel
+				}
+			}
+		case SourceGitCookstyle:
+			if gitRepo, ok := cache.gitRepos[cbName]; ok && gitRepo.Name != "" {
+				if gc := cache.gitComplexity[cacheKey(gitRepo.Name, targetChefVersion)]; gc != nil {
+					bc.Verdicts[i].ComplexityScore = gc.ComplexityScore
+					bc.Verdicts[i].ComplexityLabel = gc.ComplexityLabel
+				}
+			}
+		}
+	}
+
+	return bc
 }
 
 // deriveCookstyleStatusFromBlocking computes the CookStyle check status from
@@ -831,7 +872,8 @@ func checkCookbookCompatibility(
 ) (status, source string, verdicts []CookbookSourceVerdict) {
 	cookbookID := lookupCookbookID(cookbookIDMap, cookbookName, cookbookVersion)
 
-	var anyCSCompatible bool // at least one CookStyle source passed
+	var anyCSCompatible bool  // at least one CookStyle source is Ready
+	var anyCSNeedsReview bool // at least one CookStyle source is Needs review (toggle-on)
 	var anyTested bool
 
 	// --- Source 1: Git repo CookStyle ---
@@ -845,12 +887,8 @@ func checkCookbookCompatibility(
 				Version:   "HEAD",
 				CommitSHA: gitRepo.HeadCommitSHA,
 			}
-			if gitCSResult.Passed {
-				v.Status = StatusCompatible
-				anyCSCompatible = true
-			} else {
-				v.Status = StatusIncompatible
-			}
+			v.Status = cookstyleVerdict(gitCSResult.CookstyleStatus, gitCSResult.Passed, cache.reviewBlocksReadiness)
+			markCSAggregate(v.Status, &anyCSCompatible, &anyCSNeedsReview)
 			verdicts = append(verdicts, v)
 		}
 	}
@@ -858,37 +896,20 @@ func checkCookbookCompatibility(
 	// --- Source 2: Server cookbook CookStyle ---
 	if cookbookID != "" {
 		csResult := cache.serverCSResults[cacheKey(cookbookID, targetChefVersion)]
+		if csResult == nil || csResult.ErrorMessage != "" {
+			// Also check CookStyle without a target version — server-sourced
+			// cookbooks may have been scanned without a target version profile.
+			csResult = cache.serverCSResults[cacheKey(cookbookID, "")]
+		}
 		if csResult != nil && csResult.ErrorMessage == "" {
 			anyTested = true
 			v := CookbookSourceVerdict{
 				Source:  SourceServerCookstyle,
 				Version: cookbookVersion,
 			}
-			if csResult.Passed {
-				v.Status = StatusCompatible
-				anyCSCompatible = true
-			} else {
-				v.Status = StatusIncompatible
-			}
+			v.Status = cookstyleVerdict(csResult.CookstyleStatus, csResult.Passed, cache.reviewBlocksReadiness)
+			markCSAggregate(v.Status, &anyCSCompatible, &anyCSNeedsReview)
 			verdicts = append(verdicts, v)
-		} else {
-			// Also check CookStyle without a target version — server-sourced
-			// cookbooks may have been scanned without a target version profile.
-			csResult = cache.serverCSResults[cacheKey(cookbookID, "")]
-			if csResult != nil && csResult.ErrorMessage == "" {
-				anyTested = true
-				v := CookbookSourceVerdict{
-					Source:  SourceServerCookstyle,
-					Version: cookbookVersion,
-				}
-				if csResult.Passed {
-					v.Status = StatusCompatible
-					anyCSCompatible = true
-				} else {
-					v.Status = StatusIncompatible
-				}
-				verdicts = append(verdicts, v)
-			}
 		}
 	}
 
@@ -930,10 +951,50 @@ func checkCookbookCompatibility(
 	if anyCSCompatible {
 		return StatusCompatibleCookstyleOnly, SourceCookstyle, verdicts
 	}
+	// No compatible source, but a Review-level source exists (toggle-on only):
+	// the cookbook needs review — it does not block, but the node is not ready.
+	if anyCSNeedsReview {
+		return StatusNeedsReview, SourceCookstyle, verdicts
+	}
 	if anyTested {
 		return StatusIncompatible, SourceCookstyle, verdicts
 	}
 	return StatusUntested, SourceNone, verdicts
+}
+
+// cookstyleVerdict maps a materialised CookStyle rollup status to a cookbook
+// compatibility verdict, honouring the review-blocks-readiness toggle. Falls
+// back to the legacy passed boolean for results predating status materialisation
+// (cookstyleStatus == "").
+func cookstyleVerdict(cookstyleStatus string, passed bool, reviewBlocks bool) string {
+	switch cookstyleStatus {
+	case StatusReady:
+		return StatusCompatible
+	case StatusBlocked:
+		return StatusIncompatible
+	case StatusNeedsReview:
+		if reviewBlocks {
+			return StatusNeedsReview
+		}
+		return StatusCompatible
+	default:
+		// Unmaterialised result — fall back to the back-compat boolean.
+		if passed {
+			return StatusCompatible
+		}
+		return StatusIncompatible
+	}
+}
+
+// markCSAggregate records a CookStyle source verdict into the compatible /
+// needs-review aggregate flags used to compute the overall cookbook status.
+func markCSAggregate(verdict string, anyCSCompatible, anyCSNeedsReview *bool) {
+	switch verdict {
+	case StatusCompatible:
+		*anyCSCompatible = true
+	case StatusNeedsReview:
+		*anyCSNeedsReview = true
+	}
 }
 
 // lookupCookbookID resolves a cookbook name + version to its database ID
@@ -984,9 +1045,14 @@ type filesystemEntry struct {
 // live config (configFn) or the values baked at construction.
 func (e *ReadinessEvaluator) diskConfig() DiskConfig {
 	if e.configFn != nil {
-		// ReadinessEvalConfig and DiskConfig are field-identical, so a direct
-		// conversion is equivalent to a field-by-field literal (staticcheck S1016).
-		return DiskConfig(e.configFn())
+		cfg := e.configFn()
+		return DiskConfig{
+			InstallPathLinux:        cfg.InstallPathLinux,
+			InstallPathWindows:      cfg.InstallPathWindows,
+			InstallSizeMBLinux:      cfg.InstallSizeMBLinux,
+			InstallSizeMBWindows:    cfg.InstallSizeMBWindows,
+			MinRemainingFreePercent: cfg.MinRemainingFreePercent,
+		}
 	}
 	return DiskConfig{
 		InstallPathLinux:        e.installPathLinux,
@@ -995,6 +1061,15 @@ func (e *ReadinessEvaluator) diskConfig() DiskConfig {
 		InstallSizeMBWindows:    e.installSizeMBWindows,
 		MinRemainingFreePercent: e.minRemainingFreePercent,
 	}
+}
+
+// reviewBlocksReadinessNow returns the live review-blocks-readiness toggle from
+// configFn when wired, otherwise the value baked at construction.
+func (e *ReadinessEvaluator) reviewBlocksReadinessNow() bool {
+	if e.configFn != nil {
+		return e.configFn().ReviewBlocksReadiness
+	}
+	return e.reviewBlocksReadiness
 }
 
 // evaluateDiskSpace determines the available disk space on the installation
@@ -1288,6 +1363,15 @@ func (e *ReadinessEvaluator) persistResult(ctx context.Context, result Readiness
 		blockingJSON = b
 	}
 
+	var reviewJSON json.RawMessage
+	if len(result.ReviewCookbooks) > 0 {
+		b, err := json.Marshal(result.ReviewCookbooks)
+		if err != nil {
+			return fmt.Errorf("readiness: marshalling review cookbooks: %w", err)
+		}
+		reviewJSON = b
+	}
+
 	requiredDiskMB := result.RequiredDiskMB
 	_, err := e.db.UpsertNodeReadiness(ctx, datastore.UpsertNodeReadinessParams{
 		OrganisationName:       result.OrganisationName,
@@ -1297,9 +1381,11 @@ func (e *ReadinessEvaluator) persistResult(ctx context.Context, result Readiness
 		AllCookbooksCompatible: result.AllCookbooksCompatible,
 		SufficientDiskSpace:    result.SufficientDiskSpace,
 		BlockingCookbooks:      blockingJSON,
+		ReviewCookbooks:        reviewJSON,
 		AvailableDiskMB:        result.AvailableDiskMB,
 		RequiredDiskMB:         &requiredDiskMB,
 		StaleData:              result.StaleData,
+		Status:                 result.Status,
 		CookstyleStatus:        result.CookstyleStatus,
 		KitchenStatus:          result.KitchenStatus,
 		EvaluatedAt:            result.EvaluatedAt,

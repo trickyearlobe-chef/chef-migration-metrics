@@ -152,12 +152,12 @@ type ConcurrencyConfig struct {
 // cookstyle/kitchen binaries are resolved from PATH (provided by Chef
 // Workstation); they are not bundled.
 type AnalysisToolsConfig struct {
-	CookstyleEnabled          *bool             `yaml:"cookstyle_enabled"`
-	CookstyleTimeoutMinutes   int               `yaml:"cookstyle_timeout_minutes"`
-	CookstyleFailurePreset    string            `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
+	CookstyleEnabled          *bool               `yaml:"cookstyle_enabled"`
+	CookstyleTimeoutMinutes   int                 `yaml:"cookstyle_timeout_minutes"`
+	CookstyleFailurePreset    string              `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
 	CookstyleFailureRules     map[string][]string `yaml:"cookstyle_failure_rules" json:"cookstyle_failure_rules"`
-	TestKitchenTimeoutMinutes int               `yaml:"test_kitchen_timeout_minutes"`
-	TestKitchen               TestKitchenConfig `yaml:"test_kitchen"`
+	TestKitchenTimeoutMinutes int                 `yaml:"test_kitchen_timeout_minutes"`
+	TestKitchen               TestKitchenConfig   `yaml:"test_kitchen"`
 }
 
 // resolveTestKitchenBackwardCompat emits a deprecation warning if the
@@ -511,6 +511,13 @@ type ReadinessConfig struct {
 	InstallSizeMBLinux      int    `yaml:"install_size_mb_linux"`
 	InstallSizeMBWindows    int    `yaml:"install_size_mb_windows"`
 	MinRemainingFreePercent int    `yaml:"min_remaining_free_percent"`
+
+	// ReviewBlocksReadiness controls whether Review-level CookStyle offences
+	// gate node readiness. Off (default): Review cookbooks resolve to
+	// compatible and a node is ready as today (blocker-only). On: a node whose
+	// only issue is Review-level cookbooks is "Needs review" (not ready, not
+	// blocked). Dynamic — read live by the readiness evaluator.
+	ReviewBlocksReadiness bool `yaml:"review_blocks_readiness"`
 }
 
 // SystemHealthConfig controls host-level resource monitoring and the

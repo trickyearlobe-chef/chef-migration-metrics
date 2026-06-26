@@ -24,14 +24,17 @@ type NodeReadiness struct {
 	AllCookbooksCompatible bool            `json:"all_cookbooks_compatible"`
 	SufficientDiskSpace    *bool           `json:"sufficient_disk_space"` // nil = unknown
 	BlockingCookbooks      json.RawMessage `json:"blocking_cookbooks"`    // JSONB array
+	ReviewCookbooks        json.RawMessage `json:"review_cookbooks"`      // JSONB array (needs-review)
 	AvailableDiskMB        *int            `json:"available_disk_mb"`     // nil = unknown
 	RequiredDiskMB         *int            `json:"required_disk_mb"`      // nil = not set
 	StaleData              bool            `json:"stale_data"`
-	CookstyleStatus        string          `json:"cookstyle_status"`
-	KitchenStatus          string          `json:"kitchen_status"`
-	EvaluatedAt            time.Time       `json:"evaluated_at"`
-	CreatedAt              time.Time       `json:"created_at"`
-	UpdatedAt              time.Time       `json:"updated_at"`
+	// Status is the node rollup verdict: ready / needs_review / blocked.
+	Status          string    `json:"status"`
+	CookstyleStatus string    `json:"cookstyle_status"`
+	KitchenStatus   string    `json:"kitchen_status"`
+	EvaluatedAt     time.Time `json:"evaluated_at"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // UpsertNodeReadinessParams contains the fields needed to insert or update
@@ -45,9 +48,11 @@ type UpsertNodeReadinessParams struct {
 	AllCookbooksCompatible bool
 	SufficientDiskSpace    *bool           // nil = unknown
 	BlockingCookbooks      json.RawMessage // JSONB array
+	ReviewCookbooks        json.RawMessage // JSONB array (needs-review cookbooks)
 	AvailableDiskMB        *int            // nil = unknown
 	RequiredDiskMB         *int            // nil = not set
 	StaleData              bool
+	Status                 string // node rollup: "ready", "needs_review", "blocked"
 	CookstyleStatus        string // "passed", "failed", "unknown"
 	KitchenStatus          string // "passed", "failed", "partial", "unknown"
 	EvaluatedAt            time.Time
@@ -61,7 +66,7 @@ const nrColumns = `organisation_name, node_name,
        target_chef_version, is_ready, all_cookbooks_compatible,
        sufficient_disk_space, blocking_cookbooks, available_disk_mb,
        required_disk_mb, stale_data, cookstyle_status, kitchen_status,
-       evaluated_at, created_at, updated_at`
+       evaluated_at, created_at, updated_at, status, review_cookbooks`
 
 // latestReadinessForOrg returns a SQL fragment that restricts results to the
 // single most recent node_readiness row for each (node_name, target_chef_version)
@@ -166,7 +171,7 @@ func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, orgName stri
 		var r NodeReadiness
 		var sufficientDisk sql.NullBool
 		var availableDisk, requiredDisk sql.NullInt64
-		var blockingCookbooks []byte
+		var blockingCookbooks, reviewCookbooks []byte
 
 		if err := rows.Scan(
 			&r.OrganisationName,
@@ -184,6 +189,8 @@ func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, orgName stri
 			&r.EvaluatedAt,
 			&r.CreatedAt,
 			&r.UpdatedAt,
+			&r.Status,
+			&reviewCookbooks,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning bulk node readiness row: %w", err)
 		}
@@ -201,6 +208,7 @@ func (db *DB) BulkListNodeReadinessByNodeNames(ctx context.Context, orgName stri
 			r.RequiredDiskMB = &v
 		}
 		r.BlockingCookbooks = jsonFromNullBytes(blockingCookbooks)
+		r.ReviewCookbooks = jsonFromNullBytes(reviewCookbooks)
 
 		result[r.NodeName] = append(result[r.NodeName], r)
 	}
@@ -312,6 +320,44 @@ func (db *DB) CountNodeReadiness(ctx context.Context, orgName, targetChefVersion
 	return
 }
 
+// CountNodeReadinessByStatus returns the total and per-rollup-status counts
+// (ready / needs_review / blocked) for the given organisation and target Chef
+// version, scoped to the latest completed collection run. With the
+// review_blocks_readiness toggle off, needsReview is always 0 and (ready,
+// blocked) match CountNodeReadiness.
+func (db *DB) CountNodeReadinessByStatus(ctx context.Context, orgName, targetChefVersion string) (total, ready, needsReview, blocked int, err error) {
+	query := `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'ready'),
+			COUNT(*) FILTER (WHERE status = 'needs_review'),
+			COUNT(*) FILTER (WHERE status = 'blocked')
+		  FROM node_readiness
+		 WHERE organisation_name = $1
+		   AND target_chef_version = $2
+		   AND ` + latestReadinessForOrg("$1") + `
+	`
+	err = db.pool.QueryRowContext(ctx, query, orgName, targetChefVersion).Scan(&total, &ready, &needsReview, &blocked)
+	if err != nil {
+		err = fmt.Errorf("datastore: counting node readiness by status: %w", err)
+	}
+	return
+}
+
+// nodeRollupStatusOrDefault returns status when it is a valid node rollup value,
+// otherwise derives it from the back-compat is_ready boolean (ready / blocked).
+func nodeRollupStatusOrDefault(status string, isReady bool) string {
+	switch status {
+	case "ready", "needs_review", "blocked":
+		return status
+	default:
+		if isReady {
+			return "ready"
+		}
+		return "blocked"
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Upsert
 // ---------------------------------------------------------------------------
@@ -339,14 +385,19 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 		return nil, fmt.Errorf("datastore: target_chef_version is required")
 	}
 
+	// The status column has a CHECK constraint (ready/needs_review/blocked).
+	// Callers that predate the rollup (or tests) may leave it empty — default
+	// from the back-compat is_ready boolean.
+	status := nodeRollupStatusOrDefault(p.Status, p.IsReady)
+
 	query := `
 		INSERT INTO node_readiness (
 			organisation_name, node_name,
 			target_chef_version, is_ready, all_cookbooks_compatible,
 			sufficient_disk_space, blocking_cookbooks, available_disk_mb,
 			required_disk_mb, stale_data, cookstyle_status, kitchen_status,
-			evaluated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			evaluated_at, status, review_cookbooks
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (organisation_name, node_name, target_chef_version)
 		DO UPDATE SET
 			is_ready                = EXCLUDED.is_ready,
@@ -359,6 +410,8 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 			cookstyle_status        = EXCLUDED.cookstyle_status,
 			kitchen_status          = EXCLUDED.kitchen_status,
 			evaluated_at            = EXCLUDED.evaluated_at,
+			status                  = EXCLUDED.status,
+			review_cookbooks        = EXCLUDED.review_cookbooks,
 			updated_at              = now()
 		RETURNING ` + nrColumns + `
 	`
@@ -377,6 +430,8 @@ func (db *DB) upsertNodeReadiness(ctx context.Context, q queryable, p UpsertNode
 		p.CookstyleStatus,
 		p.KitchenStatus,
 		p.EvaluatedAt,
+		status,
+		nullJSON(p.ReviewCookbooks),
 	))
 	if err != nil {
 		return nil, fmt.Errorf("datastore: upserting node readiness: %w", err)
@@ -443,7 +498,7 @@ func scanNodeReadiness(row interface{ Scan(dest ...any) error }) (NodeReadiness,
 	var r NodeReadiness
 	var sufficientDisk sql.NullBool
 	var availableDisk, requiredDisk sql.NullInt64
-	var blockingCookbooks []byte
+	var blockingCookbooks, reviewCookbooks []byte
 
 	err := row.Scan(
 		&r.OrganisationName,
@@ -461,6 +516,8 @@ func scanNodeReadiness(row interface{ Scan(dest ...any) error }) (NodeReadiness,
 		&r.EvaluatedAt,
 		&r.CreatedAt,
 		&r.UpdatedAt,
+		&r.Status,
+		&reviewCookbooks,
 	)
 	if err != nil {
 		return NodeReadiness{}, err
@@ -479,6 +536,7 @@ func scanNodeReadiness(row interface{ Scan(dest ...any) error }) (NodeReadiness,
 		r.RequiredDiskMB = &v
 	}
 	r.BlockingCookbooks = jsonFromNullBytes(blockingCookbooks)
+	r.ReviewCookbooks = jsonFromNullBytes(reviewCookbooks)
 
 	return r, nil
 }
@@ -495,7 +553,7 @@ func (db *DB) scanNodeReadinessRows(ctx context.Context, query string, args ...a
 		var r NodeReadiness
 		var sufficientDisk sql.NullBool
 		var availableDisk, requiredDisk sql.NullInt64
-		var blockingCookbooks []byte
+		var blockingCookbooks, reviewCookbooks []byte
 
 		if err := rows.Scan(
 			&r.OrganisationName,
@@ -513,6 +571,8 @@ func (db *DB) scanNodeReadinessRows(ctx context.Context, query string, args ...a
 			&r.EvaluatedAt,
 			&r.CreatedAt,
 			&r.UpdatedAt,
+			&r.Status,
+			&reviewCookbooks,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning node readiness row: %w", err)
 		}
@@ -530,6 +590,7 @@ func (db *DB) scanNodeReadinessRows(ctx context.Context, query string, args ...a
 			r.RequiredDiskMB = &v
 		}
 		r.BlockingCookbooks = jsonFromNullBytes(blockingCookbooks)
+		r.ReviewCookbooks = jsonFromNullBytes(reviewCookbooks)
 
 		results = append(results, r)
 	}
