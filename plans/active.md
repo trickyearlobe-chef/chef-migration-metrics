@@ -1,11 +1,12 @@
 # Active Plan
 
 Current: **CookStyle status vocabulary & consistency** (implementing) — see
-`plans/cookstyle-status-consistency.md`. Chunks 1 (SoT derivation foundation)
-and 2 (re-eval propagation + audit: classification-aware rescore,
-`CookstylePropagator` full scoped recompute, `cookstyle_audit_log`) landed.
-**Next: Chunk 3** (API surfacing — `cookstyle_status` + weighted complexity in
-remediation + list responses) — run fresh for clean context.
+`plans/cookstyle-status-consistency.md`. Chunks 1 (SoT derivation foundation),
+2 (re-eval propagation + audit), and 3 (API surfacing — materialised
+`cookstyle_status` column via migration 0041; scan + propagation + rescore write
+it; surfaced in remediation + cookbook/git-repo list responses) landed.
+**Next: Chunk 4** (shared CS badge + list adoption, frontend) — run fresh for
+clean context. Goal: complete all 8 chunks.
 
 Also open: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
 Chunks A (lint) + B/D (rules) landed in `main`. Open:

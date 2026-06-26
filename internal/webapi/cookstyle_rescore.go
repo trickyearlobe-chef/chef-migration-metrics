@@ -126,13 +126,17 @@ func rescoreRows(rows []datastore.CookstyleRescoreRow, rules analysis.CookstyleF
 		result.Total++
 		// Single source of truth: classification-derived status, with the
 		// severity failure rules only as the fallback for unclassified cops.
+		// Compare on the full rollup status (not just passed) so a change that
+		// keeps passed but moves ready↔needs_review still re-materialises.
 		resolver := resolverFor(rescoreTargetFromID(row.ID))
-		newPassed := analysis.DeriveCookstyleStatus(offenses, rules, resolver) != analysis.StatusBlocked
-		if newPassed != row.Passed {
+		newStatus := analysis.DeriveCookstyleStatus(offenses, rules, resolver)
+		newPassed := newStatus != analysis.StatusBlocked
+		if newStatus != row.CookstyleStatus {
 			result.Changed++
 			updates = append(updates, datastore.CookstylePassedUpdate{
 				ID:     row.ID,
 				Passed: newPassed,
+				Status: newStatus,
 			})
 		}
 	}

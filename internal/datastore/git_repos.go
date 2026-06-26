@@ -41,6 +41,7 @@ type GitRepo struct {
 
 	// Materialised status columns — pre-computed for the active target version.
 	CompatibilityStatus string `json:"compatibility_status"`
+	CookstyleStatus     string `json:"cookstyle_status"` // ready / needs_review / blocked / untested (SoT rollup)
 	TKStatus            string `json:"tk_status"`
 	TKPassed            int    `json:"tk_passed"`
 	TKTotal             int    `json:"tk_total"`
@@ -70,7 +71,7 @@ const gitRepoColumns = `
 	has_test_suite, clone_status, clone_error,
 	last_fetched_at, created_at, updated_at,
 	kitchen_excluded, kitchen_exclude_reason, kitchen_excluded_by, kitchen_excluded_at,
-	compatibility_status, tk_status, tk_passed, tk_total
+	compatibility_status, cookstyle_status, tk_status, tk_passed, tk_total
 `
 
 // ---------------------------------------------------------------------------
@@ -472,6 +473,7 @@ func scanGitRepo(row *sql.Row) (GitRepo, error) {
 		&excludedBy,
 		&excludedAt,
 		&gr.CompatibilityStatus,
+		&gr.CookstyleStatus,
 		&gr.TKStatus,
 		&gr.TKPassed,
 		&gr.TKTotal,
@@ -523,6 +525,7 @@ func scanGitRepos(rows *sql.Rows, err error) ([]GitRepo, error) {
 			&excludedBy,
 			&excludedAt,
 			&gr.CompatibilityStatus,
+			&gr.CookstyleStatus,
 			&gr.TKStatus,
 			&gr.TKPassed,
 			&gr.TKTotal,

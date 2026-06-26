@@ -88,18 +88,20 @@ func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
 	store := &mockRescoreStore{
 		serverResults: []datastore.CookstyleRescoreRow{
 			{
-				ID:           "org1|cb1|1.0.0|18",
-				Offences:     offJSON,
-				ErrorMessage: "",
-				Passed:       false, // correct: error → fail
+				ID:              "org1|cb1|1.0.0|18",
+				Offences:        offJSON,
+				ErrorMessage:    "",
+				Passed:          false,     // correct: error → fail
+				CookstyleStatus: "blocked", // already reflects default rules
 			},
 		},
 		gitResults: []datastore.CookstyleRescoreRow{
 			{
-				ID:           "myrepo|https://git.example.com/repo|18",
-				Offences:     offJSON,
-				ErrorMessage: "",
-				Passed:       false, // correct
+				ID:              "myrepo|https://git.example.com/repo|18",
+				Offences:        offJSON,
+				ErrorMessage:    "",
+				Passed:          false, // correct
+				CookstyleStatus: "blocked",
 			},
 		},
 	}
@@ -133,16 +135,18 @@ func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
 	store := &mockRescoreStore{
 		serverResults: []datastore.CookstyleRescoreRow{
 			{
-				ID:       "org1|cb1|1.0.0|18",
-				Offences: offJSON,
-				Passed:   true, // was passing under default rules
+				ID:              "org1|cb1|1.0.0|18",
+				Offences:        offJSON,
+				Passed:          true, // was passing under default rules
+				CookstyleStatus: "ready",
 			},
 		},
 		gitResults: []datastore.CookstyleRescoreRow{
 			{
-				ID:       "myrepo|https://git.example.com/repo|18",
-				Offences: offJSON,
-				Passed:   true, // was passing under default rules
+				ID:              "myrepo|https://git.example.com/repo|18",
+				Offences:        offJSON,
+				Passed:          true, // was passing under default rules
+				CookstyleStatus: "ready",
 			},
 		},
 	}
@@ -169,6 +173,9 @@ func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
 	}
 	if store.serverUpdates[0].Passed != false {
 		t.Errorf("serverUpdates[0].Passed = %v, want false", store.serverUpdates[0].Passed)
+	}
+	if store.serverUpdates[0].Status != "blocked" {
+		t.Errorf("serverUpdates[0].Status = %q, want blocked", store.serverUpdates[0].Status)
 	}
 
 	// Check git updates

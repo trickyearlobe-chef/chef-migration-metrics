@@ -18,16 +18,19 @@ type CookstyleRescoreRow struct {
 	// ID is a pipe-delimited composite key that uniquely identifies the row.
 	// For server results: "org|cookbook|version|target_chef_version"
 	// For git results: "repo_name|repo_url|target_chef_version"
-	ID           string
-	Offences     []byte
-	ErrorMessage string
-	Passed       bool
+	ID              string
+	Offences        []byte
+	ErrorMessage    string
+	Passed          bool
+	CookstyleStatus string
 }
 
-// CookstylePassedUpdate carries a row ID and its new passed verdict.
+// CookstylePassedUpdate carries a row ID and its new materialised verdict (the
+// back-compat passed boolean and the classification-derived rollup status).
 type CookstylePassedUpdate struct {
 	ID     string
 	Passed bool
+	Status string
 }
 
 // ListServerCookstyleResultsForRescore returns lightweight rows for all server
@@ -38,7 +41,8 @@ func (db *DB) ListServerCookstyleResultsForRescore(ctx context.Context) ([]Cooks
 			organisation_name || '|' || cookbook_name || '|' || cookbook_version || '|' || COALESCE(target_chef_version, '') AS id,
 			offences,
 			COALESCE(error_message, '') AS error_message,
-			passed
+			passed,
+			cookstyle_status
 		FROM server_cookbook_cookstyle_results
 		WHERE offences IS NOT NULL
 	`
@@ -53,7 +57,8 @@ func (db *DB) ListGitRepoCookstyleResultsForRescore(ctx context.Context) ([]Cook
 			git_repo_name || '|' || git_repo_url || '|' || COALESCE(target_chef_version, '') AS id,
 			offences,
 			COALESCE(error_message, '') AS error_message,
-			passed
+			passed,
+			cookstyle_status
 		FROM git_repo_cookstyle_results
 		WHERE offences IS NOT NULL
 	`
@@ -69,7 +74,7 @@ func scanCookstyleRescoreRows(rows *sql.Rows, err error) ([]CookstyleRescoreRow,
 	var results []CookstyleRescoreRow
 	for rows.Next() {
 		var r CookstyleRescoreRow
-		if err := rows.Scan(&r.ID, &r.Offences, &r.ErrorMessage, &r.Passed); err != nil {
+		if err := rows.Scan(&r.ID, &r.Offences, &r.ErrorMessage, &r.Passed, &r.CookstyleStatus); err != nil {
 			return nil, fmt.Errorf("datastore: scanning cookstyle rescore row: %w", err)
 		}
 		results = append(results, r)
@@ -93,10 +98,10 @@ func (db *DB) BatchUpdateServerCookstylePassed(ctx context.Context, updates []Co
 	var sb strings.Builder
 	sb.WriteString(`
 		UPDATE server_cookbook_cookstyle_results AS t
-		SET passed = v.new_passed
+		SET passed = v.new_passed, cookstyle_status = v.new_status
 		FROM (VALUES `)
 
-	args := make([]any, 0, len(updates)*5)
+	args := make([]any, 0, len(updates)*6)
 	for i, u := range updates {
 		parts := splitRescoreID(u.ID)
 		if len(parts) != 4 {
@@ -105,13 +110,13 @@ func (db *DB) BatchUpdateServerCookstylePassed(ctx context.Context, updates []Co
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		base := i * 5
-		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d::boolean)",
-			base+1, base+2, base+3, base+4, base+5)
-		args = append(args, parts[0], parts[1], parts[2], parts[3], u.Passed)
+		base := i * 6
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d::boolean, $%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6)
+		args = append(args, parts[0], parts[1], parts[2], parts[3], u.Passed, u.Status)
 	}
 
-	sb.WriteString(`) AS v(org, cb, ver, tcv, new_passed)
+	sb.WriteString(`) AS v(org, cb, ver, tcv, new_passed, new_status)
 		WHERE t.organisation_name = v.org
 		  AND t.cookbook_name = v.cb
 		  AND t.cookbook_version = v.ver
@@ -135,10 +140,10 @@ func (db *DB) BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []C
 	var sb strings.Builder
 	sb.WriteString(`
 		UPDATE git_repo_cookstyle_results AS t
-		SET passed = v.new_passed
+		SET passed = v.new_passed, cookstyle_status = v.new_status
 		FROM (VALUES `)
 
-	args := make([]any, 0, len(updates)*4)
+	args := make([]any, 0, len(updates)*5)
 	for i, u := range updates {
 		parts := splitRescoreID(u.ID)
 		if len(parts) != 3 {
@@ -147,13 +152,13 @@ func (db *DB) BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []C
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		base := i * 4
-		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d::boolean)",
-			base+1, base+2, base+3, base+4)
-		args = append(args, parts[0], parts[1], parts[2], u.Passed)
+		base := i * 5
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d::boolean, $%d)",
+			base+1, base+2, base+3, base+4, base+5)
+		args = append(args, parts[0], parts[1], parts[2], u.Passed, u.Status)
 	}
 
-	sb.WriteString(`) AS v(name, url, tcv, new_passed)
+	sb.WriteString(`) AS v(name, url, tcv, new_passed, new_status)
 		WHERE t.git_repo_name = v.name
 		  AND t.git_repo_url = v.url
 		  AND (t.target_chef_version = v.tcv OR (v.tcv = '' AND t.target_chef_version IS NULL))`)

@@ -23,6 +23,7 @@ type CookstyleResultRef struct {
 	TargetChefVersion string
 	Offences          []byte
 	Passed            bool
+	CookstyleStatus   string
 	ErrorMessage      string
 }
 
@@ -45,7 +46,7 @@ func (db *DB) ListServerCookbookCookstyleResultsWithCop(ctx context.Context, cop
 	const query = `
 		SELECT organisation_name, cookbook_name, cookbook_version,
 		       COALESCE(target_chef_version, ''),
-		       COALESCE(error_message, ''), passed, offences
+		       COALESCE(error_message, ''), passed, offences, cookstyle_status
 		FROM server_cookbook_cookstyle_results
 		WHERE target_chef_version = $1
 		  AND offences @> $2::jsonb`
@@ -60,7 +61,7 @@ func (db *DB) ListServerCookbookCookstyleResultsWithCop(ctx context.Context, cop
 	for rows.Next() {
 		var r CookstyleResultRef
 		if err := rows.Scan(&r.OrganisationName, &r.CookbookName, &r.CookbookVersion,
-			&r.TargetChefVersion, &r.ErrorMessage, &r.Passed, &r.Offences); err != nil {
+			&r.TargetChefVersion, &r.ErrorMessage, &r.Passed, &r.Offences, &r.CookstyleStatus); err != nil {
 			return nil, fmt.Errorf("datastore: scanning server result with cop: %w", err)
 		}
 		refs = append(refs, r)
@@ -81,7 +82,7 @@ func (db *DB) ListGitRepoCookstyleResultsWithCop(ctx context.Context, copName, t
 	const query = `
 		SELECT git_repo_name, git_repo_url,
 		       COALESCE(target_chef_version, ''),
-		       COALESCE(error_message, ''), passed, offences
+		       COALESCE(error_message, ''), passed, offences, cookstyle_status
 		FROM git_repo_cookstyle_results
 		WHERE target_chef_version = $1
 		  AND offences @> $2::jsonb`
@@ -96,7 +97,7 @@ func (db *DB) ListGitRepoCookstyleResultsWithCop(ctx context.Context, copName, t
 	for rows.Next() {
 		var r CookstyleResultRef
 		if err := rows.Scan(&r.GitRepoName, &r.GitRepoURL,
-			&r.TargetChefVersion, &r.ErrorMessage, &r.Passed, &r.Offences); err != nil {
+			&r.TargetChefVersion, &r.ErrorMessage, &r.Passed, &r.Offences, &r.CookstyleStatus); err != nil {
 			return nil, fmt.Errorf("datastore: scanning git result with cop: %w", err)
 		}
 		refs = append(refs, r)
@@ -107,35 +108,37 @@ func (db *DB) ListGitRepoCookstyleResultsWithCop(ctx context.Context, copName, t
 	return refs, nil
 }
 
-// UpdateServerCookbookCookstylePassed updates the passed verdict for a single
-// server cookbook cookstyle result identified by its natural key.
-func (db *DB) UpdateServerCookbookCookstylePassed(ctx context.Context, organisationName, cookbookName, cookbookVersion, targetChefVersion string, passed bool) error {
+// UpdateServerCookbookCookstyleVerdict updates the materialised verdict (the
+// back-compat passed boolean and the classification-derived rollup status) for a
+// single server cookbook cookstyle result identified by its natural key.
+func (db *DB) UpdateServerCookbookCookstyleVerdict(ctx context.Context, organisationName, cookbookName, cookbookVersion, targetChefVersion string, passed bool, status string) error {
 	const query = `
 		UPDATE server_cookbook_cookstyle_results
-		SET passed = $5
+		SET passed = $5, cookstyle_status = $6
 		WHERE organisation_name = $1
 		  AND cookbook_name = $2
 		  AND cookbook_version = $3
 		  AND (target_chef_version = $4 OR ($4 = '' AND target_chef_version IS NULL))`
 	if _, err := db.q().ExecContext(ctx, query,
-		organisationName, cookbookName, cookbookVersion, targetChefVersion, passed); err != nil {
-		return fmt.Errorf("datastore: updating server cookstyle passed: %w", err)
+		organisationName, cookbookName, cookbookVersion, targetChefVersion, passed, status); err != nil {
+		return fmt.Errorf("datastore: updating server cookstyle verdict: %w", err)
 	}
 	return nil
 }
 
-// UpdateGitRepoCookstylePassed updates the passed verdict for a single git repo
-// cookstyle result identified by its natural key.
-func (db *DB) UpdateGitRepoCookstylePassed(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string, passed bool) error {
+// UpdateGitRepoCookstyleVerdict updates the materialised verdict (passed boolean
+// and rollup status) for a single git repo cookstyle result identified by its
+// natural key.
+func (db *DB) UpdateGitRepoCookstyleVerdict(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string, passed bool, status string) error {
 	const query = `
 		UPDATE git_repo_cookstyle_results
-		SET passed = $4
+		SET passed = $4, cookstyle_status = $5
 		WHERE git_repo_name = $1
 		  AND git_repo_url = $2
 		  AND (target_chef_version = $3 OR ($3 = '' AND target_chef_version IS NULL))`
 	if _, err := db.q().ExecContext(ctx, query,
-		gitRepoName, gitRepoURL, targetChefVersion, passed); err != nil {
-		return fmt.Errorf("datastore: updating git repo cookstyle passed: %w", err)
+		gitRepoName, gitRepoURL, targetChefVersion, passed, status); err != nil {
+		return fmt.Errorf("datastore: updating git repo cookstyle verdict: %w", err)
 	}
 	return nil
 }

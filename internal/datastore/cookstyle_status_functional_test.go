@@ -1,0 +1,136 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+//go:build functional
+
+package datastore
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+// TestFunctional_CookstyleStatus_ServerRoundTrip verifies the materialised
+// cookstyle_status column on server cookbook results is persisted on upsert and
+// returned on get (migration 0041 / Chunk 3 SoT surfacing).
+func TestFunctional_CookstyleStatus_ServerRoundTrip(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	cleanupTestData(t, db,
+		"DELETE FROM server_cookbook_cookstyle_results WHERE cookbook_name = 'func-cs-status'",
+		"DELETE FROM server_cookbooks WHERE name = 'func-cs-status'",
+		"DELETE FROM organisations WHERE name = 'func-cs-org'",
+	)
+
+	if _, err := db.UpsertOrganisationFromConfig(ctx, UpsertOrganisationParams{
+		Name: "func-cs-org", ChefServerURL: "https://chef.example.com", OrgName: "func-cs-org", ClientName: "c",
+	}); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	if _, err := db.UpsertServerCookbook(ctx, UpsertServerCookbookParams{
+		OrganisationName: "func-cs-org", Name: "func-cs-status", Version: "1.0.0", IsActive: true,
+	}); err != nil {
+		t.Fatalf("seed cookbook: %v", err)
+	}
+
+	_, err := db.UpsertServerCookbookCookstyleResult(ctx, UpsertServerCookbookCookstyleResultParams{
+		OrganisationName:  "func-cs-org",
+		CookbookName:      "func-cs-status",
+		CookbookVersion:   "1.0.0",
+		TargetChefVersion: "18",
+		Passed:            true,
+		CookstyleStatus:   "needs_review",
+		Offences:          []byte("[]"),
+		DurationSeconds:   1,
+		ScannedAt:         time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	got, err := db.GetServerCookbookCookstyleResult(ctx, "func-cs-org", "func-cs-status", "1.0.0", "18")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected a result row")
+	}
+	if got.CookstyleStatus != "needs_review" {
+		t.Errorf("CookstyleStatus = %q, want needs_review", got.CookstyleStatus)
+	}
+
+	// Upsert again with a changed status — ON CONFLICT must update it.
+	_, err = db.UpsertServerCookbookCookstyleResult(ctx, UpsertServerCookbookCookstyleResultParams{
+		OrganisationName:  "func-cs-org",
+		CookbookName:      "func-cs-status",
+		CookbookVersion:   "1.0.0",
+		TargetChefVersion: "18",
+		Passed:            false,
+		CookstyleStatus:   "blocked",
+		Offences:          []byte("[]"),
+		DurationSeconds:   1,
+		ScannedAt:         time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	got, err = db.GetServerCookbookCookstyleResult(ctx, "func-cs-org", "func-cs-status", "1.0.0", "18")
+	if err != nil {
+		t.Fatalf("get after re-upsert: %v", err)
+	}
+	if got.CookstyleStatus != "blocked" {
+		t.Errorf("after re-upsert CookstyleStatus = %q, want blocked", got.CookstyleStatus)
+	}
+}
+
+// TestFunctional_CookstyleStatus_GitRepoMaterialised verifies a git repo
+// result's status round-trips and that the git_repos rollup column is
+// recomputed from the latest result.
+func TestFunctional_CookstyleStatus_GitRepoMaterialised(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	const name = "func-cs-git"
+	const url = "https://git.example.com/func-cs-git"
+	cleanupTestData(t, db,
+		"DELETE FROM git_repo_cookstyle_results WHERE git_repo_name = '"+name+"'",
+		"DELETE FROM git_repos WHERE name = '"+name+"'",
+	)
+
+	if _, err := db.UpsertGitRepo(ctx, UpsertGitRepoParams{Name: name, GitRepoURL: url}); err != nil {
+		t.Fatalf("upsert git repo: %v", err)
+	}
+
+	// UpsertGitRepoCookstyleResult also recomputes the materialised columns.
+	if _, err := db.UpsertGitRepoCookstyleResult(ctx, UpsertGitRepoCookstyleResultParams{
+		GitRepoName:       name,
+		GitRepoURL:        url,
+		TargetChefVersion: "18",
+		Passed:            true,
+		CookstyleStatus:   "needs_review",
+		Offences:          []byte("[]"),
+		DurationSeconds:   1,
+		ScannedAt:         time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert git result: %v", err)
+	}
+
+	res, err := db.GetGitRepoCookstyleResult(ctx, name, url, "18")
+	if err != nil {
+		t.Fatalf("get git result: %v", err)
+	}
+	if res == nil || res.CookstyleStatus != "needs_review" {
+		t.Fatalf("git result CookstyleStatus = %v, want needs_review", res)
+	}
+
+	// The git_repos rollup column must mirror the latest result's status.
+	repo, err := db.GetGitRepoByKey(ctx, name, url)
+	if err != nil {
+		t.Fatalf("get git repo: %v", err)
+	}
+	if repo.CookstyleStatus != "needs_review" {
+		t.Errorf("git_repos.cookstyle_status = %q, want needs_review", repo.CookstyleStatus)
+	}
+}

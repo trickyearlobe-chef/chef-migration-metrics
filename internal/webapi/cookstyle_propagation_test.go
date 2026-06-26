@@ -31,6 +31,7 @@ type mockPropagationStore struct {
 type passedUpdate struct {
 	key    string
 	passed bool
+	status string
 }
 
 func (m *mockPropagationStore) ListCopClassifications(ctx context.Context, target string) ([]datastore.CopClassification, error) {
@@ -45,13 +46,13 @@ func (m *mockPropagationStore) ListGitRepoCookstyleResultsWithCop(ctx context.Co
 	return m.gitRefs, nil
 }
 
-func (m *mockPropagationStore) UpdateServerCookbookCookstylePassed(ctx context.Context, org, name, version, target string, passed bool) error {
-	m.serverPassedUpdates = append(m.serverPassedUpdates, passedUpdate{key: org + "|" + name + "|" + version, passed: passed})
+func (m *mockPropagationStore) UpdateServerCookbookCookstyleVerdict(ctx context.Context, org, name, version, target string, passed bool, status string) error {
+	m.serverPassedUpdates = append(m.serverPassedUpdates, passedUpdate{key: org + "|" + name + "|" + version, passed: passed, status: status})
 	return nil
 }
 
-func (m *mockPropagationStore) UpdateGitRepoCookstylePassed(ctx context.Context, name, url, target string, passed bool) error {
-	m.gitPassedUpdates = append(m.gitPassedUpdates, passedUpdate{key: name + "|" + url, passed: passed})
+func (m *mockPropagationStore) UpdateGitRepoCookstyleVerdict(ctx context.Context, name, url, target string, passed bool, status string) error {
+	m.gitPassedUpdates = append(m.gitPassedUpdates, passedUpdate{key: name + "|" + url, passed: passed, status: status})
 	return nil
 }
 
@@ -118,7 +119,7 @@ func TestPropagate_FlipsServerVerdictAndRecomputes(t *testing.T) {
 			"18": {{CopName: "Chef/Style/Foo", Classification: "blocker"}},
 		},
 		serverRefs: []datastore.CookstyleResultRef{
-			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true},
+			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true, CookstyleStatus: "ready"},
 		},
 	}
 	scorer := &mockComplexityRescorer{}
@@ -132,8 +133,8 @@ func TestPropagate_FlipsServerVerdictAndRecomputes(t *testing.T) {
 	if res.ServerResultsChanged != 1 {
 		t.Errorf("ServerResultsChanged = %d, want 1", res.ServerResultsChanged)
 	}
-	if len(store.serverPassedUpdates) != 1 || store.serverPassedUpdates[0].passed != false {
-		t.Errorf("expected passed=false update, got %+v", store.serverPassedUpdates)
+	if len(store.serverPassedUpdates) != 1 || store.serverPassedUpdates[0].passed != false || store.serverPassedUpdates[0].status != "blocked" {
+		t.Errorf("expected passed=false status=blocked update, got %+v", store.serverPassedUpdates)
 	}
 	if res.CookbooksRescored != 1 {
 		t.Errorf("CookbooksRescored = %d, want 1", res.CookbooksRescored)
@@ -147,15 +148,15 @@ func TestPropagate_FlipsServerVerdictAndRecomputes(t *testing.T) {
 }
 
 func TestPropagate_RescoreEvenWhenVerdictUnchanged(t *testing.T) {
-	// noise → review: both pass, so passed is unchanged, but the
-	// classification-weighted complexity changes, so the cookbook must still be
-	// re-scored (and its org's readiness re-evaluated).
+	// Already needs_review, reclassified review → still needs_review: the
+	// materialised verdict is unchanged so no verdict row is written, but the
+	// classification-weighted complexity must still be re-scored.
 	store := &mockPropagationStore{
 		classifications: map[string][]datastore.CopClassification{
 			"18": {{CopName: "Chef/Style/Foo", Classification: "review"}},
 		},
 		serverRefs: []datastore.CookstyleResultRef{
-			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true},
+			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true, CookstyleStatus: "needs_review"},
 		},
 	}
 	scorer := &mockComplexityRescorer{}
@@ -176,13 +177,41 @@ func TestPropagate_RescoreEvenWhenVerdictUnchanged(t *testing.T) {
 	}
 }
 
+func TestPropagate_StatusChangeWithoutPassedFlip(t *testing.T) {
+	// ready → needs_review: passed stays true (review is not blocking) but the
+	// materialised rollup status changes, so the verdict MUST be re-written.
+	// Under the old passed-only comparison this update was silently skipped,
+	// leaving the materialised status stale — the SoT regression this guards.
+	store := &mockPropagationStore{
+		classifications: map[string][]datastore.CopClassification{
+			"18": {{CopName: "Chef/Style/Foo", Classification: "review"}},
+		},
+		serverRefs: []datastore.CookstyleResultRef{
+			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true, CookstyleStatus: "ready"},
+		},
+	}
+	scorer := &mockComplexityRescorer{}
+	p := NewCookstylePropagator(store, scorer, nil, defaultRulesFn, nil)
+
+	res, err := p.PropagateReclassification(context.Background(), "Chef/Style/Foo", "18")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.ServerResultsChanged != 1 {
+		t.Errorf("ServerResultsChanged = %d, want 1 (status changed)", res.ServerResultsChanged)
+	}
+	if len(store.serverPassedUpdates) != 1 || store.serverPassedUpdates[0].passed != true || store.serverPassedUpdates[0].status != "needs_review" {
+		t.Errorf("expected passed=true status=needs_review update, got %+v", store.serverPassedUpdates)
+	}
+}
+
 func TestPropagate_GitFlipRecomputesCompat(t *testing.T) {
 	store := &mockPropagationStore{
 		classifications: map[string][]datastore.CopClassification{
 			"18": {{CopName: "Chef/Style/Foo", Classification: "blocker"}},
 		},
 		gitRefs: []datastore.CookstyleResultRef{
-			{GitRepoName: "repo1", GitRepoURL: "https://git/repo1", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true},
+			{GitRepoName: "repo1", GitRepoURL: "https://git/repo1", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true, CookstyleStatus: "ready"},
 		},
 		orgs: []datastore.Organisation{{Name: "org-a"}},
 	}
@@ -208,7 +237,7 @@ func TestPropagate_GitFlipRecomputesCompat(t *testing.T) {
 func TestPropagate_NilScorerAndReadinessSafe(t *testing.T) {
 	store := &mockPropagationStore{
 		serverRefs: []datastore.CookstyleResultRef{
-			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: false},
+			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: false, CookstyleStatus: "blocked"},
 		},
 		classifications: map[string][]datastore.CopClassification{
 			"18": {{CopName: "Chef/Style/Foo", Classification: "noise"}},
@@ -220,9 +249,9 @@ func TestPropagate_NilScorerAndReadinessSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// noise: error-free style → passes; was false → flips to true.
-	if res.ServerResultsChanged != 1 || store.serverPassedUpdates[0].passed != true {
-		t.Errorf("expected passed=true flip, got changed=%d updates=%+v", res.ServerResultsChanged, store.serverPassedUpdates)
+	// noise: error-free style → passes; status blocked → ready, passed false → true.
+	if res.ServerResultsChanged != 1 || store.serverPassedUpdates[0].passed != true || store.serverPassedUpdates[0].status != "ready" {
+		t.Errorf("expected passed=true status=ready flip, got changed=%d updates=%+v", res.ServerResultsChanged, store.serverPassedUpdates)
 	}
 	if res.CookbooksRescored != 0 || res.OrgsReadinessRecomputed != 0 {
 		t.Errorf("nil scorer/readiness should skip those stages: %+v", res)

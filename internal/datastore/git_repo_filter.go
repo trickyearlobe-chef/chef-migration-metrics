@@ -189,6 +189,7 @@ func (db *DB) ListGitReposFiltered(ctx context.Context, f GitRepoFilter) ([]GitR
 			&excludedBy,
 			&excludedAt,
 			&gr.CompatibilityStatus,
+			&gr.CookstyleStatus,
 			&gr.TKStatus,
 			&gr.TKPassed,
 			&gr.TKTotal,

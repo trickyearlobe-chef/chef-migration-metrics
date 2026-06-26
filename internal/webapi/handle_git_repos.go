@@ -43,6 +43,7 @@ type gitRepoResp struct {
 	CloneError        string `json:"clone_error,omitempty"`
 	LastFetchedAt     string `json:"last_fetched_at,omitempty"`
 	Compatibility     string `json:"compatibility"`
+	CookstyleStatus   string `json:"cookstyle_status"`
 	TargetChefVersion string `json:"target_chef_version,omitempty"`
 	TKStatus          string `json:"tk_status"`
 	TKPassed          int    `json:"tk_passed"`
@@ -135,6 +136,10 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		if tkStatus == "" {
 			tkStatus = "untested"
 		}
+		cookstyleStatus := gr.CookstyleStatus
+		if cookstyleStatus == "" {
+			cookstyleStatus = "untested"
+		}
 		resp := gitRepoResp{
 			ID:                gr.Name,
 			Name:              gr.Name,
@@ -145,6 +150,7 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 			CloneStatus:       gr.CloneStatus,
 			CloneError:        gr.CloneError,
 			Compatibility:     compat,
+			CookstyleStatus:   cookstyleStatus,
 			TargetChefVersion: targetChefVersion,
 			TKStatus:          tkStatus,
 			TKPassed:          gr.TKPassed,

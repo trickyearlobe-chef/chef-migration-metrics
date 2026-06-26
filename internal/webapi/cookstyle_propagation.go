@@ -36,8 +36,8 @@ type CookstylePropagationStore interface {
 	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
 	ListServerCookbookCookstyleResultsWithCop(ctx context.Context, copName, targetChefVersion string) ([]datastore.CookstyleResultRef, error)
 	ListGitRepoCookstyleResultsWithCop(ctx context.Context, copName, targetChefVersion string) ([]datastore.CookstyleResultRef, error)
-	UpdateServerCookbookCookstylePassed(ctx context.Context, organisationName, cookbookName, cookbookVersion, targetChefVersion string, passed bool) error
-	UpdateGitRepoCookstylePassed(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string, passed bool) error
+	UpdateServerCookbookCookstyleVerdict(ctx context.Context, organisationName, cookbookName, cookbookVersion, targetChefVersion string, passed bool, status string) error
+	UpdateGitRepoCookstyleVerdict(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string, passed bool, status string) error
 	RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) error
 	ListOrganisations(ctx context.Context) ([]datastore.Organisation, error)
 }
@@ -126,10 +126,10 @@ func (p *CookstylePropagator) PropagateReclassification(ctx context.Context, cop
 		if ref.ErrorMessage != "" {
 			continue // inconclusive scan — not a verdict
 		}
-		newPassed := deriveRefPassed(ref, rules, resolver)
-		if newPassed != ref.Passed {
-			if uerr := p.store.UpdateServerCookbookCookstylePassed(ctx, ref.OrganisationName, ref.CookbookName, ref.CookbookVersion, ref.TargetChefVersion, newPassed); uerr != nil {
-				p.logf("ERROR", "propagation: updating server passed for %s/%s: %v", ref.OrganisationName, ref.CookbookName, uerr)
+		newStatus, newPassed := deriveRefStatus(ref, rules, resolver)
+		if newStatus != ref.CookstyleStatus {
+			if uerr := p.store.UpdateServerCookbookCookstyleVerdict(ctx, ref.OrganisationName, ref.CookbookName, ref.CookbookVersion, ref.TargetChefVersion, newPassed, newStatus); uerr != nil {
+				p.logf("ERROR", "propagation: updating server verdict for %s/%s: %v", ref.OrganisationName, ref.CookbookName, uerr)
 				continue
 			}
 			result.ServerResultsChanged++
@@ -154,10 +154,10 @@ func (p *CookstylePropagator) PropagateReclassification(ctx context.Context, cop
 		if ref.ErrorMessage != "" {
 			continue
 		}
-		newPassed := deriveRefPassed(ref, rules, resolver)
-		if newPassed != ref.Passed {
-			if uerr := p.store.UpdateGitRepoCookstylePassed(ctx, ref.GitRepoName, ref.GitRepoURL, ref.TargetChefVersion, newPassed); uerr != nil {
-				p.logf("ERROR", "propagation: updating git passed for %s: %v", ref.GitRepoName, uerr)
+		newStatus, newPassed := deriveRefStatus(ref, rules, resolver)
+		if newStatus != ref.CookstyleStatus {
+			if uerr := p.store.UpdateGitRepoCookstyleVerdict(ctx, ref.GitRepoName, ref.GitRepoURL, ref.TargetChefVersion, newPassed, newStatus); uerr != nil {
+				p.logf("ERROR", "propagation: updating git verdict for %s: %v", ref.GitRepoName, uerr)
 				continue
 			}
 			result.GitResultsChanged++
@@ -241,11 +241,13 @@ func (p *CookstylePropagator) buildResolver(ctx context.Context, target string) 
 	return &analysis.CopClassificationResolver{OperatorOverrides: overrides, TargetChefVersion: target}
 }
 
-// deriveRefPassed re-derives the back-compat passed boolean for a result from
-// its stored offences using the single-source-of-truth derivation.
-func deriveRefPassed(ref *datastore.CookstyleResultRef, rules analysis.CookstyleFailureRules, resolver *analysis.CopClassificationResolver) bool {
+// deriveRefStatus re-derives the classification rollup status for a result from
+// its stored offences using the single-source-of-truth derivation. The
+// back-compat passed boolean is status != blocked.
+func deriveRefStatus(ref *datastore.CookstyleResultRef, rules analysis.CookstyleFailureRules, resolver *analysis.CopClassificationResolver) (status string, passed bool) {
 	offenses := refOffenses(ref.Offences)
-	return analysis.DeriveCookstyleStatus(offenses, rules, resolver) != analysis.StatusBlocked
+	status = analysis.DeriveCookstyleStatus(offenses, rules, resolver)
+	return status, status != analysis.StatusBlocked
 }
 
 // refOffenses parses the stored enriched offences JSON into the minimal offense

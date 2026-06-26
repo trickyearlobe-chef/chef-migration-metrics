@@ -137,6 +137,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		DownloadStatus    string `json:"download_status"`
 		DownloadError     string `json:"download_error,omitempty"`
 		Compatibility     string `json:"compatibility"`
+		CookstyleStatus   string `json:"cookstyle_status"`
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
 		TKStatus          string `json:"tk_status,omitempty"`
 	}
@@ -158,6 +159,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			DownloadStatus:    cb.DownloadStatus,
 			DownloadError:     cb.DownloadError,
 			Compatibility:     cb.Compatibility,
+			CookstyleStatus:   cb.CookstyleStatus,
 			TargetChefVersion: targetChefVersion,
 			TKStatus:          tkDisplay,
 		}

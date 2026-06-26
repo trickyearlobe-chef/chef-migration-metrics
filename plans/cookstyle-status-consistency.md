@@ -3,8 +3,9 @@
 Branch: `feature/cookstyle-violations-browser` (continuing)
 Supersedes chunks 9–11 of `cookstyle-violations-browser.md`.
 Status: **implementing.** Decisions below are agreed. Chunks 1 (SoT derivation
-foundation) and 2 (re-eval propagation + audit) released and landed; Chunk 3 is
-next. Remaining chunks 3–8 queued.
+foundation), 2 (re-eval propagation + audit), and 3 (API surfacing: materialised
+`cookstyle_status` column) released and landed; Chunk 4 is next. Remaining
+chunks 4–8 queued.
 
 ## Decisions (agreed)
 
@@ -120,13 +121,6 @@ Dependencies: none
 4. Tests: status truth table; kubernetes-cluster case; unclassified severity-fail → Blocked.
 
 Acceptance: Review-only repo → Needs review, complexity low, passed=true; status/complexity/badges agree.
-
-### Chunk 3 — API surfacing
-
-Scope: remediation handlers + server-cookbook/git-repo list handlers
-Dependencies: Chunk 1
-
-Add `cookstyle_status` (4-state) + weighted complexity to remediation + list responses; keep `passed`. Tests.
 
 ### Chunk 4 — Shared badge + list adoption (frontend)
 

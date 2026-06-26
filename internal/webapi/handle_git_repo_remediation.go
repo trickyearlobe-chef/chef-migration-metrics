@@ -84,6 +84,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	// Fetch cookstyle result.
 	var cookstyleOffences []byte
 	var cookstylePassed *bool
+	cookstyleStatus := "untested" // SoT rollup; stays untested when no result exists
 	var cookstyleScannedAt string
 	var hasCookstyleResult bool
 
@@ -97,6 +98,9 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		cookstyleOffences = csResult.Offences
 		p := csResult.Passed
 		cookstylePassed = &p
+		if csResult.CookstyleStatus != "" {
+			cookstyleStatus = csResult.CookstyleStatus
+		}
 		cookstyleScannedAt = csResult.ScannedAt.Format("2006-01-02T15:04:05Z")
 		hasCookstyleResult = true
 	}
@@ -436,6 +440,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		"complexity_label":     complexityLabel,
 		"complexity_breakdown": breakdown,
 		"cookstyle_passed":     cookstylePassed,
+		"cookstyle_status":     cookstyleStatus,
 		"scanned_at":           cookstyleScannedAt,
 		"statistics": map[string]any{
 			"total_offenses":         totalOffenses,

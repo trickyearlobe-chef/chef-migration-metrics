@@ -214,6 +214,10 @@ func TestHandleCookbookRemediation_NoCookstyleResult(t *testing.T) {
 	if body["cookstyle_passed"] != nil {
 		t.Errorf("cookstyle_passed = %v, want nil", body["cookstyle_passed"])
 	}
+	// cookstyle_status defaults to "untested" when no result exists.
+	if body["cookstyle_status"] != "untested" {
+		t.Errorf("cookstyle_status = %v, want \"untested\"", body["cookstyle_status"])
+	}
 
 	stats, ok := body["statistics"].(map[string]any)
 	if !ok {
@@ -237,6 +241,48 @@ func TestHandleCookbookRemediation_NoCookstyleResult(t *testing.T) {
 	}
 	if acPreview["available"] != false {
 		t.Errorf("autocorrect_preview.available = %v, want false", acPreview["available"])
+	}
+}
+
+func TestHandleCookbookRemediation_SurfacesMaterialisedStatus(t *testing.T) {
+	// The materialised SoT rollup status on the result must appear verbatim.
+	store := &mockStore{
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{{Name: "apt", Version: "1.0.0"}}, nil
+		},
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+			return &datastore.ServerCookbookCookstyleResult{
+				CookbookName:    "apt",
+				CookbookVersion: "1.0.0",
+				Passed:          true,
+				CookstyleStatus: "needs_review",
+				Offences:        []byte("[]"),
+			}, nil
+		},
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
+			return nil, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks/apt/1.0.0/remediation", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if body["cookstyle_status"] != "needs_review" {
+		t.Errorf("cookstyle_status = %v, want \"needs_review\"", body["cookstyle_status"])
+	}
+	if body["cookstyle_passed"] != true {
+		t.Errorf("cookstyle_passed = %v, want true", body["cookstyle_passed"])
 	}
 }
 

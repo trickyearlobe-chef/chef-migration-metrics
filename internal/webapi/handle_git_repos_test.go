@@ -40,6 +40,7 @@ type gitRepoListResponse struct {
 		HasTestSuite      bool   `json:"has_test_suite"`
 		LastFetchedAt     string `json:"last_fetched_at"`
 		Compatibility     string `json:"compatibility"`
+		CookstyleStatus   string `json:"cookstyle_status"`
 		TKStatus          string `json:"tk_status"`
 		TKPassed          int    `json:"tk_passed"`
 		TKTotal           int    `json:"tk_total"`
@@ -71,10 +72,10 @@ func decodeGitRepoListResponse(t *testing.T, w *httptest.ResponseRecorder) gitRe
 
 func sampleGitRepos() []datastore.GitRepo {
 	return []datastore.GitRepo{
-		{Name: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", HasTestSuite: true, CompatibilityStatus: "compatible", TKStatus: "passed", TKPassed: 2, TKTotal: 2},
-		{Name: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", HasTestSuite: false, CompatibilityStatus: "incompatible", TKStatus: "partial", TKPassed: 1, TKTotal: 2},
-		{Name: "cookbook-c", GitRepoURL: "https://github.com/org/cookbook-c.git", HasTestSuite: true, CompatibilityStatus: "untested", TKStatus: "untested", TKPassed: 0, TKTotal: 0},
-		{Name: "cookbook-d", GitRepoURL: "https://github.com/org/cookbook-d.git", HasTestSuite: true, CompatibilityStatus: "untested", TKStatus: "untested", TKPassed: 0, TKTotal: 0},
+		{Name: "cookbook-a", GitRepoURL: "https://github.com/org/cookbook-a.git", HasTestSuite: true, CompatibilityStatus: "compatible", CookstyleStatus: "ready", TKStatus: "passed", TKPassed: 2, TKTotal: 2},
+		{Name: "cookbook-b", GitRepoURL: "https://github.com/org/cookbook-b.git", HasTestSuite: false, CompatibilityStatus: "incompatible", CookstyleStatus: "blocked", TKStatus: "partial", TKPassed: 1, TKTotal: 2},
+		{Name: "cookbook-c", GitRepoURL: "https://github.com/org/cookbook-c.git", HasTestSuite: true, CompatibilityStatus: "untested", CookstyleStatus: "needs_review", TKStatus: "untested", TKPassed: 0, TKTotal: 0},
+		{Name: "cookbook-d", GitRepoURL: "https://github.com/org/cookbook-d.git", HasTestSuite: true, CompatibilityStatus: "untested", CookstyleStatus: "untested", TKStatus: "untested", TKPassed: 0, TKTotal: 0},
 	}
 }
 
@@ -193,6 +194,33 @@ func TestHandleGitRepos_CompatibilityInResponse(t *testing.T) {
 		got := compatMap[tc.name]
 		if got != tc.expected {
 			t.Errorf("compatibility for %q: expected %q, got %q", tc.name, tc.expected, got)
+		}
+	}
+}
+
+func TestHandleGitRepos_CookstyleStatusInResponse(t *testing.T) {
+	store := defaultGitRepoMockStore()
+	r := newGitRepoTestRouter(store)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/git-repos", nil)
+	r.ServeHTTP(w, req)
+
+	resp := decodeGitRepoListResponse(t, w)
+
+	statusMap := make(map[string]string)
+	for _, d := range resp.Data {
+		statusMap[d.Name] = d.CookstyleStatus
+	}
+	want := map[string]string{
+		"cookbook-a": "ready",
+		"cookbook-b": "blocked",
+		"cookbook-c": "needs_review",
+		"cookbook-d": "untested",
+	}
+	for name, expected := range want {
+		if statusMap[name] != expected {
+			t.Errorf("cookstyle_status for %q: expected %q, got %q", name, expected, statusMap[name])
 		}
 	}
 }
