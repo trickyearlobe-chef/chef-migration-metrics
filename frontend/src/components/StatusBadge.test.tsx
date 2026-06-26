@@ -3,7 +3,39 @@
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { StaleBadge, DeploymentStateBadge, ConvergeBadge } from "./StatusBadge";
+import {
+  StaleBadge,
+  DeploymentStateBadge,
+  ConvergeBadge,
+  CookStyleStatusBadge,
+} from "./StatusBadge";
+
+describe("CookStyleStatusBadge", () => {
+  it("renders Ready with green styling", () => {
+    const { container } = render(<CookStyleStatusBadge status="ready" />);
+    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(container.querySelector("span")?.className).toContain("bg-green");
+  });
+
+  it("renders Needs review with amber styling", () => {
+    const { container } = render(
+      <CookStyleStatusBadge status="needs_review" />,
+    );
+    expect(screen.getByText("Needs review")).toBeInTheDocument();
+    expect(container.querySelector("span")?.className).toContain("bg-amber");
+  });
+
+  it("renders Blocked with red styling", () => {
+    const { container } = render(<CookStyleStatusBadge status="blocked" />);
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(container.querySelector("span")?.className).toContain("bg-red");
+  });
+
+  it("renders Untested for unknown/empty status", () => {
+    render(<CookStyleStatusBadge status={undefined} />);
+    expect(screen.getByText("Untested")).toBeInTheDocument();
+  });
+});
 
 describe("StaleBadge", () => {
   it("renders Fresh text when stalenesTier is fresh", () => {

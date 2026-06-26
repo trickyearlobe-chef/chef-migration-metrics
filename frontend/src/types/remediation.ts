@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Pagination, ComplexityLabel } from "./common";
+import type { Pagination, ComplexityLabel, CookStyleStatus } from "./common";
 
 export interface RemediationPriorityItem {
   cookbook_name: string;
@@ -132,6 +132,7 @@ export interface CookbookRemediationResponse {
   complexity_label: ComplexityLabel | string;
   complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
+  cookstyle_status?: CookStyleStatus;
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];
@@ -148,6 +149,7 @@ export interface GitRepoRemediationResponse {
   complexity_label: ComplexityLabel | string;
   complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
+  cookstyle_status?: CookStyleStatus;
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];

@@ -116,6 +116,7 @@ export interface CookbookFilterQuery extends PaginationQuery {
   active?: string;
   name?: string;
   compatibility?: string;
+  cookstyle_status?: string;
   tk_status?: string;
   download_status?: string;
   target_chef_version?: string;
@@ -129,6 +130,7 @@ export interface CookbookFilterQuery extends PaginationQuery {
 export interface GitRepoFilterQuery extends PaginationQuery {
   name?: string;
   compatibility?: string;
+  cookstyle_status?: string;
   tk_status?: string;
   clone_status?: string;
   has_test_suite?: string;

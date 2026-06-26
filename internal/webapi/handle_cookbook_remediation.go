@@ -538,8 +538,8 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"cookbook_name":         cookbookName,
-		"cookbook_version":      cookbookVersion,
+		"cookbook_name":        cookbookName,
+		"cookbook_version":     cookbookVersion,
 		"target_chef_version":  targetVersion,
 		"complexity_score":     complexityScore,
 		"complexity_label":     complexityLabel,
@@ -557,8 +557,8 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 			"error_count":            errorCount,
 			"offense_groups":         len(groups),
 		},
-		"offense_groups":            groups,
-		"classification_summary":    classificationSummary,
-		"autocorrect_preview":       acPreview,
+		"offense_groups":         groups,
+		"classification_summary": classificationSummary,
+		"autocorrect_preview":    acPreview,
 	})
 }

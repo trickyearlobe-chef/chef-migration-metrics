@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 // GitRepoFilter holds optional filter criteria for listing git repos with
@@ -19,6 +21,11 @@ type GitRepoFilter struct {
 	// CompatibilityStatus filters by exact match on materialised column.
 	// Valid: "compatible", "incompatible", "untested", "error".
 	CompatibilityStatus string
+
+	// CookstyleStatus filters by the materialised SoT rollup column.
+	// Valid: "ready", "needs_review", "blocked", "untested".
+	// Supports comma-separated multi-select.
+	CookstyleStatus string
 
 	// TKStatus filters by exact match on materialised column.
 	// Valid: "passed", "failed", "partial", "untested".
@@ -85,6 +92,11 @@ func buildGitRepoFilterQuery(f GitRepoFilter) (query string, args []interface{})
 	if f.CompatibilityStatus != "" {
 		wheres = append(wheres, "compatibility_status = "+nextArg())
 		args = append(args, f.CompatibilityStatus)
+	}
+
+	if f.CookstyleStatus != "" {
+		wheres = append(wheres, "cookstyle_status = ANY("+nextArg()+")")
+		args = append(args, pq.Array(strings.Split(f.CookstyleStatus, ",")))
 	}
 
 	if f.TKStatus != "" {
@@ -244,6 +256,11 @@ func buildGitRepoFilterCountQuery(f GitRepoFilter) (query string, args []interfa
 	if f.CompatibilityStatus != "" {
 		wheres = append(wheres, "compatibility_status = "+nextArg())
 		args = append(args, f.CompatibilityStatus)
+	}
+
+	if f.CookstyleStatus != "" {
+		wheres = append(wheres, "cookstyle_status = ANY("+nextArg()+")")
+		args = append(args, pq.Array(strings.Split(f.CookstyleStatus, ",")))
 	}
 	if f.TKStatus != "" {
 		wheres = append(wheres, "tk_status = "+nextArg())

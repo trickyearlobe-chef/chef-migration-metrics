@@ -79,6 +79,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		Name:              q.Get("name"),
 		DownloadStatus:    q.Get("download_status"),
 		Compatibility:     q.Get("compatibility"),
+		CookstyleStatus:   q.Get("cookstyle_status"),
 		TKStatus:          q.Get("tk_status"),
 		TargetChefVersion: targetChefVersion,
 		Sort:              queryString(req, "sort", "name"),

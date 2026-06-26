@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { PlatformCoverageCard } from "../components/PlatformCoverageCard";
-import { StatusBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
+import { StatusBadge, CookStyleStatusBadge, TKBadge } from "../components/StatusBadge";
 import { CookstyleResultRow } from "../components/CookstyleResultRow";
 
 /** Small helper – renders a label/value row in the metadata grid. */
@@ -147,7 +147,8 @@ export function CookbookDetailPage() {
               <div className="mt-2 space-y-2">
                 {data.git_repos.map((gd, idx) => {
                   const csStatus = gd.cookstyle && gd.cookstyle.length > 0
-                    ? (gd.cookstyle[0].passed ? "compatible" : "incompatible")
+                    ? (gd.cookstyle[0].cookstyle_status ??
+                       (gd.cookstyle[0].passed ? "ready" : "blocked"))
                     : "untested";
                   const tkStatus = gd.git_repo.tk_status ?? "untested";
                   const offenses = gd.cookstyle?.[0]?.offence_count;
@@ -161,7 +162,7 @@ export function CookbookDetailPage() {
                       >
                         {gd.git_repo.git_repo_url}
                       </span>
-                      <CookStyleBadge status={csStatus} size="sm" />
+                      <CookStyleStatusBadge status={csStatus} size="sm" />
                       <TKBadge status={tkStatus} size="sm" />
                       {offenses != null && offenses > 0 && (
                         <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700">

@@ -452,8 +452,8 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 			"error_count":            errorCount,
 			"offense_groups":         len(groups),
 		},
-		"offense_groups":            groups,
-		"classification_summary":    classificationSummary,
-		"autocorrect_preview":       acPreview,
+		"offense_groups":         groups,
+		"classification_summary": classificationSummary,
+		"autocorrect_preview":    acPreview,
 	})
 }

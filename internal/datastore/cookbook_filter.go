@@ -33,6 +33,11 @@ type CookbookFilter struct {
 	// Values: "compatible", "incompatible", "scan_error", "untested".
 	Compatibility string
 
+	// CookstyleStatus filters by the materialised SoT rollup status.
+	// Values: "ready", "needs_review", "blocked", "untested".
+	// Supports comma-separated multi-select.
+	CookstyleStatus string
+
 	// TKStatus filters by Test Kitchen status derived from matching git repos.
 	// Values: "passed", "failed", "partial", "untested", "no_repo".
 	// Supports comma-separated multi-select.
@@ -174,6 +179,12 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 	if f.Compatibility != "" {
 		sb.WriteString("   AND cb.compatibility = " + nextArg() + "\n")
 		args = append(args, f.Compatibility)
+	}
+
+	if f.CookstyleStatus != "" {
+		csValues := strings.Split(f.CookstyleStatus, ",")
+		sb.WriteString("   AND cb.cookstyle_status = ANY(" + nextArg() + ")\n")
+		args = append(args, pq.Array(csValues))
 	}
 
 	if f.TKStatus != "" {

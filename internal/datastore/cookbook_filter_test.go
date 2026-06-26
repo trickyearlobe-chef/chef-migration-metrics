@@ -162,6 +162,20 @@ func TestBuildCookbookFilterQuery_CompatibilityFilter(t *testing.T) {
 	}
 }
 
+func TestBuildCookbookFilterQuery_CookstyleStatusFilter(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		CookstyleStatus:   "ready,needs_review",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "cb.cookstyle_status = ANY($2)") {
+		t.Errorf("query missing outer cookstyle_status filter, got:\n%s", q)
+	}
+	if len(args) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
+	}
+}
+
 func TestBuildCookbookFilterQuery_DownloadStatusFilter(t *testing.T) {
 	q, args := buildCookbookFilterQuery(CookbookFilter{
 		DownloadStatus: "ok",

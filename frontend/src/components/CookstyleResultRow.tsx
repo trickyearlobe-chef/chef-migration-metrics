@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { StatusBadge } from "./StatusBadge";
+import { StatusBadge, CookStyleStatusBadge } from "./StatusBadge";
 import type { CookstyleResult } from "../types/cookbooks";
 
 interface CookstyleResultRowProps {
@@ -25,10 +25,11 @@ export function CookstyleResultRow({ result, linkBase }: CookstyleResultRowProps
 
       {isScanError ? (
         <StatusBadge variant="scan_error" label="Scan Error" size="sm" />
-      ) : result.passed ? (
-        <StatusBadge variant="compatible" label="Passed" size="sm" />
       ) : (
-        <StatusBadge variant="incompatible" label="Failed" size="sm" />
+        <CookStyleStatusBadge
+          status={result.cookstyle_status ?? (result.passed ? "ready" : "blocked")}
+          size="sm"
+        />
       )}
 
       {!isScanError && (

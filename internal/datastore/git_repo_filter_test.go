@@ -56,6 +56,17 @@ func TestBuildGitRepoFilterQuery_CompatibilityFilter(t *testing.T) {
 	}
 }
 
+func TestBuildGitRepoFilterQuery_CookstyleStatusFilter(t *testing.T) {
+	q, args := buildGitRepoFilterQuery(GitRepoFilter{CookstyleStatus: "ready,needs_review"})
+
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d", len(args))
+	}
+	if !strings.Contains(q, "cookstyle_status = ANY($1)") {
+		t.Errorf("missing cookstyle_status filter: %s", q)
+	}
+}
+
 func TestBuildGitRepoFilterQuery_TKStatusFilter(t *testing.T) {
 	q, args := buildGitRepoFilterQuery(GitRepoFilter{TKStatus: "failed"})
 
