@@ -10,8 +10,9 @@ import type {
   ClassificationSummary,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
-import { ComplexityBadge, ComplexityBreakdownDisplay, StatusBadge } from "../components/StatusBadge";
+import { ComplexityBadge, ComplexityBreakdownDisplay, CookStyleStatusBadge } from "../components/StatusBadge";
 import { ClassificationBadge, ClassificationFilterBar } from "../components/ClassificationBadge";
+import { ClassificationSections } from "../components/ClassificationSections";
 import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import type { CopClassification } from "../types";
 
@@ -168,11 +169,11 @@ export function CookbookRemediationPage() {
               score={data.complexity_score}
             />
           )}
-          {data.cookstyle_passed !== null && (
-            <StatusBadge
-              variant={data.cookstyle_passed ? "compatible" : "incompatible"}
-              label={
-                data.cookstyle_passed ? "CookStyle Passed" : "CookStyle Failed"
+          {(data.cookstyle_status || data.cookstyle_passed !== null) && (
+            <CookStyleStatusBadge
+              status={
+                data.cookstyle_status ??
+                (data.cookstyle_passed ? "ready" : "blocked")
               }
             />
           )}
@@ -222,14 +223,18 @@ export function CookbookRemediationPage() {
             </div>
           </div>
 
-          {filteredGroups.map((group) => (
-            <OffenseGroupCard
-              key={group.cop_name}
-              group={group}
-              expanded={expandedGroups.has(group.cop_name)}
-              onToggle={() => toggleGroup(group.cop_name)}
-            />
-          ))}
+          <ClassificationSections
+            groups={filteredGroups}
+            classFilter={classFilter}
+            renderGroup={(group) => (
+              <OffenseGroupCard
+                key={group.cop_name}
+                group={group}
+                expanded={expandedGroups.has(group.cop_name)}
+                onToggle={() => toggleGroup(group.cop_name)}
+              />
+            )}
+          />
         </div>
       ) : (
         <EmptyState
