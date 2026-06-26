@@ -1,21 +1,15 @@
 # Active Plan
 
-Current: **CookStyle status vocabulary & consistency** (implementing) — see
-`plans/cookstyle-status-consistency.md`. Chunks 1–7 landed: SoT derivation, re-
-eval propagation + audit, API surfacing (materialised `cookstyle_status`,
-migration 0041), the 4-state CS badge + list adoption, the remediation detail
-redesign, readiness integration + `review_blocks_readiness` toggle (3-state node
-`status` + `review_cookbooks`, migration 0042), and the admin Cop Classifications
-management section + Failure→Fallback Rules reframe. Chunk 8a landed: the
-append-only `cookstyle_offence_fingerprints` storage foundation (migration 0043,
-change-deduped writer, scan-path hook, contract + functional tests). **Next:
-Chunk 8b** (trend-recompute engine over fingerprint-valid-at-T + current
-membership; trends/exports Ready/Needs review/Blocked vocabulary) — **start a
-fresh thread**. Note: membership-at-T history does not exist
-(`node_fact_snapshots` is a Future Extension), so recompute is bounded to current
-membership — make that boundary explicit in any mixed-range chart.
+**CookStyle status vocabulary & consistency — COMPLETE.** All chunks (1–8b)
+landed; "done lives in code". Chunk 8b shipped the trend-recompute engine
+(`internal/analysis/cookstyle_recompute.go`: re-derive status + weighted
+complexity from `cookstyle_offence_fingerprints` valid-at-T under the current
+resolver, bounded to current membership), the
+`/dashboard/cookstyle/recompute-trend` endpoint + frozen-boundary marker
+(`recompute_available_from`), the Recomputed-Trend dashboard card, and a
+`cookstyle_status` rollup column in the cookbook-remediation export.
 
-Also open: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
+Current: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
 Chunks A (lint) + B/D (rules) landed in `main`. Open:
 - **E — drift sweep** (approved; multi-agent spec↔code audit → report). Run next
   session for clean context.
