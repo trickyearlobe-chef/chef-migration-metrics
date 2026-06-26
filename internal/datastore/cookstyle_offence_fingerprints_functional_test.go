@@ -147,6 +147,63 @@ func TestFunctional_OffenceFingerprint_KindAndResultIsolation(t *testing.T) {
 	}
 }
 
+// TestFunctional_OffenceFingerprint_ListByTarget verifies the bulk trend-recompute
+// feed: it returns every result's rows for a target, scoped to that target, with
+// each result's rows contiguous and ascending by scanned_at.
+func TestFunctional_OffenceFingerprint_ListByTarget(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	cleanupTestData(t, db,
+		"DELETE FROM cookstyle_offence_fingerprints WHERE organisation_name = 'func-fp-bulk'",
+	)
+
+	now := time.Now().UTC()
+	mk := func(cb, hash, target string, scanned time.Time) AppendCookstyleOffenceFingerprintParams {
+		return AppendCookstyleOffenceFingerprintParams{
+			ResultKind: FingerprintKindServerCookbook, OrganisationName: "func-fp-bulk",
+			CookbookName: cb, CookbookVersion: "1.0.0", TargetChefVersion: target,
+			FingerprintHash: hash, Cops: []FingerprintCopEntry{{CopName: "Chef/A", Count: 1, Severity: "warning"}},
+			ScannedAt: scanned,
+		}
+	}
+
+	// Result cb1 (target 19): two rows. cb2 (target 19): one row. cb3 (target 18):
+	// excluded from a target-19 query.
+	for _, p := range []AppendCookstyleOffenceFingerprintParams{
+		mk("cb1", "h1a", "19", now.Add(-3*time.Hour)),
+		mk("cb1", "h1b", "19", now.Add(-1*time.Hour)),
+		mk("cb2", "h2", "19", now.Add(-2*time.Hour)),
+		mk("cb3", "h3", "18", now.Add(-1*time.Hour)),
+	} {
+		if _, err := db.AppendCookstyleOffenceFingerprint(ctx, p); err != nil {
+			t.Fatalf("append %s: %v", p.CookbookName, err)
+		}
+	}
+
+	rows, err := db.ListOffenceFingerprintsByTarget(ctx, "19")
+	if err != nil {
+		t.Fatalf("ListOffenceFingerprintsByTarget: %v", err)
+	}
+	// Restrict to our test rows (table may hold other data).
+	var mine []CookstyleOffenceFingerprint
+	for _, r := range rows {
+		if r.OrganisationName == "func-fp-bulk" {
+			mine = append(mine, r)
+		}
+	}
+	if len(mine) != 3 {
+		t.Fatalf("expected 3 target-19 rows, got %d", len(mine))
+	}
+	// cb1's two rows must be contiguous and ascending.
+	if mine[0].CookbookName != "cb1" || mine[1].CookbookName != "cb1" {
+		t.Errorf("cb1 rows not contiguous: %s, %s", mine[0].CookbookName, mine[1].CookbookName)
+	}
+	if !mine[0].ScannedAt.Before(mine[1].ScannedAt) {
+		t.Error("cb1 rows should be ascending by scanned_at")
+	}
+}
+
 // TestFunctional_OffenceFingerprint_RejectsBadKind verifies an unknown result kind
 // is rejected rather than silently writing an unqueryable row.
 func TestFunctional_OffenceFingerprint_RejectsBadKind(t *testing.T) {

@@ -202,6 +202,34 @@ func (db *DB) ListGitRepoOffenceFingerprints(ctx context.Context, gitRepoName, g
 }
 
 // ---------------------------------------------------------------------------
+// Bulk list for trend recompute
+// ---------------------------------------------------------------------------
+
+// ListOffenceFingerprintsByTarget returns every stored fingerprint row for the
+// given target Chef version across ALL results, ordered by result identity then
+// scanned_at ascending. This is the bulk feed for trend recompute: the caller
+// groups consecutive rows by identity into per-result histories (oldest-first)
+// rather than issuing one query per result. An empty target matches rows whose
+// target_chef_version is NULL/empty.
+//
+// The ORDER BY mirrors the per-result identity columns so a single linear pass
+// can split the rows into contiguous per-result runs.
+func (db *DB) ListOffenceFingerprintsByTarget(ctx context.Context, targetChefVersion string) ([]CookstyleOffenceFingerprint, error) {
+	const query = `
+		SELECT id, result_kind, organisation_name, cookbook_name, cookbook_version,
+		       git_repo_name, git_repo_url, target_chef_version,
+		       fingerprint_hash, cops, scanned_at, created_at
+		  FROM cookstyle_offence_fingerprints
+		 WHERE (target_chef_version = $1 OR ($1 = '' AND target_chef_version IS NULL))
+		 ORDER BY result_kind,
+		          organisation_name, cookbook_name, cookbook_version,
+		          git_repo_name, git_repo_url,
+		          scanned_at ASC, created_at ASC
+	`
+	return scanCookstyleOffenceFingerprints(db.q().QueryContext(ctx, query, targetChefVersion))
+}
+
+// ---------------------------------------------------------------------------
 // Row scanning helpers
 // ---------------------------------------------------------------------------
 
