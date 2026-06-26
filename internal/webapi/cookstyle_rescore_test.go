@@ -17,15 +17,20 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockRescoreStore struct {
-	serverResults []datastore.CookstyleRescoreRow
-	gitResults    []datastore.CookstyleRescoreRow
-	serverUpdates []datastore.CookstylePassedUpdate
-	gitUpdates    []datastore.CookstylePassedUpdate
-	recomputedGit []gitRepoKey
+	serverResults   []datastore.CookstyleRescoreRow
+	gitResults      []datastore.CookstyleRescoreRow
+	serverUpdates   []datastore.CookstylePassedUpdate
+	gitUpdates      []datastore.CookstylePassedUpdate
+	recomputedGit   []gitRepoKey
+	classifications map[string][]datastore.CopClassification // target version -> overrides
 }
 
 type gitRepoKey struct {
 	Name, URL, TargetVersion string
+}
+
+func (m *mockRescoreStore) ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error) {
+	return m.classifications[targetChefVersion], nil
 }
 
 func (m *mockRescoreStore) ListServerCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error) {
@@ -261,6 +266,67 @@ func TestRescoreCookstyleResults_RelaxedAllowsPreviouslyFailing(t *testing.T) {
 	}
 	if store.serverUpdates[0].Passed != true {
 		t.Errorf("serverUpdates[0].Passed = %v, want true", store.serverUpdates[0].Passed)
+	}
+}
+
+func TestRescoreCookstyleResults_ClassificationBlocksDespiteRules(t *testing.T) {
+	// A warning-severity offense that severity rules would PASS, but the cop is
+	// classified as a blocker for this target — rescore must flip passed=false.
+	offenses := []analysis.CookstyleOffense{
+		{Severity: "warning", CopName: "Chef/Style/SomeRule"},
+	}
+	offJSON, _ := json.Marshal(offenses)
+
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{ID: "org1|cb1|1.0.0|18", Offences: offJSON, Passed: true},
+		},
+		classifications: map[string][]datastore.CopClassification{
+			"18": {{CopName: "Chef/Style/SomeRule", Classification: "blocker"}},
+		},
+	}
+
+	// Relaxed rules would NOT fail a Style warning — only the classification does.
+	rules := analysis.RelaxedFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Changed != 1 {
+		t.Fatalf("changed = %d, want 1 (classification should block)", result.Changed)
+	}
+	if len(store.serverUpdates) != 1 || store.serverUpdates[0].Passed != false {
+		t.Errorf("expected passed=false update, got %+v", store.serverUpdates)
+	}
+}
+
+func TestRescoreCookstyleResults_NoiseClassificationPasses(t *testing.T) {
+	// An error-severity offense that severity rules would FAIL, but the cop is
+	// classified as noise — rescore must flip passed=true.
+	offenses := []analysis.CookstyleOffense{
+		{Severity: "error", CopName: "Chef/Style/SomeRule"},
+	}
+	offJSON, _ := json.Marshal(offenses)
+
+	store := &mockRescoreStore{
+		serverResults: []datastore.CookstyleRescoreRow{
+			{ID: "org1|cb1|1.0.0|18", Offences: offJSON, Passed: false},
+		},
+		classifications: map[string][]datastore.CopClassification{
+			"18": {{CopName: "Chef/Style/SomeRule", Classification: "noise"}},
+		},
+	}
+
+	rules := analysis.DefaultFailureRules()
+	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Changed != 1 {
+		t.Fatalf("changed = %d, want 1 (noise should pass)", result.Changed)
+	}
+	if len(store.serverUpdates) != 1 || store.serverUpdates[0].Passed != true {
+		t.Errorf("expected passed=true update, got %+v", store.serverUpdates)
 	}
 }
 

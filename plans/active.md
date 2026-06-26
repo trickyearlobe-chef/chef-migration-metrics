@@ -1,10 +1,11 @@
 # Active Plan
 
 Current: **CookStyle status vocabulary & consistency** (implementing) — see
-`plans/cookstyle-status-consistency.md`. Chunk 1 (SoT derivation foundation:
-`DeriveCookstyleStatus`, classification-weighted complexity, scan `passed`
-wiring + collector classifier injection) landed. **Next: Chunk 2** (re-eval
-propagation + audit) — run fresh for clean context.
+`plans/cookstyle-status-consistency.md`. Chunks 1 (SoT derivation foundation)
+and 2 (re-eval propagation + audit: classification-aware rescore,
+`CookstylePropagator` full scoped recompute, `cookstyle_audit_log`) landed.
+**Next: Chunk 3** (API surfacing — `cookstyle_status` + weighted complexity in
+remediation + list responses) — run fresh for clean context.
 
 Also open: **Spec/Plan Drift Control** — see `plans/spec-drift-control.md`.
 Chunks A (lint) + B/D (rules) landed in `main`. Open:

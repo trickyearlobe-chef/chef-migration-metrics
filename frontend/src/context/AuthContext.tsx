@@ -175,3 +175,15 @@ export function useAuth(): AuthContextValue {
   }
   return ctx;
 }
+
+/**
+ * useIsAdmin returns whether the current session has the admin role. Unlike
+ * useAuth it never throws when rendered without an `<AuthProvider>` — it
+ * defaults to false. Use it to gate admin-only controls inside subtrees that
+ * may be rendered standalone (e.g. in tests). In the running app the provider
+ * is always present, so the value reflects the real session.
+ */
+export function useIsAdmin(): boolean {
+  const ctx = useContext(AuthContext);
+  return ctx?.isAdmin ?? false;
+}

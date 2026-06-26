@@ -21,6 +21,10 @@ type CookstyleRescoreStore interface {
 	BatchUpdateServerCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
 	BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
 	RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error
+	// ListCopClassifications returns operator classification overrides for a
+	// target version, used to build the single-source-of-truth derivation. The
+	// resolver still applies RemovedIn auto-seed + curated defaults on top.
+	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
 }
 
 // RescoreResult reports how many results were evaluated and how many changed.
@@ -36,13 +40,35 @@ type RescoreResult struct {
 func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, rules analysis.CookstyleFailureRules, logger func(level, msg string)) (RescoreResult, error) {
 	var result RescoreResult
 
+	// Memoise one classification resolver per target version so the override
+	// load happens once per target rather than once per result. The resolver
+	// applies operator overrides, RemovedIn auto-seed, and curated defaults;
+	// severity-based failure rules are only the fallback for unclassified cops.
+	resolverCache := map[string]*analysis.CopClassificationResolver{}
+	resolverFor := func(target string) *analysis.CopClassificationResolver {
+		if r, ok := resolverCache[target]; ok {
+			return r
+		}
+		overrides := map[string]string{}
+		if rows, lerr := store.ListCopClassifications(ctx, target); lerr == nil {
+			for _, row := range rows {
+				overrides[row.CopName] = row.Classification
+			}
+		} else {
+			rescoreLogf(logger, "WARN", "rescore: loading classifications for target %q: %v", target, lerr)
+		}
+		r := &analysis.CopClassificationResolver{OperatorOverrides: overrides, TargetChefVersion: target}
+		resolverCache[target] = r
+		return r
+	}
+
 	// --- Server cookbook results ---
 	serverRows, err := store.ListServerCookstyleResultsForRescore(ctx)
 	if err != nil {
 		return result, fmt.Errorf("rescore: listing server results: %w", err)
 	}
 
-	serverUpdates := rescoreRows(serverRows, rules, &result)
+	serverUpdates := rescoreRows(serverRows, rules, resolverFor, &result)
 	if len(serverUpdates) > 0 {
 		if err := store.BatchUpdateServerCookstylePassed(ctx, serverUpdates); err != nil {
 			return result, fmt.Errorf("rescore: updating server results: %w", err)
@@ -55,7 +81,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 		return result, fmt.Errorf("rescore: listing git results: %w", err)
 	}
 
-	gitUpdates := rescoreRows(gitRows, rules, &result)
+	gitUpdates := rescoreRows(gitRows, rules, resolverFor, &result)
 	if len(gitUpdates) > 0 {
 		if err := store.BatchUpdateGitRepoCookstylePassed(ctx, gitUpdates); err != nil {
 			return result, fmt.Errorf("rescore: updating git results: %w", err)
@@ -76,7 +102,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 // rescoreRows evaluates a slice of rescore rows against the given rules,
 // collecting updates for rows whose verdict has changed. Rows with
 // error_message or nil/empty offences are skipped.
-func rescoreRows(rows []datastore.CookstyleRescoreRow, rules analysis.CookstyleFailureRules, result *RescoreResult) []datastore.CookstylePassedUpdate {
+func rescoreRows(rows []datastore.CookstyleRescoreRow, rules analysis.CookstyleFailureRules, resolverFor func(target string) *analysis.CopClassificationResolver, result *RescoreResult) []datastore.CookstylePassedUpdate {
 	var updates []datastore.CookstylePassedUpdate
 
 	for i := range rows {
@@ -98,7 +124,10 @@ func rescoreRows(rows []datastore.CookstyleRescoreRow, rules analysis.CookstyleF
 		}
 
 		result.Total++
-		newPassed := analysis.EvaluatePassFail(offenses, rules)
+		// Single source of truth: classification-derived status, with the
+		// severity failure rules only as the fallback for unclassified cops.
+		resolver := resolverFor(rescoreTargetFromID(row.ID))
+		newPassed := analysis.DeriveCookstyleStatus(offenses, rules, resolver) != analysis.StatusBlocked
 		if newPassed != row.Passed {
 			result.Changed++
 			updates = append(updates, datastore.CookstylePassedUpdate{
@@ -119,6 +148,16 @@ func parseGitRescoreID(id string) (name, url, targetVersion string) {
 		return parts[0], parts[1], parts[2]
 	}
 	return id, "", ""
+}
+
+// rescoreTargetFromID extracts the target Chef version from a rescore ID. For
+// both server ("org|cb|ver|target") and git ("name|url|target") IDs the target
+// version is the final pipe-delimited segment.
+func rescoreTargetFromID(id string) string {
+	if idx := strings.LastIndex(id, "|"); idx >= 0 {
+		return id[idx+1:]
+	}
+	return ""
 }
 
 func rescoreLogf(logger func(level, msg string), level, format string, args ...any) {

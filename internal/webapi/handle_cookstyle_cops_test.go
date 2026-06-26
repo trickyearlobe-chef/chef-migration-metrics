@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
@@ -268,6 +269,110 @@ func TestHandleCookstyleCopClassification_Put(t *testing.T) {
 	}
 	if savedReason != "crashes at runtime" {
 		t.Errorf("reason = %q, want 'crashes at runtime'", savedReason)
+	}
+}
+
+func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *testing.T) {
+	var auditAction, auditCop string
+	store := &mockStore{
+		UpsertCopClassificationFn: func(_ context.Context, copName, tv, class, reason, _ string) error {
+			return nil
+		},
+		InsertCookstyleAuditEntryFn: func(_ context.Context, p datastore.InsertCookstyleAuditParams) error {
+			auditAction = p.Action
+			auditCop = p.CopName
+			return nil
+		},
+	}
+
+	cfg := testConfigWithTargetVersions("18")
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	// Wire a propagator over a mock closure: one server cookbook carries the cop
+	// and is currently passing; reclassifying to blocker must flip + re-score.
+	propStore := &mockPropagationStore{
+		serverRefs: []datastore.CookstyleResultRef{
+			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true},
+		},
+		classifications: map[string][]datastore.CopClassification{
+			"18": {{CopName: "Chef/Style/Foo", Classification: "blocker"}},
+		},
+	}
+	scorer := &mockComplexityRescorer{}
+	readiness := &mockReadinessRecomputer{}
+	r.cookstylePropagator = NewCookstylePropagator(propStore, scorer, readiness, defaultRulesFn, nil)
+
+	w := httptest.NewRecorder()
+	body := `{"target_chef_version":"18","classification":"blocker","reason":"breaks"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	if len(propStore.serverPassedUpdates) != 1 || propStore.serverPassedUpdates[0].passed != false {
+		t.Errorf("expected verdict flip to false, got %+v", propStore.serverPassedUpdates)
+	}
+	if len(scorer.serverCalls) != 1 {
+		t.Errorf("expected complexity re-score, got %d calls", len(scorer.serverCalls))
+	}
+	if len(readiness.orgs) != 1 || readiness.orgs[0] != "org-a" {
+		t.Errorf("expected readiness recompute for org-a, got %v", readiness.orgs)
+	}
+	if auditAction != "cop_reclassified" || auditCop != "Chef/Style/Foo" {
+		t.Errorf("audit = (%q,%q), want (cop_reclassified, Chef/Style/Foo)", auditAction, auditCop)
+	}
+}
+
+func TestHandleCookstyleCopClassification_NonAdminForbidden(t *testing.T) {
+	var upserted bool
+	store := &mockStore{
+		UpsertCopClassificationFn: func(_ context.Context, _, _, _, _, _ string) error {
+			upserted = true
+			return nil
+		},
+	}
+	cfg := testConfigWithTargetVersions("18")
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	for _, role := range []string{"viewer", "operator"} {
+		w := httptest.NewRecorder()
+		body := `{"target_chef_version":"18","classification":"blocker"}`
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
+		req = req.WithContext(auth.ContextWithSession(req.Context(), &auth.SessionInfo{Username: "u", Role: role}))
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("role %q: status = %d, want 403; body: %s", role, w.Code, w.Body.String())
+		}
+	}
+	if upserted {
+		t.Error("non-admin reclassification must not reach the datastore")
+	}
+}
+
+func TestHandleCookstyleCopClassification_AdminAllowed(t *testing.T) {
+	var upserted bool
+	store := &mockStore{
+		UpsertCopClassificationFn: func(_ context.Context, _, _, _, _, _ string) error {
+			upserted = true
+			return nil
+		},
+	}
+	cfg := testConfigWithTargetVersions("18")
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	body := `{"target_chef_version":"18","classification":"blocker"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
+	req = req.WithContext(auth.ContextWithSession(req.Context(), &auth.SessionInfo{Username: "admin", Role: "admin"}))
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin: status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if !upserted {
+		t.Error("admin reclassification should reach the datastore")
 	}
 }
 

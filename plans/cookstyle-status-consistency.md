@@ -2,8 +2,9 @@
 
 Branch: `feature/cookstyle-violations-browser` (continuing)
 Supersedes chunks 9–11 of `cookstyle-violations-browser.md`.
-Status: **implementing.** Decisions below are agreed. Chunk 1 (SoT derivation
-foundation) released and landed; Chunk 2 is next. Remaining chunks 3–8 queued.
+Status: **implementing.** Decisions below are agreed. Chunks 1 (SoT derivation
+foundation) and 2 (re-eval propagation + audit) released and landed; Chunk 3 is
+next. Remaining chunks 3–8 queued.
 
 ## Decisions (agreed)
 
@@ -119,18 +120,6 @@ Dependencies: none
 4. Tests: status truth table; kubernetes-cluster case; unclassified severity-fail → Blocked.
 
 Acceptance: Review-only repo → Needs review, complexity low, passed=true; status/complexity/badges agree.
-
-### Chunk 2 — Re-eval propagation + audit (backend)
-
-Scope: `cookstyle_rescore.go`, `handle_cookstyle_cops.go` (PUT/DELETE classification, custom-cop CRUD), datastore
-Dependencies: Chunk 1
-
-1. Rescore uses the Chunk-1 derivation (status + complexity + compat), not severity-only.
-2. Reclassification (PUT/DELETE) and custom-cop change trigger the scoped recompute closure (results containing the cop → compat → dependent-node readiness).
-3. Record a criteria-change event (reuse `ownership_audit_log.go` pattern) for explainability.
-4. Tests incl. scoped recompute + propagation.
-
-Acceptance: reclassifying a cop updates all stored verdicts/complexity/readiness for its closure; change is logged.
 
 ### Chunk 3 — API surfacing
 

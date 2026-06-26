@@ -590,6 +590,10 @@ type DataStore interface {
 	// in reverse chronological order.
 	ListAuditLog(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 
+	// InsertCookstyleAuditEntry records a CookStyle criteria-change event
+	// (cop reclassification or custom-cop change) for explainability.
+	InsertCookstyleAuditEntry(ctx context.Context, p datastore.InsertCookstyleAuditParams) error
+
 	// -----------------------------------------------------------------
 	// System health
 	// -----------------------------------------------------------------

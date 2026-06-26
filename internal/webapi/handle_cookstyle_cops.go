@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
@@ -38,12 +39,12 @@ type copAggregateItem struct {
 
 // copAggregationSummary holds the headline counts returned with the cop list.
 type copAggregationSummary struct {
-	BlockerCops        int `json:"blocker_cops"`
-	BlockerCookbooks   int `json:"blocker_cookbooks"`
-	ReviewCops         int `json:"review_cops"`
-	ReviewCookbooks    int `json:"review_cookbooks"`
-	NoiseCops          int `json:"noise_cops"`
-	UnclassifiedCops   int `json:"unclassified_cops"`
+	BlockerCops      int `json:"blocker_cops"`
+	BlockerCookbooks int `json:"blocker_cookbooks"`
+	ReviewCops       int `json:"review_cops"`
+	ReviewCookbooks  int `json:"review_cookbooks"`
+	NoiseCops        int `json:"noise_cops"`
+	UnclassifiedCops int `json:"unclassified_cops"`
 }
 
 // copAggregationResponse wraps the summary, paginated data, and pagination info.
@@ -370,8 +371,8 @@ type copCookbookItem struct {
 
 // copCookbookResponse wraps the cop drill-down.
 type copCookbookResponse struct {
-	CopName    string            `json:"cop_name"`
-	Data       []copCookbookItem `json:"data"`
+	CopName    string             `json:"cop_name"`
+	Data       []copCookbookItem  `json:"data"`
 	Pagination PaginationResponse `json:"pagination"`
 }
 
@@ -520,8 +521,17 @@ type classificationPutRequest struct {
 	Reason            string `json:"reason"`
 }
 
-// handleCookstyleCopClassification handles PUT /api/v1/cookstyle/cops/<cop_name>/classification.
+// handleCookstyleCopClassification handles PUT/DELETE
+// /api/v1/cookstyle/cops/<cop_name>/classification.
+//
+// Reclassifying a cop is a migration-policy decision (it changes verdicts,
+// complexity, and node readiness across the estate), so it is restricted to
+// admins even though the Cop Analysis view that hosts it is available to all
+// authenticated users. The GET aggregation/drill-down routes stay open.
 func (r *Router) handleCookstyleCopClassification(w http.ResponseWriter, req *http.Request) {
+	if !requireAdminRole(w, req) {
+		return
+	}
 	switch req.Method {
 	case http.MethodPut:
 		r.putCookstyleCopClassification(w, req)
@@ -563,17 +573,28 @@ func (r *Router) putCookstyleCopClassification(w http.ResponseWriter, req *http.
 	}
 
 	ctx := req.Context()
-	if err := r.db.UpsertCopClassification(ctx, copName, body.TargetChefVersion, body.Classification, body.Reason, ""); err != nil {
+	if err := r.db.UpsertCopClassification(ctx, copName, body.TargetChefVersion, body.Classification, body.Reason, adminUsername(req)); err != nil {
 		r.logf("ERROR", "upserting cop classification: %v", err)
 		WriteInternalError(w, "Failed to save classification.")
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]string{
-		"cop_name":           copName,
+	// Re-evaluation propagation: re-derive verdicts/compat/complexity and
+	// recompute dependent-node readiness for this cop's affected closure.
+	prop := r.propagateCop(ctx, copName, body.TargetChefVersion)
+	r.auditCookstyle(req, "cop_reclassified", copName, body.TargetChefVersion, map[string]any{
+		"classification": body.Classification,
+		"reason":         body.Reason,
+		"propagation":    prop,
+	})
+	r.emitCookstyleRecomputed(copName, body.TargetChefVersion, prop)
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"cop_name":            copName,
 		"target_chef_version": body.TargetChefVersion,
-		"classification":     body.Classification,
-		"status":             "saved",
+		"classification":      body.Classification,
+		"status":              "saved",
+		"propagation":         prop,
 	})
 }
 
@@ -600,7 +621,15 @@ func (r *Router) deleteCookstyleCopClassification(w http.ResponseWriter, req *ht
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	// Removing an override changes the resolved classification (falls back to
+	// RemovedIn/curated/unclassified): re-evaluate the affected closure.
+	prop := r.propagateCop(ctx, copName, targetVersion)
+	r.auditCookstyle(req, "cop_classification_removed", copName, targetVersion, map[string]any{
+		"propagation": prop,
+	})
+	r.emitCookstyleRecomputed(copName, targetVersion, prop)
+
+	WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted", "propagation": prop})
 }
 
 // ---------------------------------------------------------------------------
@@ -666,6 +695,7 @@ func (r *Router) createCustomCop(w http.ResponseWriter, req *http.Request) {
 	}
 
 	body.ID = id
+	r.propagateCustomCop(ctx, req, "custom_cop_created", body.CopName)
 	WriteJSON(w, http.StatusCreated, body)
 }
 
@@ -715,6 +745,7 @@ func (r *Router) updateCustomCop(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	r.propagateCustomCop(ctx, req, "custom_cop_updated", body.CopName)
 	WriteJSON(w, http.StatusOK, body)
 }
 
@@ -732,6 +763,7 @@ func (r *Router) deleteCustomCop(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	r.propagateCustomCop(ctx, req, "custom_cop_deleted", copName)
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -866,6 +898,74 @@ func errMissingField(field string) error {
 
 func errInvalidField(field, reason string) error {
 	return &validationError{msg: field + ": " + reason}
+}
+
+// ---------------------------------------------------------------------------
+// Re-evaluation propagation + audit helpers
+// ---------------------------------------------------------------------------
+
+// propagateCop runs the scoped recompute closure for a single cop × target
+// version. Best-effort: a nil propagator or an error is logged, never fatal —
+// the classification write has already succeeded. Returns the result (zero value
+// when no propagator is wired) for inclusion in the response and audit details.
+func (r *Router) propagateCop(ctx context.Context, copName, targetVersion string) PropagationResult {
+	if r.cookstylePropagator == nil {
+		return PropagationResult{Target: targetVersion}
+	}
+	res, err := r.cookstylePropagator.PropagateReclassification(ctx, copName, targetVersion)
+	if err != nil {
+		r.logf("ERROR", "cookstyle propagation for cop %q target %q: %v", copName, targetVersion, err)
+	}
+	return res
+}
+
+// propagateCustomCop runs the recompute closure for a custom-cop change across
+// every configured target version (custom-cop classification is target-agnostic)
+// and records a criteria-change audit entry.
+func (r *Router) propagateCustomCop(ctx context.Context, req *http.Request, action, copName string) {
+	var results []PropagationResult
+	if r.cookstylePropagator != nil {
+		for _, t := range r.liveConfig().TargetChefVersions {
+			results = append(results, r.propagateCop(ctx, copName, t))
+		}
+	}
+	r.auditCookstyle(req, action, copName, "", map[string]any{"propagation": results})
+	r.emitCookstyleRecomputed(copName, "", PropagationResult{})
+}
+
+// emitCookstyleRecomputed broadcasts a status-changed event so open UI pages
+// refresh after a criteria change propagates (spec: Re-evaluation & Propagation
+// step 6). Nil-safe when no event hub is wired.
+func (r *Router) emitCookstyleRecomputed(copName, targetVersion string, prop PropagationResult) {
+	if r.hub == nil {
+		return
+	}
+	r.hub.Broadcast(NewEvent(EventCookbookStatusChanged, map[string]any{
+		"cause":               "cookstyle_reclassification",
+		"cop_name":            copName,
+		"target_chef_version": targetVersion,
+		"propagation":         prop,
+	}))
+}
+
+// auditCookstyle records a CookStyle criteria-change event for explainability.
+// Best-effort — a write failure is logged but never blocks the request.
+func (r *Router) auditCookstyle(req *http.Request, action, copName, targetVersion string, details map[string]any) {
+	var raw json.RawMessage
+	if details != nil {
+		if b, err := json.Marshal(details); err == nil {
+			raw = b
+		}
+	}
+	if err := r.db.InsertCookstyleAuditEntry(req.Context(), datastore.InsertCookstyleAuditParams{
+		Action:            action,
+		Actor:             adminUsername(req),
+		CopName:           copName,
+		TargetChefVersion: targetVersion,
+		Details:           raw,
+	}); err != nil {
+		r.logf("WARN", "cookstyle: failed to write audit log: %v", err)
+	}
 }
 
 // cookstyleFailureRules returns the current cookstyle failure rules from config.

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
+import { useIsAdmin } from "../context/AuthContext";
 import {
   fetchCookstyleCops,
   fetchCookstyleCopCookbooks,
@@ -26,6 +27,7 @@ import { ClassificationBadge, CLASSIFICATION_FILTERS } from "../components/Class
 
 export function CopAnalysisTab() {
   const { targetChefVersion } = useGlobalFilters();
+  const isAdmin = useIsAdmin();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // State
@@ -240,9 +242,11 @@ export function CopAnalysisTab() {
                   >
                     Unblocks{sortIndicator("unblocks")}
                   </th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-600">
-                    Actions
-                  </th>
+                  {isAdmin && (
+                    <th className="px-3 py-2 text-center font-medium text-gray-600">
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -253,6 +257,7 @@ export function CopAnalysisTab() {
                     isExpanded={drillCop === cop.cop_name}
                     drillItems={drillCop === cop.cop_name ? drillItems : []}
                     drillLoading={drillCop === cop.cop_name && drillLoading}
+                    canReclassify={isAdmin}
                     onExpand={() => openDrillDown(cop.cop_name)}
                     onReclassify={() => {
                       setReclassifyCop(cop.cop_name);
@@ -352,6 +357,7 @@ function CopRow({
   isExpanded,
   drillItems,
   drillLoading,
+  canReclassify,
   onExpand,
   onReclassify,
 }: {
@@ -359,6 +365,7 @@ function CopRow({
   isExpanded: boolean;
   drillItems: CopCookbookItem[];
   drillLoading: boolean;
+  canReclassify: boolean;
   onExpand: () => void;
   onReclassify: () => void;
 }) {
@@ -408,21 +415,23 @@ function CopRow({
             <span className="text-gray-300">—</span>
           )}
         </td>
-        <td className="px-3 py-2 text-center">
-          <button
-            onClick={onReclassify}
-            className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-            title="Change classification"
-          >
-            ✏️
-          </button>
-        </td>
+        {canReclassify && (
+          <td className="px-3 py-2 text-center">
+            <button
+              onClick={onReclassify}
+              className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              title="Change classification"
+            >
+              ✏️
+            </button>
+          </td>
+        )}
       </tr>
 
       {/* Drill-down row */}
       {isExpanded && (
         <tr>
-          <td colSpan={8} className="bg-gray-50 px-6 py-3">
+          <td colSpan={canReclassify ? 8 : 7} className="bg-gray-50 px-6 py-3">
             {drillLoading ? (
               <div className="text-xs text-gray-400">Loading affected cookbooks…</div>
             ) : drillItems.length === 0 ? (

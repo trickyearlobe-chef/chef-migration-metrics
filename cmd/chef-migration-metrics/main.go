@@ -126,6 +126,11 @@ type serverApp struct {
 	sched       *collector.Scheduler
 	kitchenPath string // path to kitchen binary, set during setupCollector
 
+	// cookstylePropagator runs the scoped recompute closure after a cop
+	// reclassification or custom-cop change. Built in setupCollector (it reuses
+	// the complexity scorer + readiness evaluator) and wired into the router.
+	cookstylePropagator *webapi.CookstylePropagator
+
 	// Export cleanup stop function.
 	stopExportCleanup func()
 
@@ -1038,6 +1043,32 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
 
+	// Re-evaluation propagator: reuses the classification-weighted complexity
+	// scorer + readiness evaluator so a cop reclassification or custom-cop change
+	// runs the scoped recompute closure synchronously (verdict → compat →
+	// complexity → dependent-node readiness). Wired into the router below.
+	app.cookstylePropagator = webapi.NewCookstylePropagator(
+		app.db,
+		cxScorer,
+		readinessEval,
+		func() analysis.CookstyleFailureRules {
+			cfg := app.configHolder.Get()
+			return analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
+		},
+		func(level, msg string) {
+			switch level {
+			case "DEBUG":
+				app.logger.WithScope(logging.ScopeWebAPI).Debug(msg)
+			case "WARN":
+				app.logger.WithScope(logging.ScopeWebAPI).Warn(msg)
+			case "ERROR":
+				app.logger.WithScope(logging.ScopeWebAPI).Error(msg)
+			default:
+				app.logger.WithScope(logging.ScopeWebAPI).Info(msg)
+			}
+		},
+	)
+
 	ownershipEval := collector.NewOwnershipEvaluator(app.db, app.cfg.Ownership, app.logger)
 	collOpts = append(collOpts, collector.WithOwnershipEvaluator(ownershipEval))
 
@@ -1259,6 +1290,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			return nil
 		}),
 		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
+		webapi.WithCookstylePropagator(app.cookstylePropagator),
 		webapi.WithCollectionTrigger(func(ctx context.Context) error {
 			if coll.IsRunning() {
 				return fmt.Errorf("a collection run is already in progress")

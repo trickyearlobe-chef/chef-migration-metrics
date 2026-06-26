@@ -120,6 +120,7 @@ type mockStore struct {
 	ListCommittersByRepoFn                              func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
 	GetOwnerEmailsForGitRepoFn                          func(ctx context.Context, gitRepoURL string) (map[string]bool, error)
 	InsertAuditEntryFn                                  func(ctx context.Context, p datastore.InsertAuditEntryParams) error
+	InsertCookstyleAuditEntryFn                         func(ctx context.Context, p datastore.InsertCookstyleAuditParams) error
 	ListAuditLogFn                                      func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
 	DatabaseSizeFn                                      func(ctx context.Context) (int64, error)
 	DatabaseTableSizesFn                                func(ctx context.Context) ([]datastore.TableSize, error)
@@ -1012,6 +1013,13 @@ func (m *mockStore) GetOwnerEmailsForGitRepo(ctx context.Context, gitRepoURL str
 func (m *mockStore) InsertAuditEntry(ctx context.Context, p datastore.InsertAuditEntryParams) error {
 	if m.InsertAuditEntryFn != nil {
 		return m.InsertAuditEntryFn(ctx, p)
+	}
+	return nil
+}
+
+func (m *mockStore) InsertCookstyleAuditEntry(ctx context.Context, p datastore.InsertCookstyleAuditParams) error {
+	if m.InsertCookstyleAuditEntryFn != nil {
+		return m.InsertCookstyleAuditEntryFn(ctx, p)
 	}
 	return nil
 }

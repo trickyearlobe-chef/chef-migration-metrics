@@ -203,6 +203,12 @@ type Router struct {
 	// return 503.
 	kitchenQueue *kitchenqueue.Manager
 
+	// cookstylePropagator runs the scoped recompute closure after a cop
+	// reclassification or custom-cop change (re-derive verdicts → compat →
+	// complexity → dependent-node readiness). Nil when not wired — changes are
+	// persisted but not propagated. Set via WithCookstylePropagator.
+	cookstylePropagator *CookstylePropagator
+
 	// batchMu guards runningBatch. Only held for fast map reads/writes.
 	batchMu sync.Mutex
 	// runningBatch maps batch ID to its cancel function for active batches.
@@ -412,6 +418,14 @@ func WithNodeKitchenRunner(runner NodeKitchenRunner) RouterOption {
 // goroutines directly.
 func WithKitchenQueue(m *kitchenqueue.Manager) RouterOption {
 	return func(r *Router) { r.kitchenQueue = m }
+}
+
+// WithCookstylePropagator wires the re-evaluation propagator used after a cop
+// reclassification or custom-cop change to run the scoped recompute closure
+// (re-derive verdicts → compat → complexity → dependent-node readiness). When
+// unset, classification/custom-cop changes are persisted but not propagated.
+func WithCookstylePropagator(p *CookstylePropagator) RouterOption {
+	return func(r *Router) { r.cookstylePropagator = p }
 }
 
 // WithSAML wires in the SAML SSO/SLO handler. When set, the SAML placeholder
