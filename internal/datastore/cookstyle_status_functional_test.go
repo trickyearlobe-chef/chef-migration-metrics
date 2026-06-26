@@ -85,6 +85,58 @@ func TestFunctional_CookstyleStatus_ServerRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFunctional_ListAllServerCookbookCookstyleResultsByTargetVersion_Scans
+// guards against the SELECT column list in this cross-org query drifting from
+// the shared scan helper. Migration 0041 added cookstyle_status as the 17th
+// column (read by scanServerCookbookCookstyleResults); this query selected only
+// 16, so it failed at runtime with "expected 16 destination arguments in Scan,
+// not 17" — but only against a real DB, which mocks can't catch.
+func TestFunctional_ListAllServerCookbookCookstyleResultsByTargetVersion_Scans(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	cleanupTestData(t, db,
+		"DELETE FROM server_cookbook_cookstyle_results WHERE cookbook_name = 'func-cs-listall'",
+		"DELETE FROM server_cookbooks WHERE name = 'func-cs-listall'",
+		"DELETE FROM organisations WHERE name = 'func-cs-listall-org'",
+	)
+
+	if _, err := db.UpsertOrganisationFromConfig(ctx, UpsertOrganisationParams{
+		Name: "func-cs-listall-org", ChefServerURL: "https://chef.example.com", OrgName: "func-cs-listall-org", ClientName: "c",
+	}); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	if _, err := db.UpsertServerCookbook(ctx, UpsertServerCookbookParams{
+		OrganisationName: "func-cs-listall-org", Name: "func-cs-listall", Version: "1.0.0", IsActive: true,
+	}); err != nil {
+		t.Fatalf("seed cookbook: %v", err)
+	}
+	if _, err := db.UpsertServerCookbookCookstyleResult(ctx, UpsertServerCookbookCookstyleResultParams{
+		OrganisationName:  "func-cs-listall-org",
+		CookbookName:      "func-cs-listall",
+		CookbookVersion:   "1.0.0",
+		TargetChefVersion: "func-cs-listall-tv",
+		Passed:            true,
+		CookstyleStatus:   "needs_review",
+		Offences:          []byte("[]"),
+		DurationSeconds:   1,
+		ScannedAt:         time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	results, err := db.ListAllServerCookbookCookstyleResultsByTargetVersion(ctx, "func-cs-listall-tv")
+	if err != nil {
+		t.Fatalf("ListAllServerCookbookCookstyleResultsByTargetVersion: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].CookstyleStatus != "needs_review" {
+		t.Errorf("CookstyleStatus = %q, want needs_review", results[0].CookstyleStatus)
+	}
+}
+
 // TestFunctional_CookstyleStatus_GitRepoMaterialised verifies a git repo
 // result's status round-trips and that the git_repos rollup column is
 // recomputed from the latest result.

@@ -23,7 +23,7 @@ func (db *DB) listAllServerCookbookCookstyleResultsByTargetVersion(ctx context.C
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       error_message, scanned_at, created_at
+		       error_message, scanned_at, created_at, cookstyle_status
 		  FROM server_cookbook_cookstyle_results
 		 WHERE target_chef_version = $1
 		 ORDER BY cookbook_name, cookbook_version, organisation_name
