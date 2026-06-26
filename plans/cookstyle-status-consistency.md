@@ -2,10 +2,11 @@
 
 Branch: `feature/cookstyle-violations-browser` (continuing)
 Supersedes chunks 9–11 of `cookstyle-violations-browser.md`.
-Status: **implementing.** Decisions below are agreed. Chunks 1–4 released and
+Status: **implementing.** Decisions below are agreed. Chunks 1–6 released and
 landed (SoT derivation; re-eval propagation + audit; API surfacing with a
-materialised `cookstyle_status` column; 4-state CS badge + list adoption).
-Chunk 5 is next. Remaining chunks 5–8 queued.
+materialised `cookstyle_status` column; 4-state CS badge + list adoption;
+remediation detail redesign; readiness integration + `review_blocks_readiness`
+toggle). Remaining chunks 7–8 queued.
 
 ## Decisions (agreed)
 
@@ -128,23 +129,6 @@ Scope: `GitRepoRemediationPage`, `CookbookRemediationPage`
 Dependencies: Chunk 3
 
 Verdict headline; three-state badge; collapsible Blocker/Review/Noise/Unclassified sections with counts (Blockers expanded); real empty-state for filters. Tests.
-
-### Chunk 6 — Readiness integration + toggle
-
-Scope: `internal/analysis/readiness.go`, config schema, `web-api-nodes`, dashboard `StatusCards`/`TrendCards`, `AdminReadinessPage`, readiness export
-Dependencies: Chunks 1–2
-
-Readiness consumes rollup status; add `readiness.review_blocks_readiness` (default false); node readiness surfaces Ready/Needs review/Blocked across card + trend + `/nodes` filter + admin toggle + export. Tests incl. toggle on/off.
-
-Acceptance: default-off preserves today's ready set; toggle-on moves review-only nodes to Needs review.
-
-Implementation anchors (verified @ b92cf38 — start here, don't re-explore):
-- **Per-cookbook verdict (the one switch point):** `readiness.go:checkCookbookCompatibility` (~825) reads `csResult.Passed` / `gitCSResult.Passed` (~849, ~867). Switch to the materialised `CookstyleStatus` (StatusReady/StatusNeedsReview/StatusBlocked from `cookstyle_status.go`). `ready`→compatible, `blocked`→incompatible, `needs_review`→ new "needs review" verdict gated by the toggle.
-- **Node rollup:** `readiness.go:evaluateOne` (~559) sets `IsReady`. Add a node-level review concept; persist via the new `review_cookbooks` field (decided — see note below) on `node_readiness`. Default-off: needs_review counts as ready (passed=status!=blocked already preserves this). Toggle-on: review-only node → not ready, status "needs review".
-- **Node cookstyle_status vocabulary:** `node_readiness.cookstyle_status` + `check_status.go` currently use `passed/failed/unknown`. Spec `analysis-node-readiness.md` wants three-state node `status`. Decide: either widen this vocab to ready/needs_review/blocked or add a separate node `status` field — keep `check_status.go` consumers working.
-- **Config toggle:** add `ReviewBlocksReadiness bool` to `config.go:ReadinessConfig` (~514, default false in setDefaults). Read live via the `ReadinessEvaluator.configFn` pattern (mirror `diskConfig()` ~986). Admin PUT: `handle_admin_config_readiness.go` (~30-66). Frontend: `AdminReadinessPage.tsx`.
-- **Buckets to add needs_review:** dashboard `handle_dashboard_readiness.go` (~119) + `CountNodeReadiness` query `node_readiness.go` (~297); trend payload (~280); node list `nodeReadinessSummaryEntry` `handle_nodes.go` (~267) — filter `?readiness_filter=` already supports `needs_review` (`common.ts` `ReadinessFilterValue` already has it).
-- Readiness DS test pattern: `readiness_test.go` `fakeReadinessDS` (~28); add toggle-on/off derivation cases.
 
 ### Chunk 7 — Admin: classification mgmt + reframe failure rules (frontend)
 

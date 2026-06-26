@@ -80,23 +80,25 @@ Each per-target readiness row carries a three-state node rollup `status` — `re
     {
       "target_chef_version": "18.5.0",
       "status": "ready",
-      "ready": true,
+      "is_ready": true,
+      "all_cookbooks_compatible": true,
       "stale_data": false,
-      "blocking_reasons": [],
-      "review_reasons": []
+      "blocking_cookbooks": null,
+      "review_cookbooks": null
     },
     {
       "target_chef_version": "19.0.0",
       "status": "blocked",
-      "ready": false,
+      "is_ready": false,
+      "all_cookbooks_compatible": false,
       "stale_data": false,
-      "review_reasons": [],
-      "blocking_reasons": [
+      "review_cookbooks": null,
+      "blocking_cookbooks": [
         {
-          "type": "incompatible_cookbook",
-          "cookbook_name": "nginx",
-          "cookbook_version": "5.1.0",
-          "detail": "Server version incompatible; git version compatible — upload git version to Chef Server",
+          "name": "nginx",
+          "version": "5.1.0",
+          "reason": "incompatible",
+          "source": "cookstyle",
           "complexity_score": 30,
           "complexity_label": "medium",
           "verdicts": [
@@ -132,9 +134,9 @@ Each per-target readiness row carries a three-state node rollup `status` — `re
 
 **Readiness row notes:**
 
-- `status` is the canonical three-state verdict (`ready` / `needs_review` / `blocked`); `ready` (boolean) is a derived convenience = `status == "ready"`.
-- `review_reasons` mirrors the shape of `blocking_reasons` and lists cookbooks resolved to `needs_review`. It is populated only when `readiness.review_blocks_readiness` is on; otherwise it is an empty array and no row has `status == "needs_review"`.
-- The authoritative persisted shape lives in the node-readiness record (see [analysis-node-readiness.md](analysis-node-readiness.md)); this response is its read projection.
+- `status` is the canonical three-state verdict (`ready` / `needs_review` / `blocked`); `is_ready` (boolean) is a derived convenience = `status == "ready"`.
+- `review_cookbooks` mirrors the shape of `blocking_cookbooks` (the `BlockingCookbook` struct: `name`, `version`, `reason`, `source`, `complexity_score`, `complexity_label`, `verdicts[]`) and lists cookbooks resolved to `needs_review`. It is populated only when `readiness.review_blocks_readiness` is on; otherwise it is `null`/empty and no row has `status == "needs_review"`.
+- The authoritative persisted shape lives in the node-readiness record (`datastore.NodeReadiness`; see [analysis-node-readiness.md](analysis-node-readiness.md)); this response is its read projection. The compact node-list variant carries `blocking_cookbook_count` / `review_cookbook_count` instead of the full arrays.
 
 ### Get Node Disk Detail
 

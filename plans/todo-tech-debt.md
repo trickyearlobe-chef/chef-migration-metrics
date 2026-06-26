@@ -309,6 +309,14 @@ Recorded 2026-06-26 (status-consistency Chunk 3, API surfacing).
 - [ ] **Migration 0041 backfill is coarse.** Existing rows backfill `cookstyle_status` from `passed` only (`passed → ready`, else `blocked`); it cannot distinguish `ready` from `needs_review` because that needs the offences + classification, which SQL can't evaluate. Legacy review-only results therefore show `ready` until their next scan or any reclassification (both re-derive and overwrite the precise value via the SoT path). Self-healing, no data loss. **Proper fix (optional):** a one-time Go backfill that re-derives status from stored offences for all rows on first boot after the migration.
 - [ ] **Lists surface `cookstyle_status` but not weighted complexity.** `active.md`/the chunk line said "weighted complexity to … list responses," but the `web-api-server-cookbooks`/`web-api-git-repos` list-section specs only carry `cookstyle_status` on list entries (complexity stays on remediation/detail, where it is already classification-weighted from Chunk 1). Followed the spec to avoid divergence; the cookbook/git-repo filter queries were not extended with a complexity join. **Revisit** only if a list view needs per-row complexity.
 
+## CookStyle — Readiness Integration + Toggle (Chunk 6)
+
+Recorded 2026-06-26 (status-consistency Chunk 6, readiness + `review_blocks_readiness`).
+
+- [ ] **Migration 0042 backfill of node `status` is coarse.** Existing `node_readiness` rows backfill `status` from `is_ready` (`ready` / `blocked`); `needs_review` cannot be recovered from `is_ready` alone (it needs the per-cookbook verdicts under the toggle). Self-healing on the next readiness evaluation. No data loss.
+- [ ] **Trend snapshots do not yet record `needs_review`.** The dashboard readiness card (current state) is exact via `CountNodeReadinessByStatus`, and the live trend *fallback* carries `needs_review_nodes`. But the persisted snapshot writers (`node_metrics` / `readiness_summary`) still store ready/blocked only, so with the toggle on, `needs_review` nodes are counted as blocked in historical trend points. Forward-only `needs_review` trend data + recompute is **Chunk 8**'s scope; the `readinessTrendPoint.needs_review_nodes` field + merge plumbing are already in place for it.
+- [ ] **Readiness exports still use `is_ready`, not the 3-state `status`.** `ready_nodes` / `blocked_nodes` exports (and `ListReadyNodes`/`ListBlockedNodes`) filter on `is_ready`, so with the toggle on a `needs_review` node lands in the blocked export. Default-off (today) is unaffected. **Strategic fix:** add a `needs_review_nodes` export type and switch the blocked export to `status = 'blocked'` (the node-list filter already does this).
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
