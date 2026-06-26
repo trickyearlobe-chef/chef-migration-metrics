@@ -3,6 +3,8 @@
 
 package analysis
 
+import "github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+
 // CookStyle rollup status — the classification-derived, single-source-of-truth
 // verdict for a cookbook / repo / node × target version. These wire values are
 // consumed by every read surface (lists, summary cards, detail headers, node
@@ -31,24 +33,17 @@ const (
 // An empty offense slice is Ready (a scan that found nothing). Untested is the
 // caller's concern when no scan result exists at all.
 func DeriveCookstyleStatus(offenses []CookstyleOffense, rules CookstyleFailureRules, resolver *CopClassificationResolver) string {
-	hasReview := false
+	// Project to the same minimal per-offence shape the stored fingerprint keeps
+	// (cop_name + severity is all status needs) and delegate to the single core,
+	// so the scan path and the trend-recompute path can never drift. Count is
+	// irrelevant to status, so each offence is one count-1 entry.
+	entries := make([]datastore.FingerprintCopEntry, len(offenses))
 	for i := range offenses {
-		off := &offenses[i]
-		switch resolver.Resolve(off.CopName).Classification {
-		case ClassificationBlocker:
-			return StatusBlocked
-		case ClassificationReview:
-			hasReview = true
-		case ClassificationNoise:
-			// Noise contributes nothing to the rollup.
-		default: // Unclassified — fall back to severity-based failure rules.
-			if offenseTriggersFailure(off, &rules) {
-				return StatusBlocked
-			}
+		entries[i] = datastore.FingerprintCopEntry{
+			CopName:  offenses[i].CopName,
+			Severity: offenses[i].Severity,
+			Count:    1,
 		}
 	}
-	if hasReview {
-		return StatusNeedsReview
-	}
-	return StatusReady
+	return DeriveStatusFromFingerprint(entries, rules, resolver)
 }

@@ -1,0 +1,81 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package analysis
+
+import (
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
+)
+
+// Fingerprint re-derivation engine — the trend-recompute counterpart of the
+// scan-time single source of truth. Given a result's stored offence fingerprint
+// (the per-cop projection persisted in cookstyle_offence_fingerprints), it
+// re-derives the same rollup status and weighted complexity DeriveCookstyleStatus
+// and the classification-weighted complexity produce at scan time, but under
+// WHATEVER classification is current at recompute time. This is what lets a trend
+// point captured after fingerprint history ships be recomputed under today's
+// criteria after a reclassification (no rescan). See
+// specifications/enriched-metric-snapshots.md → Trend Recompute Under Current
+// Criteria and specifications/cop-classification.md → History.
+
+// DeriveStatusFromFingerprint re-derives the rollup status from a result's stored
+// offence fingerprint under the given failure rules + resolver. It is exactly the
+// scan-time derivation (DeriveCookstyleStatus delegates to the same core): a cop's
+// occurrence count is collapsed in the fingerprint but does not affect status —
+// one blocker blocks, one review needs review, one unclassified severity-fail
+// blocks. An empty fingerprint is Ready (a clean scan). Untested is the caller's
+// concern when no fingerprint exists at all for a result at time T.
+func DeriveStatusFromFingerprint(cops []datastore.FingerprintCopEntry, rules CookstyleFailureRules, resolver *CopClassificationResolver) string {
+	hasReview := false
+	for i := range cops {
+		c := &cops[i]
+		switch resolver.Resolve(c.CopName).Classification {
+		case ClassificationBlocker:
+			return StatusBlocked
+		case ClassificationReview:
+			hasReview = true
+		case ClassificationNoise:
+			// Noise contributes nothing to the rollup.
+		default: // Unclassified — fall back to severity-based failure rules.
+			off := CookstyleOffense{CopName: c.CopName, Severity: c.Severity}
+			if offenseTriggersFailure(&off, &rules) {
+				return StatusBlocked
+			}
+		}
+	}
+	if hasReview {
+		return StatusNeedsReview
+	}
+	return StatusReady
+}
+
+// ComplexityFromFingerprint re-derives the classification-weighted CookStyle
+// complexity contribution from a result's stored offence fingerprint under the
+// current classifier. Each cop's weight is applied once per occurrence (×count),
+// mirroring ComputeCookstyleComplexity over the original offences.
+//
+// This is the CookStyle portion ONLY. Test Kitchen status is not fingerprinted,
+// so a recomputed trend point carries the CookStyle-derived complexity; the TK
+// weight added at scan time (tkWeight) has no historical counterpart to recompute
+// from. A nil classifier yields 0 (no classification context).
+func ComplexityFromFingerprint(cops []datastore.FingerprintCopEntry, classifier remediation.CopClassifier) int {
+	if classifier == nil {
+		return 0
+	}
+	// Expand each per-cop entry back to its occurrence count and reuse the exact
+	// scan-time complexity function, so recompute can never drift from the SoT.
+	total := 0
+	for _, c := range cops {
+		off := remediation.ClassifiedOffense{
+			CopName:        c.CopName,
+			Severity:       c.Severity,
+			Classification: classifier.Classify(c.CopName),
+		}
+		if c.Count <= 0 {
+			continue
+		}
+		total += remediation.ComputeCookstyleComplexity([]remediation.ClassifiedOffense{off}) * c.Count
+	}
+	return total
+}
