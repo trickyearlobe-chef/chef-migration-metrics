@@ -138,6 +138,14 @@ Readiness consumes rollup status; add `readiness.review_blocks_readiness` (defau
 
 Acceptance: default-off preserves today's ready set; toggle-on moves review-only nodes to Needs review.
 
+Implementation anchors (verified @ b92cf38 — start here, don't re-explore):
+- **Per-cookbook verdict (the one switch point):** `readiness.go:checkCookbookCompatibility` (~825) reads `csResult.Passed` / `gitCSResult.Passed` (~849, ~867). Switch to the materialised `CookstyleStatus` (StatusReady/StatusNeedsReview/StatusBlocked from `cookstyle_status.go`). `ready`→compatible, `blocked`→incompatible, `needs_review`→ new "needs review" verdict gated by the toggle.
+- **Node rollup:** `readiness.go:evaluateOne` (~559) sets `IsReady`. Add a node-level review concept; persist via the new `review_cookbooks` field (decided — see note below) on `node_readiness`. Default-off: needs_review counts as ready (passed=status!=blocked already preserves this). Toggle-on: review-only node → not ready, status "needs review".
+- **Node cookstyle_status vocabulary:** `node_readiness.cookstyle_status` + `check_status.go` currently use `passed/failed/unknown`. Spec `analysis-node-readiness.md` wants three-state node `status`. Decide: either widen this vocab to ready/needs_review/blocked or add a separate node `status` field — keep `check_status.go` consumers working.
+- **Config toggle:** add `ReviewBlocksReadiness bool` to `config.go:ReadinessConfig` (~514, default false in setDefaults). Read live via the `ReadinessEvaluator.configFn` pattern (mirror `diskConfig()` ~986). Admin PUT: `handle_admin_config_readiness.go` (~30-66). Frontend: `AdminReadinessPage.tsx`.
+- **Buckets to add needs_review:** dashboard `handle_dashboard_readiness.go` (~119) + `CountNodeReadiness` query `node_readiness.go` (~297); trend payload (~280); node list `nodeReadinessSummaryEntry` `handle_nodes.go` (~267) — filter `?readiness_filter=` already supports `needs_review` (`common.ts` `ReadinessFilterValue` already has it).
+- Readiness DS test pattern: `readiness_test.go` `fakeReadinessDS` (~28); add toggle-on/off derivation cases.
+
 ### Chunk 7 — Admin: classification mgmt + reframe failure rules (frontend)
 
 Scope: `AdminCookstylePage`, new classification-mgmt component
@@ -171,9 +179,11 @@ All landed; vocabulary consistent across the set; all files < 500 lines:
 - `data-export.md`, `web-api-exports.md`, `visualisation.md` — rollup vocabulary + forward-only trend recompute.
 - `enriched-metric-snapshots.md` — change-deduped per-scan offence fingerprint history.
 
-### Executor reconciliation note
+### Executor reconciliation note (RESOLVED)
 
-Spec agents proposed not-yet-pinned wire/field names that the implementation must
-unify: node-level `review_cookbooks` (readiness persistence) vs `review_reasons`
-(node-detail API) vs `needs_review_count` (dashboard). Pick one set when wiring
-Chunk 6 and make spec + code agree.
+Node-level review field name: use **`review_cookbooks`** everywhere (it is what
+`analysis-node-readiness.md` pins, and the only one already present in code —
+`frontend/.../cookstyle-violations.ts`). Drop `review_reasons` / `needs_review_count`
+(neither exists in code). Dashboard's per-state count is just a `needs_review`
+bucket alongside `ready`/`blocked`; node list reuses the existing
+`?readiness_filter=needs_review` (already in `common.ts` `ReadinessFilterValue`).
