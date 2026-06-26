@@ -2,8 +2,8 @@
 
 Branch: `feature/cookstyle-violations-browser` (continuing)
 Supersedes chunks 9–11 of `cookstyle-violations-browser.md`.
-Status: **draft — decisions below are agreed; chunks not yet started.** More
-design Qs from user pending; do not implement until released.
+Status: **implementing.** Decisions below are agreed. Chunk 1 (SoT derivation
+foundation) released and landed; Chunk 2 is next. Remaining chunks 3–8 queued.
 
 ## Decisions (agreed)
 

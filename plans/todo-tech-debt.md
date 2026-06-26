@@ -287,6 +287,12 @@ Recorded 2026-06-24.
 
 - [ ] **`undici@7.28.0` fixes CVE-2026-12151 (SameSite cookie substring matching) but is in the Harness 14-day quarantine.** The vuln is test-only (jsdom → undici, not shipped to production). The override in `package.json` pins `undici` to `7.27.0`; bump to `7.28.0` once the quarantine clears (~2026-07-08). Then run `npm install --ignore-scripts && npm audit` to confirm clean.
 
+## CookStyle — Scan-Time Classification Override Query Is Per-Item
+
+Recorded 2026-06-26 (status-consistency Chunk 1, SoT derivation).
+
+- [ ] **`scanOneServerCookbook`/`scanOneGitRepo` build a resolver per scanned item.** `CookstyleScanner.buildResolver` loads operator classification overrides (`ListCopClassifications`) once per cookbook×target during the scan, not once per batch. The `cop_classifications` table is small (operator overrides only) and the query is indexed and sub-millisecond against the seconds-long cookstyle subprocess, so the cost is negligible today — but at ~17k results/run it is N redundant queries. The complexity scorer already batches this correctly (`classifierCache` resolves one classifier per target up front). **Strategic fix:** pre-load overrides per target at the start of `ScanGitRepos`/the server-cookbook batch and thread them into `scanOne`, or inject a per-batch memoising `WithCookstyleClassificationOverridesFn`. Until then correctness is fine; only efficiency is affected.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

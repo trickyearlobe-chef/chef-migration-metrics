@@ -131,9 +131,13 @@ type CookstyleScanResult struct {
 	// scanning. Set for git-sourced cookbooks; empty for server-sourced.
 	CommitSHA string
 
-	// Passed is true when there are zero offenses with severity "error"
-	// or "fatal".
+	// Passed is the back-compat boolean = CookstyleStatus != StatusBlocked.
 	Passed bool
+
+	// CookstyleStatus is the classification-derived rollup verdict for this
+	// scan: StatusReady / StatusNeedsReview / StatusBlocked. It is the single
+	// source of truth; Passed is derived from it.
+	CookstyleStatus string
 
 	// OffenseCount is the total number of offenses.
 	OffenseCount int
@@ -220,6 +224,10 @@ type CookstyleScanner struct {
 	// time so a config change takes effect on the next scan without a restart.
 	// Falls back to DefaultFailureRules().
 	failureRulesFn func() CookstyleFailureRules
+	// classificationOverridesFn, when set, returns the operator classification
+	// overrides for a target version, read at scan time. Falls back to loading
+	// from the datastore (or empty overrides when no db is configured).
+	classificationOverridesFn func(ctx context.Context, targetChefVersion string) map[string]string
 }
 
 // CookstyleScannerOption configures a CookstyleScanner.
@@ -245,6 +253,13 @@ func WithCookstyleFailureRulesFn(fn func() CookstyleFailureRules) CookstyleScann
 	return func(s *CookstyleScanner) { s.failureRulesFn = fn }
 }
 
+// WithCookstyleClassificationOverridesFn wires a live provider of operator
+// classification overrides (cop_name → classification) for a target version,
+// read at scan time. When unset, overrides are loaded from the datastore.
+func WithCookstyleClassificationOverridesFn(fn func(ctx context.Context, targetChefVersion string) map[string]string) CookstyleScannerOption {
+	return func(s *CookstyleScanner) { s.classificationOverridesFn = fn }
+}
+
 // effectiveConcurrency returns the live concurrency when a provider is wired
 // (clamped to >= 1), otherwise the value baked at construction.
 func (s *CookstyleScanner) effectiveConcurrency() int {
@@ -263,6 +278,25 @@ func (s *CookstyleScanner) effectiveFailureRules() CookstyleFailureRules {
 		return s.failureRulesFn()
 	}
 	return DefaultFailureRules()
+}
+
+// buildResolver constructs a cop classification resolver for the given target
+// version, loading operator overrides from the injected provider or the
+// datastore. Safe with a nil datastore (empty overrides). The resolver still
+// applies RemovedIn auto-seed and curated defaults, so classification works
+// even with no operator overrides.
+func (s *CookstyleScanner) buildResolver(ctx context.Context, targetChefVersion string) *CopClassificationResolver {
+	if s.classificationOverridesFn != nil {
+		overrides := s.classificationOverridesFn(ctx, targetChefVersion)
+		if overrides == nil {
+			overrides = map[string]string{}
+		}
+		return &CopClassificationResolver{OperatorOverrides: overrides, TargetChefVersion: targetChefVersion}
+	}
+	if s.db == nil {
+		return &CopClassificationResolver{OperatorOverrides: map[string]string{}, TargetChefVersion: targetChefVersion}
+	}
+	return NewResolverFromStore(ctx, s.db, targetChefVersion)
 }
 
 // NewCookstyleScanner creates a scanner.
@@ -588,7 +622,9 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 		sr.OffenseCount++
 	}
 
-	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
+	resolver := s.buildResolver(ctx, targetChefVersion)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.
 	if sr.Passed {
@@ -735,7 +771,9 @@ func (s *CookstyleScanner) scanOneGitRepo(
 		sr.OffenseCount++
 	}
 
-	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
+	resolver := s.buildResolver(ctx, targetChefVersion)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.
 	if sr.Passed {

@@ -4,8 +4,34 @@
 package analysis
 
 import (
+	"context"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 )
+
+// ClassificationOverrideLister loads operator classification overrides for a
+// target version. *datastore.DB satisfies it; declared as an interface so
+// callers (scanner, scorer wiring) can build a resolver without a concrete DB.
+type ClassificationOverrideLister interface {
+	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+}
+
+// NewResolverFromStore builds a classification resolver for a target version,
+// loading operator overrides from the store. A nil store (or a load error)
+// yields a resolver with no overrides — RemovedIn auto-seed and curated
+// defaults still apply, so classification works without operator input.
+func NewResolverFromStore(ctx context.Context, store ClassificationOverrideLister, targetChefVersion string) *CopClassificationResolver {
+	overrides := map[string]string{}
+	if store != nil {
+		if rows, err := store.ListCopClassifications(ctx, targetChefVersion); err == nil {
+			for _, r := range rows {
+				overrides[r.CopName] = r.Classification
+			}
+		}
+	}
+	return &CopClassificationResolver{OperatorOverrides: overrides, TargetChefVersion: targetChefVersion}
+}
 
 // CopClassificationLevel represents the migration impact of a cop.
 const (
@@ -72,27 +98,21 @@ func (r *CopClassificationResolver) IsBlocker(copName string) bool {
 	return r.Resolve(copName).Classification == ClassificationBlocker
 }
 
+// Classify returns the resolved classification level (blocker / review / noise /
+// unclassified) for a cop, discarding the source. It satisfies the
+// remediation.CopClassifier interface used by classification-aware complexity
+// scoring.
+func (r *CopClassificationResolver) Classify(copName string) string {
+	return r.Resolve(copName).Classification
+}
+
 // EvaluatePassFailWithClassification evaluates whether a set of offenses
 // passes, using cop classification when available and falling back to
-// severity-based failure rules for unclassified cops.
+// severity-based failure rules for unclassified cops. The boolean is a
+// back-compat convenience derived from the single source of truth:
+// passed = status != Blocked.
 func EvaluatePassFailWithClassification(offenses []CookstyleOffense, rules CookstyleFailureRules, resolver *CopClassificationResolver) bool {
-	for i := range offenses {
-		off := &offenses[i]
-
-		resolved := resolver.Resolve(off.CopName)
-		switch resolved.Classification {
-		case ClassificationBlocker:
-			return false
-		case ClassificationReview, ClassificationNoise:
-			continue
-		default:
-			// Unclassified: fall back to severity-based rules
-			if offenseTriggersFailure(off, &rules) {
-				return false
-			}
-		}
-	}
-	return true
+	return DeriveCookstyleStatus(offenses, rules, resolver) != StatusBlocked
 }
 
 // versionLessOrEqual compares two Chef version strings. Returns true if a <= b.

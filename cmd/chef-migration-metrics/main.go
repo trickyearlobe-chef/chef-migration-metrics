@@ -36,12 +36,12 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
@@ -1003,6 +1003,13 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	app.startup.Info("kitchen config analyser enabled")
 
 	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)
+	// Make complexity scoring classification-weighted (single source of truth):
+	// resolve one classifier per target version, loading operator overrides at
+	// the start of each scoring batch so reclassifications take effect on the
+	// next run without a restart.
+	cxScorer.SetClassifierProvider(func(ctx context.Context, target string) remediation.CopClassifier {
+		return analysis.NewResolverFromStore(ctx, app.db, target)
+	})
 	collOpts = append(collOpts, collector.WithComplexityScorer(cxScorer))
 
 	readinessEval := analysis.NewReadinessEvaluatorFromConfig(
