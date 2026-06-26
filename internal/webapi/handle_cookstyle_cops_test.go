@@ -17,6 +17,14 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
+func testConfigWithTargetVersions(versions ...string) *config.Config {
+	cfg := &config.Config{}
+	wsEnabled := true
+	cfg.Server.WebSocket.Enabled = &wsEnabled
+	cfg.TargetChefVersions = versions
+	return cfg
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/v1/cookstyle/cops — basic aggregation
 // ---------------------------------------------------------------------------

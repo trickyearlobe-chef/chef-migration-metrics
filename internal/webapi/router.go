@@ -752,9 +752,8 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary)
 
 	// -----------------------------------------------------------------
-	// Cookstyle violations browser (viewer)
+	// Cookstyle cop analysis & classification
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/cookstyle/violations", r.handleCookstyleViolations)
 	r.protect("/api/v1/cookstyle/cops", r.handleCookstyleCops)
 	r.protect("/api/v1/cookstyle/cops/", r.handleCookstyleCopSubroute)
 	r.protect("/api/v1/cookstyle/custom-cops", r.handleCookstyleCustomCops)

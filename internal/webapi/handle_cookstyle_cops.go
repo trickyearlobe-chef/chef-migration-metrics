@@ -819,6 +819,14 @@ func parseFullOffenses(data []byte) []fullOffense {
 // extractCopNameFromPath extracts the cop name from a path like
 // /api/v1/cookstyle/cops/Chef/Deprecations/NodeSet/cookbooks
 // The cop name is everything between "/cops/" and "/cookbooks".
+func copNamespace(copName string) string {
+	parts := strings.Split(copName, "/")
+	if len(parts) < 3 {
+		return copName
+	}
+	return strings.Join(parts[:2], "/") + "/"
+}
+
 func extractCopNameFromPath(path string) string {
 	const prefix = "/api/v1/cookstyle/cops/"
 	const suffix = "/cookbooks"
