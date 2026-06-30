@@ -47,8 +47,9 @@ This preserves backward compatibility: until operators classify cops, the existi
 Binary pass/fail hides advisory work: a repo whose only issues are Review-level
 cops is neither "ready" nor "broken". The classification-derived **CookStyle
 rollup status** is the canonical per-cookbook / per-repo / per-node verdict used by
-every surface (list, summary card, detail header, node readiness, exports, trends),
-replacing the old compatible/incompatible/passed/failed wording:
+every surface (list, summary card, dashboard compatibility cards, detail header,
+node readiness, exports, trends), replacing the old
+compatible/incompatible/passed/failed wording:
 
 | Status | Visual | Condition |
 |--------|--------|-----------|
