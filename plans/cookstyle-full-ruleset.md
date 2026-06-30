@@ -1,23 +1,16 @@
 # Plan — CookStyle Full-Ruleset Scanning & Addon Cops
 
-Spec: `specifications/cookstyle-full-ruleset.md`. Status: **not started** (design
-approved 2026-06-30).
+Spec: `specifications/cookstyle-full-ruleset.md`. Design approved 2026-06-30.
+A/B/C done; D and E remain.
 
 Branch: **this branch** (`feature/cookstyle-violations-browser`). Chunk C is a
 **merge-blocker** (functional verification that the previously-hidden classified
 blocker now fires end-to-end). D (addon cops) and E (autocorrect widening) are
 additive but land on the same branch.
 
-Chunks A (drop `--only` + shared helper) and B (Noise prefix defaults for
-cosmetic departments) are complete. Remaining chunks are ordered; each = one
-session.
-
-## Chunk C — Verify the `Lint/DeprecatedClassMethods` gap is closed
-
-Scope: functional test only (likely automatic after A).
-Steps: functional scan of a cookbook using `File.exists?` at target ≥18 → asserts
-a `Lint/DeprecatedClassMethods` offence + `blocked` rollup.
-Acceptance: the curated blocker fires end-to-end. Depends on A.
+Chunks A (drop `--only` + shared helper), B (Noise prefix defaults for cosmetic
+departments) and C (functional merge-blocker) are complete. Remaining chunks are
+ordered; each = one session.
 
 ## Chunk D — Addon cop files (config + require injection + isolation)
 

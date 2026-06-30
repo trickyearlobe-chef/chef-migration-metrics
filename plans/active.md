@@ -3,11 +3,11 @@
 ## Current chunk — CookStyle full-ruleset scanning + addon cops (`plans/cookstyle-full-ruleset.md`)
 
 Approved 2026-06-30. **On `feature/cookstyle-violations-browser`.** A (drop
-`--only` → full ruleset, shared arg/sidecar helper) and B (Noise prefix defaults
-for cosmetic departments) are done. Remaining: **C — functional merge-blocker**
-verifying the `Lint/DeprecatedClassMethods` blocker now fires end-to-end; D (load
-operator addon RuboCop cop files from disk); E (widen autocorrect preview to the
-full ruleset). No new UI.
+`--only` → full ruleset, shared arg/sidecar helper), B (Noise prefix defaults
+for cosmetic departments) and C (functional merge-blocker — the
+`Lint/DeprecatedClassMethods` blocker now fires end-to-end against the live
+cookstyle binary) are done. Remaining: D (load operator addon RuboCop cop files
+from disk); E (widen autocorrect preview to the full ruleset). No new UI.
 
 ## Queued next — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
