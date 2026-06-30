@@ -109,6 +109,8 @@ export interface ComplexityTrendResponse {
 // cannot be recomputed and must be flagged as the frozen era on a mixed chart.
 export interface CookstyleRecomputeTrendPoint {
   target_chef_version: string;
+  // "server" (server cookbooks) or "git" (git repos) — charted as separate series.
+  source: string;
   completed_at: string;
   total_results: number;
   ready: number;

@@ -21,13 +21,16 @@ import (
 // the canonical rollup set (ready / needs_review / blocked / untested).
 type cookstyleRecomputeTrendPoint struct {
 	TargetChefVersion string `json:"target_chef_version"`
-	CompletedAt       string `json:"completed_at"`
-	TotalResults      int    `json:"total_results"`
-	Ready             int    `json:"ready"`
-	NeedsReview       int    `json:"needs_review"`
-	Blocked           int    `json:"blocked"`
-	Untested          int    `json:"untested"`
-	TotalComplexity   int    `json:"total_complexity"`
+	// Source is the result kind this point aggregates: "server" (server
+	// cookbooks) or "git" (git repos). The two are charted as separate series.
+	Source          string `json:"source"`
+	CompletedAt     string `json:"completed_at"`
+	TotalResults    int    `json:"total_results"`
+	Ready           int    `json:"ready"`
+	NeedsReview     int    `json:"needs_review"`
+	Blocked         int    `json:"blocked"`
+	Untested        int    `json:"untested"`
+	TotalComplexity int    `json:"total_complexity"`
 }
 
 // handleDashboardCookstyleRecomputeTrend handles
@@ -82,7 +85,6 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 		}
 
 		resolver := analysis.NewResolverFromStore(ctx, r.db, tv)
-		times := analysis.DistinctScanTimes(histories)
 
 		if boundary, ok := analysis.FingerprintDataBoundary(histories); ok {
 			ts := boundary.UTC().Format(trendTimestampFormat)
@@ -91,18 +93,34 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 			}
 		}
 
-		for _, p := range analysis.RecomputeTrend(histories, times, rules, resolver) {
-			roll := p.Rollup
-			points = append(points, cookstyleRecomputeTrendPoint{
-				TargetChefVersion: tv,
-				CompletedAt:       p.At.UTC().Format(trendTimestampFormat),
-				TotalResults:      roll.Ready + roll.NeedsReview + roll.Blocked + roll.Untested,
-				Ready:             roll.Ready,
-				NeedsReview:       roll.NeedsReview,
-				Blocked:           roll.Blocked,
-				Untested:          roll.Untested,
-				TotalComplexity:   roll.TotalComplexity,
-			})
+		// Chart server cookbooks and git repos as separate series: partition the
+		// histories by result kind and recompute each over its own change points.
+		serverHist, gitHist := partitionHistoriesBySource(histories)
+		for _, part := range []struct {
+			source    string
+			histories []analysis.ResultFingerprintHistory
+		}{
+			{source: "server", histories: serverHist},
+			{source: "git", histories: gitHist},
+		} {
+			if len(part.histories) == 0 {
+				continue
+			}
+			times := analysis.DistinctScanTimes(part.histories)
+			for _, p := range analysis.RecomputeTrend(part.histories, times, rules, resolver) {
+				roll := p.Rollup
+				points = append(points, cookstyleRecomputeTrendPoint{
+					TargetChefVersion: tv,
+					Source:            part.source,
+					CompletedAt:       p.At.UTC().Format(trendTimestampFormat),
+					TotalResults:      roll.Ready + roll.NeedsReview + roll.Blocked + roll.Untested,
+					Ready:             roll.Ready,
+					NeedsReview:       roll.NeedsReview,
+					Blocked:           roll.Blocked,
+					Untested:          roll.Untested,
+					TotalComplexity:   roll.TotalComplexity,
+				})
+			}
 		}
 	}
 
@@ -188,6 +206,23 @@ func (r *Router) liveCookstyleResultKeys(ctx context.Context, targets []string) 
 		}
 	}
 	return out
+}
+
+// partitionHistoriesBySource splits histories into server-cookbook and git-repo
+// groups by the result kind of their fingerprint rows, preserving order. A
+// history with no rows is dropped (it has no kind and contributes nothing).
+func partitionHistoriesBySource(histories []analysis.ResultFingerprintHistory) (server, git []analysis.ResultFingerprintHistory) {
+	for _, h := range histories {
+		if len(h.Rows) == 0 {
+			continue
+		}
+		if h.Rows[0].ResultKind == datastore.FingerprintKindServerCookbook {
+			server = append(server, h)
+		} else {
+			git = append(git, h)
+		}
+	}
+	return server, git
 }
 
 // filterHistoriesToLive drops histories whose result key is not in the live set,

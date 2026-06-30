@@ -72,6 +72,7 @@ func TestDashboardCookstyleRecomputeTrend_HappyPath(t *testing.T) {
 		RecomputeAvailableFrom *string `json:"recompute_available_from"`
 		Data                   []struct {
 			TargetChefVersion string `json:"target_chef_version"`
+			Source            string `json:"source"`
 			CompletedAt       string `json:"completed_at"`
 			TotalResults      int    `json:"total_results"`
 			Ready             int    `json:"ready"`
@@ -92,11 +93,104 @@ func TestDashboardCookstyleRecomputeTrend_HappyPath(t *testing.T) {
 		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
 	pt := body.Data[0]
+	if pt.Source != "server" {
+		t.Errorf("source = %q, want server", pt.Source)
+	}
 	if pt.Blocked != 1 || pt.TotalResults != 1 || pt.Ready != 0 || pt.NeedsReview != 0 {
 		t.Errorf("point = %+v, want blocked=1 total=1", pt)
 	}
 	if pt.TotalComplexity == 0 {
 		t.Error("expected non-zero recomputed complexity for a blocker")
+	}
+}
+
+// The recompute trend separates server-cookbook results from git-repo results
+// into distinct per-source series, so the dashboard can chart them apart.
+func TestDashboardCookstyleRecomputeTrend_SplitsBySource(t *testing.T) {
+	scan := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := &mockStore{
+		ListOffenceFingerprintsByTargetFn: func(_ context.Context, target string) ([]datastore.CookstyleOffenceFingerprint, error) {
+			if target != "19.3.15" {
+				return nil, nil
+			}
+			return []datastore.CookstyleOffenceFingerprint{
+				{
+					ResultKind:        datastore.FingerprintKindServerCookbook,
+					OrganisationName:  "org-a",
+					CookbookName:      "cb",
+					CookbookVersion:   "1.0.0",
+					TargetChefVersion: "19.3.15",
+					ScannedAt:         scan,
+					Cops:              []datastore.FingerprintCopEntry{{CopName: "Op/Block", Count: 1, Severity: "warning"}},
+				},
+				{
+					ResultKind:        datastore.FingerprintKindGitRepo,
+					GitRepoName:       "repo",
+					GitRepoURL:        "https://git.example.com/repo",
+					TargetChefVersion: "19.3.15",
+					ScannedAt:         scan,
+					Cops:              []datastore.FingerprintCopEntry{{CopName: "Op/Review", Count: 1, Severity: "warning"}},
+				},
+			}, nil
+		},
+		ListCopClassificationsFn: func(_ context.Context, _ string) ([]datastore.CopClassification, error) {
+			return []datastore.CopClassification{
+				{CopName: "Op/Block", Classification: "blocker"},
+				{CopName: "Op/Review", Classification: "review"},
+			}, nil
+		},
+		ListOrganisationsFn: func(_ context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "org-a"}}, nil
+		},
+		ListServerCookbookCookstyleResultsByOrganisationFn: func(_ context.Context, _ string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return []datastore.ServerCookbookCookstyleResult{{
+				OrganisationName: "org-a", CookbookName: "cb", CookbookVersion: "1.0.0", TargetChefVersion: "19.3.15",
+			}}, nil
+		},
+		ListGitRepoCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.GitRepoCookstyleResult, error) {
+			return []datastore.GitRepoCookstyleResult{{
+				GitRepoName: "repo", GitRepoURL: "https://git.example.com/repo", TargetChefVersion: "19.3.15",
+			}}, nil
+		},
+	}
+	r := recomputeTestRouter(store, []string{"19.3.15"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			Source      string `json:"source"`
+			Ready       int    `json:"ready"`
+			NeedsReview int    `json:"needs_review"`
+			Blocked     int    `json:"blocked"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	bySource := map[string]struct {
+		ready, review, blocked int
+	}{}
+	for _, p := range body.Data {
+		s := bySource[p.Source]
+		s.ready += p.Ready
+		s.review += p.NeedsReview
+		s.blocked += p.Blocked
+		bySource[p.Source] = s
+	}
+	if len(bySource) != 2 {
+		t.Fatalf("got sources %v, want exactly server + git", bySource)
+	}
+	if bySource["server"].blocked != 1 || bySource["server"].review != 0 {
+		t.Errorf("server series = %+v, want blocked=1", bySource["server"])
+	}
+	if bySource["git"].review != 1 || bySource["git"].blocked != 0 {
+		t.Errorf("git series = %+v, want needs_review=1", bySource["git"])
 	}
 }
 

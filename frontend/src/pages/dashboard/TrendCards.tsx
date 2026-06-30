@@ -423,12 +423,14 @@ export function CookstyleRecomputeTrendCard() {
     load();
   }, [load]);
 
-  const countSeries: TrendSeries[] = (() => {
+  // buildSeries produces the 4 rollup series per target version for one source
+  // ("server" cookbooks or "git" repos), so each source charts independently.
+  const buildSeries = (source: string): TrendSeries[] => {
     if (!data || data.data.length === 0) return [];
 
     const byVersion = new Map<string, typeof data.data>();
     for (const pt of data.data) {
-      if (!pt.completed_at) continue;
+      if (!pt.completed_at || pt.source !== source) continue;
       const list = byVersion.get(pt.target_chef_version) ?? [];
       list.push(pt);
       byVersion.set(pt.target_chef_version, list);
@@ -443,13 +445,13 @@ export function CookstyleRecomputeTrendCard() {
       );
       series.push(
         {
-          key: `recompute-ready-${version}`,
+          key: `recompute-${source}-ready-${version}`,
           label: `Chef ${version} — Ready`,
           colour: "#22c55e",
           data: sorted.map((p) => ({ timestamp: p.completed_at, value: p.ready })),
         },
         {
-          key: `recompute-needs-review-${version}`,
+          key: `recompute-${source}-needs-review-${version}`,
           label: `Chef ${version} — Needs review`,
           colour: "#f59e0b",
           data: sorted.map((p) => ({
@@ -458,13 +460,13 @@ export function CookstyleRecomputeTrendCard() {
           })),
         },
         {
-          key: `recompute-blocked-${version}`,
+          key: `recompute-${source}-blocked-${version}`,
           label: `Chef ${version} — Blocked`,
           colour: "#ef4444",
           data: sorted.map((p) => ({ timestamp: p.completed_at, value: p.blocked })),
         },
         {
-          key: `recompute-untested-${version}`,
+          key: `recompute-${source}-untested-${version}`,
           label: `Chef ${version} — Untested`,
           colour: "#9ca3af",
           data: sorted.map((p) => ({
@@ -475,7 +477,10 @@ export function CookstyleRecomputeTrendCard() {
       );
     }
     return series;
-  })();
+  };
+
+  const serverSeries = buildSeries("server");
+  const gitSeries = buildSeries("git");
 
   const boundaryNote = (() => {
     if (!data) return null;
@@ -493,18 +498,31 @@ export function CookstyleRecomputeTrendCard() {
         Cookbooks/repos by rollup status (Ready / Needs review / Blocked /
         Untested), re-derived from offence-fingerprint history under the current
         cop classification — so a reclassification is reflected across the whole
-        series without a rescan.
+        series without a rescan. Server cookbooks and git repos are charted
+        separately.
       </p>
       {loading && <LoadingSpinner message="Loading recomputed CookStyle trend…" />}
       {error && <ErrorAlert message={error} onRetry={load} />}
       {!loading && !error && (
-        <div className="space-y-3">
-          <TrendChart
-            series={countSeries}
-            yLabel="Result count"
-            showArea={false}
-            height={220}
-          />
+        <div className="space-y-4">
+          <div className="space-y-1" data-testid="recompute-server-chart">
+            <p className="text-xs font-medium text-gray-600">Server cookbooks</p>
+            <TrendChart
+              series={serverSeries}
+              yLabel="Result count"
+              showArea={false}
+              height={200}
+            />
+          </div>
+          <div className="space-y-1" data-testid="recompute-git-chart">
+            <p className="text-xs font-medium text-gray-600">Git repos</p>
+            <TrendChart
+              series={gitSeries}
+              yLabel="Result count"
+              showArea={false}
+              height={200}
+            />
+          </div>
           {boundaryNote && (
             <p className="text-xs italic text-gray-500" data-testid="recompute-boundary-note">
               {boundaryNote}
