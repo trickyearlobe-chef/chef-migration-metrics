@@ -6,6 +6,7 @@ package webapi
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
@@ -192,6 +193,13 @@ func (r *Router) handleDashboardDeploymentTrend(w http.ResponseWriter, req *http
 		}
 		points = append(points, pt)
 	}
+
+	// byDay is a map, so points are assembled in nondeterministic order; sort
+	// chronologically (CompletedAt is a sortable RFC3339-style timestamp) so the
+	// trend chart's x-axis is monotonic.
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].CompletedAt < points[j].CompletedAt
+	})
 
 	if len(points) == 0 {
 		points = []deploymentTrendPoint{}
