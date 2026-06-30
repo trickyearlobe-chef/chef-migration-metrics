@@ -113,6 +113,14 @@ type AutocorrectGenerator struct {
 	executor      AutocorrectExecutor
 	timeout       time.Duration
 	cookstylePath string
+
+	// addonCopPathsFn, when set, returns the live operator addon cop path
+	// entries (analysis_tools.cookstyle_addon_cop_paths), read at preview time
+	// so a config change takes effect on the next preview without a restart.
+	// The autocorrect run injects these the same way the scan does, so addon-cop
+	// fixes appear in the whole-cookbook diff (their only preview, as addon cops
+	// have no embedded remediation mapping).
+	addonCopPathsFn func() []string
 }
 
 // AutocorrectGeneratorOption configures an AutocorrectGenerator.
@@ -121,6 +129,13 @@ type AutocorrectGeneratorOption func(*AutocorrectGenerator)
 // WithAutocorrectExecutor overrides the command executor (for testing).
 func WithAutocorrectExecutor(e AutocorrectExecutor) AutocorrectGeneratorOption {
 	return func(g *AutocorrectGenerator) { g.executor = e }
+}
+
+// WithAutocorrectAddonCopPathsFn wires a live provider of operator addon cop
+// path entries (analysis_tools.cookstyle_addon_cop_paths), read at preview time.
+// When unset, no addon cops are injected into the autocorrect run.
+func WithAutocorrectAddonCopPathsFn(fn func() []string) AutocorrectGeneratorOption {
+	return func(g *AutocorrectGenerator) { g.addonCopPathsFn = fn }
 }
 
 // NewAutocorrectGenerator creates a new preview generator.
@@ -330,12 +345,12 @@ func (g *AutocorrectGenerator) generateOne(
 		return pr
 	}
 
-	// Step 6: run cookstyle --auto-correct on the copy.
+	// Step 6: run cookstyle --auto-correct on the copy (full ruleset + operator
+	// addon cops, isolating addon load failures).
 	genCtx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
 
-	args := buildAutocorrectArgs(tmpDir, csResult.TargetChefVersion)
-	stdout, _, _, execErr := g.executor.Run(genCtx, args...)
+	stdout, execErr := g.runAutocorrectWithAddonIsolation(genCtx, tmpDir, csResult.TargetChefVersion, log)
 
 	if execErr != nil {
 		if genCtx.Err() == context.DeadlineExceeded {
@@ -401,18 +416,77 @@ func (g *AutocorrectGenerator) generateOne(
 // --auto-correct (which modifies files in-place) and --format json to get
 // machine-parseable output about remaining offenses.
 //
-// The autocorrect preview still narrows to Chef/Deprecations,Chef/Correctness
-// and does not yet inject addon cops (nil). Widening it to the full ruleset and
-// adding addon-cop fixes is Chunk E; until then the scan and the autocorrect run
-// differ only in this --only filter and addon injection.
+// The autocorrect run shares the scan's full-ruleset invocation (no --only): the
+// whole-cookbook diff covers every available fix so nothing is skipped at the
+// engine level. This addon-free form is used as the isolation retry.
 func buildAutocorrectArgs(cookbookDir string, targetChefVersion string) []string {
+	return buildAutocorrectArgsWithAddons(cookbookDir, targetChefVersion, nil)
+}
+
+// buildAutocorrectArgsWithAddons is buildAutocorrectArgs with operator addon cop
+// requires injected into the sidecar (see ResolveAddonCopFiles). Addon cops have
+// no embedded remediation mapping, so the unified diff is their only preview —
+// dropping --only is what lets their fixes show up.
+func buildAutocorrectArgsWithAddons(cookbookDir, targetChefVersion string, addonCops []AddonCop) []string {
 	return BuildCookstyleArgs(
 		cookbookDir,
 		targetChefVersion,
 		[]string{"--auto-correct", "--format", "json"},
-		"Chef/Deprecations,Chef/Correctness",
-		nil,
+		"",
+		addonCops,
 	)
+}
+
+// effectiveAddonRequires resolves the live operator addon cop path entries into
+// concrete addon cops (file + parsed cop names), plus any path problems for the
+// caller to surface. With no provider or no configured paths it returns nothing.
+func (g *AutocorrectGenerator) effectiveAddonRequires() ([]AddonCop, []AddonCopProblem) {
+	if g.addonCopPathsFn == nil {
+		return nil, nil
+	}
+	paths := g.addonCopPathsFn()
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	return ResolveAddonCopFiles(paths)
+}
+
+// runAutocorrectWithAddonIsolation runs cookstyle --auto-correct with operator
+// addon cops injected, isolating addon load failures exactly as the scan path
+// does: if cookstyle errors (exit >= 2) WITH addons loaded but succeeds without
+// them, the addon-free output is returned so a single broken addon .rb never
+// fails every preview. The load failure is surfaced via the log, not recorded as
+// a preview error. Resolution problems (missing file, bad glob, …) are logged
+// and the run continues with whatever resolved.
+func (g *AutocorrectGenerator) runAutocorrectWithAddonIsolation(
+	ctx context.Context,
+	cookbookDir, targetChefVersion string,
+	log *logging.ScopedLogger,
+) (stdout string, execErr error) {
+	addonCops, problems := g.effectiveAddonRequires()
+	for _, p := range problems {
+		log.Warn(fmt.Sprintf("addon cop path %q could not be resolved: %s", p.Path, p.Reason))
+	}
+
+	args := buildAutocorrectArgsWithAddons(cookbookDir, targetChefVersion, addonCops)
+	stdout, _, exitCode, execErr := g.executor.Run(ctx, args...)
+
+	// Only attempt isolation when addons were actually injected and cookstyle ran
+	// to completion with an error exit (a start/timeout failure is not an addon
+	// problem and must surface as-is).
+	if len(addonCops) > 0 && execErr == nil && exitCode >= 2 {
+		cleanArgs := buildAutocorrectArgs(cookbookDir, targetChefVersion)
+		cStdout, _, cExit, cErr := g.executor.Run(ctx, cleanArgs...)
+		if cErr == nil && cExit < 2 {
+			log.Error(fmt.Sprintf(
+				"an addon cop failed to load during autocorrect preview (cookstyle exit %d with addons, %d without); preview generated WITHOUT addon cops — verify these files: %v",
+				exitCode, cExit, AddonCopPaths(addonCops)))
+			return cStdout, cErr
+		}
+		// The clean run also errored — a genuine cookbook/cookstyle error, not an
+		// addon load failure. Fall through with the original result.
+	}
+	return stdout, execErr
 }
 
 // ---------------------------------------------------------------------------

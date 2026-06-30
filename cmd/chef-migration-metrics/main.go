@@ -1062,6 +1062,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		acGen := remediation.NewAutocorrectGenerator(
 			app.db, app.logger, toolResult.Cookstyle.Path,
 			app.cfg.AnalysisTools.CookstyleTimeoutMinutes,
+			remediation.WithAutocorrectAddonCopPathsFn(func() []string {
+				return app.configHolder.Get().AnalysisTools.CookstyleAddonCopPaths
+			}),
 		)
 		collOpts = append(collOpts, collector.WithAutocorrectGenerator(acGen))
 		app.startup.Info("autocorrect preview generator enabled")
