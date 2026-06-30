@@ -773,20 +773,27 @@ func TestHandleDashboardVersionDistributionTrend_DBError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
+	// The dashboard summary must bucket by the 4-state CookStyle rollup
+	// (cookstyle_status), NOT the legacy passed boolean. The critical case is
+	// `redis`: passed=true but status=needs_review — it must count as needs_review,
+	// never as ready/compatible (the inconsistency this fixes).
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{OrganisationName: "prod", Name: "apt", Version: "1.0.0"},
-				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0"},
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true},
+				{OrganisationName: "prod", Name: "redis", Version: "1.0.0", IsActive: true},
+				{OrganisationName: "prod", Name: "ghost", Version: "1.0.0", IsActive: true},
 			}, nil
 		},
 		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return []datastore.ServerCookbookCookstyleResult{
-				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: true, OffenceCount: 0},
-				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 3},
+				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "ready"},
+				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: false, CookstyleStatus: "blocked", OffenceCount: 3},
+				{OrganisationName: "prod", CookbookName: "redis", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "needs_review", OffenceCount: 1},
 			}, nil
 		},
 	}
@@ -802,9 +809,13 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 	}
 	var body struct {
 		Data []struct {
-			TotalCookbooks        int `json:"total_cookbooks"`
-			CompatibleCookbooks   int `json:"compatible_cookbooks"`
-			IncompatibleCookbooks int `json:"incompatible_cookbooks"`
+			TotalCookbooks       int     `json:"total_cookbooks"`
+			ReadyCookbooks       int     `json:"ready_cookbooks"`
+			NeedsReviewCookbooks int     `json:"needs_review_cookbooks"`
+			BlockedCookbooks     int     `json:"blocked_cookbooks"`
+			UntestedCookbooks    int     `json:"untested_cookbooks"`
+			UntestedUnscanned    int     `json:"untested_unscanned_cookbooks"`
+			ReadyPercent         float64 `json:"ready_percent"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -813,14 +824,88 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 	if len(body.Data) != 1 {
 		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
-	if body.Data[0].TotalCookbooks != 2 {
-		t.Errorf("total = %d, want 2", body.Data[0].TotalCookbooks)
+	d := body.Data[0]
+	if d.TotalCookbooks != 4 {
+		t.Errorf("total = %d, want 4", d.TotalCookbooks)
 	}
-	if body.Data[0].CompatibleCookbooks != 1 {
-		t.Errorf("compatible = %d, want 1", body.Data[0].CompatibleCookbooks)
+	if d.ReadyCookbooks != 1 {
+		t.Errorf("ready = %d, want 1", d.ReadyCookbooks)
 	}
-	if body.Data[0].IncompatibleCookbooks != 1 {
-		t.Errorf("incompatible = %d, want 1", body.Data[0].IncompatibleCookbooks)
+	if d.NeedsReviewCookbooks != 1 {
+		t.Errorf("needs_review = %d, want 1 (redis: passed=true but status=needs_review)", d.NeedsReviewCookbooks)
+	}
+	if d.BlockedCookbooks != 1 {
+		t.Errorf("blocked = %d, want 1", d.BlockedCookbooks)
+	}
+	if d.UntestedCookbooks != 1 || d.UntestedUnscanned != 1 {
+		t.Errorf("untested = %d (unscanned %d), want 1 (1)", d.UntestedCookbooks, d.UntestedUnscanned)
+	}
+	if d.ReadyPercent != 25.0 {
+		t.Errorf("ready_percent = %v, want 25", d.ReadyPercent)
+	}
+}
+
+func TestHandleDashboardGitRepoCompatibility_HappyPath(t *testing.T) {
+	// Same 4-state rollup contract for git repos: api-cb is passed=true but
+	// status=needs_review and must count as needs_review.
+	store := &mockStore{
+		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
+			return []datastore.GitRepo{
+				{Name: "web-cb", CloneStatus: "ok"},
+				{Name: "api-cb", CloneStatus: "ok"},
+				{Name: "db-cb", CloneStatus: "ok"},
+				{Name: "old-cb", CloneStatus: "failed"},
+				{Name: "pending-cb", CloneStatus: "ok"},
+			}, nil
+		},
+		ListAllGitRepoCookstyleResultsFn: func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error) {
+			return []datastore.GitRepoCookstyleResult{
+				{GitRepoName: "web-cb", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "ready"},
+				{GitRepoName: "api-cb", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "needs_review"},
+				{GitRepoName: "db-cb", TargetChefVersion: "18.0.0", Passed: false, CookstyleStatus: "blocked"},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersions = []string{"18.0.0"}
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/git-repo-compatibility", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			TotalRepos        int     `json:"total_repos"`
+			ReadyRepos        int     `json:"ready_repos"`
+			NeedsReviewRepos  int     `json:"needs_review_repos"`
+			BlockedRepos      int     `json:"blocked_repos"`
+			UntestedRepos     int     `json:"untested_repos"`
+			UntestedCloneFail int     `json:"untested_clone_failed_repos"`
+			UntestedPendScan  int     `json:"untested_pending_scan_repos"`
+			ReadyPercent      float64 `json:"ready_percent"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	d := body.Data[0]
+	if d.TotalRepos != 5 {
+		t.Errorf("total = %d, want 5", d.TotalRepos)
+	}
+	if d.ReadyRepos != 1 || d.NeedsReviewRepos != 1 || d.BlockedRepos != 1 {
+		t.Errorf("ready/needs_review/blocked = %d/%d/%d, want 1/1/1", d.ReadyRepos, d.NeedsReviewRepos, d.BlockedRepos)
+	}
+	if d.UntestedRepos != 2 || d.UntestedCloneFail != 1 || d.UntestedPendScan != 1 {
+		t.Errorf("untested = %d (clone-failed %d, pending %d), want 2 (1, 1)", d.UntestedRepos, d.UntestedCloneFail, d.UntestedPendScan)
+	}
+	if d.ReadyPercent != 20.0 {
+		t.Errorf("ready_percent = %v, want 20", d.ReadyPercent)
 	}
 }
 

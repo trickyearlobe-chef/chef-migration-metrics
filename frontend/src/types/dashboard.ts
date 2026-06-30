@@ -171,12 +171,14 @@ export interface DeploymentStatusResponse {
 export interface CookbookCompatibilitySummary {
   target_chef_version: string;
   total_cookbooks: number;
-  compatible_cookbooks: number;
-  incompatible_cookbooks: number;
+  ready_cookbooks: number;
+  needs_review_cookbooks: number;
+  blocked_cookbooks: number;
   untested_cookbooks: number;
+  untested_errored_cookbooks: number;
   untested_inactive_cookbooks: number;
   untested_unscanned_cookbooks: number;
-  compatible_percent: number;
+  ready_percent: number;
 }
 
 export interface CookbookCompatibilityResponse {
@@ -186,12 +188,14 @@ export interface CookbookCompatibilityResponse {
 export interface GitRepoCompatibilitySummary {
   target_chef_version: string;
   total_repos: number;
-  compatible_repos: number;
-  incompatible_repos: number;
+  ready_repos: number;
+  needs_review_repos: number;
+  blocked_repos: number;
   untested_repos: number;
+  untested_errored_repos: number;
   untested_clone_failed_repos: number;
   untested_pending_scan_repos: number;
-  compatible_percent: number;
+  ready_percent: number;
 }
 
 export interface GitRepoCompatibilityResponse {

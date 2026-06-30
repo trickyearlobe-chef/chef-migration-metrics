@@ -340,73 +340,71 @@ export function CookbookCompatibilityCard({
                       {c.total_cookbooks} cookbooks
                     </span>
                   </div>
-                  {/* Stacked progress bar */}
+                  {/* Stacked rollup bar (Ready / Needs review / Blocked / Untested) */}
                   {c.total_cookbooks > 0 && (
                     <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
                       <Link
-                        to={`/cookbooks?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        to={`/cookbooks?cookstyle_status=ready&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                         className="bg-green-500 transition-all duration-500 hover:bg-green-600"
                         style={{
-                          width: `${(c.compatible_cookbooks / c.total_cookbooks) * 100}%`,
+                          width: `${(c.ready_cookbooks / c.total_cookbooks) * 100}%`,
                         }}
-                        title={`Compatible: ${c.compatible_cookbooks}`}
+                        title={`Ready: ${c.ready_cookbooks}`}
                       />
                       <Link
-                        to={`/cookbooks?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="bg-red-400 transition-all duration-500 hover:bg-red-500"
+                        to={`/cookbooks?cookstyle_status=needs_review&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-amber-500 transition-all duration-500 hover:bg-amber-600"
                         style={{
-                          width: `${(c.incompatible_cookbooks / c.total_cookbooks) * 100}%`,
+                          width: `${(c.needs_review_cookbooks / c.total_cookbooks) * 100}%`,
                         }}
-                        title={`Incompatible: ${c.incompatible_cookbooks}`}
+                        title={`Needs review: ${c.needs_review_cookbooks}`}
                       />
                       <Link
-                        to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="bg-gray-300 transition-all duration-500 hover:bg-gray-400"
+                        to={`/cookbooks?cookstyle_status=blocked&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-red-500 transition-all duration-500 hover:bg-red-600"
                         style={{
-                          width: `${((c.untested_inactive_cookbooks || 0) / c.total_cookbooks) * 100}%`,
+                          width: `${(c.blocked_cookbooks / c.total_cookbooks) * 100}%`,
                         }}
-                        title={`Inactive (unused): ${c.untested_inactive_cookbooks || 0}`}
+                        title={`Blocked: ${c.blocked_cookbooks}`}
                       />
                       <Link
-                        to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="bg-amber-300 transition-all duration-500 hover:bg-amber-400"
+                        to={`/cookbooks?cookstyle_status=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-gray-400 transition-all duration-500 hover:bg-gray-500"
                         style={{
-                          width: `${((c.untested_unscanned_cookbooks || 0) / c.total_cookbooks) * 100}%`,
+                          width: `${(c.untested_cookbooks / c.total_cookbooks) * 100}%`,
                         }}
-                        title={`Not yet scanned: ${c.untested_unscanned_cookbooks || 0}`}
+                        title={`Untested: ${c.untested_cookbooks} (not scanned ${c.untested_unscanned_cookbooks}, inactive ${c.untested_inactive_cookbooks}, errored ${c.untested_errored_cookbooks})`}
                       />
                     </div>
                   )}
                   <div className="flex flex-wrap gap-3 text-xs">
                     <Link
-                      to={`/cookbooks?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      to={`/cookbooks?cookstyle_status=ready&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                      Compatible: {c.compatible_cookbooks.toLocaleString()}
+                      Ready: {c.ready_cookbooks.toLocaleString()}
                     </Link>
                     <Link
-                      to={`/cookbooks?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      to={`/cookbooks?cookstyle_status=needs_review&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
-                      Incompatible: {c.incompatible_cookbooks.toLocaleString()}
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      Needs review: {c.needs_review_cookbooks.toLocaleString()}
                     </Link>
                     <Link
-                      to={`/cookbooks?compatibility=untested&active=false&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      to={`/cookbooks?cookstyle_status=blocked&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />
-                      Inactive:{" "}
-                      {(c.untested_inactive_cookbooks || 0).toLocaleString()}
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+                      Blocked: {c.blocked_cookbooks.toLocaleString()}
                     </Link>
                     <Link
-                      to={`/cookbooks?compatibility=untested&active=true&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      to={`/cookbooks?cookstyle_status=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-300" />
-                      Unscanned:{" "}
-                      {(c.untested_unscanned_cookbooks || 0).toLocaleString()}
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />
+                      Untested: {c.untested_cookbooks.toLocaleString()}
                     </Link>
                   </div>
                 </div>
@@ -472,84 +470,72 @@ export function GitRepoCompatibilityCard({
                       {c.total_repos} git repos
                     </span>
                   </div>
-                  {/* Stacked progress bar */}
+                  {/* Stacked rollup bar (Ready / Needs review / Blocked / Untested) */}
                   {c.total_repos > 0 && (
                     <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-gray-100">
                       <Link
-                        to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        to={`/git-repos?cookstyle_status=ready&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                         className="bg-green-500 transition-all duration-500 hover:bg-green-600"
                         style={{
-                          width: `${(c.compatible_repos / c.total_repos) * 100}%`,
+                          width: `${(c.ready_repos / c.total_repos) * 100}%`,
                         }}
-                        title={`Compatible: ${c.compatible_repos}`}
+                        title={`Ready: ${c.ready_repos}`}
                       />
                       <Link
-                        to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="bg-red-400 transition-all duration-500 hover:bg-red-500"
+                        to={`/git-repos?cookstyle_status=needs_review&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-amber-500 transition-all duration-500 hover:bg-amber-600"
                         style={{
-                          width: `${(c.incompatible_repos / c.total_repos) * 100}%`,
+                          width: `${(c.needs_review_repos / c.total_repos) * 100}%`,
                         }}
-                        title={`Incompatible: ${c.incompatible_repos}`}
+                        title={`Needs review: ${c.needs_review_repos}`}
                       />
-                      {c.untested_clone_failed_repos > 0 && (
-                        <Link
-                          to={`/git-repos?compatibility=untested&clone_status=failed&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                          className="bg-red-200 transition-all duration-500 hover:bg-red-300"
-                          style={{
-                            width: `${(c.untested_clone_failed_repos / c.total_repos) * 100}%`,
-                            backgroundImage:
-                              "repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(255,255,255,0.4) 3px, rgba(255,255,255,0.4) 6px)",
-                          }}
-                          title={`Clone failed — cannot scan: ${c.untested_clone_failed_repos}`}
-                        />
-                      )}
-                      {c.untested_pending_scan_repos > 0 && (
-                        <Link
-                          to={`/git-repos?compatibility=untested&clone_status=ok&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                          className="bg-amber-200 transition-all duration-500 hover:bg-amber-300"
-                          style={{
-                            width: `${(c.untested_pending_scan_repos / c.total_repos) * 100}%`,
-                          }}
-                          title={`Cloned but not yet scanned: ${c.untested_pending_scan_repos}`}
-                        />
-                      )}
+                      <Link
+                        to={`/git-repos?cookstyle_status=blocked&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-red-500 transition-all duration-500 hover:bg-red-600"
+                        style={{
+                          width: `${(c.blocked_repos / c.total_repos) * 100}%`,
+                        }}
+                        title={`Blocked: ${c.blocked_repos}`}
+                      />
+                      <Link
+                        to={`/git-repos?cookstyle_status=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                        className="bg-gray-400 transition-all duration-500 hover:bg-gray-500"
+                        style={{
+                          width: `${(c.untested_repos / c.total_repos) * 100}%`,
+                        }}
+                        title={`Untested: ${c.untested_repos} (pending scan ${c.untested_pending_scan_repos}, clone failed ${c.untested_clone_failed_repos}, errored ${c.untested_errored_repos})`}
+                      />
                     </div>
                   )}
                   <div className="flex flex-wrap gap-3 text-xs">
                     <Link
-                      to={`/git-repos?compatibility=compatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      to={`/git-repos?cookstyle_status=ready&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                      Compatible: {c.compatible_repos.toLocaleString()}
+                      Ready: {c.ready_repos.toLocaleString()}
                     </Link>
                     <Link
-                      to={`/git-repos?compatibility=incompatible&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      to={`/git-repos?cookstyle_status=needs_review&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
                       className="flex items-center gap-1 hover:underline"
                     >
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
-                      Incompatible: {c.incompatible_repos.toLocaleString()}
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      Needs review: {c.needs_review_repos.toLocaleString()}
                     </Link>
-                    {c.untested_clone_failed_repos > 0 && (
-                      <Link
-                        to={`/git-repos?compatibility=untested&clone_status=failed&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="flex items-center gap-1 hover:underline"
-                      >
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-200 ring-1 ring-red-300" />
-                        Clone failed:{" "}
-                        {c.untested_clone_failed_repos.toLocaleString()}
-                      </Link>
-                    )}
-                    {c.untested_pending_scan_repos > 0 && (
-                      <Link
-                        to={`/git-repos?compatibility=untested&clone_status=ok&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
-                        className="flex items-center gap-1 hover:underline"
-                      >
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-200 ring-1 ring-amber-300" />
-                        Pending scan:{" "}
-                        {c.untested_pending_scan_repos.toLocaleString()}
-                      </Link>
-                    )}
+                    <Link
+                      to={`/git-repos?cookstyle_status=blocked&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+                      Blocked: {c.blocked_repos.toLocaleString()}
+                    </Link>
+                    <Link
+                      to={`/git-repos?cookstyle_status=untested&target_chef_version=${encodeURIComponent(c.target_chef_version)}`}
+                      className="flex items-center gap-1 hover:underline"
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />
+                      Untested: {c.untested_repos.toLocaleString()}
+                    </Link>
                   </div>
                 </div>
               ))}

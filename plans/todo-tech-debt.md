@@ -311,6 +311,13 @@ Recorded 2026-06-26 (status-consistency Chunk 3, API surfacing).
 - [ ] **Migration 0041 backfill is coarse.** Existing rows backfill `cookstyle_status` from `passed` only (`passed → ready`, else `blocked`); it cannot distinguish `ready` from `needs_review` because that needs the offences + classification, which SQL can't evaluate. Legacy review-only results therefore show `ready` until their next scan or any reclassification (both re-derive and overwrite the precise value via the SoT path). Self-healing, no data loss. **Proper fix (optional):** a one-time Go backfill that re-derives status from stored offences for all rows on first boot after the migration.
 - [ ] **Lists surface `cookstyle_status` but not weighted complexity.** `active.md`/the chunk line said "weighted complexity to … list responses," but the `web-api-server-cookbooks`/`web-api-git-repos` list-section specs only carry `cookstyle_status` on list entries (complexity stays on remediation/detail, where it is already classification-weighted from Chunk 1). Followed the spec to avoid divergence; the cookbook/git-repo filter queries were not extended with a complexity join. **Revisit** only if a list view needs per-row complexity.
 
+## CookStyle — Detail-page rollup purity (deferred)
+
+Recorded 2026-06-30 (dashboard rollup-consistency chunk).
+
+- [ ] **Detail/remediation badges keep a legacy `passed` fallback.** `CookbookDetailPage`, `CookbookRemediationPage`, `GitRepoRemediationPage` resolve the header badge as `cookstyle_status ?? (passed ? "ready" : "blocked")`. The backend always sends a materialised `cookstyle_status` (default `untested`), so the fallback is dead defensively but can diverge from the SoT if it ever fires. **Fix:** drop the fallback; trust `cookstyle_status`. Low impact.
+- [ ] **`GitRepoDetailPage` rolls up the overview badge client-side.** `rollupCookstyleStatus()` aggregates per-target results in the browser instead of reading the materialised `git_repos.cookstyle_status`. Re-derivation can disagree with the server rollup. **Fix:** consume the materialised repo rollup. Low impact (single overview badge).
+
 ## CookStyle — Readiness Integration + Toggle (Chunk 6)
 
 Recorded 2026-06-26 (status-consistency Chunk 6, readiness + `review_blocks_readiness`).

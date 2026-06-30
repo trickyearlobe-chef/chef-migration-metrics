@@ -401,7 +401,7 @@ export function ComplexityTrendCard({
 
 // Unlike the other cards (which read frozen per-collection aggregates), this card
 // reads the recompute-trend endpoint: the CookStyle rollup re-derived from offence
-// fingerprints under TODAY's classification, in Ready/Needs review/Blocked
+// fingerprints under TODAY's classification, in Ready/Needs review/Blocked/Untested
 // vocabulary. Points before `recompute_available_from` cannot be recomputed, so we
 // surface that frozen/recomputable boundary explicitly rather than implying the
 // whole series reflects current criteria.
@@ -463,6 +463,15 @@ export function CookstyleRecomputeTrendCard() {
           colour: "#ef4444",
           data: sorted.map((p) => ({ timestamp: p.completed_at, value: p.blocked })),
         },
+        {
+          key: `recompute-untested-${version}`,
+          label: `Chef ${version} — Untested`,
+          colour: "#9ca3af",
+          data: sorted.map((p) => ({
+            timestamp: p.completed_at,
+            value: p.untested,
+          })),
+        },
       );
     }
     return series;
@@ -481,9 +490,9 @@ export function CookstyleRecomputeTrendCard() {
     <div className="card">
       <h3 className="card-header">CookStyle Rollup — Recomputed Trend</h3>
       <p className="mb-3 text-xs text-gray-500">
-        Cookbooks/repos by rollup status (Ready / Needs review / Blocked),
-        re-derived from offence-fingerprint history under the current cop
-        classification — so a reclassification is reflected across the whole
+        Cookbooks/repos by rollup status (Ready / Needs review / Blocked /
+        Untested), re-derived from offence-fingerprint history under the current
+        cop classification — so a reclassification is reflected across the whole
         series without a rescan.
       </p>
       {loading && <LoadingSpinner message="Loading recomputed CookStyle trend…" />}
