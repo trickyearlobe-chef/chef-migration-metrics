@@ -1440,13 +1440,11 @@ func (s *CookstyleScanner) scanOneNoDB(
 		TargetChefVersion: targetChefVersion,
 	}
 
-	args := buildCookstyleArgs(cookbookDir, targetChefVersion)
-
 	scanStart := time.Now()
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr := s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr, _ := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
 	sr.RawStdout = stdout

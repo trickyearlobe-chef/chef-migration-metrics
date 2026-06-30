@@ -22,6 +22,7 @@ const mockResponse = {
     embedded_bin_dir: "/opt/chef/embedded/bin",
     cookstyle_enabled: true,
     cookstyle_timeout_minutes: 30,
+    cookstyle_addon_cop_paths: ["/opt/cops/no_eval.rb"],
   },
   effective_failure_rules: { "*": ["error", "fatal"] },
 };
@@ -86,6 +87,35 @@ describe("AdminCookstylePage", () => {
       target: { value: "strict" },
     });
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+  });
+
+  it("renders addon cop paths from loaded config", async () => {
+    render(<AdminCookstylePage />);
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("/opt/cops/no_eval.rb")).toBeInTheDocument(),
+    );
+  });
+
+  it("saves addon cop paths split by line, dropping blank lines", async () => {
+    vi.mocked(api.saveAnalysisTools).mockResolvedValue({
+      value: mockResponse.value,
+      restartRequired: false,
+      verdictsChanged: 0,
+    } as never);
+    render(<AdminCookstylePage />);
+    await waitFor(() => screen.getByText("CookStyle"));
+
+    fireEvent.change(screen.getByLabelText("Addon cop paths"), {
+      target: { value: "/opt/cops/a.rb\n\n/opt/cops/b.rb\n" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.saveAnalysisTools).toHaveBeenCalled());
+    const payload = vi.mocked(api.saveAnalysisTools).mock.calls[0][0];
+    expect(payload.cookstyle_addon_cop_paths).toEqual([
+      "/opt/cops/a.rb",
+      "/opt/cops/b.rb",
+    ]);
   });
 
   it("shows verdict count toast after save", async () => {

@@ -401,15 +401,17 @@ func (g *AutocorrectGenerator) generateOne(
 // --auto-correct (which modifies files in-place) and --format json to get
 // machine-parseable output about remaining offenses.
 //
-// The autocorrect preview still narrows to Chef/Deprecations,Chef/Correctness.
-// Widening it to the full ruleset (so addon-cop fixes appear) is Chunk E; until
-// then the scan and the autocorrect run differ only in this --only filter.
+// The autocorrect preview still narrows to Chef/Deprecations,Chef/Correctness
+// and does not yet inject addon cops (nil). Widening it to the full ruleset and
+// adding addon-cop fixes is Chunk E; until then the scan and the autocorrect run
+// differ only in this --only filter and addon injection.
 func buildAutocorrectArgs(cookbookDir string, targetChefVersion string) []string {
 	return BuildCookstyleArgs(
 		cookbookDir,
 		targetChefVersion,
 		[]string{"--auto-correct", "--format", "json"},
 		"Chef/Deprecations,Chef/Correctness",
+		nil,
 	)
 }
 

@@ -134,6 +134,10 @@ export function AdminCookstylePage() {
       cookstyle_enabled: config.cookstyle_enabled ?? true,
       cookstyle_failure_preset: failurePreset === "custom" ? "" : failurePreset,
       cookstyle_failure_rules: failurePreset === "custom" ? failureRules : undefined,
+      // Drop blank lines the operator left while editing the path list.
+      cookstyle_addon_cop_paths: (config.cookstyle_addon_cop_paths ?? [])
+        .map((p) => p.trim())
+        .filter((p) => p !== ""),
     };
     try {
       const { value: updated, verdictsChanged } = await saveAnalysisTools(payload);
@@ -202,6 +206,41 @@ export function AdminCookstylePage() {
             />
           </div>
         </div>
+      </div>
+
+      {/* Addon cop files — operator-supplied RuboCop cops loaded from disk */}
+      <div className="max-w-2xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="text-base font-semibold text-gray-800">Addon Cop Files</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          On-disk RuboCop cop files (real <code>.rb</code> cop classes) loaded into every
+          scan. One entry per line — each may be a file, a directory (expanded to its{" "}
+          <code>*.rb</code> files), or a glob. Files must already be deployed on the app
+          host; cops are never uploaded through the UI.
+        </p>
+        <p className="mt-1 text-sm text-gray-500">
+          Namespace cops under <code>Chef/Custom/…</code> — CMM enables each cop by name
+          automatically, so a required cop is not left dormant.
+        </p>
+        <textarea
+          aria-label="Addon cop paths"
+          rows={4}
+          spellCheck={false}
+          value={(config.cookstyle_addon_cop_paths ?? []).join("\n")}
+          onChange={(e) =>
+            handleChange(
+              "cookstyle_addon_cop_paths",
+              e.target.value.split("\n"),
+            )
+          }
+          placeholder={"/var/lib/chef-migration-metrics/addon-cops/*.rb"}
+          className={`${INPUT_CLASS} mt-3 font-mono`}
+          disabled={saving}
+        />
+        <p className="mt-2 text-xs text-gray-400">
+          A cop file that fails to load is isolated — the affected cookbook is still scanned
+          without it, and the failure is logged rather than marking the cookbook as errored.
+          Use the <strong>Save</strong> button below to apply changes.
+        </p>
       </div>
 
       {/* Rescan all — destructive maintenance action */}

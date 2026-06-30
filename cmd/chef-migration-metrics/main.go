@@ -1052,6 +1052,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			analysis.WithCookstyleConcurrencyFunc(func() int {
 				return app.configHolder.Get().Concurrency.CookstyleScan
 			}),
+			analysis.WithCookstyleAddonCopPathsFn(func() []string {
+				return app.configHolder.Get().AnalysisTools.CookstyleAddonCopPaths
+			}),
 		)
 		collOpts = append(collOpts, collector.WithCookstyleScanner(csScanner))
 		app.startup.Info("CookStyle scanner enabled")

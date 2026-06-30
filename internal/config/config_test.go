@@ -2040,6 +2040,43 @@ analysis_tools:
 	expectParseError(t, yaml, "test_kitchen_timeout_minutes must be >= 0")
 }
 
+func TestValidation_CookstyleAddonCopPaths_EmptyEntry(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  cookstyle_addon_cop_paths:
+    - ""
+`
+	expectParseError(t, yaml, "cookstyle_addon_cop_paths[0] is empty")
+}
+
+func TestParse_CookstyleAddonCopPaths(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  cookstyle_addon_cop_paths:
+    - /var/lib/cmm/addon-cops/*.rb
+    - /opt/cops/no_eval.rb
+`
+	cfg := mustParse(t, yaml)
+	got := cfg.AnalysisTools.CookstyleAddonCopPaths
+	if len(got) != 2 || got[0] != "/var/lib/cmm/addon-cops/*.rb" || got[1] != "/opt/cops/no_eval.rb" {
+		t.Errorf("expected addon cop paths parsed, got %v", got)
+	}
+}
+
 func TestDefaults_CookstyleFailurePreset(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if cfg.AnalysisTools.CookstyleFailurePreset != "default" {

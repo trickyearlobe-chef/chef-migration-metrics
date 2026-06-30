@@ -152,12 +152,18 @@ type ConcurrencyConfig struct {
 // cookstyle/kitchen binaries are resolved from PATH (provided by Chef
 // Workstation); they are not bundled.
 type AnalysisToolsConfig struct {
-	CookstyleEnabled          *bool               `yaml:"cookstyle_enabled"`
-	CookstyleTimeoutMinutes   int                 `yaml:"cookstyle_timeout_minutes"`
-	CookstyleFailurePreset    string              `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
-	CookstyleFailureRules     map[string][]string `yaml:"cookstyle_failure_rules" json:"cookstyle_failure_rules"`
-	TestKitchenTimeoutMinutes int                 `yaml:"test_kitchen_timeout_minutes"`
-	TestKitchen               TestKitchenConfig   `yaml:"test_kitchen"`
+	CookstyleEnabled        *bool               `yaml:"cookstyle_enabled"`
+	CookstyleTimeoutMinutes int                 `yaml:"cookstyle_timeout_minutes"`
+	CookstyleFailurePreset  string              `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
+	CookstyleFailureRules   map[string][]string `yaml:"cookstyle_failure_rules" json:"cookstyle_failure_rules"`
+	// CookstyleAddonCopPaths lists operator-supplied RuboCop cop files (real .rb
+	// cop classes) on the app host to load into every scan. Entries may be
+	// files, directories (expanded to *.rb), or globs. Trust boundary is
+	// deploying the app — addon cops are never web-uploaded. See
+	// specifications/cookstyle-full-ruleset.md.
+	CookstyleAddonCopPaths    []string          `yaml:"cookstyle_addon_cop_paths" json:"cookstyle_addon_cop_paths"`
+	TestKitchenTimeoutMinutes int               `yaml:"test_kitchen_timeout_minutes"`
+	TestKitchen               TestKitchenConfig `yaml:"test_kitchen"`
 }
 
 // resolveTestKitchenBackwardCompat emits a deprecation warning if the
@@ -1453,6 +1459,20 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 
 	// Validate cookstyle failure rules.
 	c.validateCookstyleFailureRules(ve)
+
+	// Addon cop paths must be non-empty and syntactically valid glob patterns.
+	// Whether each path actually resolves to .rb files is checked at scan time
+	// and surfaced as a non-fatal problem, not here — the path may legitimately
+	// be empty until the operator drops cops in.
+	for i, p := range c.AnalysisTools.CookstyleAddonCopPaths {
+		if strings.TrimSpace(p) == "" {
+			ve.addf("analysis_tools.cookstyle_addon_cop_paths[%d] is empty", i)
+			continue
+		}
+		if _, err := filepath.Match(p, ""); err != nil {
+			ve.addf("analysis_tools.cookstyle_addon_cop_paths[%d] %q is not a valid glob: %v", i, p, err)
+		}
+	}
 
 	// Backward compat: migrate deprecated test_kitchen_timeout_minutes.
 	c.AnalysisTools.resolveTestKitchenBackwardCompat(w)

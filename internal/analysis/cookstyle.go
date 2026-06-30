@@ -227,6 +227,11 @@ type CookstyleScanner struct {
 	// overrides for a target version, read at scan time. Falls back to loading
 	// from the datastore (or empty overrides when no db is configured).
 	classificationOverridesFn func(ctx context.Context, targetChefVersion string) map[string]string
+	// addonCopPathsFn, when set, returns the live operator addon cop path entries
+	// (analysis_tools.cookstyle_addon_cop_paths), read at scan time so a config
+	// change takes effect on the next scan without a restart. Falls back to no
+	// addon cops.
+	addonCopPathsFn func() []string
 }
 
 // CookstyleScannerOption configures a CookstyleScanner.
@@ -257,6 +262,13 @@ func WithCookstyleFailureRulesFn(fn func() CookstyleFailureRules) CookstyleScann
 // read at scan time. When unset, overrides are loaded from the datastore.
 func WithCookstyleClassificationOverridesFn(fn func(ctx context.Context, targetChefVersion string) map[string]string) CookstyleScannerOption {
 	return func(s *CookstyleScanner) { s.classificationOverridesFn = fn }
+}
+
+// WithCookstyleAddonCopPathsFn wires a live provider of operator addon cop path
+// entries (analysis_tools.cookstyle_addon_cop_paths), read at scan time. When
+// unset, no addon cops are loaded.
+func WithCookstyleAddonCopPathsFn(fn func() []string) CookstyleScannerOption {
+	return func(s *CookstyleScanner) { s.addonCopPathsFn = fn }
 }
 
 // effectiveConcurrency returns the live concurrency when a provider is wired
@@ -530,15 +542,14 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 		return sr
 	}
 
-	// Step 2: build arguments.
-	args := buildCookstyleArgs(cookbookDir, targetChefVersion)
-
-	// Step 3: execute with timeout.
+	// Step 2+3: execute with timeout, injecting operator addon cops and
+	// isolating any addon load failure (a broken .rb must not error the scan).
 	scanStart := time.Now()
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr := s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr, addonInfo := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
+	logAddonScanInfo(log, addonInfo)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
 	sr.RawStdout = stdout
@@ -679,15 +690,14 @@ func (s *CookstyleScanner) scanOneGitRepo(
 		}
 	}
 
-	// Step 2: build arguments.
-	args := buildCookstyleArgs(repoDir, targetChefVersion)
-
-	// Step 3: execute with timeout.
+	// Step 2+3: execute with timeout, injecting operator addon cops and
+	// isolating any addon load failure (a broken .rb must not error the scan).
 	scanStart := time.Now()
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr := s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr, addonInfo := s.runScanWithAddonIsolation(scanCtx, repoDir, targetChefVersion)
+	logAddonScanInfo(log, addonInfo)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
 	sr.RawStdout = stdout
@@ -835,12 +845,98 @@ func relativeCookstylePath(filePath, cookbookDir string) string {
 // default Lint/DeprecatedClassMethods), so the classification could claim a
 // block the scan would never produce.
 func buildCookstyleArgs(cookbookDir string, targetChefVersion string) []string {
+	return buildCookstyleArgsWithAddons(cookbookDir, targetChefVersion, nil)
+}
+
+// buildCookstyleArgsWithAddons is buildCookstyleArgs with operator addon cop
+// requires injected into the sidecar (see remediation.ResolveAddonCopFiles).
+// The scan still runs the full ruleset (no --only).
+func buildCookstyleArgsWithAddons(cookbookDir string, targetChefVersion string, addonCops []remediation.AddonCop) []string {
 	return remediation.BuildCookstyleArgs(
 		cookbookDir,
 		targetChefVersion,
 		[]string{"--format", "json"},
 		"",
+		addonCops,
 	)
+}
+
+// effectiveAddonRequires resolves the live operator addon cop path entries into
+// concrete addon cops (file + parsed cop names). Returns the resolved cops plus
+// any path problems (missing file, empty dir, bad glob, unparseable cop) for the
+// caller to surface. With no provider or no configured paths it returns nothing.
+func (s *CookstyleScanner) effectiveAddonRequires() ([]remediation.AddonCop, []remediation.AddonCopProblem) {
+	if s.addonCopPathsFn == nil {
+		return nil, nil
+	}
+	paths := s.addonCopPathsFn()
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	return remediation.ResolveAddonCopFiles(paths)
+}
+
+// addonScanInfo reports what happened to addon cops during a scan, so the
+// caller can surface it (log) without the helper needing a logger.
+type addonScanInfo struct {
+	// problems are configured addon paths that could not be resolved.
+	problems []remediation.AddonCopProblem
+	// requires are the resolved addon cops that were injected.
+	requires []remediation.AddonCop
+	// loadFailed is true when cookstyle errored WITH addon cops loaded but
+	// succeeded without them — i.e. a broken addon cop was isolated out and the
+	// returned result comes from the clean (addon-free) retry.
+	loadFailed bool
+	// addonExit / cleanExit are the cookstyle exit codes from the addon and the
+	// isolation-retry runs (only meaningful when loadFailed is true).
+	addonExit int
+	cleanExit int
+}
+
+// runScanWithAddonIsolation runs cookstyle for a scan with operator addon cops
+// injected, isolating addon load failures: if cookstyle errors (exit >= 2) with
+// addons loaded, it retries WITHOUT them. When the clean retry succeeds, that
+// result is returned so a single broken addon .rb never marks every cookbook as
+// errored — the failure is reported via the returned addonScanInfo instead.
+func (s *CookstyleScanner) runScanWithAddonIsolation(
+	scanCtx context.Context,
+	cookbookDir, targetChefVersion string,
+) (stdout, stderr string, exitCode int, execErr error, info addonScanInfo) {
+	addonCops, problems := s.effectiveAddonRequires()
+	info.problems = problems
+	info.requires = addonCops
+
+	args := buildCookstyleArgsWithAddons(cookbookDir, targetChefVersion, addonCops)
+	stdout, stderr, exitCode, execErr = s.executor.Run(scanCtx, args...)
+
+	// Only attempt isolation when addons were actually injected and cookstyle
+	// ran to completion with an error exit (a start/timeout failure is not an
+	// addon problem and must surface as-is).
+	if len(addonCops) > 0 && execErr == nil && exitCode >= 2 {
+		cleanArgs := buildCookstyleArgs(cookbookDir, targetChefVersion)
+		cStdout, cStderr, cExit, cErr := s.executor.Run(scanCtx, cleanArgs...)
+		if cErr == nil && cExit < 2 {
+			info.loadFailed = true
+			info.addonExit = exitCode
+			info.cleanExit = cExit
+			return cStdout, cStderr, cExit, cErr, info
+		}
+		// The clean run also errored — a genuine cookbook/cookstyle error, not an
+		// addon load failure. Fall through with the original result.
+	}
+	return stdout, stderr, exitCode, execErr, info
+}
+
+// logAddonScanInfo surfaces addon path problems and load failures to the log.
+func logAddonScanInfo(log *logging.ScopedLogger, info addonScanInfo) {
+	for _, p := range info.problems {
+		log.Warn(fmt.Sprintf("addon cop path %q could not be resolved: %s", p.Path, p.Reason))
+	}
+	if info.loadFailed {
+		log.Error(fmt.Sprintf(
+			"an addon cop failed to load (cookstyle exit %d with addons, %d without); cookbook scanned WITHOUT addon cops — verify these files: %v",
+			info.addonExit, info.cleanExit, remediation.AddonCopPaths(info.requires)))
+	}
 }
 
 // ---------------------------------------------------------------------------
