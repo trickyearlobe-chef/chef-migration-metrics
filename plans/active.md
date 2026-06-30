@@ -4,10 +4,12 @@
 
 Approved 2026-06-30. **On `feature/cookstyle-violations-browser`.** A (drop
 `--only` → full ruleset, shared arg/sidecar helper), B (Noise prefix defaults
-for cosmetic departments) and C (functional merge-blocker — the
+for cosmetic departments), C (functional merge-blocker — the
 `Lint/DeprecatedClassMethods` blocker now fires end-to-end against the live
-cookstyle binary) are done. Remaining: D (load operator addon RuboCop cop files
-from disk); E (widen autocorrect preview to the full ruleset). No new UI.
+cookstyle binary) and D (operator addon RuboCop cop files from disk: resolve
+file/dir/glob, parse cop name + explicit enable, load-failure isolation, admin
+config + UI, README; live functional proof) are done. Remaining: E (widen
+autocorrect preview to the full ruleset, incl. addon-cop fixes). No new UI.
 
 ## Queued next — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
