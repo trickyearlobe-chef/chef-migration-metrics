@@ -49,22 +49,22 @@ func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 	}
 
 	// Verify sidecar .rubocop_cmm.yml was written with TargetChefVersion.
-	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	data, err := os.ReadFile(filepath.Join(cookbookDir, CmmConfigName))
 	if err != nil {
-		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+		t.Fatalf("expected %s to be written: %v", CmmConfigName, err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "TargetChefVersion: 18.0") {
-		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", CmmConfigName, content)
 	}
 
 	// Without an existing .rubocop.yml the sidecar should require cookstyle
 	// so the TargetChefVersion parameter is recognised.
 	if !strings.Contains(content, "require:") || !strings.Contains(content, "cookstyle") {
-		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", CmmConfigName, content)
 	}
 	if strings.Contains(content, "inherit_from") {
-		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", CmmConfigName, content)
 	}
 
 	// Original .rubocop.yml must not exist (we must not clobber cookbook config).
@@ -90,16 +90,16 @@ func TestBuildAutocorrectArgs_WithTargetVersion_WithCookbookConfig(t *testing.T)
 	}
 
 	// Verify sidecar inherits from the cookbook's own config.
-	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	data, err := os.ReadFile(filepath.Join(cookbookDir, CmmConfigName))
 	if err != nil {
-		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+		t.Fatalf("expected %s to be written: %v", CmmConfigName, err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "inherit_from: .rubocop.yml") {
-		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", CmmConfigName, content)
 	}
 	if !strings.Contains(content, "TargetChefVersion: 17.0") {
-		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", CmmConfigName, content)
 	}
 
 	// The cookbook's original .rubocop.yml must be preserved.
@@ -134,8 +134,8 @@ func TestBuildAutocorrectArgs_WithoutTargetVersion(t *testing.T) {
 	}
 
 	// No sidecar config should be written when target version is empty.
-	if _, err := os.Stat(filepath.Join(cookbookDir, cmmConfigName)); err == nil {
-		t.Errorf("%s should not be written when target version is empty", cmmConfigName)
+	if _, err := os.Stat(filepath.Join(cookbookDir, CmmConfigName)); err == nil {
+		t.Errorf("%s should not be written when target version is empty", CmmConfigName)
 	}
 }
 

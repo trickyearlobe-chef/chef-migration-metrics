@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -822,74 +821,26 @@ func relativeCookstylePath(filePath, cookbookDir string) string {
 // Argument construction
 // ---------------------------------------------------------------------------
 
-// buildCookstyleArgs constructs the cookstyle CLI arguments.
+// buildCookstyleArgs constructs the cookstyle CLI arguments for a scan via the
+// shared remediation.BuildCookstyleArgs helper.
 //
 // We always pass --format json for machine-parseable output. When a target
-// Chef Client version is specified we restrict the scan to the
-// ChefDeprecations and ChefCorrectness namespaces via --only, since those
-// are the namespaces that directly affect migration compatibility. CookStyle
-// handles version-relevance filtering internally within those namespaces.
+// Chef Client version is specified, a sidecar .rubocop_cmm.yml carrying
+// AllCops.TargetChefVersion is written and pointed at with --config.
 //
-// When no target version is specified the full default rule set runs so
-// that the dashboard can display style and modernisation suggestions too.
+// The scan runs the FULL ruleset (onlyDepartments = ""): classification — not a
+// department filter — decides the rollup verdict and complexity. The old
+// --only Chef/Deprecations,Chef/Correctness narrowing silently hid every
+// Blocker-classified cop outside those two departments (e.g. the curated
+// default Lint/DeprecatedClassMethods), so the classification could claim a
+// block the scan would never produce.
 func buildCookstyleArgs(cookbookDir string, targetChefVersion string) []string {
-	args := []string{"--format", "json"}
-
-	if targetChefVersion != "" {
-		// Set TargetChefVersion via a sidecar .rubocop_cmm.yml that we
-		// point CookStyle at with --config. If the cookbook already has a
-		// .rubocop.yml we inherit from it so its settings are preserved.
-		// CookStyle does not accept a --target-chef-version CLI flag.
-		configPath := writeCookstyleTargetConfig(cookbookDir, targetChefVersion)
-		if configPath != "" {
-			args = append(args, "--config", configPath)
-		}
-
-		// Restrict to the two migration-critical namespaces. CookStyle
-		// cops already carry version metadata in their own source —
-		// enabling only these namespaces avoids noise from Chef/Style and
-		// Chef/Modernize cops that don't affect compatibility.
-		args = append(args, "--only", "Chef/Deprecations,Chef/Correctness")
-	}
-
-	args = append(args, cookbookDir)
-	return args
-}
-
-// cmmConfigName is the sidecar config file written next to the cookbook's
-// own .rubocop.yml (if any). Using a distinct name avoids overwriting the
-// cookbook's configuration.
-const cmmConfigName = ".rubocop_cmm.yml"
-
-// writeCookstyleTargetConfig writes a sidecar .rubocop_cmm.yml into the
-// cookbook directory that sets AllCops.TargetChefVersion. If the cookbook
-// already contains a .rubocop.yml the sidecar inherits from it so the
-// cookbook's own configuration (excludes, custom cops, etc.) is preserved.
-// When no cookbook config exists the sidecar explicitly requires cookstyle
-// so that the TargetChefVersion parameter is recognised.
-//
-// Returns the absolute path to the written file, or "" on failure.
-func writeCookstyleTargetConfig(cookbookDir, targetChefVersion string) string {
-	var buf strings.Builder
-
-	existingConfig := filepath.Join(cookbookDir, ".rubocop.yml")
-	if _, err := os.Stat(existingConfig); err == nil {
-		// Cookbook has its own config — inherit from it (which also
-		// picks up any `require: cookstyle` it contains).
-		buf.WriteString("inherit_from: .rubocop.yml\n\n")
-	} else {
-		// No cookbook config — require cookstyle ourselves so the
-		// TargetChefVersion AllCops parameter is registered.
-		buf.WriteString("require:\n  - cookstyle\n\n")
-	}
-
-	fmt.Fprintf(&buf, "AllCops:\n  TargetChefVersion: %s\n", targetChefVersion)
-
-	outPath := filepath.Join(cookbookDir, cmmConfigName)
-	if err := os.WriteFile(outPath, []byte(buf.String()), 0644); err != nil {
-		return ""
-	}
-	return outPath
+	return remediation.BuildCookstyleArgs(
+		cookbookDir,
+		targetChefVersion,
+		[]string{"--format", "json"},
+		"",
+	)
 }
 
 // ---------------------------------------------------------------------------
