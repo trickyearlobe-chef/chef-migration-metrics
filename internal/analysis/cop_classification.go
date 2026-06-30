@@ -82,8 +82,16 @@ func (r *CopClassificationResolver) Resolve(copName string) ResolvedClassificati
 		}
 	}
 
-	// 3. Curated defaults
+	// 3. Curated defaults — exact cop name wins over department prefix.
 	if entry, ok := curatedDefaults[copName]; ok {
+		if entry.MinTargetVersion == "" || versionLessOrEqual(entry.MinTargetVersion, r.TargetChefVersion) {
+			return ResolvedClassification{Classification: entry.Classification, Source: SourceCuratedDefault}
+		}
+	}
+
+	// 3b. Curated department-prefix defaults (e.g. Style/, Layout/, Chef/Style/
+	// → Noise). Longest matching prefix wins.
+	if entry, ok := lookupCuratedPrefixDefault(copName); ok {
 		if entry.MinTargetVersion == "" || versionLessOrEqual(entry.MinTargetVersion, r.TargetChefVersion) {
 			return ResolvedClassification{Classification: entry.Classification, Source: SourceCuratedDefault}
 		}

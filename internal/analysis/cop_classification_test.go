@@ -145,13 +145,60 @@ func TestResolverUnclassifiedFallback(t *testing.T) {
 		TargetChefVersion: "18.0",
 	}
 
-	// Unknown cop — should be unclassified.
-	result := resolver.Resolve("Chef/Style/SomeUnknownCop")
+	// Unknown cop outside any curated prefix — should be unclassified.
+	result := resolver.Resolve("Lint/SomeUnknownCop")
 	if result.Classification != ClassificationUnclassified {
 		t.Errorf("expected unclassified, got %s", result.Classification)
 	}
 	if result.Source != SourceUnclassified {
 		t.Errorf("expected source unclassified, got %s", result.Source)
+	}
+}
+
+func TestResolverCuratedPrefixDefaults(t *testing.T) {
+	resolver := &CopClassificationResolver{
+		OperatorOverrides: map[string]string{},
+		TargetChefVersion: "18.0",
+	}
+
+	// Cosmetic departments resolve to Noise via department prefix, even though
+	// no exact-name curated default exists for these cops.
+	cosmetic := []string{
+		"Style/TrailingWhitespace",
+		"Layout/IndentationWidth",
+		"Chef/Style/CommentFormat",
+	}
+	for _, cop := range cosmetic {
+		result := resolver.Resolve(cop)
+		if result.Classification != ClassificationNoise {
+			t.Errorf("%s: expected noise (curated prefix), got %s", cop, result.Classification)
+		}
+		if result.Source != SourceCuratedDefault {
+			t.Errorf("%s: expected source curated_default, got %s", cop, result.Source)
+		}
+	}
+
+	// Noise contributes 0 complexity weight (Classify drives the scorer).
+	if got := resolver.Classify("Style/TrailingWhitespace"); got != ClassificationNoise {
+		t.Errorf("Classify(Style/TrailingWhitespace) = %s, want noise", got)
+	}
+}
+
+func TestResolverOperatorOverrideBeatsPrefixDefault(t *testing.T) {
+	resolver := &CopClassificationResolver{
+		OperatorOverrides: map[string]string{
+			"Style/TrailingWhitespace": ClassificationBlocker,
+		},
+		TargetChefVersion: "18.0",
+	}
+
+	// Operator override wins over the Noise department prefix.
+	result := resolver.Resolve("Style/TrailingWhitespace")
+	if result.Classification != ClassificationBlocker {
+		t.Errorf("expected blocker (operator override), got %s", result.Classification)
+	}
+	if result.Source != SourceOperatorOverride {
+		t.Errorf("expected source operator_override, got %s", result.Source)
 	}
 }
 
@@ -182,7 +229,7 @@ func TestEvaluatePassFailWithClassification(t *testing.T) {
 
 	t.Run("unclassified cop at warning passes under default rules", func(t *testing.T) {
 		offenses := []CookstyleOffense{
-			{CopName: "Chef/Style/SomeUnknownCop", Severity: "warning"},
+			{CopName: "Lint/SomeUnknownCop", Severity: "warning"},
 		}
 		if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
 			t.Error("expected pass: unknown cop at warning, default rules only fail on error/fatal")

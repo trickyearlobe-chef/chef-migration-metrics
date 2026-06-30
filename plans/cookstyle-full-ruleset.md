@@ -3,44 +3,14 @@
 Spec: `specifications/cookstyle-full-ruleset.md`. Status: **not started** (design
 approved 2026-06-30).
 
-Branch: **this branch** (`feature/cookstyle-violations-browser`). Chunks A–C are a
-**merge-blocker**: the reclassification feature introduced on this branch is
-broken as shipped — a cop classified Blocker outside `Chef/Deprecations,Chef/
-Correctness` silently never runs (the `--only` filter excludes it), so the
-classification claims a block the scan can never produce. That must be fixed
-before this branch merges. D (addon cops) and E (autocorrect widening) are
+Branch: **this branch** (`feature/cookstyle-violations-browser`). Chunk C is a
+**merge-blocker** (functional verification that the previously-hidden classified
+blocker now fires end-to-end). D (addon cops) and E (autocorrect widening) are
 additive but land on the same branch.
 
-Chunks are ordered; A is the foundation. Each = one session.
-
-## Chunk A — Drop `--only`; one shared scan/autocorrect arg+sidecar helper
-
-Scope: `internal/analysis/cookstyle.go` (`buildCookstyleArgs`,
-`writeCookstyleTargetConfig`), `internal/remediation/autocorrect.go`
-(`buildAutocorrectArgs`, `writeAutocorrectTargetConfig`).
-- Extract the duplicated sidecar/args construction into one shared helper.
-- Remove the `--only Chef/Deprecations,Chef/Correctness` narrowing from the scan
-  (autocorrect handled in Chunk E).
-Steps (TDD): test that a Blocker-classified cop outside the two departments (e.g.
-`Lint/DeprecatedClassMethods` at target ≥18) now produces an offence and yields
-`blocked`; test that a cosmetic cop (`Style/*` at convention) is weight-0 and
-non-blocking. Then make the change.
-Acceptance: full ruleset runs; verdict/complexity unchanged for cosmetic cops;
-previously-hidden classified blockers fire. Existing scan tests green.
-
-## Chunk B — Seed Noise curated defaults for cosmetic departments
-
-Scope: `internal/analysis/cop_classification_defaults.go`, resolver
-(`cop_classification.go`).
-- Open Q: `curatedDefaults` is keyed by exact cop name; Noise-seeding whole
-  departments needs **prefix** defaults (e.g. `Chef/Style/`, `Style/`, `Layout/`)
-  → add prefix support to the resolver's curated-default lookup, after operator
-  override + RemovedIn, before unclassified.
-Steps (TDD): assert common `Style/`/`Layout/`/`Chef/Style/` cops resolve to Noise
-(source = curated_default) and contribute 0 complexity; operator override still
-wins. Then implement.
-Acceptance: cosmetic tail pre-sorts into the collapsed Noise section; Blockers
-section stays clean. Depends on A.
+Chunks A (drop `--only` + shared helper) and B (Noise prefix defaults for
+cosmetic departments) are complete. Remaining chunks are ordered; each = one
+session.
 
 ## Chunk C — Verify the `Lint/DeprecatedClassMethods` gap is closed
 

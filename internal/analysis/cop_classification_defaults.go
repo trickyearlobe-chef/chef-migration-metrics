@@ -3,6 +3,8 @@
 
 package analysis
 
+import "strings"
+
 // curatedDefault represents a pre-shipped classification for a cop that is
 // known to be problematic for migration but cannot be auto-detected from
 // RemovedIn metadata alone.
@@ -76,4 +78,39 @@ var curatedDefaults = map[string]curatedDefault{
 
 	// use_inline_resources — no-op in Chef 13+, harmless dead code.
 	"Chef/Deprecations/UseInlineResources": {Classification: ClassificationNoise, MinTargetVersion: ""},
+}
+
+// curatedPrefixDefault is a department-level curated default: every cop whose
+// name starts with Prefix inherits this classification unless a more specific
+// source (operator override, RemovedIn, or an exact curatedDefaults entry)
+// applies first. It exists so whole cosmetic departments seed to Noise without
+// enumerating every cop.
+type curatedPrefixDefault struct {
+	Prefix         string
+	curatedDefault // embeds Classification + MinTargetVersion
+}
+
+// curatedPrefixDefaults seeds cosmetic departments to Noise. These cops are
+// pure style/layout — they never affect runtime migration, so they pre-sort
+// into the collapsed Noise section and contribute 0 complexity. The longest
+// matching prefix wins, so the list is searched in descending prefix length;
+// keep the entries sorted that way for readability.
+var curatedPrefixDefaults = []curatedPrefixDefault{
+	{Prefix: "Chef/Style/", curatedDefault: curatedDefault{Classification: ClassificationNoise}},
+	{Prefix: "Style/", curatedDefault: curatedDefault{Classification: ClassificationNoise}},
+	{Prefix: "Layout/", curatedDefault: curatedDefault{Classification: ClassificationNoise}},
+}
+
+// lookupCuratedPrefixDefault returns the curated default for the longest
+// matching department prefix, if any.
+func lookupCuratedPrefixDefault(copName string) (curatedDefault, bool) {
+	best := -1
+	var found curatedDefault
+	for _, p := range curatedPrefixDefaults {
+		if len(p.Prefix) > best && strings.HasPrefix(copName, p.Prefix) {
+			best = len(p.Prefix)
+			found = p.curatedDefault
+		}
+	}
+	return found, best >= 0
 }

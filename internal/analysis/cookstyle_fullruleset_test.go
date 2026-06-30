@@ -70,8 +70,9 @@ func TestDeriveStatus_BlockerOutsideDepartments_Blocked(t *testing.T) {
 }
 
 // TestDeriveStatus_CosmeticStyleCop_Ready proves widening the ruleset does not
-// turn cookbooks red: a cosmetic generic Style cop at convention severity is
-// unclassified, non-failing under the default rules, and yields Ready.
+// turn cookbooks red: a cosmetic generic Style cop seeds to Noise via the
+// Chunk B department-prefix default, is non-failing under the default rules,
+// and yields Ready.
 func TestDeriveStatus_CosmeticStyleCop_Ready(t *testing.T) {
 	offenses := []CookstyleOffense{
 		{Severity: "convention", CopName: "Style/StringLiterals", Message: "Prefer single-quoted strings"},
@@ -81,8 +82,8 @@ func TestDeriveStatus_CosmeticStyleCop_Ready(t *testing.T) {
 		TargetChefVersion: "18.0",
 	}
 
-	if got := resolver.Classify("Style/StringLiterals"); got != ClassificationUnclassified {
-		t.Fatalf("a generic Style cop should be unclassified in Chunk A, got %q", got)
+	if got := resolver.Classify("Style/StringLiterals"); got != ClassificationNoise {
+		t.Fatalf("a generic Style cop should seed to noise via the curated prefix, got %q", got)
 	}
 
 	status := DeriveCookstyleStatus(offenses, DefaultFailureRules(), resolver)
