@@ -28,27 +28,6 @@ import { GitRepoRemediationContent } from "./GitRepoRemediationPage";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/**
- * rollupCookstyleStatus reduces per-target CookStyle results to a single rollup:
- * any blocked → blocked, else any needs_review → needs_review, else ready when
- * all results are ready/passing. Each result prefers its materialised
- * cookstyle_status, falling back to the passed boolean for legacy rows.
- */
-function rollupCookstyleStatus(
-  results: { cookstyle_status?: string | null; passed?: boolean }[],
-): string {
-  let sawReady = false;
-  let sawReview = false;
-  for (const r of results) {
-    const s = r.cookstyle_status ?? (r.passed ? "ready" : "blocked");
-    if (s === "blocked") return "blocked";
-    if (s === "needs_review") sawReview = true;
-    if (s === "ready") sawReady = true;
-  }
-  if (sawReview) return "needs_review";
-  return sawReady ? "ready" : "untested";
-}
-
 export function GitRepoDetailPage() {
   const { name } = useParams<{ name: string }>();
 
@@ -310,14 +289,10 @@ export function GitRepoDetailPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-500">Status:</span>
-                        {gd.cookstyle && gd.cookstyle.length > 0 ? (
-                          <CookStyleStatusBadge
-                            status={rollupCookstyleStatus(gd.cookstyle)}
-                            size="sm"
-                          />
-                        ) : (
-                          <CookStyleStatusBadge status="untested" size="sm" />
-                        )}
+                        <CookStyleStatusBadge
+                          status={gd.git_repo.cookstyle_status ?? "untested"}
+                          size="sm"
+                        />
                       </div>
                       {gd.complexity && gd.complexity.length > 0 && (
                         <div className="flex items-center gap-2">

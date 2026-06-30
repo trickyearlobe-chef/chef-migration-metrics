@@ -146,10 +146,8 @@ export function CookbookDetailPage() {
               </h4>
               <div className="mt-2 space-y-2">
                 {data.git_repos.map((gd, idx) => {
-                  const csStatus = gd.cookstyle && gd.cookstyle.length > 0
-                    ? (gd.cookstyle[0].cookstyle_status ??
-                       (gd.cookstyle[0].passed ? "ready" : "blocked"))
-                    : "untested";
+                  const csStatus =
+                    gd.cookstyle?.[0]?.cookstyle_status ?? "untested";
                   const tkStatus = gd.git_repo.tk_status ?? "untested";
                   const offenses = gd.cookstyle?.[0]?.offence_count;
                   const target = gd.cookstyle?.[0]?.target_chef_version;

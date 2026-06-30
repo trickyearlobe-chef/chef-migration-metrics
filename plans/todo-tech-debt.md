@@ -309,13 +309,6 @@ Recorded 2026-06-26 (status-consistency Chunk 3, API surfacing).
 
 - [ ] **Lists surface `cookstyle_status` but not weighted complexity.** `active.md`/the chunk line said "weighted complexity to … list responses," but the `web-api-server-cookbooks`/`web-api-git-repos` list-section specs only carry `cookstyle_status` on list entries (complexity stays on remediation/detail, where it is already classification-weighted from Chunk 1). Followed the spec to avoid divergence; the cookbook/git-repo filter queries were not extended with a complexity join. **Revisit** only if a list view needs per-row complexity.
 
-## CookStyle — Detail-page rollup purity (deferred)
-
-Recorded 2026-06-30 (dashboard rollup-consistency chunk).
-
-- [ ] **Detail/remediation badges keep a legacy `passed` fallback.** `CookbookDetailPage`, `CookbookRemediationPage`, `GitRepoRemediationPage` resolve the header badge as `cookstyle_status ?? (passed ? "ready" : "blocked")`. The backend always sends a materialised `cookstyle_status` (default `untested`), so the fallback is dead defensively but can diverge from the SoT if it ever fires. **Fix:** drop the fallback; trust `cookstyle_status`. Low impact.
-- [ ] **`GitRepoDetailPage` rolls up the overview badge client-side.** `rollupCookstyleStatus()` aggregates per-target results in the browser instead of reading the materialised `git_repos.cookstyle_status`. Re-derivation can disagree with the server rollup. **Fix:** consume the materialised repo rollup. Low impact (single overview badge).
-
 ## CookStyle — Readiness Integration + Toggle (Chunk 6)
 
 Recorded 2026-06-26 (status-consistency Chunk 6, readiness + `review_blocks_readiness`).

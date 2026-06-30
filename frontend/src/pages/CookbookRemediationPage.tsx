@@ -169,13 +169,8 @@ export function CookbookRemediationPage() {
               score={data.complexity_score}
             />
           )}
-          {(data.cookstyle_status || data.cookstyle_passed !== null) && (
-            <CookStyleStatusBadge
-              status={
-                data.cookstyle_status ??
-                (data.cookstyle_passed ? "ready" : "blocked")
-              }
-            />
+          {data.cookstyle_status && (
+            <CookStyleStatusBadge status={data.cookstyle_status} />
           )}
         </div>
       </div>
