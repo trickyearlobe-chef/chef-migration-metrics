@@ -6,6 +6,7 @@
 package datastore
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -135,6 +136,123 @@ func TestFunctional_ListAllServerCookbookCookstyleResultsByTargetVersion_Scans(t
 	if results[0].CookstyleStatus != "needs_review" {
 		t.Errorf("CookstyleStatus = %q, want needs_review", results[0].CookstyleStatus)
 	}
+}
+
+// TestFunctional_SchemaBackfills_Marker verifies the backfill marker round-trips
+// and that marking is idempotent (migration 0043).
+func TestFunctional_SchemaBackfills_Marker(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	const name = "func-test-backfill-marker"
+	cleanupTestData(t, db, "DELETE FROM schema_backfills WHERE name = '"+name+"'")
+
+	done, err := db.BackfillCompleted(ctx, name)
+	if err != nil {
+		t.Fatalf("BackfillCompleted: %v", err)
+	}
+	if done {
+		t.Fatal("expected marker absent before first mark")
+	}
+
+	if err := db.MarkBackfillCompleted(ctx, name); err != nil {
+		t.Fatalf("MarkBackfillCompleted: %v", err)
+	}
+	// Second mark must be a no-op (ON CONFLICT DO NOTHING), not an error.
+	if err := db.MarkBackfillCompleted(ctx, name); err != nil {
+		t.Fatalf("second MarkBackfillCompleted: %v", err)
+	}
+
+	done, err = db.BackfillCompleted(ctx, name)
+	if err != nil {
+		t.Fatalf("BackfillCompleted after mark: %v", err)
+	}
+	if !done {
+		t.Error("expected marker present after mark")
+	}
+}
+
+// TestFunctional_ListAllCookstyleResultRefs verifies the unscoped ref listings
+// return rows across targets with their stored offences and current status — the
+// inputs the precise-status backfill consumes.
+func TestFunctional_ListAllCookstyleResultRefs(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	const org = "func-cs-refs-org"
+	const cb = "func-cs-refs"
+	const gitName = "func-cs-refs-git"
+	const gitURL = "https://git.example.com/func-cs-refs-git"
+	cleanupTestData(t, db,
+		"DELETE FROM server_cookbook_cookstyle_results WHERE cookbook_name = '"+cb+"'",
+		"DELETE FROM server_cookbooks WHERE name = '"+cb+"'",
+		"DELETE FROM organisations WHERE name = '"+org+"'",
+		"DELETE FROM git_repo_cookstyle_results WHERE git_repo_name = '"+gitName+"'",
+		"DELETE FROM git_repos WHERE name = '"+gitName+"'",
+	)
+
+	if _, err := db.UpsertOrganisationFromConfig(ctx, UpsertOrganisationParams{
+		Name: org, ChefServerURL: "https://chef.example.com", OrgName: org, ClientName: "c",
+	}); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	if _, err := db.UpsertServerCookbook(ctx, UpsertServerCookbookParams{
+		OrganisationName: org, Name: cb, Version: "1.0.0", IsActive: true,
+	}); err != nil {
+		t.Fatalf("seed cookbook: %v", err)
+	}
+	const offJSON = `[{"cop_name":"Chef/Correctness/NodeNormal","severity":"warning"}]`
+	if _, err := db.UpsertServerCookbookCookstyleResult(ctx, UpsertServerCookbookCookstyleResultParams{
+		OrganisationName: org, CookbookName: cb, CookbookVersion: "1.0.0", TargetChefVersion: "18",
+		Passed: true, CookstyleStatus: "ready", Offences: []byte(offJSON), DurationSeconds: 1, ScannedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert server result: %v", err)
+	}
+	if _, err := db.UpsertGitRepo(ctx, UpsertGitRepoParams{Name: gitName, GitRepoURL: gitURL}); err != nil {
+		t.Fatalf("upsert git repo: %v", err)
+	}
+	if _, err := db.UpsertGitRepoCookstyleResult(ctx, UpsertGitRepoCookstyleResultParams{
+		GitRepoName: gitName, GitRepoURL: gitURL, TargetChefVersion: "18",
+		Passed: true, CookstyleStatus: "ready", Offences: []byte(offJSON), DurationSeconds: 1, ScannedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert git result: %v", err)
+	}
+
+	const wantCop = "Chef/Correctness/NodeNormal"
+
+	serverRefs, err := db.ListAllServerCookbookCookstyleResultRefs(ctx)
+	if err != nil {
+		t.Fatalf("ListAllServerCookbookCookstyleResultRefs: %v", err)
+	}
+	if !containsServerRef(serverRefs, org, cb, wantCop) {
+		t.Errorf("seeded server ref (with its offences) not found in %d refs", len(serverRefs))
+	}
+
+	gitRefs, err := db.ListAllGitRepoCookstyleResultRefs(ctx)
+	if err != nil {
+		t.Fatalf("ListAllGitRepoCookstyleResultRefs: %v", err)
+	}
+	if !containsGitRef(gitRefs, gitName, wantCop) {
+		t.Errorf("seeded git ref (with its offences) not found in %d refs", len(gitRefs))
+	}
+}
+
+func containsServerRef(refs []CookstyleResultRef, org, cb, wantCop string) bool {
+	for _, r := range refs {
+		if r.OrganisationName == org && r.CookbookName == cb && bytes.Contains(r.Offences, []byte(wantCop)) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsGitRef(refs []CookstyleResultRef, name, wantCop string) bool {
+	for _, r := range refs {
+		if r.GitRepoName == name && bytes.Contains(r.Offences, []byte(wantCop)) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestFunctional_CookstyleStatus_GitRepoMaterialised verifies a git repo

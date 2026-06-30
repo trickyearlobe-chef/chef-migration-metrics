@@ -954,6 +954,68 @@ func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase: precise CookStyle status backfill (one-time, idempotent).
+// ---------------------------------------------------------------------------
+
+// cookstyleStatusBackfillMarker names the one-time backfill in schema_backfills.
+const cookstyleStatusBackfillMarker = "cookstyle_status_precise_v1"
+
+// backfillCookstyleStatus re-derives the precise CookStyle rollup status for
+// every server/git result from its stored offences, replacing the coarse
+// boolean-derived status migrations 0041/0042 shipped — neither can recover
+// needs_review, which needs the offences resolved through cop classification.
+// It then re-evaluates node readiness per organisation so node rollups are
+// precise on first boot too (the is_ready boolean 0042 backfilled from likewise
+// cannot express needs_review). A one-time marker makes it cheap to skip on
+// every subsequent boot; the work is idempotent regardless. Non-fatal — a
+// failure is logged and leaves the marker unset so the next boot retries.
+func (app *serverApp) backfillCookstyleStatus(ctx context.Context) {
+	done, err := app.db.BackfillCompleted(ctx, cookstyleStatusBackfillMarker)
+	if err != nil {
+		app.startup.Warn(fmt.Sprintf("could not check cookstyle status backfill marker: %v", err))
+		return
+	}
+	if done {
+		app.startup.Info("cookstyle status backfill: already applied — skipping")
+		return
+	}
+
+	cfg := app.configHolder.Get()
+	rules := analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
+	res, err := analysis.BackfillCookstyleStatus(ctx, app.db, rules)
+	if err != nil {
+		app.startup.Warn(fmt.Sprintf("cookstyle status backfill failed (will retry next boot): %v", err))
+		return
+	}
+	app.startup.Info(fmt.Sprintf(
+		"cookstyle status backfill: corrected %d result(s) (server %d/%d, git %d/%d)",
+		res.Changed(), res.ServerResultsChanged, res.ServerResultsScanned,
+		res.GitResultsChanged, res.GitResultsScanned))
+
+	// Re-derive node readiness precisely. Best-effort: readiness self-heals on
+	// every collection run, so a per-org failure here does not block the marker.
+	if app.readinessEval != nil && len(cfg.TargetChefVersions) > 0 {
+		if orgs, listErr := app.db.ListOrganisations(ctx); listErr != nil {
+			app.startup.Warn(fmt.Sprintf("cookstyle status backfill: listing organisations for readiness: %v", listErr))
+		} else {
+			recomputed := 0
+			for _, org := range orgs {
+				if _, rerr := app.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, cfg.TargetChefVersions); rerr != nil {
+					app.startup.Warn(fmt.Sprintf("cookstyle status backfill: readiness re-eval for org %q: %v", org.Name, rerr))
+					continue
+				}
+				recomputed++
+			}
+			app.startup.Info(fmt.Sprintf("cookstyle status backfill: re-evaluated readiness for %d organisation(s)", recomputed))
+		}
+	}
+
+	if err := app.db.MarkBackfillCompleted(ctx, cookstyleStatusBackfillMarker); err != nil {
+		app.startup.Warn(fmt.Sprintf("cookstyle status backfill: completed but failed to set marker (will re-run next boot): %v", err))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Phase: analysis pipeline and collector setup.
 // ---------------------------------------------------------------------------
 
@@ -2763,6 +2825,10 @@ func run() int {
 	if err := app.setupCollector(ctx); err != nil {
 		return 1
 	}
+
+	// Phase 12b: one-time precise CookStyle status backfill (needs the readiness
+	// evaluator built in Phase 12). Idempotent and marker-gated; non-fatal.
+	app.backfillCookstyleStatus(ctx)
 
 	// Phase 13: ownership startup tasks.
 	app.setupOwnership(ctx)
