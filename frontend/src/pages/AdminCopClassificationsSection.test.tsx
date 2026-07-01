@@ -159,6 +159,61 @@ describe("AdminCopClassificationsSection", () => {
     );
   });
 
+  // Display order of the cop-name cells (each is a leaf font-mono div).
+  const copOrder = () =>
+    screen.getAllByText(/^(Chef|Lint)\//).map((el) => el.textContent);
+
+  it("sorts by classification (blockers first) when the header is clicked", async () => {
+    render(<AdminCopClassificationsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("Lint/DeprecatedClassMethods")).toBeInTheDocument(),
+    );
+    // Default sort is by cop name ascending: Chef/… before Lint/…
+    expect(copOrder()).toEqual([
+      "Chef/Deprecations/ResourceWithoutUnifiedTrue",
+      "Lint/DeprecatedClassMethods",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /sort by classification/i }));
+    // Ascending by impact rank: blocker (Lint) before review (Chef).
+    expect(copOrder()).toEqual([
+      "Lint/DeprecatedClassMethods",
+      "Chef/Deprecations/ResourceWithoutUnifiedTrue",
+    ]);
+  });
+
+  it("toggles sort direction on repeated header clicks (cookbooks)", async () => {
+    render(<AdminCopClassificationsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("Lint/DeprecatedClassMethods")).toBeInTheDocument(),
+    );
+    const header = screen.getByRole("button", { name: /sort by cookbooks/i });
+    fireEvent.click(header); // asc: 2 (Chef) before 4 (Lint)
+    expect(copOrder()).toEqual([
+      "Chef/Deprecations/ResourceWithoutUnifiedTrue",
+      "Lint/DeprecatedClassMethods",
+    ]);
+    fireEvent.click(header); // desc: 4 (Lint) before 2 (Chef)
+    expect(copOrder()).toEqual([
+      "Lint/DeprecatedClassMethods",
+      "Chef/Deprecations/ResourceWithoutUnifiedTrue",
+    ]);
+  });
+
+  it("filters by classification source", async () => {
+    render(<AdminCopClassificationsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("Lint/DeprecatedClassMethods")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: /filter by source/i }), {
+      target: { value: "operator_override" },
+    });
+    // Only the operator-overridden cop remains.
+    expect(screen.getByText("Lint/DeprecatedClassMethods")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Chef/Deprecations/ResourceWithoutUnifiedTrue"),
+    ).not.toBeInTheDocument();
+  });
+
   it("filters by classification via the filter bar", async () => {
     render(<AdminCopClassificationsSection />);
     await waitFor(() =>

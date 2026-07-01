@@ -25,12 +25,77 @@ import {
 
 const PER_PAGE = 200;
 
+// Client-side sort over the fetched page. Columns like classification/source have
+// no server sort field, and the fetched set is the whole (paginated) list, so
+// sorting locally keeps every column sortable and the UI instant.
+type SortKey =
+  | "cop_name"
+  | "classification"
+  | "classification_source"
+  | "cookbooks_affected"
+  | "removed_in";
+type SortDir = "asc" | "desc";
+
+// Impact order for classification: blockers first so the must-curate work sorts
+// to the top in ascending order.
+const CLASS_RANK: Record<string, number> = {
+  blocker: 0,
+  review: 1,
+  noise: 2,
+  unclassified: 3,
+};
+
+// Numeric-aware compare for Chef version strings ("16.0" < "18.0").
+function compareVersion(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+function makeCopComparator(
+  key: SortKey,
+  dir: SortDir,
+): (a: CopAggregateItem, b: CopAggregateItem) => number {
+  const mul = dir === "asc" ? 1 : -1;
+  return (a, b) => {
+    switch (key) {
+      case "classification":
+        return (
+          mul *
+          ((CLASS_RANK[a.classification] ?? 9) - (CLASS_RANK[b.classification] ?? 9))
+        );
+      case "classification_source":
+        return mul * a.classification_source.localeCompare(b.classification_source);
+      case "cookbooks_affected":
+        return mul * (a.cookbooks_affected - b.cookbooks_affected);
+      case "removed_in": {
+        // Cops with no RemovedIn always sort last, regardless of direction.
+        const ae = !a.removed_in;
+        const be = !b.removed_in;
+        if (ae && be) return 0;
+        if (ae) return 1;
+        if (be) return -1;
+        return mul * compareVersion(a.removed_in ?? "", b.removed_in ?? "");
+      }
+      default:
+        return mul * a.cop_name.localeCompare(b.cop_name);
+    }
+  };
+}
+
 export function AdminCopClassificationsSection() {
   const [versions, setVersions] = useState<string[]>([]);
   const [target, setTarget] = useState<string>("");
   const [classFilter, setClassFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [triggeredOnly, setTriggeredOnly] = useState<boolean>(false);
+  const [sourceFilter, setSourceFilter] = useState<string>("");
+  const [sortKey, setSortKey] = useState<SortKey>("cop_name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const [items, setItems] = useState<CopAggregateItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,15 +154,30 @@ export function AdminCopClassificationsSection() {
     loadCops();
   }, [loadCops]);
 
-  const visible = useMemo(() => {
+  const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (c) =>
-        c.cop_name.toLowerCase().includes(q) ||
-        (c.description ?? "").toLowerCase().includes(q),
-    );
-  }, [items, search]);
+    let out = items;
+    if (q) {
+      out = out.filter(
+        (c) =>
+          c.cop_name.toLowerCase().includes(q) ||
+          (c.description ?? "").toLowerCase().includes(q),
+      );
+    }
+    if (sourceFilter) {
+      out = out.filter((c) => c.classification_source === sourceFilter);
+    }
+    return [...out].sort(makeCopComparator(sortKey, sortDir));
+  }, [items, search, sourceFilter, sortKey, sortDir]);
+
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
   const openEditor = (cop: CopAggregateItem) => {
     setEditCop(cop.cop_name);
@@ -177,6 +257,22 @@ export function AdminCopClassificationsSection() {
         <ClassificationFilterBar activeFilter={classFilter} onFilterChange={setClassFilter} />
 
         <label className="flex items-center gap-2 text-sm text-gray-700">
+          <span className="font-medium">Source</span>
+          <select
+            aria-label="Filter by source"
+            className="rounded border border-gray-300 px-2 py-1 text-sm"
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+          >
+            <option value="">All sources</option>
+            <option value="operator_override">Operator override</option>
+            <option value="removed_in">RemovedIn</option>
+            <option value="curated_default">Curated default</option>
+            <option value="unclassified">Unclassified</option>
+          </select>
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-gray-700">
           <input
             type="checkbox"
             className="rounded border-gray-300"
@@ -190,28 +286,27 @@ export function AdminCopClassificationsSection() {
       {error && <ErrorAlert message={error} />}
       {loading && <LoadingSpinner />}
 
-      {!loading && !error && visible.length === 0 && (
+      {!loading && !error && rows.length === 0 && (
         <div className="rounded border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-400">
           No cops match the current filters.
         </div>
       )}
 
-      {!loading && !error && visible.length > 0 && (
+      {!loading && !error && rows.length > 0 && (
         <div className="overflow-x-auto rounded border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">Cop</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">
-                  Classification
-                </th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">Source</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">RemovedIn</th>
+                <SortHeader label="Cop" sortKeyName="cop_name" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortHeader label="Classification" sortKeyName="classification" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortHeader label="Source" sortKeyName="classification_source" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortHeader label="Cookbooks" sortKeyName="cookbooks_affected" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                <SortHeader label="RemovedIn" sortKeyName="removed_in" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
                 <th className="px-3 py-2 text-center font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {visible.map((cop) => {
+              {rows.map((cop) => {
                 const isEditing = editCop === cop.cop_name;
                 const isOverride = cop.classification_source === "operator_override";
                 return (
@@ -229,6 +324,13 @@ export function AdminCopClassificationsSection() {
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-500">
                       {cop.classification_source.replace(/_/g, " ")}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-600">
+                      {cop.cookbooks_affected > 0 ? (
+                        cop.cookbooks_affected
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-600">
                       {cop.removed_in ? (
@@ -287,6 +389,45 @@ export function AdminCopClassificationsSection() {
         </p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sortable column header
+// ---------------------------------------------------------------------------
+
+function SortHeader({
+  label,
+  sortKeyName,
+  activeKey,
+  dir,
+  onSort,
+}: {
+  label: string;
+  sortKeyName: SortKey;
+  activeKey: SortKey;
+  dir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = activeKey === sortKeyName;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      className="px-3 py-2 text-left font-medium text-gray-600"
+    >
+      <button
+        type="button"
+        aria-label={`Sort by ${label}`}
+        onClick={() => onSort(sortKeyName)}
+        className="inline-flex items-center gap-1 hover:text-gray-900"
+      >
+        <span>{label}</span>
+        <span aria-hidden="true" className={active ? "text-gray-700" : "text-gray-300"}>
+          {active ? (dir === "asc" ? "▲" : "▼") : "⇅"}
+        </span>
+      </button>
+    </th>
   );
 }
 
