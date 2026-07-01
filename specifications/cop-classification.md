@@ -31,8 +31,11 @@ For a given cop + target version, classification is resolved in priority order:
 
 1. **Operator override** (stored in DB) — highest priority
 2. **Auto-seed: `RemovedIn ≤ target_version`** — from cop mapping table
-3. **Curated defaults** (shipped with application) — known behaviour-change cops
-4. **Unclassified** — fallback to severity-based failure rules
+3. **Curated exact default** (shipped) — a specific named cop
+4. **Curated prefix/department default** (shipped) — longest matching namespace
+   (`Chef/Style/`, `Style/`, `Layout/` → Noise); matches cops we never enumerated,
+   so new cosmetic cops classify with no code change
+5. **Unclassified** — fallback to severity-based failure rules
 
 ### Pass/Fail Determination
 
@@ -147,6 +150,46 @@ Shipped as compiled Go data (like `embeddedCopMappings`). Covers well-known beha
 | `Chef/Deprecations/LibrarianChefspec` | Noise | Test tooling only |
 | `Chef/Deprecations/Delivery` | Noise | CI tooling only |
 | `Chef/Deprecations/DependsPoise` | Noise | Still works, just unmaintained |
+
+## Data Provenance & Durability (decisions)
+
+Records where each input comes from and how the system avoids rotting as
+cookstyle evolves. Agreed 2026-07-01.
+
+**Static (compiled Go, hand-maintained):** the `RemovedIn`/description mapping
+table (`embeddedCopMappings`) and the curated exact + prefix defaults. **Dynamic
+(runtime):** operator overrides + custom cops (DB), scan offences + severity
+(from running the binary), failure rules (config store).
+
+**cookstyle does NOT expose `RemovedIn`.** `cookstyle --show-cops` gives
+`Enabled`/`Severity`/`Description`/`VersionAdded` — but `VersionAdded` is the
+*gem* version, and the Chef-Client removal version exists only in free-text
+`Description`. So the Chef removal signal is inherently curated; no machine source
+supplies it. This is accepted, not a gap to close.
+
+**Custom cops classify via severity, not the resolver.** A custom cop's DB
+`classification` sets its offence *severity* (`blocker→error`, `review→warning`,
+else `convention`); the resolver returns Unclassified for `Custom/*` (creating one
+writes no override row), so it blocks via the severity/failure-rule path, not the
+classification path.
+
+Durability principles (avoid silent obsolescence — the named tables must not be
+load-bearing for *unknown* cops):
+
+1. **Department-default classification.** Unknown cops resolve by namespace, never
+   to invisible-Unclassified: `Chef/Deprecations/*`, `Chef/Correctness/*` default
+   to **Review**; cosmetic namespaces to **Noise**. The `RemovedIn`/curated exacts
+   become *upgrades* (promote a specific cop to Blocker), not the primary signal —
+   so a brand-new cop cookstyle ships is at-least-Review automatically.
+2. **Live inventory + drift report.** `cookstyle --show-cops` is the authoritative
+   list of cops *this* binary has (cached at startup / on upgrade). Cross-referenced
+   against the static tables it surfaces **stale** entries (mapped cops the binary no
+   longer emits) and **coverage gaps** (`Chef/*` cops with no classification), turning
+   silent drift into an admin worklist. Generic-Ruby cops (Style/Layout/Lint/…) stay
+   out of the default view — only ~30% (`Chef/*`) are migration-relevant.
+3. **Seed static defaults into the DB.** The `RemovedIn`/curated tables seed
+   editable DB rows (operator overrides already layer on top), so updating migration
+   knowledge is a data edit, not a recompile. The Go tables are the initial seed only.
 
 ## API
 

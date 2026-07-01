@@ -1,6 +1,15 @@
 # Active Plan
 
-## Current chunk — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
+## In flight — Cop list full universe + durability (`feature/cookstyle-violations-browser`)
+
+- **Cops-list universe fix** (uncommitted): `GET /cookstyle/cops` now lists all
+  known cops (curated + mappings + custom + scanned), with a `triggered_only`
+  toggle. Cop Analysis stays triggered-only.
+- **Durability** (`plans/cop-classification-durability.md`): #1 department-default
+  classification → #2 live `--show-cops` inventory + drift report → #3 seed the
+  static tables into the DB (include #3 while the branch is unshipped).
+
+## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
 Chunks A (lint) + B/D (rules) landed in `main`. Open:
 - **E — drift sweep** (approved; multi-agent spec↔code audit → report).
