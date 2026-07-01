@@ -30,6 +30,7 @@ export function AdminCopClassificationsSection() {
   const [target, setTarget] = useState<string>("");
   const [classFilter, setClassFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
+  const [triggeredOnly, setTriggeredOnly] = useState<boolean>(false);
 
   const [items, setItems] = useState<CopAggregateItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +74,7 @@ export function AdminCopClassificationsSection() {
         page: 1,
       };
       if (classFilter) params.classification = classFilter;
+      if (triggeredOnly) params.triggered_only = true;
       const resp = await fetchCookstyleCops(params);
       setItems(resp.data ?? []);
       setTruncated((resp.pagination?.total_items ?? 0) > (resp.data?.length ?? 0));
@@ -81,7 +83,7 @@ export function AdminCopClassificationsSection() {
     } finally {
       setLoading(false);
     }
-  }, [target, classFilter]);
+  }, [target, classFilter, triggeredOnly]);
 
   useEffect(() => {
     loadCops();
@@ -173,6 +175,16 @@ export function AdminCopClassificationsSection() {
         />
 
         <ClassificationFilterBar activeFilter={classFilter} onFilterChange={setClassFilter} />
+
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            className="rounded border-gray-300"
+            checked={triggeredOnly}
+            onChange={(e) => setTriggeredOnly(e.target.checked)}
+          />
+          <span>Only cops that have triggered</span>
+        </label>
       </div>
 
       {error && <ErrorAlert message={error} />}

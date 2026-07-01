@@ -94,6 +94,25 @@ func TestResolverRemovedInNotApplicable(t *testing.T) {
 	}
 }
 
+func TestCuratedDefaultCopNames(t *testing.T) {
+	names := CuratedDefaultCopNames()
+	if len(names) == 0 {
+		t.Fatal("expected curated default cop names, got none")
+	}
+	// Must include a known curated entry so the cop list can seed it as a cop
+	// that exists even when no scan has produced its offence yet.
+	found := false
+	for _, n := range names {
+		if n == "Lint/DeprecatedClassMethods" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("CuratedDefaultCopNames() missing Lint/DeprecatedClassMethods; got %v", names)
+	}
+}
+
 func TestResolverCuratedDefaults(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},

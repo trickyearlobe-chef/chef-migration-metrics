@@ -136,6 +136,29 @@ describe("AdminCopClassificationsSection", () => {
     );
   });
 
+  it("requests all known cops by default (no triggered_only)", async () => {
+    render(<AdminCopClassificationsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("Lint/DeprecatedClassMethods")).toBeInTheDocument(),
+    );
+    expect(api.fetchCookstyleCops).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ triggered_only: true }),
+    );
+  });
+
+  it("narrows to triggered cops when the checkbox is ticked", async () => {
+    render(<AdminCopClassificationsSection />);
+    await waitFor(() =>
+      expect(screen.getByText("Lint/DeprecatedClassMethods")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByLabelText(/only cops that have triggered/i));
+    await waitFor(() =>
+      expect(api.fetchCookstyleCops).toHaveBeenLastCalledWith(
+        expect.objectContaining({ triggered_only: true }),
+      ),
+    );
+  });
+
   it("filters by classification via the filter bar", async () => {
     render(<AdminCopClassificationsSection />);
     await waitFor(() =>

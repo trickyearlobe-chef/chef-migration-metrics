@@ -19,6 +19,10 @@ export interface CopAggregationQuery {
   order?: string;
   page?: number;
   per_page?: number;
+  // When true, restrict the data page to cops that have triggered at least one
+  // scan offence. The list otherwise returns every known cop (curated defaults +
+  // RemovedIn mappings + scanned + custom).
+  triggered_only?: boolean;
 }
 
 export function fetchCookstyleCops(

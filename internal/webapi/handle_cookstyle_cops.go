@@ -101,6 +101,7 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 
 	source := queryString(req, "source", "")
 	classFilter := queryString(req, "classification", "")
+	triggeredOnly := queryString(req, "triggered_only", "") == "true"
 	pg := ParsePagination(req)
 	sp := ParseSort(req, "cookbooks_affected", []string{"cookbooks_affected", "total_offences", "cop_name", "unblocks"})
 
@@ -216,29 +217,62 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Build response items.
-	items := make([]copAggregateItem, 0, len(accum))
-	for copName, a := range accum {
+	// Build the known-cop universe. The spec's Cop Classifications surface lists
+	// ALL known cops — curated defaults + RemovedIn mappings + custom definitions
+	// + scanned — not only cops already seen in a scan, so operators can classify
+	// proactively. Cops that have never triggered appear with zero stats.
+	known := make(map[string]bool, len(accum))
+	for name := range accum {
+		known[name] = true
+	}
+	for _, name := range analysis.CuratedDefaultCopNames() {
+		known[name] = true
+	}
+	for _, m := range remediation.AllCopMappings() {
+		if m.CopName != "" {
+			known[m.CopName] = true
+		}
+	}
+	// Custom cop definitions are not in the mapping table; pull their metadata
+	// from the DB. A load failure is non-fatal — the rest of the universe stands.
+	customByName := make(map[string]datastore.CustomCopDefinition)
+	if defs, err := r.db.ListCustomCopDefinitions(ctx); err != nil {
+		r.logf("ERROR", "listing custom cop definitions for cops: %v", err)
+	} else {
+		for _, d := range defs {
+			known[d.CopName] = true
+			customByName[d.CopName] = d
+		}
+	}
+
+	// Build the full item set (unfiltered). The summary is computed from this so
+	// it reflects the whole picture regardless of the data-page filters.
+	allItems := make([]copAggregateItem, 0, len(known))
+	for copName := range known {
 		resolved := resolver.Resolve(copName)
 
-		// Apply classification filter.
-		if classFilter != "" && resolved.Classification != classFilter {
-			continue
+		var offences, correctable, cbAffected int
+		var severity string
+		if a := accum[copName]; a != nil {
+			offences = a.offences
+			correctable = a.correctable
+			cbAffected = len(a.cookbooks)
+			severity = a.severity
 		}
 
 		var autoPct float64
-		if a.offences > 0 {
-			autoPct = float64(a.correctable) / float64(a.offences) * 100
+		if offences > 0 {
+			autoPct = float64(correctable) / float64(offences) * 100
 		}
 
 		item := copAggregateItem{
 			CopName:              copName,
 			Category:             copNamespace(copName),
-			Severity:             a.severity,
+			Severity:             severity,
 			Classification:       resolved.Classification,
 			ClassificationSource: resolved.Source,
-			CookbooksAffected:    len(a.cookbooks),
-			TotalOffences:        a.offences,
+			CookbooksAffected:    cbAffected,
+			TotalOffences:        offences,
 			AutoCorrectablePct:   autoPct,
 			Unblocks:             unblocksCounts[copName],
 			IsCustom:             strings.HasPrefix(copName, "Custom/"),
@@ -251,12 +285,40 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 			item.IntroducedIn = mapping.IntroducedIn
 			item.MigrationURL = mapping.MigrationURL
 		}
+		// Custom cops carry their own description/removed_in in the DB definition.
+		if d, ok := customByName[copName]; ok {
+			if item.Description == "" {
+				item.Description = d.Description
+			}
+			if item.RemovedIn == "" {
+				item.RemovedIn = d.RemovedIn
+			}
+		}
 
-		items = append(items, item)
+		allItems = append(allItems, item)
 	}
 
-	// Compute summary (before pagination, after classification filter).
-	summary := computeCopSummary(items, accum, resolver, classFilter)
+	// Summary population: the universe, narrowed by the opt-in triggered-only
+	// toggle (so the Cop Analysis view's cards reflect what actually triggered)
+	// but independent of the classification filter (so it always shows the bigger
+	// picture across classifications).
+	summaryPop := make([]copAggregateItem, 0, len(allItems))
+	for _, it := range allItems {
+		if triggeredOnly && it.TotalOffences == 0 {
+			continue
+		}
+		summaryPop = append(summaryPop, it)
+	}
+	summary := computeCopSummary(summaryPop, accum)
+
+	// Data page narrows the summary population further by classification.
+	items := make([]copAggregateItem, 0, len(summaryPop))
+	for _, it := range summaryPop {
+		if classFilter != "" && it.Classification != classFilter {
+			continue
+		}
+		items = append(items, it)
+	}
 
 	// Sort.
 	sortCopItems(items, sp)
@@ -272,59 +334,36 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// computeCopSummary computes the headline summary counts. When a classification
-// filter is active, the summary still reports totals across ALL cops (so the
-// user can see the bigger picture).
-func computeCopSummary(items []copAggregateItem, accum map[string]*copAccum, resolver *analysis.CopClassificationResolver, classFilter string) copAggregationSummary {
+// computeCopSummary computes the headline summary counts across the full cop
+// universe (all known cops, unaffected by the data-page filters) so the user
+// always sees the bigger picture. Cop counts come from every known cop; the
+// affected-cookbook counts come from scan offences (accum) only.
+func computeCopSummary(allItems []copAggregateItem, accum map[string]*copAccum) copAggregationSummary {
 	var s copAggregationSummary
 
 	blockerCBs := make(map[string]bool)
 	reviewCBs := make(map[string]bool)
 
-	// If there's a classification filter, we need to iterate ALL cops for summary.
-	// Otherwise we can use the already-filtered items.
-	if classFilter != "" {
-		for copName, a := range accum {
-			resolved := resolver.Resolve(copName)
-			switch resolved.Classification {
-			case analysis.ClassificationBlocker:
-				s.BlockerCops++
+	for _, item := range allItems {
+		switch item.Classification {
+		case analysis.ClassificationBlocker:
+			s.BlockerCops++
+			if a, ok := accum[item.CopName]; ok {
 				for cb := range a.cookbooks {
 					blockerCBs[cb.name] = true
 				}
-			case analysis.ClassificationReview:
-				s.ReviewCops++
+			}
+		case analysis.ClassificationReview:
+			s.ReviewCops++
+			if a, ok := accum[item.CopName]; ok {
 				for cb := range a.cookbooks {
 					reviewCBs[cb.name] = true
 				}
-			case analysis.ClassificationNoise:
-				s.NoiseCops++
-			default:
-				s.UnclassifiedCops++
 			}
-		}
-	} else {
-		for _, item := range items {
-			switch item.Classification {
-			case analysis.ClassificationBlocker:
-				s.BlockerCops++
-				if a, ok := accum[item.CopName]; ok {
-					for cb := range a.cookbooks {
-						blockerCBs[cb.name] = true
-					}
-				}
-			case analysis.ClassificationReview:
-				s.ReviewCops++
-				if a, ok := accum[item.CopName]; ok {
-					for cb := range a.cookbooks {
-						reviewCBs[cb.name] = true
-					}
-				}
-			case analysis.ClassificationNoise:
-				s.NoiseCops++
-			default:
-				s.UnclassifiedCops++
-			}
+		case analysis.ClassificationNoise:
+			s.NoiseCops++
+		default:
+			s.UnclassifiedCops++
 		}
 	}
 

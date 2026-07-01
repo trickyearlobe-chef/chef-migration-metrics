@@ -83,6 +83,10 @@ export function CopAnalysisTab() {
         per_page: DEFAULT_PAGE_SIZE,
         sort: sortField,
         order: sortOrder,
+        // Cop Analysis is about cops that have triggered (cookbooks affected /
+        // fix effort). Restrict to triggered cops so the endpoint's full
+        // known-cop universe doesn't flood this view with zero-cookbook cops.
+        triggered_only: true,
       };
       if (classFilter) params.classification = classFilter;
       if (source === "server" || source === "git") params.source = source;

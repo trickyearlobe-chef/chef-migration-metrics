@@ -80,6 +80,19 @@ var curatedDefaults = map[string]curatedDefault{
 	"Chef/Deprecations/UseInlineResources": {Classification: ClassificationNoise, MinTargetVersion: ""},
 }
 
+// CuratedDefaultCopNames returns the exact cop names that ship with a curated
+// classification default. It lets the cop-aggregation surface seed these as
+// known cops even before any scan has produced their offence. Department-prefix
+// defaults (Style/, Layout/, …) are deliberately excluded — they classify whole
+// namespaces and have no concrete cop names to enumerate.
+func CuratedDefaultCopNames() []string {
+	names := make([]string, 0, len(curatedDefaults))
+	for name := range curatedDefaults {
+		names = append(names, name)
+	}
+	return names
+}
+
 // curatedPrefixDefault is a department-level curated default: every cop whose
 // name starts with Prefix inherits this classification unless a more specific
 // source (operator override, RemovedIn, or an exact curatedDefaults entry)
