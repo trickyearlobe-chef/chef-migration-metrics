@@ -203,6 +203,46 @@ func TestResolverCuratedPrefixDefaults(t *testing.T) {
 	}
 }
 
+func TestResolverDepartmentDefaults(t *testing.T) {
+	resolver := &CopClassificationResolver{
+		OperatorOverrides: map[string]string{},
+		TargetChefVersion: "18.0",
+	}
+
+	// Brand-new, unmapped cops in the Chef deprecation/correctness departments
+	// resolve to Review via department prefix — visible and advisory, never
+	// silently Unclassified.
+	review := []string{
+		"Chef/Deprecations/SomeBrandNewCop",
+		"Chef/Correctness/SomeBrandNewCop",
+	}
+	for _, cop := range review {
+		result := resolver.Resolve(cop)
+		if result.Classification != ClassificationReview {
+			t.Errorf("%s: expected review (department prefix), got %s", cop, result.Classification)
+		}
+		if result.Source != SourceCuratedDefault {
+			t.Errorf("%s: expected source curated_default, got %s", cop, result.Source)
+		}
+	}
+
+	// More specific sources still win over the department default:
+	//   - exact curated Noise entry (ChefSpec test tooling)
+	//   - RemovedIn <= target (NodeSet removed in 14.0)
+	if got := resolver.Resolve("Chef/Deprecations/ChefSpecLegacyRunner"); got.Classification != ClassificationNoise {
+		t.Errorf("exact curated Noise must beat department Review, got %s", got.Classification)
+	}
+	if got := resolver.Resolve("Chef/Deprecations/NodeSet"); got.Classification != ClassificationBlocker || got.Source != SourceRemovedIn {
+		t.Errorf("RemovedIn Blocker must beat department Review, got %s/%s", got.Classification, got.Source)
+	}
+
+	// Cosmetic Chef/Style/* stays Noise — its own department default is
+	// disjoint from Deprecations/Correctness, so no cross-contamination.
+	if got := resolver.Resolve("Chef/Style/CommentFormat"); got.Classification != ClassificationNoise {
+		t.Errorf("Chef/Style/* must stay Noise, got %s", got.Classification)
+	}
+}
+
 func TestResolverOperatorOverrideBeatsPrefixDefault(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{

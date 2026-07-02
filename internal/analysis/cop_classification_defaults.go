@@ -46,11 +46,11 @@ var curatedDefaults = map[string]curatedDefault{
 
 	// Unified mode recommended for Chef 18+ resources. Not a crash but
 	// behaviour differs significantly.
-	"Chef/Deprecations/HWRPWithoutUnifiedTrue": {Classification: ClassificationReview, MinTargetVersion: "18.0"},
+	"Chef/Deprecations/HWRPWithoutUnifiedTrue":     {Classification: ClassificationReview, MinTargetVersion: "18.0"},
 	"Chef/Deprecations/ResourceWithoutUnifiedTrue": {Classification: ClassificationReview, MinTargetVersion: "18.0"},
 
 	// node.normal persists unexpectedly — not a crash but a data hygiene issue.
-	"Chef/Correctness/NodeNormal": {Classification: ClassificationReview, MinTargetVersion: ""},
+	"Chef/Correctness/NodeNormal":       {Classification: ClassificationReview, MinTargetVersion: ""},
 	"Chef/Correctness/NodeNormalUnless": {Classification: ClassificationReview, MinTargetVersion: ""},
 
 	// -------------------------------------------------------------------------
@@ -58,14 +58,14 @@ var curatedDefaults = map[string]curatedDefault{
 	// -------------------------------------------------------------------------
 
 	// ChefSpec / test tooling — never affects production runtime.
-	"Chef/Deprecations/ChefSpecLegacyRunner": {Classification: ClassificationNoise, MinTargetVersion: ""},
-	"Chef/Deprecations/ChefSpecCoverageReport": {Classification: ClassificationNoise, MinTargetVersion: ""},
+	"Chef/Deprecations/ChefSpecLegacyRunner":       {Classification: ClassificationNoise, MinTargetVersion: ""},
+	"Chef/Deprecations/ChefSpecCoverageReport":     {Classification: ClassificationNoise, MinTargetVersion: ""},
 	"Chef/Deprecations/DeprecatedChefSpecPlatform": {Classification: ClassificationNoise, MinTargetVersion: ""},
-	"Chef/Deprecations/LibrarianChefspec": {Classification: ClassificationNoise, MinTargetVersion: ""},
+	"Chef/Deprecations/LibrarianChefspec":          {Classification: ClassificationNoise, MinTargetVersion: ""},
 
 	// Foodcritic — defunct linter, no runtime impact.
 	"Chef/Deprecations/FoodcriticTesting": {Classification: ClassificationNoise, MinTargetVersion: ""},
-	"Chef/Deprecations/FoodcriticFile": {Classification: ClassificationNoise, MinTargetVersion: ""},
+	"Chef/Deprecations/FoodcriticFile":    {Classification: ClassificationNoise, MinTargetVersion: ""},
 
 	// Delivery/Workflow — CI tooling, no runtime impact.
 	"Chef/Deprecations/Delivery": {Classification: ClassificationNoise, MinTargetVersion: ""},
@@ -103,12 +103,22 @@ type curatedPrefixDefault struct {
 	curatedDefault // embeds Classification + MinTargetVersion
 }
 
-// curatedPrefixDefaults seeds cosmetic departments to Noise. These cops are
-// pure style/layout — they never affect runtime migration, so they pre-sort
-// into the collapsed Noise section and contribute 0 complexity. The longest
-// matching prefix wins, so the list is searched in descending prefix length;
-// keep the entries sorted that way for readability.
+// curatedPrefixDefaults seeds whole departments to a sensible default so that
+// an unmapped cop is never silently Unclassified. Two tiers:
+//   - Chef deprecation/correctness departments → Review: an unknown cop here
+//     is likely migration-relevant, so it must be visible and advisory. Review
+//     is non-blocking (only Blocker blocks) and carries low complexity weight.
+//   - Cosmetic style/layout departments → Noise: pure style, never affects
+//     runtime migration, pre-sorts into the collapsed Noise section, 0 weight.
+//
+// The longest matching prefix wins (see lookupCuratedPrefixDefault), so the two
+// tiers are disjoint and cannot cross-contaminate. More specific sources —
+// operator override, RemovedIn, and exact curatedDefaults entries — are all
+// consulted before this table, so they still take precedence. Keep entries
+// sorted by descending prefix length for readability.
 var curatedPrefixDefaults = []curatedPrefixDefault{
+	{Prefix: "Chef/Deprecations/", curatedDefault: curatedDefault{Classification: ClassificationReview}},
+	{Prefix: "Chef/Correctness/", curatedDefault: curatedDefault{Classification: ClassificationReview}},
 	{Prefix: "Chef/Style/", curatedDefault: curatedDefault{Classification: ClassificationNoise}},
 	{Prefix: "Style/", curatedDefault: curatedDefault{Classification: ClassificationNoise}},
 	{Prefix: "Layout/", curatedDefault: curatedDefault{Classification: ClassificationNoise}},

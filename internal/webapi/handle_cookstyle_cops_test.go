@@ -189,11 +189,13 @@ func TestHandleCookstyleCops_FullUniverse_IncludesUnscannedCuratedCop(t *testing
 		t.Error("triggered_only should keep the scanned cop NodeSet")
 	}
 	// Summary tracks the population being viewed: the full universe carries the
-	// long unclassified tail of known-but-untriggered cops, whereas triggered_only
-	// collapses it to just the cops that fired.
-	if all.Summary.UnclassifiedCops <= only.Summary.UnclassifiedCops {
-		t.Errorf("universe summary should carry more unclassified cops than triggered-only: all=%d triggered=%d",
-			all.Summary.UnclassifiedCops, only.Summary.UnclassifiedCops)
+	// long tail of known-but-untriggered cops, whereas triggered_only collapses
+	// it to just the cops that fired. Department defaults surface the untriggered
+	// Chef/Deprecations/* tail as Review (not silently Unclassified), so the
+	// universe's Review count exceeds triggered_only's.
+	if all.Summary.ReviewCops <= only.Summary.ReviewCops {
+		t.Errorf("universe summary should carry more review cops than triggered-only: all=%d triggered=%d",
+			all.Summary.ReviewCops, only.Summary.ReviewCops)
 	}
 }
 

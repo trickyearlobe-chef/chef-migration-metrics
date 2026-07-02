@@ -32,9 +32,13 @@ For a given cop + target version, classification is resolved in priority order:
 1. **Operator override** (stored in DB) — highest priority
 2. **Auto-seed: `RemovedIn ≤ target_version`** — from cop mapping table
 3. **Curated exact default** (shipped) — a specific named cop
-4. **Curated prefix/department default** (shipped) — longest matching namespace
-   (`Chef/Style/`, `Style/`, `Layout/` → Noise); matches cops we never enumerated,
-   so new cosmetic cops classify with no code change
+4. **Curated prefix/department default** (shipped) — longest matching namespace:
+   - `Chef/Deprecations/`, `Chef/Correctness/` → Review (migration-relevant,
+     visible + advisory)
+   - `Chef/Style/`, `Style/`, `Layout/` → Noise (cosmetic)
+
+   Matches cops we never enumerated, so a brand-new cop classifies with no code
+   change. More specific sources (override, RemovedIn, curated exact) still win.
 5. **Unclassified** — fallback to severity-based failure rules
 
 ### Pass/Fail Determination

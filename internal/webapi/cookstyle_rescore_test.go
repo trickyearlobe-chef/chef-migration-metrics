@@ -79,9 +79,12 @@ func TestRescoreCookstyleResults_NoResults(t *testing.T) {
 }
 
 func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
-	// Offenses that already correctly reflect default rules (error/fatal → fail)
+	// Offenses that already correctly reflect default rules (error/fatal → fail).
+	// Use an unclassified cop (generic Lint/, no curated/RemovedIn/department
+	// default) so the severity-rule fallback — not classification — drives the
+	// verdict; a Chef/Deprecations/* cop is now department-defaulted to Review.
 	offenses := []analysis.CookstyleOffense{
-		{Severity: "error", CopName: "Chef/Deprecations/SomeRule"},
+		{Severity: "error", CopName: "Lint/SomeUnclassifiedRule"},
 	}
 	offJSON, _ := json.Marshal(offenses)
 
@@ -126,9 +129,12 @@ func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
 }
 
 func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
-	// Offense with severity "warning" in Chef/Deprecations/
+	// Offense at "warning" severity on an unclassified cop (generic Lint/, no
+	// curated/RemovedIn/department default) so the severity-rule fallback drives
+	// the verdict — a Chef/Deprecations/* cop is now department-defaulted to
+	// Review and would ignore these rules entirely.
 	offenses := []analysis.CookstyleOffense{
-		{Severity: "warning", CopName: "Chef/Deprecations/SomeRule"},
+		{Severity: "warning", CopName: "Lint/SomeUnclassifiedRule"},
 	}
 	offJSON, _ := json.Marshal(offenses)
 
@@ -151,8 +157,10 @@ func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
 		},
 	}
 
-	// Switch to strict: warnings in Deprecations now fail
-	rules := analysis.StrictFailureRules()
+	// Tighten the catch-all so warnings now fail for any (unclassified) cop.
+	rules := analysis.NewCookstyleFailureRules(map[string][]string{
+		"*": {"warning", "error", "fatal"},
+	})
 	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

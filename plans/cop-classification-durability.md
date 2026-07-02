@@ -5,25 +5,9 @@ Goal: stop the classification tables silently rotting as cookstyle evolves.
 Branch: continue on `feature/cookstyle-violations-browser` (unshipped, so #3's
 data-model change carries no back-compat cost).
 
-Ordered; each chunk = one session. #1 and #2 are the high-leverage, lower-risk
-pair; #3 converts "recompile" into "data edit".
-
-## Chunk 1 — Department-default classification (unknowns are never invisible)
-
-Scope: `internal/analysis/cop_classification_defaults.go` (+ resolver test).
-Steps (TDD):
-- Add prefix/department defaults: `Chef/Deprecations/` and `Chef/Correctness/`
-  → **Review** (below exact defaults + RemovedIn, above the cosmetic-Noise
-  prefixes and Unclassified — longest-prefix-wins already implemented).
-- Prove: a brand-new *unmapped* `Chef/Deprecations/Foo` resolves to Review, not
-  Unclassified; existing curated exacts + `RemovedIn ≤ target` still win as
-  Blocker; `Chef/Style/*` still Noise.
-Acceptance: unknown Chef deprecation/correctness cops surface as Review (visible,
-non-blocking); no cookbook turns red (only Blocker blocks); curated exacts and
-RemovedIn unchanged. Reclassification stays rescan-free (recompute closure).
-Note: measure complexity-weight impact — many previously-Unclassified cops become
-Review; Review must not inflate status, only advisory complexity.
-Depends on: none.
+Ordered; each chunk = one session. #2 is the high-leverage, lower-risk item;
+#3 converts "recompile" into "data edit". (#1 — department-default
+classification — is implemented; see `cop_classification_defaults.go`.)
 
 ## Chunk 2 — Live cop inventory + drift/coverage report
 

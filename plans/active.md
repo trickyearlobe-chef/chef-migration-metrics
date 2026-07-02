@@ -5,9 +5,9 @@
 - **Cops-list universe fix** (uncommitted): `GET /cookstyle/cops` now lists all
   known cops (curated + mappings + custom + scanned), with a `triggered_only`
   toggle. Cop Analysis stays triggered-only.
-- **Durability** (`plans/cop-classification-durability.md`): #1 department-default
-  classification → #2 live `--show-cops` inventory + drift report → #3 seed the
-  static tables into the DB (include #3 while the branch is unshipped).
+- **Durability** (`plans/cop-classification-durability.md`): #2 live `--show-cops`
+  inventory + drift report → #3 seed the static tables into the DB (include #3
+  while the branch is unshipped). (#1 department-default classification done.)
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
