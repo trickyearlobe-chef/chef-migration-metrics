@@ -1143,6 +1143,14 @@ func (s *CookstyleScanner) ResetGitRepoResults(ctx context.Context, gitRepoName,
 // Default executor
 // ---------------------------------------------------------------------------
 
+// NewCookstyleExecutor returns a CookstyleExecutor that runs the cookstyle
+// binary at the given path. It lets callers (e.g. the cop-registry provider
+// wired in main) reuse the same execution path as the scanner without
+// constructing a full scanner.
+func NewCookstyleExecutor(path string) CookstyleExecutor {
+	return &defaultCookstyleExecutor{path: path}
+}
+
 type defaultCookstyleExecutor struct {
 	path string
 }
