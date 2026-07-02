@@ -131,6 +131,12 @@ type serverApp struct {
 	// the complexity scorer + readiness evaluator) and wired into the router.
 	cookstylePropagator *webapi.CookstylePropagator
 
+	// copRegistry serves the live `cookstyle --show-cops` inventory + drift
+	// report. Built in setupCollector when the cookstyle binary is available;
+	// nil otherwise (drift degrades to registry_available=false). Lazily loads
+	// on first request, so it adds no startup latency.
+	copRegistry webapi.CopRegistryProvider
+
 	// readinessEval evaluates per-node upgrade readiness. Built in
 	// setupCollector and reused by the router's readiness reconciler to recompute
 	// readiness for all orgs when the readiness config changes.
@@ -1030,6 +1036,13 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	}
 	if toolResult.Cookstyle.Available {
 		app.startup.Info(fmt.Sprintf("cookstyle available: %s (version %s)", toolResult.Cookstyle.Path, toolResult.Cookstyle.Version))
+		// The cop registry serves the live inventory + drift report and augments
+		// the cop-list universe. It is available whenever the binary is, even if
+		// scanning is disabled via config — the inventory is still meaningful.
+		app.copRegistry = analysis.NewCopRegistryProvider(
+			analysis.NewCookstyleExecutor(toolResult.Cookstyle.Path),
+			toolResult.Cookstyle.Version,
+		)
 	} else {
 		app.startup.Info(fmt.Sprintf("cookstyle not available: %s — CookStyle scanning disabled", toolResult.Cookstyle.Error))
 	}
@@ -1367,6 +1380,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		}),
 		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
 		webapi.WithCookstylePropagator(app.cookstylePropagator),
+		webapi.WithCopRegistry(app.copRegistry),
 		webapi.WithReadinessReconciler(func() error {
 			// A readiness config change (review_blocks_readiness toggle or disk
 			// threshold) re-evaluates readiness for all organisations so the new
