@@ -5,30 +5,10 @@ Goal: stop the classification tables silently rotting as cookstyle evolves.
 Branch: continue on `feature/cookstyle-violations-browser` (unshipped, so #3's
 data-model change carries no back-compat cost).
 
-Ordered; each chunk = one session. #2 is the high-leverage, lower-risk item;
-#3 converts "recompile" into "data edit". (#1 — department-default
-classification — is implemented; see `cop_classification_defaults.go`.)
-
-## Chunk 2 — Live cop inventory + drift/coverage report
-
-Scope: new registry provider (`internal/analysis` or `internal/remediation`),
-`cmd/.../main.go` wiring, a drift endpoint under `internal/webapi`, a small admin
-panel. Union `Chef/*` registry cops into the cops list universe.
-Steps (TDD):
-- Parser: `cookstyle --show-cops` output (fixture) → cop names + department
-  (+ Enabled/Severity/Description). Column-0 `Dept/Name:` lines.
-- Registry provider: run once, cache (keyed by cookstyle path/version), fallback
-  to the static universe on failure (non-fatal).
-- Drift computation: registry vs static tables → **stale** (mapping/curated entry
-  for a cop the binary no longer emits) + **coverage gaps** (`Chef/*` cops with no
-  classification).
-- Wire `Chef/*` registry cops into `handleCookstyleCops`' known-cop universe
-  (generic-Ruby cops excluded from the default view; still auto-added on trigger).
-- Admin panel surfacing the two lists.
-Acceptance: unclassified `Chef/*` cops are listable pre-scan; drift report shows
-stale + gaps; `--show-cops` failure degrades to today's static universe; generic
-Style/Layout/Lint stay out of the default list.
-Depends on: none (complements the shipped cops-list universe fix).
+Ordered; each chunk = one session. #3 converts "recompile" into "data edit".
+(#1 department-default classification and #2 live inventory + drift report are
+implemented — see `cop_registry.go`, `cop_drift.go`, `handle_cookstyle_drift.go`,
+and the `AdminCopInventorySection` panel.)
 
 ## Chunk 3 — Seed static defaults into the DB (code edit → data edit)
 

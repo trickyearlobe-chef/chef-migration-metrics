@@ -2,12 +2,11 @@
 
 ## In flight — Cop list full universe + durability (`feature/cookstyle-violations-browser`)
 
-- **Cops-list universe fix** (uncommitted): `GET /cookstyle/cops` now lists all
-  known cops (curated + mappings + custom + scanned), with a `triggered_only`
-  toggle. Cop Analysis stays triggered-only.
-- **Durability** (`plans/cop-classification-durability.md`): #2 live `--show-cops`
-  inventory + drift report → #3 seed the static tables into the DB (include #3
-  while the branch is unshipped). (#1 department-default classification done.)
+- **Durability** (`plans/cop-classification-durability.md`): #1 dept defaults +
+  #2 live `--show-cops` inventory + drift report done. Remaining: **#3 seed the
+  static tables into the DB** (code edit → data edit; do while the branch is
+  unshipped, no migration back-compat). Start #3 in a fresh thread reading only
+  that plan + the spec.
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
