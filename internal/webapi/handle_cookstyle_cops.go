@@ -105,21 +105,12 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 	pg := ParsePagination(req)
 	sp := ParseSort(req, "cookbooks_affected", []string{"cookbooks_affected", "total_offences", "cop_name", "unblocks"})
 
-	// Load operator overrides for the target version.
-	overrides, err := r.db.ListCopClassifications(ctx, targetVersion)
+	// Load operator overrides for the target version and build the resolver.
+	resolver, err := r.copResolver(ctx, targetVersion)
 	if err != nil {
 		r.logf("ERROR", "listing cop classifications: %v", err)
 		WriteInternalError(w, "Failed to load cop classifications.")
 		return
-	}
-	overrideMap := make(map[string]string, len(overrides))
-	for _, o := range overrides {
-		overrideMap[o.CopName] = o.Classification
-	}
-
-	resolver := &analysis.CopClassificationResolver{
-		OperatorOverrides: overrideMap,
-		TargetChefVersion: targetVersion,
 	}
 
 	// Load all cookstyle results for aggregation.
@@ -244,6 +235,16 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 			customByName[d.CopName] = d
 		}
 	}
+	// Union the live registry's Chef/* cops so unclassified Chef cops are
+	// listable before they ever trigger. Generic-Ruby cops (Style/Layout/Lint/…)
+	// stay out of the default list — they are still auto-added on trigger via
+	// accum. A missing/failed registry is non-fatal (static universe stands).
+	reg := r.copRegistrySnapshot(ctx)
+	if reg != nil {
+		for _, e := range reg.ChefCops() {
+			known[e.CopName] = true
+		}
+	}
 
 	// Build the full item set (unfiltered). The summary is computed from this so
 	// it reflects the whole picture regardless of the data-page filters.
@@ -292,6 +293,13 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 			}
 			if item.RemovedIn == "" {
 				item.RemovedIn = d.RemovedIn
+			}
+		}
+		// Fall back to the live registry's description so a Chef/* cop listed
+		// from the registry (never triggered, no mapping) is not blank.
+		if item.Description == "" && reg != nil {
+			if e, ok := reg.Lookup(copName); ok {
+				item.Description = e.Description
 			}
 		}
 

@@ -20,6 +20,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
@@ -218,6 +219,13 @@ type Router struct {
 	// complexity → dependent-node readiness). Nil when not wired — changes are
 	// persisted but not propagated. Set via WithCookstylePropagator.
 	cookstylePropagator *CookstylePropagator
+
+	// copRegistry supplies the live `cookstyle --show-cops` cop registry for the
+	// drift report and the cop-list universe (Chef/* cops listable before they
+	// trigger). Nil when cookstyle is unavailable — the drift report degrades to
+	// registry_available=false and the cop list falls back to the static
+	// universe. Set via WithCopRegistry.
+	copRegistry CopRegistryProvider
 
 	// batchMu guards runningBatch. Only held for fast map reads/writes.
 	batchMu sync.Mutex
@@ -449,6 +457,20 @@ func WithKitchenQueue(m *kitchenqueue.Manager) RouterOption {
 // unset, classification/custom-cop changes are persisted but not propagated.
 func WithCookstylePropagator(p *CookstylePropagator) RouterOption {
 	return func(r *Router) { r.cookstylePropagator = p }
+}
+
+// CopRegistryProvider supplies the live cookstyle cop registry. Implemented by
+// *analysis.CopRegistryProvider; an interface here so tests can inject a
+// hand-built registry and so webapi does not depend on the binary at runtime.
+type CopRegistryProvider interface {
+	Registry(ctx context.Context) (*analysis.CopRegistry, error)
+}
+
+// WithCopRegistry wires the live cop registry provider used by the drift report
+// and the cop-list universe. When unset, the drift report reports the registry
+// unavailable and the cop list uses only the static tables.
+func WithCopRegistry(p CopRegistryProvider) RouterOption {
+	return func(r *Router) { r.copRegistry = p }
 }
 
 // WithSAML wires in the SAML SSO/SLO handler. When set, the SAML placeholder
@@ -755,6 +777,7 @@ func (r *Router) registerRoutes() {
 	// Cookstyle cop analysis & classification
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/cookstyle/cops", r.handleCookstyleCops)
+	r.protect("/api/v1/cookstyle/cop-drift", r.handleCookstyleCopDrift)
 	r.protect("/api/v1/cookstyle/cops/", r.handleCookstyleCopSubroute)
 	r.protect("/api/v1/cookstyle/custom-cops", r.handleCookstyleCustomCops)
 	r.protect("/api/v1/cookstyle/custom-cops/", r.handleCookstyleCustomCop)

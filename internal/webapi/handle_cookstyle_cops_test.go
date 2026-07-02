@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -688,6 +689,55 @@ func TestExtractCopNameFromClassificationPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// TestHandleCookstyleCops_RegistryUnionAddsChefCops proves the cop-list
+// universe unions in the live registry's Chef/* cops (listable before they ever
+// trigger) while keeping generic-Ruby cops out of the default list.
+func TestHandleCookstyleCops_RegistryUnionAddsChefCops(t *testing.T) {
+	store := &mockStore{
+		ListAllServerCookbookCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return nil, nil
+		},
+		ListGitRepoCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.GitRepoCookstyleResult, error) {
+			return nil, nil
+		},
+	}
+	r := newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("18.0"))
+	r.copRegistry = fakeCopRegistry{reg: analysis.NewCopRegistry([]analysis.CopRegistryEntry{
+		{CopName: "Chef/Modernize/ZzzRegistryOnly", Department: "Chef/Modernize", TopNamespace: "Chef", Enabled: true, Description: "registry-sourced description"},
+		{CopName: "Style/ZzzGenericRegistryOnly", Department: "Style", TopNamespace: "Style", Enabled: true},
+	}, "test-8.6.10")}
+
+	w := httptest.NewRecorder()
+	// per_page=500 fits the whole ~100-cop universe on one page, so the
+	// registry-sourced cop is included regardless of the map-iteration order the
+	// universe is built in.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookstyle/cops?target_chef_version=18.0&per_page=500", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp copAggregationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var chef *copAggregateItem
+	for i := range resp.Data {
+		switch resp.Data[i].CopName {
+		case "Chef/Modernize/ZzzRegistryOnly":
+			chef = &resp.Data[i]
+		case "Style/ZzzGenericRegistryOnly":
+			t.Error("generic-Ruby registry cop leaked into the default cop list")
+		}
+	}
+	if chef == nil {
+		t.Fatal("Chef/* registry cop not surfaced in the cop-list universe")
+	}
+	if chef.Description != "registry-sourced description" {
+		t.Errorf("Description = %q, want the registry-sourced fallback", chef.Description)
+	}
+}
 
 func mustMarshalCops(t *testing.T, v any) []byte {
 	t.Helper()
