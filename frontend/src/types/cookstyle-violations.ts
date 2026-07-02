@@ -61,6 +61,34 @@ export interface CopCookbookResponse {
   pagination: Pagination;
 }
 
+// ---------------------------------------------------------------------------
+// Cop drift / coverage report (live registry vs. static classification tables)
+// ---------------------------------------------------------------------------
+
+// StaleCopEntry is a static-table cop the running cookstyle binary no longer
+// emits. `source` names which table to prune: "curated_default" or
+// "removed_in_mapping".
+export interface StaleCopEntry {
+  cop_name: string;
+  source: string;
+}
+
+// CoverageGapEntry is a live Chef/* cop with no classification (resolves to
+// unclassified) — invisible to the preset failure clauses until curated.
+export interface CoverageGapEntry {
+  cop_name: string;
+  department: string;
+  enabled: boolean;
+}
+
+export interface CopDriftReport {
+  registry_available: boolean;
+  registry_version: string;
+  // Nil Go slices serialise as null, so treat these as possibly absent.
+  stale: StaleCopEntry[] | null;
+  coverage_gaps: CoverageGapEntry[] | null;
+}
+
 export interface CustomCopDefinition {
   id?: string;
   cop_name: string;

@@ -14,6 +14,7 @@ import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedbac
 import { CookstyleFailureRulesGrid } from "../components/CookstyleFailureRulesGrid";
 import { AdminCustomCopsSection } from "./AdminCustomCopsSection";
 import { AdminCopClassificationsSection } from "./AdminCopClassificationsSection";
+import { AdminCopInventorySection } from "./AdminCopInventorySection";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -306,6 +307,12 @@ export function AdminCookstylePage() {
 
       {/* Cop classifications — the primary classification surface */}
       <AdminCopClassificationsSection />
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Cop inventory & drift — worklist of coverage gaps + stale entries */}
+      <AdminCopInventorySection />
 
       {/* Separator */}
       <hr className="my-6 border-gray-200" />

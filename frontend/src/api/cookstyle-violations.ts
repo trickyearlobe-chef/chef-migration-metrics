@@ -3,6 +3,7 @@
 import type {
   CopAggregationResponse,
   CopCookbookResponse,
+  CopDriftReport,
   CustomCopDefinition,
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
@@ -31,6 +32,20 @@ export function fetchCookstyleCops(
   return apiFetch<CopAggregationResponse>(
     buildUrl(
       "/cookstyle/cops",
+      params as Record<string, string | number | boolean | undefined>,
+    ),
+  );
+}
+
+// fetchCopDrift returns the classification-table drift report (stale entries +
+// Chef/* coverage gaps) for the given target version. Omit the target to use
+// the server's configured default.
+export function fetchCopDrift(params?: {
+  target_chef_version?: string;
+}): Promise<CopDriftReport> {
+  return apiFetch<CopDriftReport>(
+    buildUrl(
+      "/cookstyle/cop-drift",
       params as Record<string, string | number | boolean | undefined>,
     ),
   );
