@@ -61,11 +61,20 @@
 
 ## Code Navigation
 
-- Before a refactor that renames, changes a signature, moves, or deletes a symbol, use LSP `findReferences` (or call hierarchy) to enumerate call sites. Grep alone misses indirect uses and false-matches text.
-- For "what implements this interface?" (esp. Go's implicit satisfaction), use LSP `goToImplementation`. Grep cannot find these reliably.
-- LSP and grep are complementary, not either/or: LSP finds semantic symbol references; grep still catches what LSP can't see — string/dynamic refs (reflection, struct tags, SQL columns, config keys) and cross-language uses (the Go↔TS boundary). For a rename that crosses those, run both.
-- Grep/Read remain the default for locating code and reading for understanding.
-- If an LSP server is cold/unresponsive (returns no symbols mid-indexing), fall back to grep rather than blocking.
+Three complementary layers — pick the cheapest that answers the question, escalate when it can't:
+
+- **grep/ripgrep (text)** — the default for locating code, reading for understanding, and finding what only text can see: string/dynamic refs (reflection, struct tags, SQL columns, config keys) and cross-language uses (the Go↔TS boundary). Fast, zero setup.
+- **ast-grep / `sg` (structural)** — reach for it the moment a regex starts catching matches inside comments, strings, or the wrong syntactic position. Matches by AST, so it isolates code shapes grep can't (e.g. `if err != nil { return err }` wrap-candidates instead of every `err != nil` line). Use it for structural search and mechanical multi-site rewrites. Language-aware: pass `-l go` / `-l tsx`. Pattern gotcha: a lone `$$$` as the *only* argument does not bind — anchor it with a concrete metavar (`fmt.Errorf($MSG, $$$)`, not `fmt.Errorf($$$)`). `sg` is a middle layer, not a grep replacement — the patterns take a little learning.
+- **LSP (semantic)** — the authority for symbol meaning. Before a refactor that renames, changes a signature, moves, or deletes a symbol, use `findReferences` (or call hierarchy) to enumerate call sites — grep/`sg` miss indirect uses. For "what implements this interface?" (esp. Go's implicit satisfaction), use `goToImplementation` — text/structural search cannot find these reliably.
+
+- Escalate, don't substitute: text → structural when regex fights the grammar; structural → semantic when you need meaning (references, implementations, types). For a rename that crosses dynamic/string refs or the Go↔TS boundary, run LSP **and** grep — neither sees the other's world.
+- If an LSP server is cold/unresponsive (returns no symbols mid-indexing), fall back to `sg`/grep rather than blocking.
+
+## Token Efficiency
+
+- Delegate read/search fan-out to subagents (see Spawned Agents) — the biggest lever for keeping the main context clean.
+- Preserve the prompt cache: batch related work in one session so the stable prefix (CLAUDE.md, specs, tool schemas) is reused instead of re-paid across many short chats.
+- Be specific up front (`file.go:42 nil check is wrong` beats `fix the bug`) so tokens go to action, not exploration.
 
 ## Specifications
 
@@ -99,6 +108,8 @@
 
 ## Spawned Agents
 
+- Prefer subagents for read/search fan-out — the largest token lever. A subagent reads files in a separate context and returns a short summary; the file dumps never enter the main conversation. Use it whenever answering means sweeping many files and you only want the conclusion.
+- Model-tier the work: run exploration/search subagents on a cheaper model, reserve the top model for reasoning and edits.
 - Scope spawned agents tightly. One file or one narrow topic per agent.
 - If a task requires many changes, split across multiple agents rather than risking context exhaustion.
 - Spawned agents NEVER run git commands; the caller handles git.
