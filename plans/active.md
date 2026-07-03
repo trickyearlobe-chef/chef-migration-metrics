@@ -1,12 +1,13 @@
 # Active Plan
 
-## In flight — Cop list full universe + durability (`feature/cookstyle-violations-browser`)
+## In flight — CookStyle Reliability / Trustworthy Reds (`plans/cookstyle-reliability.md`)
 
-- **Durability** (`plans/cop-classification-durability.md`): #1 dept defaults +
-  #2 live `--show-cops` inventory + drift report done. Remaining: **#3 seed the
-  static tables into the DB** (code edit → data edit; do while the branch is
-  unshipped, no migration back-compat). Start #3 in a fresh thread reading only
-  that plan + the spec.
+Pivot after the durability work: make CookStyle a reliable migration indicator
+(reds = "we know", Review = "operator decides", Noise = "provably harmless"),
+strip the non-existent per-target dimension, back out chunk 3 (done). Durability
+#1 (dept defaults, reframed as Review-worklist) + #2 (drift) stay; #3 (DB seed)
+abandoned. Spec revision gated on user approval (Phase 1). See the plan for the
+phased breakdown + acceptance criteria.
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
