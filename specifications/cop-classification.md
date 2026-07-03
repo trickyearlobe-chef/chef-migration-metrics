@@ -225,7 +225,7 @@ Returns all known cops (from scan results + mapping + custom definitions) with t
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `source` | string | `server` or `git` — which results to aggregate |
-| `classification` | string | Filter: `blocker`, `review`, `noise`, `unclassified` |
+| `classification` | string | Filter: `blocker`, `review`, `noise` |
 | `sort` | string | `cookbooks_affected`, `offence_count`, `cop_name` |
 | `sort_dir` | string | `asc` or `desc` |
 
@@ -239,7 +239,7 @@ Returns all known cops (from scan results + mapping + custom definitions) with t
     "review_cops": 5,
     "review_cookbooks": 23,
     "noise_cops": 31,
-    "unclassified_cops": 12
+    "unclassified_cops": 0
   },
   "data": [
     {
@@ -248,8 +248,8 @@ Returns all known cops (from scan results + mapping + custom definitions) with t
       "category": "Lint",
       "severity": "warning",
       "classification": "blocker",
-      "classification_source": "curated_default",
-      "removed_in": null,
+      "classification_source": "verified_removal",
+      "removed_in": "18.0",
       "introduced_in": null,
       "migration_url": null,
       "cookbooks_affected": 34,
@@ -264,10 +264,11 @@ Returns all known cops (from scan results + mapping + custom definitions) with t
 ```
 
 Fields:
-- `classification_source` — how classification was determined: `operator_override`, `removed_in`, `curated_default`, `unclassified`
+- `classification_source` — how classification was determined: `operator_override`, `custom_cop`, `verified_removal`, `structural_noise`, `review_default`
 - `unblocks` — cookbooks that would pass if this cop alone were resolved (only meaningful for blockers)
 - `auto_correctable_pct` — percentage of offences cookstyle can auto-fix
 - `is_custom` — true if this is a custom-defined cop
+- `unclassified_cops` (summary) — retained for backward compatibility; always `0` (there is no Unclassified level — an unresolved cop is a Review item)
 
 ### GET /api/v1/cookstyle/cops/:cop_name/cookbooks
 
@@ -295,13 +296,14 @@ Returns the list of cookbooks affected by a specific cop.
 
 ### PUT /api/v1/cookstyle/cops/:cop_name/classification
 
-Set or update the classification for a cop at a given target version.
+Set or update the operator classification for a cop. Single active target — no
+target is carried in the body; the active target drives only the re-evaluation
+propagation closure.
 
 #### Request Body
 
 ```json
 {
-  "target_chef_version": "18.5.0",
   "classification": "blocker",
   "reason": "File.exists? removed in Ruby 3, crashes at runtime on Chef 18+"
 }
@@ -426,16 +428,16 @@ The existing priority table gains:
 
 Any **criteria change** MUST trigger a scoped recompute through the derivation
 graph. Criteria changes are: operator override (PUT/DELETE classification),
-failure-rule edit, custom-cop add/edit, curated-default update (app upgrade), and
-target-version addition.
+custom-cop add/edit, curated-mapping update (app upgrade), and a change to the
+single active target version.
 
 The recompute closure (invalidate only what is downstream — see
 `plans/cookstyle-status-consistency.md` for the full table):
 
 1. Re-derive **status + weighted complexity** for every cookstyle result
-   containing the affected cop(s), per affected target — re-resolution only, no
-   rescan (custom-cop *definition* changes are the exception: they require a
-   rescan because they change which offenses exist).
+   containing the affected cop(s) — re-resolution only, no rescan (custom-cop
+   *definition* changes are the exception: they require a rescan because they
+   change which offenses exist).
 2. Update `status`/`passed` + `complexity_score` in
    `server_cookbook_cookstyle_results` / `git_repo_cookstyle_results`.
 3. Recompute git-repo compatibility status (CS ⊕ TK).
