@@ -29,8 +29,12 @@ type gitRepoKey struct {
 	Name, URL, TargetVersion string
 }
 
-func (m *mockRescoreStore) ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error) {
-	return m.classifications[targetChefVersion], nil
+func (m *mockRescoreStore) ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error) {
+	var out []datastore.CopClassification
+	for _, cs := range m.classifications {
+		out = append(out, cs...)
+	}
+	return out, nil
 }
 
 func (m *mockRescoreStore) ListServerCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error) {

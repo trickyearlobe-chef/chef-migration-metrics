@@ -50,7 +50,7 @@ func (r *Router) handleCookstyleCopDrift(w http.ResponseWriter, req *http.Reques
 // copResolver builds a classification resolver for the target version, loading
 // operator overrides from the datastore.
 func (r *Router) copResolver(ctx context.Context, targetVersion string) (*analysis.CopClassificationResolver, error) {
-	overrides, err := r.db.ListCopClassifications(ctx, targetVersion)
+	overrides, err := r.db.ListCopClassifications(ctx)
 	if err != nil {
 		return nil, err
 	}

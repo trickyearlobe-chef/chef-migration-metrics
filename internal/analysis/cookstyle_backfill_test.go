@@ -36,7 +36,7 @@ func (s *fakeBackfillStore) ListAllGitRepoCookstyleResultRefs(context.Context) (
 	return s.gitRefs, nil
 }
 
-func (s *fakeBackfillStore) ListCopClassifications(_ context.Context, _ string) ([]datastore.CopClassification, error) {
+func (s *fakeBackfillStore) ListCopClassifications(_ context.Context) ([]datastore.CopClassification, error) {
 	out := make([]datastore.CopClassification, 0, len(s.overrides))
 	for cop, class := range s.overrides {
 		out = append(out, datastore.CopClassification{CopName: cop, Classification: class})

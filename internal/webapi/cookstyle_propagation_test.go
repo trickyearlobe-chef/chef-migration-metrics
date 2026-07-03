@@ -34,8 +34,12 @@ type passedUpdate struct {
 	status string
 }
 
-func (m *mockPropagationStore) ListCopClassifications(ctx context.Context, target string) ([]datastore.CopClassification, error) {
-	return m.classifications[target], nil
+func (m *mockPropagationStore) ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error) {
+	var out []datastore.CopClassification
+	for _, cs := range m.classifications {
+		out = append(out, cs...)
+	}
+	return out, nil
 }
 
 func (m *mockPropagationStore) ListServerCookbookCookstyleResultsWithCop(ctx context.Context, cop, target string) ([]datastore.CookstyleResultRef, error) {

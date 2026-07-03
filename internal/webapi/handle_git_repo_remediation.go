@@ -252,7 +252,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	}
 
 	// Build classification resolver for the target version.
-	overrides, classErr := r.db.ListCopClassifications(ctx, targetVersion)
+	overrides, classErr := r.db.ListCopClassifications(ctx)
 	if classErr != nil {
 		r.logf("WARN", "listing cop classifications for git repo remediation: %v", classErr)
 	}

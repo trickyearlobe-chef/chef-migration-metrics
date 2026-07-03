@@ -356,14 +356,15 @@ type DataStore interface {
 	// Cop classifications
 	// -----------------------------------------------------------------
 
-	// ListCopClassifications returns all operator overrides for a target version.
-	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+	// ListCopClassifications returns all operator overrides (keyed by cop_name;
+	// single active target).
+	ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error)
 
 	// UpsertCopClassification creates or updates a cop classification.
-	UpsertCopClassification(ctx context.Context, copName, targetChefVersion, classification, reason, createdBy string) error
+	UpsertCopClassification(ctx context.Context, copName, classification, reason, createdBy string) error
 
 	// DeleteCopClassification removes an operator override.
-	DeleteCopClassification(ctx context.Context, copName, targetChefVersion string) error
+	DeleteCopClassification(ctx context.Context, copName string) error
 
 	// ListOffenceFingerprintsByTarget returns every stored offence fingerprint
 	// row for a target version (all results), ordered by result identity then

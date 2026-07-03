@@ -451,7 +451,7 @@ func (r *Router) handleCookstyleCopCookbooks(w http.ResponseWriter, req *http.Re
 	pg := ParsePagination(req)
 
 	// Load operator overrides for "would pass without" calculation.
-	overrides, err := r.db.ListCopClassifications(ctx, targetVersion)
+	overrides, err := r.db.ListCopClassifications(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing cop classifications for cop drill-down: %v", err)
 		WriteInternalError(w, "Failed to load cop classifications.")
@@ -561,11 +561,11 @@ func buildCopCookbookItem(copName, source, name, version, org string, offenses [
 // PUT /api/v1/cookstyle/cops/:cop_name/classification
 // ---------------------------------------------------------------------------
 
-// classificationPutRequest is the request body for setting a cop classification.
+// classificationPutRequest is the request body for setting a cop
+// classification. There is a single active target, so no target is carried.
 type classificationPutRequest struct {
-	TargetChefVersion string `json:"target_chef_version"`
-	Classification    string `json:"classification"`
-	Reason            string `json:"reason"`
+	Classification string `json:"classification"`
+	Reason         string `json:"reason"`
 }
 
 // handleCookstyleCopClassification handles PUT/DELETE
@@ -603,14 +603,6 @@ func (r *Router) putCookstyleCopClassification(w http.ResponseWriter, req *http.
 		return
 	}
 
-	if body.TargetChefVersion == "" {
-		body.TargetChefVersion = r.defaultTargetVersion()
-	}
-	if body.TargetChefVersion == "" {
-		WriteBadRequest(w, "No target_chef_version specified and none configured.")
-		return
-	}
-
 	switch body.Classification {
 	case "blocker", "review", "noise":
 		// valid
@@ -619,8 +611,16 @@ func (r *Router) putCookstyleCopClassification(w http.ResponseWriter, req *http.
 		return
 	}
 
+	// The single active target drives the re-evaluation closure (it is not a
+	// key for the override itself).
+	target := r.defaultTargetVersion()
+	if target == "" {
+		WriteBadRequest(w, "No active target Chef version is configured.")
+		return
+	}
+
 	ctx := req.Context()
-	if err := r.db.UpsertCopClassification(ctx, copName, body.TargetChefVersion, body.Classification, body.Reason, adminUsername(req)); err != nil {
+	if err := r.db.UpsertCopClassification(ctx, copName, body.Classification, body.Reason, adminUsername(req)); err != nil {
 		r.logf("ERROR", "upserting cop classification: %v", err)
 		WriteInternalError(w, "Failed to save classification.")
 		return
@@ -628,20 +628,19 @@ func (r *Router) putCookstyleCopClassification(w http.ResponseWriter, req *http.
 
 	// Re-evaluation propagation: re-derive verdicts/compat/complexity and
 	// recompute dependent-node readiness for this cop's affected closure.
-	prop := r.propagateCop(ctx, copName, body.TargetChefVersion)
-	r.auditCookstyle(req, "cop_reclassified", copName, body.TargetChefVersion, map[string]any{
+	prop := r.propagateCop(ctx, copName, target)
+	r.auditCookstyle(req, "cop_reclassified", copName, target, map[string]any{
 		"classification": body.Classification,
 		"reason":         body.Reason,
 		"propagation":    prop,
 	})
-	r.emitCookstyleRecomputed(copName, body.TargetChefVersion, prop)
+	r.emitCookstyleRecomputed(copName, target, prop)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"cop_name":            copName,
-		"target_chef_version": body.TargetChefVersion,
-		"classification":      body.Classification,
-		"status":              "saved",
-		"propagation":         prop,
+		"cop_name":       copName,
+		"classification": body.Classification,
+		"status":         "saved",
+		"propagation":    prop,
 	})
 }
 
@@ -652,17 +651,15 @@ func (r *Router) deleteCookstyleCopClassification(w http.ResponseWriter, req *ht
 		return
 	}
 
-	targetVersion := queryString(req, "target_chef_version", "")
-	if targetVersion == "" {
-		targetVersion = r.defaultTargetVersion()
-	}
-	if targetVersion == "" {
-		WriteBadRequest(w, "No target_chef_version specified and none configured.")
+	// The single active target drives the re-evaluation closure.
+	target := r.defaultTargetVersion()
+	if target == "" {
+		WriteBadRequest(w, "No active target Chef version is configured.")
 		return
 	}
 
 	ctx := req.Context()
-	if err := r.db.DeleteCopClassification(ctx, copName, targetVersion); err != nil {
+	if err := r.db.DeleteCopClassification(ctx, copName); err != nil {
 		r.logf("ERROR", "deleting cop classification: %v", err)
 		WriteInternalError(w, "Failed to delete classification.")
 		return
@@ -670,11 +667,11 @@ func (r *Router) deleteCookstyleCopClassification(w http.ResponseWriter, req *ht
 
 	// Removing an override changes the resolved classification (falls back to
 	// RemovedIn/curated/unclassified): re-evaluate the affected closure.
-	prop := r.propagateCop(ctx, copName, targetVersion)
-	r.auditCookstyle(req, "cop_classification_removed", copName, targetVersion, map[string]any{
+	prop := r.propagateCop(ctx, copName, target)
+	r.auditCookstyle(req, "cop_classification_removed", copName, target, map[string]any{
 		"propagation": prop,
 	})
-	r.emitCookstyleRecomputed(copName, targetVersion, prop)
+	r.emitCookstyleRecomputed(copName, target, prop)
 
 	WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted", "propagation": prop})
 }

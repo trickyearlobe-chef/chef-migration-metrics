@@ -283,7 +283,7 @@ func TestHandleCookstyleCops_ClassificationFilter(t *testing.T) {
 		},
 		// Chef/Deprecations/NodeSet is in curated defaults as blocker.
 		// Chef/Style/FileMode is in curated defaults as noise.
-		ListCopClassificationsFn: func(_ context.Context, _ string) ([]datastore.CopClassification, error) {
+		ListCopClassificationsFn: func(_ context.Context) ([]datastore.CopClassification, error) {
 			return nil, nil
 		},
 	}
@@ -358,7 +358,7 @@ func TestHandleCookstyleCopCookbooks_DrillDown(t *testing.T) {
 		ListGitRepoCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.GitRepoCookstyleResult, error) {
 			return nil, nil
 		},
-		ListCopClassificationsFn: func(_ context.Context, _ string) ([]datastore.CopClassification, error) {
+		ListCopClassificationsFn: func(_ context.Context) ([]datastore.CopClassification, error) {
 			return nil, nil
 		},
 	}
@@ -399,7 +399,7 @@ func TestHandleCookstyleCopCookbooks_DrillDown(t *testing.T) {
 func TestHandleCookstyleCopClassification_Put(t *testing.T) {
 	var savedCop, savedClass, savedReason string
 	store := &mockStore{
-		UpsertCopClassificationFn: func(_ context.Context, copName, tv, class, reason, _ string) error {
+		UpsertCopClassificationFn: func(_ context.Context, copName, class, reason, _ string) error {
 			savedCop = copName
 			savedClass = class
 			savedReason = reason
@@ -410,7 +410,7 @@ func TestHandleCookstyleCopClassification_Put(t *testing.T) {
 	cfg := testConfigWithTargetVersions("18.0")
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
-	body := `{"target_chef_version":"18.0","classification":"blocker","reason":"crashes at runtime"}`
+	body := `{"classification":"blocker","reason":"crashes at runtime"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Lint/DeprecatedClassMethods/classification", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
@@ -431,7 +431,7 @@ func TestHandleCookstyleCopClassification_Put(t *testing.T) {
 func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *testing.T) {
 	var auditAction, auditCop string
 	store := &mockStore{
-		UpsertCopClassificationFn: func(_ context.Context, copName, tv, class, reason, _ string) error {
+		UpsertCopClassificationFn: func(_ context.Context, copName, class, reason, _ string) error {
 			return nil
 		},
 		InsertCookstyleAuditEntryFn: func(_ context.Context, p datastore.InsertCookstyleAuditParams) error {
@@ -459,7 +459,7 @@ func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *tes
 	r.cookstylePropagator = NewCookstylePropagator(propStore, scorer, readiness, defaultRulesFn, nil)
 
 	w := httptest.NewRecorder()
-	body := `{"target_chef_version":"18","classification":"blocker","reason":"breaks"}`
+	body := `{"classification":"blocker","reason":"breaks"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
@@ -483,7 +483,7 @@ func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *tes
 func TestHandleCookstyleCopClassification_NonAdminForbidden(t *testing.T) {
 	var upserted bool
 	store := &mockStore{
-		UpsertCopClassificationFn: func(_ context.Context, _, _, _, _, _ string) error {
+		UpsertCopClassificationFn: func(_ context.Context, _, _, _, _ string) error {
 			upserted = true
 			return nil
 		},
@@ -493,7 +493,7 @@ func TestHandleCookstyleCopClassification_NonAdminForbidden(t *testing.T) {
 
 	for _, role := range []string{"viewer", "operator"} {
 		w := httptest.NewRecorder()
-		body := `{"target_chef_version":"18","classification":"blocker"}`
+		body := `{"classification":"blocker"}`
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
 		req = req.WithContext(auth.ContextWithSession(req.Context(), &auth.SessionInfo{Username: "u", Role: role}))
 		r.ServeHTTP(w, req)
@@ -510,7 +510,7 @@ func TestHandleCookstyleCopClassification_NonAdminForbidden(t *testing.T) {
 func TestHandleCookstyleCopClassification_AdminAllowed(t *testing.T) {
 	var upserted bool
 	store := &mockStore{
-		UpsertCopClassificationFn: func(_ context.Context, _, _, _, _, _ string) error {
+		UpsertCopClassificationFn: func(_ context.Context, _, _, _, _ string) error {
 			upserted = true
 			return nil
 		},
@@ -519,7 +519,7 @@ func TestHandleCookstyleCopClassification_AdminAllowed(t *testing.T) {
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
-	body := `{"target_chef_version":"18","classification":"blocker"}`
+	body := `{"classification":"blocker"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
 	req = req.WithContext(auth.ContextWithSession(req.Context(), &auth.SessionInfo{Username: "admin", Role: "admin"}))
 	r.ServeHTTP(w, req)
@@ -537,7 +537,7 @@ func TestHandleCookstyleCopClassification_InvalidClassification(t *testing.T) {
 	cfg := testConfigWithTargetVersions("18.0")
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
-	body := `{"target_chef_version":"18.0","classification":"unknown"}`
+	body := `{"classification":"unknown"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Lint/Foo/classification", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
@@ -551,11 +551,10 @@ func TestHandleCookstyleCopClassification_InvalidClassification(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleCookstyleCopClassification_Delete(t *testing.T) {
-	var deletedCop, deletedVersion string
+	var deletedCop string
 	store := &mockStore{
-		DeleteCopClassificationFn: func(_ context.Context, copName, tv string) error {
+		DeleteCopClassificationFn: func(_ context.Context, copName string) error {
 			deletedCop = copName
-			deletedVersion = tv
 			return nil
 		},
 	}
@@ -563,7 +562,7 @@ func TestHandleCookstyleCopClassification_Delete(t *testing.T) {
 	cfg := testConfigWithTargetVersions("18.0")
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/cookstyle/cops/Chef/Deprecations/NodeSet/classification?target_chef_version=18.0", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/cookstyle/cops/Chef/Deprecations/NodeSet/classification", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -571,9 +570,6 @@ func TestHandleCookstyleCopClassification_Delete(t *testing.T) {
 	}
 	if deletedCop != "Chef/Deprecations/NodeSet" {
 		t.Errorf("cop = %q, want Chef/Deprecations/NodeSet", deletedCop)
-	}
-	if deletedVersion != "18.0" {
-		t.Errorf("version = %q, want 18.0", deletedVersion)
 	}
 }
 

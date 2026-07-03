@@ -338,7 +338,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	}
 
 	// Build classification resolver for the target version.
-	overrides, classErr := r.db.ListCopClassifications(ctx, targetVersion)
+	overrides, classErr := r.db.ListCopClassifications(ctx)
 	if classErr != nil {
 		r.logf("WARN", "listing cop classifications for remediation detail: %v", classErr)
 	}

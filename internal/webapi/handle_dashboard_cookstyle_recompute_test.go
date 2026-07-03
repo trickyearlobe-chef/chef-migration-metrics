@@ -41,7 +41,7 @@ func TestDashboardCookstyleRecomputeTrend_HappyPath(t *testing.T) {
 				Cops:              []datastore.FingerprintCopEntry{{CopName: "Op/X", Count: 2, Severity: "warning"}},
 			}}, nil
 		},
-		ListCopClassificationsFn: func(_ context.Context, target string) ([]datastore.CopClassification, error) {
+		ListCopClassificationsFn: func(_ context.Context) ([]datastore.CopClassification, error) {
 			return []datastore.CopClassification{{CopName: "Op/X", Classification: "blocker"}}, nil
 		},
 		// The cookbook is still LIVE — present in the current cookstyle result set,
@@ -133,7 +133,7 @@ func TestDashboardCookstyleRecomputeTrend_SplitsBySource(t *testing.T) {
 				},
 			}, nil
 		},
-		ListCopClassificationsFn: func(_ context.Context, _ string) ([]datastore.CopClassification, error) {
+		ListCopClassificationsFn: func(_ context.Context) ([]datastore.CopClassification, error) {
 			return []datastore.CopClassification{
 				{CopName: "Op/Block", Classification: "blocker"},
 				{CopName: "Op/Review", Classification: "review"},

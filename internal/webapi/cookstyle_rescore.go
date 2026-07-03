@@ -21,10 +21,11 @@ type CookstyleRescoreStore interface {
 	BatchUpdateServerCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
 	BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
 	RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error
-	// ListCopClassifications returns operator classification overrides for a
-	// target version, used to build the single-source-of-truth derivation. The
-	// resolver still applies RemovedIn auto-seed + curated defaults on top.
-	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+	// ListCopClassifications returns operator classification overrides (keyed by
+	// cop_name; single active target), used to build the single-source-of-truth
+	// derivation. The resolver still applies RemovedIn auto-seed + curated
+	// defaults on top.
+	ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error)
 }
 
 // RescoreResult reports how many results were evaluated and how many changed.
@@ -50,7 +51,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 			return r
 		}
 		overrides := map[string]string{}
-		if rows, lerr := store.ListCopClassifications(ctx, target); lerr == nil {
+		if rows, lerr := store.ListCopClassifications(ctx); lerr == nil {
 			for _, row := range rows {
 				overrides[row.CopName] = row.Classification
 			}

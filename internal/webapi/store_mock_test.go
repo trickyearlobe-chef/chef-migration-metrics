@@ -204,10 +204,10 @@ type mockStore struct {
 	DependencyDepthStatsFn  func(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error)
 
 	// Cop classifications
-	ListCopClassificationsFn          func(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+	ListCopClassificationsFn          func(ctx context.Context) ([]datastore.CopClassification, error)
 	ListOffenceFingerprintsByTargetFn func(ctx context.Context, targetChefVersion string) ([]datastore.CookstyleOffenceFingerprint, error)
-	UpsertCopClassificationFn         func(ctx context.Context, copName, targetChefVersion, classification, reason, createdBy string) error
-	DeleteCopClassificationFn         func(ctx context.Context, copName, targetChefVersion string) error
+	UpsertCopClassificationFn         func(ctx context.Context, copName, classification, reason, createdBy string) error
+	DeleteCopClassificationFn         func(ctx context.Context, copName string) error
 
 	// Custom cop definitions
 	ListCustomCopDefinitionsFn  func(ctx context.Context) ([]datastore.CustomCopDefinition, error)
@@ -1589,9 +1589,9 @@ func (m *mockStore) SuggestOwnerAliases(_ context.Context, _ string, _ int) ([]d
 // Cop classification stubs
 // ---------------------------------------------------------------------------
 
-func (m *mockStore) ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error) {
+func (m *mockStore) ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error) {
 	if m.ListCopClassificationsFn != nil {
-		return m.ListCopClassificationsFn(ctx, targetChefVersion)
+		return m.ListCopClassificationsFn(ctx)
 	}
 	return nil, nil
 }
@@ -1603,16 +1603,16 @@ func (m *mockStore) ListOffenceFingerprintsByTarget(ctx context.Context, targetC
 	return nil, nil
 }
 
-func (m *mockStore) UpsertCopClassification(ctx context.Context, copName, targetChefVersion, classification, reason, createdBy string) error {
+func (m *mockStore) UpsertCopClassification(ctx context.Context, copName, classification, reason, createdBy string) error {
 	if m.UpsertCopClassificationFn != nil {
-		return m.UpsertCopClassificationFn(ctx, copName, targetChefVersion, classification, reason, createdBy)
+		return m.UpsertCopClassificationFn(ctx, copName, classification, reason, createdBy)
 	}
 	return nil
 }
 
-func (m *mockStore) DeleteCopClassification(ctx context.Context, copName, targetChefVersion string) error {
+func (m *mockStore) DeleteCopClassification(ctx context.Context, copName string) error {
 	if m.DeleteCopClassificationFn != nil {
-		return m.DeleteCopClassificationFn(ctx, copName, targetChefVersion)
+		return m.DeleteCopClassificationFn(ctx, copName)
 	}
 	return nil
 }

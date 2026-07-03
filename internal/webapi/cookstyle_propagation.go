@@ -33,7 +33,7 @@ import (
 // CookstylePropagationStore is the datastore subset the propagator needs.
 // *datastore.DB satisfies it; declared as an interface for mock-based testing.
 type CookstylePropagationStore interface {
-	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+	ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error)
 	ListServerCookbookCookstyleResultsWithCop(ctx context.Context, copName, targetChefVersion string) ([]datastore.CookstyleResultRef, error)
 	ListGitRepoCookstyleResultsWithCop(ctx context.Context, copName, targetChefVersion string) ([]datastore.CookstyleResultRef, error)
 	UpdateServerCookbookCookstyleVerdict(ctx context.Context, organisationName, cookbookName, cookbookVersion, targetChefVersion string, passed bool, status string) error
@@ -231,7 +231,7 @@ func (p *CookstylePropagator) rescoreComplexity(ctx context.Context, target stri
 // defaults still apply, so classification works without operator input.
 func (p *CookstylePropagator) buildResolver(ctx context.Context, target string) *analysis.CopClassificationResolver {
 	overrides := map[string]string{}
-	if rows, err := p.store.ListCopClassifications(ctx, target); err == nil {
+	if rows, err := p.store.ListCopClassifications(ctx); err == nil {
 		for _, row := range rows {
 			overrides[row.CopName] = row.Classification
 		}

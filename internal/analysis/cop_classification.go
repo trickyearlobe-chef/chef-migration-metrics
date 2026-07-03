@@ -10,21 +10,24 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 )
 
-// ClassificationOverrideLister loads operator classification overrides for a
-// target version. *datastore.DB satisfies it; declared as an interface so
-// callers (scanner, scorer wiring) can build a resolver without a concrete DB.
+// ClassificationOverrideLister loads operator classification overrides.
+// Overrides are keyed by cop_name only (single active target). *datastore.DB
+// satisfies it; declared as an interface so callers (scanner, scorer wiring)
+// can build a resolver without a concrete DB.
 type ClassificationOverrideLister interface {
-	ListCopClassifications(ctx context.Context, targetChefVersion string) ([]datastore.CopClassification, error)
+	ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error)
 }
 
-// NewResolverFromStore builds a classification resolver for a target version,
-// loading operator overrides from the store. A nil store (or a load error)
-// yields a resolver with no overrides — RemovedIn auto-seed and curated
-// defaults still apply, so classification works without operator input.
+// NewResolverFromStore builds a classification resolver for the active target
+// version, loading operator overrides from the store. A nil store (or a load
+// error) yields a resolver with no overrides — RemovedIn auto-seed and curated
+// defaults still apply, so classification works without operator input. The
+// target version is still carried for the RemovedIn ≤ target comparison; it is
+// no longer a key for the overrides.
 func NewResolverFromStore(ctx context.Context, store ClassificationOverrideLister, targetChefVersion string) *CopClassificationResolver {
 	overrides := map[string]string{}
 	if store != nil {
-		if rows, err := store.ListCopClassifications(ctx, targetChefVersion); err == nil {
+		if rows, err := store.ListCopClassifications(ctx); err == nil {
 			for _, r := range rows {
 				overrides[r.CopName] = r.Classification
 			}
