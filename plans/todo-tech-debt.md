@@ -336,6 +336,12 @@ Recorded 2026-07-03 (export "current filtered list" rework).
 
 - [ ] **Streamed exports ignore `exports.max_rows`.** The per-list-view exports (nodes/cookbooks/roles/git_repos) stream the entire filtered set to disk/response so a full 120k-node export is complete, not capped. `exports.max_rows` (default 100000) is therefore no longer enforced on the streamed path — only `exports.async_threshold` (sync vs async) still applies. This is intentional (the feature is "the full list"), but there is no configurable safety ceiling and no truncation flag. **Strategic fix (if needed):** add a high, configurable streaming ceiling that, when hit, still writes the rows and sets an `X-Export-Truncated` header / job warning — never a silent truncation.
 
+## Ubiquitous Language — Staleness Tier Named by Severity, Not by Meaning
+
+Recorded 2026-07-03 (export staleness_tier mismatch).
+
+- [ ] **The staleness tier is named `fresh`/`warning`/`critical` in code but users see `Fresh`/`Missing`/`Gone`.** Because the domain object was named by generic severity rather than by what it means to the user, every surface re-translates: `StaleBadge` (frontend) maps warning→Missing / critical→Gone, and the node export now maps the same in `stalenessLabel` (`internal/webapi/export_nodes.go`). Each new consumer perpetuates the mistake, and the maps drift. This is the ubiquitous-language rule violated: name the thing in code the way the user names it, once, at the source. **Strategic fix:** adopt `Fresh`/`Missing`/`Gone` as the canonical tier vocabulary at the source — `staleness.Tier` constants + `ComputeTier` + the SQL `StaleTiers` literals in `node_snapshot_filter.go` — then propagate through the API field/`stale=` filter param and the TS side (Nodes filter option values), and **delete** the per-surface translators (`StaleBadge`'s remap and the export's `stalenessLabel`). Cross-boundary rename: drive with LSP `findReferences` + grep on both Go and TS (string/wire values). Until then, `stalenessLabel` is the recorded tactical translator.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

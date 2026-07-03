@@ -148,13 +148,17 @@ func TestHandleExports_Sync_NodesCSV(t *testing.T) {
 	body := w.Body.String()
 	// ohai_time renders as a datetime (like collected_at), not a unix epoch.
 	wantOhai := time.Unix(1719400000, 0).UTC().Format("2006-01-02T15:04:05Z")
-	for _, want := range []string{"node_name", "web1", "available_disk_mb", "5000", "install_path", "ohai_time", wantOhai} {
+	// staleness_tier uses the UI's wording (critical → "Gone"), not the raw tier.
+	for _, want := range []string{"node_name", "web1", "available_disk_mb", "5000", "install_path", "ohai_time", wantOhai, "Gone"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("CSV missing %q:\n%s", want, body)
 		}
 	}
 	if strings.Contains(body, "1719400000") {
 		t.Errorf("CSV should not contain the raw ohai epoch:\n%s", body)
+	}
+	if strings.Contains(body, "critical") {
+		t.Errorf("CSV should use the UI staleness wording, not the raw tier:\n%s", body)
 	}
 }
 
