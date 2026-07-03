@@ -22,6 +22,8 @@ Returns a paginated list of all known git repos with optional filtering.
 | `page` | integer | Page number (default: 1) |
 | `per_page` | integer | Items per page (default: 50) |
 
+**CookStyle rollup status:** Each entry carries a `cookstyle_status` field (`ready`/`needs_review`/`blocked`/`untested`; 🟢/🟠/🔴/⚪) — the CookStyle verdict for the listed `target_chef_version`. It is **classification-derived** (the single source of truth — resolved from offenses + cop classification), not severity-derived. This is the CookStyle signal only and is kept **separate** from `tk_status` (Test Kitchen); the two are never merged into one verdict. See [cop-classification.md](cop-classification.md) (CookStyle Rollup Status) for canonical values/conditions; the owning shape lives in the git-repo-list handler/type in code.
+
 **Response (200):**
 
 ```json
@@ -66,6 +68,8 @@ Returns a paginated list of all known git repos with optional filtering.
 #### `GET /api/v1/git-repos/:name`
 
 Returns full detail for a specific git repo, including CookStyle results, Test Kitchen results, and complexity scores.
+
+**CookStyle rollup status:** Each `cookstyle[]` entry carries a `cookstyle_status` field (`ready`/`needs_review`/`blocked`/`untested`; 🟢/🟠/🔴/⚪) per target, alongside the existing `passed`/`offence_count` fields; the `complexity[].score` is now classification-weighted (same field, new derivation). The status is **classification-derived** (single source of truth), not severity-derived; `passed` is retained for back-compat = `cookstyle_status != blocked`. CookStyle (`cookstyle[]`) and Test Kitchen (`test_kitchen[]`) stay separate signals — never merged. See [cop-classification.md](cop-classification.md) (CookStyle Rollup Status). The owning shape lives in the git-repo-detail handler/type in code.
 
 **Response (200):**
 
@@ -234,6 +238,8 @@ Assigns one or more committers as owners of the git repo for ownership tracking.
 Returns the full remediation guidance for a specific git repo version, including offense groups, autocorrect preview, and cop-level remediation guidance.
 
 **Query parameters:** `target_chef_version` (optional, defaults to all configured targets).
+
+**CookStyle rollup status:** The response carries a `cookstyle_status` field (`ready`/`needs_review`/`blocked`/`untested`; 🟢/🟠/🔴/⚪) alongside the existing `complexity_score`/`complexity_label` fields. It is **classification-derived** (single source of truth — resolved from offenses + cop classification), not severity-derived; `complexity_score` is now classification-weighted. CookStyle signal only — kept separate from Test Kitchen. See [cop-classification.md](cop-classification.md) (CookStyle Rollup Status). The owning shape lives in the git-repo remediation handler/type in code.
 
 **Response (200):**
 

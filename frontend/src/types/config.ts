@@ -25,6 +25,9 @@ export interface AnalysisToolsConfig {
   cookstyle_timeout_minutes: number;
   cookstyle_failure_preset?: string;
   cookstyle_failure_rules?: Record<string, string[]>;
+  // On-disk RuboCop addon cop files (files, directories, or globs on the app
+  // host) loaded into every scan. Trust boundary is deploying the app.
+  cookstyle_addon_cop_paths?: string[];
 }
 
 export type CookstyleFailurePreset = "strict" | "default" | "relaxed" | "custom";
@@ -87,6 +90,10 @@ export interface ReadinessConfig {
   install_size_mb_linux: number;
   install_size_mb_windows: number;
   min_remaining_free_percent: number;
+  // When true, Review-level CookStyle offences gate readiness: a node whose
+  // only issue is review-level cookbooks becomes "Needs review" (not ready).
+  // Off (default) preserves blocker-only readiness.
+  review_blocks_readiness: boolean;
 }
 
 export interface ExportsConfig {

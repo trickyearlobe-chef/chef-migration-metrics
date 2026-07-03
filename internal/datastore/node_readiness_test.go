@@ -154,3 +154,31 @@ func TestNodeReadiness_ZeroValue(t *testing.T) {
 		t.Error("zero-value BlockingCookbooks should be nil")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// nodeRollupStatusOrDefault — CHECK-constraint guard
+// ---------------------------------------------------------------------------
+
+func TestNodeRollupStatusOrDefault(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  string
+		isReady bool
+		want    string
+	}{
+		{"explicit ready", "ready", true, "ready"},
+		{"explicit needs_review", "needs_review", false, "needs_review"},
+		{"explicit blocked", "blocked", false, "blocked"},
+		{"empty + ready falls back to ready", "", true, "ready"},
+		{"empty + not ready falls back to blocked", "", false, "blocked"},
+		{"invalid value + ready falls back to ready", "bogus", true, "ready"},
+		{"invalid value + not ready falls back to blocked", "garbage", false, "blocked"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nodeRollupStatusOrDefault(tc.status, tc.isReady); got != tc.want {
+				t.Errorf("nodeRollupStatusOrDefault(%q, %v) = %q, want %q", tc.status, tc.isReady, got, tc.want)
+			}
+		})
+	}
+}

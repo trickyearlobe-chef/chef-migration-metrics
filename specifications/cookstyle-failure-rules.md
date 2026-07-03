@@ -1,6 +1,29 @@
 # CookStyle Failure Rules — Component Specification
 
-> **TL;DR** — Configurable per-namespace severity thresholds that determine whether a CookStyle scan result is "passed" or "failed". Includes named presets (strict/default/relaxed) and auto re-scoring of stored results when rules change. The default preset preserves current behaviour: fail on `error` or `fatal` severity regardless of namespace.
+> **TL;DR** — Configurable per-namespace severity thresholds that determine
+> CookStyle pass/fail **for unclassified cops only**. The primary pass/fail and
+> rollup-status mechanism is now cop classification (see
+> [cop-classification.md](cop-classification.md)); these severity rules are the
+> fallback applied when a cop has no classification. Includes named presets
+> (strict/default/relaxed) and auto re-scoring of stored results when rules
+> change. The default preset preserves the historical behaviour: fail on `error`
+> or `fatal` severity regardless of namespace.
+
+## Status: Unclassified-Cop Fallback
+
+Cop classification (Blocker / Review / Noise) is now the **primary** mechanism for
+CookStyle pass/fail and the rollup status (Ready / Needs review / Blocked /
+Untested) — see [cop-classification.md](cop-classification.md) (CookStyle Rollup
+Status). The severity-based failure rules described in this spec are **not the
+primary verdict any more**: they apply **only to Unclassified cops** as the
+fallback.
+
+Specifically, a cookbook fails on an offense when its cop is classified Blocker,
+**or** when its cop is Unclassified **and** the offense's severity matches the
+rules below. Classified Review/Noise cops never consult these rules. The mechanics
+of the rules themselves (presets, matching, re-score) are unchanged; only their
+scope is narrowed. This spec is de-emphasised relative to cop-classification.md
+but retained because the Unclassified fallback still depends on it.
 
 ## Overview
 
@@ -134,7 +157,12 @@ Downstream DB types (`ServerCookbookCookstyleResult.Passed`, `GitRepoCookstyleRe
 
 ## Admin UI
 
-The failure rules are presented as a checkbox grid on the Analysis Tools admin page.
+The failure rules are presented as a checkbox grid on the Analysis Tools admin
+page, reframed and labelled **"Fallback rules (unclassified cops only)"** and
+visually de-emphasised below the cop-classification surface (see
+[cop-classification.md](cop-classification.md), Cop Management Page → Fallback
+rules). The label makes clear these rules apply only to cops with no
+classification.
 
 ### Layout
 
@@ -160,6 +188,7 @@ The failure rules are presented as a checkbox grid on the Analysis Tools admin p
 
 ## Related
 
+- [cop-classification.md](cop-classification.md) — **Primary** pass/fail and rollup-status mechanism (Blocker/Review/Noise); these severity rules are its Unclassified fallback
 - [analysis-cookstyle.md](analysis-cookstyle.md) — CookStyle invocation and output parsing
 - [configuration.md](configuration.md) — Configuration surface area
 - [configuration-live-reload.md](configuration-live-reload.md) — Live reload architecture

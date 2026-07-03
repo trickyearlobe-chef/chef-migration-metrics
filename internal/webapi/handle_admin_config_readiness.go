@@ -61,6 +61,10 @@ func (r *Router) putAdminConfigReadiness(w http.ResponseWriter, req *http.Reques
 		input.InstallPathWindows = `C:\hab`
 	}
 
-	// Readiness thresholds are pulled per collector run and read live — applied.
-	r.storeAdminConfigSection(w, req, &config.Config{Readiness: input}, configstore.KeyReadiness, appliedApplier)
+	// Readiness config is read live (applied), and a change also triggers a
+	// background recompute of node readiness for all organisations so the new
+	// thresholds / review_blocks_readiness toggle take effect immediately rather
+	// than waiting for the next collection cycle. The reconciler returns promptly
+	// (it kicks the recompute in the background), so the PUT does not block.
+	r.storeAdminConfigSection(w, req, &config.Config{Readiness: input}, configstore.KeyReadiness, r.readinessApplier())
 }

@@ -50,6 +50,7 @@ export interface ReadinessSummary {
   target_chef_version: string;
   total_nodes: number;
   ready_nodes: number;
+  needs_review_nodes?: number;
   blocked_nodes: number;
   ready_percent: number;
 }
@@ -73,6 +74,7 @@ export interface ReadinessTrendPoint {
   target_chef_version: string;
   total_nodes: number;
   ready_nodes: number;
+  needs_review_nodes?: number;
   blocked_nodes: number;
   ready_percent: number;
   blocked_by?: BlockedByBreakdown;
@@ -99,6 +101,30 @@ export interface ComplexityTrendPoint {
 
 export interface ComplexityTrendResponse {
   data: ComplexityTrendPoint[];
+}
+
+// CookStyle rollup recompute trend — re-derived from offence-fingerprint history
+// under the CURRENT classification (Ready/Needs review/Blocked vocabulary), not
+// the frozen node_metrics aggregates. Points before recompute_available_from
+// cannot be recomputed and must be flagged as the frozen era on a mixed chart.
+export interface CookstyleRecomputeTrendPoint {
+  target_chef_version: string;
+  // "server" (server cookbooks) or "git" (git repos) — charted as separate series.
+  source: string;
+  completed_at: string;
+  total_results: number;
+  ready: number;
+  needs_review: number;
+  blocked: number;
+  untested: number;
+  total_complexity: number;
+}
+
+export interface CookstyleRecomputeTrendResponse {
+  // Earliest fingerprint timestamp; null when no history exists yet (whole series
+  // is still in the frozen, non-recomputable era).
+  recompute_available_from: string | null;
+  data: CookstyleRecomputeTrendPoint[];
 }
 
 export interface StaleTrendPoint {
@@ -147,12 +173,14 @@ export interface DeploymentStatusResponse {
 export interface CookbookCompatibilitySummary {
   target_chef_version: string;
   total_cookbooks: number;
-  compatible_cookbooks: number;
-  incompatible_cookbooks: number;
+  ready_cookbooks: number;
+  needs_review_cookbooks: number;
+  blocked_cookbooks: number;
   untested_cookbooks: number;
+  untested_errored_cookbooks: number;
   untested_inactive_cookbooks: number;
   untested_unscanned_cookbooks: number;
-  compatible_percent: number;
+  ready_percent: number;
 }
 
 export interface CookbookCompatibilityResponse {
@@ -162,12 +190,14 @@ export interface CookbookCompatibilityResponse {
 export interface GitRepoCompatibilitySummary {
   target_chef_version: string;
   total_repos: number;
-  compatible_repos: number;
-  incompatible_repos: number;
+  ready_repos: number;
+  needs_review_repos: number;
+  blocked_repos: number;
   untested_repos: number;
+  untested_errored_repos: number;
   untested_clone_failed_repos: number;
   untested_pending_scan_repos: number;
-  compatible_percent: number;
+  ready_percent: number;
 }
 
 export interface GitRepoCompatibilityResponse {

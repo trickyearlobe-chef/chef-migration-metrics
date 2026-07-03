@@ -782,8 +782,12 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		switch f.ReadinessFilter {
 		case "ready":
 			where += " AND nr.is_ready = true"
+		case "needs_review":
+			where += " AND nr.status = 'needs_review'"
 		case "blocked":
-			where += " AND (nr.is_ready = false OR nr.is_ready IS NULL)"
+			// Blocked excludes needs_review: a needs-review node is not ready but
+			// is not blocked. Treat a missing readiness row as blocked.
+			where += " AND (nr.status = 'blocked' OR nr.status IS NULL)"
 		case "cookbooks_blocked":
 			where += " AND (nr.all_cookbooks_compatible = false OR nr.all_cookbooks_compatible IS NULL)"
 		}

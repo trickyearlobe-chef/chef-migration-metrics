@@ -180,7 +180,12 @@ function ReadinessCard({
   nodeName?: string;
   targetChefVersion?: string;
 }) {
-  const ready = r.is_ready;
+  // Node rollup status: prefer the materialised 3-state value, falling back to
+  // the back-compat is_ready boolean for rows that predate it.
+  const rollup: "ready" | "needs_review" | "blocked" =
+    r.status ?? (r.is_ready ? "ready" : "blocked");
+  const ready = rollup === "ready";
+  const needsReview = rollup === "needs_review";
 
   const diskStatus: string = r.sufficient_disk_space === true
     ? "sufficient"
@@ -191,13 +196,22 @@ function ReadinessCard({
   const csMapped: string = csStatus === "passed" ? "compatible" : csStatus === "failed" ? "incompatible" : "untested";
   const tkStatus: string = r.kitchen_status ?? "unknown";
 
+  const borderClass = ready
+    ? "border-green-200 bg-green-50/30"
+    : needsReview
+      ? "border-amber-200 bg-amber-50/20"
+      : "border-red-200 bg-red-50/20";
+  const verdictClass = ready
+    ? "bg-green-100 text-green-800"
+    : needsReview
+      ? "bg-amber-100 text-amber-800"
+      : "bg-red-100 text-red-800";
+
   return (
-    <div
-      className={`rounded-lg border p-4 ${ready ? "border-green-200 bg-green-50/30" : "border-red-200 bg-red-50/20"}`}
-    >
+    <div className={`rounded-lg border p-4 ${borderClass}`}>
       {/* Header */}
       <div className="flex items-center gap-3">
-        <StatusBadge variant={ready ? "ready" : "blocked"} />
+        <StatusBadge variant={rollup} />
         <div>
           <div className="text-sm font-semibold text-gray-800">
             Target: Chef Infra Client {r.target_chef_version}
@@ -217,14 +231,19 @@ function ReadinessCard({
       </div>
 
       {/* Overall verdict */}
-      <div
-        className={`mt-3 rounded-lg px-3 py-2 text-sm ${ready ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}
-      >
+      <div className={`mt-3 rounded-lg px-3 py-2 text-sm ${verdictClass}`}>
         {ready ? (
           <span className="flex items-center gap-2">
             <span className="text-base">🟢</span>
             This node is <strong>ready</strong> to upgrade — all cookbooks are
             compatible and disk space is sufficient.
+          </span>
+        ) : needsReview ? (
+          <span className="flex items-center gap-2">
+            <span className="text-base">🟠</span>
+            This node <strong>needs review</strong> — one or more cookbooks have
+            review-level CookStyle findings. No blockers, but a human should look
+            before upgrading.
           </span>
         ) : (
           <span className="flex items-center gap-2">

@@ -15,20 +15,20 @@ import (
 // paths, ACME config, etc.) are never returned.
 func DiagnosticConfigSummary(cfg config.Config) map[string]any {
 	return map[string]any{
-		"organisation_count":   len(cfg.Organisations),
-		"target_chef_versions": cfg.TargetChefVersions,
-		"git_base_urls":        cfg.GitBaseURLs,
-		"collection":           diagnosticCollection(cfg),
-		"concurrency":          diagnosticConcurrency(cfg),
-		"analysis_tools":       diagnosticAnalysisTools(cfg),
-		"readiness":            diagnosticReadiness(cfg),
-		"exports":              diagnosticExports(cfg),
-		"logging":              diagnosticLogging(cfg),
-		"server":               diagnosticServer(cfg),
-		"system_health":        diagnosticSystemHealth(cfg),
-		"performance":          diagnosticPerformance(cfg),
-		"ownership":            diagnosticOwnership(cfg),
-		"auth":                 diagnosticAuth(cfg),
+		"organisation_count":  len(cfg.Organisations),
+		"target_chef_version": cfg.TargetChefVersion,
+		"git_base_urls":       cfg.GitBaseURLs,
+		"collection":          diagnosticCollection(cfg),
+		"concurrency":         diagnosticConcurrency(cfg),
+		"analysis_tools":      diagnosticAnalysisTools(cfg),
+		"readiness":           diagnosticReadiness(cfg),
+		"exports":             diagnosticExports(cfg),
+		"logging":             diagnosticLogging(cfg),
+		"server":              diagnosticServer(cfg),
+		"system_health":       diagnosticSystemHealth(cfg),
+		"performance":         diagnosticPerformance(cfg),
+		"ownership":           diagnosticOwnership(cfg),
+		"auth":                diagnosticAuth(cfg),
 	}
 }
 

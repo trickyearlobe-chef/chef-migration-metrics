@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -131,9 +130,13 @@ type CookstyleScanResult struct {
 	// scanning. Set for git-sourced cookbooks; empty for server-sourced.
 	CommitSHA string
 
-	// Passed is true when there are zero offenses with severity "error"
-	// or "fatal".
+	// Passed is the back-compat boolean = CookstyleStatus != StatusBlocked.
 	Passed bool
+
+	// CookstyleStatus is the classification-derived rollup verdict for this
+	// scan: StatusReady / StatusNeedsReview / StatusBlocked. It is the single
+	// source of truth; Passed is derived from it.
+	CookstyleStatus string
 
 	// OffenseCount is the total number of offenses.
 	OffenseCount int
@@ -220,6 +223,15 @@ type CookstyleScanner struct {
 	// time so a config change takes effect on the next scan without a restart.
 	// Falls back to DefaultFailureRules().
 	failureRulesFn func() CookstyleFailureRules
+	// classificationOverridesFn, when set, returns the operator classification
+	// overrides for a target version, read at scan time. Falls back to loading
+	// from the datastore (or empty overrides when no db is configured).
+	classificationOverridesFn func(ctx context.Context, targetChefVersion string) map[string]string
+	// addonCopPathsFn, when set, returns the live operator addon cop path entries
+	// (analysis_tools.cookstyle_addon_cop_paths), read at scan time so a config
+	// change takes effect on the next scan without a restart. Falls back to no
+	// addon cops.
+	addonCopPathsFn func() []string
 }
 
 // CookstyleScannerOption configures a CookstyleScanner.
@@ -245,6 +257,20 @@ func WithCookstyleFailureRulesFn(fn func() CookstyleFailureRules) CookstyleScann
 	return func(s *CookstyleScanner) { s.failureRulesFn = fn }
 }
 
+// WithCookstyleClassificationOverridesFn wires a live provider of operator
+// classification overrides (cop_name → classification) for a target version,
+// read at scan time. When unset, overrides are loaded from the datastore.
+func WithCookstyleClassificationOverridesFn(fn func(ctx context.Context, targetChefVersion string) map[string]string) CookstyleScannerOption {
+	return func(s *CookstyleScanner) { s.classificationOverridesFn = fn }
+}
+
+// WithCookstyleAddonCopPathsFn wires a live provider of operator addon cop path
+// entries (analysis_tools.cookstyle_addon_cop_paths), read at scan time. When
+// unset, no addon cops are loaded.
+func WithCookstyleAddonCopPathsFn(fn func() []string) CookstyleScannerOption {
+	return func(s *CookstyleScanner) { s.addonCopPathsFn = fn }
+}
+
 // effectiveConcurrency returns the live concurrency when a provider is wired
 // (clamped to >= 1), otherwise the value baked at construction.
 func (s *CookstyleScanner) effectiveConcurrency() int {
@@ -263,6 +289,25 @@ func (s *CookstyleScanner) effectiveFailureRules() CookstyleFailureRules {
 		return s.failureRulesFn()
 	}
 	return DefaultFailureRules()
+}
+
+// buildResolver constructs a cop classification resolver for the given target
+// version, loading operator overrides from the injected provider or the
+// datastore. Safe with a nil datastore (empty overrides). The resolver still
+// applies RemovedIn auto-seed and curated defaults, so classification works
+// even with no operator overrides.
+func (s *CookstyleScanner) buildResolver(ctx context.Context, targetChefVersion string) *CopClassificationResolver {
+	if s.classificationOverridesFn != nil {
+		overrides := s.classificationOverridesFn(ctx, targetChefVersion)
+		if overrides == nil {
+			overrides = map[string]string{}
+		}
+		return &CopClassificationResolver{OperatorOverrides: overrides, TargetChefVersion: targetChefVersion}
+	}
+	if s.db == nil {
+		return &CopClassificationResolver{OperatorOverrides: map[string]string{}, TargetChefVersion: targetChefVersion}
+	}
+	return NewResolverFromStore(ctx, s.db, targetChefVersion)
 }
 
 // NewCookstyleScanner creates a scanner.
@@ -323,7 +368,7 @@ type CookstyleBatchResult struct {
 }
 
 // ScanGitRepos runs CookStyle against all provided git repos in parallel,
-// once per target Chef Client version. For each combination it:
+// against the given target Chef Client version. For each repo it:
 //
 //  1. Checks if a result already exists — git repos are skipped only when
 //     the HEAD commit SHA has not changed since the last scan.
@@ -338,7 +383,7 @@ type CookstyleBatchResult struct {
 func (s *CookstyleScanner) ScanGitRepos(
 	ctx context.Context,
 	repos []datastore.GitRepo,
-	targetChefVersions []string,
+	targetChefVersion string,
 	repoDir func(gr datastore.GitRepo) string,
 ) CookstyleBatchResult {
 	start := time.Now()
@@ -356,13 +401,7 @@ func (s *CookstyleScanner) ScanGitRepos(
 		if dir == "" {
 			continue
 		}
-		if len(targetChefVersions) == 0 {
-			items = append(items, workItem{Repo: gr, Dir: dir})
-		} else {
-			for _, tv := range targetChefVersions {
-				items = append(items, workItem{Repo: gr, TargetVersion: tv, Dir: dir})
-			}
-		}
+		items = append(items, workItem{Repo: gr, TargetVersion: targetChefVersion, Dir: dir})
 	}
 
 	result := CookstyleBatchResult{
@@ -497,15 +536,14 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 		return sr
 	}
 
-	// Step 2: build arguments.
-	args := buildCookstyleArgs(cookbookDir, targetChefVersion)
-
-	// Step 3: execute with timeout.
+	// Step 2+3: execute with timeout, injecting operator addon cops and
+	// isolating any addon load failure (a broken .rb must not error the scan).
 	scanStart := time.Now()
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr := s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr, addonInfo := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
+	logAddonScanInfo(log, addonInfo)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
 	sr.RawStdout = stdout
@@ -581,16 +619,25 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 		}
 	}
 
-	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
+	// Step 6b: run custom cop scanning.
+	customOffenses := s.runCustomCopScan(ctx, cookbookDir, log)
+	for _, off := range customOffenses {
+		sr.Offenses = append(sr.Offenses, off)
+		sr.OffenseCount++
+	}
+
+	resolver := s.buildResolver(ctx, targetChefVersion)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.
 	if sr.Passed {
-		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	} else {
-		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	}
 
@@ -637,15 +684,14 @@ func (s *CookstyleScanner) scanOneGitRepo(
 		}
 	}
 
-	// Step 2: build arguments.
-	args := buildCookstyleArgs(repoDir, targetChefVersion)
-
-	// Step 3: execute with timeout.
+	// Step 2+3: execute with timeout, injecting operator addon cops and
+	// isolating any addon load failure (a broken .rb must not error the scan).
 	scanStart := time.Now()
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr := s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr, addonInfo := s.runScanWithAddonIsolation(scanCtx, repoDir, targetChefVersion)
+	logAddonScanInfo(log, addonInfo)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
 	sr.RawStdout = stdout
@@ -721,16 +767,25 @@ func (s *CookstyleScanner) scanOneGitRepo(
 		}
 	}
 
-	sr.Passed = EvaluatePassFail(sr.Offenses, s.effectiveFailureRules())
+	// Step 6b: run custom cop scanning.
+	customOffenses := s.runCustomCopScan(ctx, repoDir, log)
+	for _, off := range customOffenses {
+		sr.Offenses = append(sr.Offenses, off)
+		sr.OffenseCount++
+	}
+
+	resolver := s.buildResolver(ctx, targetChefVersion)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.
 	if sr.Passed {
-		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Info(fmt.Sprintf("passed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	} else {
-		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable in %s",
-			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount,
+		log.Warn(fmt.Sprintf("failed: %d offense(s), %d deprecation(s), %d correctness, %d correctable, %d custom in %s",
+			sr.OffenseCount, sr.DeprecationCount, sr.CorrectnessCount, sr.CorrectableCount, len(customOffenses),
 			sr.Duration.Round(time.Millisecond)))
 	}
 
@@ -770,74 +825,135 @@ func relativeCookstylePath(filePath, cookbookDir string) string {
 // Argument construction
 // ---------------------------------------------------------------------------
 
-// buildCookstyleArgs constructs the cookstyle CLI arguments.
+// buildCookstyleArgs constructs the cookstyle CLI arguments for a scan via the
+// shared remediation.BuildCookstyleArgs helper.
 //
 // We always pass --format json for machine-parseable output. When a target
-// Chef Client version is specified we restrict the scan to the
-// ChefDeprecations and ChefCorrectness namespaces via --only, since those
-// are the namespaces that directly affect migration compatibility. CookStyle
-// handles version-relevance filtering internally within those namespaces.
+// Chef Client version is specified, a sidecar .rubocop_cmm.yml carrying
+// AllCops.TargetChefVersion is written and pointed at with --config.
 //
-// When no target version is specified the full default rule set runs so
-// that the dashboard can display style and modernisation suggestions too.
+// The scan runs the FULL ruleset (onlyDepartments = ""): classification — not a
+// department filter — decides the rollup verdict and complexity. The old
+// --only Chef/Deprecations,Chef/Correctness narrowing silently hid every
+// Blocker-classified cop outside those two departments (e.g. the curated
+// default Lint/DeprecatedClassMethods), so the classification could claim a
+// block the scan would never produce.
 func buildCookstyleArgs(cookbookDir string, targetChefVersion string) []string {
-	args := []string{"--format", "json"}
-
-	if targetChefVersion != "" {
-		// Set TargetChefVersion via a sidecar .rubocop_cmm.yml that we
-		// point CookStyle at with --config. If the cookbook already has a
-		// .rubocop.yml we inherit from it so its settings are preserved.
-		// CookStyle does not accept a --target-chef-version CLI flag.
-		configPath := writeCookstyleTargetConfig(cookbookDir, targetChefVersion)
-		if configPath != "" {
-			args = append(args, "--config", configPath)
-		}
-
-		// Restrict to the two migration-critical namespaces. CookStyle
-		// cops already carry version metadata in their own source —
-		// enabling only these namespaces avoids noise from Chef/Style and
-		// Chef/Modernize cops that don't affect compatibility.
-		args = append(args, "--only", "Chef/Deprecations,Chef/Correctness")
-	}
-
-	args = append(args, cookbookDir)
-	return args
+	return buildCookstyleArgsWithAddons(cookbookDir, targetChefVersion, nil)
 }
 
-// cmmConfigName is the sidecar config file written next to the cookbook's
-// own .rubocop.yml (if any). Using a distinct name avoids overwriting the
-// cookbook's configuration.
-const cmmConfigName = ".rubocop_cmm.yml"
+// buildCookstyleArgsWithAddons is buildCookstyleArgs with operator addon cop
+// requires injected into the sidecar (see remediation.ResolveAddonCopFiles).
+// The scan still runs the full ruleset (no --only).
+func buildCookstyleArgsWithAddons(cookbookDir string, targetChefVersion string, addonCops []remediation.AddonCop) []string {
+	return remediation.BuildCookstyleArgs(
+		cookbookDir,
+		targetChefVersion,
+		[]string{"--format", "json"},
+		"",
+		addonCops,
+	)
+}
 
-// writeCookstyleTargetConfig writes a sidecar .rubocop_cmm.yml into the
-// cookbook directory that sets AllCops.TargetChefVersion. If the cookbook
-// already contains a .rubocop.yml the sidecar inherits from it so the
-// cookbook's own configuration (excludes, custom cops, etc.) is preserved.
-// When no cookbook config exists the sidecar explicitly requires cookstyle
-// so that the TargetChefVersion parameter is recognised.
-//
-// Returns the absolute path to the written file, or "" on failure.
-func writeCookstyleTargetConfig(cookbookDir, targetChefVersion string) string {
-	var buf strings.Builder
+// effectiveAddonRequires resolves the live operator addon cop path entries into
+// concrete addon cops (file + parsed cop names). Returns the resolved cops plus
+// any path problems (missing file, empty dir, bad glob, unparseable cop) for the
+// caller to surface. With no provider or no configured paths it returns nothing.
+func (s *CookstyleScanner) effectiveAddonRequires() ([]remediation.AddonCop, []remediation.AddonCopProblem) {
+	if s.addonCopPathsFn == nil {
+		return nil, nil
+	}
+	paths := s.addonCopPathsFn()
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	return remediation.ResolveAddonCopFiles(paths)
+}
 
-	existingConfig := filepath.Join(cookbookDir, ".rubocop.yml")
-	if _, err := os.Stat(existingConfig); err == nil {
-		// Cookbook has its own config — inherit from it (which also
-		// picks up any `require: cookstyle` it contains).
-		buf.WriteString("inherit_from: .rubocop.yml\n\n")
-	} else {
-		// No cookbook config — require cookstyle ourselves so the
-		// TargetChefVersion AllCops parameter is registered.
-		buf.WriteString("require:\n  - cookstyle\n\n")
+// addonScanInfo reports what happened to addon cops during a scan, so the
+// caller can surface it (log) without the helper needing a logger.
+type addonScanInfo struct {
+	// problems are configured addon paths that could not be resolved.
+	problems []remediation.AddonCopProblem
+	// requires are the resolved addon cops that were injected.
+	requires []remediation.AddonCop
+	// loadFailed is true when cookstyle errored WITH addon cops loaded but
+	// succeeded without them — i.e. a broken addon cop was isolated out and the
+	// returned result comes from the clean (addon-free) retry.
+	loadFailed bool
+	// addonExit / cleanExit are the cookstyle exit codes from the addon and the
+	// isolation-retry runs (only meaningful when loadFailed is true).
+	addonExit int
+	cleanExit int
+}
+
+// runScanWithAddonIsolation runs cookstyle for a scan with operator addon cops
+// injected, isolating addon load failures: if cookstyle errors (exit >= 2) with
+// addons loaded, it retries WITHOUT them. When the clean retry succeeds, that
+// result is returned so a single broken addon .rb never marks every cookbook as
+// errored — the failure is reported via the returned addonScanInfo instead.
+func (s *CookstyleScanner) runScanWithAddonIsolation(
+	scanCtx context.Context,
+	cookbookDir, targetChefVersion string,
+) (stdout, stderr string, exitCode int, execErr error, info addonScanInfo) {
+	addonCops, problems := s.effectiveAddonRequires()
+	info.problems = problems
+	info.requires = addonCops
+
+	args := buildCookstyleArgsWithAddons(cookbookDir, targetChefVersion, addonCops)
+	stdout, stderr, exitCode, execErr = s.executor.Run(scanCtx, args...)
+
+	// Only attempt isolation when addons were actually injected and cookstyle
+	// ran to completion with an error exit (a start/timeout failure is not an
+	// addon problem and must surface as-is).
+	if len(addonCops) > 0 && execErr == nil && exitCode >= 2 {
+		cleanArgs := buildCookstyleArgs(cookbookDir, targetChefVersion)
+		cStdout, cStderr, cExit, cErr := s.executor.Run(scanCtx, cleanArgs...)
+		if cErr == nil && cExit < 2 {
+			info.loadFailed = true
+			info.addonExit = exitCode
+			info.cleanExit = cExit
+			return cStdout, cStderr, cExit, cErr, info
+		}
+		// The clean run also errored — a genuine cookbook/cookstyle error, not an
+		// addon load failure. Fall through with the original result.
+	}
+	return stdout, stderr, exitCode, execErr, info
+}
+
+// logAddonScanInfo surfaces addon path problems and load failures to the log.
+func logAddonScanInfo(log *logging.ScopedLogger, info addonScanInfo) {
+	for _, p := range info.problems {
+		log.Warn(fmt.Sprintf("addon cop path %q could not be resolved: %s", p.Path, p.Reason))
+	}
+	if info.loadFailed {
+		log.Error(fmt.Sprintf(
+			"an addon cop failed to load (cookstyle exit %d with addons, %d without); cookbook scanned WITHOUT addon cops — verify these files: %v",
+			info.addonExit, info.cleanExit, remediation.AddonCopPaths(info.requires)))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Custom cop scanning
+// ---------------------------------------------------------------------------
+
+// runCustomCopScan loads enabled custom cop definitions from the database and
+// runs pattern matching against cookbook source files.
+func (s *CookstyleScanner) runCustomCopScan(ctx context.Context, cookbookDir string, log *logging.ScopedLogger) []CookstyleOffense {
+	defs, err := s.db.ListEnabledCustomCopDefinitions(ctx)
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to load custom cop definitions: %v", err))
+		return nil
+	}
+	if len(defs) == 0 {
+		return nil
 	}
 
-	fmt.Fprintf(&buf, "AllCops:\n  TargetChefVersion: %s\n", targetChefVersion)
-
-	outPath := filepath.Join(cookbookDir, cmmConfigName)
-	if err := os.WriteFile(outPath, []byte(buf.String()), 0644); err != nil {
-		return ""
+	offenses := ScanCustomCops(cookbookDir, defs)
+	if len(offenses) > 0 {
+		log.Debug(fmt.Sprintf("custom cops: %d offense(s) from %d definition(s)", len(offenses), len(defs)))
 	}
-	return outPath
+	return offenses
 }
 
 // ---------------------------------------------------------------------------
@@ -896,6 +1012,7 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 		CookbookVersion:     sr.CookbookVersion,
 		TargetChefVersion:   sr.TargetChefVersion,
 		Passed:              sr.Passed,
+		CookstyleStatus:     sr.CookstyleStatus,
 		OffenceCount:        sr.OffenseCount,
 		DeprecationCount:    sr.DeprecationCount,
 		CorrectnessCount:    sr.CorrectnessCount,
@@ -910,6 +1027,27 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 
 	if _, persistErr := s.db.UpsertServerCookbookCookstyleResult(ctx, params); persistErr != nil {
 		log.Error(fmt.Sprintf("failed to persist server cookbook result: %v", persistErr))
+		return
+	}
+
+	// Append a change-deduped offence fingerprint so this scan's status/complexity
+	// can be recomputed under future classification criteria. Skip errored scans:
+	// they have no offences, and recording an empty fingerprint would falsely read
+	// as "clean". See specifications/enriched-metric-snapshots.md.
+	if sr.ErrorMessage == "" {
+		entries, hash := BuildOffenceFingerprint(sr.Offenses)
+		if _, fpErr := s.db.AppendCookstyleOffenceFingerprint(ctx, datastore.AppendCookstyleOffenceFingerprintParams{
+			ResultKind:        datastore.FingerprintKindServerCookbook,
+			OrganisationName:  sr.OrganisationName,
+			CookbookName:      sr.CookbookName,
+			CookbookVersion:   sr.CookbookVersion,
+			TargetChefVersion: sr.TargetChefVersion,
+			FingerprintHash:   hash,
+			Cops:              entries,
+			ScannedAt:         sr.ScannedAt,
+		}); fpErr != nil {
+			log.Warn(fmt.Sprintf("failed to append offence fingerprint: %v", fpErr))
+		}
 	}
 }
 
@@ -938,6 +1076,7 @@ func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr Cookstyl
 		TargetChefVersion:   sr.TargetChefVersion,
 		CommitSHA:           sr.CommitSHA,
 		Passed:              sr.Passed,
+		CookstyleStatus:     sr.CookstyleStatus,
 		OffenceCount:        sr.OffenseCount,
 		DeprecationCount:    sr.DeprecationCount,
 		CorrectnessCount:    sr.CorrectnessCount,
@@ -952,6 +1091,23 @@ func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr Cookstyl
 
 	if _, persistErr := s.db.UpsertGitRepoCookstyleResult(ctx, params); persistErr != nil {
 		log.Error(fmt.Sprintf("failed to persist git repo result: %v", persistErr))
+		return
+	}
+
+	// Append a change-deduped offence fingerprint (see persistServerCookbookResult).
+	if sr.ErrorMessage == "" {
+		entries, hash := BuildOffenceFingerprint(sr.Offenses)
+		if _, fpErr := s.db.AppendCookstyleOffenceFingerprint(ctx, datastore.AppendCookstyleOffenceFingerprintParams{
+			ResultKind:        datastore.FingerprintKindGitRepo,
+			GitRepoName:       sr.CookbookName,
+			GitRepoURL:        sr.GitRepoURL,
+			TargetChefVersion: sr.TargetChefVersion,
+			FingerprintHash:   hash,
+			Cops:              entries,
+			ScannedAt:         sr.ScannedAt,
+		}); fpErr != nil {
+			log.Warn(fmt.Sprintf("failed to append offence fingerprint: %v", fpErr))
+		}
 	}
 }
 
@@ -980,6 +1136,14 @@ func (s *CookstyleScanner) ResetGitRepoResults(ctx context.Context, gitRepoName,
 // ---------------------------------------------------------------------------
 // Default executor
 // ---------------------------------------------------------------------------
+
+// NewCookstyleExecutor returns a CookstyleExecutor that runs the cookstyle
+// binary at the given path. It lets callers (e.g. the cop-registry provider
+// wired in main) reuse the same execution path as the scanner without
+// constructing a full scanner.
+func NewCookstyleExecutor(path string) CookstyleExecutor {
+	return &defaultCookstyleExecutor{path: path}
+}
 
 type defaultCookstyleExecutor struct {
 	path string

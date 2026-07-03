@@ -10,7 +10,7 @@ import { fetchGitRepos } from "../api";
 import type { GitRepoListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StatusBadge, CookStyleBadge } from "../components/StatusBadge";
+import { StatusBadge, CookStyleStatusBadge } from "../components/StatusBadge";
 
 // ---------------------------------------------------------------------------
 // Git Repos list page — paginated table from GET /api/v1/git-repos showing
@@ -78,8 +78,8 @@ export function GitReposPage() {
 
   // Filters
   const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
-  const [compatibility, setCompatibility] = useState<string[]>(
-    searchParams.get("compatibility")?.split(",").filter(Boolean) ?? [],
+  const [cookstyleStatus, setCookstyleStatus] = useState<string[]>(
+    searchParams.get("cookstyle_status")?.split(",").filter(Boolean) ?? [],
   );
   const [tkStatus, setTkStatus] = useState<string[]>(
     searchParams.get("tk_status")?.split(",").filter(Boolean) ?? [],
@@ -110,7 +110,7 @@ export function GitReposPage() {
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
     if (
-      searchParams.has("compatibility") ||
+      searchParams.has("cookstyle_status") ||
       searchParams.has("target_chef_version") ||
       searchParams.has("name") ||
       searchParams.has("tk_status") ||
@@ -127,7 +127,7 @@ export function GitReposPage() {
 
     const filters: {
       name?: string;
-      compatibility?: string;
+      cookstyle_status?: string;
       tk_status?: string;
       clone_status?: string;
       has_test_suite?: string;
@@ -141,8 +141,8 @@ export function GitReposPage() {
       per_page: perPage,
     };
     if (nameFilter) filters.name = nameFilter;
-    if (compatibility.length > 0)
-      filters.compatibility = compatibility.join(",");
+    if (cookstyleStatus.length > 0)
+      filters.cookstyle_status = cookstyleStatus.join(",");
     if (tkStatus.length > 0) filters.tk_status = tkStatus.join(",");
     if (cloneStatus.length > 0) filters.clone_status = cloneStatus.join(",");
     if (kitchenFilter.length > 0)
@@ -161,7 +161,7 @@ export function GitReposPage() {
       .finally(() => setLoading(false));
   }, [
     nameFilter,
-    compatibility,
+    cookstyleStatus,
     tkStatus,
     cloneStatus,
     kitchenFilter,
@@ -178,7 +178,7 @@ export function GitReposPage() {
     setPage(1);
   }, [
     nameFilter,
-    compatibility,
+    cookstyleStatus,
     tkStatus,
     cloneStatus,
     kitchenFilter,
@@ -190,7 +190,7 @@ export function GitReposPage() {
   // Count active filters for the clear button.
   const activeFilterCount = [
     nameFilter ? 1 : 0,
-    compatibility.length > 0 ? 1 : 0,
+    cookstyleStatus.length > 0 ? 1 : 0,
     tkStatus.length > 0 ? 1 : 0,
     cloneStatus.length > 0 ? 1 : 0,
     kitchenFilter.length > 0 ? 1 : 0,
@@ -198,7 +198,7 @@ export function GitReposPage() {
 
   const clearFilters = () => {
     setNameFilter("");
-    setCompatibility([]);
+    setCookstyleStatus([]);
     setTkStatus([]);
     setCloneStatus([]);
     setKitchenFilter([]);
@@ -219,12 +219,13 @@ export function GitReposPage() {
         <FilterMultiCheckbox
           label="CookStyle"
           options={[
-            { value: "compatible", label: "Compatible" },
-            { value: "incompatible", label: "Incompatible" },
+            { value: "ready", label: "Ready" },
+            { value: "needs_review", label: "Needs review" },
+            { value: "blocked", label: "Blocked" },
             { value: "untested", label: "Untested" },
           ]}
-          selected={compatibility}
-          onChange={setCompatibility}
+          selected={cookstyleStatus}
+          onChange={setCookstyleStatus}
         />
         <FilterMultiCheckbox
           label="TK Status"
@@ -379,8 +380,8 @@ export function GitReposPage() {
                         )}
                       </td>
                       <td>
-                        <CookStyleBadge
-                          status={repo.compatibility ?? "untested"}
+                        <CookStyleStatusBadge
+                          status={repo.cookstyle_status ?? "untested"}
                           size="sm"
                         />
                       </td>

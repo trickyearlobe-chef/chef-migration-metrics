@@ -51,6 +51,7 @@ readiness:
   install_size_mb_linux: 3072
   install_size_mb_windows: 6144
   min_remaining_free_percent: 20
+  review_blocks_readiness: false
 
 datastore:
   url: postgres://localhost:5432/chef_migration_metrics

@@ -4,6 +4,14 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
+## CookStyle — Failure-rules subsystem now inert (Reliability Phase 3)
+
+Recorded 2026-07-03 (cookstyle-reliability Phase 3, trustworthy-reds resolver).
+
+- [ ] **The severity-based failure-rules argument is threaded but inert.** Phase 3 removed the severity fallback from the verdict (`DeriveStatusFromFingerprint`/`DeriveCookstyleStatus` now derive status from classification alone; the `rules CookstyleFailureRules` param is kept for call-site stability and explicitly discarded with `_ = rules`). The whole `cookstyle_failure_preset`/`cookstyle_failure_rules` subsystem, `offenseTriggersFailure`, `DefaultFailureRules`, and the admin "Failure Rules" grid no longer influence any red. **Strategic fix (full retirement, per spec "Retirement of Failure Rules"):** drop the `rules` parameter from the derivation functions and their ~10 callers, remove the failure-rules config/store/admin surfaces, and delete the now-dead severity plumbing. Deferred as a wide ripple; correctness is already correct (no severity-derived reds).
+
+---
+
 ## Security — CodeQL Path-injection / TLS Follow-ups
 
 Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dismissed).
@@ -65,7 +73,8 @@ Recorded 2026-06-19 (`feature/orphan-sweep-ticker`).
 
 ## Backend — Code Smells
 
-- [ ] `DataStore` interface has 138+ methods (`webapi/store.go`) — consider splitting into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, etc.) composed into the full interface.
+- [ ] `DataStore` interface has 190 methods (`webapi/store.go`, up from 138 — the cookstyle status/classification/fingerprint cluster on `feature/cookstyle-violations-browser` added ~10 + ~450 lines of `store_mock_test.go`) — split into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, **cookstyle**) composed into the full interface. The cookstyle methods are the cleanest first slice to extract (`CookstyleStore`) since they were all added together. **Queued for its own branch after the cookstyle branch merges.**
+- [ ] **`handle_cookstyle_cops.go` is a 978-line, 29-function god-handler** (`internal/webapi/`) covering five REST resources — cop aggregation (`handleCookstyleCops`), cop→cookbooks drill-down (`handleCookstyleCopCookbooks`), classification CRUD (`putCookstyleCopClassification`/`delete…`), and custom-cop CRUD (`createCustomCop`/`update…`/`delete…`) — plus a local `validationError` framework and offence parsing. **Strategic fix:** split per resource into `handle_cookstyle_{cops,cop_cookbooks,classifications,custom_cops}.go`, keeping shared helpers (`copNamespace`, `parseFullOffenses`, `extractCopName*`) in one place. Added 2026-06-26 (`feature/cookstyle-violations-browser`). **Queued for its own branch after that branch merges.**
 - [ ] **SAML provider validation duplicated between `config.validateAuth` and `webapi.putAdminConfigAuth`** — the saml-provider rules (metadata source one-of/mutual-exclusion, sp_entity_id/credentials required, role_mapping, and now `sp_base_url`) are implemented twice: once in `internal/config/config.go` (`validateAuth`, the YAML/load-time path) and again in `internal/webapi/handle_admin_config_auth.go` (`putAdminConfigAuth`, the admin-save path), with separately-maintained message strings. They drift easily — the admin-save fast-fail checks already lag `validateAuth` (no https-only/1MB/duration checks). (Partially mitigated 2026-06-15 by sharing `config.IsValidSPBaseURL`.) **Lockout risk now closed (2026-06-17):** `storeAdminConfigSection` runs the full `config.Validate()` on the prospective assembled config *before* `configStore.Set`, so a section that only `validateAuth` would reject is no longer persisted-then-rejected-on-reload (which left invalid, encrypted, non-hand-editable config that bricked the next reload/startup). What remains is pure cleanup, lower priority: the `putAdminConfigAuth` fast-fail block now duplicates rules the pre-persist validation already enforces, with separate message strings. **Strategic fix:** extract a single `config.ValidateAuthProvider(p) []error` and have the fast-fail path use it (or drop the redundant fast-fail checks and rely on the pre-persist validation for precise messages). Added 2026-06-15 with the SAML config improvements.
 - [ ] **`target_chef_versions` is a list but only one target is ever active** — config stores `TargetChefVersions []string` and code picks the highest via `config.HighestVersion()`. This is confusing and error-prone (users may add multiple values thinking they'll all be tested). **Strategic fix:** change config to `target_chef_version: "18.5.0"` (scalar string), update `config.Config`, admin API PUT/GET, frontend admin page, and all call sites that index into the slice. Remove `HighestVersion()` helper.
 
@@ -286,6 +295,40 @@ Recorded 2026-06-18 (`fix/pin-harness-blocked-deps`).
 Recorded 2026-06-24.
 
 - [ ] **`undici@7.28.0` fixes CVE-2026-12151 (SameSite cookie substring matching) but is in the Harness 14-day quarantine.** The vuln is test-only (jsdom → undici, not shipped to production). The override in `package.json` pins `undici` to `7.27.0`; bump to `7.28.0` once the quarantine clears (~2026-07-08). Then run `npm install --ignore-scripts && npm audit` to confirm clean.
+
+## CookStyle — Scan-Time Classification Override Query Is Per-Item
+
+Recorded 2026-06-26 (status-consistency Chunk 1, SoT derivation).
+
+- [ ] **`scanOneServerCookbook`/`scanOneGitRepo` build a resolver per scanned item.** `CookstyleScanner.buildResolver` loads operator classification overrides (`ListCopClassifications`) once per cookbook×target during the scan, not once per batch. The `cop_classifications` table is small (operator overrides only) and the query is indexed and sub-millisecond against the seconds-long cookstyle subprocess, so the cost is negligible today — but at ~17k results/run it is N redundant queries. The complexity scorer already batches this correctly (`classifierCache` resolves one classifier per target up front). **Strategic fix:** pre-load overrides per target at the start of `ScanGitRepos`/the server-cookbook batch and thread them into `scanOne`, or inject a per-batch memoising `WithCookstyleClassificationOverridesFn`. Until then correctness is fine; only efficiency is affected.
+
+## CookStyle — Re-eval Propagation Scoping & Spec Drift
+
+Recorded 2026-06-26 (status-consistency Chunk 2, re-eval propagation + audit).
+
+- [ ] **Readiness recompute is org-scoped, not strictly per-dependent-node.** `CookstylePropagator` re-evaluates readiness via `ReadinessEvaluator.EvaluateOrganisation` for every org owning an affected server cookbook — a superset of the nodes whose run-list actually includes the cop's cookbook(s). The evaluator has no per-node entry point (it bulk-loads an org-scoped cache, so per-org is its natural granularity). Correct but coarser than the dependency graph's "nodes whose run-list includes an affected cookbook." **Strategic fix:** add a node-set-scoped readiness method (reusing the org cache) and a cookbook→nodes lookup, then re-evaluate only dependent nodes.
+- [ ] **Git-repo complexity re-score is org-looped.** Git repos are not org-scoped, but complexity blast radius is loaded per org. The propagator re-scores affected git repos once per affected org (or, for a git-only change, once per org), mirroring the collector's per-org pass (last-write-wins). At many orgs this is redundant work. **Strategic fix:** resolve the authoritative org for a git repo's blast radius (or make git blast org-agnostic) and score once.
+- [ ] **Custom-cop definition change does not rescan offences synchronously.** Creating/editing/deleting a custom cop changes *which* offences exist, which truly needs a re-scan (dependency graph: "rescan = yes"). Chunk 2 runs only the re-resolution closure over results that *already* contain the custom cop + audit; the offence set refreshes on the next collection cycle. **Strategic fix:** trigger a scoped reset/rescan of files matching the custom cop on definition change.
+- [ ] **Spec/code drift: `cop-classification.md` Re-eval step 2 — `complexity_score` is not in the results table.** Chunk 3 (migration 0041) added the `cookstyle_status` column to `server_cookbook_cookstyle_results` / `git_repo_cookstyle_results` (resolving the `status` half of this item — propagator + rescore now write `passed` + `cookstyle_status` in the results tables). Complexity still lives in the separate `server_cookbook_complexity` / `git_repo_complexity` tables, so the spec's "`+ complexity_score` in `*_cookstyle_results`" wording remains stale. **Fix (needs owner sign-off):** reword the spec's Re-eval step to say status+passed materialise in the results tables while complexity materialises in its own tables.
+
+## CookStyle — Status Materialisation (Chunk 3)
+
+Recorded 2026-06-26 (status-consistency Chunk 3, API surfacing).
+
+- [ ] **Lists surface `cookstyle_status` but not weighted complexity.** `active.md`/the chunk line said "weighted complexity to … list responses," but the `web-api-server-cookbooks`/`web-api-git-repos` list-section specs only carry `cookstyle_status` on list entries (complexity stays on remediation/detail, where it is already classification-weighted from Chunk 1). Followed the spec to avoid divergence; the cookbook/git-repo filter queries were not extended with a complexity join. **Revisit** only if a list view needs per-row complexity.
+
+## CookStyle — Readiness Integration + Toggle (Chunk 6)
+
+Recorded 2026-06-26 (status-consistency Chunk 6, readiness + `review_blocks_readiness`).
+
+- [ ] **Trend snapshots do not yet record `needs_review`.** The dashboard readiness card (current state) is exact via `CountNodeReadinessByStatus`, and the live trend *fallback* carries `needs_review_nodes`. But the persisted snapshot writers (`node_metrics` / `readiness_summary`) still store ready/blocked only, so with the toggle on, `needs_review` nodes are counted as blocked in historical trend points. Forward-only `needs_review` trend data + recompute is **Chunk 8**'s scope; the `readinessTrendPoint.needs_review_nodes` field + merge plumbing are already in place for it.
+- [ ] **Readiness exports still use `is_ready`, not the 3-state `status`.** `ready_nodes` / `blocked_nodes` exports (and `ListReadyNodes`/`ListBlockedNodes`) filter on `is_ready`, so with the toggle on a `needs_review` node lands in the blocked export. Default-off (today) is unaffected. **Strategic fix:** add a `needs_review_nodes` export type and switch the blocked export to `status = 'blocked'` (the node-list filter already does this).
+
+## CookStyle — Per-Target Dimension Not Fully Torn Out (Reliability Phase 2)
+
+Recorded 2026-07-03 (cookstyle-reliability Phase 2, scope decision).
+
+- [ ] **`target_chef_version` columns remain on the stored-results schema.** Phase 2 took the *contained* scope: config is now scalar (`TargetChefVersion`), `cop_classifications` is keyed by `cop_name` only, the resolver dropped its target param, and the config-target loops were collapsed. But `target_chef_version` still exists as a column on `server_cookbook_cookstyle_results`, `git_repo_cookstyle_results`, `node_kitchen_runs`, and `cookstyle_offence_fingerprints`, and the dashboard compatibility/readiness/trends/recompute handlers still group and filter by it — now always the single active target. This is harmless (the column holds one value) but is the residual "per-target dimension." **Strategic fix (full teardown):** drop those columns via migration and remove the target grouping from `handle_dashboard_compatibility.go`, `handle_dashboard_readiness.go`, `handle_dashboard_trends.go`, `handle_dashboard_cookstyle_recompute.go`, the fingerprint code, and their tests. Deferred as a schema-wide migration the approved spec does not require.
 
 ## Phasing Notes
 

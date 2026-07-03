@@ -4,11 +4,14 @@
 package remediation
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 )
 
 // ---------------------------------------------------------------------------
@@ -22,7 +25,9 @@ func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 		t.Fatal("expected non-empty args")
 	}
 
-	// Should contain --auto-correct, --format json, --config, --only, and the directory.
+	// Should contain --auto-correct, --format json, --config, and the directory.
+	// Chunk E: the autocorrect run is FULL ruleset — no --only narrowing — so its
+	// whole-cookbook diff covers every available fix (including addon-cop fixes).
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--auto-correct") {
 		t.Error("args should contain --auto-correct")
@@ -33,11 +38,8 @@ func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 	if !strings.Contains(joined, "--config") {
 		t.Error("args should contain --config when target version is set")
 	}
-	if !strings.Contains(joined, "--only") {
-		t.Error("args should contain --only when target version is set")
-	}
-	if !strings.Contains(joined, "Chef/Deprecations,Chef/Correctness") {
-		t.Error("args should restrict to Chef/Deprecations,Chef/Correctness")
+	if strings.Contains(joined, "--only") {
+		t.Error("args should NOT contain --only — the autocorrect preview runs the full ruleset (chunk E)")
 	}
 	if args[len(args)-1] != cookbookDir {
 		t.Errorf("last arg = %q, want %s", args[len(args)-1], cookbookDir)
@@ -49,22 +51,22 @@ func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 	}
 
 	// Verify sidecar .rubocop_cmm.yml was written with TargetChefVersion.
-	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	data, err := os.ReadFile(filepath.Join(cookbookDir, CmmConfigName))
 	if err != nil {
-		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+		t.Fatalf("expected %s to be written: %v", CmmConfigName, err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "TargetChefVersion: 18.0") {
-		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", CmmConfigName, content)
 	}
 
 	// Without an existing .rubocop.yml the sidecar should require cookstyle
 	// so the TargetChefVersion parameter is recognised.
 	if !strings.Contains(content, "require:") || !strings.Contains(content, "cookstyle") {
-		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", CmmConfigName, content)
 	}
 	if strings.Contains(content, "inherit_from") {
-		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", CmmConfigName, content)
 	}
 
 	// Original .rubocop.yml must not exist (we must not clobber cookbook config).
@@ -90,16 +92,16 @@ func TestBuildAutocorrectArgs_WithTargetVersion_WithCookbookConfig(t *testing.T)
 	}
 
 	// Verify sidecar inherits from the cookbook's own config.
-	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	data, err := os.ReadFile(filepath.Join(cookbookDir, CmmConfigName))
 	if err != nil {
-		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+		t.Fatalf("expected %s to be written: %v", CmmConfigName, err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "inherit_from: .rubocop.yml") {
-		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", CmmConfigName, content)
 	}
 	if !strings.Contains(content, "TargetChefVersion: 17.0") {
-		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", CmmConfigName, content)
 	}
 
 	// The cookbook's original .rubocop.yml must be preserved.
@@ -134,8 +136,8 @@ func TestBuildAutocorrectArgs_WithoutTargetVersion(t *testing.T) {
 	}
 
 	// No sidecar config should be written when target version is empty.
-	if _, err := os.Stat(filepath.Join(cookbookDir, cmmConfigName)); err == nil {
-		t.Errorf("%s should not be written when target version is empty", cmmConfigName)
+	if _, err := os.Stat(filepath.Join(cookbookDir, CmmConfigName)); err == nil {
+		t.Errorf("%s should not be written when target version is empty", CmmConfigName)
 	}
 }
 
@@ -152,6 +154,167 @@ func TestBuildAutocorrectArgs_AlwaysHasFormatJSON(t *testing.T) {
 		if !found {
 			t.Errorf("buildAutocorrectArgs(%q, %q) missing --format json", "/dir", tv)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Chunk E: addon cops in the autocorrect preview (full ruleset + isolation)
+// ---------------------------------------------------------------------------
+
+// seqAutocorrectExecutor returns a different canned result per call, cycling
+// through the configured results (last one repeats). It records every
+// invocation's args so a test can assert which run carried the addon sidecar.
+type seqAutocorrectExecutor struct {
+	results []autocorrectExecResult
+	calls   [][]string
+}
+
+type autocorrectExecResult struct {
+	stdout, stderr string
+	exitCode       int
+	err            error
+}
+
+func (e *seqAutocorrectExecutor) Run(_ context.Context, args ...string) (string, string, int, error) {
+	idx := len(e.calls)
+	e.calls = append(e.calls, append([]string{}, args...))
+	if idx >= len(e.results) {
+		idx = len(e.results) - 1
+	}
+	r := e.results[idx]
+	return r.stdout, r.stderr, r.exitCode, r.err
+}
+
+func testAutocorrectLogger() *logging.Logger {
+	return logging.New(logging.Options{Level: logging.ERROR, Writers: []logging.Writer{logging.NewMemoryWriter()}})
+}
+
+// TestBuildAutocorrectArgsWithAddons_InjectsRequireAndEnable proves the
+// autocorrect run shares the scan's sidecar builder: a resolved addon cop is
+// require:'d AND explicitly enabled, with no --only narrowing, so addon-cop
+// fixes can appear in the diff.
+func TestBuildAutocorrectArgsWithAddons_InjectsRequireAndEnable(t *testing.T) {
+	cookbookDir := t.TempDir()
+	addonDir := t.TempDir()
+	copPath := filepath.Join(addonDir, "no_regex.rb")
+	cop := "module RuboCop\n  module Cop\n    module Cmm\n      class NoRegex < RuboCop::Cop::Base\n      end\n    end\n  end\nend\n"
+	if err := os.WriteFile(copPath, []byte(cop), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cops, problems := ResolveAddonCopFiles([]string{copPath})
+	if len(problems) != 0 {
+		t.Fatalf("unexpected addon resolution problems: %v", problems)
+	}
+
+	args := buildAutocorrectArgsWithAddons(cookbookDir, "18.0", cops)
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "--only") {
+		t.Error("autocorrect args must NOT contain --only with addons — full ruleset")
+	}
+	if !strings.Contains(joined, "--auto-correct") {
+		t.Error("autocorrect args must contain --auto-correct")
+	}
+
+	data, err := os.ReadFile(filepath.Join(cookbookDir, CmmConfigName))
+	if err != nil {
+		t.Fatalf("expected sidecar %s: %v", CmmConfigName, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, copPath) {
+		t.Errorf("sidecar should require the addon cop path %q, got:\n%s", copPath, content)
+	}
+	if !strings.Contains(content, "Cmm/NoRegex:\n  Enabled: true") {
+		t.Errorf("sidecar should enable the addon cop Cmm/NoRegex, got:\n%s", content)
+	}
+}
+
+// TestEffectiveAddonRequires_ResolvesFromConfig proves the generator resolves
+// the live addon-cop path provider into concrete cops, and returns nothing when
+// no provider is wired.
+func TestEffectiveAddonRequires_ResolvesFromConfig(t *testing.T) {
+	addonDir := t.TempDir()
+	copPath := filepath.Join(addonDir, "x.rb")
+	cop := "module RuboCop\n  module Cop\n    module Cmm\n      class X < RuboCop::Cop::Base\n      end\n    end\n  end\nend\n"
+	if err := os.WriteFile(copPath, []byte(cop), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	none := NewAutocorrectGenerator(nil, testAutocorrectLogger(), "/usr/bin/cookstyle", 10)
+	if cops, _ := none.effectiveAddonRequires(); cops != nil {
+		t.Errorf("no provider wired should resolve no cops, got %v", cops)
+	}
+
+	g := NewAutocorrectGenerator(nil, testAutocorrectLogger(), "/usr/bin/cookstyle", 10,
+		WithAutocorrectAddonCopPathsFn(func() []string { return []string{copPath} }))
+	cops, problems := g.effectiveAddonRequires()
+	if len(problems) != 0 {
+		t.Fatalf("unexpected problems: %v", problems)
+	}
+	if len(cops) != 1 || cops[0].Path != copPath {
+		t.Fatalf("expected one resolved cop at %q, got %v", copPath, cops)
+	}
+}
+
+// TestRunAutocorrectWithAddonIsolation_RetriesWithoutAddonsOnLoadFailure proves
+// a broken addon (cookstyle exit 2 WITH addons) does not fail the preview: the
+// run is retried WITHOUT addons and the clean output is returned.
+func TestRunAutocorrectWithAddonIsolation_RetriesWithoutAddonsOnLoadFailure(t *testing.T) {
+	cookbookDir := t.TempDir()
+	addon := filepath.Join(t.TempDir(), "addon.rb")
+	cop := "module RuboCop\n  module Cop\n    module Cmm\n      class A < RuboCop::Cop::Base\n      end\n    end\n  end\nend\n"
+	if err := os.WriteFile(addon, []byte(cop), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fe := &seqAutocorrectExecutor{results: []autocorrectExecResult{
+		{stderr: "cannot load addon", exitCode: 2}, // with addons — load failure
+		{stdout: `{"summary":{"offense_count":1}}`, exitCode: 1}, // clean retry — offenses found
+	}}
+	g := NewAutocorrectGenerator(nil, testAutocorrectLogger(), "/usr/bin/cookstyle", 10,
+		WithAutocorrectExecutor(fe),
+		WithAutocorrectAddonCopPathsFn(func() []string { return []string{addon} }))
+
+	log := g.logger.WithScope(logging.ScopeRemediation)
+	stdout, execErr := g.runAutocorrectWithAddonIsolation(context.Background(), cookbookDir, "18.0", log)
+	if execErr != nil {
+		t.Fatalf("isolation should swallow the addon load failure, got err: %v", execErr)
+	}
+	if !strings.Contains(stdout, `"offense_count":1`) {
+		t.Errorf("expected the clean retry's JSON output, got %q", stdout)
+	}
+	if len(fe.calls) != 2 {
+		t.Fatalf("expected exactly two runs (addon + clean retry), got %d", len(fe.calls))
+	}
+	// First run carries the addon sidecar config; the retry does not.
+	if !strings.Contains(strings.Join(fe.calls[0], " "), "--config") {
+		t.Error("first (addon) run should carry --config sidecar")
+	}
+}
+
+// TestRunAutocorrectWithAddonIsolation_KeepsErrorWhenBrokenWithoutAddons proves a
+// genuine cookstyle error (fails WITH and WITHOUT addons) is NOT masked: the
+// original failing result is returned so the preview records the error.
+func TestRunAutocorrectWithAddonIsolation_KeepsErrorWhenBrokenWithoutAddons(t *testing.T) {
+	cookbookDir := t.TempDir()
+	addon := filepath.Join(t.TempDir(), "addon.rb")
+	cop := "module RuboCop\n  module Cop\n    module Cmm\n      class B < RuboCop::Cop::Base\n      end\n    end\n  end\nend\n"
+	if err := os.WriteFile(addon, []byte(cop), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fe := &seqAutocorrectExecutor{results: []autocorrectExecResult{
+		{stderr: "broken cookbook", exitCode: 2}, // with addons
+		{stderr: "broken cookbook", exitCode: 2}, // without addons — still broken
+	}}
+	g := NewAutocorrectGenerator(nil, testAutocorrectLogger(), "/usr/bin/cookstyle", 10,
+		WithAutocorrectExecutor(fe),
+		WithAutocorrectAddonCopPathsFn(func() []string { return []string{addon} }))
+
+	log := g.logger.WithScope(logging.ScopeRemediation)
+	stdout, _ := g.runAutocorrectWithAddonIsolation(context.Background(), cookbookDir, "18.0", log)
+	if strings.Contains(stdout, "offense_count") {
+		t.Error("a genuine error must not be masked by the addon-free retry")
 	}
 }
 

@@ -21,8 +21,7 @@ organisations:
     client_name: test-client
     client_key_credential: test-key
 
-target_chef_versions:
-  - "18.5.0"
+target_chef_version: "18.5.0"
 
 datastore:
   url: postgres://localhost:5432/test
@@ -641,8 +640,7 @@ func TestEnvOverride_ElasticsearchOutputDirectory(t *testing.T) {
 // the UI. It surfaces as a warning, never a parse error.
 func TestValidation_NoOrganisations_IsWarningNotError(t *testing.T) {
 	yaml := `
-target_chef_versions:
-  - "18.5.0"
+target_chef_version: "18.5.0"
 `
 	cfg, warnings, err := Parse([]byte(yaml))
 	if err != nil {
@@ -795,8 +793,7 @@ organisations:
     client_key_credential: test-key
     ssl_verify: true
 
-target_chef_versions:
-  - "18.5.0"
+target_chef_version: "18.5.0"
 
 datastore:
   url: postgres://localhost:5432/test
@@ -823,8 +820,7 @@ organisations:
     client_key_credential: test-key
     ssl_verify: false
 
-target_chef_versions:
-  - "18.5.0"
+target_chef_version: "18.5.0"
 
 datastore:
   url: postgres://localhost:5432/test
@@ -867,8 +863,7 @@ organisations:
     client_key_credential: test-key
     ssl_verify: true
 
-target_chef_versions:
-  - "18.5.0"
+target_chef_version: "18.5.0"
 
 datastore:
   url: postgres://localhost:5432/test
@@ -901,10 +896,7 @@ organisations:
     client_name: test
     client_key_credential: k
 
-target_chef_versions:
-  - "18.5.0"
-  - "19.0.0"
-  - "100.200.300"
+target_chef_version: "100.200.300"
 `
 	mustParse(t, yaml)
 }
@@ -918,8 +910,7 @@ organisations:
     client_name: test
     client_key_credential: k
 
-target_chef_versions:
-  - "not-a-version"
+target_chef_version: "not-a-version"
 `
 	expectParseError(t, yaml, "not a valid semver")
 }
@@ -933,65 +924,9 @@ organisations:
     client_name: test
     client_key_credential: k
 
-target_chef_versions:
-  - "18.5"
+target_chef_version: "18.5"
 `
 	expectParseError(t, yaml, "not a valid semver")
-}
-
-// ---------------------------------------------------------------------------
-// HighestVersion
-// ---------------------------------------------------------------------------
-
-func TestHighestVersion_Empty(t *testing.T) {
-	if got := HighestVersion(nil); got != "" {
-		t.Errorf("HighestVersion(nil) = %q, want empty", got)
-	}
-	if got := HighestVersion([]string{}); got != "" {
-		t.Errorf("HighestVersion([]) = %q, want empty", got)
-	}
-}
-
-func TestHighestVersion_Single(t *testing.T) {
-	if got := HighestVersion([]string{"18.5.0"}); got != "18.5.0" {
-		t.Errorf("HighestVersion([18.5.0]) = %q, want 18.5.0", got)
-	}
-}
-
-func TestHighestVersion_PicksHighestMajor(t *testing.T) {
-	got := HighestVersion([]string{"17.0.0", "19.1.164", "18.5.0"})
-	if got != "19.1.164" {
-		t.Errorf("HighestVersion = %q, want 19.1.164", got)
-	}
-}
-
-func TestHighestVersion_PicksHighestMinor(t *testing.T) {
-	got := HighestVersion([]string{"18.5.0", "18.10.17", "18.8.54"})
-	if got != "18.10.17" {
-		t.Errorf("HighestVersion = %q, want 18.10.17", got)
-	}
-}
-
-func TestHighestVersion_PicksHighestPatch(t *testing.T) {
-	got := HighestVersion([]string{"19.1.12", "19.1.164", "19.1.3"})
-	if got != "19.1.164" {
-		t.Errorf("HighestVersion = %q, want 19.1.164", got)
-	}
-}
-
-func TestHighestVersion_NumericNotLexicographic(t *testing.T) {
-	// Lexicographic sort would put "9.0.0" after "18.0.0".
-	got := HighestVersion([]string{"9.0.0", "18.0.0"})
-	if got != "18.0.0" {
-		t.Errorf("HighestVersion = %q, want 18.0.0", got)
-	}
-}
-
-func TestHighestVersion_PreservesOriginalString(t *testing.T) {
-	got := HighestVersion([]string{"18.05.0", "17.0.0"})
-	if got != "18.05.0" {
-		t.Errorf("HighestVersion = %q, want 18.05.0 (original string preserved)", got)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2040,6 +1975,43 @@ analysis_tools:
 	expectParseError(t, yaml, "test_kitchen_timeout_minutes must be >= 0")
 }
 
+func TestValidation_CookstyleAddonCopPaths_EmptyEntry(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  cookstyle_addon_cop_paths:
+    - ""
+`
+	expectParseError(t, yaml, "cookstyle_addon_cop_paths[0] is empty")
+}
+
+func TestParse_CookstyleAddonCopPaths(t *testing.T) {
+	yaml := `
+organisations:
+  - name: test-org
+    chef_server_url: https://chef.example.com
+    org_name: test-org
+    client_name: test
+    client_key_credential: k
+
+analysis_tools:
+  cookstyle_addon_cop_paths:
+    - /var/lib/cmm/addon-cops/*.rb
+    - /opt/cops/no_eval.rb
+`
+	cfg := mustParse(t, yaml)
+	got := cfg.AnalysisTools.CookstyleAddonCopPaths
+	if len(got) != 2 || got[0] != "/var/lib/cmm/addon-cops/*.rb" || got[1] != "/opt/cops/no_eval.rb" {
+		t.Errorf("expected addon cop paths parsed, got %v", got)
+	}
+}
+
 func TestDefaults_CookstyleFailurePreset(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if cfg.AnalysisTools.CookstyleFailurePreset != "default" {
@@ -2437,9 +2409,7 @@ organisations:
     client_name: metrics
     client_key_credential: staging-key
 
-target_chef_versions:
-  - "18.5.0"
-  - "19.0.0"
+target_chef_version: "19.0.0"
 
 git_base_urls:
   - https://github.com/myorg
@@ -2505,8 +2475,8 @@ auth:
 	if len(cfg.Organisations) != 2 {
 		t.Errorf("expected 2 orgs, got %d", len(cfg.Organisations))
 	}
-	if len(cfg.TargetChefVersions) != 2 {
-		t.Errorf("expected 2 target versions, got %d", len(cfg.TargetChefVersions))
+	if cfg.TargetChefVersion != "19.0.0" {
+		t.Errorf("target_chef_version: %q", cfg.TargetChefVersion)
 	}
 	if len(cfg.GitBaseURLs) != 1 {
 		t.Errorf("expected 1 git_base_url, got %d", len(cfg.GitBaseURLs))
@@ -2872,7 +2842,7 @@ datastore:
 }
 
 func TestParseRaw_FullYAML_SkipsValidation(t *testing.T) {
-	// This YAML has organisations but is missing target_chef_versions
+	// This YAML has organisations but is missing target_chef_version
 	// and other required fields. Parse() would reject it, but ParseRaw
 	// should accept it since it skips validation.
 	yaml := `
@@ -2930,8 +2900,7 @@ organisations:
     client_name: test-client
     client_key_credential: test-key
 
-target_chef_versions:
-  - "19.2.12"
+target_chef_version: "19.2.12"
 
 datastore:
   url: postgres://localhost:5432/test
@@ -2961,8 +2930,7 @@ organisations:
     client_name: test-client
     client_key_credential: test-key
 
-target_chef_versions:
-  - "19.2.12"
+target_chef_version: "19.2.12"
 
 datastore:
   url: postgres://localhost:5432/test
@@ -2991,8 +2959,7 @@ organisations:
     client_name: test-client
     client_key_credential: test-key
 
-target_chef_versions:
-  - "19.2.12"
+target_chef_version: "19.2.12"
 
 datastore:
   url: postgres://localhost:5432/test

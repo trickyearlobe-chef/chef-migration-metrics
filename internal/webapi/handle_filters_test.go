@@ -23,7 +23,7 @@ var _ = datastore.NodeSnapshotFilter{}
 
 func TestHandleFilterTargetChefVersions_OK(t *testing.T) {
 	wsEnabled := true
-	r := testRouterWithTargetVersions([]string{"18.0.0", "17.0.0", "19.0.0"}, &wsEnabled)
+	r := testRouterWithTargetVersion("18.0.0", &wsEnabled)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/target-chef-versions", nil)
 	r.ServeHTTP(w, req)
@@ -38,18 +38,18 @@ func TestHandleFilterTargetChefVersions_OK(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(body.Data) != 3 {
-		t.Fatalf("len(data) = %d, want 3", len(body.Data))
+	// A single active target now yields a one-element array.
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
-	// Should be sorted.
-	if body.Data[0] != "17.0.0" || body.Data[1] != "18.0.0" || body.Data[2] != "19.0.0" {
-		t.Errorf("data = %v, want [17.0.0 18.0.0 19.0.0]", body.Data)
+	if body.Data[0] != "18.0.0" {
+		t.Errorf("data = %v, want [18.0.0]", body.Data)
 	}
 }
 
 func TestHandleFilterTargetChefVersions_Empty(t *testing.T) {
 	wsEnabled := true
-	r := testRouterWithTargetVersions(nil, &wsEnabled)
+	r := testRouterWithTargetVersion("", &wsEnabled)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/target-chef-versions", nil)
 	r.ServeHTTP(w, req)
@@ -271,19 +271,16 @@ func TestHandleFilterComplexityLabels_Ordering(t *testing.T) {
 
 func TestHandleFilterTargetChefVersions_DoesNotMutateConfig(t *testing.T) {
 	wsEnabled := true
-	r := testRouterWithTargetVersions([]string{"18.0.0", "17.0.0"}, &wsEnabled)
+	r := testRouterWithTargetVersion("18.0.0", &wsEnabled)
 
 	// First request.
 	w1 := httptest.NewRecorder()
 	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/filters/target-chef-versions", nil)
 	r.ServeHTTP(w1, req1)
 
-	// Check config is still in original order.
-	if r.cfg.TargetChefVersions[0] != "18.0.0" {
-		t.Errorf("cfg.TargetChefVersions[0] = %q, want %q — config was mutated", r.cfg.TargetChefVersions[0], "18.0.0")
-	}
-	if r.cfg.TargetChefVersions[1] != "17.0.0" {
-		t.Errorf("cfg.TargetChefVersions[1] = %q, want %q — config was mutated", r.cfg.TargetChefVersions[1], "17.0.0")
+	// The handler must not mutate the configured scalar target.
+	if r.cfg.TargetChefVersion != "18.0.0" {
+		t.Errorf("cfg.TargetChefVersion = %q, want %q — config was mutated", r.cfg.TargetChefVersion, "18.0.0")
 	}
 }
 
@@ -313,12 +310,12 @@ func TestHandleFilter_ContentType(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Test helper — build a Router with TargetChefVersions configured
+// Test helper — build a Router with the target Chef version configured
 // ---------------------------------------------------------------------------
 
-func testRouterWithTargetVersions(versions []string, wsEnabled *bool) *Router {
+func testRouterWithTargetVersion(version string, wsEnabled *bool) *Router {
 	cfg := testConfig()
-	cfg.TargetChefVersions = versions
+	cfg.TargetChefVersion = version
 	if wsEnabled != nil {
 		cfg.Server.WebSocket.Enabled = wsEnabled
 	}

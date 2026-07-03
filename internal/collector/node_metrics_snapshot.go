@@ -22,12 +22,12 @@ import (
 // nodeMetricsPayload is the JSONB payload shape for the "node_metrics"
 // snapshot type. It contains only pre-aggregated counts — no per-node data.
 type nodeMetricsPayload struct {
-	TotalNodes       int                `json:"total_nodes"`
-	TargetChefVer    string             `json:"target_chef_version"`
-	ByStaleness      stalenessBreakdown `json:"by_staleness"`
-	Fresh            freshBreakdown     `json:"fresh"`
-	Deployment       deploymentBreakdown `json:"deployment"`
-	Thresholds       thresholdsRecord   `json:"thresholds"`
+	TotalNodes    int                 `json:"total_nodes"`
+	TargetChefVer string              `json:"target_chef_version"`
+	ByStaleness   stalenessBreakdown  `json:"by_staleness"`
+	Fresh         freshBreakdown      `json:"fresh"`
+	Deployment    deploymentBreakdown `json:"deployment"`
+	Thresholds    thresholdsRecord    `json:"thresholds"`
 }
 
 // stalenessBreakdown holds counts per staleness tier.
@@ -59,8 +59,8 @@ type blockedByCount struct {
 
 // deploymentBreakdown holds parallel deployment progress counts across all nodes.
 type deploymentBreakdown struct {
-	StagedOrActivated int                                `json:"staged_or_activated"`
-	ConvergePassing   int                                `json:"converge_passing"`
+	StagedOrActivated int                                   `json:"staged_or_activated"`
+	ConvergePassing   int                                   `json:"converge_passing"`
 	ByVersion         map[string]deploymentVersionBreakdown `json:"by_version"`
 }
 
@@ -255,8 +255,8 @@ func (c *Collector) recordNodeMetricsSnapshot(
 	readinessResults []analysis.ReadinessResult,
 ) {
 	targetVersion := ""
-	if len(c.cfg.TargetChefVersions) > 0 {
-		targetVersion = c.cfg.TargetChefVersions[0]
+	if len(c.cfg.TargetChefVersionList()) > 0 {
+		targetVersion = c.cfg.TargetChefVersionList()[0]
 	}
 
 	raw, err := buildNodeMetricsPayload(nodeMetricsInput{

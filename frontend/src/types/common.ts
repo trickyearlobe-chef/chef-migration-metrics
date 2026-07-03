@@ -78,6 +78,17 @@ export type CompatibilityStatus =
   | "cookstyle_only"
   | "untested";
 
+/**
+ * CookStyleStatus is the classification-derived CookStyle rollup verdict (the
+ * single source of truth), returned as `cookstyle_status` on list, detail, and
+ * remediation responses. It is kept separate from the Test Kitchen signal.
+ */
+export type CookStyleStatus =
+  | "ready"
+  | "needs_review"
+  | "blocked"
+  | "untested";
+
 export type ConfidenceLevel = "high" | "medium" | null;
 
 export type ComplexityLabel = "low" | "medium" | "high" | "critical";

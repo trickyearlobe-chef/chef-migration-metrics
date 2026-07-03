@@ -168,12 +168,7 @@ func ComputeComplexityScore(input ComplexityInput) int {
 	score += input.Cookstyle.ModernizeCount * WeightModernize
 
 	// Test Kitchen weight — aligned with tkstatus model.
-	switch input.TestKitchen.Status {
-	case "failed":
-		score += WeightTKFail
-	case "partial":
-		score += WeightTKPartial
-	}
+	score += tkWeight(input.TestKitchen.Status)
 
 	return score
 }
@@ -228,6 +223,13 @@ type ComplexityResult struct {
 type ComplexityScorer struct {
 	db     *datastore.DB
 	logger *logging.Logger
+
+	// classifierFor returns the cop classifier to use for a given target Chef
+	// version, or nil to fall back to legacy severity-based scoring. It is read
+	// once per target at the start of each scoring batch (so a reclassification
+	// or override change takes effect on the next run without a restart), then
+	// memoised for that batch.
+	classifierFor func(ctx context.Context, targetChefVersion string) CopClassifier
 }
 
 // NewComplexityScorer creates a new scorer.
@@ -236,6 +238,38 @@ func NewComplexityScorer(db *datastore.DB, logger *logging.Logger) *ComplexitySc
 		db:     db,
 		logger: logger,
 	}
+}
+
+// SetClassifierProvider wires a per-target-version cop classifier so complexity
+// scoring becomes classification-weighted (the single source of truth). When
+// unset, scoring falls back to the legacy severity-based aggregate weights.
+func (s *ComplexityScorer) SetClassifierProvider(fn func(ctx context.Context, targetChefVersion string) CopClassifier) {
+	s.classifierFor = fn
+}
+
+// classifierCache resolves one classifier per target version up front, so the
+// underlying override load happens once per batch rather than once per scored
+// item. Returns an empty map when no provider is wired.
+func (s *ComplexityScorer) classifierCache(ctx context.Context, targets []string) map[string]CopClassifier {
+	cache := make(map[string]CopClassifier, len(targets))
+	if s.classifierFor == nil {
+		return cache
+	}
+	for _, t := range targets {
+		cache[t] = s.classifierFor(ctx, t)
+	}
+	return cache
+}
+
+// cookstyleScore returns the CookStyle+TK complexity contribution. When a
+// classifier is supplied it uses the classification-weighted derivation (each
+// offense once); otherwise it returns the legacy severity-based score.
+func (s *ComplexityScorer) cookstyleScore(classifier CopClassifier, offencesJSON []byte, input ComplexityInput) int {
+	if classifier != nil {
+		classified := classifyOffensesForComplexity(offencesJSON, classifier)
+		return ComputeCookstyleComplexity(classified) + tkWeight(input.TestKitchen.Status)
+	}
+	return ComputeComplexityScore(input)
 }
 
 // ---------------------------------------------------------------------------
@@ -254,8 +288,7 @@ type ComplexityBatchResult struct {
 }
 
 // ScoreServerCookbooks computes complexity scores for all provided server
-// cookbooks against all provided target Chef versions. For each combination
-// it:
+// cookbooks against the active target Chef version. For each cookbook it:
 //
 //  1. Loads the CookStyle scan result and classifies offenses.
 //  2. Loads the auto-correct preview (if any) for manual fix counts.
@@ -265,7 +298,7 @@ type ComplexityBatchResult struct {
 func (s *ComplexityScorer) ScoreServerCookbooks(
 	ctx context.Context,
 	cookbooks []datastore.ServerCookbook,
-	targetChefVersions []string,
+	targetChefVersion string,
 	organisationID string,
 ) ComplexityBatchResult {
 	start := time.Now()
@@ -290,10 +323,10 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 
 	var items []workItem
 	for _, cb := range cookbooks {
-		for _, tv := range targetChefVersions {
-			items = append(items, workItem{Cookbook: cb, TargetVersion: tv})
-		}
+		items = append(items, workItem{Cookbook: cb, TargetVersion: targetChefVersion})
 	}
+
+	classifiers := s.classifierCache(ctx, []string{targetChefVersion})
 
 	batch := ComplexityBatchResult{
 		Total:   len(items),
@@ -305,7 +338,7 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 			break
 		}
 
-		result := s.scoreOneServerCookbook(ctx, item.Cookbook, item.TargetVersion, blastRadii)
+		result := s.scoreOneServerCookbook(ctx, item.Cookbook, item.TargetVersion, blastRadii, classifiers[item.TargetVersion])
 		batch.Results = append(batch.Results, result)
 
 		switch {
@@ -329,7 +362,7 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 }
 
 // ScoreGitRepos computes complexity scores for all provided git repos
-// against all provided target Chef versions. For each combination it:
+// against the active target Chef version. For each repo it:
 //
 //  1. Loads the CookStyle scan result and classifies offenses.
 //  2. Loads the auto-correct preview (if any) for manual fix counts.
@@ -340,7 +373,7 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 func (s *ComplexityScorer) ScoreGitRepos(
 	ctx context.Context,
 	repos []datastore.GitRepo,
-	targetChefVersions []string,
+	targetChefVersion string,
 	organisationID string,
 ) ComplexityBatchResult {
 	start := time.Now()
@@ -355,8 +388,8 @@ func (s *ComplexityScorer) ScoreGitRepos(
 		}
 	}
 
-	// Pre-load TK counts for all target versions (bulk query).
-	tkCounts, tkErr := s.db.ListGitKitchenCountsByTargetVersions(ctx, targetChefVersions)
+	// Pre-load TK counts for the target version (bulk query).
+	tkCounts, tkErr := s.db.ListGitKitchenCountsByTargetVersions(ctx, []string{targetChefVersion})
 	if tkErr != nil {
 		log.Error(fmt.Sprintf("failed to load TK counts: %v", tkErr))
 		if tkCounts == nil {
@@ -372,10 +405,10 @@ func (s *ComplexityScorer) ScoreGitRepos(
 
 	var items []workItem
 	for _, repo := range repos {
-		for _, tv := range targetChefVersions {
-			items = append(items, workItem{Repo: repo, TargetVersion: tv})
-		}
+		items = append(items, workItem{Repo: repo, TargetVersion: targetChefVersion})
 	}
+
+	classifiers := s.classifierCache(ctx, []string{targetChefVersion})
 
 	batch := ComplexityBatchResult{
 		Total:   len(items),
@@ -387,7 +420,7 @@ func (s *ComplexityScorer) ScoreGitRepos(
 			break
 		}
 
-		result := s.scoreOneGitRepo(ctx, item.Repo, item.TargetVersion, blastRadii, tkCounts)
+		result := s.scoreOneGitRepo(ctx, item.Repo, item.TargetVersion, blastRadii, tkCounts, classifiers[item.TargetVersion])
 		batch.Results = append(batch.Results, result)
 
 		switch {
@@ -421,6 +454,7 @@ func (s *ComplexityScorer) scoreOneServerCookbook(
 	cb datastore.ServerCookbook,
 	targetChefVersion string,
 	blastRadii map[string]BlastRadius,
+	classifier CopClassifier,
 ) ComplexityResult {
 	result := ComplexityResult{
 		OrganisationName:  cb.OrganisationName,
@@ -467,7 +501,7 @@ func (s *ComplexityScorer) scoreOneServerCookbook(
 		Blast:             blast,
 	}
 
-	score := ComputeComplexityScore(input)
+	score := s.cookstyleScore(classifier, csResult.Offences, input)
 	label := ScoreToLabel(score)
 
 	result.ComplexityScore = score
@@ -497,6 +531,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 	targetChefVersion string,
 	blastRadii map[string]BlastRadius,
 	tkCounts map[string]tkstatus.Counts,
+	classifier CopClassifier,
 ) ComplexityResult {
 	result := ComplexityResult{
 		CookbookName:      repo.Name,
@@ -552,7 +587,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		Blast:             blast,
 	}
 
-	score := ComputeComplexityScore(input)
+	score := s.cookstyleScore(classifier, csResult.Offences, input)
 	label := ScoreToLabel(score)
 
 	result.ComplexityScore = score

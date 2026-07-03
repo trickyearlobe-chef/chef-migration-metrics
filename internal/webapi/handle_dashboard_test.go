@@ -600,7 +600,7 @@ func TestHandleDashboardReadiness_HappyPath_WithData(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness", nil)
@@ -638,6 +638,51 @@ func TestHandleDashboardReadiness_HappyPath_WithData(t *testing.T) {
 	}
 }
 
+func TestHandleDashboardReadiness_NeedsReviewBucket(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		CountNodeReadinessByStatusFn: func(ctx context.Context, orgID, tv string) (int, int, int, int, error) {
+			// total, ready, needsReview, blocked
+			return 10, 6, 1, 3, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersion = "18.0.0"
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			TargetChefVersion string  `json:"target_chef_version"`
+			TotalNodes        int     `json:"total_nodes"`
+			ReadyNodes        int     `json:"ready_nodes"`
+			NeedsReviewNodes  int     `json:"needs_review_nodes"`
+			BlockedNodes      int     `json:"blocked_nodes"`
+			ReadyPercent      float64 `json:"ready_percent"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	d := body.Data[0]
+	if d.ReadyNodes != 6 || d.NeedsReviewNodes != 1 || d.BlockedNodes != 3 {
+		t.Errorf("got ready=%d needs_review=%d blocked=%d, want 6/1/3", d.ReadyNodes, d.NeedsReviewNodes, d.BlockedNodes)
+	}
+	if d.ReadyPercent != 60 {
+		t.Errorf("ready_percent = %v, want 60", d.ReadyPercent)
+	}
+}
+
 func TestHandleDashboardReadiness_DBError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
@@ -645,7 +690,7 @@ func TestHandleDashboardReadiness_DBError(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness", nil)
@@ -728,25 +773,32 @@ func TestHandleDashboardVersionDistributionTrend_DBError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
+	// The dashboard summary must bucket by the 4-state CookStyle rollup
+	// (cookstyle_status), NOT the legacy passed boolean. The critical case is
+	// `redis`: passed=true but status=needs_review — it must count as needs_review,
+	// never as ready/compatible (the inconsistency this fixes).
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{{Name: "prod"}}, nil
 		},
 		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
 			return []datastore.ServerCookbook{
-				{OrganisationName: "prod", Name: "apt", Version: "1.0.0"},
-				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0"},
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true},
+				{OrganisationName: "prod", Name: "redis", Version: "1.0.0", IsActive: true},
+				{OrganisationName: "prod", Name: "ghost", Version: "1.0.0", IsActive: true},
 			}, nil
 		},
 		ListServerCookbookCookstyleResultsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error) {
 			return []datastore.ServerCookbookCookstyleResult{
-				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: true, OffenceCount: 0},
-				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: false, OffenceCount: 3},
+				{OrganisationName: "prod", CookbookName: "apt", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "ready"},
+				{OrganisationName: "prod", CookbookName: "nginx", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: false, CookstyleStatus: "blocked", OffenceCount: 3},
+				{OrganisationName: "prod", CookbookName: "redis", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "needs_review", OffenceCount: 1},
 			}, nil
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-compatibility", nil)
@@ -757,9 +809,13 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 	}
 	var body struct {
 		Data []struct {
-			TotalCookbooks        int `json:"total_cookbooks"`
-			CompatibleCookbooks   int `json:"compatible_cookbooks"`
-			IncompatibleCookbooks int `json:"incompatible_cookbooks"`
+			TotalCookbooks       int     `json:"total_cookbooks"`
+			ReadyCookbooks       int     `json:"ready_cookbooks"`
+			NeedsReviewCookbooks int     `json:"needs_review_cookbooks"`
+			BlockedCookbooks     int     `json:"blocked_cookbooks"`
+			UntestedCookbooks    int     `json:"untested_cookbooks"`
+			UntestedUnscanned    int     `json:"untested_unscanned_cookbooks"`
+			ReadyPercent         float64 `json:"ready_percent"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
@@ -768,14 +824,88 @@ func TestHandleDashboardCookbookCompatibility_HappyPath(t *testing.T) {
 	if len(body.Data) != 1 {
 		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
-	if body.Data[0].TotalCookbooks != 2 {
-		t.Errorf("total = %d, want 2", body.Data[0].TotalCookbooks)
+	d := body.Data[0]
+	if d.TotalCookbooks != 4 {
+		t.Errorf("total = %d, want 4", d.TotalCookbooks)
 	}
-	if body.Data[0].CompatibleCookbooks != 1 {
-		t.Errorf("compatible = %d, want 1", body.Data[0].CompatibleCookbooks)
+	if d.ReadyCookbooks != 1 {
+		t.Errorf("ready = %d, want 1", d.ReadyCookbooks)
 	}
-	if body.Data[0].IncompatibleCookbooks != 1 {
-		t.Errorf("incompatible = %d, want 1", body.Data[0].IncompatibleCookbooks)
+	if d.NeedsReviewCookbooks != 1 {
+		t.Errorf("needs_review = %d, want 1 (redis: passed=true but status=needs_review)", d.NeedsReviewCookbooks)
+	}
+	if d.BlockedCookbooks != 1 {
+		t.Errorf("blocked = %d, want 1", d.BlockedCookbooks)
+	}
+	if d.UntestedCookbooks != 1 || d.UntestedUnscanned != 1 {
+		t.Errorf("untested = %d (unscanned %d), want 1 (1)", d.UntestedCookbooks, d.UntestedUnscanned)
+	}
+	if d.ReadyPercent != 25.0 {
+		t.Errorf("ready_percent = %v, want 25", d.ReadyPercent)
+	}
+}
+
+func TestHandleDashboardGitRepoCompatibility_HappyPath(t *testing.T) {
+	// Same 4-state rollup contract for git repos: api-cb is passed=true but
+	// status=needs_review and must count as needs_review.
+	store := &mockStore{
+		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
+			return []datastore.GitRepo{
+				{Name: "web-cb", CloneStatus: "ok"},
+				{Name: "api-cb", CloneStatus: "ok"},
+				{Name: "db-cb", CloneStatus: "ok"},
+				{Name: "old-cb", CloneStatus: "failed"},
+				{Name: "pending-cb", CloneStatus: "ok"},
+			}, nil
+		},
+		ListAllGitRepoCookstyleResultsFn: func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error) {
+			return []datastore.GitRepoCookstyleResult{
+				{GitRepoName: "web-cb", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "ready"},
+				{GitRepoName: "api-cb", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "needs_review"},
+				{GitRepoName: "db-cb", TargetChefVersion: "18.0.0", Passed: false, CookstyleStatus: "blocked"},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersion = "18.0.0"
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/git-repo-compatibility", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			TotalRepos        int     `json:"total_repos"`
+			ReadyRepos        int     `json:"ready_repos"`
+			NeedsReviewRepos  int     `json:"needs_review_repos"`
+			BlockedRepos      int     `json:"blocked_repos"`
+			UntestedRepos     int     `json:"untested_repos"`
+			UntestedCloneFail int     `json:"untested_clone_failed_repos"`
+			UntestedPendScan  int     `json:"untested_pending_scan_repos"`
+			ReadyPercent      float64 `json:"ready_percent"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
+	}
+	d := body.Data[0]
+	if d.TotalRepos != 5 {
+		t.Errorf("total = %d, want 5", d.TotalRepos)
+	}
+	if d.ReadyRepos != 1 || d.NeedsReviewRepos != 1 || d.BlockedRepos != 1 {
+		t.Errorf("ready/needs_review/blocked = %d/%d/%d, want 1/1/1", d.ReadyRepos, d.NeedsReviewRepos, d.BlockedRepos)
+	}
+	if d.UntestedRepos != 2 || d.UntestedCloneFail != 1 || d.UntestedPendScan != 1 {
+		t.Errorf("untested = %d (clone-failed %d, pending %d), want 2 (1, 1)", d.UntestedRepos, d.UntestedCloneFail, d.UntestedPendScan)
+	}
+	if d.ReadyPercent != 20.0 {
+		t.Errorf("ready_percent = %v, want 20", d.ReadyPercent)
 	}
 }
 
@@ -786,7 +916,7 @@ func TestHandleDashboardCookbookCompatibility_DBError(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookbook-compatibility", nil)
@@ -813,7 +943,7 @@ func TestHandleDashboardReadinessTrend_Fallback_NoSnapshots(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend", nil)
@@ -876,7 +1006,7 @@ func TestHandleDashboardReadinessTrend_HappyPath_Snapshots(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend", nil)
@@ -965,7 +1095,7 @@ func TestHandleDashboardReadinessTrend_Snapshots_OwnershipFiltered(t *testing.T)
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?owner=team-a", nil)
@@ -1025,7 +1155,7 @@ func TestHandleDashboardReadinessTrend_Snapshots_NodesOmitted_SkippedUnderOwnerF
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?owner=team-a", nil)
@@ -1067,7 +1197,7 @@ func TestHandleDashboardReadinessTrend_Snapshots_Empty(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend", nil)
@@ -1094,7 +1224,7 @@ func TestHandleDashboardReadinessTrend_DBError(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend", nil)
@@ -1143,7 +1273,7 @@ func TestHandleDashboardReadinessTrend_NodeMetrics_HappyPath(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?stale=fresh", nil)
@@ -1245,7 +1375,7 @@ func TestHandleDashboardReadinessTrend_NodeMetrics_StaleFilterNonFresh(t *testin
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?stale=fresh,warning", nil)
@@ -1291,7 +1421,7 @@ func TestHandleDashboardReadinessTrend_NodeMetrics_StaleFilterOnlyNonFresh(t *te
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/readiness/trend?stale=warning,critical", nil)
@@ -1513,7 +1643,7 @@ func TestHandleDashboardComplexityTrend_HappyPath(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
@@ -1575,7 +1705,7 @@ func TestHandleDashboardComplexityTrend_HappyPath_Empty(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
@@ -1602,7 +1732,7 @@ func TestHandleDashboardComplexityTrend_DBError(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
@@ -1613,7 +1743,7 @@ func TestHandleDashboardComplexityTrend_DBError(t *testing.T) {
 	}
 }
 
-func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
+func TestHandleDashboardComplexityTrend_MultipleOrgsSingleTargetVersion(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return []datastore.Organisation{
@@ -1624,6 +1754,7 @@ func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
 		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 			if orgID == "prod" {
 				return []datastore.ServerCookbookComplexity{
+					// Tagged with a non-target version — must be excluded.
 					{OrganisationName: "prod", CookbookName: "cb-1", CookbookVersion: "1.0.0", TargetChefVersion: "17.0.0", ComplexityScore: 20, ComplexityLabel: "medium"},
 					{OrganisationName: "prod", CookbookName: "cb-2", CookbookVersion: "1.0.0", TargetChefVersion: "18.0.0", ComplexityScore: 5, ComplexityLabel: "low"},
 				}, nil
@@ -1634,7 +1765,7 @@ func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"17.0.0", "18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/complexity/trend", nil)
@@ -1653,9 +1784,15 @@ func TestHandleDashboardComplexityTrend_MultipleOrgsAndVersions(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	// prod has 17.0.0 (1 cb) and 18.0.0 (1 cb); staging has 18.0.0 (1 cb) → 3 points
-	if len(body.Data) != 3 {
-		t.Fatalf("len(data) = %d, want 3", len(body.Data))
+	// Only the single configured target (18.0.0) is aggregated: prod cb-2 and
+	// staging cb-3 → 2 points. The prod 17.0.0 row is excluded.
+	if len(body.Data) != 2 {
+		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	}
+	for _, p := range body.Data {
+		if p.TargetChefVersion != "18.0.0" {
+			t.Errorf("unexpected target_chef_version %q in trend output", p.TargetChefVersion)
+		}
 	}
 }
 
@@ -2636,7 +2773,7 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/test-kitchen-compatibility", nil)
@@ -2685,7 +2822,7 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_WithUntested(t *testi
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/test-kitchen-compatibility", nil)
@@ -2725,7 +2862,7 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_Empty(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/test-kitchen-compatibility", nil)
@@ -2752,7 +2889,7 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_Empty(t *testing.T) {
 	}
 }
 
-func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersions(t *testing.T) {
+func TestHandleDashboardTestKitchenCompatibility_HappyPath_SingleTargetVersion(t *testing.T) {
 	store := &mockStore{
 		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
 			return []datastore.GitRepo{
@@ -2761,7 +2898,7 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersion
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0", "19.0.0"}
+	cfg.TargetChefVersion = "19.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/test-kitchen-compatibility", nil)
@@ -2780,20 +2917,15 @@ func TestHandleDashboardTestKitchenCompatibility_HappyPath_MultipleTargetVersion
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(body.Data) != 2 {
-		t.Fatalf("len(data) = %d, want 2", len(body.Data))
+	// Single configured target → a single compatibility group.
+	if len(body.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(body.Data))
 	}
-	if body.Data[0].TargetChefVersion != "18.0.0" {
-		t.Errorf("data[0].target_chef_version = %q, want 18.0.0", body.Data[0].TargetChefVersion)
+	if body.Data[0].TargetChefVersion != "19.0.0" {
+		t.Errorf("data[0].target_chef_version = %q, want 19.0.0", body.Data[0].TargetChefVersion)
 	}
 	if body.Data[0].UntestedRepos != 1 {
 		t.Errorf("data[0].untested_repos = %d, want 1", body.Data[0].UntestedRepos)
-	}
-	if body.Data[1].TargetChefVersion != "19.0.0" {
-		t.Errorf("data[1].target_chef_version = %q, want 19.0.0", body.Data[1].TargetChefVersion)
-	}
-	if body.Data[1].UntestedRepos != 1 {
-		t.Errorf("data[1].untested_repos = %d, want 1", body.Data[1].UntestedRepos)
 	}
 }
 
@@ -2804,7 +2936,7 @@ func TestHandleDashboardTestKitchenCompatibility_DBError_GitRepos(t *testing.T) 
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/test-kitchen-compatibility", nil)
@@ -2827,7 +2959,7 @@ func TestHandleDashboardTestKitchenCompatibility_PassedPercent(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/test-kitchen-compatibility", nil)

@@ -4,6 +4,7 @@
 package export
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -27,6 +28,7 @@ type fakeStore struct {
 	readiness    map[string][]datastore.NodeReadiness
 	cookbooks    map[string][]datastore.ServerCookbook
 	complexities map[string][]datastore.ServerCookbookComplexity
+	cookstyle    map[string][]datastore.ServerCookbookCookstyleResult
 	countReady   map[string][3]int // orgID+version -> [total, ready, blocked]
 }
 
@@ -52,6 +54,10 @@ func (f *fakeStore) ListGitRepos(_ context.Context) ([]datastore.GitRepo, error)
 
 func (f *fakeStore) ListServerCookbookComplexitiesByOrganisation(_ context.Context, orgID string) ([]datastore.ServerCookbookComplexity, error) {
 	return f.complexities[orgID], nil
+}
+
+func (f *fakeStore) ListServerCookbookCookstyleResultsByOrganisation(_ context.Context, orgID string) ([]datastore.ServerCookbookCookstyleResult, error) {
+	return f.cookstyle[orgID], nil
 }
 
 func (f *fakeStore) CountNodeReadiness(_ context.Context, orgID, targetVersion string) (int, int, int, error) {
@@ -174,12 +180,32 @@ func testStore() *fakeStore {
 		},
 	}
 
+	cookstyle := map[string][]datastore.ServerCookbookCookstyleResult{
+		"prod-org": {
+			{
+				OrganisationName:  "prod-org",
+				CookbookName:      "legacy-db",
+				CookbookVersion:   "1.0.0",
+				TargetChefVersion: "18.0.0",
+				CookstyleStatus:   "blocked",
+			},
+			{
+				OrganisationName:  "prod-org",
+				CookbookName:      "webserver",
+				CookbookVersion:   "2.0.0",
+				TargetChefVersion: "18.0.0",
+				CookstyleStatus:   "needs_review",
+			},
+		},
+	}
+
 	return &fakeStore{
 		orgs:         []datastore.Organisation{org},
 		nodesByOrg:   map[string][]datastore.NodeSnapshot{"prod-org": nodes},
 		readiness:    readiness,
 		cookbooks:    cookbooks,
 		complexities: complexities,
+		cookstyle:    cookstyle,
 		countReady: map[string][3]int{
 			"prod-org+18.0.0": {3, 2, 1},
 		},
@@ -654,6 +680,45 @@ func TestGenerateCookbookRemediationExport_CSV(t *testing.T) {
 	// 2 cookbooks × 1 target version = 2 rows.
 	if result.RowCount != 2 {
 		t.Errorf("RowCount = %d, want 2", result.RowCount)
+	}
+}
+
+// The cookbook remediation export must carry the materialised CookStyle rollup
+// status (Ready/Needs review/Blocked vocabulary) joined from the cookstyle
+// results, in both CSV and JSON.
+func TestGenerateCookbookRemediationExport_CookstyleStatus(t *testing.T) {
+	store := testStore()
+
+	// JSON: each row carries its rollup status.
+	jsonResult, err := GenerateCookbookRemediationExport(context.Background(), store, CookbookRemediationExportParams{Format: "json"})
+	if err != nil {
+		t.Fatalf("json export: %v", err)
+	}
+	var rows []cookbookRemediationRow
+	if err := json.Unmarshal(jsonResult.Data, &rows); err != nil {
+		t.Fatalf("parsing JSON: %v", err)
+	}
+	got := map[string]string{}
+	for _, r := range rows {
+		got[r.CookbookName] = r.CookstyleStatus
+	}
+	if got["legacy-db"] != "blocked" {
+		t.Errorf("legacy-db cookstyle_status = %q, want blocked", got["legacy-db"])
+	}
+	if got["webserver"] != "needs_review" {
+		t.Errorf("webserver cookstyle_status = %q, want needs_review", got["webserver"])
+	}
+
+	// CSV: the header includes the new column.
+	csvResult, err := GenerateCookbookRemediationExport(context.Background(), store, CookbookRemediationExportParams{Format: "csv"})
+	if err != nil {
+		t.Fatalf("csv export: %v", err)
+	}
+	if !bytes.Contains(csvResult.Data, []byte("cookstyle_status")) {
+		t.Errorf("CSV header missing cookstyle_status column:\n%s", csvResult.Data)
+	}
+	if !bytes.Contains(csvResult.Data, []byte("blocked")) {
+		t.Errorf("CSV missing blocked status value:\n%s", csvResult.Data)
 	}
 }
 

@@ -27,7 +27,7 @@ import (
 type Config struct {
 	CredentialEncryptionKeyEnv string              `yaml:"credential_encryption_key_env"`
 	Organisations              []Organisation      `yaml:"organisations"`
-	TargetChefVersions         []string            `yaml:"target_chef_versions"`
+	TargetChefVersion          string              `yaml:"target_chef_version"`
 	GitBaseURLs                []string            `yaml:"git_base_urls"`
 	Storage                    StorageConfig       `yaml:"storage"`
 	Collection                 CollectionConfig    `yaml:"collection"`
@@ -152,10 +152,16 @@ type ConcurrencyConfig struct {
 // cookstyle/kitchen binaries are resolved from PATH (provided by Chef
 // Workstation); they are not bundled.
 type AnalysisToolsConfig struct {
-	CookstyleEnabled          *bool             `yaml:"cookstyle_enabled"`
-	CookstyleTimeoutMinutes   int               `yaml:"cookstyle_timeout_minutes"`
-	CookstyleFailurePreset    string            `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
-	CookstyleFailureRules     map[string][]string `yaml:"cookstyle_failure_rules" json:"cookstyle_failure_rules"`
+	CookstyleEnabled        *bool               `yaml:"cookstyle_enabled"`
+	CookstyleTimeoutMinutes int                 `yaml:"cookstyle_timeout_minutes"`
+	CookstyleFailurePreset  string              `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
+	CookstyleFailureRules   map[string][]string `yaml:"cookstyle_failure_rules" json:"cookstyle_failure_rules"`
+	// CookstyleAddonCopPaths lists operator-supplied RuboCop cop files (real .rb
+	// cop classes) on the app host to load into every scan. Entries may be
+	// files, directories (expanded to *.rb), or globs. Trust boundary is
+	// deploying the app — addon cops are never web-uploaded. See
+	// specifications/cookstyle-full-ruleset.md.
+	CookstyleAddonCopPaths    []string          `yaml:"cookstyle_addon_cop_paths" json:"cookstyle_addon_cop_paths"`
 	TestKitchenTimeoutMinutes int               `yaml:"test_kitchen_timeout_minutes"`
 	TestKitchen               TestKitchenConfig `yaml:"test_kitchen"`
 }
@@ -511,6 +517,13 @@ type ReadinessConfig struct {
 	InstallSizeMBLinux      int    `yaml:"install_size_mb_linux"`
 	InstallSizeMBWindows    int    `yaml:"install_size_mb_windows"`
 	MinRemainingFreePercent int    `yaml:"min_remaining_free_percent"`
+
+	// ReviewBlocksReadiness controls whether Review-level CookStyle offences
+	// gate node readiness. Off (default): Review cookbooks resolve to
+	// compatible and a node is ready as today (blocker-only). On: a node whose
+	// only issue is Review-level cookbooks is "Needs review" (not ready, not
+	// blocked). Dynamic — read live by the readiness evaluator.
+	ReviewBlocksReadiness bool `yaml:"review_blocks_readiness"`
 }
 
 // SystemHealthConfig controls host-level resource monitoring and the
@@ -1339,34 +1352,23 @@ func (c *Config) validateOrganisations(ve *ValidationError, w *Warnings) {
 var semverRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 func (c *Config) validateTargetVersions(ve *ValidationError) {
-	for i, v := range c.TargetChefVersions {
-		if !semverRe.MatchString(v) {
-			ve.addf("target_chef_versions[%d]: %q is not a valid semver string (expected MAJOR.MINOR.PATCH)", i, v)
-		}
+	// Single active target. Empty is permitted (no target configured yet);
+	// only a non-empty value must be a valid semver string.
+	if c.TargetChefVersion != "" && !semverRe.MatchString(c.TargetChefVersion) {
+		ve.addf("target_chef_version: %q is not a valid semver string (expected MAJOR.MINOR.PATCH)", c.TargetChefVersion)
 	}
 }
 
-// HighestVersion returns the highest semver string from a slice of version
-// strings. Each string is expected to be in MAJOR.MINOR.PATCH format (as
-// validated by validateTargetVersions). Returns an empty string if the
-// slice is empty.
-func HighestVersion(versions []string) string {
-	if len(versions) == 0 {
-		return ""
+// TargetChefVersionList returns the single active target as a one-element
+// slice, or nil if no target is configured. It is a transitional adapter for
+// call sites that still iterate a version list; the scalar TargetChefVersion
+// is the source of truth. Returning nil (not [""]) preserves the historical
+// "no target → skip" semantics of the len()==0 guards.
+func (c *Config) TargetChefVersionList() []string {
+	if c.TargetChefVersion == "" {
+		return nil
 	}
-
-	best := versions[0]
-	bestParts := parseSemverParts(best)
-
-	for _, v := range versions[1:] {
-		parts := parseSemverParts(v)
-		if compareSemverParts(parts, bestParts) > 0 {
-			best = v
-			bestParts = parts
-		}
-	}
-
-	return best
+	return []string{c.TargetChefVersion}
 }
 
 // chefMajorVersionFromString returns the major version number from a
@@ -1385,16 +1387,6 @@ func parseSemverParts(v string) [3]int {
 		parts[i] = n
 	}
 	return parts
-}
-
-// compareSemverParts returns >0 if a > b, <0 if a < b, 0 if equal.
-func compareSemverParts(a, b [3]int) int {
-	for i := 0; i < 3; i++ {
-		if a[i] != b[i] {
-			return a[i] - b[i]
-		}
-	}
-	return 0
 }
 
 // cronFieldRe is a deliberately permissive check — a cron expression has 5
@@ -1446,6 +1438,20 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 
 	// Validate cookstyle failure rules.
 	c.validateCookstyleFailureRules(ve)
+
+	// Addon cop paths must be non-empty and syntactically valid glob patterns.
+	// Whether each path actually resolves to .rb files is checked at scan time
+	// and surfaced as a non-fatal problem, not here — the path may legitimately
+	// be empty until the operator drops cops in.
+	for i, p := range c.AnalysisTools.CookstyleAddonCopPaths {
+		if strings.TrimSpace(p) == "" {
+			ve.addf("analysis_tools.cookstyle_addon_cop_paths[%d] is empty", i)
+			continue
+		}
+		if _, err := filepath.Match(p, ""); err != nil {
+			ve.addf("analysis_tools.cookstyle_addon_cop_paths[%d] %q is not a valid glob: %v", i, p, err)
+		}
+	}
 
 	// Backward compat: migrate deprecated test_kitchen_timeout_minutes.
 	c.AnalysisTools.resolveTestKitchenBackwardCompat(w)
@@ -1535,15 +1541,8 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 			w.addf("analysis_tools.test_kitchen.images[%d].chef_client_path is set but install_method is not \"baked_in\"; it will be ignored", i)
 		}
 		for ver := range img.ChefDownloadURLs {
-			found := false
-			for _, tv := range c.TargetChefVersions {
-				if tv == ver {
-					found = true
-					break
-				}
-			}
-			if !found {
-				w.addf("analysis_tools.test_kitchen.images[%d].chef_download_urls key %q is not in target_chef_versions", i, ver)
+			if ver != c.TargetChefVersion {
+				w.addf("analysis_tools.test_kitchen.images[%d].chef_download_urls key %q is not the target_chef_version", i, ver)
 			}
 		}
 	}
@@ -1574,20 +1573,17 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 	}
 
 	// Chef license key validation for v19+.
-	for _, v := range c.TargetChefVersions {
-		if chefMajorVersionFromString(v) >= 19 && tk.ChefLicenseKeyCredential == "" {
-			// Check if every image has a download_url for this version.
-			allCovered := len(tk.Images) > 0
-			for _, img := range tk.Images {
-				if img.ChefDownloadURLs[v] == "" {
-					allCovered = false
-					break
-				}
-			}
-			if !allCovered {
-				w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or per-image chef_download_urls for Chef 19+ installation", v)
+	if v := c.TargetChefVersion; v != "" && chefMajorVersionFromString(v) >= 19 && tk.ChefLicenseKeyCredential == "" {
+		// Check if every image has a download_url for this version.
+		allCovered := len(tk.Images) > 0
+		for _, img := range tk.Images {
+			if img.ChefDownloadURLs[v] == "" {
+				allCovered = false
 				break
 			}
+		}
+		if !allCovered {
+			w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or per-image chef_download_urls for Chef 19+ installation", v)
 		}
 	}
 }

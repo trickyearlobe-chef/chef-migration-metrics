@@ -272,6 +272,63 @@ createdb chef_migration_metrics
 
 The application runs database migrations automatically on startup — no manual schema setup is required.
 
+### CookStyle Addon Cops
+
+In addition to the built-in CookStyle/RuboCop ruleset, you can load your own
+RuboCop cops (real `.rb` cop classes with AST matchers and autocorrect) so
+organisation-specific rules are scanned, classified, and rolled up like any
+other cop. Cops are loaded from disk on the app host — they are **never**
+uploaded through the UI; the trust boundary is deploying the application.
+
+Configure the paths under `analysis_tools` (also editable live from
+**Admin → CookStyle → Addon Cop Files**):
+
+```yaml
+analysis_tools:
+  cookstyle_addon_cop_paths:
+    - /var/lib/chef-migration-metrics/addon-cops/*.rb   # glob
+    - /etc/cmm/cops                                     # directory (expands to *.rb)
+    - /etc/cmm/cops/no_node_regex_match.rb              # single file
+```
+
+Each entry may be a file, a directory (expanded to its top-level `*.rb`), or a
+glob. Changes take effect on the next scan — no restart required.
+
+Cop authoring notes:
+
+- **Namespace the cop under `Chef/Custom/…`** following RuboCop's nested
+  module/class convention, e.g.:
+
+  ```ruby
+  module RuboCop
+    module Cop
+      module Chef
+        module Custom
+          class NoNodeRegexMatch < Base
+            # ...
+          end
+        end
+      end
+    end
+  end
+  ```
+
+- A required custom cop is **disabled by default** in CookStyle until it is
+  enabled by name. CMM parses the cop name from the file and enables it
+  automatically (`<CopName>: { Enabled: true }`), so you do not need to ship a
+  separate config.
+- **Load-failure isolation:** if a cop file fails to load (syntax error, missing
+  dependency), the affected cookbook is still scanned *without* the addon cops —
+  the failure is logged rather than marking the cookbook as errored. Resolution
+  problems (a missing path, an empty directory, or a file with no recognisable
+  cop class) are surfaced to the log too.
+- Classify addon cops (Blocker / Review / Noise) on the **Cop Classifications**
+  admin surface; an addon cop set to Blocker blocks readiness like any built-in
+  Blocker, and reclassification takes effect without a rescan.
+
+See the [CookStyle full-ruleset specification](specifications/cookstyle-full-ruleset.md)
+for the full behaviour and invariants.
+
 ### Test Kitchen Driver Configuration
 
 The Test Kitchen driver is configured under `analysis_tools.test_kitchen` in the YAML config file. There is **no default driver** — you must choose one. Driver support:

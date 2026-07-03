@@ -42,12 +42,13 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	type readinessSummary struct {
 		TargetChefVersion string  `json:"target_chef_version"`
 		TotalNodes        int     `json:"total_nodes"`
 		ReadyNodes        int     `json:"ready_nodes"`
+		NeedsReviewNodes  int     `json:"needs_review_nodes"`
 		BlockedNodes      int     `json:"blocked_nodes"`
 		ReadyPercent      float64 `json:"ready_percent"`
 	}
@@ -77,7 +78,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 
 		var summaries []readinessSummary
 		for _, tv := range targetVersions {
-			var totalAll, readyAll, blockedAll int
+			var totalAll, readyAll, needsReviewAll, blockedAll int
 			for _, nk := range allowedNodes {
 				readiness, err := r.db.ListNodeReadinessByNodeName(ctx, nk.orgName, nk.nodeName)
 				if err != nil {
@@ -88,9 +89,12 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 						continue
 					}
 					totalAll++
-					if nr.IsReady {
+					switch nr.Status {
+					case "ready":
 						readyAll++
-					} else {
+					case "needs_review":
+						needsReviewAll++
+					default:
 						blockedAll++
 					}
 				}
@@ -103,6 +107,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 				TargetChefVersion: tv,
 				TotalNodes:        totalAll,
 				ReadyNodes:        readyAll,
+				NeedsReviewNodes:  needsReviewAll,
 				BlockedNodes:      blockedAll,
 				ReadyPercent:      pct,
 			})
@@ -117,15 +122,16 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 	// Fast path: no owner filtering — use aggregate counts.
 	var summaries []readinessSummary
 	for _, tv := range targetVersions {
-		var totalAll, readyAll, blockedAll int
+		var totalAll, readyAll, needsReviewAll, blockedAll int
 		for _, org := range orgs {
-			total, ready, blocked, err := r.db.CountNodeReadiness(ctx, org.Name, tv)
+			total, ready, needsReview, blocked, err := r.db.CountNodeReadinessByStatus(ctx, org.Name, tv)
 			if err != nil {
 				r.logf("WARN", "counting readiness for org %s version %s: %v", org.Name, tv, err)
 				continue
 			}
 			totalAll += total
 			readyAll += ready
+			needsReviewAll += needsReview
 			blockedAll += blocked
 		}
 		pct := 0.0
@@ -136,6 +142,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 			TargetChefVersion: tv,
 			TotalNodes:        totalAll,
 			ReadyNodes:        readyAll,
+			NeedsReviewNodes:  needsReviewAll,
 			BlockedNodes:      blockedAll,
 			ReadyPercent:      pct,
 		})
@@ -184,7 +191,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 		return
 	}
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	var points []readinessTrendPoint
 
@@ -205,9 +212,9 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 			}
 			for _, ms := range metrics {
 				var payload struct {
-					TotalNodes      int    `json:"total_nodes"`
-					TargetChefVer   string `json:"target_chef_version"`
-					Fresh           struct {
+					TotalNodes    int    `json:"total_nodes"`
+					TargetChefVer string `json:"target_chef_version"`
+					Fresh         struct {
 						Total        int `json:"total"`
 						Ready        int `json:"ready"`
 						BlockedTotal int `json:"blocked_total"`
@@ -340,7 +347,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 	if !snapshotFound && !ownerFilterActive {
 		for _, org := range orgs {
 			for _, tv := range targetVersions {
-				total, ready, blocked, cErr := r.db.CountNodeReadiness(ctx, org.Name, tv)
+				total, ready, needsReview, blocked, cErr := r.db.CountNodeReadinessByStatus(ctx, org.Name, tv)
 				if cErr != nil {
 					r.logf("WARN", "counting readiness for org %s version %s in trend fallback: %v", org.Name, tv, cErr)
 					continue
@@ -354,6 +361,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 					TargetChefVersion: tv,
 					TotalNodes:        total,
 					ReadyNodes:        ready,
+					NeedsReviewNodes:  needsReview,
 					BlockedNodes:      blocked,
 					ReadyPercent:      pct,
 					FilterLimited:     !staleFilter.isDefault(),

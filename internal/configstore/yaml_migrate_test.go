@@ -522,7 +522,7 @@ func minimalFullConfig() *config.Config {
 	cfg.Datastore.URL = "postgres://user:pass@localhost:5432/cmm"
 	cfg.Server.ListenAddress = "127.0.0.1"
 	cfg.Server.Port = 8080
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	cfg.ApplyDefaults()
 	return cfg
 }
@@ -539,8 +539,7 @@ organisations:
     org_name: testorg
     client_name: testclient
     client_key_credential: test-org-key
-target_chef_versions:
-  - "18.0.0"
+target_chef_version: "18.0.0"
 collection:
   stale_node_threshold_days: 30
 concurrency:

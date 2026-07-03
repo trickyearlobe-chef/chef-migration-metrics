@@ -33,7 +33,7 @@ func (r *Router) handleDashboardComplexityTrend(w http.ResponseWriter, req *http
 	}
 
 	ctx := req.Context()
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	var points []complexityTrendPoint
 

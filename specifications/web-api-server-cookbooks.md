@@ -14,6 +14,8 @@ Returns a paginated list of all known server cookbooks with usage summary.
 
 **Sortable fields:** `name`, `version`, `node_count`, `active`.
 
+**CookStyle rollup status:** Each version's `cookstyle_results` carries a `cookstyle_status` field alongside the existing `passed`/`offence_count` fields. Values: `ready` (🟢), `needs_review` (🟠), `blocked` (🔴), `untested` (⚪). It is **classification-derived** (the single source of truth — resolved from offenses + cop classification), not severity-derived. The legacy `passed` boolean is retained for back-compat = `cookstyle_status != blocked`. This is the CookStyle signal only and is never merged with Test Kitchen. See [cop-classification.md](cop-classification.md) (CookStyle Rollup Status) for canonical values/conditions; the owning shape lives in the cookbook-list handler/type in code.
+
 **Response (200):**
 
 ```json
@@ -73,6 +75,8 @@ Returns a paginated list of all known server cookbooks with usage summary.
 #### `GET /api/v1/cookbooks/:name`
 
 Returns full detail for a specific server cookbook across all versions and organisations, including CookStyle results, complexity scores, associated git repos (matched by name), and Policyfile references.
+
+**CookStyle rollup status:** Each `server_cookbooks[].cookstyle_results` carries a `cookstyle_status` field (`ready`/`needs_review`/`blocked`/`untested`; 🟢/🟠/🔴/⚪) alongside the existing `passed`/`offence_count` fields, and the `complexity[].score` is now classification-weighted (same field, new derivation). The status is **classification-derived** (single source of truth), not severity-derived; `passed` is retained for back-compat = `cookstyle_status != blocked`. CookStyle signal only — never merged with Test Kitchen. See [cop-classification.md](cop-classification.md) (CookStyle Rollup Status). The owning shape lives in the cookbook-detail handler/type in code.
 
 **Response (200):**
 

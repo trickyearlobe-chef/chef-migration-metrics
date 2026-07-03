@@ -11,7 +11,7 @@ import { fetchCookbooks, type CookbookFilterQuery } from "../api";
 import type { CookbookListItem, Pagination as PaginationType } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StatusBadge, CookStyleBadge, TKBadge } from "../components/StatusBadge";
+import { StatusBadge, CookStyleStatusBadge, TKBadge } from "../components/StatusBadge";
 
 /** Render a coloured download-status pill with optional error tooltip. */
 function DownloadStatusBadge({
@@ -72,8 +72,8 @@ export function CookbooksPage() {
     searchParams.get("active")?.split(",").filter(Boolean) ?? [],
   );
   const [nameFilter, setNameFilter] = useState(searchParams.get("name") || "");
-  const [compatibility, setCompatibility] = useState<string[]>(
-    searchParams.get("compatibility")?.split(",").filter(Boolean) ?? [],
+  const [cookstyleStatus, setCookstyleStatus] = useState<string[]>(
+    searchParams.get("cookstyle_status")?.split(",").filter(Boolean) ?? [],
   );
   const [downloadStatus, setDownloadStatus] = useState<string[]>(
     searchParams.get("download_status")?.split(",").filter(Boolean) ?? [],
@@ -99,7 +99,7 @@ export function CookbooksPage() {
   // Clear search params on mount so they don't persist on manual navigation.
   useEffect(() => {
     if (
-      searchParams.has("compatibility") ||
+      searchParams.has("cookstyle_status") ||
       searchParams.has("active") ||
       searchParams.has("name") ||
       searchParams.has("target_chef_version") ||
@@ -121,8 +121,8 @@ export function CookbooksPage() {
     if (selectedOrg) filters.organisation = selectedOrg;
     if (active.length > 0) filters.active = active.join(",");
     if (nameFilter) filters.name = nameFilter;
-    if (compatibility.length > 0)
-      filters.compatibility = compatibility.join(",");
+    if (cookstyleStatus.length > 0)
+      filters.cookstyle_status = cookstyleStatus.join(",");
     if (downloadStatus.length > 0)
       filters.download_status = downloadStatus.join(",");
     if (tkStatus.length > 0)
@@ -143,7 +143,7 @@ export function CookbooksPage() {
     selectedOrg,
     active,
     nameFilter,
-    compatibility,
+    cookstyleStatus,
     downloadStatus,
     tkStatus,
     selectedTargetVersion,
@@ -161,7 +161,7 @@ export function CookbooksPage() {
     selectedOrg,
     active,
     nameFilter,
-    compatibility,
+    cookstyleStatus,
     downloadStatus,
     tkStatus,
     selectedTargetVersion,
@@ -173,14 +173,14 @@ export function CookbooksPage() {
   const activeFilterCount =
     (nameFilter ? 1 : 0) +
     (active.length > 0 ? 1 : 0) +
-    (compatibility.length > 0 ? 1 : 0) +
+    (cookstyleStatus.length > 0 ? 1 : 0) +
     (downloadStatus.length > 0 ? 1 : 0) +
     (tkStatus.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setNameFilter("");
     setActive([]);
-    setCompatibility([]);
+    setCookstyleStatus([]);
     setDownloadStatus([]);
     setTkStatus([]);
   };
@@ -207,14 +207,15 @@ export function CookbooksPage() {
           onChange={setActive}
         />
         <FilterMultiCheckbox
-          label="Compatibility"
+          label="CookStyle"
           options={[
-            { value: "compatible", label: "Compatible" },
-            { value: "incompatible", label: "Incompatible" },
+            { value: "ready", label: "Ready" },
+            { value: "needs_review", label: "Needs review" },
+            { value: "blocked", label: "Blocked" },
             { value: "untested", label: "Untested" },
           ]}
-          selected={compatibility}
-          onChange={setCompatibility}
+          selected={cookstyleStatus}
+          onChange={setCookstyleStatus}
         />
         <FilterMultiCheckbox
           label="Download"
@@ -338,8 +339,8 @@ export function CookbooksPage() {
                         </td>
                       )}
                       <td>
-                        <CookStyleBadge
-                          status={cb.compatibility ?? "untested"}
+                        <CookStyleStatusBadge
+                          status={cb.cookstyle_status ?? "untested"}
                           size="sm"
                         />
                       </td>

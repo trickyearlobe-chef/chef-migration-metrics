@@ -29,9 +29,23 @@ Requests a data export. Small exports are returned synchronously; large exports 
 
 | Type | Description |
 |------|-------------|
-| `ready_nodes` | Nodes ready to upgrade for the specified target version |
-| `blocked_nodes` | Blocked nodes with blocking reasons and complexity scores |
-| `cookbook_remediation` | Full remediation report for all incompatible cookbooks |
+| `ready_nodes` | Nodes whose readiness state is `ready` for the specified target version |
+| `blocked_nodes` | Nodes whose readiness state is `blocked` (or `needs_review`), with blocking/review reasons and classification-weighted complexity scores |
+| `cookbook_remediation` | Full remediation report for all cookbooks not in the Ready state (Blocked / Needs review) |
+
+The CookStyle vocabulary in export rows is canonical from
+[cop-classification.md](cop-classification.md): per-item rollup is **Ready /
+Needs review / Blocked / Untested**; node readiness is the three-state
+`ready` / `needs_review` / `blocked` (replacing the former
+compatible/incompatible/passed/failed wording). Complexity scores are
+**classification-weighted**. CS and TK stay separate signals — a row never
+merges them into one verdict.
+
+Back-compat: `ready_nodes` continues to select on the `ready` readiness state,
+and remediation/blocked rows retain any boolean `passed`/`ready` field
+(`passed = status not in {Blocked}`) alongside the new `status` so existing
+downstream automation keeps working; new consumers read `status`. Row shapes are
+owned by the export Go types (with their json tags) — not copied here.
 
 **Export formats:**
 

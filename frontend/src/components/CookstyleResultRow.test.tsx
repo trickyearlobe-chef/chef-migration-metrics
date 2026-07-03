@@ -31,16 +31,16 @@ function renderRow(
 }
 
 describe("CookstyleResultRow", () => {
-  it("renders a green Passed badge with counts and scanned timestamp", () => {
+  it("renders a Ready badge (passed fallback) with counts and scanned timestamp", () => {
     renderRow({ ...baseResult, offence_count: 2, deprecation_count: 1 });
 
-    expect(screen.getByText("Passed")).toBeInTheDocument();
+    expect(screen.getByText("Ready")).toBeInTheDocument();
     expect(screen.getByText(/Offences: 2/)).toBeInTheDocument();
     expect(screen.getByText(/Deprecations: 1/)).toBeInTheDocument();
     expect(screen.getByText(/Scanned:/)).toBeInTheDocument();
   });
 
-  it("renders a red Failed badge with counts", () => {
+  it("renders a Blocked badge (passed=false fallback) with counts", () => {
     renderRow({
       ...baseResult,
       passed: false,
@@ -48,9 +48,17 @@ describe("CookstyleResultRow", () => {
       deprecation_count: 3,
     });
 
-    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
     expect(screen.getByText(/Offences: 5/)).toBeInTheDocument();
     expect(screen.getByText(/Deprecations: 3/)).toBeInTheDocument();
+  });
+
+  it("prefers the materialised cookstyle_status over the passed boolean", () => {
+    // passed=true but status is needs_review — the 4-state value must win.
+    renderRow({ ...baseResult, passed: true, cookstyle_status: "needs_review" });
+
+    expect(screen.getByText("Needs review")).toBeInTheDocument();
+    expect(screen.queryByText("Ready")).not.toBeInTheDocument();
   });
 
   it("renders an orange Scan Error badge without offence counts", () => {

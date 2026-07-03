@@ -57,6 +57,13 @@ func TestBuildCookbookFilterQuery_WithTargetVersion(t *testing.T) {
 	if !strings.Contains(q, "gr.tk_status") {
 		t.Error("query missing materialised tk_status column reference")
 	}
+	// SoT rollup status surfaced from the materialised column.
+	if !strings.Contains(q, "csr.cookstyle_status") {
+		t.Error("query missing csr.cookstyle_status reference")
+	}
+	if !strings.Contains(q, "cb.cookstyle_status") {
+		t.Error("outer query missing cb.cookstyle_status projection")
+	}
 	// $1 = cookstyle target only (TK no longer needs a param)
 	if len(args) != 1 {
 		t.Fatalf("expected 1 arg, got %d: %v", len(args), args)
@@ -76,6 +83,9 @@ func TestBuildCookbookFilterQuery_WithoutTargetVersion(t *testing.T) {
 	}
 	if !strings.Contains(q, "'untested' AS compatibility") {
 		t.Error("query missing 'untested' AS compatibility")
+	}
+	if !strings.Contains(q, "'untested' AS cookstyle_status") {
+		t.Error("query missing 'untested' AS cookstyle_status fallback")
 	}
 	// TK CTE still present but with no gkr join
 	if !strings.Contains(q, "tk AS") {
@@ -149,6 +159,20 @@ func TestBuildCookbookFilterQuery_CompatibilityFilter(t *testing.T) {
 	}
 	if args[1] != "incompatible" {
 		t.Errorf("args[1] = %v, want incompatible", args[1])
+	}
+}
+
+func TestBuildCookbookFilterQuery_CookstyleStatusFilter(t *testing.T) {
+	q, args := buildCookbookFilterQuery(CookbookFilter{
+		CookstyleStatus:   "ready,needs_review",
+		TargetChefVersion: "18.5.0",
+	})
+
+	if !strings.Contains(q, "cb.cookstyle_status = ANY($2)") {
+		t.Errorf("query missing outer cookstyle_status filter, got:\n%s", q)
+	}
+	if len(args) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
 	}
 }
 

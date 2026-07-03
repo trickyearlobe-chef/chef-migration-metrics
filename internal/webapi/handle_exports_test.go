@@ -187,8 +187,8 @@ func TestHandleExports_MissingTargetVersionForBlockedNodes_NoConfig(t *testing.T
 }
 
 func TestHandleExports_MissingTargetVersionDefaultsFromConfig(t *testing.T) {
-	// When target_chef_version is omitted but the config has TargetChefVersions,
-	// the handler defaults to the first one and proceeds successfully.
+	// When target_chef_version is omitted but the config has a target version,
+	// the handler defaults to it and proceeds successfully.
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
 			return nil, nil // no orgs → zero rows estimate → sync path → empty export
@@ -197,7 +197,7 @@ func TestHandleExports_MissingTargetVersionDefaultsFromConfig(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0", "17.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -208,7 +208,7 @@ func TestHandleExports_MissingTargetVersionDefaultsFromConfig(t *testing.T) {
 
 	// Should not be 400 — the handler defaulted the target version from config.
 	if w.Code == http.StatusBadRequest {
-		t.Errorf("expected non-400 when TargetChefVersions is configured, got %d: %s",
+		t.Errorf("expected non-400 when a target Chef version is configured, got %d: %s",
 			w.Code, w.Body.String())
 	}
 }
@@ -1226,7 +1226,7 @@ func exportTestConfig() *config.Config {
 	wsEnabled := true
 	cfg := &config.Config{}
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0", "17.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	cfg.Exports.MaxRows = 100000
 	cfg.Exports.AsyncThreshold = 100000 // high threshold → sync by default
 	cfg.Exports.RetentionHours = 24

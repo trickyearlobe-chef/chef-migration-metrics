@@ -201,8 +201,7 @@ func (r *Router) handleFilterTargetChefVersions(w http.ResponseWriter, req *http
 		return
 	}
 	cfg := r.liveConfig()
-	versions := make([]string, len(cfg.TargetChefVersions))
-	copy(versions, cfg.TargetChefVersions)
+	versions := cfg.TargetChefVersionList()
 	sort.Strings(versions)
 	WriteJSON(w, http.StatusOK, map[string]any{"data": versions})
 }

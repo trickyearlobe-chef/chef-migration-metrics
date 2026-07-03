@@ -43,11 +43,11 @@ export function CookstyleFailureRulesGrid({ preset, rules, onChange, disabled }:
     <div className="space-y-3">
       <div>
         <label htmlFor="cookstyle-preset" className="block text-sm font-medium text-gray-700">
-          Failure Rules Preset
+          Fallback Rules Preset
         </label>
         <select
           id="cookstyle-preset"
-          aria-label="Failure Rules Preset"
+          aria-label="Fallback Rules Preset"
           value={preset}
           onChange={(e) => handlePresetChange(e.target.value)}
           disabled={disabled}

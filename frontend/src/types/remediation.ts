@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Pagination, ComplexityLabel } from "./common";
+import type { Pagination, ComplexityLabel, CookStyleStatus } from "./common";
 
 export interface RemediationPriorityItem {
   cookbook_name: string;
@@ -71,6 +71,9 @@ export interface CopRemediation {
 export interface OffenseGroup {
   cop_name: string;
   severity: string;
+  classification: string;
+  classification_source: string;
+  removed_in?: string;
   count: number;
   correctable_count: number;
   remediation?: CopRemediation | null;
@@ -114,6 +117,15 @@ export interface ComplexityBreakdown {
   tk_fail: ComplexityBreakdownItem;
 }
 
+export interface ClassificationSummary {
+  blocker: number;
+  review: number;
+  noise: number;
+  // Retained for backwards compatibility with the API payload; under the
+  // "trustworthy reds" model there is no unclassified level, so this is always 0.
+  unclassified: number;
+}
+
 export interface CookbookRemediationResponse {
   cookbook_name: string;
   cookbook_version: string;
@@ -122,9 +134,14 @@ export interface CookbookRemediationResponse {
   complexity_label: ComplexityLabel | string;
   complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
+  cookstyle_status?: CookStyleStatus;
+  // Data-quality flag: a fatal (parse-failure) offense means cookstyle could
+  // not fully analyse the cookbook. Separate from pass/fail and classification.
+  cookstyle_wont_parse?: boolean;
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];
+  classification_summary?: ClassificationSummary;
   autocorrect_preview: AutocorrectPreview;
 }
 
@@ -137,8 +154,13 @@ export interface GitRepoRemediationResponse {
   complexity_label: ComplexityLabel | string;
   complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
+  cookstyle_status?: CookStyleStatus;
+  // Data-quality flag: a fatal (parse-failure) offense means cookstyle could
+  // not fully analyse the repo. Separate from pass/fail and classification.
+  cookstyle_wont_parse?: boolean;
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];
+  classification_summary?: ClassificationSummary;
   autocorrect_preview: AutocorrectPreview;
 }

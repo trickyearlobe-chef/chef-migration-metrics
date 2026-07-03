@@ -108,7 +108,7 @@ func TestHandleRemediationPriority_HappyPath_Empty(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -206,7 +206,7 @@ func TestHandleRemediationPriority_HappyPath_WithData(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -311,7 +311,7 @@ func TestHandleRemediationPriority_SortByName(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -371,7 +371,7 @@ func TestHandleRemediationPriority_ExplicitTargetVersion(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0", "17.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -446,7 +446,7 @@ func TestHandleRemediationPriority_OrganisationFilter(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -492,7 +492,7 @@ func TestHandleRemediationPriority_DBError(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -530,7 +530,7 @@ func TestHandleRemediationPriority_ZeroAffectedNodesUsesOne(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -648,7 +648,7 @@ func TestHandleRemediationSummary_HappyPath_Empty(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -735,7 +735,7 @@ func TestHandleRemediationSummary_HappyPath_WithData(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -801,7 +801,7 @@ func TestHandleRemediationSummary_DBError(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -848,7 +848,7 @@ func TestHandleRemediationSummary_OrganisationFilter(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -901,7 +901,7 @@ func TestRemediationRoutes_NotFallingThrough(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	paths := []string{
@@ -962,7 +962,7 @@ func TestHandleRemediationPriority_Pagination(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
@@ -1017,7 +1017,7 @@ func TestResolveOrganisationFilter_NoFilter_ReturnsAll(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
@@ -1045,7 +1045,7 @@ func TestResolveOrganisationFilter_WithFilter_ReturnsMatch(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
@@ -1140,7 +1140,7 @@ func TestHandleRemediationPriority_ComplexityLabelFilter(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
@@ -1217,7 +1217,7 @@ func TestHandleRemediationPriority_ComplexityLabelFilter_NoMatch(t *testing.T) {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
@@ -1296,7 +1296,7 @@ func TestHandleRemediationPriority_ComplexityLabelFilter_OmittedReturnsAll(t *te
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 

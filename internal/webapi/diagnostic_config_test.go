@@ -33,8 +33,8 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 				ClientKeyCredential: "chef-client-key-cred-2",
 			},
 		},
-		TargetChefVersions: []string{"17.10.0", "18.0.0"},
-		GitBaseURLs:        []string{"https://git.example.com"},
+		TargetChefVersion: "18.0.0",
+		GitBaseURLs:       []string{"https://git.example.com"},
 		Collection: config.CollectionConfig{
 			Schedule:                       "0 * * * *",
 			StaleNodeThresholdDays:         7,
@@ -160,17 +160,17 @@ func TestDiagnosticConfigSummary(t *testing.T) {
 		}
 	})
 
-	t.Run("target_chef_versions", func(t *testing.T) {
-		v, ok := result["target_chef_versions"]
+	t.Run("target_chef_version", func(t *testing.T) {
+		v, ok := result["target_chef_version"]
 		if !ok {
-			t.Fatal("target_chef_versions missing from result")
+			t.Fatal("target_chef_version missing from result")
 		}
-		versions, ok := v.([]string)
+		version, ok := v.(string)
 		if !ok {
-			t.Fatalf("expected []string, got %T", v)
+			t.Fatalf("expected string, got %T", v)
 		}
-		if len(versions) != 2 || versions[0] != "17.10.0" || versions[1] != "18.0.0" {
-			t.Fatalf("unexpected target_chef_versions: %v", versions)
+		if version != "18.0.0" {
+			t.Fatalf("unexpected target_chef_version: %v", version)
 		}
 	})
 

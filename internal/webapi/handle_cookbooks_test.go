@@ -668,7 +668,7 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -716,7 +716,7 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -753,6 +753,50 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 		if cb.Compatibility != expected {
 			t.Errorf("cookbook %q version %s compatibility = %q, want %q",
 				cb.Name, cb.Version, cb.Compatibility, expected)
+		}
+	}
+}
+
+func TestHandleCookbooks_SurfacesCookstyleStatus(t *testing.T) {
+	// The SoT rollup status materialised on the filter row must appear per cookbook.
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListCookbooksFilteredFn: func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+			rows := []datastore.CookbookFilterRow{
+				{OrganisationName: "prod", Name: "apt", Version: "1.0.0", IsActive: true, DownloadStatus: "ok", Compatibility: "compatible", CookstyleStatus: "ready"},
+				{OrganisationName: "prod", Name: "nginx", Version: "1.0.0", IsActive: true, DownloadStatus: "ok", Compatibility: "compatible", CookstyleStatus: "needs_review"},
+				{OrganisationName: "prod", Name: "mysql", Version: "1.0.0", IsActive: true, DownloadStatus: "pending", Compatibility: "untested", CookstyleStatus: "untested"},
+			}
+			return rows, len(rows), nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersion = "18.0"
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var body struct {
+		Data []struct {
+			Name            string `json:"name"`
+			CookstyleStatus string `json:"cookstyle_status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := map[string]string{"apt": "ready", "nginx": "needs_review", "mysql": "untested"}
+	for _, cb := range body.Data {
+		if cb.CookstyleStatus != want[cb.Name] {
+			t.Errorf("cookbook %q cookstyle_status = %q, want %q", cb.Name, cb.CookstyleStatus, want[cb.Name])
 		}
 	}
 }

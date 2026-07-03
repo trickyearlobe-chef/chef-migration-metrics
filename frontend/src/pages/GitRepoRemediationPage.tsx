@@ -7,10 +7,14 @@ import type {
   RemediationOffense,
   AutocorrectPreview,
   RemediationStatistics,
+  ClassificationSummary,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
-import { ComplexityBadge, ComplexityBreakdownDisplay, StatusBadge } from "../components/StatusBadge";
+import { ComplexityBadge, ComplexityBreakdownDisplay, CookStyleStatusBadge } from "../components/StatusBadge";
+import { ClassificationBadge, ClassificationFilterBar } from "../components/ClassificationBadge";
+import { ClassificationSections } from "../components/ClassificationSections";
 import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
+import type { CopClassification } from "../types";
 
 // ---------------------------------------------------------------------------
 // Git Repo Remediation Detail Page
@@ -99,10 +103,18 @@ export function GitRepoRemediationContent({
       return next;
     });
   };
+
+  // Classification filter — defaults to showing all.
+  const [classFilter, setClassFilter] = useState("");
+
+  const filteredGroups = data
+    ? classFilter
+      ? data.offense_groups.filter((g) => g.classification === classFilter)
+      : data.offense_groups
+    : [];
+
   const expandAll = () => {
-    if (data) {
-      setExpandedGroups(new Set(data.offense_groups.map((g) => g.cop_name)));
-    }
+    setExpandedGroups(new Set(filteredGroups.map((g) => g.cop_name)));
   };
   const collapseAll = () => setExpandedGroups(new Set());
 
@@ -193,57 +205,70 @@ export function GitRepoRemediationContent({
               score={data.complexity_score}
             />
           )}
-          {data.cookstyle_passed !== null && (
-            <StatusBadge
-              variant={data.cookstyle_passed ? "compatible" : "incompatible"}
-              label={
-                data.cookstyle_passed ? "CookStyle Passed" : "CookStyle Failed"
-              }
-            />
+          {data.cookstyle_status && (
+            <CookStyleStatusBadge status={data.cookstyle_status} />
           )}
         </div>
       </div>
 
+      {/* Won't parse — data-quality warning */}
+      {data.cookstyle_wont_parse && <WontParseBanner />}
+
       {/* Statistics cards */}
       <StatisticsCards stats={stats} />
+
+      {/* Classification summary */}
+      {data.classification_summary && hasOffenses && (
+        <ClassificationSummaryBar summary={data.classification_summary} />
+      )}
 
       {/* Offense groups */}
       {hasOffenses ? (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-lg font-semibold text-gray-800">
               Offense Groups
               <span className="ml-2 text-sm font-normal text-gray-500">
-                ({data.offense_groups.length} cop
-                {data.offense_groups.length !== 1 ? "s" : ""},{" "}
+                ({filteredGroups.length} cop
+                {filteredGroups.length !== 1 ? "s" : ""},{" "}
                 {stats.total_offenses} offense
                 {stats.total_offenses !== 1 ? "s" : ""})
               </span>
             </h3>
-            <div className="flex gap-2">
-              <button
-                className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
-                onClick={expandAll}
-              >
-                Expand All
-              </button>
-              <button
-                className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
-                onClick={collapseAll}
-              >
-                Collapse All
-              </button>
+            <div className="flex items-center gap-3">
+              <ClassificationFilterBar
+                activeFilter={classFilter}
+                onFilterChange={setClassFilter}
+              />
+              <div className="flex gap-2">
+                <button
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                  onClick={expandAll}
+                >
+                  Expand All
+                </button>
+                <button
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                  onClick={collapseAll}
+                >
+                  Collapse All
+                </button>
+              </div>
             </div>
           </div>
 
-          {data.offense_groups.map((group) => (
-            <OffenseGroupCard
-              key={group.cop_name}
-              group={group}
-              expanded={expandedGroups.has(group.cop_name)}
-              onToggle={() => toggleGroup(group.cop_name)}
-            />
-          ))}
+          <ClassificationSections
+            groups={filteredGroups}
+            classFilter={classFilter}
+            renderGroup={(group) => (
+              <OffenseGroupCard
+                key={group.cop_name}
+                group={group}
+                expanded={expandedGroups.has(group.cop_name)}
+                onToggle={() => toggleGroup(group.cop_name)}
+              />
+            )}
+          />
         </div>
       ) : (
         <EmptyState
@@ -264,6 +289,30 @@ export function GitRepoRemediationContent({
           onToggle={() => setDiffExpanded((p) => !p)}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Won't parse — fix first banner
+// ---------------------------------------------------------------------------
+
+function WontParseBanner() {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
+    >
+      <span className="shrink-0 text-base leading-none" aria-hidden="true">
+        ⚠
+      </span>
+      <div>
+        <p className="font-semibold">Won't parse — fix first</p>
+        <p className="mt-0.5 text-red-700">
+          This cookbook has a Ruby syntax/parse error; cookstyle could not fully
+          analyse it. Fix the parse error before trusting the results.
+        </p>
+      </div>
     </div>
   );
 }
@@ -437,6 +486,19 @@ function OffenseGroupCard({
           {group.cop_name}
         </span>
 
+        {/* Classification badge */}
+        <ClassificationBadge
+          classification={group.classification as CopClassification}
+          source={group.classification_source}
+        />
+
+        {/* RemovedIn indicator */}
+        {group.removed_in && (
+          <span className="shrink-0 font-mono text-xs text-red-600" title={`Removed in Chef ${group.removed_in}`}>
+            ✕ Chef {group.removed_in}
+          </span>
+        )}
+
         {/* Badges */}
         <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
           {group.count} offense{group.count !== 1 ? "s" : ""}
@@ -572,6 +634,29 @@ function OffenseRow({ offense }: { offense: RemediationOffense }) {
           auto-correctable
         </span>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Classification Summary Bar
+// ---------------------------------------------------------------------------
+
+function ClassificationSummaryBar({ summary }: { summary: ClassificationSummary }) {
+  const items = [
+    { label: "Blockers", count: summary.blocker, color: "text-red-700" },
+    { label: "Review", count: summary.review, color: "text-amber-700" },
+    { label: "Noise", count: summary.noise, color: "text-gray-500" },
+  ];
+
+  return (
+    <div className="flex items-center gap-4 rounded-md bg-gray-50 px-4 py-2 text-sm">
+      <span className="font-medium text-gray-700">Classification:</span>
+      {items.map((item) => (
+        <span key={item.label} className={item.color}>
+          <strong>{item.count}</strong> {item.label}
+        </span>
+      ))}
     </div>
   );
 }

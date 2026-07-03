@@ -31,6 +31,18 @@ func (db *DB) RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoNa
 			ORDER BY cs.scanned_at DESC
 			LIMIT 1
 		), 'untested'),
+		    cookstyle_status = COALESCE((
+			SELECT CASE
+				WHEN cs.error_message != '' THEN 'untested'
+				ELSE NULLIF(cs.cookstyle_status, '')
+			END
+			FROM git_repo_cookstyle_results cs
+			WHERE cs.git_repo_name = $1
+			  AND cs.git_repo_url = $2
+			  AND cs.target_chef_version = $3
+			ORDER BY cs.scanned_at DESC
+			LIMIT 1
+		), 'untested'),
 		    updated_at = now()
 		WHERE name = $1 AND git_repo_url = $2`
 
@@ -115,6 +127,7 @@ func (db *DB) ResetAllGitRepoStatuses(ctx context.Context) error {
 	const query = `
 		UPDATE git_repos
 		SET compatibility_status = 'untested',
+		    cookstyle_status = 'untested',
 		    tk_status = 'untested',
 		    tk_passed = 0,
 		    tk_total = 0,

@@ -19,7 +19,7 @@ import type { CommitterFilterQuery } from "../api/ownership";
 import type { GitRepoFileEntry, GitRepoFileContentResponse } from "../api/git-repos";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, CookStyleStatusBadge } from "../components/StatusBadge";
 import { GitKitchenSection } from "../components/GitKitchenSection";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { useSort } from "../hooks/useSort";
@@ -289,15 +289,10 @@ export function GitRepoDetailPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-500">Status:</span>
-                        {gd.cookstyle && gd.cookstyle.length > 0 ? (
-                          <StatusBadge
-                            variant={gd.cookstyle.every((cs) => cs.passed) ? "compatible" : "incompatible"}
-                            label={gd.cookstyle.every((cs) => cs.passed) ? "Passed" : "Issues Found"}
-                            size="sm"
-                          />
-                        ) : (
-                          <StatusBadge variant="untested" label="Not Scanned" size="sm" />
-                        )}
+                        <CookStyleStatusBadge
+                          status={gd.git_repo.cookstyle_status ?? "untested"}
+                          size="sm"
+                        />
                       </div>
                       {gd.complexity && gd.complexity.length > 0 && (
                         <div className="flex items-center gap-2">

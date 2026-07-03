@@ -21,11 +21,11 @@ func TestAssembleConfig_NoOrganisations_BootsWithWarning(t *testing.T) {
 
 	// A non-org section present in the store (stands in for leftover TLS/ACME),
 	// but no organisations section at all.
-	tv, err := json.Marshal([]string{"18.5.0"})
+	tv, err := json.Marshal("18.5.0")
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := store.Set(ctx, KeyTargetChefVersions, tv, false, "test"); err != nil {
+	if err := store.Set(ctx, KeyTargetChefVersion, tv, false, "test"); err != nil {
 		t.Fatalf("seed section: %v", err)
 	}
 
@@ -46,5 +46,29 @@ func TestAssembleConfig_NoOrganisations_BootsWithWarning(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected a no-organisations setup warning, got %v", warnings)
+	}
+}
+
+// Back-compat: a store still holding the pre-single-target legacy key
+// (target_chef_versions as a JSON array) must assemble into the scalar
+// TargetChefVersion, picking the highest version.
+func TestAssembleConfig_LegacyTargetChefVersions_MigratesToHighest(t *testing.T) {
+	ctx := context.Background()
+	store := mustNewStore(t, newFakeDB())
+
+	legacy, err := json.Marshal([]string{"17.0.0", "18.0.0"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := store.Set(ctx, KeyTargetChefVersionsLegacy, legacy, false, "test"); err != nil {
+		t.Fatalf("seed legacy section: %v", err)
+	}
+
+	cfg, _, err := AssembleConfig(ctx, store)
+	if err != nil {
+		t.Fatalf("AssembleConfig: %v", err)
+	}
+	if cfg.TargetChefVersion != "18.0.0" {
+		t.Errorf("TargetChefVersion: got %q, want %q", cfg.TargetChefVersion, "18.0.0")
 	}
 }

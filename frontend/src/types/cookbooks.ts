@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { PaginatedResponse, CompatibilityStatus } from "./common";
+import type {
+  PaginatedResponse,
+  CompatibilityStatus,
+  CookStyleStatus,
+} from "./common";
 
 export interface CookbookSourceVerdict {
   source: string;
@@ -23,6 +27,7 @@ export interface CookbookListItem {
   download_status: string;
   download_error?: string;
   compatibility?: CompatibilityStatus;
+  cookstyle_status?: CookStyleStatus;
   tk_status?: string;
   target_chef_version?: string;
   maintainer?: string;
@@ -59,6 +64,7 @@ export interface CookstyleResult {
   cookbook_id: string;
   target_chef_version: string;
   passed: boolean;
+  cookstyle_status?: CookStyleStatus;
   offence_count: number;
   deprecation_count: number;
   error_message?: string;
@@ -109,6 +115,7 @@ export interface GitRepoListItem {
   clone_error?: string;
   last_fetched_at?: string;
   compatibility?: CompatibilityStatus;
+  cookstyle_status?: CookStyleStatus;
   target_chef_version?: string;
   tk_status?: string;
   tk_passed?: number;

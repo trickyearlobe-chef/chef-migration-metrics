@@ -21,6 +21,7 @@ type ServerCookbookCookstyleResult struct {
 	CookbookVersion     string    `json:"cookbook_version"`
 	TargetChefVersion   string    `json:"target_chef_version"`
 	Passed              bool      `json:"passed"`
+	CookstyleStatus     string    `json:"cookstyle_status"` // ready / needs_review / blocked (SoT rollup)
 	OffenceCount        int       `json:"offence_count"`
 	DeprecationCount    int       `json:"deprecation_count"`
 	CorrectnessCount    int       `json:"correctness_count"`
@@ -43,6 +44,7 @@ type UpsertServerCookbookCookstyleResultParams struct {
 	CookbookVersion     string
 	TargetChefVersion   string
 	Passed              bool
+	CookstyleStatus     string
 	OffenceCount        int
 	DeprecationCount    int
 	CorrectnessCount    int
@@ -74,11 +76,12 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 			offence_count, deprecation_count, correctness_count,
 			deprecation_warnings, offences,
 			process_stdout, process_stderr, duration_seconds,
-			error_message, scanned_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			error_message, scanned_at, cookstyle_status
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (organisation_name, cookbook_name, cookbook_version, target_chef_version)
 		DO UPDATE SET
 			passed              = EXCLUDED.passed,
+			cookstyle_status    = EXCLUDED.cookstyle_status,
 			offence_count       = EXCLUDED.offence_count,
 			deprecation_count   = EXCLUDED.deprecation_count,
 			correctness_count   = EXCLUDED.correctness_count,
@@ -94,7 +97,7 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 		          offence_count, deprecation_count, correctness_count,
 		          deprecation_warnings, offences,
 		          process_stdout, process_stderr, duration_seconds,
-		          error_message, scanned_at, created_at
+		          error_message, scanned_at, created_at, cookstyle_status
 	`
 
 	var targetVersion sql.NullString
@@ -125,6 +128,7 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 		nullInt(p.DurationSeconds),
 		nullString(p.ErrorMessage),
 		p.ScannedAt,
+		p.CookstyleStatus,
 	).Scan(
 		&r.OrganisationName,
 		&r.CookbookName,
@@ -142,6 +146,7 @@ func (db *DB) upsertServerCookbookCookstyleResult(ctx context.Context, q queryab
 		&errorMessage,
 		&r.ScannedAt,
 		&r.CreatedAt,
+		&r.CookstyleStatus,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: upserting server cookbook cookstyle result: %w", err)
@@ -176,7 +181,7 @@ func (db *DB) getServerCookbookCookstyleResult(ctx context.Context, q queryable,
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       error_message, scanned_at, created_at
+		       error_message, scanned_at, created_at, cookstyle_status
 		  FROM server_cookbook_cookstyle_results
 		 WHERE organisation_name = $1
 		   AND cookbook_name = $2
@@ -217,7 +222,7 @@ func (db *DB) listServerCookbookCookstyleResults(ctx context.Context, q queryabl
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       error_message, scanned_at, created_at
+		       error_message, scanned_at, created_at, cookstyle_status
 		  FROM server_cookbook_cookstyle_results
 		 WHERE organisation_name = $1
 		   AND cookbook_name = $2
@@ -258,7 +263,7 @@ func (db *DB) listServerCookbookCookstyleResultsByOrganisationAndVersions(ctx co
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       error_message, scanned_at, created_at
+		       error_message, scanned_at, created_at, cookstyle_status
 		  FROM server_cookbook_cookstyle_results
 		 WHERE organisation_name = $1
 		   ` + versionClause + `
@@ -279,7 +284,7 @@ func (db *DB) listServerCookbookCookstyleResultsByOrganisation(ctx context.Conte
 		       offence_count, deprecation_count, correctness_count,
 		       deprecation_warnings, offences,
 		       process_stdout, process_stderr, duration_seconds,
-		       error_message, scanned_at, created_at
+		       error_message, scanned_at, created_at, cookstyle_status
 		  FROM server_cookbook_cookstyle_results
 		 WHERE organisation_name = $1
 		 ORDER BY cookbook_name, cookbook_version, target_chef_version NULLS FIRST
@@ -365,6 +370,7 @@ func scanServerCookbookCookstyleResult(row *sql.Row) (ServerCookbookCookstyleRes
 		&errorMessage,
 		&r.ScannedAt,
 		&r.CreatedAt,
+		&r.CookstyleStatus,
 	)
 	if err != nil {
 		return ServerCookbookCookstyleResult{}, err
@@ -413,6 +419,7 @@ func scanServerCookbookCookstyleResults(rows *sql.Rows, err error) ([]ServerCook
 			&errorMessage,
 			&r.ScannedAt,
 			&r.CreatedAt,
+			&r.CookstyleStatus,
 		); err != nil {
 			return nil, fmt.Errorf("datastore: scanning server cookbook cookstyle result row: %w", err)
 		}

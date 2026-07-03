@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
 import {
@@ -20,9 +20,77 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { ComplexityBadge } from "../components/StatusBadge";
 import { ExportButton } from "../components/ExportButton";
+import { CopAnalysisTab } from "./CopAnalysisTab";
 
 // ---------------------------------------------------------------------------
-// Remediation Priority page
+// Remediation page — tabbed layout with Priority (default) and Cop Analysis
+// tabs. Tab selection is persisted via ?tab= query param.
+// ---------------------------------------------------------------------------
+
+type RemediationTab = "priority" | "cop-analysis";
+
+const TABS: { key: RemediationTab; label: string }[] = [
+  { key: "priority", label: "Priority" },
+  { key: "cop-analysis", label: "Cop Analysis" },
+];
+
+function isValidTab(value: string | null): value is RemediationTab {
+  return value === "priority" || value === "cop-analysis";
+}
+
+export function RemediationPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get("tab");
+  const activeTab: RemediationTab = isValidTab(rawTab) ? rawTab : "priority";
+
+  const switchTab = (tab: RemediationTab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      // Clear filter params from the other tab when switching
+      if (tab === "priority") {
+        next.delete("tab");
+        next.delete("source");
+        next.delete("classification");
+      } else {
+        next.set("tab", tab);
+      }
+      next.delete("page");
+      next.delete("sort");
+      next.delete("order");
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Tab navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-6" aria-label="Remediation tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => switchTab(t.key)}
+              className={
+                "whitespace-nowrap border-b-2 px-1 pb-3 text-sm font-medium transition-colors " +
+                (activeTab === t.key
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700")
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {activeTab === "priority" && <RemediationPriorityContent />}
+      {activeTab === "cop-analysis" && <CopAnalysisTab />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Remediation Priority content (was the original RemediationPage)
 //
 // Shows what to fix first and how:
 //   1. Effort summary header — total cookbooks needing remediation, quick
@@ -33,7 +101,7 @@ import { ExportButton } from "../components/ExportButton";
 //   4. Links from each row to the cookbook detail page
 // ---------------------------------------------------------------------------
 
-export function RemediationPage() {
+function RemediationPriorityContent() {
   const { selectedOrg } = useOrg();
   const org = selectedOrg || undefined;
 

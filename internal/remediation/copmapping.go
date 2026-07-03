@@ -104,6 +104,22 @@ func CopMappingCount() int {
 
 var embeddedCopMappings = []CopMapping{
 	// -----------------------------------------------------------------------
+	// Generic Ruby removals (RuboCop Lint department) — verified removals that
+	// crash on the target Chef Client's bundled Ruby.
+	// -----------------------------------------------------------------------
+	{
+		CopName:      "Lint/DeprecatedClassMethods",
+		Description:  "File.exists? and Dir.exists? were removed in Ruby 3 (bundled with Chef 18+). Calls raise NoMethodError at converge time. Use File.exist? / Dir.exist?.",
+		MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+		IntroducedIn: "",
+		RemovedIn:    "18.0",
+		ReplacementPattern: `# Before:
+File.exists?(path)
+
+# After:
+File.exist?(path)`,
+	},
+	// -----------------------------------------------------------------------
 	// Chef/Deprecations
 	// -----------------------------------------------------------------------
 	{
@@ -443,18 +459,6 @@ archive_file '/tmp/app.tar.gz' do
 end`,
 	},
 	{
-		CopName:      "Chef/Deprecations/RecipeMetadata",
-		Description:  "The recipe metadata in metadata.rb (recipe 'name', 'description') has been deprecated and is ignored.",
-		MigrationURL: "https://docs.chef.io/deprecations/",
-		IntroducedIn: "12.0",
-		RemovedIn:    "15.0",
-		ReplacementPattern: `# Before (metadata.rb):
-recipe 'my_cookbook::default', 'Installs the service'
-
-# After:
-# Remove the recipe metadata line — use the README instead.`,
-	},
-	{
 		CopName:      "Chef/Deprecations/ResourceInheritsFromCompatResource",
 		Description:  "Custom resources should not inherit from ChefCompat::Resource. This compatibility shim is no longer needed in Chef 12.19+.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
@@ -651,18 +655,6 @@ maintainer 'My Company'
 maintainer_email 'team@example.com'`,
 	},
 	{
-		CopName:      "Chef/Deprecations/LongDescriptionInMetadata",
-		Description:  "The long_description field in metadata.rb is deprecated and ignored. Use README.md instead.",
-		MigrationURL: "https://docs.chef.io/deprecations/",
-		IntroducedIn: "12.0",
-		RemovedIn:    "15.0",
-		ReplacementPattern: `# Before (metadata.rb):
-long_description IO.read(File.join(File.dirname(__FILE__), 'README.md'))
-
-# After:
-# Remove the long_description line.`,
-	},
-	{
 		CopName:      "Chef/Deprecations/PolicyfileCommunitySource",
 		Description:  "The :community source in Policyfiles is deprecated. Use the default_source :supermarket instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
@@ -780,10 +772,10 @@ gem 'cookstyle'`,
 	},
 	{
 		CopName:      "Chef/Deprecations/UserDeprecatedSupportsProperty",
-		Description:  "The user resource's supports property (for manage_home, non_unique) is deprecated. Use the individual properties directly.",
+		Description:  "The user resource's supports property (for manage_home, non_unique) was removed in Chef Infra Client 13. Use the individual properties directly.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.14",
-		RemovedIn:    "15.0",
+		RemovedIn:    "13.0",
 		ReplacementPattern: `# Before:
 user 'deploy' do
   supports manage_home: true

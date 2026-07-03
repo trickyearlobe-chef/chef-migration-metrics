@@ -5,12 +5,16 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchAnalysisTools,
   saveAnalysisTools,
+  rescanAllCookstyle,
   type AnalysisToolsConfig,
   type CookstyleFailurePreset,
   COOKSTYLE_PRESETS,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 import { CookstyleFailureRulesGrid } from "../components/CookstyleFailureRulesGrid";
+import { AdminCustomCopsSection } from "./AdminCustomCopsSection";
+import { AdminCopClassificationsSection } from "./AdminCopClassificationsSection";
+import { AdminCopInventorySection } from "./AdminCopInventorySection";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -46,6 +50,20 @@ export function AdminCookstylePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [rescanningAll, setRescanningAll] = useState(false);
+  const [rescanAllMsg, setRescanAllMsg] = useState<string | null>(null);
+  const [showRescanAllConfirm, setShowRescanAllConfirm] = useState(false);
+
+  const handleRescanAll = useCallback(() => {
+    setRescanningAll(true);
+    setRescanAllMsg(null);
+    setShowRescanAllConfirm(false);
+    rescanAllCookstyle()
+      .then((res) => setRescanAllMsg(res.message))
+      .catch((e: Error) => setRescanAllMsg(`Rescan all failed: ${e.message}`))
+      .finally(() => setRescanningAll(false));
+  }, []);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -117,6 +135,10 @@ export function AdminCookstylePage() {
       cookstyle_enabled: config.cookstyle_enabled ?? true,
       cookstyle_failure_preset: failurePreset === "custom" ? "" : failurePreset,
       cookstyle_failure_rules: failurePreset === "custom" ? failureRules : undefined,
+      // Drop blank lines the operator left while editing the path list.
+      cookstyle_addon_cop_paths: (config.cookstyle_addon_cop_paths ?? [])
+        .map((p) => p.trim())
+        .filter((p) => p !== ""),
     };
     try {
       const { value: updated, verdictsChanged } = await saveAnalysisTools(payload);
@@ -138,8 +160,8 @@ export function AdminCookstylePage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
+    <div className="space-y-6">
+      <div className="max-w-3xl">
         <h2 className="text-xl font-semibold text-gray-900">CookStyle</h2>
         <p className="mt-1 text-sm text-gray-500">
           Controls CookStyle scanning behaviour and failure rules. CookStyle analyses cookbook code
@@ -147,7 +169,7 @@ export function AdminCookstylePage() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="max-w-2xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-gray-700">CookStyle Scanning Enabled</label>
@@ -187,34 +209,159 @@ export function AdminCookstylePage() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-lg font-medium text-gray-900">Failure Rules</h3>
+      {/* Addon cop files — operator-supplied RuboCop cops loaded from disk */}
+      <div className="max-w-2xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="text-base font-semibold text-gray-800">Addon Cop Files</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          On-disk RuboCop cop files (real <code>.rb</code> cop classes) loaded into every
+          scan. One entry per line — each may be a file, a directory (expanded to its{" "}
+          <code>*.rb</code> files), or a glob. Files must already be deployed on the app
+          host; cops are never uploaded through the UI.
+        </p>
+        <p className="mt-1 text-sm text-gray-500">
+          Namespace cops under <code>Chef/Custom/…</code> — CMM enables each cop by name
+          automatically, so a required cop is not left dormant.
+        </p>
+        <textarea
+          aria-label="Addon cop paths"
+          rows={4}
+          spellCheck={false}
+          value={(config.cookstyle_addon_cop_paths ?? []).join("\n")}
+          onChange={(e) =>
+            handleChange(
+              "cookstyle_addon_cop_paths",
+              e.target.value.split("\n"),
+            )
+          }
+          placeholder={"/var/lib/chef-migration-metrics/addon-cops/*.rb"}
+          className={`${INPUT_CLASS} mt-3 font-mono`}
+          disabled={saving}
+        />
+        <p className="mt-2 text-xs text-gray-400">
+          A cop file that fails to load is isolated — the affected cookbook is still scanned
+          without it, and the failure is logged rather than marking the cookbook as errored.
+          Use the <strong>Save</strong> button below to apply changes.
+        </p>
+      </div>
+
+      {/* Rescan all — destructive maintenance action */}
+      <div className="max-w-3xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-800">Rescan All CookStyle</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Invalidate all cached CookStyle results, complexity scores, and autocorrect previews
+              across every cookbook. A collection run will be triggered immediately to rescan all cookbooks.
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              This is useful after upgrading CookStyle, changing target Chef versions, or when
+              scan results appear stale.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowRescanAllConfirm(true)}
+            disabled={rescanningAll}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-purple-300 bg-white px-4 py-2 text-sm font-medium text-purple-700 shadow-sm hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {rescanningAll ? "Requesting…" : "Rescan All Cookbooks"}
+          </button>
+        </div>
+
+        {showRescanAllConfirm && (
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-medium">Are you sure?</p>
+            <p className="mt-1 text-amber-600">
+              This will delete all cached CookStyle results, complexity scores, and autocorrect
+              previews, then trigger an immediate collection run to rescan everything. This may
+              take a significant amount of time depending on the number of cookbooks.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={handleRescanAll}
+                className="rounded-md bg-purple-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-purple-700"
+              >
+                Yes, Rescan All
+              </button>
+              <button
+                onClick={() => setShowRescanAllConfirm(false)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {rescanAllMsg && (
+          <div className={`mt-4 rounded-md border px-4 py-3 text-sm ${rescanAllMsg.startsWith("Rescan all failed")
+            ? "border-red-200 bg-red-50 text-red-800"
+            : "border-green-200 bg-green-50 text-green-800"
+            }`}>
+            {rescanAllMsg}
+          </div>
+        )}
+      </div>
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Cop classifications — the primary classification surface */}
+      <AdminCopClassificationsSection />
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Cop inventory & drift — worklist of coverage gaps + stale entries */}
+      <AdminCopInventorySection />
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Custom Cops section */}
+      <AdminCustomCopsSection />
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Fallback rules — de-emphasised; applies to cops with no explicit classification */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 shadow-sm">
+        <h3 className="text-lg font-medium text-gray-900">Fallback Rules</h3>
+        <p className="mb-4 mt-1 text-sm text-gray-500">
+          Severity-based pass/fail, applied only to cops with{" "}
+          <strong>no explicit classification</strong> — those with no operator override,
+          verified removal, or structural-noise decision, which otherwise resolve to the
+          review default. Classify a cop above and these rules no longer apply to it.
+        </p>
         <CookstyleFailureRulesGrid
           preset={failurePreset}
           rules={failureRules}
           onChange={handleRulesChange}
           disabled={saving}
         />
-      </div>
 
-      {saveError && <ErrorAlert message="Failed to save" detail={saveError} />}
+        {saveError && (
+          <div className="mt-4">
+            <ErrorAlert message="Failed to save" detail={saveError} />
+          </div>
+        )}
 
-      {successMsg && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {successMsg}
+        {successMsg && (
+          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            {successMsg}
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+          >
+            {saving && <InlineSpinner />}
+            {saving ? "Saving…" : "Save"}
+          </button>
         </div>
-      )}
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || !isDirty}
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-        >
-          {saving && <InlineSpinner />}
-          {saving ? "Saving…" : "Save"}
-        </button>
       </div>
     </div>
   );

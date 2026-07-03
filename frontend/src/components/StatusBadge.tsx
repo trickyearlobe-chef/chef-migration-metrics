@@ -29,6 +29,7 @@ type BadgeVariant =
   | CompatibilityStatus
   | ComplexityLabel
   | "ready"
+  | "needs_review"
   | "blocked"
   | "stale"
   | "fresh"
@@ -42,6 +43,9 @@ type BadgeVariant =
   | "cs_compatible"
   | "cs_incompatible"
   | "cs_untested"
+  | "cs_ready"
+  | "cs_needs_review"
+  | "cs_blocked"
   | "tk_passed"
   | "tk_failed"
   | "tk_partial"
@@ -76,6 +80,7 @@ const variantStyles: Record<BadgeVariant, string> = {
 
   // Boolean / readiness states
   ready: "bg-green-100 text-green-800 ring-green-600/20",
+  needs_review: "bg-amber-100 text-amber-800 ring-amber-600/20",
   blocked: "bg-red-100 text-red-800 ring-red-600/20",
   stale: "bg-purple-100 text-purple-800 ring-purple-600/20",
   fresh: "bg-green-100 text-green-800 ring-green-600/20",
@@ -93,6 +98,11 @@ const variantStyles: Record<BadgeVariant, string> = {
   cs_compatible: "bg-green-100 text-green-800 ring-green-600/20",
   cs_incompatible: "bg-red-100 text-red-800 ring-red-600/20",
   cs_untested: "bg-gray-100 text-gray-600 ring-gray-500/20",
+
+  // CookStyle rollup status (SoT 4-state: Ready/Needs review/Blocked/Untested)
+  cs_ready: "bg-green-100 text-green-800 ring-green-600/20",
+  cs_needs_review: "bg-amber-100 text-amber-800 ring-amber-600/20",
+  cs_blocked: "bg-red-100 text-red-800 ring-red-600/20",
 
   // Test Kitchen signal (high confidence for passes)
   tk_passed: "bg-green-100 text-green-800 ring-green-600/20",
@@ -116,6 +126,7 @@ const variantLabels: Record<BadgeVariant, string> = {
   high: "High",
   critical: "Critical",
   ready: "Ready",
+  needs_review: "Needs review",
   blocked: "Blocked",
   stale: "Stale",
   fresh: "Fresh",
@@ -129,6 +140,9 @@ const variantLabels: Record<BadgeVariant, string> = {
   cs_compatible: "CS ✓",
   cs_incompatible: "CS ✗",
   cs_untested: "CS ?",
+  cs_ready: "Ready",
+  cs_needs_review: "Needs review",
+  cs_blocked: "Blocked",
   tk_passed: "TK ✓",
   tk_failed: "TK ✗",
   tk_partial: "TK ~",
@@ -154,6 +168,9 @@ const variantTooltips: Partial<Record<BadgeVariant, string>> = {
   cs_compatible: "CookStyle (static analysis) passed — low confidence, linting only",
   cs_incompatible: "CookStyle found deprecated API usage for the target Chef version",
   cs_untested: "No CookStyle scan results available",
+  cs_ready: "CookStyle: no blockers or review-level cops — ready",
+  cs_needs_review: "CookStyle: review-level cops present — needs a human look, not blocking",
+  cs_blocked: "CookStyle: a blocker cop is present",
   tk_passed: "Test Kitchen converge + verify passed — high confidence",
   tk_failed: "Test Kitchen failed — may be a real issue or infrastructure noise",
   tk_partial: "Test Kitchen: some platforms passed, some failed",
@@ -209,6 +226,9 @@ export function StatusBadge({
         variant === "cs_compatible" ||
         variant === "cs_incompatible" ||
         variant === "cs_untested" ||
+        variant === "cs_ready" ||
+        variant === "cs_needs_review" ||
+        variant === "cs_blocked" ||
         variant === "tk_passed" ||
         variant === "tk_failed" ||
         variant === "tk_partial" ||
@@ -231,13 +251,16 @@ function dotColor(variant: BadgeVariant): string {
   switch (variant) {
     case "compatible":
     case "cs_compatible":
+    case "cs_ready":
     case "tk_passed":
     case "disk_sufficient":
       return "bg-green-500";
     case "cookstyle_only":
+    case "cs_needs_review":
       return "bg-amber-500";
     case "incompatible":
     case "cs_incompatible":
+    case "cs_blocked":
     case "tk_failed":
     case "disk_insufficient":
       return "bg-red-500";
@@ -440,6 +463,41 @@ export function CookStyleBadge({
       break;
   }
   return <StatusBadge variant={variant} size={size} />;
+}
+
+/**
+ * Renders the CookStyle rollup status badge from the 4-state SoT value
+ * (ready / needs_review / blocked / untested). This is the CookStyle signal
+ * only — it is never merged with the Test Kitchen signal (use TKBadge for that).
+ */
+export function CookStyleStatusBadge({
+  status,
+  size = "md",
+}: {
+  status?: string | null;
+  size?: "sm" | "md";
+}) {
+  let variant: BadgeVariant;
+  let label: string;
+  switch (status) {
+    case "ready":
+      variant = "cs_ready";
+      label = "Ready";
+      break;
+    case "needs_review":
+      variant = "cs_needs_review";
+      label = "Needs review";
+      break;
+    case "blocked":
+      variant = "cs_blocked";
+      label = "Blocked";
+      break;
+    default:
+      variant = "cs_untested";
+      label = "Untested";
+      break;
+  }
+  return <StatusBadge variant={variant} label={label} size={size} />;
 }
 
 /** Renders a Test Kitchen signal badge from a TK status string. */

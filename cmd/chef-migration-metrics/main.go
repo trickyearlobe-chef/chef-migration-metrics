@@ -36,12 +36,12 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/chefapi"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
@@ -125,6 +125,22 @@ type serverApp struct {
 	coll        *collector.Collector
 	sched       *collector.Scheduler
 	kitchenPath string // path to kitchen binary, set during setupCollector
+
+	// cookstylePropagator runs the scoped recompute closure after a cop
+	// reclassification or custom-cop change. Built in setupCollector (it reuses
+	// the complexity scorer + readiness evaluator) and wired into the router.
+	cookstylePropagator *webapi.CookstylePropagator
+
+	// copRegistry serves the live `cookstyle --show-cops` inventory + drift
+	// report. Built in setupCollector when the cookstyle binary is available;
+	// nil otherwise (drift degrades to registry_available=false). Lazily loads
+	// on first request, so it adds no startup latency.
+	copRegistry webapi.CopRegistryProvider
+
+	// readinessEval evaluates per-node upgrade readiness. Built in
+	// setupCollector and reused by the router's readiness reconciler to recompute
+	// readiness for all orgs when the readiness config changes.
+	readinessEval *analysis.ReadinessEvaluator
 
 	// Export cleanup stop function.
 	stopExportCleanup func()
@@ -899,7 +915,7 @@ func (app *serverApp) syncOrganisations(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
-	versions := app.cfg.TargetChefVersions
+	versions := app.cfg.TargetChefVersionList()
 	if len(versions) == 0 {
 		app.startup.Warn("no target_chef_versions configured — skipping stale version reconciliation")
 		return
@@ -944,6 +960,68 @@ func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase: precise CookStyle status backfill (one-time, idempotent).
+// ---------------------------------------------------------------------------
+
+// cookstyleStatusBackfillMarker names the one-time backfill in schema_backfills.
+const cookstyleStatusBackfillMarker = "cookstyle_status_precise_v1"
+
+// backfillCookstyleStatus re-derives the precise CookStyle rollup status for
+// every server/git result from its stored offences, replacing the coarse
+// boolean-derived status migrations 0041/0042 shipped — neither can recover
+// needs_review, which needs the offences resolved through cop classification.
+// It then re-evaluates node readiness per organisation so node rollups are
+// precise on first boot too (the is_ready boolean 0042 backfilled from likewise
+// cannot express needs_review). A one-time marker makes it cheap to skip on
+// every subsequent boot; the work is idempotent regardless. Non-fatal — a
+// failure is logged and leaves the marker unset so the next boot retries.
+func (app *serverApp) backfillCookstyleStatus(ctx context.Context) {
+	done, err := app.db.BackfillCompleted(ctx, cookstyleStatusBackfillMarker)
+	if err != nil {
+		app.startup.Warn(fmt.Sprintf("could not check cookstyle status backfill marker: %v", err))
+		return
+	}
+	if done {
+		app.startup.Info("cookstyle status backfill: already applied — skipping")
+		return
+	}
+
+	cfg := app.configHolder.Get()
+	rules := analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
+	res, err := analysis.BackfillCookstyleStatus(ctx, app.db, rules)
+	if err != nil {
+		app.startup.Warn(fmt.Sprintf("cookstyle status backfill failed (will retry next boot): %v", err))
+		return
+	}
+	app.startup.Info(fmt.Sprintf(
+		"cookstyle status backfill: corrected %d result(s) (server %d/%d, git %d/%d)",
+		res.Changed(), res.ServerResultsChanged, res.ServerResultsScanned,
+		res.GitResultsChanged, res.GitResultsScanned))
+
+	// Re-derive node readiness precisely. Best-effort: readiness self-heals on
+	// every collection run, so a per-org failure here does not block the marker.
+	if app.readinessEval != nil && cfg.TargetChefVersion != "" {
+		if orgs, listErr := app.db.ListOrganisations(ctx); listErr != nil {
+			app.startup.Warn(fmt.Sprintf("cookstyle status backfill: listing organisations for readiness: %v", listErr))
+		} else {
+			recomputed := 0
+			for _, org := range orgs {
+				if _, rerr := app.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, cfg.TargetChefVersion); rerr != nil {
+					app.startup.Warn(fmt.Sprintf("cookstyle status backfill: readiness re-eval for org %q: %v", org.Name, rerr))
+					continue
+				}
+				recomputed++
+			}
+			app.startup.Info(fmt.Sprintf("cookstyle status backfill: re-evaluated readiness for %d organisation(s)", recomputed))
+		}
+	}
+
+	if err := app.db.MarkBackfillCompleted(ctx, cookstyleStatusBackfillMarker); err != nil {
+		app.startup.Warn(fmt.Sprintf("cookstyle status backfill: completed but failed to set marker (will re-run next boot): %v", err))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Phase: analysis pipeline and collector setup.
 // ---------------------------------------------------------------------------
 
@@ -958,6 +1036,13 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	}
 	if toolResult.Cookstyle.Available {
 		app.startup.Info(fmt.Sprintf("cookstyle available: %s (version %s)", toolResult.Cookstyle.Path, toolResult.Cookstyle.Version))
+		// The cop registry serves the live inventory + drift report and augments
+		// the cop-list universe. It is available whenever the binary is, even if
+		// scanning is disabled via config — the inventory is still meaningful.
+		app.copRegistry = analysis.NewCopRegistryProvider(
+			analysis.NewCookstyleExecutor(toolResult.Cookstyle.Path),
+			toolResult.Cookstyle.Version,
+		)
 	} else {
 		app.startup.Info(fmt.Sprintf("cookstyle not available: %s — CookStyle scanning disabled", toolResult.Cookstyle.Error))
 	}
@@ -980,6 +1065,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			analysis.WithCookstyleConcurrencyFunc(func() int {
 				return app.configHolder.Get().Concurrency.CookstyleScan
 			}),
+			analysis.WithCookstyleAddonCopPathsFn(func() []string {
+				return app.configHolder.Get().AnalysisTools.CookstyleAddonCopPaths
+			}),
 		)
 		collOpts = append(collOpts, collector.WithCookstyleScanner(csScanner))
 		app.startup.Info("CookStyle scanner enabled")
@@ -987,6 +1075,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		acGen := remediation.NewAutocorrectGenerator(
 			app.db, app.logger, toolResult.Cookstyle.Path,
 			app.cfg.AnalysisTools.CookstyleTimeoutMinutes,
+			remediation.WithAutocorrectAddonCopPathsFn(func() []string {
+				return app.configHolder.Get().AnalysisTools.CookstyleAddonCopPaths
+			}),
 		)
 		collOpts = append(collOpts, collector.WithAutocorrectGenerator(acGen))
 		app.startup.Info("autocorrect preview generator enabled")
@@ -1003,6 +1094,13 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	app.startup.Info("kitchen config analyser enabled")
 
 	cxScorer := remediation.NewComplexityScorer(app.db, app.logger)
+	// Make complexity scoring classification-weighted (single source of truth):
+	// resolve one classifier per target version, loading operator overrides at
+	// the start of each scoring batch so reclassifications take effect on the
+	// next run without a restart.
+	cxScorer.SetClassifierProvider(func(ctx context.Context, target string) remediation.CopClassifier {
+		return analysis.NewResolverFromStore(ctx, app.db, target)
+	})
 	collOpts = append(collOpts, collector.WithComplexityScorer(cxScorer))
 
 	readinessEval := analysis.NewReadinessEvaluatorFromConfig(
@@ -1014,6 +1112,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			InstallSizeMBLinux:      app.cfg.Readiness.InstallSizeMBLinux,
 			InstallSizeMBWindows:    app.cfg.Readiness.InstallSizeMBWindows,
 			MinRemainingFreePercent: app.cfg.Readiness.MinRemainingFreePercent,
+			ReviewBlocksReadiness:   app.cfg.Readiness.ReviewBlocksReadiness,
 		},
 		analysis.WithConfigFunc(func() analysis.ReadinessEvalConfig {
 			cfg := app.configHolder.Get()
@@ -1023,6 +1122,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 				InstallSizeMBLinux:      cfg.Readiness.InstallSizeMBLinux,
 				InstallSizeMBWindows:    cfg.Readiness.InstallSizeMBWindows,
 				MinRemainingFreePercent: cfg.Readiness.MinRemainingFreePercent,
+				ReviewBlocksReadiness:   cfg.Readiness.ReviewBlocksReadiness,
 			}
 		}),
 		analysis.WithReadinessConcurrencyFunc(func() int {
@@ -1030,6 +1130,33 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		}),
 	)
 	collOpts = append(collOpts, collector.WithReadinessEvaluator(readinessEval))
+	app.readinessEval = readinessEval
+
+	// Re-evaluation propagator: reuses the classification-weighted complexity
+	// scorer + readiness evaluator so a cop reclassification or custom-cop change
+	// runs the scoped recompute closure synchronously (verdict → compat →
+	// complexity → dependent-node readiness). Wired into the router below.
+	app.cookstylePropagator = webapi.NewCookstylePropagator(
+		app.db,
+		cxScorer,
+		readinessEval,
+		func() analysis.CookstyleFailureRules {
+			cfg := app.configHolder.Get()
+			return analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
+		},
+		func(level, msg string) {
+			switch level {
+			case "DEBUG":
+				app.logger.WithScope(logging.ScopeWebAPI).Debug(msg)
+			case "WARN":
+				app.logger.WithScope(logging.ScopeWebAPI).Warn(msg)
+			case "ERROR":
+				app.logger.WithScope(logging.ScopeWebAPI).Error(msg)
+			default:
+				app.logger.WithScope(logging.ScopeWebAPI).Info(msg)
+			}
+		},
+	)
 
 	ownershipEval := collector.NewOwnershipEvaluator(app.db, app.cfg.Ownership, app.logger)
 	collOpts = append(collOpts, collector.WithOwnershipEvaluator(ownershipEval))
@@ -1252,6 +1379,39 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			return nil
 		}),
 		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
+		webapi.WithCookstylePropagator(app.cookstylePropagator),
+		webapi.WithCopRegistry(app.copRegistry),
+		webapi.WithReadinessReconciler(func() error {
+			// A readiness config change (review_blocks_readiness toggle or disk
+			// threshold) re-evaluates readiness for all organisations so the new
+			// criteria take effect immediately. Run in the background so the admin
+			// PUT returns promptly; the recompute reads the reloaded live config.
+			if app.readinessEval == nil {
+				return nil
+			}
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				defer cancel()
+				rlog := logger.WithScope(logging.ScopeReadinessEvaluation)
+				orgs, err := app.db.ListOrganisations(ctx)
+				if err != nil {
+					rlog.Error(fmt.Sprintf("readiness reconcile: listing organisations: %v", err))
+					return
+				}
+				target := app.configHolder.Get().TargetChefVersion
+				if target == "" {
+					return
+				}
+				rlog.Info("readiness config changed — recomputing readiness for all organisations")
+				for _, org := range orgs {
+					if _, err := app.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, target); err != nil {
+						rlog.Error(fmt.Sprintf("readiness reconcile: org %s: %v", org.Name, err))
+					}
+				}
+				rlog.Info("readiness recompute complete")
+			}()
+			return nil
+		}),
 		webapi.WithCollectionTrigger(func(ctx context.Context) error {
 			if coll.IsRunning() {
 				return fmt.Errorf("a collection run is already in progress")
@@ -2685,6 +2845,10 @@ func run() int {
 	if err := app.setupCollector(ctx); err != nil {
 		return 1
 	}
+
+	// Phase 12b: one-time precise CookStyle status backfill (needs the readiness
+	// evaluator built in Phase 12). Idempotent and marker-gated; non-fatal.
+	app.backfillCookstyleStatus(ctx)
 
 	// Phase 13: ownership startup tasks.
 	app.setupOwnership(ctx)

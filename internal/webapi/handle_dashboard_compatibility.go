@@ -6,8 +6,28 @@ package webapi
 import (
 	"net/http"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
+
+// rollupBucketForScan maps a CookStyle scan result to one of the 4-state rollup
+// buckets the dashboard summaries report (ready / needs_review / blocked /
+// untested), so every surface shares the cop-classification.md vocabulary. An
+// inconclusive scan (error_message set) and a row with no materialised status
+// fall to untested — a scan that produced no verdict. This deliberately ignores
+// the legacy passed boolean: a needs_review result has passed=true but must not
+// read as ready/"compatible".
+func rollupBucketForScan(cookstyleStatus, errorMessage string) string {
+	if errorMessage != "" {
+		return analysis.StatusUntested
+	}
+	switch cookstyleStatus {
+	case analysis.StatusReady, analysis.StatusNeedsReview, analysis.StatusBlocked:
+		return cookstyleStatus
+	default:
+		return analysis.StatusUntested
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Dashboard — compatibility endpoints (cookbook, git repo, Test Kitchen)
@@ -15,8 +35,9 @@ import (
 
 // handleDashboardCookbookCompatibility handles
 // GET /api/v1/dashboard/cookbook-compatibility.
-// Returns a summary of cookbook compatibility across all organisations and
-// target Chef versions, based on test kitchen results.
+// Returns the CookStyle rollup-status breakdown (ready / needs_review / blocked
+// / untested) for server cookbooks across all organisations and target Chef
+// versions, sourced from the materialised cookstyle_status.
 func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -45,18 +66,22 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		return
 	}
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
+	// CookStyle rollup summary (cop-classification.md 4-state vocabulary). The
+	// untested segment is sub-split (errored scan / inactive / not-yet-scanned)
+	// for the card tooltip; the three add up to UntestedCookbooks.
 	type compatSummary struct {
-		TargetChefVersion     string  `json:"target_chef_version"`
-		TotalCookbooks        int     `json:"total_cookbooks"`
-		CompatibleCookbooks   int     `json:"compatible_cookbooks"`
-		IncompatibleCookbooks int     `json:"incompatible_cookbooks"`
-		ErroredCookbooks      int     `json:"errored_cookbooks"`
-		UntestedCookbooks     int     `json:"untested_cookbooks"`
-		UntestedInactive      int     `json:"untested_inactive_cookbooks"`
-		UntestedUnscanned     int     `json:"untested_unscanned_cookbooks"`
-		CompatiblePercent     float64 `json:"compatible_percent"`
+		TargetChefVersion    string  `json:"target_chef_version"`
+		TotalCookbooks       int     `json:"total_cookbooks"`
+		ReadyCookbooks       int     `json:"ready_cookbooks"`
+		NeedsReviewCookbooks int     `json:"needs_review_cookbooks"`
+		BlockedCookbooks     int     `json:"blocked_cookbooks"`
+		UntestedCookbooks    int     `json:"untested_cookbooks"`
+		UntestedErrored      int     `json:"untested_errored_cookbooks"`
+		UntestedInactive     int     `json:"untested_inactive_cookbooks"`
+		UntestedUnscanned    int     `json:"untested_unscanned_cookbooks"`
+		ReadyPercent         float64 `json:"ready_percent"`
 	}
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
@@ -85,16 +110,15 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		}
 	}
 
-	// Compute compatibility from server cookbook cookstyle results, aggregated
-	// per target Chef version. A cookbook is "compatible" when cookstyle passed,
-	// "incompatible" when it did not, and "untested" when no result exists.
-	// We deduplicate by cookbook name so each name counts once per target version.
+	// Aggregate the materialised CookStyle rollup status per target Chef version,
+	// deduplicating by cookbook name so each name counts once per target version.
 	type perVersion struct {
 		total             int
-		compatible        int
-		incompatible      int
-		errored           int
+		ready             int
+		needsReview       int
+		blocked           int
 		untested          int
+		untestedErrored   int
 		untestedInactive  int
 		untestedUnscanned int
 	}
@@ -129,9 +153,8 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 			cookbookNameByID[sc.OrganisationName+"/"+sc.Name+"/"+sc.Version] = sc.Name
 		}
 
-		// Derive compatibility directly from CookStyle scan results.
-		// A cookbook that passed CookStyle (no error/fatal offenses) is
-		// compatible; one that failed is incompatible.
+		// Bucket each scanned cookbook by its materialised CookStyle rollup
+		// status (ready / needs_review / blocked / untested).
 		for _, cs := range cookstyleResults {
 			cbName := cookbookNameByID[cs.OrganisationName+"/"+cs.CookbookName+"/"+cs.CookbookVersion]
 			if cbName == "" {
@@ -150,12 +173,16 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 			}
 			seen[key] = true
 			pv.total++
-			if cs.ErrorMessage != "" {
-				pv.errored++
-			} else if cs.Passed {
-				pv.compatible++
-			} else {
-				pv.incompatible++
+			switch rollupBucketForScan(cs.CookstyleStatus, cs.ErrorMessage) {
+			case analysis.StatusReady:
+				pv.ready++
+			case analysis.StatusNeedsReview:
+				pv.needsReview++
+			case analysis.StatusBlocked:
+				pv.blocked++
+			default: // untested — an errored scan has no verdict.
+				pv.untested++
+				pv.untestedErrored++
 			}
 		}
 
@@ -188,18 +215,19 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		pv := byTV[tv]
 		pct := 0.0
 		if pv.total > 0 {
-			pct = float64(pv.compatible) / float64(pv.total) * 100
+			pct = float64(pv.ready) / float64(pv.total) * 100
 		}
 		summaries = append(summaries, compatSummary{
-			TargetChefVersion:     tv,
-			TotalCookbooks:        pv.total,
-			CompatibleCookbooks:   pv.compatible,
-			IncompatibleCookbooks: pv.incompatible,
-			ErroredCookbooks:      pv.errored,
-			UntestedCookbooks:     pv.untested,
-			UntestedInactive:      pv.untestedInactive,
-			UntestedUnscanned:     pv.untestedUnscanned,
-			CompatiblePercent:     pct,
+			TargetChefVersion:    tv,
+			TotalCookbooks:       pv.total,
+			ReadyCookbooks:       pv.ready,
+			NeedsReviewCookbooks: pv.needsReview,
+			BlockedCookbooks:     pv.blocked,
+			UntestedCookbooks:    pv.untested,
+			UntestedErrored:      pv.untestedErrored,
+			UntestedInactive:     pv.untestedInactive,
+			UntestedUnscanned:    pv.untestedUnscanned,
+			ReadyPercent:         pct,
 		})
 	}
 
@@ -234,18 +262,21 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 	ownerFilterActive := ownedKeys != nil
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
+	// CookStyle rollup summary (4-state). UntestedRepos is sub-split into errored
+	// scan / clone-failed / cloned-but-not-yet-scanned for the card tooltip.
 	type compatSummary struct {
 		TargetChefVersion        string  `json:"target_chef_version"`
 		TotalRepos               int     `json:"total_repos"`
-		CompatibleRepos          int     `json:"compatible_repos"`
-		IncompatibleRepos        int     `json:"incompatible_repos"`
-		ErroredRepos             int     `json:"errored_repos"`
+		ReadyRepos               int     `json:"ready_repos"`
+		NeedsReviewRepos         int     `json:"needs_review_repos"`
+		BlockedRepos             int     `json:"blocked_repos"`
 		UntestedRepos            int     `json:"untested_repos"`
+		UntestedErroredRepos     int     `json:"untested_errored_repos"`
 		UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
 		UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
-		CompatiblePercent        float64 `json:"compatible_percent"`
+		ReadyPercent             float64 `json:"ready_percent"`
 	}
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
@@ -273,13 +304,14 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		}
 	}
 
-	// Compute compatibility from git repo complexity records.
+	// Aggregate the materialised CookStyle rollup status per target Chef version.
 	type perVersion struct {
 		total               int
-		compatible          int
-		incompatible        int
-		errored             int
+		ready               int
+		needsReview         int
+		blocked             int
 		untested            int
+		untestedErrored     int
 		untestedCloneFailed int
 		untestedPendingScan int
 	}
@@ -308,9 +340,8 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		repoCloneStatus[gr.Name] = gr.CloneStatus
 	}
 
-	// Determine compatibility directly from CookStyle results.
-	// Passed == true → compatible, Passed == false → incompatible,
-	// no result for the target version → untested.
+	// Bucket each scanned repo by its materialised CookStyle rollup status; a
+	// repo with no result for the target version is counted as untested below.
 	allCookstyle, err := r.db.ListAllGitRepoCookstyleResults(ctx)
 	if err != nil {
 		r.logf("ERROR", "listing git repo cookstyle results for compatibility: %v", err)
@@ -336,12 +367,16 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		}
 		seen[key] = true
 		pv.total++
-		if cs.ErrorMessage != "" {
-			pv.errored++
-		} else if cs.Passed {
-			pv.compatible++
-		} else {
-			pv.incompatible++
+		switch rollupBucketForScan(cs.CookstyleStatus, cs.ErrorMessage) {
+		case analysis.StatusReady:
+			pv.ready++
+		case analysis.StatusNeedsReview:
+			pv.needsReview++
+		case analysis.StatusBlocked:
+			pv.blocked++
+		default: // untested — an errored scan has no verdict.
+			pv.untested++
+			pv.untestedErrored++
 		}
 	}
 
@@ -374,18 +409,19 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		pv := byTV[tv]
 		pct := 0.0
 		if pv.total > 0 {
-			pct = float64(pv.compatible) / float64(pv.total) * 100
+			pct = float64(pv.ready) / float64(pv.total) * 100
 		}
 		summaries = append(summaries, compatSummary{
 			TargetChefVersion:        tv,
 			TotalRepos:               pv.total,
-			CompatibleRepos:          pv.compatible,
-			IncompatibleRepos:        pv.incompatible,
-			ErroredRepos:             pv.errored,
+			ReadyRepos:               pv.ready,
+			NeedsReviewRepos:         pv.needsReview,
+			BlockedRepos:             pv.blocked,
 			UntestedRepos:            pv.untested,
+			UntestedErroredRepos:     pv.untestedErrored,
 			UntestedCloneFailedRepos: pv.untestedCloneFailed,
 			UntestedPendingScanRepos: pv.untestedPendingScan,
-			CompatiblePercent:        pct,
+			ReadyPercent:             pct,
 		})
 	}
 
@@ -423,7 +459,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 	ownerFilterActive := ownedKeys != nil
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	type tkSummary struct {
 		TargetChefVersion        string  `json:"target_chef_version"`
@@ -495,9 +531,9 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 
 	// Load kitchen results to compute per-repo TK status.
 	type repoTKInfo struct {
-		passed  int
-		failed  int
-		total   int
+		passed int
+		failed int
+		total  int
 	}
 	tkByRepo := make(map[string]*repoTKInfo)
 	allResults, tkErr := r.db.ListActiveGitKitchenResults(ctx)

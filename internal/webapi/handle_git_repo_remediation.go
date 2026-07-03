@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
@@ -83,6 +84,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	// Fetch cookstyle result.
 	var cookstyleOffences []byte
 	var cookstylePassed *bool
+	cookstyleStatus := "untested" // SoT rollup; stays untested when no result exists
 	var cookstyleScannedAt string
 	var hasCookstyleResult bool
 
@@ -96,6 +98,9 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		cookstyleOffences = csResult.Offences
 		p := csResult.Passed
 		cookstylePassed = &p
+		if csResult.CookstyleStatus != "" {
+			cookstyleStatus = csResult.CookstyleStatus
+		}
 		cookstyleScannedAt = csResult.ScannedAt.Format("2006-01-02T15:04:05Z")
 		hasCookstyleResult = true
 	}
@@ -155,12 +160,15 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	}
 
 	type offenseGroup struct {
-		CopName          string              `json:"cop_name"`
-		Severity         string              `json:"severity"`
-		Count            int                 `json:"count"`
-		CorrectableCount int                 `json:"correctable_count"`
-		Remediation      *copRemediationResp `json:"remediation,omitempty"`
-		Offenses         []offense           `json:"offenses"`
+		CopName              string              `json:"cop_name"`
+		Severity             string              `json:"severity"`
+		Classification       string              `json:"classification"`
+		ClassificationSource string              `json:"classification_source"`
+		RemovedIn            string              `json:"removed_in,omitempty"`
+		Count                int                 `json:"count"`
+		CorrectableCount     int                 `json:"correctable_count"`
+		Remediation          *copRemediationResp `json:"remediation,omitempty"`
+		Offenses             []offense           `json:"offenses"`
 	}
 
 	// Parse offenses from the JSONB column. The stored format is the
@@ -243,15 +251,32 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		}
 	}
 
+	// Build classification resolver for the target version.
+	overrides, classErr := r.db.ListCopClassifications(ctx)
+	if classErr != nil {
+		r.logf("WARN", "listing cop classifications for git repo remediation: %v", classErr)
+	}
+	overrideMap := make(map[string]string, len(overrides))
+	for _, o := range overrides {
+		overrideMap[o.CopName] = o.Classification
+	}
+	resolver := &analysis.CopClassificationResolver{
+		OperatorOverrides: overrideMap,
+		TargetChefVersion: targetVersion,
+	}
+
 	// Group offenses by cop name.
 	groupOrder := make([]string, 0)
 	groupMap := make(map[string]*offenseGroup)
 	for _, o := range flatOffenses {
 		g, ok := groupMap[o.CopName]
 		if !ok {
+			resolved := resolver.Resolve(o.CopName)
 			g = &offenseGroup{
-				CopName:  o.CopName,
-				Severity: o.Severity,
+				CopName:              o.CopName,
+				Severity:             o.Severity,
+				Classification:       resolved.Classification,
+				ClassificationSource: resolved.Source,
 			}
 			// Look up remediation guidance from the embedded cop mapping.
 			if cm := remediation.LookupCop(o.CopName); cm != nil {
@@ -263,6 +288,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 					RemovedIn:          cm.RemovedIn,
 					ReplacementPattern: cm.ReplacementPattern,
 				}
+				g.RemovedIn = cm.RemovedIn
 			}
 			groupMap[o.CopName] = g
 			groupOrder = append(groupOrder, o.CopName)
@@ -277,8 +303,27 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	// Build the sorted groups slice (preserve insertion order which is
 	// effectively the order offenses appear in the cookstyle output).
 	groups := make([]offenseGroup, 0, len(groupOrder))
+	var blockerCount, reviewCount, noiseCount, unclassifiedCount int
 	for _, copName := range groupOrder {
-		groups = append(groups, *groupMap[copName])
+		g := *groupMap[copName]
+		groups = append(groups, g)
+		switch g.Classification {
+		case analysis.ClassificationBlocker:
+			blockerCount++
+		case analysis.ClassificationReview:
+			reviewCount++
+		case analysis.ClassificationNoise:
+			noiseCount++
+		default:
+			unclassifiedCount++
+		}
+	}
+
+	classificationSummary := map[string]int{
+		"blocker":      blockerCount,
+		"review":       reviewCount,
+		"noise":        noiseCount,
+		"unclassified": unclassifiedCount,
 	}
 
 	// Compute statistics.
@@ -386,6 +431,17 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		},
 	}
 
+	// "Won't parse — fix first": a data-quality flag carried alongside the
+	// rollup status, derived from any fatal (parse-failure) offense. Not a
+	// classification blocker.
+	cookstyleWontParse := false
+	for i := range flatOffenses {
+		if flatOffenses[i].Severity == analysis.SeverityFatal {
+			cookstyleWontParse = true
+			break
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"git_repo_name":        repoName,
 		"version":              repoVersion,
@@ -395,6 +451,8 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		"complexity_label":     complexityLabel,
 		"complexity_breakdown": breakdown,
 		"cookstyle_passed":     cookstylePassed,
+		"cookstyle_status":     cookstyleStatus,
+		"cookstyle_wont_parse": cookstyleWontParse,
 		"scanned_at":           cookstyleScannedAt,
 		"statistics": map[string]any{
 			"total_offenses":         totalOffenses,
@@ -406,7 +464,8 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 			"error_count":            errorCount,
 			"offense_groups":         len(groups),
 		},
-		"offense_groups":      groups,
-		"autocorrect_preview": acPreview,
+		"offense_groups":         groups,
+		"classification_summary": classificationSummary,
+		"autocorrect_preview":    acPreview,
 	})
 }

@@ -15,155 +15,159 @@ import (
 // a function field. If the field is nil the method returns zero values (and
 // nil error) so tests only need to set the stubs they care about.
 type mockStore struct {
-	PingFn                                              func(ctx context.Context) error
-	ListOrganisationsFn                                 func(ctx context.Context) ([]datastore.Organisation, error)
-	GetOrganisationByNameFn                             func(ctx context.Context, name string) (datastore.Organisation, error)
-	GetLatestCollectionRunFn                            func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
-	ListCollectionRunsFn                                func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
-	ListCollectionRunsFilteredFn                        func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error)
-	CountCollectionRunsFilteredFn                       func(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
-	ListNodeSnapshotsByOrganisationFn                   func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
-	ListNodeSnapshotsFilteredFn                         func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
-	CountNodeVersionDistributionFn                      func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
-	CountNodePlatformDistributionFn                     func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
-	CountNodePlatformDistributionDetailedFn             func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.PlatformDistributionRow, int, error)
-	ListDistinctNodeValuesFn                            func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error)
-	ListDistinctNodeRolesFn                             func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error)
-	ListNodeSnapshotsByCollectionRunFn                  func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
-	CountStaleFreshByCollectionRunFn                    func(ctx context.Context, collectionRunID string) (int, int, int, error)
-	CountNodesByDeploymentVersionFn                     func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.DeploymentVersionRow, int, error)
-	ListMetricSnapshotsByOrganisationFn                  func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
-	ListMetricSnapshotsByOrganisationAndVersionFn        func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error)
-	ListDailyMetricSnapshotsByOrganisationFn             func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
-	ListDailyMetricSnapshotsByOrganisationAndVersionFn   func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error)
-	GetNodeSnapshotByNameFn                              func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
-	ListNodeReadinessForSnapshotFn                      func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error)
-	ListNodeReadinessByNodeNameFn                       func(ctx context.Context, organisationName, nodeName string) ([]datastore.NodeReadiness, error)
-	BulkListNodeReadinessByNodeNamesFn                  func(ctx context.Context, organisationName string, nodeNames []string) (map[string][]datastore.NodeReadiness, error)
-	CountNodeReadinessFn                                func(ctx context.Context, organisationName, targetChefVersion string) (int, int, int, error)
-	ListCookbooksFilteredFn                             func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error)
-	ListServerCookbooksByOrganisationFn                 func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
-	ListServerCookbooksByNameFn                         func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
-	ResetServerCookbookDownloadStatusFn                 func(ctx context.Context, organisationName, name, version string) (datastore.ServerCookbook, error)
-	ResetAllServerCookbookDownloadStatusesFn            func(ctx context.Context) (int, error)
-	ResetAllGitRepoStatusesFn                           func(ctx context.Context) error
-	ListGitReposFn                                      func(ctx context.Context) ([]datastore.GitRepo, error)
-	ListGitReposFilteredFn                              func(ctx context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error)
-	ListGitReposByNameFn                                func(ctx context.Context, name string) ([]datastore.GitRepo, error)
-	DeleteGitReposByNameFn                              func(ctx context.Context, name string) (datastore.DeleteGitRepoResult, error)
-	ListAllGitRepoCookstyleResultsFn                    func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error)
-	ListServerCookbookComplexitiesByCookbookFn          func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error)
-	ListServerCookbookComplexitiesByOrganisationFn      func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error)
-	ListServerCookbookCookstyleResultsFn                func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookCookstyleResult, error)
-	ListServerCookbookCookstyleResultsByOrganisationFn  func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error)
-	GetServerCookbookCookstyleResultFn                  func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
-	GetServerCookbookAutocorrectPreviewFn               func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error)
-	DeleteServerCookbookCookstyleResultsByCookbookFn    func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error
-	DeleteServerCookbookComplexitiesByCookbookFn        func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error
-	DeleteServerCookbookAutocorrectPreviewsByCookbookFn func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error
-	DeleteAllServerCookbookCookstyleResultsFn           func(ctx context.Context) error
-	DeleteAllServerCookbookComplexitiesFn               func(ctx context.Context) error
-	DeleteAllServerCookbookAutocorrectPreviewsFn        func(ctx context.Context) error
-	ListGitRepoCookstyleResultsFn                       func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoCookstyleResult, error)
-	GetGitRepoCookstyleResultFn                         func(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
-	ListGitRepoComplexitiesByRepoFn                     func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoComplexity, error)
-	ListAllGitRepoComplexitiesFn                        func(ctx context.Context) ([]datastore.GitRepoComplexity, error)
-	GetGitRepoAutocorrectPreviewFn                      func(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoAutocorrectPreview, error)
-	DeleteGitRepoCookstyleResultsByRepoFn               func(ctx context.Context, gitRepoName, gitRepoURL string) error
-	DeleteGitRepoComplexitiesByRepoFn                   func(ctx context.Context, gitRepoName, gitRepoURL string) error
-	DeleteGitRepoAutocorrectPreviewsByRepoFn            func(ctx context.Context, gitRepoName, gitRepoURL string) error
-	DeleteAllGitRepoCookstyleResultsFn                  func(ctx context.Context) error
-	ListServerCookstyleResultsForRescoreFn              func(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
-	ListGitRepoCookstyleResultsForRescoreFn             func(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
-	BatchUpdateServerCookstylePassedFn                  func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
-	BatchUpdateGitRepoCookstylePassedFn                 func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
-	RecomputeGitRepoCompatibilityStatusFn               func(ctx context.Context, name, url, targetVersion string) error
-	DeleteAllGitRepoComplexitiesFn                      func(ctx context.Context) error
-	DeleteAllGitRepoAutocorrectPreviewsFn               func(ctx context.Context) error
-	ListLogEntriesFn                                    func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
-	CountLogEntriesFn                                   func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
-	GetLogEntryFn                                       func(ctx context.Context, id int64) (datastore.LogEntry, error)
-	ListRolesFilteredFn                                 func(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error)
-	GetRoleCompatSummaryFn                              func(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error)
-	GetRoleTKStatusesFn                                 func(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error)
-	GetCookbookTKStatusesFn                             func(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error)
-	GetRoleDetailFn                                     func(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error)
-	ListRoleDependenciesByOrgFn                         func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
-	ListCookbookDependenciesByOrgFn                     func(ctx context.Context, orgName string) (map[string][]string, error)
-	CountDependenciesByRoleFn                           func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
-	CountRolesPerCookbookFn                             func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
-	InsertExportJobFn                                   func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error)
-	GetExportJobFn                                      func(ctx context.Context, id string) (*datastore.ExportJob, error)
-	UpdateExportJobStatusFn                             func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error
-	UpdateExportJobExpiredFn                            func(ctx context.Context, id string) error
-	ListExportJobsByStatusFn                            func(ctx context.Context, status string) ([]datastore.ExportJob, error)
-	ListExpiredExportJobsFn                             func(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
-	ListOwnersFn                                        func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error)
-	ListOwnersWithSummaryFn                             func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error)
-	GetOwnerByNameFn                                    func(ctx context.Context, name string) (datastore.Owner, error)
-	InsertOwnerFn                                       func(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error)
-	UpdateOwnerFn                                       func(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error)
-	DeleteOwnerFn                                       func(ctx context.Context, name string) (int, error)
-	CountAssignmentsByOwnerFn                           func(ctx context.Context, ownerName string) (map[string]int, error)
-	InsertAssignmentFn                                  func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error)
-	ListAssignmentsByOwnerFn                            func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error)
-	GetAssignmentFn                                     func(ctx context.Context, id int64) (datastore.OwnershipAssignment, error)
-	DeleteAssignmentFn                                  func(ctx context.Context, id int64) error
-	ReassignOwnershipFn                                 func(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (int, int, error)
-	LookupOwnershipFn                                   func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
-	GetOwnerReadinessSummaryFn                          func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
-	GetOwnerCookbookSummaryFn                           func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
-	GetOwnerGitRepoSummaryFn                            func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
-	GetGitRepoURLForCookbookFn                          func(ctx context.Context, cookbookName string) (string, error)
-	ListCommittersByRepoFn                              func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
-	GetOwnerEmailsForGitRepoFn                          func(ctx context.Context, gitRepoURL string) (map[string]bool, error)
-	InsertAuditEntryFn                                  func(ctx context.Context, p datastore.InsertAuditEntryParams) error
-	ListAuditLogFn                                      func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
-	DatabaseSizeFn                                      func(ctx context.Context) (int64, error)
-	DatabaseTableSizesFn                                func(ctx context.Context) ([]datastore.TableSize, error)
-	PgStatStatementsAvailableFn                         func(ctx context.Context) bool
-	TopQueryStatsFn                                     func(ctx context.Context, limit int) ([]datastore.TopQueryStat, error)
-	TableStatsFn                                        func(ctx context.Context) ([]datastore.TableStat, error)
-	IndexStatsFn                                        func(ctx context.Context) ([]datastore.IndexStat, error)
-	ActiveQueriesFn                                     func(ctx context.Context) ([]datastore.ActiveQuery, error)
-	ResetPgStatsFn                                      func(ctx context.Context) error
-	VacuumFullFn                                        func(ctx context.Context) error
-	GetCookbookPlatformCoverageFn                       func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
-	GetKitchenAnalysisSummaryFn                         func(ctx context.Context) (*datastore.KitchenAnalysisSummary, error)
-	ListKitchenAnalysisResultsFn                        func(ctx context.Context) ([]datastore.KitchenAnalysisResult, error)
-	ListKitchenAnalysisResultsFilteredFn                func(ctx context.Context, driverName string, hasLocalOverride *bool) ([]datastore.KitchenAnalysisResult, error)
-	GetKitchenAnalysisResultByNameFn                    func(ctx context.Context, gitRepoName string) (*datastore.KitchenAnalysisResult, error)
-	ListDiscoveredPlatformsFn                           func(ctx context.Context) ([]datastore.KitchenDiscoveredPlatform, error)
-	ListDiscoveredPlatformsFilteredFn                   func(ctx context.Context, osFamily string, minCount int) ([]datastore.KitchenDiscoveredPlatform, error)
-	ListTrackedVMsFn                                    func(ctx context.Context) ([]datastore.TrackedVM, error)
-	ListTrackedVMsFilteredFn                            func(ctx context.Context, status string) ([]datastore.TrackedVM, error)
-	GetTrackedVMFn                                      func(ctx context.Context, id string) (*datastore.TrackedVM, error)
-	ListOrphanedVMsFn                                   func(ctx context.Context) ([]datastore.TrackedVM, error)
-	MarkVMDestroyedFn                                   func(ctx context.Context, id string) error
-	MarkVMOrphanedFn                                    func(ctx context.Context, id string) error
-	CountTrackedVMsByStatusFn                           func(ctx context.Context) (map[string]int, error)
-	ListNodeKitchenRunsFn                               func(ctx context.Context, orgName string) ([]datastore.NodeKitchenRun, error)
-	ListNodeKitchenRunsByNodeFn                         func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeKitchenRun, error)
-	GetNodeKitchenRunFn                                 func(ctx context.Context, id string) (*datastore.NodeKitchenRun, error)
-	DeleteNodeKitchenRunFn                              func(ctx context.Context, id string) error
+	PingFn                                                 func(ctx context.Context) error
+	ListOrganisationsFn                                    func(ctx context.Context) ([]datastore.Organisation, error)
+	GetOrganisationByNameFn                                func(ctx context.Context, name string) (datastore.Organisation, error)
+	GetLatestCollectionRunFn                               func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
+	ListCollectionRunsFn                                   func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
+	ListCollectionRunsFilteredFn                           func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error)
+	CountCollectionRunsFilteredFn                          func(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
+	ListNodeSnapshotsByOrganisationFn                      func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
+	ListNodeSnapshotsFilteredFn                            func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
+	CountNodeVersionDistributionFn                         func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
+	CountNodePlatformDistributionFn                        func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
+	CountNodePlatformDistributionDetailedFn                func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.PlatformDistributionRow, int, error)
+	ListDistinctNodeValuesFn                               func(ctx context.Context, f datastore.NodeSnapshotFilter, columnExpr string, opts datastore.DistinctValueOpts) ([]string, error)
+	ListDistinctNodeRolesFn                                func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error)
+	ListNodeSnapshotsByCollectionRunFn                     func(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)
+	CountStaleFreshByCollectionRunFn                       func(ctx context.Context, collectionRunID string) (int, int, int, error)
+	CountNodesByDeploymentVersionFn                        func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.DeploymentVersionRow, int, error)
+	ListMetricSnapshotsByOrganisationFn                    func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
+	ListMetricSnapshotsByOrganisationAndVersionFn          func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error)
+	ListDailyMetricSnapshotsByOrganisationFn               func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error)
+	ListDailyMetricSnapshotsByOrganisationAndVersionFn     func(ctx context.Context, organisationID, snapshotType, targetChefVersion string, limit int) ([]datastore.MetricSnapshot, error)
+	GetNodeSnapshotByNameFn                                func(ctx context.Context, organisationID, nodeName string) (datastore.NodeSnapshot, error)
+	ListNodeReadinessForSnapshotFn                         func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error)
+	ListNodeReadinessByNodeNameFn                          func(ctx context.Context, organisationName, nodeName string) ([]datastore.NodeReadiness, error)
+	BulkListNodeReadinessByNodeNamesFn                     func(ctx context.Context, organisationName string, nodeNames []string) (map[string][]datastore.NodeReadiness, error)
+	CountNodeReadinessFn                                   func(ctx context.Context, organisationName, targetChefVersion string) (int, int, int, error)
+	CountNodeReadinessByStatusFn                           func(ctx context.Context, organisationName, targetChefVersion string) (int, int, int, int, error)
+	ListCookbooksFilteredFn                                func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error)
+	ListServerCookbooksByOrganisationFn                    func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error)
+	ListServerCookbooksByNameFn                            func(ctx context.Context, name string) ([]datastore.ServerCookbook, error)
+	ResetServerCookbookDownloadStatusFn                    func(ctx context.Context, organisationName, name, version string) (datastore.ServerCookbook, error)
+	ResetAllServerCookbookDownloadStatusesFn               func(ctx context.Context) (int, error)
+	ResetAllGitRepoStatusesFn                              func(ctx context.Context) error
+	ListGitReposFn                                         func(ctx context.Context) ([]datastore.GitRepo, error)
+	ListGitReposFilteredFn                                 func(ctx context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error)
+	ListGitReposByNameFn                                   func(ctx context.Context, name string) ([]datastore.GitRepo, error)
+	DeleteGitReposByNameFn                                 func(ctx context.Context, name string) (datastore.DeleteGitRepoResult, error)
+	ListAllGitRepoCookstyleResultsFn                       func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error)
+	ListServerCookbookComplexitiesByCookbookFn             func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error)
+	ListServerCookbookComplexitiesByOrganisationFn         func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error)
+	ListServerCookbookCookstyleResultsFn                   func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookCookstyleResult, error)
+	ListServerCookbookCookstyleResultsByOrganisationFn     func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookCookstyleResult, error)
+	GetServerCookbookCookstyleResultFn                     func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error)
+	GetServerCookbookAutocorrectPreviewFn                  func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error)
+	DeleteServerCookbookCookstyleResultsByCookbookFn       func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error
+	DeleteServerCookbookComplexitiesByCookbookFn           func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error
+	DeleteServerCookbookAutocorrectPreviewsByCookbookFn    func(ctx context.Context, orgName, cookbookName, cookbookVersion string) error
+	DeleteAllServerCookbookCookstyleResultsFn              func(ctx context.Context) error
+	DeleteAllServerCookbookComplexitiesFn                  func(ctx context.Context) error
+	DeleteAllServerCookbookAutocorrectPreviewsFn           func(ctx context.Context) error
+	ListGitRepoCookstyleResultsFn                          func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoCookstyleResult, error)
+	GetGitRepoCookstyleResultFn                            func(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoCookstyleResult, error)
+	ListGitRepoComplexitiesByRepoFn                        func(ctx context.Context, gitRepoName, gitRepoURL string) ([]datastore.GitRepoComplexity, error)
+	ListAllGitRepoComplexitiesFn                           func(ctx context.Context) ([]datastore.GitRepoComplexity, error)
+	GetGitRepoAutocorrectPreviewFn                         func(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) (*datastore.GitRepoAutocorrectPreview, error)
+	DeleteGitRepoCookstyleResultsByRepoFn                  func(ctx context.Context, gitRepoName, gitRepoURL string) error
+	DeleteGitRepoComplexitiesByRepoFn                      func(ctx context.Context, gitRepoName, gitRepoURL string) error
+	DeleteGitRepoAutocorrectPreviewsByRepoFn               func(ctx context.Context, gitRepoName, gitRepoURL string) error
+	DeleteAllGitRepoCookstyleResultsFn                     func(ctx context.Context) error
+	ListServerCookstyleResultsForRescoreFn                 func(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
+	ListGitRepoCookstyleResultsForRescoreFn                func(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
+	BatchUpdateServerCookstylePassedFn                     func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
+	BatchUpdateGitRepoCookstylePassedFn                    func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
+	RecomputeGitRepoCompatibilityStatusFn                  func(ctx context.Context, name, url, targetVersion string) error
+	DeleteAllGitRepoComplexitiesFn                         func(ctx context.Context) error
+	DeleteAllGitRepoAutocorrectPreviewsFn                  func(ctx context.Context) error
+	ListAllServerCookbookCookstyleResultsByTargetVersionFn func(ctx context.Context, targetChefVersion string) ([]datastore.ServerCookbookCookstyleResult, error)
+	ListGitRepoCookstyleResultsByTargetVersionFn           func(ctx context.Context, targetChefVersion string) ([]datastore.GitRepoCookstyleResult, error)
+	ListLogEntriesFn                                       func(ctx context.Context, filter datastore.LogEntryFilter) ([]datastore.LogEntry, error)
+	CountLogEntriesFn                                      func(ctx context.Context, filter datastore.LogEntryFilter) (int, error)
+	GetLogEntryFn                                          func(ctx context.Context, id int64) (datastore.LogEntry, error)
+	ListRolesFilteredFn                                    func(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error)
+	GetRoleCompatSummaryFn                                 func(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error)
+	GetRoleTKStatusesFn                                    func(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error)
+	GetCookbookTKStatusesFn                                func(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error)
+	GetRoleDetailFn                                        func(ctx context.Context, roleName, targetChefVersion string) (*datastore.RoleDetail, error)
+	ListRoleDependenciesByOrgFn                            func(ctx context.Context, organisationID string) ([]datastore.RoleDependency, error)
+	ListCookbookDependenciesByOrgFn                        func(ctx context.Context, orgName string) (map[string][]string, error)
+	CountDependenciesByRoleFn                              func(ctx context.Context, organisationID string) ([]datastore.RoleDependencyCount, error)
+	CountRolesPerCookbookFn                                func(ctx context.Context, organisationID string) ([]datastore.CookbookRoleCount, error)
+	InsertExportJobFn                                      func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error)
+	GetExportJobFn                                         func(ctx context.Context, id string) (*datastore.ExportJob, error)
+	UpdateExportJobStatusFn                                func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error
+	UpdateExportJobExpiredFn                               func(ctx context.Context, id string) error
+	ListExportJobsByStatusFn                               func(ctx context.Context, status string) ([]datastore.ExportJob, error)
+	ListExpiredExportJobsFn                                func(ctx context.Context, now time.Time) ([]datastore.ExportJob, error)
+	ListOwnersFn                                           func(ctx context.Context, f datastore.OwnerListFilter) ([]datastore.Owner, int, error)
+	ListOwnersWithSummaryFn                                func(ctx context.Context, f datastore.OwnerListFilter, targetChefVersion string) ([]datastore.OwnerWithSummary, int, error)
+	GetOwnerByNameFn                                       func(ctx context.Context, name string) (datastore.Owner, error)
+	InsertOwnerFn                                          func(ctx context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error)
+	UpdateOwnerFn                                          func(ctx context.Context, name string, p datastore.UpdateOwnerParams) (datastore.Owner, error)
+	DeleteOwnerFn                                          func(ctx context.Context, name string) (int, error)
+	CountAssignmentsByOwnerFn                              func(ctx context.Context, ownerName string) (map[string]int, error)
+	InsertAssignmentFn                                     func(ctx context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error)
+	ListAssignmentsByOwnerFn                               func(ctx context.Context, f datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error)
+	GetAssignmentFn                                        func(ctx context.Context, id int64) (datastore.OwnershipAssignment, error)
+	DeleteAssignmentFn                                     func(ctx context.Context, id int64) error
+	ReassignOwnershipFn                                    func(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (int, int, error)
+	LookupOwnershipFn                                      func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
+	GetOwnerReadinessSummaryFn                             func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
+	GetOwnerCookbookSummaryFn                              func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
+	GetOwnerGitRepoSummaryFn                               func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
+	GetGitRepoURLForCookbookFn                             func(ctx context.Context, cookbookName string) (string, error)
+	ListCommittersByRepoFn                                 func(ctx context.Context, f datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error)
+	GetOwnerEmailsForGitRepoFn                             func(ctx context.Context, gitRepoURL string) (map[string]bool, error)
+	InsertAuditEntryFn                                     func(ctx context.Context, p datastore.InsertAuditEntryParams) error
+	InsertCookstyleAuditEntryFn                            func(ctx context.Context, p datastore.InsertCookstyleAuditParams) error
+	ListAuditLogFn                                         func(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
+	DatabaseSizeFn                                         func(ctx context.Context) (int64, error)
+	DatabaseTableSizesFn                                   func(ctx context.Context) ([]datastore.TableSize, error)
+	PgStatStatementsAvailableFn                            func(ctx context.Context) bool
+	TopQueryStatsFn                                        func(ctx context.Context, limit int) ([]datastore.TopQueryStat, error)
+	TableStatsFn                                           func(ctx context.Context) ([]datastore.TableStat, error)
+	IndexStatsFn                                           func(ctx context.Context) ([]datastore.IndexStat, error)
+	ActiveQueriesFn                                        func(ctx context.Context) ([]datastore.ActiveQuery, error)
+	ResetPgStatsFn                                         func(ctx context.Context) error
+	VacuumFullFn                                           func(ctx context.Context) error
+	GetCookbookPlatformCoverageFn                          func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
+	GetKitchenAnalysisSummaryFn                            func(ctx context.Context) (*datastore.KitchenAnalysisSummary, error)
+	ListKitchenAnalysisResultsFn                           func(ctx context.Context) ([]datastore.KitchenAnalysisResult, error)
+	ListKitchenAnalysisResultsFilteredFn                   func(ctx context.Context, driverName string, hasLocalOverride *bool) ([]datastore.KitchenAnalysisResult, error)
+	GetKitchenAnalysisResultByNameFn                       func(ctx context.Context, gitRepoName string) (*datastore.KitchenAnalysisResult, error)
+	ListDiscoveredPlatformsFn                              func(ctx context.Context) ([]datastore.KitchenDiscoveredPlatform, error)
+	ListDiscoveredPlatformsFilteredFn                      func(ctx context.Context, osFamily string, minCount int) ([]datastore.KitchenDiscoveredPlatform, error)
+	ListTrackedVMsFn                                       func(ctx context.Context) ([]datastore.TrackedVM, error)
+	ListTrackedVMsFilteredFn                               func(ctx context.Context, status string) ([]datastore.TrackedVM, error)
+	GetTrackedVMFn                                         func(ctx context.Context, id string) (*datastore.TrackedVM, error)
+	ListOrphanedVMsFn                                      func(ctx context.Context) ([]datastore.TrackedVM, error)
+	MarkVMDestroyedFn                                      func(ctx context.Context, id string) error
+	MarkVMOrphanedFn                                       func(ctx context.Context, id string) error
+	CountTrackedVMsByStatusFn                              func(ctx context.Context) (map[string]int, error)
+	ListNodeKitchenRunsFn                                  func(ctx context.Context, orgName string) ([]datastore.NodeKitchenRun, error)
+	ListNodeKitchenRunsByNodeFn                            func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeKitchenRun, error)
+	GetNodeKitchenRunFn                                    func(ctx context.Context, id string) (*datastore.NodeKitchenRun, error)
+	DeleteNodeKitchenRunFn                                 func(ctx context.Context, id string) error
 
 	// Kitchen Batches
-	CreateKitchenBatchFn       func(ctx context.Context, p datastore.CreateKitchenBatchParams) (datastore.KitchenBatch, error)
-	GetKitchenBatchFn          func(ctx context.Context, id string) (datastore.KitchenBatch, error)
-	ListKitchenBatchesFn       func(ctx context.Context) ([]datastore.KitchenBatch, error)
-	UpdateKitchenBatchFn       func(ctx context.Context, id string, p datastore.UpdateKitchenBatchParams) (datastore.KitchenBatch, error)
-	UpdateKitchenBatchStatusFn func(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error)
-	DeleteKitchenBatchFn       func(ctx context.Context, id string) error
+	CreateKitchenBatchFn                func(ctx context.Context, p datastore.CreateKitchenBatchParams) (datastore.KitchenBatch, error)
+	GetKitchenBatchFn                   func(ctx context.Context, id string) (datastore.KitchenBatch, error)
+	ListKitchenBatchesFn                func(ctx context.Context) ([]datastore.KitchenBatch, error)
+	UpdateKitchenBatchFn                func(ctx context.Context, id string, p datastore.UpdateKitchenBatchParams) (datastore.KitchenBatch, error)
+	UpdateKitchenBatchStatusFn          func(ctx context.Context, id string, status string, now time.Time) (datastore.KitchenBatch, error)
+	DeleteKitchenBatchFn                func(ctx context.Context, id string) error
 	UpdateKitchenBatchStatusIfCurrentFn func(ctx context.Context, id string, expectedStatus string, newStatus string, now time.Time) (datastore.KitchenBatch, error)
-	CancelStaleBatchesFn func(ctx context.Context, now time.Time) (int, error)
+	CancelStaleBatchesFn                func(ctx context.Context, now time.Time) (int, error)
 
 	// Kitchen Batch Instances
-	CreateBatchInstanceFn          func(ctx context.Context, p datastore.CreateBatchInstanceParams) (datastore.KitchenBatchInstance, error)
-	CreateBatchInstancesFn         func(ctx context.Context, params []datastore.CreateBatchInstanceParams) ([]datastore.KitchenBatchInstance, error)
-	ListBatchInstancesFn           func(ctx context.Context, batchID string) ([]datastore.KitchenBatchInstance, error)
-	UpdateBatchInstanceStatusFn    func(ctx context.Context, id string, status string, errorMessage string, now time.Time) error
-	CountBatchInstancesByStatusFn  func(ctx context.Context, batchID string) (map[string]int, error)
-	CancelPendingBatchInstancesFn  func(ctx context.Context, batchID string) (int, error)
+	CreateBatchInstanceFn         func(ctx context.Context, p datastore.CreateBatchInstanceParams) (datastore.KitchenBatchInstance, error)
+	CreateBatchInstancesFn        func(ctx context.Context, params []datastore.CreateBatchInstanceParams) ([]datastore.KitchenBatchInstance, error)
+	ListBatchInstancesFn          func(ctx context.Context, batchID string) ([]datastore.KitchenBatchInstance, error)
+	UpdateBatchInstanceStatusFn   func(ctx context.Context, id string, status string, errorMessage string, now time.Time) error
+	CountBatchInstancesByStatusFn func(ctx context.Context, batchID string) (map[string]int, error)
+	CancelPendingBatchInstancesFn func(ctx context.Context, batchID string) (int, error)
 
 	// Git Repo Kitchen Exclusions
 	SetGitRepoKitchenExclusionFn   func(ctx context.Context, name string, reason string, excludedBy string) error
@@ -174,30 +178,43 @@ type mockStore struct {
 	DeleteKitchenExclusionFn       func(ctx context.Context, id string) (bool, error)
 
 	// Git Kitchen Results (per-instance)
-	UpsertGitKitchenResultFn         func(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error)
-	GetGitKitchenResultFn            func(ctx context.Context, id string) (datastore.GitKitchenResult, error)
-	ListGitKitchenResultsFn          func(ctx context.Context) ([]datastore.GitKitchenResult, error)
-	ListActiveGitKitchenResultsFn    func(ctx context.Context) ([]datastore.GitKitchenResult, error)
-	ListGitKitchenResultsByRepoFn    func(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
-	DeleteGitKitchenResultsByRepoFn  func(ctx context.Context, gitRepoName string) error
+	UpsertGitKitchenResultFn        func(ctx context.Context, p datastore.UpsertGitKitchenResultParams) (datastore.GitKitchenResult, error)
+	GetGitKitchenResultFn           func(ctx context.Context, id string) (datastore.GitKitchenResult, error)
+	ListGitKitchenResultsFn         func(ctx context.Context) ([]datastore.GitKitchenResult, error)
+	ListActiveGitKitchenResultsFn   func(ctx context.Context) ([]datastore.GitKitchenResult, error)
+	ListGitKitchenResultsByRepoFn   func(ctx context.Context, gitRepoName string) ([]datastore.GitKitchenResult, error)
+	DeleteGitKitchenResultsByRepoFn func(ctx context.Context, gitRepoName string) error
 
 	// Kitchen Run Queue
-	EnqueueKitchenRunFn            func(ctx context.Context, p datastore.EnqueueKitchenRunParams) (*datastore.KitchenQueueItem, error)
-	ClaimNextKitchenRunFn          func(ctx context.Context) (*datastore.KitchenQueueItem, error)
-	CompleteKitchenRunFn           func(ctx context.Context, id string, output string) error
-	FailKitchenRunFn               func(ctx context.Context, id string, errMsg string, output string) error
-	CancelKitchenRunFn             func(ctx context.Context, id string) error
-	CancelKitchenRunsByBatchFn     func(ctx context.Context, batchID string) (int64, error)
-	RetryKitchenRunFn              func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
-	ListKitchenQueueFn             func(ctx context.Context, f datastore.KitchenQueueFilter) ([]datastore.KitchenQueueItem, error)
-	GetKitchenQueueItemFn          func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
-	GetKitchenQueueStatsFn         func(ctx context.Context) (*datastore.KitchenQueueStats, error)
-	MarkInterruptedKitchenRunsFn   func(ctx context.Context) (int64, error)
+	EnqueueKitchenRunFn          func(ctx context.Context, p datastore.EnqueueKitchenRunParams) (*datastore.KitchenQueueItem, error)
+	ClaimNextKitchenRunFn        func(ctx context.Context) (*datastore.KitchenQueueItem, error)
+	CompleteKitchenRunFn         func(ctx context.Context, id string, output string) error
+	FailKitchenRunFn             func(ctx context.Context, id string, errMsg string, output string) error
+	CancelKitchenRunFn           func(ctx context.Context, id string) error
+	CancelKitchenRunsByBatchFn   func(ctx context.Context, batchID string) (int64, error)
+	RetryKitchenRunFn            func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
+	ListKitchenQueueFn           func(ctx context.Context, f datastore.KitchenQueueFilter) ([]datastore.KitchenQueueItem, error)
+	GetKitchenQueueItemFn        func(ctx context.Context, id string) (*datastore.KitchenQueueItem, error)
+	GetKitchenQueueStatsFn       func(ctx context.Context) (*datastore.KitchenQueueStats, error)
+	MarkInterruptedKitchenRunsFn func(ctx context.Context) (int64, error)
 
 	// Diagnostic bundle
-	ListAppliedMigrationsFn  func(ctx context.Context) ([]datastore.AppliedMigration, error)
-	InventoryStatsFn         func(ctx context.Context, includeNames bool) (datastore.InventoryStatsResult, error)
-	DependencyDepthStatsFn   func(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error)
+	ListAppliedMigrationsFn func(ctx context.Context) ([]datastore.AppliedMigration, error)
+	InventoryStatsFn        func(ctx context.Context, includeNames bool) (datastore.InventoryStatsResult, error)
+	DependencyDepthStatsFn  func(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error)
+
+	// Cop classifications
+	ListCopClassificationsFn          func(ctx context.Context) ([]datastore.CopClassification, error)
+	ListOffenceFingerprintsByTargetFn func(ctx context.Context, targetChefVersion string) ([]datastore.CookstyleOffenceFingerprint, error)
+	UpsertCopClassificationFn         func(ctx context.Context, copName, classification, reason, createdBy string) error
+	DeleteCopClassificationFn         func(ctx context.Context, copName string) error
+
+	// Custom cop definitions
+	ListCustomCopDefinitionsFn  func(ctx context.Context) ([]datastore.CustomCopDefinition, error)
+	GetCustomCopDefinitionFn    func(ctx context.Context, copName string) (*datastore.CustomCopDefinition, error)
+	CreateCustomCopDefinitionFn func(ctx context.Context, d datastore.CustomCopDefinition) (string, error)
+	UpdateCustomCopDefinitionFn func(ctx context.Context, d *datastore.CustomCopDefinition) error
+	DeleteCustomCopDefinitionFn func(ctx context.Context, copName string) error
 }
 
 // compile-time check
@@ -391,6 +408,19 @@ func (m *mockStore) CountNodeReadiness(ctx context.Context, organisationName, ta
 		return m.CountNodeReadinessFn(ctx, organisationName, targetChefVersion)
 	}
 	return 0, 0, 0, nil
+}
+
+func (m *mockStore) CountNodeReadinessByStatus(ctx context.Context, organisationName, targetChefVersion string) (int, int, int, int, error) {
+	if m.CountNodeReadinessByStatusFn != nil {
+		return m.CountNodeReadinessByStatusFn(ctx, organisationName, targetChefVersion)
+	}
+	// Fall back to the 3-value count (needs_review = 0) so tests that only set
+	// CountNodeReadinessFn keep working with the default-off behaviour.
+	if m.CountNodeReadinessFn != nil {
+		total, ready, blocked, err := m.CountNodeReadinessFn(ctx, organisationName, targetChefVersion)
+		return total, ready, 0, blocked, err
+	}
+	return 0, 0, 0, 0, nil
 }
 
 // -----------------------------------------------------------------
@@ -680,6 +710,24 @@ func (m *mockStore) DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) err
 		return m.DeleteAllGitRepoAutocorrectPreviewsFn(ctx)
 	}
 	return nil
+}
+
+// -----------------------------------------------------------------
+// Cookstyle violations browser
+// -----------------------------------------------------------------
+
+func (m *mockStore) ListAllServerCookbookCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.ServerCookbookCookstyleResult, error) {
+	if m.ListAllServerCookbookCookstyleResultsByTargetVersionFn != nil {
+		return m.ListAllServerCookbookCookstyleResultsByTargetVersionFn(ctx, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListGitRepoCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.GitRepoCookstyleResult, error) {
+	if m.ListGitRepoCookstyleResultsByTargetVersionFn != nil {
+		return m.ListGitRepoCookstyleResultsByTargetVersionFn(ctx, targetChefVersion)
+	}
+	return nil, nil
 }
 
 // -----------------------------------------------------------------
@@ -980,6 +1028,13 @@ func (m *mockStore) GetOwnerEmailsForGitRepo(ctx context.Context, gitRepoURL str
 func (m *mockStore) InsertAuditEntry(ctx context.Context, p datastore.InsertAuditEntryParams) error {
 	if m.InsertAuditEntryFn != nil {
 		return m.InsertAuditEntryFn(ctx, p)
+	}
+	return nil
+}
+
+func (m *mockStore) InsertCookstyleAuditEntry(ctx context.Context, p datastore.InsertCookstyleAuditParams) error {
+	if m.InsertCookstyleAuditEntryFn != nil {
+		return m.InsertCookstyleAuditEntryFn(ctx, p)
 	}
 	return nil
 }
@@ -1389,7 +1444,7 @@ func newTestRouterWithMock(store *mockStore) *Router {
 }
 
 // newTestRouterWithMockAndConfig is like newTestRouterWithMock but accepts a
-// custom *config.Config (e.g. to set TargetChefVersions).
+// custom *config.Config (e.g. to set TargetChefVersion).
 func newTestRouterWithMockAndConfig(store *mockStore, cfg *config.Config) *Router {
 	hub := NewEventHub()
 	go hub.Run()
@@ -1528,4 +1583,75 @@ func (m *mockStore) DeleteOwnerAlias(_ context.Context, _ string) error {
 
 func (m *mockStore) SuggestOwnerAliases(_ context.Context, _ string, _ int) ([]datastore.AliasSuggestion, error) {
 	return nil, nil
+}
+
+// ---------------------------------------------------------------------------
+// Cop classification stubs
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error) {
+	if m.ListCopClassificationsFn != nil {
+		return m.ListCopClassificationsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListOffenceFingerprintsByTarget(ctx context.Context, targetChefVersion string) ([]datastore.CookstyleOffenceFingerprint, error) {
+	if m.ListOffenceFingerprintsByTargetFn != nil {
+		return m.ListOffenceFingerprintsByTargetFn(ctx, targetChefVersion)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) UpsertCopClassification(ctx context.Context, copName, classification, reason, createdBy string) error {
+	if m.UpsertCopClassificationFn != nil {
+		return m.UpsertCopClassificationFn(ctx, copName, classification, reason, createdBy)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteCopClassification(ctx context.Context, copName string) error {
+	if m.DeleteCopClassificationFn != nil {
+		return m.DeleteCopClassificationFn(ctx, copName)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Custom cop definition stubs
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) ListCustomCopDefinitions(ctx context.Context) ([]datastore.CustomCopDefinition, error) {
+	if m.ListCustomCopDefinitionsFn != nil {
+		return m.ListCustomCopDefinitionsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetCustomCopDefinition(ctx context.Context, copName string) (*datastore.CustomCopDefinition, error) {
+	if m.GetCustomCopDefinitionFn != nil {
+		return m.GetCustomCopDefinitionFn(ctx, copName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CreateCustomCopDefinition(ctx context.Context, d datastore.CustomCopDefinition) (string, error) {
+	if m.CreateCustomCopDefinitionFn != nil {
+		return m.CreateCustomCopDefinitionFn(ctx, d)
+	}
+	return "mock-id", nil
+}
+
+func (m *mockStore) UpdateCustomCopDefinition(ctx context.Context, d *datastore.CustomCopDefinition) error {
+	if m.UpdateCustomCopDefinitionFn != nil {
+		return m.UpdateCustomCopDefinitionFn(ctx, d)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteCustomCopDefinition(ctx context.Context, copName string) error {
+	if m.DeleteCustomCopDefinitionFn != nil {
+		return m.DeleteCustomCopDefinitionFn(ctx, copName)
+	}
+	return nil
 }

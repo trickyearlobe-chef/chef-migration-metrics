@@ -33,6 +33,11 @@ type CookbookFilter struct {
 	// Values: "compatible", "incompatible", "scan_error", "untested".
 	Compatibility string
 
+	// CookstyleStatus filters by the materialised SoT rollup status.
+	// Values: "ready", "needs_review", "blocked", "untested".
+	// Supports comma-separated multi-select.
+	CookstyleStatus string
+
 	// TKStatus filters by Test Kitchen status derived from matching git repos.
 	// Values: "passed", "failed", "partial", "untested", "no_repo".
 	// Supports comma-separated multi-select.
@@ -66,8 +71,9 @@ type CookbookFilterRow struct {
 	IsStaleCookbook  bool   `json:"is_stale_cookbook"`
 	DownloadStatus   string `json:"download_status"`
 	DownloadError    string `json:"download_error,omitempty"`
-	Compatibility    string `json:"compatibility"` // "compatible", "incompatible", "scan_error", "untested"
-	TKStatus         string `json:"tk_status"`     // "passed", "failed", "partial", "untested", "no_repo"
+	Compatibility    string `json:"compatibility"`    // "compatible", "incompatible", "scan_error", "untested"
+	CookstyleStatus  string `json:"cookstyle_status"` // "ready", "needs_review", "blocked", "untested" (SoT rollup)
+	TKStatus         string `json:"tk_status"`        // "passed", "failed", "partial", "untested", "no_repo"
 }
 
 // buildCookbookFilterQuery constructs the SQL query and args for
@@ -104,9 +110,16 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 		sb.WriteString("      WHEN csr.passed = true THEN 'compatible'\n")
 		sb.WriteString("      WHEN csr.passed = false THEN 'incompatible'\n")
 		sb.WriteString("      ELSE 'untested'\n")
-		sb.WriteString("    END AS compatibility\n")
+		sb.WriteString("    END AS compatibility,\n")
+		// CookStyle rollup status (SoT, classification-derived). Scan errors and
+		// missing results have no assessable rollup, so they read 'untested'.
+		sb.WriteString("    CASE\n")
+		sb.WriteString("      WHEN csr.error_message IS NOT NULL AND csr.error_message != '' THEN 'untested'\n")
+		sb.WriteString("      ELSE COALESCE(NULLIF(csr.cookstyle_status, ''), 'untested')\n")
+		sb.WriteString("    END AS cookstyle_status\n")
 	} else {
-		sb.WriteString("    'untested' AS compatibility\n")
+		sb.WriteString("    'untested' AS compatibility,\n")
+		sb.WriteString("    'untested' AS cookstyle_status\n")
 	}
 
 	sb.WriteString("  FROM server_cookbooks sc\n")
@@ -156,7 +169,7 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 	// --- Outer SELECT with optional compatibility and TK filter ---
 	sb.WriteString("SELECT cb.organisation_name, cb.name, cb.version,\n")
 	sb.WriteString("       cb.is_active, cb.is_stale_cookbook, cb.download_status,\n")
-	sb.WriteString("       cb.download_error, cb.compatibility,\n")
+	sb.WriteString("       cb.download_error, cb.compatibility, cb.cookstyle_status,\n")
 	sb.WriteString("       COALESCE(tk.tk_status, 'no_repo') AS tk_status,\n")
 	sb.WriteString("       COUNT(*) OVER() AS total_count\n")
 	sb.WriteString("  FROM cb\n")
@@ -166,6 +179,12 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 	if f.Compatibility != "" {
 		sb.WriteString("   AND cb.compatibility = " + nextArg() + "\n")
 		args = append(args, f.Compatibility)
+	}
+
+	if f.CookstyleStatus != "" {
+		csValues := strings.Split(f.CookstyleStatus, ",")
+		sb.WriteString("   AND cb.cookstyle_status = ANY(" + nextArg() + ")\n")
+		args = append(args, pq.Array(csValues))
 	}
 
 	if f.TKStatus != "" {
@@ -243,6 +262,7 @@ func (db *DB) ListCookbooksFiltered(ctx context.Context, f CookbookFilter) ([]Co
 			&r.DownloadStatus,
 			&downloadError,
 			&r.Compatibility,
+			&r.CookstyleStatus,
 			&r.TKStatus,
 			&rowTotal,
 		); err != nil {

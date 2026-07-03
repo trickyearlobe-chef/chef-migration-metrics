@@ -291,7 +291,6 @@ func TestBuildCookstyleArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 	assertContains(t, args, "--format")
 	assertContains(t, args, "json")
 	assertContains(t, args, "--config")
-	assertContains(t, args, "--only")
 	assertContains(t, args, cookbookDir)
 
 	// --target-chef-version is NOT a CLI flag — it is written to .rubocop_cmm.yml.
@@ -301,36 +300,31 @@ func TestBuildCookstyleArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 		}
 	}
 
-	// Find the --only value — should use Chef/Deprecations format.
-	for i, a := range args {
-		if a == "--only" && i+1 < len(args) {
-			val := args[i+1]
-			if !strings.Contains(val, "Chef/Deprecations") {
-				t.Errorf("--only should include Chef/Deprecations, got %q", val)
-			}
-			if !strings.Contains(val, "Chef/Correctness") {
-				t.Errorf("--only should include Chef/Correctness, got %q", val)
-			}
+	// The scan runs the full ruleset — classification, not a department filter,
+	// decides the verdict. --only must not be present (see Chunk A).
+	for _, a := range args {
+		if a == "--only" {
+			t.Error("--only should not be present — the scan runs the full ruleset")
 		}
 	}
 
 	// Verify sidecar .rubocop_cmm.yml was written with TargetChefVersion.
-	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	data, err := os.ReadFile(filepath.Join(cookbookDir, remediation.CmmConfigName))
 	if err != nil {
-		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+		t.Fatalf("expected %s to be written: %v", remediation.CmmConfigName, err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "TargetChefVersion: 18.0") {
-		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should contain TargetChefVersion: 18.0, got:\n%s", remediation.CmmConfigName, content)
 	}
 
 	// Without an existing .rubocop.yml the sidecar should require cookstyle
 	// so the TargetChefVersion parameter is recognised.
 	if !strings.Contains(content, "require:") || !strings.Contains(content, "cookstyle") {
-		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should require cookstyle when no cookbook config exists, got:\n%s", remediation.CmmConfigName, content)
 	}
 	if strings.Contains(content, "inherit_from") {
-		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should NOT inherit_from when no cookbook .rubocop.yml exists, got:\n%s", remediation.CmmConfigName, content)
 	}
 
 	// Original .rubocop.yml must not exist (we must not clobber cookbook config).
@@ -356,16 +350,16 @@ func TestBuildCookstyleArgs_WithTargetVersion_WithCookbookConfig(t *testing.T) {
 	}
 
 	// Verify sidecar inherits from the cookbook's own config.
-	data, err := os.ReadFile(filepath.Join(cookbookDir, cmmConfigName))
+	data, err := os.ReadFile(filepath.Join(cookbookDir, remediation.CmmConfigName))
 	if err != nil {
-		t.Fatalf("expected %s to be written: %v", cmmConfigName, err)
+		t.Fatalf("expected %s to be written: %v", remediation.CmmConfigName, err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "inherit_from: .rubocop.yml") {
-		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", remediation.CmmConfigName, content)
 	}
 	if !strings.Contains(content, "TargetChefVersion: 17.0") {
-		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", cmmConfigName, content)
+		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", remediation.CmmConfigName, content)
 	}
 
 	// The cookbook's original .rubocop.yml must be preserved.
@@ -382,8 +376,8 @@ func TestBuildCookstyleArgs_NoSidecarWithoutTarget(t *testing.T) {
 	cookbookDir := t.TempDir()
 	buildCookstyleArgs(cookbookDir, "")
 
-	if _, err := os.Stat(filepath.Join(cookbookDir, cmmConfigName)); err == nil {
-		t.Errorf("%s should not be written when target version is empty", cmmConfigName)
+	if _, err := os.Stat(filepath.Join(cookbookDir, remediation.CmmConfigName)); err == nil {
+		t.Errorf("%s should not be written when target version is empty", remediation.CmmConfigName)
 	}
 }
 
@@ -971,7 +965,7 @@ func TestExecutor_CalledWithFormatJSON(t *testing.T) {
 	}
 }
 
-func TestExecutor_CalledWithOnlyWhenTargetVersion(t *testing.T) {
+func TestExecutor_FullRulesetWithConfigWhenTargetVersion(t *testing.T) {
 	cookbookDir := t.TempDir()
 	fe := &fakeCookstyleExecutor{
 		stdout: makeCleanJSON(),
@@ -986,15 +980,10 @@ func TestExecutor_CalledWithOnlyWhenTargetVersion(t *testing.T) {
 	}
 
 	args := fe.calls[0].Args
-	foundOnly := false
 	foundConfig := false
-	for i, a := range args {
-		if a == "--only" && i+1 < len(args) {
-			foundOnly = true
-			val := args[i+1]
-			if !strings.Contains(val, "Chef/Deprecations") || !strings.Contains(val, "Chef/Correctness") {
-				t.Errorf("--only value should contain both namespaces, got %q", val)
-			}
+	for _, a := range args {
+		if a == "--only" {
+			t.Error("--only should not be present — the scan runs the full ruleset")
 		}
 		if a == "--config" {
 			foundConfig = true
@@ -1002,9 +991,6 @@ func TestExecutor_CalledWithOnlyWhenTargetVersion(t *testing.T) {
 		if a == "--target-chef-version" {
 			t.Error("--target-chef-version should not be a CLI arg; it belongs in .rubocop_cmm.yml")
 		}
-	}
-	if !foundOnly {
-		t.Errorf("expected --only in args when target version is set, got %v", args)
 	}
 	if !foundConfig {
 		t.Errorf("expected --config in args when target version is set, got %v", args)
@@ -1454,13 +1440,11 @@ func (s *CookstyleScanner) scanOneNoDB(
 		TargetChefVersion: targetChefVersion,
 	}
 
-	args := buildCookstyleArgs(cookbookDir, targetChefVersion)
-
 	scanStart := time.Now()
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr := s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr, _ := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
 	sr.RawStdout = stdout

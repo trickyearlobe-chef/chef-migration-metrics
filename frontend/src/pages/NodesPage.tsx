@@ -39,6 +39,7 @@ function formatOhaiTime(ohaiTime?: number): string {
 
 const READINESS_OPTIONS: { value: string; label: string }[] = [
   { value: "ready", label: "✓ Ready" },
+  { value: "needs_review", label: "◐ Needs Review" },
   { value: "blocked", label: "✗ Blocked" },
   { value: "cookbooks_blocked", label: "📦 Cookbooks Blocked" },
   { value: "disk_blocked", label: "💾 Disk Blocked" },

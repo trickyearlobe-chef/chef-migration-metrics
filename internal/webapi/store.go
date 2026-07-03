@@ -150,6 +150,11 @@ type DataStore interface {
 	// the given organisation and target Chef version.
 	CountNodeReadiness(ctx context.Context, organisationName, targetChefVersion string) (total, ready, blocked int, err error)
 
+	// CountNodeReadinessByStatus returns the total and per-rollup-status counts
+	// (ready / needs_review / blocked) for the given organisation and target
+	// Chef version.
+	CountNodeReadinessByStatus(ctx context.Context, organisationName, targetChefVersion string) (total, ready, needsReview, blocked int, err error)
+
 	// -----------------------------------------------------------------
 	// Server cookbooks
 	// -----------------------------------------------------------------
@@ -333,6 +338,58 @@ type DataStore interface {
 	// DeleteAllGitRepoAutocorrectPreviews removes all git repo autocorrect
 	// preview records.
 	DeleteAllGitRepoAutocorrectPreviews(ctx context.Context) error
+
+	// -----------------------------------------------------------------
+	// Cookstyle violations browser
+	// -----------------------------------------------------------------
+
+	// ListAllServerCookbookCookstyleResultsByTargetVersion returns all
+	// server cookbook cookstyle results for the given target Chef version,
+	// across all organisations.
+	ListAllServerCookbookCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.ServerCookbookCookstyleResult, error)
+
+	// ListGitRepoCookstyleResultsByTargetVersion returns all git repo
+	// cookstyle results for a single target Chef version.
+	ListGitRepoCookstyleResultsByTargetVersion(ctx context.Context, targetChefVersion string) ([]datastore.GitRepoCookstyleResult, error)
+
+	// -----------------------------------------------------------------
+	// Cop classifications
+	// -----------------------------------------------------------------
+
+	// ListCopClassifications returns all operator overrides (keyed by cop_name;
+	// single active target).
+	ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error)
+
+	// UpsertCopClassification creates or updates a cop classification.
+	UpsertCopClassification(ctx context.Context, copName, classification, reason, createdBy string) error
+
+	// DeleteCopClassification removes an operator override.
+	DeleteCopClassification(ctx context.Context, copName string) error
+
+	// ListOffenceFingerprintsByTarget returns every stored offence fingerprint
+	// row for a target version (all results), ordered by result identity then
+	// scanned_at ascending — the bulk feed for the CookStyle rollup recompute
+	// trend.
+	ListOffenceFingerprintsByTarget(ctx context.Context, targetChefVersion string) ([]datastore.CookstyleOffenceFingerprint, error)
+
+	// -----------------------------------------------------------------
+	// Custom cop definitions
+	// -----------------------------------------------------------------
+
+	// ListCustomCopDefinitions returns all custom cop definitions.
+	ListCustomCopDefinitions(ctx context.Context) ([]datastore.CustomCopDefinition, error)
+
+	// GetCustomCopDefinition returns a custom cop definition by cop_name.
+	GetCustomCopDefinition(ctx context.Context, copName string) (*datastore.CustomCopDefinition, error)
+
+	// CreateCustomCopDefinition inserts a new custom cop and returns its ID.
+	CreateCustomCopDefinition(ctx context.Context, d datastore.CustomCopDefinition) (string, error)
+
+	// UpdateCustomCopDefinition updates an existing custom cop by cop_name.
+	UpdateCustomCopDefinition(ctx context.Context, d *datastore.CustomCopDefinition) error
+
+	// DeleteCustomCopDefinition removes a custom cop by cop_name.
+	DeleteCustomCopDefinition(ctx context.Context, copName string) error
 
 	// -----------------------------------------------------------------
 	// Log entries
@@ -544,6 +601,10 @@ type DataStore interface {
 	// ListAuditLog returns audit log entries matching the given filter,
 	// in reverse chronological order.
 	ListAuditLog(ctx context.Context, f datastore.AuditLogFilter) ([]datastore.OwnershipAuditEntry, int, error)
+
+	// InsertCookstyleAuditEntry records a CookStyle criteria-change event
+	// (cop reclassification or custom-cop change) for explainability.
+	InsertCookstyleAuditEntry(ctx context.Context, p datastore.InsertCookstyleAuditParams) error
 
 	// -----------------------------------------------------------------
 	// System health

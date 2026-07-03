@@ -144,7 +144,7 @@ func TestLookupCop_SpecificCops(t *testing.T) {
 			copName:        "Chef/Deprecations/UserDeprecatedSupportsProperty",
 			wantURL:        "https://docs.chef.io/deprecations/",
 			wantIntro:      "12.14",
-			wantRemoved:    "15.0",
+			wantRemoved:    "13.0",
 			hasReplacement: true,
 		},
 	}
@@ -256,7 +256,10 @@ func TestAllCopMappings_AllFieldsPopulated(t *testing.T) {
 		if m.MigrationURL == "" {
 			t.Errorf("cop %q has empty MigrationURL", m.CopName)
 		}
-		if m.IntroducedIn == "" {
+		// Generic-Ruby removals (Lint/ department) have no Chef IntroducedIn
+		// version — the deprecation lived in Ruby, not Chef.
+		isGenericRuby := len(m.CopName) > len("Lint/") && m.CopName[:len("Lint/")] == "Lint/"
+		if m.IntroducedIn == "" && !isGenericRuby {
 			t.Errorf("cop %q has empty IntroducedIn", m.CopName)
 		}
 		if m.ReplacementPattern == "" {
@@ -271,9 +274,12 @@ func TestAllCopMappings_AllCopsInCorrectNamespace(t *testing.T) {
 	for _, m := range all {
 		isDeprecation := len(m.CopName) > len("Chef/Deprecations/") && m.CopName[:len("Chef/Deprecations/")] == "Chef/Deprecations/"
 		isCorrectness := len(m.CopName) > len("Chef/Correctness/") && m.CopName[:len("Chef/Correctness/")] == "Chef/Correctness/"
+		// Generic-Ruby verified removals (e.g. Lint/DeprecatedClassMethods) live
+		// in the RuboCop Lint department, not a Chef namespace.
+		isGenericRuby := len(m.CopName) > len("Lint/") && m.CopName[:len("Lint/")] == "Lint/"
 
-		if !isDeprecation && !isCorrectness {
-			t.Errorf("cop %q is not in ChefDeprecations/ or ChefCorrectness/ namespace", m.CopName)
+		if !isDeprecation && !isCorrectness && !isGenericRuby {
+			t.Errorf("cop %q is not in a recognised namespace (Chef/Deprecations, Chef/Correctness, or Lint/)", m.CopName)
 		}
 	}
 }
