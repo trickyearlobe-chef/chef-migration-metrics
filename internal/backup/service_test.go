@@ -357,13 +357,23 @@ func TestService_RunRestore_WhileActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	go svc.RunCreate(ctx, &m)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		svc.RunCreate(ctx, &m)
+	}()
 
 	// Try to restore while backup is active
 	err = svc.RunRestore(ctx, "some-id")
 	if err == nil {
 		t.Fatal("expected error when another operation is active")
 	}
+
+	// Let the active create finish before the test returns, so t.TempDir's
+	// RemoveAll cleanup does not race the background pg_dump goroutine (which
+	// blocks until ctx is cancelled).
+	cancel()
+	<-done
 }
 
 func contains(s, substr string) bool {
