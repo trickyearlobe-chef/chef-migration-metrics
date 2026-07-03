@@ -542,7 +542,7 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr, addonInfo := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
+	stdout, stderr, exitCode, addonInfo, execErr := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
 	logAddonScanInfo(log, addonInfo)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
@@ -690,7 +690,7 @@ func (s *CookstyleScanner) scanOneGitRepo(
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr, addonInfo := s.runScanWithAddonIsolation(scanCtx, repoDir, targetChefVersion)
+	stdout, stderr, exitCode, addonInfo, execErr := s.runScanWithAddonIsolation(scanCtx, repoDir, targetChefVersion)
 	logAddonScanInfo(log, addonInfo)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
@@ -895,7 +895,7 @@ type addonScanInfo struct {
 func (s *CookstyleScanner) runScanWithAddonIsolation(
 	scanCtx context.Context,
 	cookbookDir, targetChefVersion string,
-) (stdout, stderr string, exitCode int, execErr error, info addonScanInfo) {
+) (stdout, stderr string, exitCode int, info addonScanInfo, execErr error) {
 	addonCops, problems := s.effectiveAddonRequires()
 	info.problems = problems
 	info.requires = addonCops
@@ -913,12 +913,12 @@ func (s *CookstyleScanner) runScanWithAddonIsolation(
 			info.loadFailed = true
 			info.addonExit = exitCode
 			info.cleanExit = cExit
-			return cStdout, cStderr, cExit, cErr, info
+			return cStdout, cStderr, cExit, info, cErr
 		}
 		// The clean run also errored — a genuine cookbook/cookstyle error, not an
 		// addon load failure. Fall through with the original result.
 	}
-	return stdout, stderr, exitCode, execErr, info
+	return stdout, stderr, exitCode, info, execErr
 }
 
 // logAddonScanInfo surfaces addon path problems and load failures to the log.

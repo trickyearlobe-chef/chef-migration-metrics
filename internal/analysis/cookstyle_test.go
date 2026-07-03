@@ -1444,7 +1444,7 @@ func (s *CookstyleScanner) scanOneNoDB(
 	scanCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	stdout, stderr, exitCode, execErr, _ := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
+	stdout, stderr, exitCode, _, execErr := s.runScanWithAddonIsolation(scanCtx, cookbookDir, targetChefVersion)
 	sr.Duration = time.Since(scanStart)
 	sr.ScannedAt = time.Now().UTC()
 	sr.RawStdout = stdout

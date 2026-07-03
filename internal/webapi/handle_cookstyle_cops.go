@@ -844,7 +844,7 @@ func parseFullOffenses(data []byte) []fullOffense {
 		var result []fullOffense
 		for _, fe := range fileEntries {
 			for _, o := range fe.Offenses {
-				result = append(result, fullOffense{CopName: o.CopName, Severity: o.Severity, Correctable: o.Correctable})
+				result = append(result, fullOffense(o))
 			}
 		}
 		return result

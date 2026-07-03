@@ -83,9 +83,23 @@ func StreamCSV(ctx context.Context, w io.Writer, cols []Column, src RowSource) (
 // order in each object. It returns the number of objects written.
 func StreamJSON(ctx context.Context, w io.Writer, cols []Column, src RowSource) (int, error) {
 	bw := bufio.NewWriter(w)
-	if _, err := bw.WriteString("["); err != nil {
-		return 0, err
+
+	// put/putBytes accumulate the first write error; subsequent calls are no-ops
+	// (mirroring bufio's sticky error) so we can write freely and check werr at
+	// page boundaries and before Flush.
+	var werr error
+	put := func(s string) {
+		if werr == nil {
+			_, werr = bw.WriteString(s)
+		}
 	}
+	putBytes := func(b []byte) {
+		if werr == nil {
+			_, werr = bw.Write(b)
+		}
+	}
+
+	put("[")
 
 	// Pre-marshal the keys once.
 	keys := make([]string, len(cols))
@@ -105,29 +119,35 @@ func StreamJSON(ctx context.Context, w io.Writer, cols []Column, src RowSource) 
 		}
 		for _, row := range rows {
 			if count > 0 {
-				bw.WriteString(",")
+				put(",")
 			}
-			bw.WriteString("\n  {")
+			put("\n  {")
 			for i, c := range cols {
 				if i > 0 {
-					bw.WriteString(",")
+					put(",")
 				}
-				bw.WriteString(keys[i])
-				bw.WriteString(":")
+				put(keys[i])
+				put(":")
 				vb, err := json.Marshal(c.Value(row))
 				if err != nil {
 					return count, fmt.Errorf("export: marshalling JSON cell %q: %w", c.Header, err)
 				}
-				bw.Write(vb)
+				putBytes(vb)
 			}
-			bw.WriteString("}")
+			put("}")
 			count++
+		}
+		if werr != nil {
+			return count, werr
 		}
 	}
 	if count > 0 {
-		bw.WriteString("\n")
+		put("\n")
 	}
-	bw.WriteString("]\n")
+	put("]\n")
+	if werr != nil {
+		return count, werr
+	}
 	return count, bw.Flush()
 }
 
@@ -136,6 +156,12 @@ func StreamJSON(ctx context.Context, w io.Writer, cols []Column, src RowSource) 
 // empty name are skipped. It returns the number of names written.
 func StreamChefSearchQuery(ctx context.Context, w io.Writer, name func(row any) string, src RowSource) (int, error) {
 	bw := bufio.NewWriter(w)
+	var werr error
+	put := func(s string) {
+		if werr == nil {
+			_, werr = bw.WriteString(s)
+		}
+	}
 	count := 0
 	for {
 		rows, err := src.Next(ctx)
@@ -151,15 +177,21 @@ func StreamChefSearchQuery(ctx context.Context, w io.Writer, name func(row any) 
 				continue
 			}
 			if count > 0 {
-				bw.WriteString(" OR ")
+				put(" OR ")
 			}
-			bw.WriteString("name:")
-			bw.WriteString(strings.ReplaceAll(n, " ", `\ `))
+			put("name:")
+			put(strings.ReplaceAll(n, " ", `\ `))
 			count++
+		}
+		if werr != nil {
+			return count, werr
 		}
 	}
 	if count > 0 {
-		bw.WriteString("\n")
+		put("\n")
+	}
+	if werr != nil {
+		return count, werr
 	}
 	return count, bw.Flush()
 }
