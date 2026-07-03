@@ -19,10 +19,11 @@ import (
 type mockRescoreStore struct {
 	serverResults   []datastore.CookstyleRescoreRow
 	gitResults      []datastore.CookstyleRescoreRow
-	serverUpdates   []datastore.CookstylePassedUpdate
-	gitUpdates      []datastore.CookstylePassedUpdate
-	recomputedGit   []gitRepoKey
-	classifications map[string][]datastore.CopClassification // target version -> overrides
+	serverUpdates        []datastore.CookstylePassedUpdate
+	gitUpdates           []datastore.CookstylePassedUpdate
+	recomputedGit        []gitRepoKey
+	recomputedAllTargets []string // targets passed to RecomputeAllGitRepoCookstyleStatus
+	classifications      map[string][]datastore.CopClassification // target version -> overrides
 }
 
 type gitRepoKey struct {
@@ -57,6 +58,11 @@ func (m *mockRescoreStore) BatchUpdateGitRepoCookstylePassed(ctx context.Context
 
 func (m *mockRescoreStore) RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error {
 	m.recomputedGit = append(m.recomputedGit, gitRepoKey{name, url, targetVersion})
+	return nil
+}
+
+func (m *mockRescoreStore) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error {
+	m.recomputedAllTargets = append(m.recomputedAllTargets, targetChefVersion)
 	return nil
 }
 
@@ -130,6 +136,14 @@ func TestRescoreCookstyleResults_ConsistentStatusNoChange(t *testing.T) {
 	if len(store.gitUpdates) != 0 {
 		t.Errorf("gitUpdates = %d, want 0", len(store.gitUpdates))
 	}
+	// Regression (git-repo cookstyle drift): even though NO result changed, the
+	// bulk git-repo re-materialisation must still run. A repo whose result status
+	// is unchanged but whose materialised git_repos.cookstyle_status is stale
+	// (e.g. blanked by a target-version reset) would otherwise never be healed,
+	// which is what made the Git Repos list disagree with the dashboard summary.
+	if len(store.recomputedAllTargets) != 1 || store.recomputedAllTargets[0] != "18" {
+		t.Errorf("recomputedAllTargets = %v, want [18] even with no result changes", store.recomputedAllTargets)
+	}
 }
 
 func TestRescoreCookstyleResults_ClassificationFlipsVerdict(t *testing.T) {
@@ -195,9 +209,10 @@ func TestRescoreCookstyleResults_ClassificationFlipsVerdict(t *testing.T) {
 		t.Errorf("gitUpdates[0].Passed = %v, want false", store.gitUpdates[0].Passed)
 	}
 
-	// Check compatibility recompute was triggered
-	if len(store.recomputedGit) != 1 {
-		t.Fatalf("recomputedGit = %d, want 1", len(store.recomputedGit))
+	// The bulk git-repo status re-materialisation runs for the target present in
+	// the results (unconditional, not gated on which results changed).
+	if len(store.recomputedAllTargets) != 1 || store.recomputedAllTargets[0] != "18" {
+		t.Errorf("recomputedAllTargets = %v, want [18]", store.recomputedAllTargets)
 	}
 }
 

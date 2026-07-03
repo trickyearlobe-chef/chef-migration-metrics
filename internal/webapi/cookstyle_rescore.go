@@ -20,7 +20,11 @@ type CookstyleRescoreStore interface {
 	ListGitRepoCookstyleResultsForRescore(ctx context.Context) ([]datastore.CookstyleRescoreRow, error)
 	BatchUpdateServerCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
 	BatchUpdateGitRepoCookstylePassed(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
-	RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error
+	// RecomputeAllGitRepoCookstyleStatus re-materialises every git repo's
+	// cookstyle/compatibility status from its latest result for the target, so
+	// the materialised list columns cannot drift from the results (which the
+	// dashboard summary reads directly).
+	RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error
 	// ListCopClassifications returns operator classification overrides (keyed by
 	// cop_name; single active target), used to build the single-source-of-truth
 	// derivation. The resolver still applies RemovedIn auto-seed + curated
@@ -87,12 +91,17 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 		if err := store.BatchUpdateGitRepoCookstylePassed(ctx, gitUpdates); err != nil {
 			return result, fmt.Errorf("rescore: updating git results: %w", err)
 		}
-		// Recompute compatibility status for each affected git repo.
-		for _, u := range gitUpdates {
-			name, url, targetVersion := parseGitRescoreID(u.ID)
-			if err := store.RecomputeGitRepoCompatibilityStatus(ctx, name, url, targetVersion); err != nil {
-				rescoreLogf(logger, "ERROR", "rescore: recomputing git repo status for %s: %v", name, err)
-			}
+	}
+
+	// Re-materialise every git repo's status from its latest result —
+	// unconditionally, and for every target present in the results, not just the
+	// changed ones. A repo whose result status did not change this pass but whose
+	// materialised column is stale (e.g. blanked by a prior target-version reset)
+	// is only healed here; gating on gitUpdates would leave it drifted, which is
+	// what made the Git Repos list disagree with the dashboard summary.
+	for _, tv := range distinctRescoreTargets(gitRows) {
+		if err := store.RecomputeAllGitRepoCookstyleStatus(ctx, tv); err != nil {
+			rescoreLogf(logger, "ERROR", "rescore: recomputing git repo status for target %s: %v", tv, err)
 		}
 	}
 
@@ -145,14 +154,20 @@ func rescoreRows(rows []datastore.CookstyleRescoreRow, rules analysis.CookstyleF
 	return updates
 }
 
-// parseGitRescoreID extracts repo name, URL, and target version from a
-// pipe-delimited git rescore ID ("name|url|target_chef_version").
-func parseGitRescoreID(id string) (name, url, targetVersion string) {
-	parts := strings.SplitN(id, "|", 3)
-	if len(parts) == 3 {
-		return parts[0], parts[1], parts[2]
+// distinctRescoreTargets returns the unique target Chef versions referenced by a
+// set of git rescore rows (the target is the final pipe-delimited segment of the
+// row ID). Used to drive the bulk git-repo status re-materialisation per target.
+func distinctRescoreTargets(rows []datastore.CookstyleRescoreRow) []string {
+	seen := map[string]bool{}
+	var targets []string
+	for i := range rows {
+		tv := rescoreTargetFromID(rows[i].ID)
+		if !seen[tv] {
+			seen[tv] = true
+			targets = append(targets, tv)
+		}
 	}
-	return id, "", ""
+	return targets
 }
 
 // rescoreTargetFromID extracts the target Chef version from a rescore ID. For

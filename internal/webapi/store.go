@@ -341,6 +341,11 @@ type DataStore interface {
 	// for a single git repo from its latest cookstyle result.
 	RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, targetVersion string) error
 
+	// RecomputeAllGitRepoCookstyleStatus re-materialises every git repo's
+	// cookstyle/compatibility status from its latest result for the target Chef
+	// version, so the materialised list columns cannot drift from the results.
+	RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error
+
 	// DeleteAllGitRepoComplexities removes all git repo complexity records.
 	DeleteAllGitRepoComplexities(ctx context.Context) error
 

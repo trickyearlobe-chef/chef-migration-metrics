@@ -1,0 +1,4 @@
+-- No structural change to revert: 0046 is a one-time data repair that
+-- re-materialises git_repos status columns from existing cookstyle results. The
+-- prior (drifted) values are not recoverable and not worth restoring, so the
+-- down migration is intentionally a no-op.
