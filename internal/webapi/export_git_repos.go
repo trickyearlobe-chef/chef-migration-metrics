@@ -19,7 +19,6 @@ func (r *Router) gitReposExportSpec() exportSpec {
 		Filename:  "git_repos",
 		Columns:   gitRepoExportColumns(),
 		NewSource: newGitRepoExportSource,
-		Count:     countGitRepoExport,
 	}
 }
 
@@ -36,12 +35,6 @@ func newGitRepoExportSource(ctx context.Context, r *Router, req *http.Request) (
 	return export.NewSliceSource(anyRows), nil
 }
 
-func countGitRepoExport(ctx context.Context, r *Router, req *http.Request) (int, error) {
-	f := gitRepoFilterFromValues(req.URL.Query())
-	f.Limit = 1
-	_, total, err := r.db.ListGitReposFiltered(ctx, f)
-	return total, err
-}
 
 // gitRepoExportColumns is the single source of truth for the git-repo export's
 // CSV header and JSON keys.

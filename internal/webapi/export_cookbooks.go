@@ -19,7 +19,6 @@ func (r *Router) cookbooksExportSpec() exportSpec {
 		Filename:  "cookbooks",
 		Columns:   cookbookExportColumns(),
 		NewSource: newCookbookExportSource,
-		Count:     countCookbookExport,
 	}
 }
 
@@ -61,23 +60,6 @@ func newCookbookExportSource(ctx context.Context, r *Router, req *http.Request) 
 		anyRows[i] = rows[i]
 	}
 	return export.NewSliceSource(anyRows), nil
-}
-
-func countCookbookExport(ctx context.Context, r *Router, req *http.Request) (int, error) {
-	f, of, err := r.cookbookExportFilter(req)
-	if err != nil {
-		return 0, err
-	}
-	if of.Active {
-		src, sErr := newCookbookExportSource(ctx, r, req)
-		if sErr != nil {
-			return 0, sErr
-		}
-		return drainCount(ctx, src)
-	}
-	f.Limit = 1
-	_, total, err := r.db.ListCookbooksFiltered(ctx, f)
-	return total, err
 }
 
 // cookbookExportColumns is the single source of truth for the cookbook export's

@@ -21,7 +21,6 @@ func (r *Router) rolesExportSpec() exportSpec {
 		Filename:  "roles",
 		Columns:   roleExportColumns(),
 		NewSource: newRoleExportSource,
-		Count:     countRoleExport,
 	}
 }
 
@@ -92,16 +91,6 @@ func newRoleExportSource(ctx context.Context, r *Router, req *http.Request) (exp
 		anyRows[i] = rows[i]
 	}
 	return export.NewSliceSource(anyRows), nil
-}
-
-func countRoleExport(ctx context.Context, r *Router, req *http.Request) (int, error) {
-	// Roles are small and TK filtering is post-query, so counting the fully
-	// materialised source is both exact and cheap.
-	src, err := newRoleExportSource(ctx, r, req)
-	if err != nil {
-		return 0, err
-	}
-	return drainCount(ctx, src)
 }
 
 // roleExportColumns is the single source of truth for the role export's CSV

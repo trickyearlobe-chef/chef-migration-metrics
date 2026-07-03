@@ -142,9 +142,6 @@ func TestHandleExports_Sync_NodesCSV(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
 		t.Errorf("Content-Type = %q, want text/csv", ct)
 	}
-	if rc := w.Header().Get("X-Export-Row-Count"); rc != "1" {
-		t.Errorf("X-Export-Row-Count = %q, want 1", rc)
-	}
 	body := w.Body.String()
 	// ohai_time renders as a datetime (like collected_at), not a unix epoch.
 	wantOhai := time.Unix(1719400000, 0).UTC().Format("2006-01-02T15:04:05Z")
@@ -262,68 +259,48 @@ func TestHandleExports_Sync_GitRepos(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/exports — async dispatch
+// POST /api/v1/exports — large sets stream synchronously (no async job path)
 // ---------------------------------------------------------------------------
 
-func TestHandleExports_Async_LargeEstimate(t *testing.T) {
+func TestHandleExports_LargeSet_StreamsSynchronously(t *testing.T) {
+	// Even a large node set streams inline as a download — no export job is
+	// created (the async job path is retired / future scaffolding).
 	insertCalled := false
 	store := oneOrgStore()
-	store.CountNodeSnapshotsFilteredFn = func(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error) { return 50000, nil }
 	store.InsertExportJobFn = func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
 		insertCalled = true
-		if p.ExportType != "nodes" {
-			t.Errorf("InsertExportJob export_type = %q, want nodes", p.ExportType)
-		}
-		return &datastore.ExportJob{ID: "job-async-001", ExportType: p.ExportType, Format: p.Format, Status: datastore.ExportStatusPending, RequestedAt: time.Now().UTC()}, nil
-	}
-	store.UpdateExportJobStatusFn = func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error {
-		return nil
+		return nil, fmt.Errorf("InsertExportJob must not be called")
 	}
 	store.ListNodeSnapshotsForExportFn = func(ctx context.Context, f datastore.NodeSnapshotFilter, after datastore.NodeSnapshotCursor, limit int) ([]datastore.NodeSnapshot, error) {
-		return nil, nil
+		if after.Valid {
+			return nil, nil
+		}
+		return []datastore.NodeSnapshot{
+			{OrganisationName: "production", NodeName: "web1", CollectedAt: time.Now().UTC()},
+			{OrganisationName: "production", NodeName: "web2", CollectedAt: time.Now().UTC()},
+		}, nil
 	}
 
 	cfg := exportTestConfig()
-	cfg.Exports.AsyncThreshold = 100
-	cfg.Exports.OutputDirectory = t.TempDir()
+	cfg.Exports.AsyncThreshold = 1 // would previously have forced async
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=nodes&format=csv", nil)
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (streamed); body: %s", w.Code, w.Body.String())
 	}
-	if !insertCalled {
-		t.Error("InsertExportJob was not called for async export")
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Errorf("Content-Type = %q, want text/csv", ct)
 	}
-	var resp exportJobResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
+	if insertCalled {
+		t.Error("InsertExportJob was called — the async job path should be retired")
 	}
-	if resp.JobID != "job-async-001" {
-		t.Errorf("job_id = %q, want job-async-001", resp.JobID)
-	}
-}
-
-func TestHandleExports_Async_InsertJobError(t *testing.T) {
-	store := oneOrgStore()
-	store.CountNodeSnapshotsFilteredFn = func(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error) { return 50000, nil }
-	store.InsertExportJobFn = func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
-		return nil, fmt.Errorf("database connection lost")
-	}
-
-	cfg := exportTestConfig()
-	cfg.Exports.AsyncThreshold = 100
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=nodes&format=csv", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", w.Code)
+	body := w.Body.String()
+	if !strings.Contains(body, "web1") || !strings.Contains(body, "web2") {
+		t.Errorf("streamed CSV missing rows:\n%s", body)
 	}
 }
 
