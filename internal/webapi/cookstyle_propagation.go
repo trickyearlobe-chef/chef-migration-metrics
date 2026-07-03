@@ -45,14 +45,14 @@ type CookstylePropagationStore interface {
 // ComplexityRescorer re-scores classification-weighted complexity for a scoped
 // set of cookbooks/repos. *remediation.ComplexityScorer satisfies it.
 type ComplexityRescorer interface {
-	ScoreServerCookbooks(ctx context.Context, cookbooks []datastore.ServerCookbook, targetChefVersions []string, organisationID string) remediation.ComplexityBatchResult
-	ScoreGitRepos(ctx context.Context, repos []datastore.GitRepo, targetChefVersions []string, organisationID string) remediation.ComplexityBatchResult
+	ScoreServerCookbooks(ctx context.Context, cookbooks []datastore.ServerCookbook, targetChefVersion, organisationID string) remediation.ComplexityBatchResult
+	ScoreGitRepos(ctx context.Context, repos []datastore.GitRepo, targetChefVersion, organisationID string) remediation.ComplexityBatchResult
 }
 
 // ReadinessRecomputer re-evaluates node readiness for an organisation.
 // *analysis.ReadinessEvaluator satisfies it.
 type ReadinessRecomputer interface {
-	EvaluateOrganisation(ctx context.Context, organisationID, orgName string, targetChefVersions []string) ([]analysis.ReadinessResult, error)
+	EvaluateOrganisation(ctx context.Context, organisationID, orgName, targetChefVersion string) ([]analysis.ReadinessResult, error)
 }
 
 // CookstylePropagator runs the scoped recompute closure after a classification
@@ -176,7 +176,7 @@ func (p *CookstylePropagator) PropagateReclassification(ctx context.Context, cop
 	// scoped to organisations owning affected server cookbooks.
 	if p.readiness != nil {
 		for org := range readinessOrgs {
-			if _, rerr := p.readiness.EvaluateOrganisation(ctx, org, org, []string{targetChefVersion}); rerr != nil {
+			if _, rerr := p.readiness.EvaluateOrganisation(ctx, org, org, targetChefVersion); rerr != nil {
 				p.logf("ERROR", "propagation: recomputing readiness for org %q: %v", org, rerr)
 				continue
 			}
@@ -214,11 +214,11 @@ func (p *CookstylePropagator) rescoreComplexity(ctx context.Context, target stri
 
 	for org := range complexityOrgs {
 		if cbs := cbsByOrg[org]; len(cbs) > 0 {
-			p.scorer.ScoreServerCookbooks(ctx, cbs, []string{target}, org)
+			p.scorer.ScoreServerCookbooks(ctx, cbs, target, org)
 			result.CookbooksRescored += len(cbs)
 		}
 		if len(gitRepos) > 0 {
-			p.scorer.ScoreGitRepos(ctx, gitRepos, []string{target}, org)
+			p.scorer.ScoreGitRepos(ctx, gitRepos, target, org)
 		}
 	}
 	if len(gitRepos) > 0 && len(complexityOrgs) > 0 {

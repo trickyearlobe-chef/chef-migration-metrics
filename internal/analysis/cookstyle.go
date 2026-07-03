@@ -368,7 +368,7 @@ type CookstyleBatchResult struct {
 }
 
 // ScanGitRepos runs CookStyle against all provided git repos in parallel,
-// once per target Chef Client version. For each combination it:
+// against the given target Chef Client version. For each repo it:
 //
 //  1. Checks if a result already exists — git repos are skipped only when
 //     the HEAD commit SHA has not changed since the last scan.
@@ -383,7 +383,7 @@ type CookstyleBatchResult struct {
 func (s *CookstyleScanner) ScanGitRepos(
 	ctx context.Context,
 	repos []datastore.GitRepo,
-	targetChefVersions []string,
+	targetChefVersion string,
 	repoDir func(gr datastore.GitRepo) string,
 ) CookstyleBatchResult {
 	start := time.Now()
@@ -401,13 +401,7 @@ func (s *CookstyleScanner) ScanGitRepos(
 		if dir == "" {
 			continue
 		}
-		if len(targetChefVersions) == 0 {
-			items = append(items, workItem{Repo: gr, Dir: dir})
-		} else {
-			for _, tv := range targetChefVersions {
-				items = append(items, workItem{Repo: gr, TargetVersion: tv, Dir: dir})
-			}
-		}
+		items = append(items, workItem{Repo: gr, TargetVersion: targetChefVersion, Dir: dir})
 	}
 
 	result := CookstyleBatchResult{

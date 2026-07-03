@@ -78,13 +78,13 @@ type mockComplexityRescorer struct {
 	gitOrgs     []string
 }
 
-func (m *mockComplexityRescorer) ScoreServerCookbooks(ctx context.Context, cbs []datastore.ServerCookbook, targets []string, org string) remediation.ComplexityBatchResult {
+func (m *mockComplexityRescorer) ScoreServerCookbooks(ctx context.Context, cbs []datastore.ServerCookbook, target string, org string) remediation.ComplexityBatchResult {
 	m.serverCalls = append(m.serverCalls, cbs)
 	m.serverOrgs = append(m.serverOrgs, org)
 	return remediation.ComplexityBatchResult{}
 }
 
-func (m *mockComplexityRescorer) ScoreGitRepos(ctx context.Context, repos []datastore.GitRepo, targets []string, org string) remediation.ComplexityBatchResult {
+func (m *mockComplexityRescorer) ScoreGitRepos(ctx context.Context, repos []datastore.GitRepo, target string, org string) remediation.ComplexityBatchResult {
 	m.gitCalls = append(m.gitCalls, repos)
 	m.gitOrgs = append(m.gitOrgs, org)
 	return remediation.ComplexityBatchResult{}
@@ -96,7 +96,7 @@ type mockReadinessRecomputer struct {
 	orgs []string
 }
 
-func (m *mockReadinessRecomputer) EvaluateOrganisation(ctx context.Context, orgID, orgName string, targets []string) ([]analysis.ReadinessResult, error) {
+func (m *mockReadinessRecomputer) EvaluateOrganisation(ctx context.Context, orgID, orgName string, target string) ([]analysis.ReadinessResult, error) {
 	m.orgs = append(m.orgs, orgID)
 	return nil, nil
 }

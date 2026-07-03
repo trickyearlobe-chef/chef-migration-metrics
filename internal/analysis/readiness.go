@@ -426,12 +426,12 @@ type workItem struct {
 }
 
 // EvaluateOrganisation evaluates readiness for all nodes in the given
-// organisation across all specified target Chef Client versions.
+// organisation against the specified target Chef Client version.
 //
 // The method:
 //  1. Loads the latest node snapshots for the organisation
 //  2. Pre-loads the server cookbook ID map for efficient lookups
-//  3. Fans out work items (node × target version) across a bounded worker pool
+//  3. Fans out work items (one per node) across a bounded worker pool
 //  4. Persists each result to the node_readiness table
 //
 // Returns the collected results and any error that prevented evaluation from
@@ -441,9 +441,9 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 	ctx context.Context,
 	organisationID string,
 	orgName string,
-	targetChefVersions []string,
+	targetChefVersion string,
 ) ([]ReadinessResult, error) {
-	if len(targetChefVersions) == 0 {
+	if targetChefVersion == "" {
 		return nil, nil
 	}
 
@@ -468,24 +468,22 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 
 	// Step 3: Bulk-load all lookup data into an in-memory cache.
 	// This replaces ~12M individual DB queries with ~5 bulk queries.
-	cache, err := buildReadinessCache(ctx, e.db, organisationID, targetChefVersions, e.reviewBlocksReadinessNow())
+	cache, err := buildReadinessCache(ctx, e.db, organisationID, []string{targetChefVersion}, e.reviewBlocksReadinessNow())
 	if err != nil {
 		return nil, fmt.Errorf("readiness: building cache: %w", err)
 	}
 
 	// Step 4: Build work items.
-	items := make([]workItem, 0, len(snapshots)*len(targetChefVersions))
+	items := make([]workItem, 0, len(snapshots))
 	for _, snap := range snapshots {
-		for _, tv := range targetChefVersions {
-			items = append(items, workItem{
-				snapshot:          snap,
-				targetChefVersion: tv,
-			})
-		}
+		items = append(items, workItem{
+			snapshot:          snap,
+			targetChefVersion: targetChefVersion,
+		})
 	}
 
-	e.logInfo(orgName, fmt.Sprintf("evaluating %d nodes × %d target versions = %d work items",
-		len(snapshots), len(targetChefVersions), len(items)))
+	e.logInfo(orgName, fmt.Sprintf("evaluating %d nodes for target version %s = %d work items",
+		len(snapshots), targetChefVersion, len(items)))
 
 	// Step 5: Fan out. evaluateOne uses only in-memory lookups (no DB calls),
 	// so context cancellation cannot corrupt evaluations.

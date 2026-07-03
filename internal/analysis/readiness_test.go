@@ -2039,7 +2039,7 @@ func TestEvaluateOrganisation_Basic(t *testing.T) {
 	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2057,7 +2057,7 @@ func TestEvaluateOrganisation_Basic(t *testing.T) {
 	}
 }
 
-func TestEvaluateOrganisation_MultipleTargetVersions(t *testing.T) {
+func TestEvaluateOrganisation_TargetVersionDrivesVerdict(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
 		makeSnapshot("org-1", "node-1", false,
@@ -2071,23 +2071,29 @@ func TestEvaluateOrganisation_MultipleTargetVersions(t *testing.T) {
 	ds.addCSResult("org-1", "apt", "7.4.0", "17.0", false) // fails for 17.0
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"17.0", "18.0"})
+
+	// 18.0 has a passing CookStyle result → node is ready.
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results (1 node × 2 versions), got %d", len(results))
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (1 node), got %d", len(results))
+	}
+	if !results[0].IsReady {
+		t.Errorf("expected node ready for 18.0")
 	}
 
-	readyCount := 0
-	for _, r := range results {
-		if r.IsReady {
-			readyCount++
-		}
+	// 17.0 has a failing CookStyle result → node is not ready.
+	results, err = e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "17.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	// 18.0 has passing CS result, 17.0 has failing CS result.
-	if readyCount != 1 {
-		t.Errorf("expected 1 ready result (18.0), got %d", readyCount)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (1 node), got %d", len(results))
+	}
+	if results[0].IsReady {
+		t.Errorf("expected node not ready for 17.0")
 	}
 }
 
@@ -2096,7 +2102,7 @@ func TestEvaluateOrganisation_NoSnapshots(t *testing.T) {
 	// No snapshots.
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2105,14 +2111,14 @@ func TestEvaluateOrganisation_NoSnapshots(t *testing.T) {
 	}
 }
 
-func TestEvaluateOrganisation_NoTargetVersions(t *testing.T) {
+func TestEvaluateOrganisation_NoTargetVersion(t *testing.T) {
 	ds := newFakeReadinessDS()
 	ds.snapshots = []datastore.NodeSnapshot{
 		makeSnapshot("org-1", "node-1", false, nil, nil),
 	}
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", nil)
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2126,7 +2132,7 @@ func TestEvaluateOrganisation_ListSnapshotsError(t *testing.T) {
 	ds.listSnapshotsErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -2143,7 +2149,7 @@ func TestEvaluateOrganisation_CookbookIDMapError(t *testing.T) {
 	ds.listServerCookbooksErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -2167,7 +2173,7 @@ func TestEvaluateOrganisation_UpsertErrorDoesNotAbortBatch(t *testing.T) {
 	ds.upsertErr = fmt.Errorf("disk full")
 
 	e := NewReadinessEvaluator(ds, nil, 4, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err != nil {
 		t.Fatalf("batch should not fail: %v", err)
 	}
@@ -2192,7 +2198,7 @@ func TestEvaluateOrganisation_ContextCancellation(t *testing.T) {
 	cancel() // Cancel immediately.
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048) // concurrency=1 to make cancellation more observable
-	results, err := e.EvaluateOrganisation(ctx, "org-1", "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(ctx, "org-1", "org-1", "18.0")
 	if err != nil {
 		t.Fatalf("unexpected error (context cancellation is not a batch error): %v", err)
 	}
@@ -2218,7 +2224,7 @@ func TestEvaluateOrganisation_ConcurrencyBounded(t *testing.T) {
 	ds.addCSResult("org-1", "apt", "7.4.0", "18.0", true)
 
 	e := NewReadinessEvaluator(ds, nil, 3, 2048) // concurrency=3
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2342,7 +2348,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitRepos(t *testing.T) {
 	ds.gitRepoErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error from bulk-load failure")
 	}
@@ -2359,7 +2365,7 @@ func TestEvaluateOrganisation_BulkLoadError_ServerCSResults(t *testing.T) {
 	ds.csErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error from bulk-load failure")
 	}
@@ -2376,7 +2382,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitCSResults(t *testing.T) {
 	ds.gitCSErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error from bulk-load failure")
 	}
@@ -2393,7 +2399,7 @@ func TestEvaluateOrganisation_BulkLoadError_ServerComplexities(t *testing.T) {
 	ds.complexityErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error from bulk-load failure")
 	}
@@ -2410,7 +2416,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitComplexities(t *testing.T) {
 	ds.gitComplexityErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error from bulk-load failure")
 	}
@@ -2427,7 +2433,7 @@ func TestEvaluateOrganisation_BulkLoadError_GitTK(t *testing.T) {
 	ds.gitTKErr = fmt.Errorf("connection refused")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	_, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err == nil {
 		t.Fatal("expected error from bulk-load failure")
 	}
@@ -2450,7 +2456,7 @@ func TestEvaluateOrganisation_EmptyCache(t *testing.T) {
 	ds.addCookbookID("nginx", "2.0.0", "org-1")
 
 	e := NewReadinessEvaluator(ds, nil, 1, 2048)
-	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", []string{"18.0"})
+	results, err := e.EvaluateOrganisation(context.Background(), "org-1", "org-1", "18.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

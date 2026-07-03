@@ -288,8 +288,7 @@ type ComplexityBatchResult struct {
 }
 
 // ScoreServerCookbooks computes complexity scores for all provided server
-// cookbooks against all provided target Chef versions. For each combination
-// it:
+// cookbooks against the active target Chef version. For each cookbook it:
 //
 //  1. Loads the CookStyle scan result and classifies offenses.
 //  2. Loads the auto-correct preview (if any) for manual fix counts.
@@ -299,7 +298,7 @@ type ComplexityBatchResult struct {
 func (s *ComplexityScorer) ScoreServerCookbooks(
 	ctx context.Context,
 	cookbooks []datastore.ServerCookbook,
-	targetChefVersions []string,
+	targetChefVersion string,
 	organisationID string,
 ) ComplexityBatchResult {
 	start := time.Now()
@@ -324,12 +323,10 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 
 	var items []workItem
 	for _, cb := range cookbooks {
-		for _, tv := range targetChefVersions {
-			items = append(items, workItem{Cookbook: cb, TargetVersion: tv})
-		}
+		items = append(items, workItem{Cookbook: cb, TargetVersion: targetChefVersion})
 	}
 
-	classifiers := s.classifierCache(ctx, targetChefVersions)
+	classifiers := s.classifierCache(ctx, []string{targetChefVersion})
 
 	batch := ComplexityBatchResult{
 		Total:   len(items),
@@ -365,7 +362,7 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 }
 
 // ScoreGitRepos computes complexity scores for all provided git repos
-// against all provided target Chef versions. For each combination it:
+// against the active target Chef version. For each repo it:
 //
 //  1. Loads the CookStyle scan result and classifies offenses.
 //  2. Loads the auto-correct preview (if any) for manual fix counts.
@@ -376,7 +373,7 @@ func (s *ComplexityScorer) ScoreServerCookbooks(
 func (s *ComplexityScorer) ScoreGitRepos(
 	ctx context.Context,
 	repos []datastore.GitRepo,
-	targetChefVersions []string,
+	targetChefVersion string,
 	organisationID string,
 ) ComplexityBatchResult {
 	start := time.Now()
@@ -391,8 +388,8 @@ func (s *ComplexityScorer) ScoreGitRepos(
 		}
 	}
 
-	// Pre-load TK counts for all target versions (bulk query).
-	tkCounts, tkErr := s.db.ListGitKitchenCountsByTargetVersions(ctx, targetChefVersions)
+	// Pre-load TK counts for the target version (bulk query).
+	tkCounts, tkErr := s.db.ListGitKitchenCountsByTargetVersions(ctx, []string{targetChefVersion})
 	if tkErr != nil {
 		log.Error(fmt.Sprintf("failed to load TK counts: %v", tkErr))
 		if tkCounts == nil {
@@ -408,12 +405,10 @@ func (s *ComplexityScorer) ScoreGitRepos(
 
 	var items []workItem
 	for _, repo := range repos {
-		for _, tv := range targetChefVersions {
-			items = append(items, workItem{Repo: repo, TargetVersion: tv})
-		}
+		items = append(items, workItem{Repo: repo, TargetVersion: targetChefVersion})
 	}
 
-	classifiers := s.classifierCache(ctx, targetChefVersions)
+	classifiers := s.classifierCache(ctx, []string{targetChefVersion})
 
 	batch := ComplexityBatchResult{
 		Total:   len(items),
