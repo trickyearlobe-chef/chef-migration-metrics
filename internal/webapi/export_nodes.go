@@ -31,7 +31,6 @@ func (r *Router) nodesExportSpec() exportSpec {
 		Filename:           "nodes",
 		Columns:            nodeExportColumns(),
 		NewSource:          newNodeExportSource,
-		Count:              countNodeExport,
 		SupportsChefSearch: true,
 		ChefSearchName:     func(row any) string { return row.(nodeExportRow).resp.NodeName },
 	}
@@ -169,25 +168,6 @@ func (s *nodeExportSource) enrich(ctx context.Context, page []datastore.NodeSnap
 		})
 	}
 	return out
-}
-
-func countNodeExport(ctx context.Context, r *Router, req *http.Request) (int, error) {
-	f, _, err := r.nodeExportFilter(req)
-	if err != nil {
-		return 0, err
-	}
-	if of := parseOwnerFilter(req); of.Active {
-		all, _, err := r.db.ListNodeSnapshotsFiltered(ctx, f)
-		if err != nil {
-			return 0, err
-		}
-		ownedKeys, err := r.resolveOwnershipFilter(ctx, of, "node")
-		if err != nil {
-			return 0, err
-		}
-		return len(filterByOwnershipKey(all, ownedKeys, of, func(n datastore.NodeSnapshot) string { return n.NodeName })), nil
-	}
-	return r.db.CountNodeSnapshotsFiltered(ctx, f)
 }
 
 // nodeExportColumns is the single source of truth for the node export's CSV

@@ -9,9 +9,12 @@
 **Requires: `viewer` role (or higher).**
 
 Requests an export of **the current filtered list** for one of the four list views.
-There is one export type per list view. Small exports are returned synchronously;
-large exports (exceeding the configured `exports.async_threshold`) are processed
-asynchronously.
+There is one export type per list view. The export is **always streamed
+synchronously** to the response as a file download — regardless of size — because
+the encoder holds only one page in memory at a time (see Scale). There is no
+asynchronous job path in the active flow; the `export_jobs` table and the
+status/download endpoints below are dormant scaffolding reserved for a future
+pipeline export (logstash / elasticsearch / observe).
 
 **Filter parity (invariant).** The export MUST return exactly the set of entities the
 corresponding list endpoint returns for the same filters. This is guaranteed by
@@ -52,11 +55,12 @@ merges them into one verdict. Back-compat: rows retain any boolean `passed`/`rea
 field (`passed = status not in {Blocked}`) alongside `status` so existing downstream
 automation keeps working; new consumers read `status`.
 
-**Scale.** A full unfiltered `nodes` export can exceed 120,000 rows. Exports stream
-the filtered result set (paging the shared datastore query and writing each page
-straight to the output); the full set is never held in memory, and the `csv`/`json`
-row set is complete rather than capped. Any safety ceiling that is ever hit is
-reported (never a silent truncation).
+**Scale.** A full unfiltered `nodes` export can exceed 120,000 rows. The handler
+streams the filtered result set directly to the HTTP response — paging the shared
+datastore query (keyset pagination for nodes) and writing each page straight to the
+response body — so the full set is never held in memory and the `csv`/`json` row set
+is complete rather than capped. The data comes from local Postgres, so the streamed
+download completes quickly even at full scale.
 
 **Export formats:**
 
@@ -66,52 +70,23 @@ reported (never a silent truncation).
 | `json` | JSON array of objects (all list views) |
 | `chef_search_query` | Chef search query string — **`nodes` only** — `name:<node> OR …` for the node names in the current filtered set, for use with `knife ssh` / search |
 
-**Response (200) — synchronous (small export):**
+**Response (200):** The export data is streamed directly with `Content-Type`
+(`text/csv`, `application/json`, or `text/plain` for `chef_search_query`) and a
+`Content-Disposition: attachment` filename (`<export_type>_<date>.<ext>`). This is
+the only success response — there is no `202`/job path.
 
-Returns the export data directly with the appropriate `Content-Type` header (`text/csv`, `application/json`, or `text/plain`).
+**Response (400):** Unknown `export_type` or `format`, or `chef_search_query`
+requested for a non-`nodes` export.
 
-**Response (202) — asynchronous (large export):**
+### Reserved (future): async job endpoints
 
-```json
-{
-  "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "status": "pending",
-  "message": "Export queued. Poll GET /api/v1/exports/a1b2c3d4-... for status."
-}
-```
+The `export_jobs` table and the endpoints below exist as dormant scaffolding for a
+future async / pipeline export (logstash / elasticsearch / observe). They are **not
+part of the active export flow** — `POST /api/v1/exports` never creates a job — and
+are documented here only so the reservation is explicit. Do not build against them
+until that feature is specified.
 
-### Get Export Status
-
-#### `GET /api/v1/exports/:job_id`
-
-Returns the status of an asynchronous export job.
-
-**Response (200):**
-
-```json
-{
-  "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "export_type": "nodes",
-  "format": "csv",
-  "status": "completed",
-  "row_count": 1800,
-  "file_size_bytes": 245760,
-  "download_url": "/api/v1/exports/a1b2c3d4-.../download",
-  "requested_at": "2024-06-15T16:00:00Z",
-  "completed_at": "2024-06-15T16:00:15Z",
-  "expires_at": "2024-06-16T16:00:15Z"
-}
-```
-
-### Download Export
-
-#### `GET /api/v1/exports/:job_id/download`
-
-Downloads the completed export file.
-
-**Response (200):** File download with appropriate `Content-Type` and `Content-Disposition` headers.
-
-**Response (404):** Export not found or expired.
-**Response (409):** Export not yet completed.
+- `GET /api/v1/exports/:job_id` — job status
+- `GET /api/v1/exports/:job_id/download` — completed-file download
 
 ---

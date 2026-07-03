@@ -4,16 +4,14 @@
 package webapi
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,33 +67,24 @@ func (r *Router) handleExports(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	estimatedRows, err := spec.Count(req.Context(), r, req)
-	if err != nil {
-		r.logf("ERROR", "estimating export rows for %s: %v", exportType, err)
-		WriteInternalError(w, "Failed to prepare export.")
-		return
-	}
-
-	asyncThreshold := r.liveConfig().Exports.AsyncThreshold
-	if asyncThreshold <= 0 {
-		asyncThreshold = 10000
-	}
-
-	if estimatedRows > asyncThreshold {
-		r.handleAsyncExport(w, req, spec, exportType, format)
-	} else {
-		r.handleSyncExport(w, req, spec, exportType, format)
-	}
+	// Always stream the export directly to the response as a download. The
+	// encoder holds only one page in memory, so this works at any size. There is
+	// no async job path — that remains future scaffolding (the export_jobs table
+	// and status/download endpoints are dormant, reserved for pipeline export to
+	// logstash/elasticsearch/observe).
+	r.streamExportDownload(w, req, spec, exportType, format)
 }
 
-// handleSyncExport streams a small export into a buffer and returns it inline.
-// Sync exports are below the async threshold, so buffering is bounded and lets
-// us report the exact row count in a header.
-func (r *Router) handleSyncExport(w http.ResponseWriter, req *http.Request, spec exportSpec, exportType, format string) {
-	var buf bytes.Buffer
-	rowCount, err := r.streamExportTo(req.Context(), &buf, spec, req, format)
+// streamExportDownload streams the export directly to the response as a file
+// download, holding only one page in memory. Query/source errors surface as a
+// clean 500 before any bytes are written; an error once streaming has begun can
+// only be logged, since the response status is already committed.
+func (r *Router) streamExportDownload(w http.ResponseWriter, req *http.Request, spec exportSpec, exportType, format string) {
+	ctx := req.Context()
+
+	src, err := spec.NewSource(ctx, r, req)
 	if err != nil {
-		r.logf("ERROR", "generating synchronous export: %v", err)
+		r.logf("ERROR", "preparing export %s: %v", exportType, err)
 		WriteInternalError(w, "Failed to generate export.")
 		return
 	}
@@ -103,131 +92,18 @@ func (r *Router) handleSyncExport(w http.ResponseWriter, req *http.Request, spec
 	w.Header().Set("Content-Type", contentTypeForFormat(format))
 	w.Header().Set("Content-Disposition",
 		fmt.Sprintf(`attachment; filename="%s"`, downloadFilename(exportType, format, time.Now().UTC())))
-	w.Header().Set("X-Export-Row-Count", fmt.Sprintf("%d", rowCount))
-	w.WriteHeader(http.StatusOK)
-	w.Write(buf.Bytes())
-}
 
-// handleAsyncExport creates an export job (persisting the raw query so the
-// background goroutine reconstructs the same filter), launches generation, and
-// returns 202.
-func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, spec exportSpec, exportType, format string) {
-	ctx := req.Context()
-
-	retentionHours := r.liveConfig().Exports.RetentionHours
-	if retentionHours <= 0 {
-		retentionHours = 24
+	var streamErr error
+	switch format {
+	case datastore.ExportFormatJSON:
+		_, streamErr = export.StreamJSON(ctx, w, spec.Columns, src)
+	case datastore.ExportFormatChefSearchQuery:
+		_, streamErr = export.StreamChefSearchQuery(ctx, w, spec.ChefSearchName, src)
+	default:
+		_, streamErr = export.StreamCSV(ctx, w, spec.Columns, src)
 	}
-
-	filtersJSON, err := marshalExportQuery(req)
-	if err != nil {
-		r.logf("ERROR", "marshalling export query: %v", err)
-		WriteInternalError(w, "Failed to create export job.")
-		return
-	}
-
-	job, err := r.db.InsertExportJob(ctx, datastore.InsertExportJobParams{
-		ExportType:  exportType,
-		Format:      format,
-		Filters:     filtersJSON,
-		RequestedBy: "", // TODO: set from auth context when auth is implemented
-		ExpiresAt:   time.Now().UTC().Add(time.Duration(retentionHours) * time.Hour),
-	})
-	if err != nil {
-		r.logf("ERROR", "inserting export job: %v", err)
-		WriteInternalError(w, "Failed to create export job.")
-		return
-	}
-
-	go r.runAsyncExport(job.ID, spec, exportType, format, filtersJSON)
-
-	if r.hub != nil {
-		r.hub.Broadcast(NewEvent(EventExportStarted, map[string]any{
-			"job_id":      job.ID,
-			"export_type": exportType,
-			"format":      format,
-		}))
-	}
-
-	WriteJSON(w, http.StatusAccepted, exportJobResponse{
-		JobID:       job.ID,
-		ExportType:  job.ExportType,
-		Format:      job.Format,
-		Status:      job.Status,
-		RequestedAt: job.RequestedAt.Format(time.RFC3339),
-		Message:     "Export job created. Poll GET /api/v1/exports/" + job.ID + " for status.",
-	})
-}
-
-// runAsyncExport streams an export file to disk in the background, updating the
-// export_jobs row with progress and results. It reconstructs the original
-// request from the persisted query so it reproduces the same filtered list.
-func (r *Router) runAsyncExport(jobID string, spec exportSpec, exportType, format string, filtersJSON []byte) {
-	ctx, cancel := context.WithTimeout(r.asyncContext(), 1*time.Hour)
-	defer cancel()
-
-	fail := func(err error) {
-		r.logf("ERROR", "async export %s failed: %v", jobID, err)
-		if uErr := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusFailed, 0, "", 0, err.Error()); uErr != nil {
-			r.logf("ERROR", "updating export job %s to failed: %v", jobID, uErr)
-		}
-		if r.hub != nil {
-			r.hub.Broadcast(NewEvent(EventExportFailed, map[string]any{"job_id": jobID, "error": err.Error()}))
-		}
-	}
-
-	if err := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusProcessing, 0, "", 0, ""); err != nil {
-		r.logf("ERROR", "updating export job %s to processing: %v", jobID, err)
-		return
-	}
-
-	req, err := reconstructExportRequest(ctx, filtersJSON)
-	if err != nil {
-		fail(fmt.Errorf("reconstructing export request: %w", err))
-		return
-	}
-
-	outputDir := r.liveConfig().Exports.OutputDirectory
-	if outputDir == "" {
-		outputDir = "/var/lib/chef-migration-metrics/exports"
-	}
-	ext := format
-	if ext == datastore.ExportFormatChefSearchQuery {
-		ext = "txt"
-	}
-	outputPath := filepath.Join(outputDir, fmt.Sprintf("%s.%s", jobID, ext))
-
-	f, err := os.Create(outputPath) //nolint:gosec // path is server-controlled (jobID + configured dir)
-	if err != nil {
-		fail(fmt.Errorf("creating export file: %w", err))
-		return
-	}
-	cw := &countingWriter{w: f}
-	rowCount, streamErr := r.streamExportTo(ctx, cw, spec, req, format)
-	closeErr := f.Close()
 	if streamErr != nil {
-		fail(streamErr)
-		return
-	}
-	if closeErr != nil {
-		fail(fmt.Errorf("closing export file: %w", closeErr))
-		return
-	}
-
-	if err := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusCompleted,
-		rowCount, outputPath, cw.n, ""); err != nil {
-		r.logf("ERROR", "updating export job %s to completed: %v", jobID, err)
-		return
-	}
-
-	r.logf("INFO", "export job %s completed: %d rows, %d bytes", jobID, rowCount, cw.n)
-
-	if r.hub != nil {
-		r.hub.Broadcast(NewEvent(EventExportComplete, map[string]any{
-			"job_id":    jobID,
-			"row_count": rowCount,
-			"file_size": cw.n,
-		}))
+		r.logf("ERROR", "streaming export %s: %v", exportType, streamErr)
 	}
 }
 
@@ -362,13 +238,6 @@ func (r *Router) handleExportDownload(w http.ResponseWriter, req *http.Request, 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// asyncContext returns a background context for async export goroutines.
-// The request context cannot be used because it is cancelled when the HTTP
-// response is sent.
-func (r *Router) asyncContext() context.Context {
-	return context.Background()
-}
 
 // contentTypeForFormat returns the MIME type for the given export format.
 func contentTypeForFormat(format string) string {
