@@ -207,7 +207,7 @@ func nodeExportColumns() []export.Column {
 		{Header: "policy_name", Value: func(r any) any { return nr(r).resp.PolicyName }},
 		{Header: "policy_group", Value: func(r any) any { return nr(r).resp.PolicyGroup }},
 		{Header: "is_stale", Value: func(r any) any { return nr(r).resp.IsStale }},
-		{Header: "staleness_tier", Value: func(r any) any { return nr(r).resp.StalenesTier }},
+		{Header: "staleness_tier", Value: func(r any) any { return stalenessLabel(nr(r).resp.StalenesTier) }},
 		{Header: "ohai_time", Value: func(r any) any { return ohaiTimeISO(nr(r).resp.OhaiTime) }},
 		{Header: "collected_at", Value: func(r any) any { return nr(r).resp.CollectedAt }},
 		{Header: "target_chef_version", Value: func(r any) any { return nr(r).target }},
@@ -235,6 +235,22 @@ func strOrEmpty(p *string) any {
 		return ""
 	}
 	return *p
+}
+
+// stalenessLabel maps the raw staleness tier to the wording the UI shows in its
+// stale badge (fresh→Fresh, warning→Missing, critical→Gone), so the export reads
+// the same as the Nodes list. Unknown values pass through unchanged.
+func stalenessLabel(tier string) string {
+	switch tier {
+	case "fresh":
+		return "Fresh"
+	case "warning":
+		return "Missing"
+	case "critical":
+		return "Gone"
+	default:
+		return tier
+	}
 }
 
 // ohaiTimeISO renders a node's ohai_time (a unix epoch in seconds) as a UTC
