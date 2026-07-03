@@ -1,53 +1,63 @@
 # Cop Classification & Analysis — Component Specification
 
-> **TL;DR** — A system for classifying CookStyle cops by their actual migration
-> impact (Blocker / Review / Noise), with auto-seeding from `RemovedIn` data, operator overrides, custom cop definitions for gaps in cookstyle, and a cop-centric analysis UI that answers "what must I fix to migrate?"
+> **TL;DR** — Classify CookStyle cops by their actual migration impact
+> (Blocker / Review / Noise) so the signal is a *reliable* indicator: **reds mean
+> "we know it must be fixed", Review means "operator must decide", Noise means
+> "provably harmless".** No bucket presents a guess as knowledge.
+
+> **Reliability model (v2 — trustworthy reds).** This revises the earlier
+> auto-seed/severity-fallback model. Two invariants drive it:
+> 1. **Single target.** There is exactly one active target Chef version. Cops are
+>    classified per-cop, not per-target. (The old per-target machinery is removed
+>    — see [cookstyle-reliability plan].)
+> 2. **Asymmetric confidence.** A wrong Blocker wastes effort (visible,
+>    recoverable); a wrong Noise *hides a real blocker* (silent, dangerous). So
+>    Noise needs a higher bar than Blocker, and anything uncertain falls to
+>    **Review**, never to Noise and never to a severity-derived red.
 
 ## Overview
 
-CookStyle severity levels (`convention`, `refactor`, `warning`, `error`, `fatal`) do not reliably indicate whether a cop is a migration blocker. The `Chef/Deprecations/NodeSet` cop (removed in Chef 13 — hard crash) and `Chef/Deprecations/DependsPoise` (unmaintained but still works) both fire at `warning`. Operators need to know which cops actually block their migration.
+CookStyle severity levels (`convention`, `refactor`, `warning`, `error`, `fatal`) do not reliably indicate whether a cop is a migration blocker. `Chef/Deprecations/NodeSet` (removed in Chef 14 — hard crash) and `Chef/Deprecations/DependsPoise` (unmaintained but still works) both fire at `warning`. Severity is therefore never a source of a migration verdict — it is the signal this feature exists to *replace*.
 
-This specification adds:
+This specification provides:
 
-1. **Cop classification** — per-cop, per-target-version labels (Blocker / Review / Noise)
-2. **Auto-seeding** — cops with `RemovedIn ≤ target_version` are auto-classified as Blocker
-3. **Operator overrides** — reclassify any cop via the UI
-4. **Custom cop definitions** — define patterns not yet in cookstyle (e.g. `nil.=~` removal in Ruby 3)
-5. **Cop analysis view** — per-cop aggregation showing affected cookbooks, fix effort, and classification
-6. **Updated pass/fail** — classification-aware failure determination replaces pure severity rules
+1. **Cop classification** — per-cop Blocker / Review / Noise for the active target
+2. **Trustworthy Blocker sources** — verified removal knowledge, operator confirmation, or a custom/manual cop (a blocker by intent)
+3. **Review as a worklist** — the honest default for migration-relevant-but-unproven cops; the operator triages each into Blocker-or-clear
+4. **Structural Noise only** — a cop is Noise only for a positive structural reason (cosmetic RuboCop department, or test/CI-tooling-only), never as a fallback
+5. **Custom cop definitions** — patterns not yet in cookstyle (e.g. `nil.=~` removal in Ruby 3); these resolve as Blocker by intent
+6. **Curation linter** — CI cross-check that curated removal data agrees with the shipped cop descriptions and flags stale entries
+7. **Cop analysis view** — per-cop aggregation showing affected cookbooks, fix effort, and classification with visible provenance
 
 ## Classification Levels
 
-| Level | Meaning | Visual | Pass/Fail |
-|-------|---------|--------|-----------|
-| **Blocker** | Will crash or silently produce wrong results on target version | 🔴 | Fails cookbook |
-| **Review** | Likely problematic — operator should investigate | 🟠 | Does not fail (advisory) |
-| **Noise** | Tooling-only, style, or harmless on target version | ⚪ | Does not fail |
-| **Unclassified** | Not yet reviewed — falls back to severity rules | ❓ | Severity fallback |
+| Level | Meaning | Visual | Rollup |
+|-------|---------|--------|--------|
+| **Blocker** | We *know* it must be fixed for the target | 🔴 | Blocks |
+| **Review** | Migration-relevant but unproven — operator must decide (absorbs the old "Unclassified") | 🟠 | Does not block; a worklist item |
+| **Noise** | *Provably* harmless (cosmetic department or test/CI tooling only) | ⚪ | Does not block |
+
+There is no separate "Unclassified" level: an unresolved cop *is* a Review item ("not yet reviewed"). A cop file that will not parse (`fatal`) is surfaced by a **separate "won't parse — fix first" flag**, not folded into a classification Blocker.
 
 ## Classification Resolution
 
-For a given cop + target version, classification is resolved in priority order:
+For a given cop (against the single active target), classification resolves in priority order. **Every source is a positive statement of knowledge; the default is Review, never a severity-derived red.**
 
-1. **Operator override** (stored in DB) — highest priority
-2. **Auto-seed: `RemovedIn ≤ target_version`** — from cop mapping table
-3. **Curated exact default** (shipped) — a specific named cop
-4. **Curated prefix/department default** (shipped) — longest matching namespace:
-   - `Chef/Deprecations/`, `Chef/Correctness/` → Review (migration-relevant,
-     visible + advisory)
-   - `Chef/Style/`, `Style/`, `Layout/` → Noise (cosmetic)
+1. **Operator override** (stored in DB) — highest priority; the operator's confirmed verdict.
+2. **Custom/manual cop** → **Blocker**. A cop hand-defined in a migration tool is a blocker by intent.
+3. **Verified removal** → **Blocker**. A curated `RemovedIn` for the cop (`RemovedIn ≤ target`). Curated removal is human-asserted knowledge; the linter cross-checks it against the cop description and flags disagreements/staleness, but does not auto-demote.
+4. **Structural Noise** → **Noise**, only from a positive structural reason (longest match wins):
+   - Cosmetic RuboCop departments: `Style/`, `Layout/`, `Chef/Style/` — non-functional *by RuboCop's own taxonomy*.
+   - Test/CI-tooling-only cops (ChefSpec, Foodcritic, Delivery, Librarian/Berks) — cannot affect production convergence.
+5. **Review** (default) — everything else, including all `Chef/Deprecations/*`, `Chef/Correctness/*`, `Lint/*`, and any cop with no positive Blocker/Noise reason. Honest "unproven — operator decides".
 
-   Matches cops we never enumerated, so a brand-new cop classifies with no code
-   change. More specific sources (override, RemovedIn, curated exact) still win.
-5. **Unclassified** — fallback to severity-based failure rules
+Removed from the old model: the `RemovedIn`-auto-seed-as-primary, the curated *exact/prefix classification* defaults that guessed Review/Noise for whole namespaces without a structural reason, and the **Unclassified→severity→Blocked fallback** entirely.
 
 ### Pass/Fail Determination
 
-A cookbook **fails** if it has any offense where:
-- Classification = Blocker, OR
-- Classification = Unclassified AND severity ∈ configured failure severities (existing failure rules as fallback)
+A cookbook is **Blocked** iff it has at least one **Blocker** offense. Review and Noise never block. Severity plays no part in the verdict.
 
-This preserves backward compatibility: until operators classify cops, the existing severity-based rules still apply.
+Separately, a cookbook that **won't parse** (a `fatal`/parse-failure offense) is flagged "won't parse — fix first" — a data-quality signal distinct from the migration classification, surfaced but not counted as a classification Blocker.
 
 ### CookStyle Rollup Status
 
@@ -60,10 +70,10 @@ compatible/incompatible/passed/failed wording:
 
 | Status | Visual | Condition |
 |--------|--------|-----------|
-| **Ready** | 🟢 | Scan exists; no blockers and no review-level offenses (clean, or only Noise / non-failing Unclassified) |
-| **Needs review** | 🟠 | No blockers, but ≥1 Review offense |
-| **Blocked** | 🔴 | ≥1 Blocker offense, OR ≥1 Unclassified offense that triggers the severity failure rules |
-| **Untested** | ⚪ | No CookStyle scan result for this unit + target |
+| **Ready** | 🟢 | Scan exists; no Blocker and no Review offenses (clean, or only Noise) |
+| **Needs review** | 🟠 | No Blocker, but ≥1 Review offense |
+| **Blocked** | 🔴 | ≥1 Blocker offense (verified removal, operator, or custom cop). Severity is never a source. |
+| **Untested** | ⚪ | No CookStyle scan result for this unit |
 
 This is the **CookStyle signal only**. Test Kitchen remains a separate badge
 (passed/failed/partial/untested) — the two signals are never merged into one
@@ -73,16 +83,15 @@ Invariants:
 - **Single source of truth.** Status (and complexity) are derived once, by
   `(offenses + resolved classification) → status`, and materialised. Every read
   path consumes the materialised value; the cop-analysis view and offense-group
-  badges resolve from the same classification — the surfaces must never disagree
-  (this incoherence is the bug this revision fixes).
-- Unclassified offenses that severity-fail map to **Blocked** (conservative —
-  anything that fails today stays red until a human classifies it).
+  badges resolve from the same classification — the surfaces must never disagree.
+- **Only knowledge produces red.** Blocked requires a Blocker offense from a
+  positive source; there is no severity-derived red. An operator who does nothing
+  sees an honest "N items to review", not a false alarm.
 - The boolean `passed` field is retained for backward-compat = `status not in
   {Blocked}` (Untested has `passed = false`/null per existing semantics). New code
   reads `status`; `passed` is a derived convenience.
-
-The scan pipeline MUST derive status via classification (the resolver), not via
-severity rules alone; severity rules remain only the Unclassified fallback.
+- A "won't parse" (fatal/parse-failure) flag is carried alongside status, not
+  inside it.
 
 ### Complexity Weighting by Classification
 
@@ -92,28 +101,28 @@ advisory-only repo does not score as "high":
 - **Blocker** offenses dominate the score (highest weight).
 - **Review** offenses contribute a low weight (advisory).
 - **Noise** offenses contribute ~0.
-- **Unclassified** offenses keep the existing category weights (deprecation /
-  correctness / manual-fix) as the fallback.
 
-The double-counting that produces today's inflated scores (the same offense
-counted as both a deprecation *and* a manual fix) is removed: each offense
-contributes once, via its classification.
+Each offense contributes exactly once, via its classification (the old
+double-counting — the same offense counted as both a deprecation *and* a manual
+fix — is removed). With no Unclassified level, there is no severity-category
+fallback weight.
 
 ## Data Model
 
 ### Cop Classifications Table
 
+Operator overrides are keyed by `cop_name` only — there is a single active target
+(the per-target column and key are removed):
+
 ```sql
 CREATE TABLE cop_classifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    cop_name TEXT NOT NULL,
-    target_chef_version TEXT NOT NULL,
+    cop_name TEXT NOT NULL UNIQUE,
     classification TEXT NOT NULL CHECK (classification IN ('blocker', 'review', 'noise')),
     reason TEXT,
     created_by TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now(),
-    UNIQUE (cop_name, target_chef_version)
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 ```
 
@@ -136,76 +145,85 @@ CREATE TABLE custom_cop_definitions (
 );
 ```
 
-Custom cops are scanned at analysis time (alongside cookstyle) and produce offenses in the same format. They appear in the classification UI like any other cop.
+Custom cops are scanned at analysis time (alongside cookstyle) and produce offenses in the same format. They resolve as **Blocker** (blocker by intent) and appear in the classification UI like any other cop.
 
-## Curated Defaults
+## Blocker & Noise Reference Data
 
-Shipped as compiled Go data (like `embeddedCopMappings`). Covers well-known behaviour-change cops not captured by `RemovedIn`:
+Shipped as compiled Go data. Two disjoint kinds, each with a *positive reason*:
 
-| Cop | Default Classification | Reason |
-|-----|----------------------|--------|
-| `Lint/DeprecatedClassMethods` | Blocker (target ≥ 18) | `File.exists?` removed in Ruby 3 |
-| `Chef/Deprecations/LogResourceNotifications` | Blocker (target ≥ 16) | Notifications silently stop firing |
-| `Chef/Deprecations/WindowsFeatureServermanagercmd` | Blocker (target ≥ 14) | Install method silently ignored |
-| `Chef/Deprecations/HWRPWithoutUnifiedTrue` | Review (target ≥ 18) | Required for Chef 18 unified mode |
-| `Chef/Deprecations/ResourceWithoutUnifiedTrue` | Review (target ≥ 18) | Required for Chef 18 unified mode |
-| `Chef/Deprecations/ChefSpecLegacyRunner` | Noise | Test tooling only |
-| `Chef/Deprecations/FoodcriticTesting` | Noise | Test tooling only |
-| `Chef/Deprecations/LibrarianChefspec` | Noise | Test tooling only |
-| `Chef/Deprecations/Delivery` | Noise | CI tooling only |
-| `Chef/Deprecations/DependsPoise` | Noise | Still works, just unmaintained |
+**Verified removals → Blocker** (`RemovedIn` for a specific cop). Human-curated
+Chef-Client removal versions; the curation linter cross-checks these against the
+shipped cop descriptions:
+
+| Cop | RemovedIn | Reason |
+|-----|-----------|--------|
+| `Lint/DeprecatedClassMethods` | Ruby 3 / Chef 18 | `File.exists?` removed |
+| `Chef/Deprecations/NodeSet` | 14 | `node.set` removed |
+| `Chef/Deprecations/WindowsFeatureServermanagercmd` | 15 | install method removed |
+| …(see `embeddedCopMappings`, linter-guarded) | | |
+
+**Structural Noise** (positive reason, not a per-cop guess):
+- Cosmetic RuboCop departments `Style/`, `Layout/`, `Chef/Style/` — cosmetic by RuboCop taxonomy.
+- Test/CI-tooling-only cops (ChefSpec / Foodcritic / Delivery / Librarian).
+
+Everything not covered by these is **Review** by default — no curated
+Review/Noise *guesses* for whole namespaces. (Cops like `HWRPWithoutUnifiedTrue`
+are simply Review, which is where the default already puts every unproven
+`Chef/Deprecations/*` cop.)
 
 ## Data Provenance & Durability (decisions)
 
-Records where each input comes from and how the system avoids rotting as
-cookstyle evolves. Agreed 2026-07-01.
+Records where each input comes from and how the signal stays reliable as cookstyle
+evolves. Model agreed 2026-07-03 (trustworthy reds; supersedes the 2026-07-01
+auto-seed/DB-seed decisions).
 
-**Static (compiled Go, hand-maintained):** the `RemovedIn`/description mapping
-table (`embeddedCopMappings`) and the curated exact + prefix defaults. **Dynamic
-(runtime):** operator overrides + custom cops (DB), scan offences + severity
-(from running the binary), failure rules (config store).
+**Static (compiled Go, hand-maintained):** the `RemovedIn` verified-removal table
+and the structural-Noise rules. **Dynamic (runtime):** operator overrides + custom
+cops (DB), scan offences (from running the binary). **Removed:** the config-store
+severity *failure rules* no longer feed the verdict (severity is not a source);
+the DB-seeded defaults table (chunk 3) is abandoned.
 
-**cookstyle does NOT expose `RemovedIn`.** `cookstyle --show-cops` gives
-`Enabled`/`Severity`/`Description`/`VersionAdded` — but `VersionAdded` is the
-*gem* version, and the Chef-Client removal version exists only in free-text
-`Description`. So the Chef removal signal is inherently curated; no machine source
-supplies it. This is accepted, not a gap to close.
+**cookstyle does NOT reliably expose removal versions.** `--show-cops` gives
+`Enabled`/`Description`/`VersionAdded` (the *gem* version, not the Chef-Client
+removal), and does not even print default `Severity`. The Chef removal version
+exists only in free-text `Description`, and a 2026-07-03 spike showed it is only
+~30% cleanly parseable (a third absent, a fifth a deprecation-vs-removal trap). So
+removal knowledge stays **curated** — but validated by a linter, not assumed.
 
-**Custom cops classify via severity, not the resolver.** A custom cop's DB
-`classification` sets its offence *severity* (`blocker→error`, `review→warning`,
-else `convention`); the resolver returns Unclassified for `Custom/*` (creating one
-writes no override row), so it blocks via the severity/failure-rule path, not the
-classification path.
+**Custom cops are Blockers by intent.** A cop hand-defined in a migration
+assessment tool is, by the act of defining it, a declared blocker. It resolves as
+Blocker directly (no severity side-channel).
 
-Durability principles (avoid silent obsolescence — the named tables must not be
-load-bearing for *unknown* cops):
+Durability principles:
 
-1. **Department-default classification.** Unknown cops resolve by namespace, never
-   to invisible-Unclassified: `Chef/Deprecations/*`, `Chef/Correctness/*` default
-   to **Review**; cosmetic namespaces to **Noise**. The `RemovedIn`/curated exacts
-   become *upgrades* (promote a specific cop to Blocker), not the primary signal —
-   so a brand-new cop cookstyle ships is at-least-Review automatically.
+1. **Review is the honest default.** Any migration-relevant cop we can't *prove*
+   is a Blocker or *structurally* show is Noise resolves to Review — a worklist,
+   not a guess dressed as a verdict. A brand-new `Chef/*` cop is Review
+   automatically; the operator triages it.
 2. **Live inventory + drift report.** `cookstyle --show-cops` is the authoritative
    list of cops *this* binary has (cached at startup / on upgrade). Cross-referenced
-   against the static tables it surfaces **stale** entries (mapped cops the binary no
-   longer emits) and **coverage gaps** (`Chef/*` cops with no classification), turning
-   silent drift into an admin worklist. Generic-Ruby cops (Style/Layout/Lint/…) stay
-   out of the default view — only ~30% (`Chef/*`) are migration-relevant.
-3. **Seed static defaults into the DB.** The `RemovedIn`/curated tables seed
-   editable DB rows (operator overrides already layer on top), so updating migration
-   knowledge is a data edit, not a recompile. The Go tables are the initial seed only.
+   against the static tables it surfaces **stale** entries (curated cops the binary no
+   longer emits) and **coverage gaps**, turning silent drift into an admin worklist.
+3. **Curation linter (CI).** Each curated `RemovedIn` is cross-checked against the
+   shipped cop description; disagreements and stale entries (cop absent from the
+   binary) fail CI. This is the durability mechanism for the curated Blocker set —
+   catching rot at the source instead of moving the data into an editable DB.
 
 ## API
 
+> **Single target:** endpoints below no longer take a `target_chef_version`
+> parameter or key — resolution is against the one active target. Any remaining
+> `target_chef_version` request/response fields are removed. The `cop-defaults`
+> endpoints from chunk 3 do not exist.
+
 ### GET /api/v1/cookstyle/cops
 
-Returns all known cops (from scan results + mapping + custom definitions) with their resolved classification for the given target version.
+Returns all known cops (from scan results + mapping + custom definitions) with their resolved classification.
 
 #### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `target_chef_version` | string | Required. Determines classification resolution. |
 | `source` | string | `server` or `git` — which results to aggregate |
 | `classification` | string | Filter: `blocker`, `review`, `noise`, `unclassified` |
 | `sort` | string | `cookbooks_affected`, `offence_count`, `cop_name` |
@@ -441,22 +459,25 @@ result per scan; appended only when it differs from the prior scan) makes trends
 recomputable under current criteria for data captured after it ships. See
 [enriched-metric-snapshots.md](enriched-metric-snapshots.md).
 
-## Migration from Failure Rules
+## Retirement of Failure Rules
 
-The existing failure rules system (`cookstyle_failure_preset`, `cookstyle_failure_rules`) continues to function as the fallback for unclassified cops. Over time, as operators classify cops, the severity-based rules become less relevant.
-
-No breaking change: existing behaviour is preserved. The classification system is additive.
+The severity-based failure-rules system (`cookstyle_failure_preset`,
+`cookstyle_failure_rules`) is **retired as a source of the verdict** — severity is
+the signal this feature exists to distrust, so it no longer produces reds. The
+only migration verdict is classification (Blocker/Review/Noise). A `fatal`/parse
+failure is surfaced by the separate "won't parse — fix first" flag. This is a
+deliberate behaviour change from the additive-fallback model.
 
 ## Performance
 
-- Cop aggregation query groups offences by `cop_name` across all results for a target version — same cardinality as the existing violations endpoint
-- Classification lookup is O(1) per cop (in-memory map from DB + curated defaults)
+- Cop aggregation query groups offences by `cop_name` across all results — same cardinality as before
+- Classification lookup is O(1) per cop (in-memory map from DB overrides + curated tables)
 - Custom cop scanning adds per-file regex matching during analysis — bounded by file count × pattern count
 - Re-evaluation on classification change is bounded by cookbooks with that cop in their offences
 
 ## Related
 
-- [cookstyle-failure-rules.md](cookstyle-failure-rules.md) — Existing severity-based pass/fail (becomes fallback)
+- [cookstyle-failure-rules.md](cookstyle-failure-rules.md) — Severity pass/fail, now **retired** as a verdict source
 - [cookstyle-violations-browser.md](cookstyle-violations-browser.md) — Superseded by this spec's Cop Analysis view
 - [analysis.md](analysis.md) — CookStyle invocation and output parsing (extended for custom cops)
 - `internal/remediation/copmapping.go` — Embedded cop mapping with `RemovedIn` data

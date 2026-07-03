@@ -29,14 +29,17 @@ Branch: `feature/cookstyle-violations-browser` (continues).
 - Delete superseded flat-list violations code (dead under the Cop Analysis view).
 Acceptance: build + tests green; no `cop_defaults` table/endpoint.
 
-## Phase 1 — Spec revision (approval-gated)
+## Phase 1 — Spec revision
 - Rewrite `cop-classification.md`: levels/resolution, blocker sources,
   review-as-worklist, structural noise, single target, drop severity reds +
   parse-failure flag, linter, remove the DB-seed durability principle.
-- **Open question to settle in the spec:** curated `RemovedIn` entries the linter
-  can't confirm from the cop description — demote to Review (fully trustworthy
-  reds) or keep Blocker on curator authority? Soundness vs coverage.
-Acceptance: user approves the revised spec.
+- **Settled (2026-07-03, DECIDE-not-block; user may flip on review):** curated
+  `RemovedIn` stays a **Blocker** source (curator authority = human-asserted
+  knowledge, same principle as custom-cops-are-blockers). The linter
+  cross-checks curated vs cop description and flags disagreements + staleness for
+  manual resolution — it does NOT auto-demote. Alternative if flipped: demote
+  linter-unconfirmable removals to Review.
+Acceptance: spec matches the model below; reviewed on wake.
 
 ## Phase 2 — Single target
 - config: `TargetChefVersions []string` → `target_chef_version` scalar; drop
