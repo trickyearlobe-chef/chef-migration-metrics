@@ -584,7 +584,6 @@ function ClassificationSummaryBar({ summary }: { summary: ClassificationSummary 
     { label: "Blockers", count: summary.blocker, color: "text-red-700" },
     { label: "Review", count: summary.review, color: "text-amber-700" },
     { label: "Noise", count: summary.noise, color: "text-gray-500" },
-    { label: "Unclassified", count: summary.unclassified, color: "text-blue-600" },
   ];
 
   return (

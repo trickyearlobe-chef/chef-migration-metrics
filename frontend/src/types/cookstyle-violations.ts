@@ -6,12 +6,13 @@ import type { Pagination } from "./common";
 // Cop Analysis (classification-aware aggregation)
 // ---------------------------------------------------------------------------
 
-export type CopClassification = "blocker" | "review" | "noise" | "unclassified";
+export type CopClassification = "blocker" | "review" | "noise";
 export type ClassificationSource =
   | "operator_override"
-  | "removed_in"
-  | "curated_default"
-  | "unclassified";
+  | "custom_cop"
+  | "verified_removal"
+  | "structural_noise"
+  | "review_default";
 
 export interface CopAggregateItem {
   cop_name: string;
@@ -36,6 +37,8 @@ export interface CopAggregationSummary {
   review_cops: number;
   review_cookbooks: number;
   noise_cops: number;
+  // Retained for backwards compatibility with the API payload; under the
+  // "trustworthy reds" model there is no unclassified level, so this is always 0.
   unclassified_cops: number;
 }
 
@@ -66,15 +69,16 @@ export interface CopCookbookResponse {
 // ---------------------------------------------------------------------------
 
 // StaleCopEntry is a static-table cop the running cookstyle binary no longer
-// emits. `source` names which table to prune: "curated_default" or
-// "removed_in_mapping".
+// emits. The only static classification table is the removed-in mapping, so
+// `source` is "removed_in_mapping".
 export interface StaleCopEntry {
   cop_name: string;
   source: string;
 }
 
-// CoverageGapEntry is a live Chef/* cop with no classification (resolves to
-// unclassified) — invisible to the preset failure clauses until curated.
+// CoverageGapEntry is a live Chef/* cop with no explicit classification — it
+// resolves to the review default (the honest worklist bucket) rather than to a
+// blocker or noise decision.
 export interface CoverageGapEntry {
   cop_name: string;
   department: string;

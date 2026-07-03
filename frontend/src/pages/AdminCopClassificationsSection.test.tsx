@@ -26,7 +26,7 @@ const RESPONSE: CopAggregationResponse = {
       category: "Chef/Deprecations",
       severity: "warning",
       classification: "review",
-      classification_source: "curated_default",
+      classification_source: "review_default",
       cookbooks_affected: 2,
       total_offences: 5,
       auto_correctable_pct: 0,

@@ -265,7 +265,7 @@ export function CopAnalysisTab() {
                     onExpand={() => openDrillDown(cop.cop_name)}
                     onReclassify={() => {
                       setReclassifyCop(cop.cop_name);
-                      setReclassifyValue(cop.classification === "unclassified" ? "blocker" : cop.classification);
+                      setReclassifyValue(cop.classification || "blocker");
                     }}
                   />
                 ))}
@@ -305,7 +305,7 @@ export function CopAnalysisTab() {
 
 function SummaryCards({ summary }: { summary: CopAggregationSummary }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       <SummaryCard
         label="Blocker cops"
         value={summary.blocker_cops}
@@ -322,11 +322,6 @@ function SummaryCards({ summary }: { summary: CopAggregationSummary }) {
         label="Noise cops"
         value={summary.noise_cops}
         colour="text-gray-500 bg-gray-50 border-gray-200"
-      />
-      <SummaryCard
-        label="Unclassified"
-        value={summary.unclassified_cops}
-        colour="text-blue-600 bg-blue-50 border-blue-200"
       />
     </div>
   );

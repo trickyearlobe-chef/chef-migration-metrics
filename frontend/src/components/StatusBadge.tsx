@@ -170,7 +170,7 @@ const variantTooltips: Partial<Record<BadgeVariant, string>> = {
   cs_untested: "No CookStyle scan results available",
   cs_ready: "CookStyle: no blockers or review-level cops — ready",
   cs_needs_review: "CookStyle: review-level cops present — needs a human look, not blocking",
-  cs_blocked: "CookStyle: a blocker cop (or unclassified severity-fail) is present",
+  cs_blocked: "CookStyle: a blocker cop is present",
   tk_passed: "Test Kitchen converge + verify passed — high confidence",
   tk_failed: "Test Kitchen failed — may be a real issue or infrastructure noise",
   tk_partial: "Test Kitchen: some platforms passed, some failed",

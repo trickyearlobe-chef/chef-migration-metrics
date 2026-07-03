@@ -17,7 +17,7 @@ const AVAILABLE_REPORT: CopDriftReport = {
     { cop_name: "Chef/Modernize/FooBar", department: "Chef/Modernize", enabled: true },
   ],
   stale: [
-    { cop_name: "Chef/Deprecations/OldGone", source: "curated_default" },
+    { cop_name: "Chef/Deprecations/OldGone", source: "removed_in_mapping" },
     { cop_name: "Lint/AlsoGone", source: "removed_in_mapping" },
   ],
 };
@@ -34,11 +34,11 @@ describe("AdminCopInventorySection", () => {
     await waitFor(() => {
       expect(screen.getByText("Chef/Modernize/FooBar")).toBeInTheDocument();
     });
-    // Stale entries with human-readable source labels.
+    // Stale entries with human-readable source labels. The removed-in mapping is
+    // the only static classification table, so both rows share that label.
     expect(screen.getByText("Chef/Deprecations/OldGone")).toBeInTheDocument();
     expect(screen.getByText("Lint/AlsoGone")).toBeInTheDocument();
-    expect(screen.getByText("Curated default")).toBeInTheDocument();
-    expect(screen.getByText("RemovedIn mapping")).toBeInTheDocument();
+    expect(screen.getAllByText("RemovedIn mapping")).toHaveLength(2);
     // Registry version chip.
     expect(screen.getByText(/cookstyle 8\.6\.10/)).toBeInTheDocument();
     // Section counts.

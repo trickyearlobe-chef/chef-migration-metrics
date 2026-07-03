@@ -16,7 +16,7 @@ function group(
     cop_name: cop,
     severity: "warning",
     classification,
-    classification_source: "curated_default",
+    classification_source: "review_default",
     count,
     correctable_count: 0,
     offenses: [],
@@ -45,8 +45,19 @@ describe("ClassificationSections", () => {
     expect(screen.getByText("Blockers")).toBeInTheDocument();
     expect(screen.getByText("Review")).toBeInTheDocument();
     expect(screen.getByText("Noise")).toBeInTheDocument();
+    // There is no Unclassified bucket under the trustworthy-reds model.
+    expect(screen.queryByText("Unclassified")).not.toBeInTheDocument();
     // Blocker section count: 1 cop, 2 offenses.
     expect(screen.getByText(/1 cop, 2 offenses/)).toBeInTheDocument();
+  });
+
+  it("folds groups with no/unknown classification into Review", () => {
+    renderSections([group("Chef/Unknown/D", "", 4)]);
+    // Review is the honest default; the group is visible in the (open) Review section.
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.getByText("Chef/Unknown/D")).toBeInTheDocument();
+    expect(screen.queryByText("Blockers")).not.toBeInTheDocument();
+    expect(screen.queryByText("Noise")).not.toBeInTheDocument();
   });
 
   it("expands Blockers and Review by default, collapses Noise", () => {
@@ -66,8 +77,8 @@ describe("ClassificationSections", () => {
   });
 
   it("shows a filter-aware empty state when nothing matches the filter", () => {
-    // Only blocker/review/noise groups exist; filter on unclassified → empty.
-    renderSections(groups, "unclassified");
+    // Only a blocker group exists; filter on noise → empty.
+    renderSections([group("Chef/Blocker/A", "blocker", 2)], "noise");
     expect(
       screen.getByText("No offenses match this filter"),
     ).toBeInTheDocument();

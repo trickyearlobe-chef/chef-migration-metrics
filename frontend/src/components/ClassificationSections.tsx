@@ -6,8 +6,8 @@ import type { OffenseGroup } from "../types/remediation";
 import { EmptyState } from "./Feedback";
 
 // Section order + default-open policy. Blockers and Review (the actionable
-// classes) start expanded; Noise and Unclassified start collapsed to keep the
-// view focused on what blocks readiness.
+// classes) start expanded; Noise starts collapsed to keep the view focused on
+// what blocks readiness.
 const SECTIONS: {
   key: string;
   label: string;
@@ -17,18 +17,21 @@ const SECTIONS: {
   { key: "blocker", label: "Blockers", defaultOpen: true, accent: "text-red-700" },
   { key: "review", label: "Review", defaultOpen: true, accent: "text-amber-700" },
   { key: "noise", label: "Noise", defaultOpen: false, accent: "text-gray-500" },
-  {
-    key: "unclassified",
-    label: "Unclassified",
-    defaultOpen: false,
-    accent: "text-blue-600",
-  },
 ];
+
+// Review is the honest default: any group with no/unknown classification is
+// folded into the Review worklist rather than a separate bucket.
+function sectionKey(classification: string): string {
+  return classification === "blocker" || classification === "noise"
+    ? classification
+    : "review";
+}
 
 /**
  * ClassificationSections groups offense groups into collapsible sections by cop
- * classification (Blocker / Review / Noise / Unclassified), each with an offense
- * count. Blockers and Review start expanded. When `classFilter` is set only the
+ * classification (Blocker / Review / Noise), each with an offense count.
+ * Blockers and Review start expanded. Groups with no/unknown classification
+ * fall under Review, the honest default. When `classFilter` is set only the
  * matching section is shown; if nothing matches, a real empty-state is rendered
  * instead of a blank area.
  *
@@ -63,7 +66,7 @@ export function ClassificationSections({
   )
     .map((s) => ({
       ...s,
-      groups: groups.filter((g) => (g.classification || "unclassified") === s.key),
+      groups: groups.filter((g) => sectionKey(g.classification) === s.key),
     }))
     .filter((s) => s.groups.length > 0);
 

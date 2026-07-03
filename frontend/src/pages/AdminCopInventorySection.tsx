@@ -9,16 +9,16 @@ import { ErrorAlert, LoadingSpinner } from "../components/Feedback";
 // ---------------------------------------------------------------------------
 // AdminCopInventorySection — surfaces classification-table drift against the
 // live `cookstyle --show-cops` inventory:
-//   • Coverage gaps: Chef/* cops the binary emits that resolve to unclassified
-//     (must be curated so they participate in pass/fail decisions).
-//   • Stale entries: curated/mapping rows for a cop the binary no longer emits
-//     (safe to prune).
+//   • Coverage gaps: Chef/* cops the binary emits that resolve to the review
+//     default (classify them so they get an explicit pass/fail decision).
+//   • Stale entries: removed-in mapping rows for a cop the binary no longer
+//     emits (safe to prune).
 // Read-only: it is the worklist that feeds the Cop Classifications editor above.
 // ---------------------------------------------------------------------------
 
-// Human labels for the stale-entry source (which static table owns the row).
+// Human labels for the stale-entry source. The removed-in mapping is the only
+// static classification table.
 const STALE_SOURCE_LABEL: Record<string, string> = {
-  curated_default: "Curated default",
   removed_in_mapping: "RemovedIn mapping",
 };
 
@@ -122,7 +122,8 @@ export function AdminCopInventorySection() {
               <span className="font-normal text-gray-500">({gaps.length})</span>
             </h4>
             <p className="mt-0.5 text-xs text-gray-500">
-              Chef cops the binary emits with no classification — resolve to unclassified.
+              Chef cops the binary emits with no explicit classification — they resolve to
+              the review default until curated.
             </p>
             {gaps.length === 0 ? (
               <p className="mt-2 text-sm text-gray-500">

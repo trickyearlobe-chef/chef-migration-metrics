@@ -121,6 +121,8 @@ export interface ClassificationSummary {
   blocker: number;
   review: number;
   noise: number;
+  // Retained for backwards compatibility with the API payload; under the
+  // "trustworthy reds" model there is no unclassified level, so this is always 0.
   unclassified: number;
 }
 

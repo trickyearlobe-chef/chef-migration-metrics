@@ -14,6 +14,7 @@ import { ErrorAlert, LoadingSpinner } from "../components/Feedback";
 import {
   ClassificationBadge,
   ClassificationFilterBar,
+  classificationSourceLabel,
 } from "../components/ClassificationBadge";
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,6 @@ const CLASS_RANK: Record<string, number> = {
   blocker: 0,
   review: 1,
   noise: 2,
-  unclassified: 3,
 };
 
 // Numeric-aware compare for Chef version strings ("16.0" < "18.0").
@@ -181,7 +181,7 @@ export function AdminCopClassificationsSection() {
 
   const openEditor = (cop: CopAggregateItem) => {
     setEditCop(cop.cop_name);
-    setEditValue(cop.classification === "unclassified" ? "blocker" : cop.classification);
+    setEditValue(cop.classification || "blocker");
     setEditReason("");
   };
 
@@ -222,9 +222,10 @@ export function AdminCopClassificationsSection() {
       <div>
         <h3 className="text-lg font-medium text-gray-900">Cop Classifications</h3>
         <p className="mt-1 text-sm text-gray-500">
-          Every known cop (curated defaults, <code>RemovedIn</code> mappings, scanned,
-          and custom) with its resolved classification for the selected target. Override
-          any cop; overrides take effect immediately and re-evaluate affected cookbooks.
+          Every known cop with its resolved classification and source (operator override,
+          custom cop, verified removal, structural noise, or the review default) for the
+          selected target. Override any cop; overrides take effect immediately and
+          re-evaluate affected cookbooks.
         </p>
       </div>
 
@@ -266,9 +267,10 @@ export function AdminCopClassificationsSection() {
           >
             <option value="">All sources</option>
             <option value="operator_override">Operator override</option>
-            <option value="removed_in">RemovedIn</option>
-            <option value="curated_default">Curated default</option>
-            <option value="unclassified">Unclassified</option>
+            <option value="custom_cop">Custom cop</option>
+            <option value="verified_removal">Verified removal</option>
+            <option value="structural_noise">Structural noise</option>
+            <option value="review_default">Review (default)</option>
           </select>
         </label>
 
@@ -323,7 +325,7 @@ export function AdminCopClassificationsSection() {
                       <ClassificationBadge classification={cop.classification} />
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-500">
-                      {cop.classification_source.replace(/_/g, " ")}
+                      {classificationSourceLabel(cop.classification_source)}
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-600">
                       {cop.cookbooks_affected > 0 ? (

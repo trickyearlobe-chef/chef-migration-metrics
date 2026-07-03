@@ -323,13 +323,14 @@ export function AdminCookstylePage() {
       {/* Separator */}
       <hr className="my-6 border-gray-200" />
 
-      {/* Fallback rules — de-emphasised; applies only to unclassified cops */}
+      {/* Fallback rules — de-emphasised; applies to cops with no explicit classification */}
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 shadow-sm">
         <h3 className="text-lg font-medium text-gray-900">Fallback Rules</h3>
         <p className="mb-4 mt-1 text-sm text-gray-500">
-          Severity-based pass/fail, applied <strong>only to unclassified cops</strong> —
-          those with no operator override, <code>RemovedIn</code> mapping, or curated
-          default. Classify a cop above and these rules no longer apply to it.
+          Severity-based pass/fail, applied only to cops with{" "}
+          <strong>no explicit classification</strong> — those with no operator override,
+          verified removal, or structural-noise decision, which otherwise resolve to the
+          review default. Classify a cop above and these rules no longer apply to it.
         </p>
         <CookstyleFailureRulesGrid
           preset={failurePreset}

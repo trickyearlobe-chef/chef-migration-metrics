@@ -89,7 +89,7 @@ const mockCopAnalysisResponse = {
       category: "Chef/Deprecations/",
       severity: "warning",
       classification: "blocker",
-      classification_source: "curated_default",
+      classification_source: "verified_removal",
       removed_in: "14.0",
       cookbooks_affected: 5,
       total_offences: 12,
