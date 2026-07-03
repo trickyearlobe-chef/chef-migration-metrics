@@ -915,7 +915,7 @@ func (app *serverApp) syncOrganisations(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) reconcileTargetVersions(ctx context.Context) {
-	versions := app.cfg.TargetChefVersions
+	versions := app.cfg.TargetChefVersionList()
 	if len(versions) == 0 {
 		app.startup.Warn("no target_chef_versions configured — skipping stale version reconciliation")
 		return
@@ -1000,13 +1000,13 @@ func (app *serverApp) backfillCookstyleStatus(ctx context.Context) {
 
 	// Re-derive node readiness precisely. Best-effort: readiness self-heals on
 	// every collection run, so a per-org failure here does not block the marker.
-	if app.readinessEval != nil && len(cfg.TargetChefVersions) > 0 {
+	if app.readinessEval != nil && len(cfg.TargetChefVersionList()) > 0 {
 		if orgs, listErr := app.db.ListOrganisations(ctx); listErr != nil {
 			app.startup.Warn(fmt.Sprintf("cookstyle status backfill: listing organisations for readiness: %v", listErr))
 		} else {
 			recomputed := 0
 			for _, org := range orgs {
-				if _, rerr := app.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, cfg.TargetChefVersions); rerr != nil {
+				if _, rerr := app.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, cfg.TargetChefVersionList()); rerr != nil {
 					app.startup.Warn(fmt.Sprintf("cookstyle status backfill: readiness re-eval for org %q: %v", org.Name, rerr))
 					continue
 				}
@@ -1398,7 +1398,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 					rlog.Error(fmt.Sprintf("readiness reconcile: listing organisations: %v", err))
 					return
 				}
-				targets := app.configHolder.Get().TargetChefVersions
+				targets := app.configHolder.Get().TargetChefVersionList()
 				if len(targets) == 0 {
 					return
 				}

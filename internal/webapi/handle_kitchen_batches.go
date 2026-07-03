@@ -52,10 +52,10 @@ func (r *Router) handleListKitchenBatches(w http.ResponseWriter, req *http.Reque
 }
 
 type createBatchRequest struct {
-	Name    string                 `json:"name"`
-	Filters datastore.BatchFilters `json:"filters"`
-	MaxCount *int                  `json:"max_count"`
-	DryRun  bool                   `json:"dry_run"`
+	Name     string                 `json:"name"`
+	Filters  datastore.BatchFilters `json:"filters"`
+	MaxCount *int                   `json:"max_count"`
+	DryRun   bool                   `json:"dry_run"`
 }
 
 // handleCreateKitchenBatch creates a new kitchen batch definition.
@@ -71,10 +71,10 @@ func (r *Router) handleCreateKitchenBatch(w http.ResponseWriter, req *http.Reque
 	}
 
 	b, err := r.db.CreateKitchenBatch(req.Context(), datastore.CreateKitchenBatchParams{
-		Name:    body.Name,
-		Filters: body.Filters,
+		Name:     body.Name,
+		Filters:  body.Filters,
 		MaxCount: body.MaxCount,
-		DryRun:  body.DryRun,
+		DryRun:   body.DryRun,
 	})
 	if err != nil {
 		r.logf("ERROR", "kitchen-batches: creating batch: %v", err)
@@ -214,7 +214,7 @@ func (p *dbResultProvider) GetLatestTestKitchenStatus(ctx context.Context, repoN
 			passed++
 		case (r.Passed != nil && !*r.Passed) || r.TimedOut:
 			failed++
-		// r.Passed == nil && !r.TimedOut: result incomplete — skip
+			// r.Passed == nil && !r.TimedOut: result incomplete — skip
 		}
 	}
 	status := "untested"
@@ -322,10 +322,10 @@ func (r *Router) handleUpdateKitchenBatch(w http.ResponseWriter, req *http.Reque
 	}
 
 	b, err := r.db.UpdateKitchenBatch(req.Context(), id, datastore.UpdateKitchenBatchParams{
-		Name:    body.Name,
-		Filters: body.Filters,
+		Name:     body.Name,
+		Filters:  body.Filters,
 		MaxCount: body.MaxCount,
-		DryRun:  body.DryRun,
+		DryRun:   body.DryRun,
 	})
 	if err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {
@@ -858,8 +858,8 @@ func (r *Router) batchTargetVersion(b datastore.KitchenBatch) string {
 	if len(b.Filters.TargetChefVersions) > 0 {
 		return b.Filters.TargetChefVersions[0]
 	}
-	// Fall back to the highest globally configured target version.
-	return config.HighestVersion(r.liveConfig().TargetChefVersions)
+	// Fall back to the globally configured target version.
+	return r.liveConfig().TargetChefVersion
 }
 
 // ---------------------------------------------------------------------------

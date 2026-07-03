@@ -22,14 +22,14 @@ import (
 
 func ownershipTestConfig() *Router {
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.5.0"}
+	cfg.TargetChefVersion = "18.5.0"
 	store := &mockStore{}
 	return newTestRouterWithMockAndConfig(store, cfg)
 }
 
 func ownershipRouter(store *mockStore) *Router {
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.5.0"}
+	cfg.TargetChefVersion = "18.5.0"
 	return newTestRouterWithMockAndConfig(store, cfg)
 }
 

@@ -80,7 +80,7 @@ func TestHandleCookbookRemediation_MissingVersion(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -132,7 +132,7 @@ func TestHandleCookbookRemediation_CookbookNotFound(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -153,7 +153,7 @@ func TestHandleCookbookRemediation_VersionNotFound(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -184,7 +184,7 @@ func TestHandleCookbookRemediation_NoCookstyleResult(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -264,7 +264,7 @@ func TestHandleCookbookRemediation_SurfacesMaterialisedStatus(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -369,7 +369,7 @@ func TestHandleCookbookRemediation_WithOffenses_FileFormat(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -552,7 +552,7 @@ func TestHandleCookbookRemediation_WithOffenses_FlatFormat(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -651,7 +651,7 @@ func TestHandleCookbookRemediation_WithAutocorrectPreview(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -730,7 +730,7 @@ func TestHandleCookbookRemediation_ExplicitTargetVersion(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -768,7 +768,7 @@ func TestHandleCookbookRemediation_DBError_ListCookbooks(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -792,7 +792,7 @@ func TestHandleCookbookRemediation_DBError_GetCookstyleResult(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -844,7 +844,7 @@ func TestHandleCookbookRemediation_PassedCookstyle(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -906,7 +906,7 @@ func TestHandleCookbookRemediation_MalformedOffensesJSON(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -959,7 +959,7 @@ func TestHandleCookbookRemediation_EmptyOffensesArray(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -1011,7 +1011,7 @@ func TestHandleCookbookRemediation_NilOffencesBytes(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -1060,7 +1060,7 @@ func TestHandleCookbookRemediation_MultipleVersions_SelectsCorrect(t *testing.T)
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -1095,7 +1095,7 @@ func TestCookbookRemediationRoute_DoesNotBreakDetailRoute(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	// The regular detail route should still work.
@@ -1147,7 +1147,7 @@ func TestHandleCookbookRemediation_AutocorrectPreviewDBError(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -1216,7 +1216,7 @@ func TestHandleCookbookRemediation_UnknownCop_NilRemediation(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -1266,7 +1266,7 @@ func TestHandleCookbookRemediation_ComplexityError_Graceful(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()

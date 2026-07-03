@@ -18,11 +18,11 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
-func testConfigWithTargetVersions(versions ...string) *config.Config {
+func testConfigWithTargetVersions(version string) *config.Config {
 	cfg := &config.Config{}
 	wsEnabled := true
 	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersions = versions
+	cfg.TargetChefVersion = version
 	return cfg
 }
 

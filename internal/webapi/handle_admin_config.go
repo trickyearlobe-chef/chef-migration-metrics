@@ -107,8 +107,10 @@ func (r *Router) putAdminConfigCollection(w http.ResponseWriter, req *http.Reque
 func (r *Router) handleAdminConfigTargetVersions(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodGet:
-		cfg := r.liveConfig()
-		r.writeAdminConfigSection(w, &config.Config{TargetChefVersions: cfg.TargetChefVersions}, configstore.KeyTargetChefVersions)
+		// Transitional list shim: the model is single-target (scalar), but the
+		// admin UI still edits a list. Return the active target as a
+		// one-element list (empty if unset) until the UI migrates to scalar.
+		WriteJSON(w, http.StatusOK, r.liveConfig().TargetChefVersionList())
 	case http.MethodPut:
 		r.putAdminConfigTargetVersions(w, req)
 	default:
@@ -143,8 +145,10 @@ func (r *Router) putAdminConfigTargetVersions(w http.ResponseWriter, req *http.R
 		// Non-fatal: statuses will be recomputed on next scan cycle.
 	}
 
-	// Target versions are pulled per collector run and read live by handlers — applied.
-	r.storeAdminConfigSection(w, req, &config.Config{TargetChefVersions: input}, configstore.KeyTargetChefVersions, appliedApplier)
+	// Single-target model: collapse the list to the highest version (matching
+	// the prior live behaviour) and store it as the scalar target. Transitional
+	// shim until the admin UI edits a single version directly.
+	r.storeAdminConfigSection(w, req, &config.Config{TargetChefVersion: configstore.HighestVersion(input)}, configstore.KeyTargetChefVersion, appliedApplier)
 }
 
 // ---------------------------------------------------------------------------

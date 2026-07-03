@@ -14,9 +14,9 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
-func recomputeTestRouter(store *mockStore, targets []string) *Router {
+func recomputeTestRouter(store *mockStore, target string) *Router {
 	cfg := testConfig()
-	cfg.TargetChefVersions = targets
+	cfg.TargetChefVersion = target
 	return newTestRouterWithMockAndConfig(store, cfg)
 }
 
@@ -58,7 +58,7 @@ func TestDashboardCookstyleRecomputeTrend_HappyPath(t *testing.T) {
 			}}, nil
 		},
 	}
-	r := recomputeTestRouter(store, []string{"19.3.15"})
+	r := recomputeTestRouter(store, "19.3.15")
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
@@ -153,7 +153,7 @@ func TestDashboardCookstyleRecomputeTrend_SplitsBySource(t *testing.T) {
 			}}, nil
 		},
 	}
-	r := recomputeTestRouter(store, []string{"19.3.15"})
+	r := recomputeTestRouter(store, "19.3.15")
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
@@ -220,7 +220,7 @@ func TestDashboardCookstyleRecomputeTrend_ExcludesRemovedResult(t *testing.T) {
 			return nil, nil // no live results
 		},
 	}
-	r := recomputeTestRouter(store, []string{"19.3.15"})
+	r := recomputeTestRouter(store, "19.3.15")
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)
@@ -243,7 +243,7 @@ func TestDashboardCookstyleRecomputeTrend_ExcludesRemovedResult(t *testing.T) {
 // No fingerprint history → empty series and a null boundary (still the frozen era).
 func TestDashboardCookstyleRecomputeTrend_NoData(t *testing.T) {
 	store := &mockStore{} // ListOffenceFingerprintsByTargetFn nil → returns nil
-	r := recomputeTestRouter(store, []string{"19.3.15"})
+	r := recomputeTestRouter(store, "19.3.15")
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cookstyle/recompute-trend", nil)

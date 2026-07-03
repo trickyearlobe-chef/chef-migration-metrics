@@ -42,7 +42,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	type readinessSummary struct {
 		TargetChefVersion string  `json:"target_chef_version"`
@@ -191,7 +191,7 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 		return
 	}
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	var points []readinessTrendPoint
 

@@ -8,10 +8,38 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"gopkg.in/yaml.v3"
 )
+
+// HighestVersion returns the highest "MAJOR.MINOR.PATCH" string from a list,
+// or "" if the list is empty. Used only in transitional adapters: migrating a
+// legacy target-version list to the single active target, and the list-shaped
+// admin config PUT shim.
+func HighestVersion(versions []string) string {
+	best := ""
+	var bestParts [3]int
+	for _, v := range versions {
+		var parts [3]int
+		for i, seg := range strings.SplitN(v, ".", 3) {
+			if i >= 3 {
+				break
+			}
+			n, _ := strconv.Atoi(seg)
+			parts[i] = n
+		}
+		if best == "" || parts[0] > bestParts[0] ||
+			(parts[0] == bestParts[0] && parts[1] > bestParts[1]) ||
+			(parts[0] == bestParts[0] && parts[1] == bestParts[1] && parts[2] > bestParts[2]) {
+			best = v
+			bestParts = parts
+		}
+	}
+	return best
+}
 
 // HasKey reports whether the given config key exists in the store. It is used
 // to decide whether a config section came from the database (authoritative)
@@ -32,9 +60,15 @@ func HasKey(ctx context.Context, store *Store, key string) (bool, error) {
 // configuration section. These match the key naming convention in the
 // encrypted-config-store specification.
 const (
-	KeyOrganisations              = "organisations"
-	KeyTargetChefVersions         = "target_chef_versions"
-	KeyGitBaseURLs                = "git_base_urls"
+	KeyOrganisations     = "organisations"
+	KeyTargetChefVersion = "target_chef_version"
+	KeyGitBaseURLs       = "git_base_urls"
+
+	// KeyTargetChefVersionsLegacy is the pre-single-target key that stored a
+	// list of target Chef versions. Retained only so config assembly can read
+	// and migrate existing stores (the highest version becomes the single
+	// active target). Never written by ConfigToSections.
+	KeyTargetChefVersionsLegacy   = "target_chef_versions"
 	KeyCollection                 = "collection"
 	KeyConcurrency                = "concurrency"
 	KeyAnalysisTools              = "analysis_tools"
@@ -114,7 +148,7 @@ type ServerListenSection struct {
 func AllConfigKeys() []string {
 	return []string{
 		KeyOrganisations,
-		KeyTargetChefVersions,
+		KeyTargetChefVersion,
 		KeyGitBaseURLs,
 		KeyCollection,
 		KeyConcurrency,
@@ -212,8 +246,21 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 	switch key {
 	case KeyOrganisations:
 		return yamlUnmarshalInto(&cfg.Organisations, raw, key)
-	case KeyTargetChefVersions:
-		return yamlUnmarshalInto(&cfg.TargetChefVersions, raw, key)
+	case KeyTargetChefVersion:
+		return yamlUnmarshalInto(&cfg.TargetChefVersion, raw, key)
+	case KeyTargetChefVersionsLegacy:
+		// Back-compat: an existing store may hold the pre-single-target list.
+		// Migrate it to the single active target (the highest version, matching
+		// the prior live behaviour) without clobbering a newer scalar value.
+		if cfg.TargetChefVersion != "" {
+			return nil
+		}
+		var legacy []string
+		if err := yamlUnmarshalInto(&legacy, raw, key); err != nil {
+			return err
+		}
+		cfg.TargetChefVersion = HighestVersion(legacy)
+		return nil
 	case KeyGitBaseURLs:
 		return yamlUnmarshalInto(&cfg.GitBaseURLs, raw, key)
 	case KeyCollection:
@@ -296,15 +343,15 @@ func yamlUnmarshalInto[T any](target *T, raw json.RawMessage, key string) error 
 // YAML keeps a copy only as the bind-failure fallback).
 func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 	sections := map[string]any{
-		KeyOrganisations:      cfg.Organisations,
-		KeyTargetChefVersions: cfg.TargetChefVersions,
-		KeyGitBaseURLs:        cfg.GitBaseURLs,
-		KeyCollection:         cfg.Collection,
-		KeyConcurrency:        cfg.Concurrency,
-		KeyAnalysisTools:      cfg.AnalysisTools,
-		KeyReadiness:          cfg.Readiness,
-		KeyExports:            cfg.Exports,
-		KeyElasticsearch:      cfg.Elasticsearch,
+		KeyOrganisations:     cfg.Organisations,
+		KeyTargetChefVersion: cfg.TargetChefVersion,
+		KeyGitBaseURLs:       cfg.GitBaseURLs,
+		KeyCollection:        cfg.Collection,
+		KeyConcurrency:       cfg.Concurrency,
+		KeyAnalysisTools:     cfg.AnalysisTools,
+		KeyReadiness:         cfg.Readiness,
+		KeyExports:           cfg.Exports,
+		KeyElasticsearch:     cfg.Elasticsearch,
 		KeyServerListen: ServerListenSection{
 			ListenAddress: cfg.Server.ListenAddress,
 			Port:          cfg.Server.Port,

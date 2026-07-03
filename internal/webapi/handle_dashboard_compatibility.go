@@ -66,7 +66,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		return
 	}
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	// CookStyle rollup summary (cop-classification.md 4-state vocabulary). The
 	// untested segment is sub-split (errored scan / inactive / not-yet-scanned)
@@ -262,7 +262,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 	ownerFilterActive := ownedKeys != nil
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	// CookStyle rollup summary (4-state). UntestedRepos is sub-split into errored
 	// scan / clone-failed / cloned-but-not-yet-scanned for the card tooltip.
@@ -459,7 +459,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 	ownerFilterActive := ownedKeys != nil
 
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	type tkSummary struct {
 		TargetChefVersion        string  `json:"target_chef_version"`

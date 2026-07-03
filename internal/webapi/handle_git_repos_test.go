@@ -20,7 +20,7 @@ import (
 
 func newGitRepoTestRouter(store *mockStore) *Router {
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	hub := NewEventHub()
 	go hub.Run()
 	return NewRouter(store, cfg, hub)
@@ -391,4 +391,3 @@ func TestHandleGitRepos_HasTestSuiteFilter_Both(t *testing.T) {
 		t.Fatalf("expected all 4 repos when both selected, got %d", len(resp.Data))
 	}
 }
-

@@ -52,7 +52,7 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 
 	ctx := req.Context()
 	rules := r.cookstyleFailureRules()
-	targetVersions := r.liveConfig().TargetChefVersions
+	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	// Live result keys per target — the current-membership set the fingerprint
 	// feed is intersected with. A target absent from the map means its live

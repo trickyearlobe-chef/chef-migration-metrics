@@ -980,7 +980,7 @@ func (r *Router) propagateCop(ctx context.Context, copName, targetVersion string
 func (r *Router) propagateCustomCop(ctx context.Context, req *http.Request, action, copName string) {
 	var results []PropagationResult
 	if r.cookstylePropagator != nil {
-		for _, t := range r.liveConfig().TargetChefVersions {
+		for _, t := range r.liveConfig().TargetChefVersionList() {
 			results = append(results, r.propagateCop(ctx, copName, t))
 		}
 	}

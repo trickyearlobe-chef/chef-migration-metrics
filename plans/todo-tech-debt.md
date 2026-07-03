@@ -316,6 +316,12 @@ Recorded 2026-06-26 (status-consistency Chunk 6, readiness + `review_blocks_read
 - [ ] **Trend snapshots do not yet record `needs_review`.** The dashboard readiness card (current state) is exact via `CountNodeReadinessByStatus`, and the live trend *fallback* carries `needs_review_nodes`. But the persisted snapshot writers (`node_metrics` / `readiness_summary`) still store ready/blocked only, so with the toggle on, `needs_review` nodes are counted as blocked in historical trend points. Forward-only `needs_review` trend data + recompute is **Chunk 8**'s scope; the `readinessTrendPoint.needs_review_nodes` field + merge plumbing are already in place for it.
 - [ ] **Readiness exports still use `is_ready`, not the 3-state `status`.** `ready_nodes` / `blocked_nodes` exports (and `ListReadyNodes`/`ListBlockedNodes`) filter on `is_ready`, so with the toggle on a `needs_review` node lands in the blocked export. Default-off (today) is unaffected. **Strategic fix:** add a `needs_review_nodes` export type and switch the blocked export to `status = 'blocked'` (the node-list filter already does this).
 
+## CookStyle — Per-Target Dimension Not Fully Torn Out (Reliability Phase 2)
+
+Recorded 2026-07-03 (cookstyle-reliability Phase 2, scope decision).
+
+- [ ] **`target_chef_version` columns remain on the stored-results schema.** Phase 2 took the *contained* scope: config is now scalar (`TargetChefVersion`), `cop_classifications` is keyed by `cop_name` only, the resolver dropped its target param, and the config-target loops were collapsed. But `target_chef_version` still exists as a column on `server_cookbook_cookstyle_results`, `git_repo_cookstyle_results`, `node_kitchen_runs`, and `cookstyle_offence_fingerprints`, and the dashboard compatibility/readiness/trends/recompute handlers still group and filter by it — now always the single active target. This is harmless (the column holds one value) but is the residual "per-target dimension." **Strategic fix (full teardown):** drop those columns via migration and remove the target grouping from `handle_dashboard_compatibility.go`, `handle_dashboard_readiness.go`, `handle_dashboard_trends.go`, `handle_dashboard_cookstyle_recompute.go`, the fingerprint code, and their tests. Deferred as a schema-wide migration the approved spec does not require.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

@@ -1139,7 +1139,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		pipelineResult := runServerCookbookPipeline(
 			ctx, client, c.db, log, org,
 			c.cookbookCacheDir,
-			c.cfg.TargetChefVersions,
+			c.cfg.TargetChefVersionList(),
 			c.cookstyleScanner,
 			c.autocorrectGen,
 			deleteAfterScan,
@@ -1175,13 +1175,13 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 		// Complexity scoring for server cookbooks runs after the pipeline
 		// completes so CookStyle results are available.
-		if c.complexityScorer != nil && len(c.cfg.TargetChefVersions) > 0 {
+		if c.complexityScorer != nil && len(c.cfg.TargetChefVersionList()) > 0 {
 			orgCBs, cxListErr := c.db.ListServerCookbooksByOrganisation(ctx, org.Name)
 			if cxListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list server cookbooks for complexity scoring: %v", cxListErr),
 					logging.WithCollectionRunID(run.OrganisationName))
 			} else {
-				cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersions, org.Name)
+				cxBatch := c.complexityScorer.ScoreServerCookbooks(ctx, orgCBs, c.cfg.TargetChefVersionList(), org.Name)
 				log.Info(fmt.Sprintf(
 					"server cookbook complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
 					cxBatch.Total, cxBatch.Scored, cxBatch.Skipped, cxBatch.Errors,
@@ -1191,7 +1191,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		}
 
 		// Record complexity metric snapshots for trend charts.
-		c.recordComplexitySnapshots(ctx, log, run.OrganisationName, org.Name, c.cfg.TargetChefVersions)
+		c.recordComplexitySnapshots(ctx, log, run.OrganisationName, org.Name, c.cfg.TargetChefVersionList())
 	}()
 
 	// -------------------------------------------------------------------
@@ -1209,7 +1209,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		// B.1: Scan already-cloned git repos immediately (before new
 		// clones finish). Repos whose HEAD hasn't changed since the last
 		// scan are skipped automatically by scanOneGitRepo.
-		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersionList()) > 0 {
 			existingRepos, listErr := c.db.ListClonedGitRepos(ctx)
 			if listErr != nil {
 				log.Warn(fmt.Sprintf("failed to list existing git repos for immediate CookStyle scanning: %v", listErr),
@@ -1218,7 +1218,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				log.Info(fmt.Sprintf("scanning %d existing git repo(s) for CookStyle (before clone/pull)", len(existingRepos)),
 					logging.WithCollectionRunID(run.OrganisationName))
 
-				csBatch := c.cookstyleScanner.ScanGitRepos(ctx, existingRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+				csBatch := c.cookstyleScanner.ScanGitRepos(ctx, existingRepos, c.cfg.TargetChefVersionList(), c.gitRepoDirFn)
 				log.Info(fmt.Sprintf(
 					"CookStyle pre-scan complete (existing git repos): %d total, %d scanned, %d skipped, %d passed, %d failed, %d errors in %s",
 					csBatch.Total, csBatch.Scanned, csBatch.Skipped,
@@ -1260,7 +1260,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		// B.3: CookStyle scan for newly cloned/pulled repos. The scanner's
 		// skip logic detects repos already scanned in B.1 (same commit SHA)
 		// and skips them, so only repos with new commits are re-scanned.
-		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersions) > 0 {
+		if c.cookstyleScanner != nil && c.gitRepoDirFn != nil && len(c.cfg.TargetChefVersionList()) > 0 {
 			gitRepos, gitListErr := c.db.ListClonedGitRepos(ctx)
 			if gitListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list git repos for post-clone CookStyle scanning: %v", gitListErr),
@@ -1269,7 +1269,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				log.Info(fmt.Sprintf("scanning %d git repo(s) for CookStyle (post clone/pull)", len(gitRepos)),
 					logging.WithCollectionRunID(run.OrganisationName))
 
-				csBatch := c.cookstyleScanner.ScanGitRepos(ctx, gitRepos, c.cfg.TargetChefVersions, c.gitRepoDirFn)
+				csBatch := c.cookstyleScanner.ScanGitRepos(ctx, gitRepos, c.cfg.TargetChefVersionList(), c.gitRepoDirFn)
 				log.Info(fmt.Sprintf(
 					"CookStyle post-scan complete (git repos): %d total, %d scanned, %d skipped, %d passed, %d failed, %d errors in %s",
 					csBatch.Total, csBatch.Scanned, csBatch.Skipped,
@@ -1361,13 +1361,13 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		}
 
 		// B.6: Complexity scoring for git repos.
-		if c.complexityScorer != nil && len(c.cfg.TargetChefVersions) > 0 {
+		if c.complexityScorer != nil && len(c.cfg.TargetChefVersionList()) > 0 {
 			gitReposForCX, grCXListErr := c.db.ListClonedGitRepos(ctx)
 			if grCXListErr != nil {
 				log.Warn(fmt.Sprintf("failed to list git repos for complexity scoring: %v", grCXListErr),
 					logging.WithCollectionRunID(run.OrganisationName))
 			} else if len(gitReposForCX) > 0 {
-				grCXBatch := c.complexityScorer.ScoreGitRepos(ctx, gitReposForCX, c.cfg.TargetChefVersions, org.Name)
+				grCXBatch := c.complexityScorer.ScoreGitRepos(ctx, gitReposForCX, c.cfg.TargetChefVersionList(), org.Name)
 				log.Info(fmt.Sprintf(
 					"git repo complexity scoring complete: %d total, %d scored, %d skipped, %d errors in %s",
 					grCXBatch.Total, grCXBatch.Scored, grCXBatch.Skipped, grCXBatch.Errors,
@@ -1491,11 +1491,11 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// data (from CookStyle + Test Kitchen) with disk space evaluation to
 	// produce a per-node per-target-version readiness verdict. Skipped if
 	// the evaluator is not configured. Non-fatal.
-	if c.readinessEval != nil && len(c.cfg.TargetChefVersions) > 0 {
+	if c.readinessEval != nil && len(c.cfg.TargetChefVersionList()) > 0 {
 		log.Info("evaluating node readiness",
 			logging.WithCollectionRunID(run.OrganisationName))
 
-		readinessResults, readinessErr := c.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, c.cfg.TargetChefVersions)
+		readinessResults, readinessErr := c.readinessEval.EvaluateOrganisation(ctx, org.Name, org.Name, c.cfg.TargetChefVersionList())
 		if readinessErr != nil {
 			log.Warn(fmt.Sprintf("node readiness evaluation failed: %v", readinessErr),
 				logging.WithCollectionRunID(run.OrganisationName))
@@ -1518,7 +1518,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			// These pre-aggregated snapshots allow the dashboard to show
 			// historical readiness trends without querying live
 			// node_readiness rows.
-			c.recordReadinessSnapshots(ctx, log, run.OrganisationName, org.Name, readinessResults, c.cfg.TargetChefVersions)
+			c.recordReadinessSnapshots(ctx, log, run.OrganisationName, org.Name, readinessResults, c.cfg.TargetChefVersionList())
 
 			// Step 14c: Record unified node_metrics snapshot for enriched
 			// trend views (staleness breakdown, blocking reasons, platform).

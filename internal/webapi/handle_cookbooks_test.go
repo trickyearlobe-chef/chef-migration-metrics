@@ -668,7 +668,7 @@ func TestHandleCookbooks_UnscannedCookbooks_ShowUntested(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -716,7 +716,7 @@ func TestHandleCookbooks_ScannedCookbooks_CompatibilityPerID(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()
@@ -773,7 +773,7 @@ func TestHandleCookbooks_SurfacesCookstyleStatus(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0"}
+	cfg.TargetChefVersion = "18.0"
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
 	w := httptest.NewRecorder()

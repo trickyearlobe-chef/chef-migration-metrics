@@ -377,7 +377,7 @@ func TestAdminConfigCollection_PUT_500_ReloadError(t *testing.T) {
 
 func TestAdminConfigTargetVersions_GET(t *testing.T) {
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"15.3.0", "17.10.0"}
+	cfg.TargetChefVersion = "17.10.0"
 	r := newTestRouterForAdminConfig(cfg, nil, nil)
 
 	w := httptest.NewRecorder()
@@ -387,14 +387,15 @@ func TestAdminConfigTargetVersions_GET(t *testing.T) {
 	assertStatus(t, w, http.StatusOK)
 	var got []string
 	decodeBody(t, w, &got)
-	if len(got) != 2 || got[0] != "15.3.0" || got[1] != "17.10.0" {
-		t.Errorf("versions = %v, want [15.3.0 17.10.0]", got)
+	// GET returns TargetChefVersionList() — a single-element array.
+	if len(got) != 1 || got[0] != "17.10.0" {
+		t.Errorf("versions = %v, want [17.10.0]", got)
 	}
 }
 
 func TestAdminConfigTargetVersions_GET_NilStore(t *testing.T) {
 	cfg := testConfig()
-	cfg.TargetChefVersions = []string{"18.0.0"}
+	cfg.TargetChefVersion = "18.0.0"
 	r := newTestRouterForAdminConfig(cfg, nil, nil)
 
 	w := httptest.NewRecorder()
@@ -418,10 +419,12 @@ func TestAdminConfigTargetVersions_PUT_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusOK)
-	var got []string
+	// PUT accepts a list but stores the single highest version as the scalar
+	// target; the response value is that scalar string.
+	var got string
 	decodePutValue(t, w, &got)
-	if len(got) != 2 || got[0] != "15.3.0" {
-		t.Errorf("versions = %v, want [15.3.0 17.10.0]", got)
+	if got != "17.10.0" {
+		t.Errorf("version = %q, want %q (highest of the input list)", got, "17.10.0")
 	}
 }
 
